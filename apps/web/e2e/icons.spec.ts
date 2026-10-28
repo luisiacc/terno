@@ -20,7 +20,7 @@ async function reload(page: Page) {
 }
 
 test.describe("sender icons", { tag: "@design" }, () => {
-  test("off by default in local mode: the list and the reader ask nothing, nothing is requested", async ({ app: page, server }) => {
+  test("turned off: the list and the reader ask nothing, nothing is requested", async ({ app: page, server }) => {
     await rows(page).nth(2).dispatchEvent("mousedown", { button: 0 });
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await page.getByTestId("thread-list").locator("[role=listbox]").evaluate((el) => (el.scrollTop = 4000));
@@ -75,20 +75,25 @@ test.describe("sender icons", { tag: "@design" }, () => {
   });
 });
 
-test("Settings → Appearance: website icons are off in local mode, one tap turns them on, and General says so", async ({ app: page }) => {
-  await focusList(page);
-  await page.keyboard.press("Meta+,");
-  await page.getByTestId("tab-appearance").click();
-  const row = page.getByTestId("site-icons-row");
-  await row.scrollIntoViewIfNeeded();
-  await expect(row).toContainText("Off in local mode");
-  const sw = page.getByTestId("site-icons-switch");
-  await expect(sw).not.toBeChecked();
-  await sw.click();
-  await expect(sw).toBeChecked();
-  await page.getByTestId("tab-general").click();
-  await expect(page.getByTestId("local-mode-row")).toContainText("website icons you turned on");
-  await page.getByTestId("tab-appearance").click();
-  await page.getByTestId("forget-icons").click();
-  await expect(page.getByText("Saved icons forgotten").first()).toBeVisible();
+test.describe("a fresh install's default", () => {
+  test.use({ siteIcons: true });
+  test("Settings → Appearance: website icons are on in local mode too, General says so, and one tap turns them off", async ({ app: page }) => {
+    await focusList(page);
+    await page.keyboard.press("Meta+,");
+    await page.getByTestId("tab-general").click();
+    await expect(page.getByTestId("local-mode-row")).toContainText("and website icons (Appearance)");
+    await page.getByTestId("tab-appearance").click();
+    const row = page.getByTestId("site-icons-row");
+    await row.scrollIntoViewIfNeeded();
+    await expect(row).toContainText("On in local mode too");
+    const sw = page.getByTestId("site-icons-switch");
+    await expect(sw).toBeChecked();
+    await sw.click();
+    await expect(sw).not.toBeChecked();
+    await page.getByTestId("tab-general").click();
+    await expect(page.getByTestId("local-mode-row")).not.toContainText("website icons");
+    await page.getByTestId("tab-appearance").click();
+    await page.getByTestId("forget-icons").click();
+    await expect(page.getByText("Saved icons forgotten").first()).toBeVisible();
+  });
 });

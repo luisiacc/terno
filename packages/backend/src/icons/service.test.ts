@@ -70,9 +70,10 @@ async function until(f: () => boolean, ms = 3000) {
 }
 
 describe("sender icons, privacy defaults (plan 22)", () => {
-  it("a new install (local mode) sends nothing anywhere: every sender asked about, zero requests", async () => {
+  it("local mode with website icons turned off sends nothing anywhere: every sender asked about, zero requests", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { client, transport, senders } = await setup();
+    await client.call("settings.update", { senderIcons: false });
     expect(senders.length).toBeGreaterThan(30);
     for (let i = 0; i < senders.length; i += 200) {
       const answers = await client.call("icons.lookup", { emails: senders.slice(i, i + 200) });
@@ -94,15 +95,16 @@ describe("sender icons, privacy defaults (plan 22)", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("the default follows the mode until the user chooses; the choice sticks; an import never turns it on", async () => {
+  it("on by default in either mode; turning it off sticks across modes; an import never turns it on", async () => {
     const { backend, client } = await setup({ seed: false });
-    expect((await readSettings(backend.store)).senderIcons).toBe(false);
+    expect((await readSettings(backend.store)).localMode).toBe(true);
+    expect((await readSettings(backend.store)).senderIcons).toBe(true);
     expect((await client.call("settings.update", { localMode: false })).senderIcons).toBe(true);
+    expect((await client.call("settings.update", { localMode: true })).senderIcons).toBe(true);
+    // the one tap off
+    expect((await client.call("settings.update", { senderIcons: false })).senderIcons).toBe(false);
+    expect((await client.call("settings.update", { localMode: false })).senderIcons).toBe(false);
     expect((await client.call("settings.update", { localMode: true })).senderIcons).toBe(false);
-    // the one tap in local mode
-    expect((await client.call("settings.update", { senderIcons: true })).senderIcons).toBe(true);
-    expect((await client.call("settings.update", { localMode: false })).senderIcons).toBe(true);
-    expect((await client.call("settings.update", { senderIcons: false, localMode: true })).senderIcons).toBe(false);
     const file = await exportMailbox(backend);
     await importMailbox(backend, { ...file, settings: { ...file.settings, senderIcons: true } });
     expect((await readSettings(backend.store)).senderIcons).toBe(false);
@@ -111,8 +113,10 @@ describe("sender icons, privacy defaults (plan 22)", () => {
     expect((await readSettings(backend.store)).senderIcons).toBe(false);
   });
 
-  it("the policy allows purpose icons only when the setting does: never by default in local mode, yes once turned on", async () => {
+  it("the policy allows purpose icons only when the setting does: by default in local mode too, never once turned off", async () => {
     const { backend, client } = await setup({ seed: false });
+    await expect(backend.net.assert("icons", "https://netflix.com/")).resolves.toEqual({});
+    await client.call("settings.update", { senderIcons: false });
     await expect(backend.net.assert("icons", "https://netflix.com/")).rejects.toBeInstanceOf(NetworkPolicyError);
     await client.call("settings.update", { senderIcons: true });
     await expect(backend.net.assert("icons", "https://netflix.com/")).resolves.toEqual({});

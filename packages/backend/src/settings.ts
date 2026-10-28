@@ -96,8 +96,8 @@ export const DEFAULT_SETTINGS: General = {
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
   composeSuggestions: true,
-  // plan 22: unset follows the mode (readSettings); this is local mode's answer
-  senderIcons: false,
+  // plan 22: website icons are on in either mode until turned off
+  senderIcons: true,
   googlePhotos: {},
   // plan 41: like Mail, the count and the notifications are on until turned off
   dockBadge: true,
@@ -211,14 +211,9 @@ export async function readLocalMode(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).localMode ?? DEFAULT_SETTINGS.localMode;
 }
 
-/**
- * Plan 22: whether website icons may be fetched. Connected mode: unless turned off. Local mode:
- * only when the user turned them on (an explicit choice; the default there is off).
- */
+/** Plan 22: whether website icons may be fetched: in either mode, unless the user turned them off. */
 export async function readSiteIcons(store: SettingsStore): Promise<boolean> {
-  const s = await stored(store);
-  const localMode = s.localMode ?? DEFAULT_SETTINGS.localMode;
-  return s.senderIcons ?? !localMode;
+  return (await stored(store)).senderIcons ?? DEFAULT_SETTINGS.senderIcons;
 }
 
 /** Plan 22: the Gmail accounts showing photos from Google, and what each was granted. */
@@ -302,9 +297,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
   };
-  // plan 22: website icons follow the mode until the user chooses
-  const senderIcons = s.senderIcons ?? !(s.localMode ?? DEFAULT_SETTINGS.localMode);
-  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s), senderIcons }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
+  return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), gmailClientSecretSet: await store.secrets.has("gmailClientSecret"), gmailClientSecretUnreadable: unreadable.has("gmailClientSecret"), ai };
 }
 
 export class SettingsError extends Error {

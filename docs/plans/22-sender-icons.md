@@ -205,3 +205,11 @@ Five more (one high, four medium), each with a regression test that failed befor
 - **The account's own picture** shows on the inline draft's avatar and on the account's own messages; the sidebar's account list is left to plan 21.
 - **Lookups** are asserted at a median ≤ 10 ms for 200 addresses with 4,000 cached entries (looser than §7's 2 ms, to hold on a loaded machine).
 - **Screenshots:** `/tmp/unica-scratch/icons-22/{macos,lumen,atelier}-{light,dark}.png` (the stub's icons are flat squares; real favicons sit on the same paper tile).
+
+## Revision: everything on by default (2026-10-27)
+
+At the owner's request, the three switches under Sender pictures now start on:
+
+- **Website icons** default to on in either mode (`DEFAULT_SETTINGS.senderIcons: true`; unset no longer follows `!localMode`). Local mode's hints say icons are the exception ("On in local mode too…"; General: "…and website icons (Appearance)"). Turning them off still sticks, the network policy still enforces it, and imports still only turn them off. This replaces §2's "off in Local mode" default and §2.8's zero-requests-by-default: zero requests now hold once the switch is off (`service.test.ts`).
+- **Photos from Google** come on with the account: a new Gmail sign-in (desktop `accounts.connectGmail`, web `connectGmailWeb`) asks for the two contacts scopes beside mail's, and whatever Google granted is saved as the account's photo state and listed at once. Unticking the boxes on Google's screen leaves photos off. Existing accounts are unchanged: Google must ask first, so they turn photos on in Settings as before.
+- **e2e:** the fixture turns website icons off (`siteIcons: false`) so baselines stay stable; `icons.spec.ts` opts in to check the real default.

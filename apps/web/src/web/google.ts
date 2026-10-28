@@ -36,6 +36,8 @@ declare global {
 const GIS = "https://accounts.google.com/gsi/client";
 /** the same scopes as desktop (@terno/mail's GMAIL_SCOPES) */
 const GMAIL_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/gmail.modify"];
+/** plan 22: the two contacts scopes (@terno/mail's CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE) */
+const PHOTO_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 let loading: Promise<void> | null = null;
 
 /** Loads Google's sign-in script (allowed by the web build's CSP). Call it before the click: the popup needs the click's activation. */
@@ -55,11 +57,11 @@ export function preloadGoogle(): Promise<void> {
   return loading;
 }
 
-function accessToken(clientId: string, loginHint?: string): Promise<TokenResponse> {
+function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES): Promise<TokenResponse> {
   return new Promise((resolve, reject) => {
     const tokens = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: GMAIL_SCOPES.join(" "),
+      scope: scopes.join(" "),
       login_hint: loginHint,
       include_granted_scopes: true,
       callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
@@ -80,13 +82,19 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number): P
   const clientId = getApp().settings?.gmailClientId;
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
-  const token = await accessToken(clientId, loginHint);
-  if (!token.scope.split(" ").includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
-  return client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600, ...(accountId !== undefined && { accountId }) });
+  // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
+  const adding = loginHint === undefined && accountId === undefined;
+  const token = await accessToken(clientId, loginHint, adding ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
+  const granted = token.scope.split(" ");
+  if (!granted.includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
+  const expiresIn = Number(token.expires_in) || 3600;
+  const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }) });
+  if (adding && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
+    // photos are extra: the account is connected even if this fails
+    await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn, scope: token.scope }).then((settings) => setApp({ settings }), () => {});
+  }
+  return account;
 }
-
-/** plan 22: the two contacts scopes (@terno/mail's CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE) */
-const PHOTO_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 
 /**
  * Plan 22: photos from Google for an account. Google's popup asks for the contacts scopes beside

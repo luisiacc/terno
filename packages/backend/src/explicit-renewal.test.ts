@@ -40,9 +40,10 @@ async function setup(kind: "SQL" | "IndexedDB") {
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "renewal", origin: "renderer" }); const client = new RpcClient(c);
   cleanups.push(async () => { for (const g of gates) g.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   await client.call("settings.update", { gmailClientId: "synthetic-client" });
-  answer = { ...who, email: "owner@example.test", sub: "owner-sub", refreshToken: "owner-refresh" };
+  // signed in without the contacts scopes: these tests turn photos on themselves
+  answer = { ...who, email: "owner@example.test", sub: "owner-sub", refreshToken: "owner-refresh", grantedScopes: [MAIL] };
   await client.call("accounts.connectGmail", {});
-  answer = { ...who, refreshToken: "old-refresh" };
+  answer = { ...who, refreshToken: "old-refresh", grantedScopes: [MAIL] };
   const account = await client.call("accounts.connectGmail", {});
   await backend.syncAccount(account.id);
   const name = `account:${account.id}:refreshToken`;

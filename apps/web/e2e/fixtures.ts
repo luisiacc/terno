@@ -134,6 +134,8 @@ interface Fixtures {
   design: DesignId | null;
   /** plan 24: the layout the app opens in (null: the install's default, Split) */
   layout: "split" | "list" | null;
+  /** plan 22: website icons are on by default; tests keep them off (stable baselines) unless they opt in */
+  siteIcons: boolean;
   server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
@@ -144,7 +146,8 @@ export const test = base.extend<Fixtures>({
   backendOptions: [{}, { option: true }],
   design: ["macos", { option: true }],
   layout: [null, { option: true }],
-  server: async ({ backendOptions }, use) => {
+  siteIcons: [false, { option: true }],
+  server: async ({ backendOptions, siteIcons }, use) => {
     const template = process.env[TEMPLATE_ENV];
     if (!template) throw new Error("global setup did not seed a template database");
     const dir = mkdtempSync(join(tmpdir(), "terno-e2e-"));
@@ -161,6 +164,7 @@ export const test = base.extend<Fixtures>({
     // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
     const icons = iconStub();
     const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, openExternal: backendOptions.network ? async () => {} : undefined });
+    if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
     await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };

@@ -47,6 +47,8 @@ export function AddAccountDialog() {
     setBusy("gmail");
     try {
       const a = WEB ? await (await import("~/web/google")).connectGmailWeb() : await client.call("accounts.connectGmail", {});
+      // plan 22: photos from Google came on with the account
+      if (!WEB) void client.call("app.bootstrap", {}).then((b) => setApp({ settings: b.settings }), () => {});
       snack.success(t("account.connected", { email: a.email }));
       setApp({ dialog: null });
     } catch (error) {

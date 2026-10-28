@@ -158,16 +158,16 @@ test("plan 18: the packaged backend suggests recipients from its index", async (
   await page.keyboard.press("Escape");
 });
 
-test("plan 22: the packaged backend can fetch website icons, and they're off in local mode until turned on (nothing is fetched here)", async () => {
+test("plan 22: the packaged backend can fetch website icons, and they're on in local mode too until turned off", async () => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Meta+,");
   await page.getByTestId("tab-appearance").click();
   const row = page.getByTestId("site-icons-row");
   await row.scrollIntoViewIfNeeded();
-  // the desktop host has the node:https transport (the switch is live, unlike the web's), and local mode keeps it off
+  // the desktop host has the node:https transport (the switch is live, unlike the web's), on by default even in local mode
   await expect(page.getByTestId("site-icons-switch")).toBeEnabled();
-  await expect(page.getByTestId("site-icons-switch")).not.toBeChecked();
-  await expect(row).toContainText("Off in local mode");
+  await expect(page.getByTestId("site-icons-switch")).toBeChecked();
+  await expect(row).toContainText("On in local mode too");
   await page.keyboard.press("Escape");
 });
 

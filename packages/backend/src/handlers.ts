@@ -2,13 +2,14 @@ import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/c
 import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
+import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
-import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
+import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
 const FIRST_BUILD_WAIT_MS = 250;
@@ -517,6 +518,8 @@ export function createHandlers(b: Backend): Handlers {
         openExternal: b.options.openExternal,
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
+        // plan 22: photos from Google come on with the account (the user can untick them on Google's screen)
+        scopes: [...GMAIL_SCOPES, ...PHOTO_SCOPES],
       });
       googleFlowActive(b);
       validateGoogleConnection(result, "initial");
@@ -542,6 +545,11 @@ export function createHandlers(b: Backend): Handlers {
       // what an import kept for this mailbox goes in now
       await restorePending(b);
       b.startAccount(account);
+      const photos = photoStateFrom(result.grantedScopes ?? []);
+      if (photos.connections || photos.otherContacts) {
+        await setGooglePhotoState(store, account.id, photos);
+        void b.icons.syncPeople(account.id, photos).catch(() => {});
+      }
       return account;
     },
 

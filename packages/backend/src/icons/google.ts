@@ -18,7 +18,7 @@ import { readSettings, setGooglePhotoState } from "../settings";
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 export const PHOTO_SCOPES = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE];
 
-const stateFrom = (granted: readonly string[]): GooglePhotoState => ({ connections: granted.includes(CONTACTS_SCOPE), otherContacts: granted.includes(OTHER_CONTACTS_SCOPE), apiDisabled: false });
+export const photoStateFrom = (granted: readonly string[]): GooglePhotoState => ({ connections: granted.includes(CONTACTS_SCOPE), otherContacts: granted.includes(OTHER_CONTACTS_SCOPE), apiDisabled: false });
 
 async function gmailAccount(b: Backend, accountId: number) {
   const account = await b.store.accounts.get(accountId);
@@ -78,9 +78,9 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
       b.assertSignIn(accountId, flow);
       if (!current) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       b.startAccount(current);
-      await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, stateFrom(granted)));
+      await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, photoStateFrom(granted)));
       b.assertSignIn(accountId, flow);
-      await b.icons.syncPeople(accountId, stateFrom(granted), flow.signal);
+      await b.icons.syncPeople(accountId, photoStateFrom(granted), flow.signal);
       b.assertSignIn(accountId, flow);
       return readSettings(b.store);
     });
@@ -101,5 +101,5 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
   tokens.set(account.id, p.accessToken, b.now() + p.expiresIn * 1000);
   await b.resumeAuth(account.id);
-  return turnOn(b, account.id, stateFrom(granted));
+  return turnOn(b, account.id, photoStateFrom(granted));
 }

@@ -43,8 +43,8 @@ function GooglePhotosRow({ account, state }: { account: Account; state: GooglePh
 }
 
 /**
- * Plan 22, Settings → Appearance: website icons (their default follows the mode: off in local
- * mode, one tap away), each Gmail account's photos from Google, and forgetting what's saved.
+ * Plan 22, Settings → Appearance: website icons (on by default in either mode, one tap to turn
+ * off), each Gmail account’s photos from Google, and forgetting what’s saved.
  */
 export function SenderPictures({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const canFetch = useApp((s) => s.host?.capabilities.siteIcons === true);

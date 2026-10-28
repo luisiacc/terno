@@ -46,6 +46,21 @@ describe("Google connection RPC validation", () => {
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: [], owner: null });
   });
 
+  it("plan 22: a new desktop sign-in asks for the contacts scopes too, and photos come on with what Google granted", async () => {
+    const t = await setup(false);
+    const contacts = "https://www.googleapis.com/auth/contacts.readonly";
+    t.answer({ ...identity, grantedScopes: [...identity.grantedScopes, contacts], refreshToken: "synthetic-refresh" });
+    const account = await t.client.call("accounts.connectGmail", {});
+    expect(t.connect.mock.calls[0]![0].scopes).toEqual(expect.arrayContaining([contacts, "https://www.googleapis.com/auth/contacts.other.readonly", "https://www.googleapis.com/auth/gmail.modify"]));
+    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toEqual({ connections: true, otherContacts: false, apiDisabled: false });
+  });
+
+  it("plan 22: a sign-in where the contacts boxes were unticked leaves photos off", async () => {
+    const t = await setup(false);
+    const account = await t.client.call("accounts.connectGmail", {});
+    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toBeUndefined();
+  });
+
   it("explicit reduced desktop consent is actionable and saves nothing", async () => {
     const t = await setup();
     t.answer({ ...identity, refreshToken: "synthetic-refresh", grantedScopes: ["openid", "https://www.googleapis.com/auth/gmail.readonly"] });
