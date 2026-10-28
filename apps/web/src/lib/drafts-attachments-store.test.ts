@@ -2,8 +2,9 @@ import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Draft } from "@terno/core/rpc";
+import { contract } from "@terno/core/rpc";
 import type { DraftInput, DraftRow, MailStore } from "@terno/store";
 import { withAccounts, msg, ingest, threadOf } from "@terno/store/conformance";
 import { openDatabase } from "@terno/db";
@@ -12,21 +13,65 @@ import { SqlMailStore } from "../../../../packages/db/src/sql-store";
 
 const { attachmentRpc } = vi.hoisted(() => ({ attachmentRpc: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: attachmentRpc } }));
-const { attachBody, copyDraft, draftsSaved, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft, fromServer, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
+const { attachBody, copyDraft, draftsSaved, draftWorkPending, materialize, resumeDraft, retryDraft, createDraft, editDraft, flushDraft: flush, fromServer, forgetDraft, setDraftTransport: applyDraftTransport, useDrafts } = await import("./drafts");
 
-const { openCompose } = await import("./compose");
+const { openCompose: compose, supersedeCompose } = await import("./compose");
 const { convertFields, replyFields } = await import("./compose-fields");
-const { setApp } = await import("~/state/app");
+const { getApp, setApp, useApp } = await import("~/state/app");
 const { useThreads } = await import("~/state/threads");
-const { useSnack } = await import("./snack");
+const { useSnack, resetSnacks } = await import("./snack");
 
-const apiDraft = (r: DraftRow): Draft => ({
-  id: r.id, generation: r.generation ?? "", revision: r.revision, format: 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
-  to: JSON.parse(r.to_json), cc: JSON.parse(r.cc_json), bcc: JSON.parse(r.bcc_json), subject: r.subject, subjectEdited: !!r.subject_edited,
-  bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json), quotedText: r.quoted_text, includeQuote: !!r.include_quote,
-  inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, uiState: r.ui_state, updatedAt: r.updated_at,
+const apiDraft = (r: DraftRow): Draft => checked(() => {
+  const dto: Draft = {
+  id: r.id, generation: r.generation ?? "", revision: r.revision, format: r.format === 1 ? 1 : 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
+  to: JSON.parse(r.to_json), cc: JSON.parse(r.cc_json), bcc: JSON.parse(r.bcc_json), subject: r.subject, subjectEdited: r.subject_edited === 1,
+  bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json ?? "[]"), quotedText: r.quoted_text, includeQuote: r.include_quote === 1,
+  inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, showSourceContext: r.show_source_context === 1, presentationThreadId: r.presentation_thread_id ?? null, uiState: r.ui_state, updatedAt: r.updated_at,
+  };
+  expect(dto).toMatchObject({ showSourceContext: r.show_source_context === 1, presentationThreadId: r.presentation_thread_id ?? null });
+  return dto;
 });
-afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); attachmentRpc.mockReset(); });
+const violations: unknown[] = [], releases: (() => void)[] = [];
+const work = new Map<Promise<unknown>, string>(), transports = new Set<Promise<unknown>>();
+let cleanupFailed = false;
+let previousApp: ReturnType<typeof getApp>, previousThreads: ReturnType<typeof useThreads.getState>;
+function checked<T>(check: () => T): T { try { return check(); } catch (error) { violations.push(error); throw error; } }
+function own<T>(pending: Promise<T>, label: string): Promise<T> {
+  work.set(pending, label); void pending.then(() => work.delete(pending), () => work.delete(pending)); return pending;
+}
+function openCompose(...args: Parameters<typeof compose>) { return own(compose(...args), "compose"); }
+function flushDraft(key: string) { return own(flush(key), "flush"); }
+function setDraftTransport(call: Parameters<typeof applyDraftTransport>[0]) {
+  applyDraftTransport((method, params) => {
+    checked(() => { contract[method].params.parse(params); });
+    const pending = call(method, params); transports.add(pending);
+    void pending.then(() => transports.delete(pending), () => transports.delete(pending));
+    return pending;
+  });
+}
+async function bounded<T>(pending: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: pending ${[...work.values()].join(", ")}; transports ${transports.size}`)), 5000); })]); }
+  finally { clearTimeout(timer); }
+}
+async function drain() {
+  for (const release of releases) release();
+  try {
+    await bounded((async () => {
+      await Promise.all(work.keys());
+      await Promise.all(Object.keys(useDrafts.getState().drafts).map(flush));
+      await Promise.all(transports);
+    })(), "fixture drain");
+  } catch (error) { cleanupFailed = true; throw error; }
+}
+beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; violations.length = 0; releases.length = 0; });
+afterEach(async () => {
+  if (cleanupFailed) throw new Error("Fixture cleanup incomplete; dependent teardown skipped");
+  await drain(); supersedeCompose();
+  for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key);
+  useApp.setState(previousApp, true); useThreads.setState(previousThreads, true); attachmentRpc.mockReset(); resetSnacks();
+  expect(draftWorkPending()).toBe(false); expect(violations).toEqual([]);
+});
 
 for (const adapter of ["SQL", "IDB"] as const) {
   it.each(["binary", "empty", "unavailable", "none"])(`${adapter}: From-B Forward refusal preserves exact work and subsequent autosave/reload (%s)`, async (kind) => {
@@ -36,7 +81,14 @@ for (const adapter of ["SQL", "IDB"] as const) {
     let store = await open();
     try {
       const [a, b] = await withAccounts(store);
-      attachmentRpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string }) => {
+      let sourceMessageId: number | undefined, sourceAssetId: string | undefined;
+      attachmentRpc.mockImplementation(async (method: string, p: { accountId: number; assetId: string; messageId: number }) => {
+        checked(() => {
+          if (method === "drafts.sourceContext") expect(p).toEqual({ messageId: sourceMessageId });
+          else if (method === "attachments.info") expect(p).toEqual({ accountId: a, assetId: sourceAssetId });
+          else throw new Error(`Unexpected fixture RPC ${method}`);
+        });
+        if (method === "drafts.sourceContext") return store.drafts.sourceContext(p.messageId);
         if (method === "attachments.info") return store.attachments.info(p.accountId, p.assetId);
         throw new Error("Unexpected fixture RPC");
       });
@@ -44,10 +96,11 @@ for (const adapter of ["SQL", "IDB"] as const) {
       const bytes = kind === "empty" ? new Uint8Array() : new Uint8Array([0, 255, 128]);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "source", attachments: kind === "none" ? [] : [{ filename: "source.bin", mime: "application/octet-stream", size: bytes.length, ...(kind === "unavailable" ? {} : { bytes }) }] })]);
       const detail = (await store.threads.get(await threadOf(store, "source")))!;
+      sourceMessageId = detail.messages[0]!.id; sourceAssetId = detail.messages[0]!.attachments[0]?.assetId ?? undefined;
       const fields = replyFields("reply", detail, account);
       const key = createDraft(fields);
       useThreads.setState({ details: new Map([[detail.thread.id, detail]]) });
-      setApp({ accounts, selectedId: detail.thread.id, checked: new Set(), scope: null, draftShown: { threadId: detail.thread.id, key } });
+      setApp({ accounts, selectedId: detail.thread.id, checked: new Set(), scope: null, draftShown: { threadId: detail.thread.id, key }, draftFocus: null, compose: null, dialog: null, fatal: null });
       const errors: unknown[] = [];
       let acknowledge!: () => void;
       const acknowledged = new Promise<void>((r) => { acknowledge = r; });
@@ -63,7 +116,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
         expect(useSnack.getState().current?.message).toBe(kind === "unavailable" ? "The original files are not ready. Wait for the download or choose Retry, then try Forward again." : `To forward these attachments, choose ${account.email} in From.`);
         if (kind !== "unavailable") expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
       } else expect(useDrafts.getState().drafts[key]!.mode).toBe("forward");
-      await acknowledged;
+      await bounded(acknowledged, "real autosave acknowledgement");
       await flushDraft(key);
       editDraft(key, { bodyText: "later work stays savable", bodyHtml: "<div>later work stays <b>savable</b></div>" });
       await flushDraft(key);
@@ -83,7 +136,8 @@ for (const adapter of ["SQL", "IDB"] as const) {
         expect(await store.attachments.info(a!, ref.assetId)).toMatchObject({ size: bytes.length });
         expect(await store.attachments.read(a!, ref.assetId, 0)).toBe(kind === "empty" ? null : "AP+A");
       }
-    } finally { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
+      expect(attachmentRpc.mock.calls.filter(([method]) => method === "drafts.sourceContext")).toEqual(kind === "unavailable" ? [] : [["drafts.sourceContext", { messageId: sourceMessageId }]]);
+    } finally { await drain(); supersedeCompose(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
   it(`${adapter}: removal keeps From locked through the real autosave acknowledgement, then switching and later edits survive reopen`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-draft-attachment-"));
@@ -112,7 +166,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       editDraft(d.key, { bodyText: "typed while removal saves" });
       expect(useDrafts.getState().drafts[d.key]!.accountId).toBe(a);
       // Exercise the actual 800 ms debounce against the public store, not a fake saved response.
-      await acknowledged;
+      await bounded(acknowledged, "real removal debounce acknowledgement");
       await flushDraft(d.key);
       editDraft(d.key, { accountId: b! });
       editDraft(d.key, { bodyText: "later edit from the other account" });
@@ -122,7 +176,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       const reloaded = (await store.drafts.list())[0]!;
       expect(reloaded).toMatchObject({ account_id: b, body_text: "later edit from the other account", attachments_json: "[]" });
       expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
-    } finally { await store.close(); rmSync(dir, { recursive: true, force: true }); }
+    } finally { await drain(); supersedeCompose(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 }
 
@@ -143,6 +197,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       else await store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "old", bodyText: "old", draftId: saved.id, draftGeneration: saved.generation, draftRevision: 1, recordReply: false, now: 1 });
       let release!: () => void; let reached!: () => void;
       const gate = new Promise<void>((r) => { release = r; });
+      releases.push(release);
       const waiting = new Promise<void>((r) => { reached = r; });
       const ids: (number | undefined)[] = [];
       setDraftTransport(async (method, params) => {
@@ -152,7 +207,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
         const result = await store.drafts.save(input, 2); return result ? apiDraft(result) : null;
       });
       editDraft(d.key, { bodyText: "submitted" });
-      const flushing = flushDraft(d.key); await waiting;
+      const flushing = flushDraft(d.key); await Promise.race([waiting, flushing.then(() => { throw new Error("Flush settled before terminal-save gate"); })]);
       let text = "latest bold";
       body = attachBody(d.key, () => ({ html: `<div><b>${text}</b></div>`, text })); body.changed();
       editDraft(d.key, { toText: '"Pérez, Ana" <ana@example.com>, bob@', subject: "latest", attachments: [ref], quotedText: "> exact quote", includeQuote: true });
@@ -173,6 +228,6 @@ for (const adapter of ["SQL", "IDB"] as const) {
       expect(apiDraft(reloaded).to).toEqual([{ name: "Pérez, Ana", email: "ana@example.com" }, { name: "", email: "bob@" }]);
       expect(await store.attachments.read(a!, ref.assetId, 0)).toBe("AP+A");
       expect((await store.ops.recent(10)).filter((o) => o.kind === "send")).toHaveLength(terminal === "send" ? 1 : 0);
-    } finally { body?.dispose(); await store.close(); rmSync(dir, { recursive: true, force: true }); }
+    } finally { await drain(); body?.dispose(); supersedeCompose(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 }
