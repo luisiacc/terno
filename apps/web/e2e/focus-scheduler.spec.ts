@@ -34,6 +34,9 @@ for (const [name, scenario] of [
   ["completion refuses placement", "denied-fast"],
   ["completion moves focus elsewhere", "movement-fast"],
   ["leased frame then trusted key", "leased-raf"],
+  ["reentrant successor after ownerless preparation", "reentrant-ownerless"],
+  ["reentrant successor after ownerless preparation and RAF", "reentrant-ownerless-raf"],
+  ["reentrant successor after ordinary focusSoon", "reentrant-ordinary"],
 ] as const satisfies ReadonlyArray<readonly [string, Scenario]>) {
   test(name, async ({ page }) => {
     await page.goto("about:blank");

@@ -98,12 +98,12 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
 /** One ownerless inline request, observed before it is published and bound only to its mounted slot. */
 export function prepareInlineFocusMove(valid: () => boolean, terminal: () => void): InlineFocusMove {
   const request = ++focusRequest, previous = pendingFocus, initial = document.activeElement;
-  let root: HTMLElement | null = null, selector: string | null = null, completedRoot: HTMLElement | null = null, completedSelector: string | null = null, raf = 0, finished = false;
+  let root: HTMLElement | null = null, selector: string | null = null, completedRoot: HTMLElement | null = null, completedSelector: string | null = null, raf = 0, finished = false, keydownInstalled = false;
   const cleanup = () => {
     if (finished) return false;
     finished = true;
     cancelAnimationFrame(raf);
-    document.removeEventListener("keydown", keyDuringMove, true);
+    if (keydownInstalled) { document.removeEventListener("keydown", keyDuringMove, true); keydownInstalled = false; }
     document.removeEventListener("focusin", moved, true);
     document.removeEventListener("visibilitychange", hidden, true);
     window.removeEventListener("pagehide", pagehide, true);
@@ -142,6 +142,7 @@ export function prepareInlineFocusMove(valid: () => boolean, terminal: () => voi
     if (finished || request !== focusRequest || !valid() || document.hidden) { done(); return token; }
     pendingFocus = mine;
     document.addEventListener("keydown", keyDuringMove, true);
+    keydownInstalled = true;
     const tick = (left: number) => {
       raf = requestAnimationFrame(() => {
         if (!valid() || (root && !root.isConnected)) return done();
