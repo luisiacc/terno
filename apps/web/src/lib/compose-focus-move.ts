@@ -77,7 +77,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
   const moved = (event: FocusEvent) => {
     if (event.target !== document.body) done();
   };
-  const mine = { find: () => valid && !valid() ? null : target(selector, root), current: (el: HTMLElement) => request === focusRequest && (!valid || valid()) && (!root || root.isConnected) && target(selector, root) === el, done };
+  const mine = { find: () => valid && !valid() ? null : target(selector, root), current: (el: HTMLElement) => request === focusRequest && (!root || root.isConnected) && target(selector, root) === el, done };
   pendingFocus = mine;
   document.addEventListener("keydown", keyDuringMove, true);
   document.addEventListener("focusin", moved, true);
