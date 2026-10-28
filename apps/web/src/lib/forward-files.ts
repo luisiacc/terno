@@ -178,6 +178,8 @@ async function attempt(s: Session): Promise<void> {
   // another From can't carry them: wait for the original's account (the draft says so)
   if (d && d.accountId !== s.accountId) { s.paused = true; return; }
   await retryCapture(s.accountId, s.messageId);
+  // the retry may have stored what wasn't confirmed before it: those are asked about again
+  s.unconfirmed.clear();
   if (!alive(s) || await settle(s, await loadThread(s.threadId, true).catch(() => null))) return;
   if (!alive(s)) return;
   s.attempt++;

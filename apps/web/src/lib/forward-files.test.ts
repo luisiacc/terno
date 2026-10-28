@@ -256,6 +256,25 @@ it("adopting into a saved forward on a keystroke doesn't re-enter itself", async
   } finally { setForwardOpenProbe(() => false); }
 });
 
+// Codex review round 4: a part that couldn't be confirmed before a retry is asked about again after it
+it("a file that couldn't be confirmed before the last retry is confirmed after it", async () => {
+  vi.useFakeTimers();
+  backend(captured());
+  let tries = 0;
+  rpc.mockImplementation(async (method: string) => {
+    if (method === "attachments.retry") { tries++; return { ok: true }; }
+    if (method === "threads.get") return captured();
+    if (method === "attachments.info") { if (tries < 3) throw new Error("not stored yet"); return ref; }
+    return { ok: true };
+  });
+  const key = createDraft(replyFields("forward", captured(), account, { forwardRefs: [] }));
+  fetchForwardFiles(key, { threadId: 7, messageId: 3, accountId: 1 });
+  await vi.advanceTimersByTimeAsync(FORWARD_FILE_DELAYS[1] + FORWARD_FILE_DELAYS[2] + 1);
+  expect(tries).toBe(3);
+  await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
+  expect(useForwardFiles.getState()[key]).toBeUndefined();
+});
+
 it("names the files in English and Spanish", async () => {
   expect(t("compose.forwardFiles.failed", { count: 1, names: "report.pdf" })).toBe("Couldn’t get report.pdf, so this forward won’t include it.");
   expect(t("compose.forwardFiles.failed", { count: 2, names: "a.pdf and b.pdf" })).toBe("Couldn’t get a.pdf and b.pdf, so this forward won’t include them.");
