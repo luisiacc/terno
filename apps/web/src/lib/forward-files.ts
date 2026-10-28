@@ -274,7 +274,7 @@ async function adopt(s: Session, refs: readonly AttachmentRef[]): Promise<"adopt
 
 /** Tests: every session stopped, everything forgotten. */
 export function resetForwardFiles(): void {
-  for (const key of [...sessions.keys()]) stopSession(key);
+  for (const key of sessions.keys()) stopSession(key);
   sources.clear(); offered.clear(); verified.clear(); retrying.clear();
   useForwardFiles.setState({}, true);
 }
