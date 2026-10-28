@@ -68,16 +68,37 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; h
 /** The extension a tile shows on its document glyph ("PDF", "XLSX"), or nothing. */
 
 
-function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean }) {
+/** Who a message went to: "To: …" and, when there are any, "· Cc: …" (one truncated line). */
+function Recipients({ m, className }: { m: MessageDetail; className?: string }) {
+  const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
+  return (
+    <span data-testid="recipients" className={cn("block truncate text-xs text-muted-foreground", className)}>
+      <span className="font-medium text-foreground">{t("reader.to")}</span> {people(m.to)}
+      {m.cc.length > 0 && (
+        <>
+          {" · "}
+          <span className="font-medium text-foreground">{t("reader.cc")}</span> {people(m.cc)}
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * `headless`: the sender card above the subject shows this message's header (Lumen, one message: plan 59), so it
+ * renders its body alone and never folds. Only the header comes and goes: the body keeps its place (and its frames)
+ * when a second message arrives. `knownEmail`: an address already on screen (the card's), not revealed again on hover.
+ */
+function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: MessageDetail; expanded: boolean; onToggle: () => void; icons: boolean; headless: boolean; knownEmail: string | null }) {
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const name = m.from.name || m.from.email;
   const bodyId = `msg-body-${m.id}`;
-  const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
+  const open = headless || expanded;
   return (
-    <article data-testid="message" data-message-id={m.id} data-expanded={expanded || undefined} className="hairline-b">
+    <article data-testid="message" data-message-id={m.id} data-expanded={open || undefined} className="hairline-b">
       {/* one heading and one button in both states, so the focused control survives expanding and collapsing */}
-      <h3>
+      {!headless && <h3>
         <button
           type="button"
           aria-expanded={expanded}
@@ -96,18 +117,10 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline gap-2">
                   <span className="type-sender-name truncate">{name}</span>
-                  {m.from.name && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
+                  {m.from.name && m.from.email.toLowerCase() !== knownEmail?.toLowerCase() && <span className="truncate text-xs text-muted-foreground opacity-0 group-hover/mh:opacity-100 group-focus-reveal/mh:opacity-100">{m.from.email}</span>}
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{listDate(m.date)}</span>
                 </span>
-                <span className="mt-px block truncate text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{t("reader.to")}</span> {people(m.to)}
-                  {m.cc.length > 0 && (
-                    <>
-                      {" · "}
-                      <span className="font-medium text-foreground">{t("reader.cc")}</span> {people(m.cc)}
-                    </>
-                  )}
-                </span>
+                <Recipients m={m} className="mt-px" />
               </span>
             </>
           ) : (
@@ -119,12 +132,12 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
             </>
           )}
         </button>
-      </h3>
+      </h3>}
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
-        <Expand open={expanded} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
-          <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />
-          <div className="pt-3.5 pb-5">
+        <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
+          {!headless && <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />}
+          <div className={cn("pb-5", headless ? "pt-5" : "pt-3.5")}>
             {m.bodyHtml ? (
               <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (
@@ -148,7 +161,8 @@ function Message({ m, expanded, onToggle, icons }: { m: MessageDetail; expanded:
  * or a newer message never folds one away under the reader.
  */
 /** `icons`: senders' icons may be asked for (never in spam: plan 22) */
-function Conversation({ messages, icons }: { messages: MessageDetail[]; icons: boolean }) {
+/** `headless`: the card above shows the one message's header (plan 59); `knownEmail`: the card's address */
+function Conversation({ messages, icons, headless, knownEmail }: { messages: MessageDetail[]; icons: boolean; headless: boolean; knownEmail: string | null }) {
   renderProbe("Conversation");
   const last = messages[messages.length - 1];
   const opensAt = (m: MessageDetail) => !m.isRead || m.id === last?.id;
@@ -188,7 +202,7 @@ function Conversation({ messages, icons }: { messages: MessageDetail[]; icons: b
     <div className="hairline-t">
       {items.map((it) =>
         it.kind === "message" ? (
-          <Message key={it.m.id} m={it.m} icons={icons} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
+          <Message key={it.m.id} m={it.m} icons={icons} headless={headless && messages.length === 1} knownEmail={knownEmail} expanded={isOpen(it.m)} onToggle={() => toggle(it.m.id, isOpen(it.m))} />
         ) : (
           <div key={`more-${it.ids[0]}`} className="hairline-b">
             <button
@@ -317,6 +331,17 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
   );
 }
 
+/** When a message was sent: the list's short form, the full date for the tooltip and screen readers. */
+function MessageDate({ ms, className }: { ms: number; className?: string }) {
+  const full = fullDate(ms);
+  return (
+    <time data-testid="message-date" dateTime={new Date(ms).toISOString()} title={full} className={cn("tabular", className)}>
+      <span aria-hidden>{listDate(ms)}</span>
+      <span className="sr-only">{full}</span>
+    </time>
+  );
+}
+
 /** Who the conversation is with: the last person who wrote who isn't you (or its sender when every message is yours). */
 function senderOf(detail: ThreadDetail): { name: string; email: string } {
   const last = [...detail.messages].reverse().find((m) => !m.isSent);
@@ -345,14 +370,21 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
       </>
     ),
     "sender-card": (() => {
-      const who = senderOf(detail);
+      // one message: the card is its header (who wrote it, to whom, when), so the message shows no second one (plan 59)
+      const one = detail.messages.length === 1 ? detail.messages[0]! : null;
+      const who = one ? { name: one.from.name || one.from.email, email: one.from.email } : senderOf(detail);
       return (
         <>
-          <div data-testid="sender-card" className="mt-2 flex items-center gap-4">
+          {/* the message's id: a right-click here is a right-click on the message (Print this message, Copy) */}
+          <div data-testid="sender-card" data-message-id={one?.id} className="mt-2 flex items-center gap-4">
             <SenderAvatar name={who.name} email={who.email} icon={!detail.thread.inSpam} className="size-(--avatar-sender) text-lg" />
-            <div className="flex min-w-0 flex-col">
-              <span className="type-sender-name truncate">{who.name}</span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-baseline gap-3">
+                <span className="type-sender-name min-w-0 truncate">{who.name}</span>
+                {one && <MessageDate ms={one.date} className="ml-auto shrink-0 text-sm text-muted-foreground" />}
+              </span>
               {who.name !== who.email && <span className="truncate text-sm text-muted-foreground">{who.email}</span>}
+              {one && <Recipients m={one} className="mt-0.5" />}
               <ThreadChips detail={detail} account={account} cats={cats} accountChip="name" className="mt-1.5" />
             </div>
           </div>
@@ -485,6 +517,7 @@ export function Reader() {
   const thread = detail?.thread;
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
+  const cardHeader = design.variants.readerHeader === "sender-card";
 
   return (
     <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
@@ -570,10 +603,11 @@ export function Reader() {
             </div>
           ) : (
             <>
-              <ReaderHeader detail={detail} account={account} cats={cats} />
               <MessageMenu threadId={detail.thread.id}>
                 <div>
-                  <Conversation key={detail.thread.id} messages={detail.messages} icons={!detail.thread.inSpam} />
+                  {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
+                  <ReaderHeader detail={detail} account={account} cats={cats} />
+                  <Conversation key={detail.thread.id} messages={detail.messages} icons={!detail.thread.inSpam} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={!detail.thread.inSpam} />
