@@ -482,7 +482,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
   let proof: DraftAckRead | undefined, noWriter = false;
-  if (existing && existing.mode !== mode && !existing.presentationExpired && lease) {
+  const sameModeSource = Boolean(existing && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
+  if (existing && (existing.mode !== mode || sameModeSource) && !existing.presentationExpired && lease) {
     const admission = beginDraftAckRead(existing);
     if (admission.kind === "refused") return;
     noWriter = admission.kind === "no-writer";
@@ -510,7 +511,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   if (existing?.showSourceContext) {
-    const snapshot = existing;
+    let snapshot = existing;
+    const destination = sameModeSource && proof ? loaded ?? await loadThread(threadId) : undefined;
+    if (sameModeSource && proof) {
+      const current = readDraftAck(proof);
+      if (!destination || destination.thread.id !== threadId || mine !== intent || !focusAllowed() || getApp().selectedId !== s.selectedId || !current || shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== existingKey) return;
+      snapshot = current;
+    }
     const sourceId = snapshot.mode === "forward" ? snapshot.forwardOfMessageId : snapshot.mode === "new" ? null : snapshot.inReplyToMessageId;
     let context: { threadId: number; accountId: number } | null;
     try { context = sourceId ? await client.call("drafts.sourceContext", { messageId: sourceId }) : null; } catch { return; }
@@ -519,6 +526,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     if (!context || context.threadId !== threadId) {
       showStoredStandalone(current.key, mine, undefined, lease);
       return;
+    }
+    if (sameModeSource && proof) {
+      if (!destination || context.accountId !== destination.thread.accountId) return;
+      if (await loadThread(threadId) !== destination || mine !== intent || !focusAllowed() || getApp().selectedId !== s.selectedId || readDraftAck(proof) !== current || shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) !== existingKey) return;
+      endDraftAckRead(proof);
+      if (lease?.ackRead === proof) lease.ackRead = undefined;
+      proof = undefined;
     }
     if (canonicalNullSource) originalContext = context;
     if (current.presentationExpired) {
@@ -530,8 +544,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   if (existing && existing.mode === mode) {
     const expected = openedDraft(existing);
-    setDraftUi(existing.key, "open");
-    if (focusAllowed() && sameStoredDraft(expected)) focusDraft(existing.key, target, mine);
+    let transitions = 0, receipt: LocalDraft | undefined;
+    const stop = sameModeSource ? useDrafts.subscribe((state, previous) => {
+      if (state.drafts[existing!.key] !== previous.drafts[existing!.key]) { transitions++; receipt = state.drafts[existing!.key]; }
+    }) : undefined;
+    try { setDraftUi(existing.key, "open"); } finally { stop?.(); }
+    const exact = !sameModeSource || (expected === existing ? transitions === 0 : transitions === 1 && receipt === useDrafts.getState().drafts[existing.key] && !!receipt && shallow(receipt, expected));
+    if (exact && focusAllowed() && sameStoredDraft(expected)) focusDraft(existing.key, target, mine);
     return;
   }
   const selected = s.selectedId;
