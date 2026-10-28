@@ -114,6 +114,13 @@ export function openMenuForSelection(): void {
 }
 
 /**
+ * A menu item that moves focus itself (Reply, Reply all, Forward: into the composer) asks the closing menu not
+ * to hand focus back to the list. That hand-back lands while the reply is still opening, reads as the user going
+ * elsewhere, and makes the reply give up (its focus lease), so nothing opened.
+ */
+let focusHandedOff = false;
+
+/**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
  * per-row trigger, so opening it renders no row). The clicked row gets a
  * ring from a keyed CSS rule; global shortcuts wait while it is open.
@@ -146,7 +153,15 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
           setRule("menu-target", `${rowSelector([row], "::before")}{box-shadow:inset 0 0 0 2px var(--ring)}`);
         }}
       />
-      <ContextMenuContent className="w-64" data-testid="thread-menu">
+      <ContextMenuContent
+        className="w-64"
+        data-testid="thread-menu"
+        finalFocus={() => {
+          const back = !focusHandedOff;
+          focusHandedOff = false;
+          return back;
+        }}
+      >
         <MenuItems />
       </ContextMenuContent>
     </ContextMenu>
@@ -206,7 +221,8 @@ function MenuItems() {
   const sender = scope ? null : sharedSender(rows);
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
-    // the menu's own thread, passed explicitly (the selection follows, it isn't read back)
+    // the menu's own thread, passed explicitly (the selection follows, it isn't read back); the composer takes focus
+    focusHandedOff = true;
     openThread(single.id);
     void openCompose(mode, single.id);
   };

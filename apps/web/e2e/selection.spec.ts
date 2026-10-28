@@ -91,6 +91,25 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-subject")).toHaveValue(subject.startsWith("Re:") ? subject : `Re: ${subject}`);
   });
 
+  test("reply from the menu: the closing menu never hands focus back to the list, so the reply always opens", async ({ app: page }) => {
+    // the hand-back landed while the reply was still opening and made it give up: nothing opened, often
+    for (const n of [3, 5, 6]) {
+      await rightClick(page, rows(page).nth(n));
+      // from the menu on (the right-click itself focuses the list)
+      await page.evaluate(() => {
+        const w = window as unknown as { __listFocus: number; __listWatch?: boolean };
+        w.__listFocus = 0;
+        if (!w.__listWatch) document.addEventListener("focusin", (e) => { if ((e.target as Element).getAttribute?.("role") === "listbox") w.__listFocus++; }, true);
+        w.__listWatch = true;
+      });
+      await item(page, "menu-reply").click();
+      await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      expect(await page.evaluate(() => (window as unknown as { __listFocus: number }).__listFocus)).toBe(0);
+      await page.keyboard.press("Escape");
+    }
+  });
+
   test("sender items: search their mail, copy the address, a filter prefilled with them", async ({ app: page }) => {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     const target = rows(page).nth(1);
