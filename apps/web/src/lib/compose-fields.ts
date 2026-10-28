@@ -107,7 +107,8 @@ export function subjectFor(mode: DraftMode, subject: string): string {
 
 /** A fresh reply/forward draft for a conversation. */
 /** `identities`: every account's address (plan 34: none of them is replied to); the draft's account's alone by default. */
-export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[] } = {}): DraftFields {
+/** `forwardRefs`: the original's files a forward carries (plan 60: those confirmed on this device); every stored part by default. */
+export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[]; forwardRefs?: readonly AttachmentRef[] } = {}): DraftFields {
   const mine = identitiesIn(detail, [account.email, ...(opts.identities ?? [])]);
   const { to, cc } = autoRecipients(mode, detail, mine);
   const quote = quoteFor(mode, detail, mine);
@@ -125,7 +126,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     // the floating composer shows the quote inside the text; the inline one keeps it apart
     bodyText: opts.quoteInBody ? `\n\n${quote}` : "",
     bodyHtml: "",
-    attachments: mode === "forward" ? last.attachments.filter((a) => a.assetId).map((a) => ({ assetId: a.assetId!, filename: a.filename, mime: a.mime, size: a.size, contentId: a.contentId ?? null })) : [],
+    attachments: mode === "forward" ? [...(opts.forwardRefs ?? storedRefs(last))] : [],
     quotedText: opts.quoteInBody ? "" : quote,
     includeQuote: !opts.quoteInBody,
     inReplyToMessageId: mode === "forward" ? null : last.id,
@@ -146,8 +147,14 @@ export function mergeAttachmentRefs(current: readonly AttachmentRef[], incoming:
   return [...refs.values()];
 }
 
-export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, identities: readonly string[] = []): boolean {
-  return accountId !== detail.thread.accountId && answered(detail, identities).attachments.some((a) => !!a.assetId);
+/** The parts of a message whose bytes are on this device, as refs. */
+export function storedRefs(m: MessageDetail): AttachmentRef[] {
+  return m.attachments.filter((a) => a.assetId).map((a) => ({ assetId: a.assetId!, filename: a.filename, mime: a.mime, size: a.size, contentId: a.contentId ?? null }));
+}
+
+/** A forward's files belong to the original's account: another From can't carry them (`refs`: the files it would carry). */
+export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, identities: readonly string[] = [], refs?: readonly AttachmentRef[]): boolean {
+  return accountId !== detail.thread.accountId && (refs ?? storedRefs(answered(detail, identities))).length > 0;
 }
 
 /**
@@ -156,9 +163,9 @@ export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, 
  * Only what Terno filled in (auto recipients, subject, quote, threading) is
  * recomputed for the new mode.
  */
-export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = []): DraftFields {
-  if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities)) return d;
-  const fresh = replyFields(mode, detail, account, { identities });
+export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = [], forwardRefs?: readonly AttachmentRef[]): DraftFields {
+  if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities, forwardRefs)) return d;
+  const fresh = replyFields(mode, detail, account, { identities, forwardRefs });
   const attachments = mergeAttachmentRefs(d.attachments ?? [], mode === "forward" ? fresh.attachments ?? [] : []);
   if (!attachmentMessageBudget("", undefined, attachments)) return d;
   const lower = (e: string) => e.toLowerCase();

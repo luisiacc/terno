@@ -20,6 +20,7 @@ const { convertFields, replyFields } = await import("./compose-fields");
 const { getApp, setApp, useApp } = await import("~/state/app");
 const { useThreads } = await import("~/state/threads");
 const { useSnack, resetSnacks } = await import("./snack");
+const { resetForwardFiles, useForwardFiles } = await import("./forward-files");
 
 const apiDraft = (r: DraftRow): Draft => checked(() => {
   const dto: Draft = {
@@ -191,10 +192,14 @@ for (const adapter of ["SQL", "IDB"] as const) {
       editDraft(key, { accountId: b!, bodyText: "exact authored work", bodyHtml: "<div>exact authored <b>work</b></div>", subject: "my subject", subjectEdited: true, bccText: "manual@test.com" });
       const before = useDrafts.getState().drafts[key]!;
       await openCompose("forward", detail.thread.id);
-      if (kind !== "none") {
+      if (kind === "unavailable") {
+        // plan 60: no file is on the device, so none ties the forward to A; it opens on B and says which From brings them
+        expect(useDrafts.getState().drafts[key]).toMatchObject({ mode: "forward", accountId: b, attachments: [], bodyText: "exact authored work" });
+        await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toEqual({ status: "account", account: account.email }));
+      } else if (kind !== "none") {
         expect(useDrafts.getState().drafts[key]).toEqual(before);
-        expect(useSnack.getState().current?.message).toBe(kind === "unavailable" ? "The original files are not ready. Wait for the download or choose Retry, then try Forward again." : `To forward these attachments, choose ${account.email} in From.`);
-        if (kind !== "unavailable") expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
+        expect(useSnack.getState().current?.message).toBe(`To forward these attachments, choose ${account.email} in From.`);
+        expect(convertFields({ ...fields, accountId: b! }, "forward", detail, account)).toEqual({ ...fields, accountId: b! });
       } else expect(useDrafts.getState().drafts[key]!.mode).toBe("forward");
       await bounded(acknowledged, "real autosave acknowledgement");
       await flushDraft(key);
@@ -202,7 +207,7 @@ for (const adapter of ["SQL", "IDB"] as const) {
       await flushDraft(key);
       expect(errors).toEqual([]);
       await store.close(); store = await open();
-      expect((await store.drafts.list())[0]).toMatchObject({ account_id: b, mode: kind === "none" ? "forward" : "reply", subject: "my subject", body_text: "later work stays savable", body_html: "<div>later work stays <b>savable</b></div>", attachments_json: "[]" });
+      expect((await store.drafts.list())[0]).toMatchObject({ account_id: b, mode: kind === "none" || kind === "unavailable" ? "forward" : "reply", subject: "my subject", body_text: "later work stays savable", body_html: "<div>later work stays <b>savable</b></div>", attachments_json: "[]" });
       if (kind === "binary" || kind === "empty") {
         editDraft(key, { accountId: a! });
         // Immediate Forward must acknowledge the empty account change before adding source refs.
@@ -216,8 +221,8 @@ for (const adapter of ["SQL", "IDB"] as const) {
         expect(await store.attachments.info(a!, ref.assetId)).toMatchObject({ size: bytes.length });
         expect(await store.attachments.read(a!, ref.assetId, 0)).toBe(kind === "empty" ? null : "AP+A");
       }
-      expect(attachmentRpc.mock.calls.filter(([method]) => method === "drafts.sourceContext")).toEqual(kind === "unavailable" ? [] : [["drafts.sourceContext", { messageId: sourceMessageId }]]);
-    } finally { await drain(); supersedeCompose(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
+      expect(attachmentRpc.mock.calls.filter(([method]) => method === "drafts.sourceContext")).toEqual([["drafts.sourceContext", { messageId: sourceMessageId }]]);
+    } finally { await drain(); supersedeCompose(); resetForwardFiles(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); await store.close(); rmSync(dir, { recursive: true, force: true }); }
   });
   it(`${adapter}: removal keeps From locked through the real autosave acknowledgement, then switching and later edits survive reopen`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-draft-attachment-"));

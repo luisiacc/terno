@@ -8,7 +8,8 @@ const { replyFields } = await import("./compose-fields");
 const { createDraft, editDraft, fieldsOf, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 const { getApp, setApp } = await import("~/state/app");
 const { invalidateThreads, useThreads } = await import("~/state/threads");
-const { registerUndo, resetSnacks, runAction, useSnack } = await import("./snack");
+const { registerUndo, resetSnacks, useSnack } = await import("./snack");
+const { resetForwardFiles, useForwardFiles } = await import("./forward-files");
 const account = { id: 1, email: "source@test.com" } as Account;
 const ref = { assetId: "source-asset", filename: "empty.txt", mime: "text/plain", size: 0 };
 function thread(patch: Partial<MessageDetail> = {}): ThreadDetail {
@@ -19,12 +20,18 @@ function setup(detail: ThreadDetail) {
   setApp({ accounts: [account], selectedId: 7, checked: new Set(), scope: null, draftShown: null, draftFocus: null });
   setDraftTransport(async (_method, p) => ({ ...(p as DraftInput), id: 9, generation: "generation", revision: 1, updatedAt: 0 }));
 }
-afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.mockReset(); vi.unstubAllGlobals(); resetSnacks(); });
+afterEach(() => { resetForwardFiles(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.mockReset(); vi.unstubAllGlobals(); resetSnacks(); });
 
-it.each(["pending", "unavailable", undefined] as const)("%s capture cannot be certified by complete body or an empty attachment list", async (attachmentState) => {
-  setup(thread({ attachmentState, bodyState: "full", attachments: [] }));
+// plan 60: files that aren't on the device never stop a forward; it opens and asks for them again
+it.each(["pending", "unavailable", undefined] as const)("%s capture opens the Forward at once and asks for the original's files again", async (attachmentState) => {
+  const detail = thread({ attachmentState, bodyState: "full", attachments: [] });
+  setup(detail);
+  rpc.mockImplementation(async (method: string) => method === "threads.get" ? detail : { ok: true });
   await openCompose("forward", 7);
-  expect(Object.values(useDrafts.getState().drafts)).toEqual([]);
+  const [draft] = Object.values(useDrafts.getState().drafts);
+  expect(draft).toMatchObject({ mode: "forward", forwardOfMessageId: 3, attachments: [] });
+  expect(useForwardFiles.getState()[draft!.key]).toEqual({ status: "fetching", names: [] });
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("attachments.retry", { accountId: 1, messageId: 3 }));
 });
 
 it("complete zero-part capture opens an ordinary Forward without attachment I/O", async () => {
@@ -34,17 +41,22 @@ it("complete zero-part capture opens an ordinary Forward without attachment I/O"
   expect(rpc).not.toHaveBeenCalled();
 });
 
-it.each(["missing", "wrong metadata", "unsealed empty"])("%s original file refuses before mutation", async (scenario) => {
+it.each(["missing", "wrong metadata", "unsealed empty"])("%s original file stays out, and the Forward opens without it", async (scenario) => {
   const detail = thread(); setup(detail);
   const key = createDraft(replyFields("reply", detail, account));
   editDraft(key, { bodyText: "keep", bccText: "private@test.com" });
   const before = fieldsOf(useDrafts.getState().drafts[key]!);
-  const undo = registerUndo(() => {});
-  rpc.mockImplementation(async () => { if (scenario !== "wrong metadata") throw new Error("unavailable"); return { ...ref, filename: "different" }; });
+  rpc.mockImplementation(async (method: string) => {
+    if (method === "threads.get") return detail;
+    if (method === "attachments.retry") return { ok: true };
+    if (scenario !== "wrong metadata") throw new Error("unavailable");
+    return { ...ref, filename: "different" };
+  });
   await openCompose("forward", 7);
-  expect(fieldsOf(useDrafts.getState().drafts[key]!)).toEqual(before);
-  expect(useSnack.getState().undo).toBe(undo);
-  expect(getApp().draftFocus).toBeNull();
+  // what was written stays; only the file that couldn't be confirmed is missing (and asked for)
+  expect(useDrafts.getState().drafts[key]).toMatchObject({ mode: "forward", bodyText: before.bodyText, bccText: before.bccText, attachments: [] });
+  await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toEqual({ status: "fetching", names: ["empty.txt"] }));
+  expect(useSnack.getState().current?.message).toBe("Converted to a forward");
 });
 
 it("source account removed during asset validation cannot create a Forward", async () => {
@@ -78,17 +90,14 @@ it.each(["edit", "account", "discard", "navigation", "intent", "recovery", "send
   else { expect(useDrafts.getState().drafts[key]).toEqual(before); expect(useSnack.getState().undo).toBe(undo); }
 });
 
-it("Retry stays bound to the refused original after navigation and never resumes conversion", async () => {
+it("files captured by the retry join the Forward once, bound to its original after navigation", async () => {
   const detail = thread({ attachmentState: "pending", attachments: [] }); setup(detail);
+  rpc.mockImplementation(async (method: string) => method === "threads.get" ? thread() : method === "attachments.info" ? ref : { ok: true });
   await openCompose("forward", 7);
-  const action = useSnack.getState().current?.action;
-  expect(action?.label).toBe("Retry");
+  const [draft] = Object.values(useDrafts.getState().drafts);
   setApp({ selectedId: 8 });
-  rpc.mockImplementation(async (method: string) => method === "threads.get" ? thread() : { ok: true });
-  runAction("action");
-  await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("threads.get", { threadId: 7 }));
-  expect(rpc).toHaveBeenCalledWith("attachments.retry", { accountId: 1, messageId: 3 });
-  expect(Object.values(useDrafts.getState().drafts)).toEqual([]);
+  await vi.waitFor(() => expect(useDrafts.getState().drafts[draft!.key]!.attachments).toEqual([{ ...ref, contentId: null }]));
+  await vi.waitFor(() => expect(useForwardFiles.getState()[draft!.key]).toBeUndefined());
+  expect(rpc.mock.calls.filter(([method]) => method === "attachments.retry")).toEqual([["attachments.retry", { accountId: 1, messageId: 3 }]]);
   expect(getApp().selectedId).toBe(8);
-  expect(getApp().draftFocus).toBeNull();
 });

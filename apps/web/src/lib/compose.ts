@@ -11,6 +11,7 @@ import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscri
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
+import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
 import { prepareInlineFocusMove } from "./compose-focus-move";
@@ -428,6 +429,10 @@ export async function openStoredDraft(key: string): Promise<void> {
 /** Why an open that still mattered stopped short: the conversation was refreshed under it, or loading it failed. */
 type OpenOutcome = "stale" | "failed" | undefined;
 
+/** opens in flight: the background forward files (plan 60) never edit a draft under one */
+let openingNow = 0;
+setForwardOpenProbe(() => openingNow > 0);
+
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
@@ -443,7 +448,9 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
   let outcome: OpenOutcome;
+  openingNow++;
   try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
+    openingNow--;
     lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
     lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
     if (lease?.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
@@ -578,6 +585,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     try { setDraftUi(existing.key, "open"); } finally { stop?.(); }
     const exact = !sameModeSource || (expected === existing ? transitions === 0 : transitions === 1 && receipt === useDrafts.getState().drafts[existing.key] && !!receipt && shallow(receipt, expected));
     if (exact && focusAllowed() && sameStoredDraft(expected)) focusDraft(existing.key, target, mine);
+    // Forward again: files that didn't come (or were never asked for, after a reload) are asked for again (plan 60)
+    if (mode === "forward" && exact && mine === intent) void ensureForwardFiles(existing.key, threadId);
     return;
   }
   const selected = s.selectedId;
@@ -606,35 +615,32 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const source = accounts.find((a) => a.id === detail.thread.accountId);
   // none of my addresses is replied to, whichever account the conversation is in (plan 34)
   const identities = accounts.map((a) => a.email);
+  let forwardRefs: AttachmentRef[] | undefined, forwardSource: { threadId: number; messageId: number; accountId: number } | undefined;
   if (mode === "forward") {
     const message = answered(detail, identities);
-    const parts = message.attachments;
-    const unavailable = () => snack.error(t("compose.forwardUnavailable"), { action: { label: t("common.retry"), onClick: () => {
-      void client.call("attachments.retry", { accountId: message.accountId, messageId: message.id })
-        .then(() => loadThread(threadId, true))
-        .catch(() => snack.error(t("attachments.readerUnavailable")));
-    } } });
-    if (message.attachmentState !== "complete" || parts.some((a) => !a.assetId)) { unavailable(); return; }
+    // plan 60: only the files confirmed on this device go in now; one not ready never stops the forward (it follows)
+    const parts = message.attachments.filter((a) => a.assetId);
     if (parts.length && !source) { snack.error(t("errors.accountGone")); return; }
-    if (existing && forwardAccountMismatch(existing.accountId, detail, identities)) {
+    const snapshot = existing;
+    const checked = new Map<string, AttachmentRef | null>();
+    for (const part of parts) {
+      if (checked.has(part.assetId!)) continue;
+      let info: AttachmentRef | null = null;
+      try { info = await client.call("attachments.info", { accountId: message.accountId, assetId: part.assetId! }); } catch { /* not ready: it follows */ }
+      checked.set(part.assetId!, info && info.filename === part.filename && info.mime === part.mime && info.size === part.size && (info.contentId ?? null) === (part.contentId ?? null) ? { assetId: part.assetId!, filename: part.filename, mime: part.mime, size: part.size, contentId: part.contentId ?? null } : null);
+    }
+    forwardRefs = [...checked.values()].filter((r): r is AttachmentRef => r !== null);
+    forwardSource = { threadId, messageId: message.id, accountId: message.accountId };
+    if (existing && forwardAccountMismatch(existing.accountId, detail, identities, forwardRefs)) {
       snack.error(t("compose.forwardAccountMismatch", { account: source!.email }));
       return;
     }
-    const snapshot = existing;
-    try {
-      const checked = new Map<string, AttachmentRef>();
-      for (const part of parts) {
-        const info = checked.get(part.assetId!) ?? await client.call("attachments.info", { accountId: message.accountId, assetId: part.assetId! });
-        checked.set(part.assetId!, info);
-        if (info.filename !== part.filename || info.mime !== part.mime || info.size !== part.size || (info.contentId ?? null) !== (part.contentId ?? null)) { unavailable(); return; }
-      }
-    } catch { if (currentIntent()) unavailable(); return; }
     if (!currentIntent() || await loadThread(threadId) !== detail) return;
-    if (parts.length && !getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
+    if (forwardRefs.length && !getApp().accounts.some((a) => a.id === source!.id)) { snack.error(t("errors.accountGone")); return; }
     existing = proof ? readDraftAck(proof) : existingKey ? materialize(existingKey) : undefined;
     if (existingKey && (!existing || existing.sending || existing.recovery || (!proof && (existing.accountId !== snapshot?.accountId || existing.id !== snapshot?.id || existing.generation !== snapshot?.generation || existing.localRev !== snapshot?.localRev)))) return;
     takeFocus = focusUnchanged();
-    if (parts.length && existing && !existing.attachments?.length) {
+    if (forwardRefs.length && existing && !existing.attachments?.length) {
       // Save the empty From transition before introducing that account's attachment owners.
       const active = typeof document === "undefined" ? null : document.activeElement;
       const beforeFlush = existing;
@@ -670,8 +676,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const before = existing ? fieldsOf(existing) : undefined;
   if (proof && readDraftAck(proof) !== existing) return;
   const converted = existing && existing.mode !== "new" && written(existing)
-    ? convertFields(before!, mode, detail, account, identities)
-    : replyFields(mode, detail, account, { identities });
+    ? convertFields(before!, mode, detail, account, identities, forwardRefs)
+    : replyFields(mode, detail, account, { identities, forwardRefs });
   if (converted === before) { snack.error(t("attachments.tooLarge")); return; }
   converted.showSourceContext = true;
   converted.attachments = mergeAttachmentRefs([], converted.attachments ?? []);
@@ -709,6 +715,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     let edited = false;
     try { edited = editDraft(original.key, converted); } finally { unsubscribe(); }
     if (!edited || count !== 1 || !receipt || useDrafts.getState().drafts[original.key] !== receipt) return;
+    if (forwardSource) fetchForwardFiles(original.key, forwardSource, converted.attachments ?? []);
     const sourceChanged = converted.mode !== original.mode || (converted.mode === "forward" ? converted.forwardOfMessageId !== undefined && converted.forwardOfMessageId !== original.forwardOfMessageId : converted.inReplyToMessageId !== undefined && converted.inReplyToMessageId !== original.inReplyToMessageId);
     const resetContext = converted.threadId !== undefined || sourceChanged;
     const bodyChanged = (converted.bodyText !== undefined && converted.bodyText !== original.bodyText) || (converted.bodyHtml !== undefined && converted.bodyHtml !== original.bodyHtml);
@@ -731,6 +738,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     return;
   }
   const { key, created } = createDraftWithReceipt(converted);
+  if (forwardSource) fetchForwardFiles(key, forwardSource, converted.attachments ?? []);
   if (takeFocus && mine === intent && destinationAvailable(lease) && focusAllowed() && getApp().selectedId === selected && useDrafts.getState().drafts[key] === created && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === key) focusDraft(key, target, mine);
 }
 

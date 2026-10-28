@@ -2,11 +2,13 @@ import { client } from "~/rpc/connection";
 import { useRef, useState } from "react";
 import { Download, Paperclip, X } from "lucide-react";
 import type { AttachmentInfo } from "@terno/core";
-import { t } from "@terno/i18n";
+import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { attachFiles, downloadAttachment, useAttachmentUploads } from "~/lib/attachments";
 import { editDraft, type LocalDraft } from "~/lib/drafts";
 import { formatBytes } from "~/lib/format";
+import { retryForwardFiles, useForwardFiles, type ForwardFiles } from "~/lib/forward-files";
 import { snack } from "~/lib/snack";
 
 export function AttachButton({ d }: { d: LocalDraft }) {
@@ -18,12 +20,27 @@ export function AttachButton({ d }: { d: LocalDraft }) {
   </>;
 }
 
+/** What a forward's draft says about its original's files that haven't joined it (plan 60). */
+function forwardFilesText(state: ForwardFiles): string {
+  switch (state.status) {
+    case "fetching": return state.names.length ? t("compose.forwardFiles.fetching", { names: formatList(state.names) }) : t("compose.forwardFiles.fetchingUnknown");
+    case "failed": return state.names.length ? t("compose.forwardFiles.failed", { count: state.names.length, names: formatList(state.names) }) : t("compose.forwardFiles.failedUnknown");
+    case "tooLarge": return t("attachments.tooLarge");
+    case "account": return t("compose.forwardFiles.account", { account: state.account });
+  }
+}
+
 export function DraftAttachments({ d }: { d: LocalDraft }) {
   const busy = useAttachmentUploads((s) => s.keys.has(d.key));
-  if (!d.attachments?.length && !busy) return null;
+  const forward = useForwardFiles((s) => s[d.key]);
+  if (!d.attachments?.length && !busy && !forward) return null;
   return <div className="px-3.5 py-2" aria-live="polite">
     {busy && <p role="status" className="text-xs text-muted-foreground">{t("attachments.adding")}</p>}
-    <ul aria-label={t("reader.attachments")} className="flex flex-wrap gap-2">
+    {forward && <p role="status" data-testid="forward-files" data-status={forward.status} className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+      <span>{forwardFilesText(forward)}</span>
+      {forward.status === "failed" && <Button type="button" variant="link" size="sm" data-testid="forward-files-retry" className="h-auto p-0 text-xs font-medium text-foreground underline underline-offset-2 hover:no-underline" disabled={d.sending} onClick={() => retryForwardFiles(d.key)}>{t("compose.forwardFiles.tryAgain")}</Button>}
+    </p>}
+    {!!d.attachments?.length && <ul aria-label={t("reader.attachments")} className={cn("flex flex-wrap gap-2", forward && "mt-2")}>
       {(d.attachments ?? []).map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full items-center gap-2 rounded-md bg-tint py-1 pl-2.5 pr-1 text-xs">
         <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="max-w-48 truncate">{a.filename}</span><span className="text-muted-foreground tabular">{formatBytes(a.size)}</span>
@@ -33,7 +50,7 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
           body?.focus({ preventScroll: true });
         }}><X className="size-3" /></Button>
       </li>)}
-    </ul>
+    </ul>}
   </div>;
 }
 
