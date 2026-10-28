@@ -567,7 +567,9 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   const d = get(key);
   if (draftEditsHeld() || !d || d.uiState === uiState) return;
   changeVersion++;
-  put({ ...d, uiState, ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" as const : "dirty" as const } : {}) });
+  const next = { ...d, uiState, ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" as const : "dirty" as const } : {}) };
+  if (d.id !== null) writer(key);
+  put(next);
   if (d.id !== null) schedule(key);
 }
 
