@@ -2,6 +2,23 @@
 
 Status: in progress on `main`. Baseline: `11092b6e48c947e2bde60d2b1b3dd34abb19cb5d` (application code unchanged from research snapshot `35509d2`).
 
+## Global fixture admission correction (2026-10-28)
+
+This is part of the verbatim request below: preserve meaningful regression tests while fixing every report item. At clean `2ea6027a`, two unit shards covered all 383 configured files exactly once: 9,702 passed, 28 failed and three skipped. The separate WASM project reported 1,728 passed, one failed and two skipped. Both shards and WASM exited 1 naturally; source and HEAD stayed unchanged. Evidence is `/tmp/terno-root-sharded-tests-2ea6027a`. The earlier unsharded command exceeded its external 300-second budget without a report; it is incomplete qualification, not a product failure or a pass.
+
+Four fixture files need narrowly scoped correction before the remaining failures can be interpreted. `storage-send.test.ts` never installs its real store accounts in app state. The later missing-From Send guard therefore refuses before the fixture's RPC gate, leaving five tests waiting for an event they cannot reach. Populate the actual store accounts and selected account, restore the complete prior app state in unconditional cleanup, and retain every Send/export/body/attachment/RPC assertion. Its failed-read case must also install a synthetic connected account so it still reaches the serializer rather than passing at the earlier guard.
+
+The SQL parked-effect upgrade test expects schema 22 even though the current schema is 23. Preserve its genuine schema-21 source and all parked-effect assertions, changing only the final version expectation. The IDB physical-7 fixture tries to read its current source database at physical version 8, which now correctly raises VersionError; omit the version only for that source read, retaining the actual newly created version-7 destination. The parked-index fixture must retain its genuine physical-8/logical-21 opening oracle: copy the current seeded rows, keys and native index definitions into a separate version-8 database, with logical metadata 21, then open that database through the real adapter. Assert both legacy versions before opening and current physical 10 afterward. Do not change production migration or admission behavior, bump versions, relax test timeouts, or replace these paths with mocks.
+
+The four existing failures supply the fixture-level REDs; they do not establish new production defects. Run the four corrected files serially in the unit project and the SQL file in WASM, then scoped types, lint and whitespace checks. No UI, runtime hot path, dependency, locale or production API changes are proposed. Fresh independent review follows the atomic fixture commit. The remaining Forward/attachment/focus failures, global rerun, browser/native and performance gates remain open.
+
+Revisions after the Codex review: the single read-only correction-plan critique completed naturally with actual exit 0 and substantive DONE; PID 69317 was waited and reaped after 100.911 seconds. Its complete final was read; it reported zero findings against the exact proposal. Prompt, full transcript and process result are retained in `/tmp/terno-global-fixture-critique`. This is plan critique only, not the required subsequent code review.
+
+The correction changes four tests and this record only. The reconstructed IDB fixture copies the current seeded keys, values, store options and native indexes into an actual physical-8 database with logical metadata 21. It is not execution of an older binary or a proof of every historical row shape. Its source contains no drafts, so no schema-23 draft fields are introduced into a claimed legacy draft. The original reconciliation, stale-retry, exact Send/export and attachment assertions remain intact.
+
+Validation in `/tmp/terno-root-global-fixtures-2ea6027a`: all 16 unit cases across the four files and all three SQL cases in WASM passed. Full `pnpm typecheck`, `pnpm lint` and scoped `git diff --check` exited 0. The five commands finished naturally and were reaped; no guard or signal was used, no captured process identity remained, and the owned temporary directories were removed. Process ancestry sampling was nonexhaustive. Tracked bytes and HEAD stayed stable during those commands; the subsequent evidence-only plan update does not change tested source. These focused results repair eight fixture failures, not the remaining 20 unit failures or the full release gate. Fresh two-axis code review remains pending.
+
+
 ## Request (verbatim)
 
 > I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:

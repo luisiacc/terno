@@ -55,7 +55,7 @@ it("upgrades a real schema 21 mailbox with parked effects", async () => {
     writeLegacyCopy(source.db, path, 21);
     await source.close();
     const db = openDatabase(path); source = new SqlMailStore(db);
-    expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(22);
+    expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(23);
     expect(db.get<{ count: number }>("SELECT count(*) AS count FROM flag_op_effects")!.count).toBe(1);
     const fresh = await source.sync.beginObservation(account!, { authoritativeFlags: true });
     await source.sync.updateFlags(account!, [{ messageId: message.id, expectedProviderMsgId: "upgrade", flags: { isRead: false } }], fresh!);

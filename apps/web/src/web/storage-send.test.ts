@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Account } from "@terno/core";
+import { getApp, setApp, useApp } from "~/state/app";
 import { contract, createMemoryTransportPair, RpcClient, toErrorPayload, type Draft } from "@terno/core/rpc";
 import { openDatabase, SqlMailStore } from "@terno/db";
 import type { DraftRow } from "@terno/store";
@@ -21,7 +23,12 @@ const apiDraft = (r: DraftRow): Draft => ({
   bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json), quotedText: r.quoted_text, includeQuote: !!r.include_quote,
   inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, uiState: r.ui_state, updatedAt: r.updated_at,
 });
-afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.call.mockReset(); vi.unstubAllGlobals(); });
+let previousApp = getApp();
+beforeEach(() => { previousApp = getApp(); });
+afterEach(() => {
+  try { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.call.mockReset(); vi.unstubAllGlobals(); }
+  finally { useApp.setState(previousApp, true); }
+});
 
 it("storage switching refuses an already-accepted Send, then carries an explicit exact copy after its missing refusal", async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-send-switch-")), store = new SqlMailStore(openDatabase(join(dir, "mail.db")));
@@ -46,6 +53,7 @@ it("storage switching refuses an already-accepted Send, then carries an explicit
   rpc.call.mockImplementation(client.call.bind(client));
   try {
     const [accountId] = await withAccounts(store);
+    setApp({ accounts: await store.accounts.list(), accountId: accountId! });
     const ref = await store.attachments.create({ accountId: accountId!, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 0 });
     await store.attachments.append(accountId!, ref.assetId, 0, "AP+A"); await store.attachments.seal(accountId!, ref.assetId);
     setDraftTransport(async (_method, p) => { const row = await store.drafts.save(contract["drafts.save"].params.parse(p), 0); return row ? apiDraft(row) : null; });
@@ -76,6 +84,8 @@ it("storage switching refuses an already-accepted Send, then carries an explicit
 });
 
 it("a failed Send materialization releases its accepted-work flag and retains the editable fields", async () => {
+  setApp({ accounts: [{ id: 1, email: "me@example.test" } as Account], accountId: 1 });
+  rpc.call.mockClear();
   const key = createDraft({ ...newFields(1), toText: "ana@example.test", bodyText: "retained before source failure" });
   const source = attachBody(key, () => { throw new Error("synthetic source failure"); }); source.changed();
   try {
@@ -109,6 +119,7 @@ it.each(["pending", "missing", "failure", "success"] as const)("Send accepted du
   rpc.call.mockImplementation(client.call.bind(client));
   try {
     const [accountId] = await withAccounts(store);
+    setApp({ accounts: await store.accounts.list(), accountId: accountId! });
     setDraftTransport(async (_method, p) => { const row = await store.drafts.save(contract["drafts.save"].params.parse(p), 0); return row ? apiDraft(row) : null; });
     const key = createDraft({ ...newFields(accountId!), toText: "ana@example.test", bodyText: "retained during export" });
     editDraft(key, {}); await flushDraft(key);

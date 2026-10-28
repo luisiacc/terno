@@ -45,7 +45,9 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
   const { IDBFactory } = await import("fake-indexeddb");
   const { databaseName } = await import("./schema");
   const factory = new IDBFactory(), name = crypto.randomUUID();
+  const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
   let store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
+  let raw: IDBDatabase | undefined;
   try {
     const [account] = await withAccounts(store, 1);
     await ingest(store, [msg({ accountId: account!, providerMsgId: "upgrade" })]);
@@ -55,15 +57,42 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
     const [op] = await store.ops.claimReady(2, 10);
     await store.ops.markUnknown(op!.id, "uncertain", 3);
     await store.close();
-    const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = factory.open(databaseName(name), 8); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-    await new Promise<void>((resolve, reject) => { const tx = db.transaction("meta", "readwrite"); tx.objectStore("meta").put(21, "logicalSchema"); tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); });
-    db.close();
-    store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
+    raw = await request(factory.open(databaseName(name)));
+    const tx = raw.transaction([...raw.objectStoreNames], "readonly");
+    const finished = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); });
+    void finished.catch(() => {});
+    const image = await Promise.all([...raw.objectStoreNames].map(async (name) => {
+      const table = tx.objectStore(name);
+      const indexes = [...table.indexNames].map((name) => {
+        const index = table.index(name);
+        return { name, keyPath: index.keyPath, unique: index.unique, multiEntry: index.multiEntry };
+      });
+      const [keys, values] = await Promise.all([request(table.getAllKeys()), request(table.getAll())]);
+      return { name, keyPath: table.keyPath, autoIncrement: table.autoIncrement, indexes, keys, values };
+    }));
+    await finished;
+    raw.close(); raw = undefined;
+    const legacyName = crypto.randomUUID(), create = factory.open(databaseName(legacyName), 8);
+    create.onupgradeneeded = () => {
+      for (const saved of image) {
+        const table = create.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement });
+        for (const index of saved.indexes) table.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry });
+        saved.values.forEach((value, i) => table.put(saved.name === "meta" && saved.keys[i] === "logicalSchema" ? 21 : value, saved.keys[i]!));
+      }
+    };
+    raw = await request(create);
+    expect(raw.version).toBe(8);
+    expect(await request(raw.transaction("meta").objectStore("meta").get("logicalSchema"))).toBe(21);
+    raw.close(); raw = undefined;
+    store = await IdbMailStore.open({ name: legacyName, factory, instantSearch: false, platform });
+    raw = await request(factory.open(databaseName(legacyName)));
+    expect(raw.version).toBe(10);
+    raw.close(); raw = undefined;
     const fresh = await store.sync.beginObservation(account!, { authoritativeFlags: true });
     await store.sync.updateFlags(account!, [{ messageId: message.id, expectedProviderMsgId: "upgrade", flags: { isRead: false } }], fresh!);
     expect((await store.threads.act({ threadIds: [message.threadId], action: "markUnread", signal: null, now: 4 })).flagReconcileAccounts).toEqual([account]);
     await expect(store.ops.resolveUnknown(op!.id, "retry", 5)).rejects.toMatchObject({ code: "STALE" });
-  } finally { if (store.isOpen) await store.close(); }
+  } finally { raw?.close(); if (store.isOpen) await store.close(); }
 });
 
 it("restores the parked lookup after a real IndexedDB transaction abort", async () => {

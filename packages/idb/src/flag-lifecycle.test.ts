@@ -97,7 +97,7 @@ it("upgrades a genuine physical7 mailbox and creates required physical flag inde
   const [a] = await withAccounts(source, 1);
   await ingest(source, [msg({ accountId: a!, providerMsgId: "physical7" })]);
   const action = await source.threads.act({ threadIds: [await threadOf(source, "physical7")], action: "archive", signal: null, now: 1 });
-  const sourceDb = await request(factory.open(databaseName(source.name), 8));
+  const sourceDb = await request(factory.open(databaseName(source.name)));
   const names = [...sourceDb.objectStoreNames].filter((name) => !["flag_clocks", "message_flag_intents", "flag_op_effects"].includes(name));
   const read = sourceDb.transaction(names, "readonly");
   const copied = await Promise.all(names.map(async (name) => ({ name, keys: await request(read.objectStore(name).getAllKeys()), values: await request(read.objectStore(name).getAll()) })));
