@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { Buffer } from "node:buffer";
 import { createHash, type Hash } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it } from "vitest";
 import { IdbMailStore } from "@terno/idb";
@@ -48,10 +49,13 @@ function overrides() {
       let cursor: object | null = target, descriptor = own;
       while (!descriptor && cursor) { cursor = Object.getPrototypeOf(cursor); if (cursor) descriptor = Object.getOwnPropertyDescriptor(cursor, key); }
       if (!descriptor || !("value" in descriptor) || typeof descriptor.value !== "function" || typeof replacement !== "function") throw new Error("Expected replaceable method: " + key);
-      Object.defineProperty(target, key, { ...descriptor, value: replacement });
+      const owned = { ...descriptor, value: replacement };
+      Object.defineProperty(target, key, owned);
       installed++;
       undo.push(() => {
-        if (Object.getOwnPropertyDescriptor(target, key)?.value !== replacement) throw new Error("Owned wrapper identity changed: " + key);
+        const current = Object.getOwnPropertyDescriptor(target, key);
+        if (!current || !Object.hasOwn(current, "value") || !Object.hasOwn(current, "writable") || Object.hasOwn(current, "get") || Object.hasOwn(current, "set")
+          || current.value !== owned.value || current.writable !== owned.writable || current.enumerable !== owned.enumerable || current.configurable !== owned.configurable) throw new Error("Owned wrapper descriptor changed: " + key);
         if (own) Object.defineProperty(target, key, own);
         else if (!Reflect.deleteProperty(target, key)) throw new Error("Cannot restore inherited method: " + key);
         const after = Object.getOwnPropertyDescriptor(target, key);
@@ -261,8 +265,30 @@ async function physicalDigest(factory: IDBFactory) {
   return hash.digest("hex");
 }
 
-it("P0 resource model: 32 public operations", async () => {
+type DescriptorFault = {
+  attribute: "enumerable" | "writable";
+  applied: number;
+  bodyCompleted: boolean;
+  factory?: IDBFactory;
+  originalFactoryDelete?: IDBFactory["deleteDatabase"];
+  target?: object;
+  key?: "put" | "deleteDatabase";
+  original?: PropertyDescriptor;
+  changed?: PropertyDescriptor;
+  restoration?: { installed: number; restored: number; active: number };
+  cleanupRejected?: boolean;
+  finalizationFailed?: boolean;
+  reportFailed?: boolean;
+};
+
+async function resourceModel(fault?: DescriptorFault): Promise<void> {
   const factory = new IDBFactory(), installed = overrides(), stores = new Set<IdbMailStore>();
+  if (fault) {
+    fault.factory = factory; fault.originalFactoryDelete = factory.deleteDatabase;
+    fault.target = fault.attribute === "enumerable" ? IDBObjectStore.prototype : factory;
+    fault.key = fault.attribute === "enumerable" ? "put" : "deleteDatabase";
+    fault.original = Object.getOwnPropertyDescriptor(fault.target, fault.key);
+  }
   let observed: ReturnType<typeof audit>;
   try {
     // Same fixed public recent-history clock; no mock call history.
@@ -335,6 +361,13 @@ it("P0 resource model: 32 public operations", async () => {
         const claimName = `locality-claim-${instant}-${id === outlier ? "large" : "small"}`; locality.push(claimName);
         const claimed = await observed.phase(claimName, () => command(() => store.ops.claimReady(21, 1))); expect(claimed.map((op) => op.id)).toEqual([id]);
         expect(claimed[0]).toEqual(before); probes.set(id, claimed[0]!); expected.set(id, digest(claimed[0])); observed.setProbe();
+        if (fault && !instant && id === outlier) {
+          const target = fault.target!, key = fault.key!;
+          const descriptor = Object.getOwnPropertyDescriptor(target, key)!;
+          Object.defineProperty(target, key, { ...descriptor, [fault.attribute]: !descriptor[fault.attribute] });
+          fault.changed = Object.getOwnPropertyDescriptor(target, key);
+          fault.applied++;
+        }
       }
       await close(store); store = await observed.phase(`reopen-${instant}`, () => open("resource-seed", instant));
       await observed.phase(`reopen-public-${instant}`, () => verify(store)); await close(store);
@@ -390,6 +423,7 @@ it("P0 resource model: 32 public operations", async () => {
     for (const d of Object.values(observed.phases.copied!.db)) expect([d.getAll, d.partGetAll]).toEqual([0, 0]);
     const fresh = observed.phases.copying!.db["unica-case"]!; expect(fresh.getAll).toBe(1); expect(fresh.partGetAll).toBe(3); expect(fresh.freshBaseRows).toBe(N); expect(fresh.freshBaseBytes).toBe(wire); expect(fresh.maxBatch).toBeLessThanOrEqual(500);
     expect(observed.phases.copying!.db["terno-case"]!.getAll).toBe(0);
+    if (fault) fault.bodyCompleted = true;
   } finally {
     try {
       observed.setProbe();
@@ -398,13 +432,80 @@ it("P0 resource model: 32 public operations", async () => {
       cleanupFailure = [...closed, ...removed].find((result) => result.status === "rejected");
     } catch (error) { rememberFinalization(error); }
     try { installed.restore(); } catch (error) { rememberFinalization(error); }
+    let reportFailed = false;
     try {
       const report = { n: N, probeRows: probes.size, wire, parts: p, phases: observed.phases, commandCounter: "wrapped public mutations and migrateLegacyIdb; public get/recent/debug/open are separate phase work", tracePolicy: "first128/last128; scalar totals cover intercepted methods only", sampled: observed.sampled, first: observed.samples, last: observed.last, cleanupRejected: !!cleanupFailure, observerKind: observed.observerKind, restoration: installed.summary(), finalizationFailed };
+      if (fault) {
+        fault.restoration = report.restoration;
+        fault.cleanupRejected = report.cleanupRejected;
+        fault.finalizationFailed = report.finalizationFailed;
+      }
       const output = process.env.TERNO_RESOURCE32_REPORT;
-      if (output) writeFileSync(output, JSON.stringify(report));
+      if (output && !fault) writeFileSync(output, JSON.stringify(report));
       console.info("RESOURCE32", JSON.stringify({ n: N, probeRows: probes.size, wire, parts: p, phases: Object.entries(observed.phases).map(([name, s]) => ({ name, commands: s.commands, tx: s.tx, complete: s.complete, abort: s.abort, wallMs: s.wallMs, processCpuMs: s.processCpuMs })) }));
-    } catch (error) { rememberFinalization(error); }
+    } catch (error) { reportFailed = true; rememberFinalization(error); }
+    if (fault) fault.reportFailed = reportFailed;
   }
   if (finalizationFailed) throw finalizationFailure;
   if (cleanupFailure) throw cleanupFailure.reason;
-}, 60_000);
+  if (!fault) expect(installed.summary()).toEqual({ installed: 15, restored: 15, active: 0 });
+}
+
+it("P0 resource model: 32 public operations", () => resourceModel(), 60_000);
+
+for (const attribute of ["enumerable", "writable"] as const) {
+  it(`P0 resource observer refuses newer ${attribute} data descriptor after public claim`, async () => {
+    const snapshots = [
+      { target: Date, keys: ["now"] },
+      { target: IDBDatabase.prototype, keys: ["transaction"] },
+      { target: IDBObjectStore.prototype, keys: ["getAll", "getAllKeys", "getKey", "get", "openCursor", "openKeyCursor", "put", "delete", "count"] },
+      { target: IDBCursor.prototype, keys: ["continue", "advance", "continuePrimaryKey"] },
+    ].flatMap(({ target, keys }) => keys.map((key) => ({ target, key, descriptor: Object.getOwnPropertyDescriptor(target, key) })));
+    const fault: DescriptorFault = { attribute, applied: 0, bodyCompleted: false };
+    let failure: unknown, assertionFailure: unknown, assertionFailed = false;
+    let cleanupFailure: unknown, cleanupFailed = false;
+    try {
+      try { await resourceModel(fault); } catch (error) { failure = error; }
+      expect(fault.applied).toBe(1);
+      expect(fault.bodyCompleted).toBe(true);
+      expect(fault.cleanupRejected).toBe(false);
+      expect(fault.reportFailed).toBe(false);
+      let restored = 0;
+      for (const snapshot of snapshots) {
+        if (snapshot.target === fault.target && snapshot.key === fault.key) continue;
+        expect(Object.getOwnPropertyDescriptor(snapshot.target, snapshot.key)).toEqual(snapshot.descriptor);
+        restored++;
+      }
+      if (fault.target !== fault.factory) {
+        expect(Object.getOwnPropertyDescriptor(fault.factory!, "deleteDatabase")).toBeUndefined();
+        expect(fault.factory!.deleteDatabase).toBe(fault.originalFactoryDelete);
+        restored++;
+      }
+      expect(restored).toBe(14);
+      expect(failure, "observer must refuse later same-function descriptor changes").toBeInstanceOf(Error);
+      expect(failure).toMatchObject({ message: "Owned wrapper descriptor changed: " + fault.key });
+      expect(Object.getOwnPropertyDescriptor(fault.target!, fault.key!)).toEqual(fault.changed);
+      expect(fault.restoration).toEqual({ installed: 15, restored: 14, active: 0 });
+      expect(fault.finalizationFailed).toBe(true);
+    } catch (error) { assertionFailed = true; assertionFailure = error; } finally {
+      try {
+        if (fault.target && fault.key) {
+          const current = Object.getOwnPropertyDescriptor(fault.target, fault.key);
+          if (fault.changed && isDeepStrictEqual(current, fault.changed)) {
+            if (fault.original) Object.defineProperty(fault.target, fault.key, fault.original);
+            else if (!Reflect.deleteProperty(fault.target, fault.key)) {
+              cleanupFailed = true; cleanupFailure = new Error("Cannot remove test-owned descriptor fault");
+            }
+          } else if (!isDeepStrictEqual(current, fault.original)) {
+            cleanupFailed = true; cleanupFailure = new Error("Test fault descriptor changed again; preserve it");
+          }
+          if (!cleanupFailed && !isDeepStrictEqual(Object.getOwnPropertyDescriptor(fault.target, fault.key), fault.original)) {
+            cleanupFailed = true; cleanupFailure = new Error("Test-owned descriptor fault was not restored");
+          }
+        }
+      } catch (error) { cleanupFailed = true; cleanupFailure = error; }
+    }
+    if (cleanupFailed) throw new AggregateError(assertionFailed ? [assertionFailure, cleanupFailure] : [cleanupFailure], "Descriptor fault cleanup failed");
+    if (assertionFailed) throw assertionFailure;
+  }, 60_000);
+}
