@@ -275,6 +275,56 @@ it("a file that couldn't be confirmed before the last retry is confirmed after i
   expect(useForwardFiles.getState()[key]).toBeUndefined();
 });
 
+// Codex review round 5: a check begun before the last retry that fails after it doesn't hide the file from the next check
+it("a stale failed check from before the last retry doesn't keep the file out", async () => {
+  vi.useFakeTimers();
+  backend(notCaptured());
+  let tries = 0, infos = 0, releaseRetry!: () => void, failFirst!: () => void;
+  const retryGate = new Promise<void>((r) => { releaseRetry = r; });
+  rpc.mockImplementation(async (method: string) => {
+    if (method === "attachments.retry") { tries++; if (tries === 3) await retryGate; return { ok: true }; }
+    if (method === "threads.get") return tries >= 3 ? captured() : notCaptured();
+    if (method === "attachments.info") { if (++infos === 1) await new Promise<void>((_, reject) => { failFirst = () => reject(new Error("not yet")); }); return ref; }
+    return { ok: true };
+  });
+  const key = createDraft(replyFields("forward", notCaptured(), account, { forwardRefs: [] }));
+  fetchForwardFiles(key, { threadId: 7, messageId: 3, accountId: 1 });
+  await vi.advanceTimersByTimeAsync(FORWARD_FILE_DELAYS[1] + FORWARD_FILE_DELAYS[2] + 1);
+  expect(tries).toBe(3);
+  // a refetch lands while the last retry runs: its check starts (and will fail late)
+  useThreads.setState({ details: new Map([[7, captured()]]) });
+  await vi.waitFor(() => expect(infos).toBe(1));
+  releaseRetry();
+  await flush();
+  failFirst();
+  await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
+  expect(useForwardFiles.getState()[key]).toBeUndefined();
+});
+
+it("From changed during the last retry waits for the original's account instead of giving up", async () => {
+  vi.useFakeTimers();
+  backend(notCaptured());
+  let tries = 0, releaseRetry!: () => void;
+  const retryGate = new Promise<void>((r) => { releaseRetry = r; });
+  rpc.mockImplementation(async (method: string) => {
+    if (method === "attachments.retry") { tries++; if (tries === 3) await retryGate; return { ok: true }; }
+    if (method === "threads.get") return tries >= 3 ? captured() : notCaptured();
+    if (method === "attachments.info") return ref;
+    return { ok: true };
+  });
+  const key = createDraft(replyFields("forward", notCaptured(), account, { forwardRefs: [] }));
+  fetchForwardFiles(key, { threadId: 7, messageId: 3, accountId: 1 });
+  await vi.advanceTimersByTimeAsync(FORWARD_FILE_DELAYS[1] + FORWARD_FILE_DELAYS[2] + 1);
+  expect(tries).toBe(3);
+  editDraft(key, { accountId: 2 });
+  releaseRetry();
+  await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toEqual({ status: "account", account: "source@test.com" }));
+  await flush();
+  expect(useForwardFiles.getState()[key]?.status).toBe("account");
+  editDraft(key, { accountId: 1 });
+  await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
+});
+
 it("names the files in English and Spanish", async () => {
   expect(t("compose.forwardFiles.failed", { count: 1, names: "report.pdf" })).toBe("Couldn’t get report.pdf, so this forward won’t include it.");
   expect(t("compose.forwardFiles.failed", { count: 2, names: "a.pdf and b.pdf" })).toBe("Couldn’t get a.pdf and b.pdf, so this forward won’t include them.");

@@ -37,6 +37,8 @@ interface Session extends Source {
   paused: boolean;
   /** parts this try couldn't confirm: asked again on the next try, not on every keystroke */
   unconfirmed: Set<string>;
+  /** bumped whenever `unconfirmed` is cleared: a check that began before then can't mark a part again */
+  round: number;
   /** the original's parts this device confirmed (attachments.info), by asset */
   verified: Map<string, AttachmentRef>;
   detail: ThreadDetail | null;
@@ -103,7 +105,7 @@ export function fetchForwardFiles(key: string, source: Source, placed: readonly 
   const seen = offered.get(id) ?? new Set((d.attachments ?? []).map((a) => a.assetId));
   for (const ref of placed) seen.add(ref.assetId);
   offered.set(id, seen);
-  const session: Session = { ...source, key, attempt: 0, running: null, again: false, paused: false, unconfirmed: new Set(), verified: new Map(), detail: null, unsubscribe: () => {} };
+  const session: Session = { ...source, key, attempt: 0, running: null, again: false, paused: false, unconfirmed: new Set(), round: 0, verified: new Map(), detail: null, unsubscribe: () => {} };
   sessions.set(key, session);
   const stopDrafts = useDrafts.subscribe((state, previous) => {
     const live = state.drafts[key];
@@ -171,7 +173,7 @@ const alive = (s: Session) => sessions.get(s.key) === s;
 /** One try: what's on the device now, else a capture retry and a fresh look; then the next try, or Try again. */
 async function attempt(s: Session): Promise<void> {
   s.timer = undefined;
-  s.unconfirmed.clear();
+  s.unconfirmed.clear(); s.round++;
   if (await settle(s, await loadThread(s.threadId).catch(() => null))) return;
   if (!alive(s)) return;
   const d = useDrafts.getState().drafts[s.key];
@@ -179,9 +181,12 @@ async function attempt(s: Session): Promise<void> {
   if (d && d.accountId !== s.accountId) { s.paused = true; return; }
   await retryCapture(s.accountId, s.messageId);
   // the retry may have stored what wasn't confirmed before it: those are asked about again
-  s.unconfirmed.clear();
+  s.unconfirmed.clear(); s.round++;
   if (!alive(s) || await settle(s, await loadThread(s.threadId, true).catch(() => null))) return;
   if (!alive(s)) return;
+  // From changed meanwhile: wait for the original's account again instead of giving up
+  const now = useDrafts.getState().drafts[s.key];
+  if (now && now.accountId !== s.accountId) { s.paused = true; return; }
   s.attempt++;
   if (s.attempt < FORWARD_FILE_DELAYS.length) {
     s.timer = setTimeout(() => void attempt(s), FORWARD_FILE_DELAYS[s.attempt]);
@@ -242,12 +247,13 @@ async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<bool
     if (!part.assetId || seen.has(part.assetId) || s.unconfirmed.has(part.assetId)) continue;
     let ref = s.verified.get(part.assetId);
     if (!ref) {
+      const round = s.round;
       try {
         const info = await client.call("attachments.info", { accountId: s.accountId, assetId: part.assetId });
         if (info.filename === part.filename && info.mime === part.mime && info.size === part.size && (info.contentId ?? null) === (part.contentId ?? null)) s.verified.set(part.assetId, (ref = { assetId: part.assetId, filename: part.filename, mime: part.mime, size: part.size, contentId: part.contentId ?? null }));
       } catch { /* not ready on this device yet: a later try */ }
       if (!alive(s)) return true;
-      if (!ref) s.unconfirmed.add(part.assetId);
+      if (!ref && round === s.round) s.unconfirmed.add(part.assetId);
     }
     if (ref) refs.push(ref);
   }
