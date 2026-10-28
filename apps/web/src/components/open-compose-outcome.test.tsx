@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import type { ThreadDetail } from "@terno/core";
 import { setup } from "./draft-presentation-r1-harness";
 
-// plan 56: an open that still matters never ends in silence
+// plan 57: an open that still matters never ends in silence
 const opened = (h: Awaited<ReturnType<typeof setup>>) => Object.values(h.drafts.useDrafts.getState().drafts).filter((d) => d.mode === "reply" && d.inReplyToMessageId === 3);
 
 it("a refresh that replaces the conversation mid-open is retried with it, and the reply opens", async () => {
