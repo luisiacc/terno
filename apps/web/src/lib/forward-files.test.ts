@@ -14,7 +14,7 @@ const { createDraft, editDraft, forgetDraft, setDraftTransport, useDrafts } = aw
 const { setApp } = await import("~/state/app");
 const { useThreads } = await import("~/state/threads");
 const { resetSnacks } = await import("./snack");
-const { FORWARD_FILE_DELAYS, resetForwardFiles, retryForwardFiles, useForwardFiles } = await import("./forward-files");
+const { FORWARD_FILE_DELAYS, forwardFilesHeld, resetForwardFiles, retryForwardFiles, useForwardFiles } = await import("./forward-files");
 
 const account = { id: 1, email: "source@test.com" } as Account;
 const other = { id: 2, email: "other@test.com" } as Account;
@@ -163,6 +163,55 @@ it("two drafts forwarding the same original share one capture retry", async () =
   expect(retries()).toBe(1);
   release();
   expect(first).not.toBe(second);
+});
+
+// Codex review: tries that ran out keep nothing alive (no watchers, no thread held); the status stays until the draft goes
+it("after the last try nothing keeps watching, and a discarded draft leaves nothing behind", async () => {
+  vi.useFakeTimers();
+  backend(notCaptured());
+  await openCompose("forward", 7);
+  const key = theDraft().key;
+  await vi.advanceTimersByTimeAsync(FORWARD_FILE_DELAYS[1] + FORWARD_FILE_DELAYS[2] + 1);
+  await flush();
+  expect(useForwardFiles.getState()[key]?.status).toBe("failed");
+  expect(forwardFilesHeld()).toEqual({ sessions: 0, sources: 1, offered: 1, watching: true });
+  forgetDraft(key);
+  expect(useForwardFiles.getState()[key]).toBeUndefined();
+  expect(forwardFilesHeld()).toEqual({ sessions: 0, sources: 0, offered: 0, watching: false });
+});
+
+it("forwards opened and finished again and again keep nothing once their drafts go", async () => {
+  backend(captured());
+  for (let i = 0; i < 5; i++) {
+    await openCompose("forward", 7);
+    const key = theDraft().key;
+    await vi.waitFor(() => expect(forwardFilesHeld().sessions).toBe(0));
+    forgetDraft(key);
+  }
+  expect(forwardFilesHeld()).toEqual({ sessions: 0, sources: 0, offered: 0, watching: false });
+});
+
+it("a forward of an original with no files never asks for its account in From", async () => {
+  backend(thread({ attachmentState: "complete", hasAttachments: false, attachments: [] }));
+  const key = createDraft({ ...replyFields("reply", thread(), account), accountId: 2 });
+  editDraft(key, { bodyText: "mine" });
+  await openCompose("forward", 7);
+  expect(useDrafts.getState().drafts[key]).toMatchObject({ mode: "forward", accountId: 2 });
+  await vi.waitFor(() => expect(forwardFilesHeld().sessions).toBe(0));
+  expect(useForwardFiles.getState()[key]).toBeUndefined();
+  expect(retries()).toBe(0);
+});
+
+it("the size note goes when the draft stops being that forward", async () => {
+  const big = { ...ref, size: 30 * 1024 * 1024 };
+  // not on the device at open; the retry brings it, too large to join
+  backend(notCaptured(big));
+  rpc.mockImplementation(async (method: string) => method === "threads.get" ? captured(big) : method === "attachments.info" ? big : { ok: true });
+  await openCompose("forward", 7);
+  const key = theDraft().key;
+  await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toEqual({ status: "tooLarge" }));
+  editDraft(key, { mode: "reply", forwardOfMessageId: null, inReplyToMessageId: 3 });
+  expect(useForwardFiles.getState()[key]).toBeUndefined();
 });
 
 it("names the files in English and Spanish", async () => {

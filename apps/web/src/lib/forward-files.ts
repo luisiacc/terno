@@ -28,7 +28,6 @@ export const FORWARD_FILE_DELAYS = [0, 4_000, 15_000] as const;
 interface Source { threadId: number; messageId: number; accountId: number }
 interface Session extends Source {
   key: string;
-  token: number;
   attempt: number;
   timer?: ReturnType<typeof setTimeout>;
   /** tries run one at a time; a draft or thread change while one runs asks for one more look */
@@ -38,19 +37,22 @@ interface Session extends Source {
   paused: boolean;
   /** parts this try couldn't confirm: asked again on the next try, not on every keystroke */
   unconfirmed: Set<string>;
+  /** the original's parts this device confirmed (attachments.info), by asset */
+  verified: Map<string, AttachmentRef>;
   detail: ThreadDetail | null;
   unsubscribe: () => void;
 }
 
+/** tries in progress (or waiting for From), by draft key */
 const sessions = new Map<string, Session>();
+/** every forward draft this module speaks for, until it goes or stops forwarding its original (then all of it is forgotten) */
 const sources = new Map<string, Source>();
 /** refs a draft already had from its original (placed at open or adopted later): a file the user removes never comes back */
 const offered = new Map<string, Set<string>>();
-/** the original's parts this device confirmed (attachments.info), by asset */
-const verified = new Map<string, AttachmentRef>();
 /** one capture retry per original at a time, whichever drafts forward it */
 const retrying = new Map<number, Promise<void>>();
-let tokens = 0;
+/** one drafts watch for all of them: a draft that goes, or stops forwarding, takes its status and memory with it */
+let janitor: (() => void) | null = null;
 /** compose.ts: an open (Reply/Forward) in flight owns the draft until it settles; nothing is adopted under it */
 let opening: () => boolean = () => false;
 export function setForwardOpenProbe(probe: () => boolean): void {
@@ -93,22 +95,19 @@ export function fetchForwardFiles(key: string, source: Source, placed: readonly 
   stopSession(key);
   const d = useDrafts.getState().drafts[key];
   if (!isForwardOf(d, source.messageId)) return;
+  const previous = sources.get(key);
+  if (previous && previous.messageId !== source.messageId) offered.delete(offeredKey(key, previous.messageId));
   sources.set(key, source);
+  janitor ??= useDrafts.subscribe(sweep);
   const id = offeredKey(key, source.messageId);
   const seen = offered.get(id) ?? new Set((d.attachments ?? []).map((a) => a.assetId));
   for (const ref of placed) seen.add(ref.assetId);
   offered.set(id, seen);
-  const session: Session = { ...source, key, token: ++tokens, attempt: 0, busy: false, again: false, paused: false, unconfirmed: new Set(), detail: null, unsubscribe: () => {} };
+  const session: Session = { ...source, key, attempt: 0, busy: false, again: false, paused: false, unconfirmed: new Set(), verified: new Map(), detail: null, unsubscribe: () => {} };
   sessions.set(key, session);
   const stopDrafts = useDrafts.subscribe((state, previous) => {
     const live = state.drafts[key];
-    if (live === previous.drafts[key]) return;
-    if (!isForwardOf(live, source.messageId)) {
-      stopSession(key);
-      setState(key, null);
-      if (!live) offered.delete(id);
-      return;
-    }
+    if (live === previous.drafts[key] || !isForwardOf(live, source.messageId)) return;
     // From set to the original's account: the tries go on
     if (session.paused && live.accountId === source.accountId) { session.paused = false; void attempt(session); return; }
     // a send that didn't go, a save that settled: look again
@@ -141,6 +140,24 @@ export function retryForwardFiles(key: string): void {
   if (source) fetchForwardFiles(key, source);
 }
 
+function sweep(state: { drafts: Record<string, LocalDraft> }, previous: { drafts: Record<string, LocalDraft> }): void {
+  if (state.drafts === previous.drafts) return;
+  for (const [key, source] of sources) {
+    const live = state.drafts[key];
+    if (live !== previous.drafts[key] && !isForwardOf(live, source.messageId)) forget(key);
+  }
+}
+
+/** The draft went or stopped forwarding its original: its tries, status and memory go too. */
+function forget(key: string): void {
+  const source = sources.get(key);
+  stopSession(key);
+  setState(key, null);
+  if (source) offered.delete(offeredKey(key, source.messageId));
+  sources.delete(key);
+  if (!sources.size && janitor) { janitor(); janitor = null; }
+}
+
 function stopSession(key: string): void {
   const session = sessions.get(key);
   if (!session) return;
@@ -170,6 +187,8 @@ async function attempt(s: Session): Promise<void> {
   }
   const current = useForwardFiles.getState()[s.key];
   setState(s.key, { status: "failed", names: current && "names" in current ? current.names : [] });
+  // nothing more on its own (Try again or Forward again start over); the status stays until the draft goes
+  stopSession(s.key);
 }
 
 /** A look outside the tries (a draft or thread change), with the last thread seen unless a newer one came. */
@@ -202,8 +221,12 @@ async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<bool
   if (!detail) return false;
   s.detail = detail;
   const message = detail.thread.id === s.threadId ? detail.messages.find((m) => m.id === s.messageId) : undefined;
-  if (!message) { stopSession(s.key); setState(s.key, null); return true; }
+  // the original is gone: nothing to bring
+  if (!message) { forget(s.key); return true; }
   const seen = offered.get(offeredKey(s.key, s.messageId))!;
+  const missing = () => message.attachments.filter((a) => !a.assetId || !seen.has(a.assetId));
+  const complete = () => message.attachmentState === "complete" && !missing().length;
+  if (complete()) { stopSession(s.key); setState(s.key, null); return true; }
   const d = useDrafts.getState().drafts[s.key];
   if (d && d.accountId !== s.accountId) {
     setState(s.key, { status: "account", account: getApp().accounts.find((a) => a.id === s.accountId)?.email ?? "" });
@@ -212,11 +235,11 @@ async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<bool
   const refs: AttachmentRef[] = [];
   for (const part of message.attachments) {
     if (!part.assetId || seen.has(part.assetId) || s.unconfirmed.has(part.assetId)) continue;
-    let ref = verified.get(part.assetId);
+    let ref = s.verified.get(part.assetId);
     if (!ref) {
       try {
         const info = await client.call("attachments.info", { accountId: s.accountId, assetId: part.assetId });
-        if (info.filename === part.filename && info.mime === part.mime && info.size === part.size && (info.contentId ?? null) === (part.contentId ?? null)) verified.set(part.assetId, (ref = { assetId: part.assetId, filename: part.filename, mime: part.mime, size: part.size, contentId: part.contentId ?? null }));
+        if (info.filename === part.filename && info.mime === part.mime && info.size === part.size && (info.contentId ?? null) === (part.contentId ?? null)) s.verified.set(part.assetId, (ref = { assetId: part.assetId, filename: part.filename, mime: part.mime, size: part.size, contentId: part.contentId ?? null }));
       } catch { /* not ready on this device yet: a later try */ }
       if (!alive(s)) return true;
       if (!ref) s.unconfirmed.add(part.assetId);
@@ -226,13 +249,11 @@ async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<bool
   if (refs.length) {
     const outcome = await adopt(s, refs);
     if (!alive(s)) return true;
+    // the status stays (the draft watch clears it when the draft goes or stops forwarding)
     if (outcome === "tooLarge") { stopSession(s.key); setState(s.key, { status: "tooLarge" }); return true; }
   }
-  const missing = message.attachments.filter((a) => !a.assetId || !seen.has(a.assetId));
-  if (message.attachmentState === "complete" && !missing.length) { stopSession(s.key); setState(s.key, null); return true; }
-  const names = missing.map((a) => a.filename);
-  const failed = useForwardFiles.getState()[s.key]?.status === "failed" && !s.timer && s.attempt >= FORWARD_FILE_DELAYS.length;
-  setState(s.key, { status: failed ? "failed" : "fetching", names });
+  if (complete()) { stopSession(s.key); setState(s.key, null); return true; }
+  setState(s.key, { status: "fetching", names: missing().map((a) => a.filename) });
   return false;
 }
 
@@ -272,9 +293,15 @@ async function adopt(s: Session, refs: readonly AttachmentRef[]): Promise<"adopt
   } finally { finish(); }
 }
 
+/** Tests: how much is kept (bounded by the forward drafts open). */
+export function forwardFilesHeld(): { sessions: number; sources: number; offered: number; watching: boolean } {
+  return { sessions: sessions.size, sources: sources.size, offered: offered.size, watching: janitor !== null };
+}
+
 /** Tests: every session stopped, everything forgotten. */
 export function resetForwardFiles(): void {
   for (const key of sessions.keys()) stopSession(key);
-  sources.clear(); offered.clear(); verified.clear(); retrying.clear();
+  janitor?.(); janitor = null;
+  sources.clear(); offered.clear(); retrying.clear();
   useForwardFiles.setState({}, true);
 }
