@@ -9,7 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
-import { copyDraft, discardDraft, draftEditsHeld, draftHoldRevision, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -21,95 +21,8 @@ import { Expand } from "./expand";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
-/** The focus move waiting for its element (one at a time: a newer request replaces it). */
-let focusRequest = 0;
-let pendingFocus: { find: () => HTMLElement | null; current: (el: HTMLElement) => boolean; done: () => boolean } | null = null;
-
-const target = (selector: string, root: HTMLElement | null) =>
-  // while the editor's chunk loads, its stand-in takes the keys (and hands them over)
-  (root ?? document).querySelector<HTMLElement>(selector) ?? (selector.includes("compose-body") ? (root ?? document).querySelector<HTMLElement>("[data-testid=compose-body-loading]") : null);
-const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && el.isConnected && !el.closest("[inert]");
-
-function place(el: HTMLElement) {
-  el.focus({ preventScroll: true });
-  if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
-}
-
-/**
- * A key pressed while a focus move is still waiting for its frame (r, then Esc
- * at once) belongs where focus is going, not to the page: focus moves now, a
- * character follows it (the browser types into what is focused after keydown),
- * and any other key is replayed there (Esc collapses that draft). Before this,
- * "r, Esc, r" typed fast lost the Esc and typed the second "r" into the text.
- */
-function keyDuringMove(e: KeyboardEvent) {
-  const p = pendingFocus;
-  if (!p || !e.isTrusted) return;
-  const active = document.activeElement;
-  if (active && active !== document.body) return;
-  const el = p.find();
-  if (!focusable(el)) return;
-  let moved = false;
-  const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
-  document.addEventListener("focusin", observe, true);
-  let allowed: boolean;
-  try { allowed = p.done(); } finally { document.removeEventListener("focusin", observe, true); }
-  if (!allowed || moved || !p.current(el) || !focusable(el)) return;
-  place(el);
-  if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  el.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, repeat: e.repeat, bubbles: true, cancelable: true }));
-}
-
-/**
- * Puts focus on an element of the draft area once it is rendered and no longer
- * inert (an opening part is inert for a frame).
- */
-export function focusSoon(selector: string, root: HTMLElement | null, frames = 12, onDone?: (fallback: boolean) => boolean | void, valid?: () => boolean, watch?: (cancel: () => void) => () => void) {
-  const request = ++focusRequest;
-  let cancelled = false;
-  let cancelWatch = () => { cancelled = true; };
-  const stopWatching = watch?.(() => cancelWatch()) ?? (() => {});
-  pendingFocus?.done();
-  if (request !== focusRequest || cancelled) { stopWatching(); return; }
-  let raf = 0;
-  let finished = false;
-  const cleanup = () => {
-    if (finished) return false;
-    finished = true;
-    cancelAnimationFrame(raf);
-    stopWatching();
-    document.removeEventListener("keydown", keyDuringMove, true);
-    document.removeEventListener("focusin", moved, true);
-    if (pendingFocus === mine) pendingFocus = null;
-    return true;
-  };
-  const done = () => {
-    if (!cleanup()) return false;
-    const result = onDone?.(false);
-    return request === focusRequest && (!valid || result === true);
-  };
-  const moved = (event: FocusEvent) => {
-    if (event.target !== document.body) done();
-  };
-  const mine = { find: () => valid && !valid() ? null : target(selector, root), current: (el: HTMLElement) => request === focusRequest && (!root || root.isConnected) && target(selector, root) === el, done };
-  pendingFocus = mine;
-  document.addEventListener("keydown", keyDuringMove, true);
-  document.addEventListener("focusin", moved, true);
-  cancelWatch = () => { done(); };
-  const tick = (left: number) => {
-    raf = requestAnimationFrame(() => {
-      if ((valid && !valid()) || (root && !root.isConnected)) return done();
-      const el = target(selector, root);
-      if (!focusable(el) && left > 0) return tick(left - 1);
-      if (!cleanup()) return;
-      if (focusable(el)) place(el);
-      onDone?.(true);
-    });
-  };
-  tick(frames);
-}
+export { focusSoon } from "~/lib/compose-focus-move";
+import { focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
 
 /** A borderless field row: a real label, the control, hairline below. */
 function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean }) {
@@ -357,6 +270,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const accounts = useApp((s) => s.accounts);
   const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
+  const slotMove = useRef<InlineFocusMove | null>(null), slotGeneration = useRef(0);
+  useEffect(() => {
+    const generation = ++slotGeneration.current;
+    return () => { const move = slotMove.current; queueMicrotask(() => { if (slotGeneration.current === generation) move?.cancel(); }); };
+  }, []);
   const exitWatches = useRef(new Set<() => void>());
   useEffect(() => () => { for (const stop of exitWatches.current) stop(); }, []);
   const formatId = useId();
@@ -378,12 +296,13 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    const validOwnerless = () => !focus.cancellation?.cancelled && !draftEditsHeld() && (focus.holdRevision === undefined || focus.holdRevision === draftHoldRevision()) && (focus.selectionRevision === undefined || focus.selectionRevision === getSelectionWriteRevision());
-    if (focus.cancellation && !validOwnerless()) {
+    const selector = focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]";
+    if (focus.move && !focus.move.bind(rootRef.current, selector)) {
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : focus.cancellation ? validOwnerless : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : focus.cancellation ? validOwnerless : undefined);
+    if (focus.move) slotMove.current = focus.move;
+    else focusSoon(selector, rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : undefined);
     if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
@@ -404,7 +323,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const exitFocus = () => {
     const root = rootRef.current, initial = useApp.getState(), active = document.activeElement;
     const revision = getSelectionWriteRevision();
-    let changed = !root || draftEditsHeld(), stopped = false, expectedRequest = focusRequest, cancel: (() => void) | undefined;
+    let changed = !root || draftEditsHeld(), stopped = false, expectedRequest = focusMoveGeneration(), cancel: (() => void) | undefined;
     const invalidate = () => { changed = true; cancel?.(); };
     const moved = (event: FocusEvent) => { if (event.target !== active) invalidate(); };
     const offApp = useApp.subscribe((state, previous) => {
@@ -414,8 +333,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
     document.addEventListener("focusin", moved, true);
     const stop = () => { if (stopped) return; stopped = true; offApp(); offDrafts(); document.removeEventListener("focusin", moved, true); exitWatches.current.delete(stop); };
     exitWatches.current.add(stop);
-    const valid = () => !stopped && !changed && rootRef.current === root && !!root?.isConnected && getSelectionWriteRevision() === revision && focusRequest === expectedRequest && useApp.getState().selectedId === initial.selectedId && !draftEditsHeld();
-    return { root, valid, stop, prepare: () => { expectedRequest = focusRequest + 1; }, watch: (onCancel: () => void) => { cancel = onCancel; return stop; } };
+    const valid = () => !stopped && !changed && rootRef.current === root && !!root?.isConnected && getSelectionWriteRevision() === revision && focusMoveGeneration() === expectedRequest && useApp.getState().selectedId === initial.selectedId && !draftEditsHeld();
+    return { root, valid, stop, prepare: () => { expectedRequest = focusMoveGeneration() + 1; }, watch: (onCancel: () => void) => { cancel = onCancel; return stop; } };
   };
   const send = async () => {
     if (!d) return;

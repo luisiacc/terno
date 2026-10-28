@@ -13,6 +13,7 @@ import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
+import { prepareInlineFocusMove } from "./compose-focus-move";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -186,23 +187,27 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
   const current = intent;
   if (owner !== undefined && owner !== current) return;
   const originalLease = focusLease && focusLease.intent === owner ? focusLease : null;
-  const cancellation = originalLease ? undefined : { cancelled: false };
   const hold = draftHoldRevision();
   const selection = getSelectionWriteRevision();
-  if (cancellation && draftEditsHeld()) return;
-  const active = typeof document === "undefined" ? null : document.activeElement, previousSeq = seq;
-  const moved = (event: FocusEvent) => { if (cancellation && event.target !== active) cancellation.cancelled = true; };
-  if (cancellation && typeof document !== "undefined") document.addEventListener("focusin", moved, true);
+  if (!originalLease && draftEditsHeld()) return;
+  const previousSeq = seq;
+  let expectedSeq = previousSeq, published: ReturnType<typeof getApp>["draftFocus"];
+  const valid = () => intent === current && seq === expectedSeq && !draftEditsHeld() && draftHoldRevision() === hold && getSelectionWriteRevision() === selection;
+  const move = !originalLease && typeof document !== "undefined" ? prepareInlineFocusMove(valid, () => {
+    if (published && getApp().draftFocus === published) setApp({ draftFocus: null });
+  }) : undefined;
+  let committed = false;
   try {
     if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
-    if (intent !== current || seq !== previousSeq || cancellation?.cancelled || (cancellation && (draftEditsHeld() || draftHoldRevision() !== hold || getSelectionWriteRevision() !== selection)) || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
+    if (intent !== current || seq !== previousSeq || (!originalLease && (!valid() || (move && !move.active()))) || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
     const focusSeq = ++seq;
+    expectedSeq = focusSeq;
     if (originalLease) { originalLease.key = key; originalLease.seq = focusSeq; }
-    const request = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { cancellation: cancellation!, holdRevision: hold, selectionRevision: selection }) };
-    setApp({ draftFocus: request });
-    if (cancellation?.cancelled && getApp().draftFocus === request) setApp({ draftFocus: null });
+    published = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { move }) };
+    setApp({ draftFocus: published });
+    committed = true;
   } finally {
-    if (cancellation && typeof document !== "undefined") document.removeEventListener("focusin", moved, true);
+    if (!committed) move?.cancel();
   }
 }
 
