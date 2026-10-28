@@ -188,16 +188,17 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
   const originalLease = focusLease && focusLease.intent === owner ? focusLease : null;
   const cancellation = originalLease ? undefined : { cancelled: false };
   const hold = draftHoldRevision();
+  const selection = getSelectionWriteRevision();
   if (cancellation && draftEditsHeld()) return;
   const active = typeof document === "undefined" ? null : document.activeElement, previousSeq = seq;
   const moved = (event: FocusEvent) => { if (cancellation && event.target !== active) cancellation.cancelled = true; };
   if (cancellation && typeof document !== "undefined") document.addEventListener("focusin", moved, true);
   try {
     if (focusLease && focusLease.intent !== owner) releaseFocusLease(focusLease, false);
-    if (intent !== current || seq !== previousSeq || cancellation?.cancelled || (cancellation && (draftEditsHeld() || draftHoldRevision() !== hold)) || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
+    if (intent !== current || seq !== previousSeq || cancellation?.cancelled || (cancellation && (draftEditsHeld() || draftHoldRevision() !== hold || getSelectionWriteRevision() !== selection)) || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
     const focusSeq = ++seq;
     if (originalLease) { originalLease.key = key; originalLease.seq = focusSeq; }
-    const request = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { cancellation: cancellation!, holdRevision: hold }) };
+    const request = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { cancellation: cancellation!, holdRevision: hold, selectionRevision: selection }) };
     setApp({ draftFocus: request });
     if (cancellation?.cancelled && getApp().draftFocus === request) setApp({ draftFocus: null });
   } finally {

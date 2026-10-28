@@ -378,7 +378,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    const validOwnerless = () => !focus.cancellation?.cancelled && !draftEditsHeld() && (focus.holdRevision === undefined || focus.holdRevision === draftHoldRevision());
+    const validOwnerless = () => !focus.cancellation?.cancelled && !draftEditsHeld() && (focus.holdRevision === undefined || focus.holdRevision === draftHoldRevision()) && (focus.selectionRevision === undefined || focus.selectionRevision === getSelectionWriteRevision());
     if (focus.cancellation && !validOwnerless()) {
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
