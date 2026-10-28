@@ -47,3 +47,22 @@ Render only: one fewer button per one-message thread. There's no new state, and 
 
 - Merging headers in Classic or Atelier.
 - Changing how multi-message conversations fold.
+
+## Revisions after the Codex review
+
+**Plan critique (10 points):**
+
+- **The message menu.** The header now sits inside `MessageMenu`, and a one-message card carries `data-message-id`, so a right-click on the card is a right-click on the message (Print this message, Copy). A test covers it.
+- **The arrival of a second message.** `Message` keeps its key and its body structure; only the `<h3>` and the inner hairline are conditional. A test checks that the first message's frame and the draft's caret survive the arrival.
+- **Drafts.** A draft never counts as a message. The test opens a reply first.
+- **The e2e configuration.**
+  - The e2e fixture defaults to macOS, so the Lumen tests use `test.use({ design: "lumen" })`.
+  - One `@design` test checks each design: one header, Lumen in the card, the others on the message.
+  - Multi-message assertions are made only on rendered articles.
+- **Threads you started.** The card reads the one message's own sender (`senderOf` only for longer conversations). A test uses an outgoing-only thread.
+- **Loading and attachments.** The body reuses the existing renderer (downloading, unavailable and empty states unchanged). A test checks a seeded one-message thread with an attachment.
+- **The date.** A `<time dateTime>` element; the full date is the tooltip and is read out (`sr-only`), and the short form is `aria-hidden`.
+- **Width.** The card's column grows (`flex-1`), the name truncates and the date never shrinks. The screenshots include a 900 px window.
+- **Mark-read stability.** `Conversation` stays keyed by thread only. A one-message thread has no toggle whose state could change; the existing mark-read tests cover the remount guarantees.
+
+**Code review:** no findings.
