@@ -364,12 +364,13 @@ export function materialize(key: string): LocalDraft | undefined {
   if (!d || !source?.dirty) return d;
   const version = source.editVersion, detached = source.detached;
   const materializingWriter = writers.get(key);
+  const materializingOperation = materializingWriter?.operation;
   const materializingRead = materializingWriter?.ackRead;
   const fail = (error: unknown): never => {
     if (materializingRead) endDraftAckRead(materializingRead);
-    if (sources.get(key) === source) {
+    if (sources.get(key) === source && source.editVersion === version && source.detached === detached && source.dirty && get(key)?.bodyVersion === d.bodyVersion) {
       source.failed = true; source.dirty = true;
-      if (materializingWriter && writers.get(key) === materializingWriter && materializingWriter.timer) {
+      if (materializingWriter && writers.get(key) === materializingWriter && materializingWriter.operation === materializingOperation && materializingWriter.timer) {
         clearTimeout(materializingWriter.timer); materializingWriter.timer = null;
       }
     }
@@ -590,13 +591,16 @@ function save(key: string, copy = false): Promise<void> {
   if (w.inflight) return w.inflight;
   // the editor's body, serialized once for this save (same document as the revision it saves)
   let d: LocalDraft | undefined;
-  const savingSource = sources.get(key);
+  const savingSource = sources.get(key), savingVersion = savingSource?.editVersion, savingDetached = savingSource?.detached;
+  const savingOperation = w.operation, savingTimer = w.timer;
   try { d = materialize(key); } catch {
-    if (sources.get(key) !== savingSource || writers.get(key) !== w) return Promise.resolve();
-    if (w.timer) clearTimeout(w.timer);
-    w.timer = null;
-    const current = get(key);
-    if (current) put({ ...current, status: "error" });
+    if (writers.get(key) !== w || w.operation !== savingOperation || sources.get(key) !== savingSource || !savingSource?.failed || !savingSource.dirty || savingSource.editVersion !== savingVersion || savingSource.detached !== savingDetached || get(key)?.bodyVersion !== current.bodyVersion) return Promise.resolve();
+    if (w.timer === savingTimer) {
+      if (savingTimer) clearTimeout(savingTimer);
+      w.timer = null;
+    }
+    const failed = get(key);
+    if (failed) put({ ...failed, status: "error" });
     return Promise.resolve();
   }
   if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
