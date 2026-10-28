@@ -10,11 +10,11 @@ const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: (method: string, params: unknown) => method === "drafts.sourceContext" ? Promise.resolve({ threadId: 7, accountId: 1 }) : rpc(method, params) } }));
 const { openCompose } = await import("./compose");
 const { replyFields } = await import("./compose-fields");
-const { createDraft, editDraft, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
+const { createDraft, editDraft, flushDraft, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 const { setApp } = await import("~/state/app");
 const { useThreads } = await import("~/state/threads");
 const { resetSnacks } = await import("./snack");
-const { FORWARD_FILE_DELAYS, forwardFilesHeld, resetForwardFiles, retryForwardFiles, useForwardFiles } = await import("./forward-files");
+const { FORWARD_FILE_DELAYS, fetchForwardFiles, forwardFilesHeld, resetForwardFiles, retryForwardFiles, setForwardOpenProbe, useForwardFiles } = await import("./forward-files");
 
 const account = { id: 1, email: "source@test.com" } as Account;
 const other = { id: 2, email: "other@test.com" } as Account;
@@ -156,8 +156,7 @@ it("two drafts forwarding the same original share one capture retry", async () =
   await openCompose("forward", 7);
   const first = theDraft().key;
   const second = createDraft({ ...replyFields("forward", thread(), account) });
-  const { fetchForwardFiles } = await import("./forward-files");
-  fetchForwardFiles(second, { threadId: 7, messageId: 3, accountId: 1 });
+    fetchForwardFiles(second, { threadId: 7, messageId: 3, accountId: 1 });
   await vi.waitFor(() => expect(retries()).toBe(1));
   await flush();
   expect(retries()).toBe(1);
@@ -234,6 +233,27 @@ it("a file the last try's refetch brings joins even while its check is still run
   release();
   await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
   await vi.waitFor(() => expect(useForwardFiles.getState()[key]).toBeUndefined());
+});
+
+// Codex review round 3: files confirmed while an open held them back join on the next keystroke; the save that
+// adoption makes notifies synchronously, and the look it starts must wait instead of re-entering
+it("adopting into a saved forward on a keystroke doesn't re-enter itself", async () => {
+  backend(captured());
+  let blocked = true;
+  setForwardOpenProbe(() => blocked);
+  try {
+    const key = createDraft(replyFields("forward", captured(), account, { forwardRefs: [] }));
+    editDraft(key, { bodyText: "saved first" });
+    await flushDraft(key);
+    fetchForwardFiles(key, { threadId: 7, messageId: 3, accountId: 1 });
+    await vi.waitFor(() => expect(rpc.mock.calls.filter(([method]) => method === "attachments.info").length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(useForwardFiles.getState()[key]?.status).toBe("fetching"));
+    expect(useDrafts.getState().drafts[key]!.attachments).toEqual([]);
+    blocked = false;
+    editDraft(key, { bodyText: "typing" });
+    await vi.waitFor(() => expect(useDrafts.getState().drafts[key]!.attachments).toEqual([ref]));
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("typing");
+  } finally { setForwardOpenProbe(() => false); }
 });
 
 it("names the files in English and Spanish", async () => {

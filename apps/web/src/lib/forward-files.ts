@@ -205,17 +205,19 @@ function settle(s: Session, detail: ThreadDetail | null): Promise<boolean> {
   if (detail) s.detail = detail;
   // one already running (a thread refetch started it): its answer, after one more look with the newest thread
   if (s.running) { s.again = true; return s.running; }
-  s.running = (async () => {
+  // the guard is up before the first step runs: a save it makes notifies synchronously, and that look must wait
+  let answer!: (done: boolean) => void;
+  const running = (s.running = new Promise<boolean>((r) => { answer = r; }));
+  void (async () => {
+    let done = false;
     try {
-      let done = false;
       do {
         s.again = false;
         done = await settleOnce(s, s.detail);
       } while (!done && s.again && alive(s));
-      return done;
-    } finally { s.running = null; }
+    } finally { s.running = null; answer(done); }
   })();
-  return s.running;
+  return running;
 }
 
 async function settleOnce(s: Session, detail: ThreadDetail | null): Promise<boolean> {
