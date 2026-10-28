@@ -20,6 +20,8 @@ test.describe("focus rings @design", () => {
     await expect(page.getByTestId("compose-body")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("compose-body")).toHaveCount(0);
+    // focus lands on the reply bar a frame or two after the composer goes
+    await expect.poll(async () => (await ringed(page))?.tag ?? null).not.toBeNull();
     const now = (await ringed(page))!;
     expect(now, `${now.tag} ${now.dbg}`).toMatchObject({ ring: false, focusVisible: true });
     // the same control under Tab navigation does show one: the ring is gated, not gone

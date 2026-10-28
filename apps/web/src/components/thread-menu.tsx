@@ -124,6 +124,16 @@ export function openMenuForSelection(): void {
 const handOff = { pending: false };
 
 /**
+ * Whether a reply from the menu opened (and so takes focus itself, maybe a frame later: the editor loads lazily):
+ * inline in its conversation, or, for a stored draft whose source moved, in the reader pane. Read from state, not
+ * the DOM.
+ */
+export function replyOpened(threadId: number, paneBefore: ReturnType<typeof getApp>["compose"]): boolean {
+  const key = shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown);
+  return (key !== null && useDrafts.getState().drafts[key]?.uiState === "open") || getApp().compose !== paneBefore;
+}
+
+/**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
  * per-row trigger, so opening it renders no row). The clicked row gets a
  * ring from a keyed CSS rule; global shortcuts wait while it is open.
@@ -234,10 +244,9 @@ function MenuItems() {
     // a reply that didn't open (refused, failed) leaves focus nowhere: it goes back to the list. One that opened
     // takes focus itself, maybe a frame later (the editor loads lazily), so that is read from the drafts, not the DOM
     const id = single.id;
+    const pane = getApp().compose;
     void openCompose(mode, id).then(() => {
-      const key = shownDraftKey(useDrafts.getState().drafts, id, getApp().draftShown);
-      const opened = key !== null && useDrafts.getState().drafts[key]?.uiState === "open";
-      if (!opened && document.activeElement === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [role=listbox]")?.focus({ preventScroll: true });
+      if (!replyOpened(id, pane) && document.activeElement === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [role=listbox]")?.focus({ preventScroll: true });
     });
   };
   const inAll = (categoryId: number) => rows.length > 0 && rows.every((t) => t.categoryIds.includes(categoryId));

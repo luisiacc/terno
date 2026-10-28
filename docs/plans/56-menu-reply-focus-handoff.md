@@ -46,3 +46,14 @@ Tests:
 
 - `open-compose-outcome.test.tsx`: a mid-open refresh retries and opens; source-context and load failures show the message; a superseded request stays silent. The first three fail without the fix.
 - `selection.spec.ts`: the three menu tests fail against main's menu and pass 150 of 150 across the designs (twice each).
+
+Round 2 found two more problems (both P2):
+
+- **A retry could pull focus back after the user moved on.** Moving focus invalidates the lease but not `intent`, so a `"stale"` retry could take focus back into a composer (and a failure could show a message) after the user went elsewhere. An outcome now counts only while the lease is still held (`stillAsked`).
+- **A stored draft opened in the reader pane wasn't recognized as opened.** Such a draft (its source moved) didn't count, so the menu's fallback could focus the list and cancel the pane's focus. `replyOpened()` now counts a change in the reader pane too.
+
+Tests:
+
+- `open-compose-outcome.test.tsx`: after the user focuses another control mid-open, neither a stale nor a failed open retries, takes focus or complains. Both fail on the round-1 code.
+- `replyOpened` is unit-tested for the inline and reader-pane cases.
+- `focus-ring.spec.ts` now waits for focus to settle after Esc before reading it (it was flaky in Lumen).
