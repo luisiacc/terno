@@ -127,9 +127,10 @@ function retireHydrationIdentity(d: LocalDraft): void {
 /** Constant-time fence for page transitions, including coalesced editor changes. */
 export const draftChangeVersion = (): number => changeVersion;
 
-let pendingWork = 0, holds = 0;
+let pendingWork = 0, holds = 0, holdRevision = 0;
 let holdFocus: HTMLElement | null = null;
 export const draftEditsHeld = (): boolean => holds > 0;
+export const draftHoldRevision = (): number => holdRevision;
 export const draftWorkPending = (): boolean => pendingWork > 0 || Object.values(useDrafts.getState().drafts).some((d) => d.sending);
 
 /** Accepted async intent must finish before shutdown can freeze and acknowledge its fields. */
@@ -147,6 +148,7 @@ const holdInput = (event: Event) => { event.preventDefault(); event.stopImmediat
 export function acquireDraftHold(): (() => void) | null {
   if (draftWorkPending()) return null;
   if (++holds === 1) {
+    holdRevision++;
     holdFocus = typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (typeof document !== "undefined") for (const type of inputEvents) document.addEventListener(type, holdInput, true);
     useDrafts.setState({ held: true });

@@ -9,7 +9,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
-import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
+import { copyDraft, discardDraft, draftEditsHeld, draftHoldRevision, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { SenderAvatar } from "./sender-avatar";
 import { RecipientInput, recipientSummary } from "./recipient-input";
 import { warmAutocomplete } from "~/lib/autocomplete";
@@ -378,7 +378,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
       if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
       return;
     }
-    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : focus.cancellation ? () => !focus.cancellation!.cancelled : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : focus.cancellation ? () => !focus.cancellation!.cancelled : undefined);
+    const validOwnerless = () => !focus.cancellation?.cancelled && !draftEditsHeld() && (focus.holdRevision === undefined || focus.holdRevision === draftHoldRevision());
+    if (focus.cancellation && !validOwnerless()) {
+      if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
+      return;
+    }
+    focusSoon(focus.target === "to" ? "[data-testid=compose-to]" : "[data-testid=compose-body]", rootRef.current, 12, focus.leased ? (fallback) => finishComposeFocus(focus.key, focus.seq, fallback) : focus.cancellation ? validOwnerless : undefined, focus.leased ? () => composeFocusPending(threadId, focus.key, focus.seq) : focus.cancellation ? validOwnerless : undefined);
     if (useApp.getState().draftFocus === focus) setApp({ draftFocus: null });
   }, [focus?.seq]);
 
