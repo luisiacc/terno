@@ -9,6 +9,7 @@ import { EditorState, Plugin, Selection, TextSelection, type Command, type Trans
 import { EditorView } from "prosemirror-view";
 import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
+import { keepEditorBody, keptEditorBody, forgetEditorBody, type KeptEditorBody } from "~/lib/drafts";
 import { ghostPlugin, type GhostHooks } from "./ghost";
 
 /**
@@ -45,18 +46,13 @@ export function serialize(doc: PMNode): { html: string; text: string } {
 }
 
 /** The last editor states by draft (undo history, selection, stored marks), so collapsing and coming back loses none. */
-const kept = new Map<string, { state: EditorState; version: number }>();
-const KEPT_MAX = 8;
-export function keepState(key: string, state: EditorState, version: number): void {
-  kept.delete(key);
-  kept.set(key, { state, version });
-  if (kept.size > KEPT_MAX) kept.delete(kept.keys().next().value!);
+export function keepState(key: string, state: EditorState, version: number): KeptEditorBody {
+  return keepEditorBody(key, state, version, state.doc);
 }
 export function keptState(key: string, version: number): EditorState | null {
-  const k = kept.get(key);
-  return k && k.version === version ? k.state : null;
+  return (keptEditorBody(key, version)?.state as EditorState | undefined) ?? null;
 }
-export const forgetState = (key: string) => kept.delete(key);
+export const forgetState = forgetEditorBody;
 
 // ── commands
 

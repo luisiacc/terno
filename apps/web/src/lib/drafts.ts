@@ -115,7 +115,21 @@ interface DraftsState {
   drafts: Record<string, LocalDraft>;
 }
 
+type UiFrontier = { state: DraftsState; target: LocalDraft; stamp: number };
+type UiFrame = { parent?: UiFrame; before: DraftsState; after: DraftsState; target: LocalDraft; stamp?: number; frontier?: UiFrontier; read?: AckRead; closed?: boolean };
+type UiReceipt = { cursor?: UiFrame; close: UiFrame; frontier: UiFrontier };
+let uiFrame: UiFrame | undefined, notificationStamp = 0;
+
 export const useDrafts = create<DraftsState>(() => ({ drafts: {}, held: false }));
+// First observer: nested native Zustand deliveries see live state, but retain their original previous state.
+useDrafts.subscribe((state, previous) => {
+  if (!uiFrame) return;
+  const stamp = ++notificationStamp;
+  if (uiFrame.stamp === undefined && state === uiFrame.after && previous === uiFrame.before) {
+    uiFrame.stamp = stamp;
+    uiFrame.frontier = { state, target: uiFrame.target, stamp };
+  }
+});
 
 let changeVersion = 0;
 let presentationNavigation = 0;
@@ -269,7 +283,7 @@ export function fieldsOf(d: LocalDraft): DraftFields {
 // ───────────────────────────── the editor's body ─────────────────────────────
 
 /** What the editor gives for a draft's body: mail HTML ('' when empty) and its plain text, from one document. */
-export type BodyReader = () => { html: string; text: string };
+export type BodyReader = () => { html: string; text: string; editor?: { state: unknown; doc: object } };
 interface BodySource {
   read: BodyReader;
   dirty: boolean;
@@ -279,8 +293,111 @@ interface BodySource {
   /** its HTML comes from the schema (the editor's): a stand-in carrying a stored body isn't, and is re-read before sending */
   canonical: boolean;
   retained?: { state: unknown; version: number };
+  owner?: object;
+  certificate?: BodyCertificate;
 }
 const sources = new Map<string, BodySource>();
+
+/** The same eight kept editor states; no ProseMirror code enters the draft module. */
+export interface KeptEditorBody { readonly state: unknown; readonly version: number; readonly doc: object }
+type KeptBody = KeptEditorBody & { certificate?: BodyCertificate };
+type BodyCertificate = { origin: "raw" | "materialized"; authority?: LocalDraft; state?: unknown; doc?: object; owner?: object; source?: BodySource; version: number; entry?: KeptBody; read?: AckRead; valid: boolean };
+type BodyRead = { phase: "attached" | "parked" | "raw"; certificate?: BodyCertificate; authority?: LocalDraft; entry?: KeptBody };
+const keptBodies = new Map<string, KeptBody>();
+
+function invalidateCertificate(certificate: BodyCertificate | undefined): void {
+  if (!certificate) return;
+  const read = certificate.read;
+  if (certificate.source?.certificate === certificate) certificate.source.certificate = undefined;
+  if (certificate.entry?.certificate === certificate) certificate.entry.certificate = undefined;
+  certificate.valid = false; certificate.read = undefined; certificate.authority = undefined;
+  certificate.source = undefined; certificate.entry = undefined; certificate.state = undefined; certificate.doc = undefined; certificate.owner = undefined;
+  if (read) endDraftAckRead(read);
+}
+function validCertificate(c: BodyCertificate): boolean {
+  const d = c.authority;
+  return !!d && c.valid && c.doc !== undefined && get(d.key) === d &&
+    (c.source ? sources.get(d.key) === c.source && c.source.certificate === c && c.source.owner === c.owner && c.source.editVersion === c.version && !c.source.dirty && !c.source.failed && !c.source.detached
+      : !!c.entry && keptBodies.get(d.key) === c.entry && c.entry.certificate === c && !sources.has(d.key) && c.entry.doc === c.doc && c.entry.state === c.state && c.entry.version === d.bodyVersion);
+}
+function bodyCertificate(key: string): BodyCertificate | undefined { return sources.get(key)?.certificate ?? keptBodies.get(key)?.certificate; }
+function advanceBodyAuthority(before: LocalDraft, after: LocalDraft, identity = false): void {
+  const c = bodyCertificate(before.key);
+  if (!c) return;
+  if (!validCertificate(c) || c.authority !== before || before.bodyText !== after.bodyText || before.bodyHtml !== after.bodyHtml || before.bodyVersion !== after.bodyVersion || before.canonical !== after.canonical || (!identity && (before.id !== after.id || before.generation !== after.generation)) || after.recovery || after.sending || after.status === "error") { invalidateCertificate(c); return; }
+  c.authority = after;
+}
+export function keepEditorBody(key: string, state: unknown, version: number, doc: object): KeptEditorBody {
+  const old = keptBodies.get(key); if (old) invalidateCertificate(old.certificate);
+  const entry: KeptBody = { state, version, doc };
+  keptBodies.delete(key); keptBodies.set(key, entry);
+  if (keptBodies.size > 8) forgetEditorBody(keptBodies.keys().next().value!);
+  return entry;
+}
+export function keptEditorBody(key: string, version: number): KeptEditorBody | undefined {
+  const entry = keptBodies.get(key); return entry?.version === version ? entry : undefined;
+}
+export function forgetEditorBody(key: string): boolean {
+  const entry = keptBodies.get(key); if (entry) invalidateCertificate(entry.certificate);
+  return keptBodies.delete(key);
+}
+
+/** A synchronous constructor is classified only after its actual state/doc branch exists. */
+export interface EditorBodyConstruction {
+  supplyState(origin: "raw" | "kept" | "other", state: unknown, doc: object, entry?: KeptEditorBody): void;
+  changed(): void;
+  close(complete: boolean): void;
+}
+type BodyConstruction = EditorBodyConstruction & { key: string; owner: object; authority?: LocalDraft; prior?: BodySource; priorVersion?: number; parent?: BodyConstruction; state?: unknown; doc?: object; certificate?: BodyCertificate; entry?: KeptBody; origin?: "raw" | "kept" | "other"; supplied: boolean; modified: boolean; active: boolean; attached?: BodySource; read?: AckRead };
+let bodyConstruction: BodyConstruction | undefined;
+function constructing(key: string): boolean { for (let c = bodyConstruction; c; c = c.parent) if (c.key === key) return true; return false; }
+function currentAckRead(key: string): AckRead | undefined { return writers.get(key)?.ackRead ?? (noWriterRead?.key === key ? noWriterRead : undefined); }
+function validConstruction(c: BodyConstruction): boolean {
+  return c.active && c.supplied && !c.modified && c.origin !== "other" && !!c.authority && get(c.key) === c.authority && !draftEditsHeld() && !c.authority.sending && !c.authority.recovery && sources.get(c.key) === c.prior && c.prior?.editVersion === c.priorVersion && !c.prior?.dirty && !c.prior?.failed && !c.prior?.detached && !!c.certificate?.valid && c.certificate.authority === c.authority && c.certificate.doc === c.doc &&
+    (c.origin === "raw" || !!c.entry && keptBodies.get(c.key) === c.entry && c.entry.certificate === c.certificate && c.entry.state === c.state && c.entry.doc === c.doc);
+}
+export function enterEditorBodyConstruction(key: string, owner: object): EditorBodyConstruction {
+  const prior = sources.get(key);
+  const c: BodyConstruction = {
+    key, owner, authority: get(key), prior, priorVersion: prior?.editVersion, parent: bodyConstruction, read: currentAckRead(key), active: true, supplied: false, modified: false,
+    supplyState(origin, state, doc, entry) {
+      if (!c.active || c.supplied) return;
+      c.supplied = true; c.origin = origin; c.state = state; c.doc = doc;
+      if (!c.authority || get(key) !== c.authority || draftEditsHeld() || c.authority.sending || c.authority.recovery) return;
+      if (origin === "raw") c.certificate = { origin: "raw", authority: c.authority, state, doc, owner, version: 0, valid: true };
+      else if (origin === "kept" && entry && keptBodies.get(key) === entry && entry.state === state && entry.doc === doc && entry.version === c.authority.bodyVersion) {
+        const cached = entry as KeptBody;
+        if (cached.certificate && validCertificate(cached.certificate)) { c.entry = cached; c.certificate = cached.certificate; }
+      }
+    },
+    changed() {
+      if (!c.active) return;
+      c.modified = true;
+      if (c.read) endDraftAckRead(c.read);
+      if (!c.certificate?.source || c.certificate.source === c.attached) invalidateCertificate(c.certificate);
+    },
+    close(complete) {
+      if (!c.active) return;
+      c.active = false;
+      if (!complete || !c.attached || c.modified) {
+        if (c.read) endDraftAckRead(c.read);
+        if (!c.certificate?.source || c.certificate.source === c.attached) invalidateCertificate(c.certificate);
+      }
+      if (bodyConstruction === c) bodyConstruction = c.parent;
+      c.authority = undefined; c.prior = undefined; c.state = undefined; c.doc = undefined; c.certificate = undefined; c.entry = undefined; c.read = undefined; c.attached = undefined; c.parent = undefined;
+    },
+  };
+  bodyConstruction = c;
+  return c;
+}
+function adoptEditorSource(c: BodyConstruction | undefined, source: BodySource): void {
+  if (!c || !validConstruction(c)) return;
+  const certificate = c.certificate!;
+  if (certificate.entry?.certificate === certificate) certificate.entry.certificate = undefined;
+  certificate.entry = undefined; certificate.state = c.state; certificate.source = source; certificate.owner = c.owner; certificate.version = source.editVersion;
+  source.owner = c.owner; source.certificate = certificate; c.attached = source;
+}
+
 export interface BodyCheckpoint { readonly key: string; readonly version: number; readonly source: BodySource; readonly retained: NonNullable<BodySource["retained"]> }
 
 export function bodyCheckpoint(key: string): BodyCheckpoint | undefined {
@@ -298,47 +415,74 @@ export function validBodyCheckpoint(checkpoint: BodyCheckpoint): boolean {
  * (an edit: dirty, saved later), `dispose()` when it unmounts (what it has is
  * written to the draft first). A source of a draft that is gone does nothing.
  */
-export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint } = {}): { changed(): void; reset(): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number }): void } {
+export function attachBody(key: string, read: BodyReader, options: { canonical?: boolean; checkpoint?: BodyCheckpoint; editor?: EditorBodyConstruction } = {}): { changed(): void; reset(editor?: EditorBodyConstruction): void; dispose(snapshot?: { read: BodyReader; state: unknown; version: number; editor?: KeptEditorBody }): void } {
   if (options.checkpoint && (options.checkpoint.key !== key || !validBodyCheckpoint(options.checkpoint))) throw new Error("Draft checkpoint is no longer available");
-  invalidateNoWriterRead(key);
-  const prior = sources.get(key);
-  const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
+  const prior = sources.get(key), pending = currentAckRead(key), c = options.editor as BodyConstruction | undefined;
+  if (c && (!c.active || c.key !== key || c.authority !== get(key) || c.prior !== prior || c.priorVersion !== prior?.editVersion)) {
+    if (c.read) endDraftAckRead(c.read);
+    throw new Error(t("compose.readChanged"));
+  }
+  const prepared = c && validConstruction(c) ? c : undefined;
+  const body = pending?.body;
+  const preserve = pending && prepared && pending === prepared.read && readDraftAck(pending) !== undefined && body &&
+    ((body.phase === "raw" && prepared.origin === "raw" && !prior && body.authority === prepared.authority) ||
+      (body.phase === "parked" && prepared.origin === "kept" && !prior && body.certificate === prepared.certificate && body.entry === prepared.entry));
+  if (pending && !preserve) endDraftAckRead(pending);
+  const oldCertificate = bodyCertificate(key);
+  if (oldCertificate !== prepared?.certificate) invalidateCertificate(oldCertificate);
   const source: BodySource = { read, dirty: prior?.dirty ?? false, editVersion: 0, failed: prior?.failed ?? false, detached: false, canonical: options.canonical ?? true };
+  const actualEditor = c?.active && c.key === key && c.authority === get(key) && c.prior === prior;
+  if (actualEditor) source.owner = c.owner;
+  adoptEditorSource(prepared, source);
   sources.set(key, source);
-  return {
+  if (actualEditor) c.attached = source;
+  if (preserve && pending?.current && prepared?.certificate && source.certificate === prepared.certificate) {
+    pending.source = source; pending.version = source.editVersion;
+    pending.body = { phase: "attached", certificate: source.certificate };
+    source.certificate.read = pending;
+  }
+  const attached = {
     changed() {
       if (sources.get(key) !== source || source.detached) return;
       const d = get(key);
       if (!d || d.sending || draftEditsHeld()) return;
+      invalidateCertificate(source.certificate);
       invalidateNoWriterRead(key);
       changeVersion++;
       source.editVersion++;
       const w = writer(key), proof = w.ackRead;
       if (proof?.phase === "forward" && proof.source === source && proof.current === d && !w.publishing) proof.version = source.editVersion;
       else if (proof) endDraftAckRead(proof);
-      // an unsaved revision is already pending for this body: the save will serialize the latest document, so only
-      // the debounce moves (no store update per keystroke: nothing re-renders while typing)
       if (source.dirty && d.localRev > d.savedRev) return schedule(key);
       source.dirty = true;
       const changed: LocalDraft = { ...d, localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty", updatedAt: now(), tooLong: false };
       publishWriter(w, d, changed, w.ackRead?.phase === "forward");
       schedule(key);
     },
-    // the editor reloaded what the draft has: nothing of its own to write
-    reset() {
+    reset(editor?: EditorBodyConstruction) {
       if (sources.get(key) !== source || source.detached) return;
+      invalidateCertificate(source.certificate);
       invalidateNoWriterRead(key);
       source.editVersion++;
       const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
       source.dirty = false;
+      const construction = editor as BodyConstruction | undefined;
+      if (construction?.prior === source && construction.owner === source.owner && construction.origin === "raw") {
+        construction.priorVersion = source.editVersion;
+        adoptEditorSource(construction, source);
+      }
     },
-    dispose(snapshot) {
+    dispose(snapshot?: { read: BodyReader; state: unknown; version: number; editor?: KeptEditorBody }) {
       if (sources.get(key) !== source || source.detached) return;
-      invalidateNoWriterRead(key);
-      const proof = writers.get(key)?.ackRead; if (proof) endDraftAckRead(proof);
+      const proof = currentAckRead(key), certificate = source.certificate;
+      const entry = snapshot?.editor as KeptBody | undefined;
+      const owned = !!certificate && validCertificate(certificate) && !!entry && keptBodies.get(key) === entry && entry.state === snapshot?.state && entry.version === snapshot?.version && entry.doc === certificate.doc;
+      const preserve = owned && proof?.body?.phase === "attached" && proof.body.certificate === certificate && readDraftAck(proof) !== undefined;
+      if (proof && !preserve) endDraftAckRead(proof);
       let unread = source.failed && source.dirty;
       if (!unread) { try { materialize(key); } catch { unread = true; } }
       if (unread) {
+        invalidateCertificate(source.certificate);
         if (snapshot) {
           source.read = snapshot.read;
           source.retained = { state: snapshot.state, version: snapshot.version };
@@ -346,9 +490,19 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
         source.detached = true;
         return;
       }
-      sources.delete(key);
+      const currentCertificate = source.certificate;
+      if (entry && snapshot && keptBodies.get(key) === entry && currentCertificate && validCertificate(currentCertificate) && entry.state === snapshot.state && entry.version === get(key)?.bodyVersion && entry.doc === currentCertificate.doc) {
+        currentCertificate.source = undefined; currentCertificate.state = entry.state; currentCertificate.entry = entry; entry.certificate = currentCertificate;
+        sources.delete(key);
+        if (preserve && proof?.current && currentCertificate === certificate) {
+          proof.source = undefined; proof.version = 0;
+          proof.body = { phase: "parked", certificate: currentCertificate, entry };
+        }
+      } else { invalidateCertificate(currentCertificate); sources.delete(key); }
     },
   };
+  if (actualEditor && c.modified) attached.changed();
+  return attached;
 }
 
 /** A failed editor disposal retains its exact state until that editor takes ownership again. */
@@ -366,7 +520,9 @@ export function materialize(key: string): LocalDraft | undefined {
   const materializingWriter = writers.get(key);
   const materializingOperation = materializingWriter?.operation;
   const materializingRead = materializingWriter?.ackRead;
+  const materializingCertificate = source.certificate;
   const fail = (error: unknown): never => {
+    invalidateCertificate(materializingCertificate);
     if (materializingRead) endDraftAckRead(materializingRead);
     if (sources.get(key) === source && source.editVersion === version && source.detached === detached && source.dirty && get(key)?.bodyVersion === d.bodyVersion) {
       source.failed = true; source.dirty = true;
@@ -382,10 +538,20 @@ export function materialize(key: string): LocalDraft | undefined {
   const { html, text } = body;
   const next = { ...d, bodyHtml: html, bodyText: text, canonical: source.canonical };
   const w = writers.get(key);
-  if (w) publishWriter(w, d, next, w.ackRead?.phase === "forward" && w.ackRead.source === source && w.ackRead.version === version); else put(next);
+  try {
+    if (w) publishWriter(w, d, next, w.ackRead?.phase === "forward" && w.ackRead.source === source && w.ackRead.version === version); else put(next);
+  } catch (error) {
+    invalidateCertificate(materializingCertificate);
+    if (materializingRead) endDraftAckRead(materializingRead);
+    throw error;
+  }
   if (sources.get(key) !== source || source.detached !== detached || source.editVersion !== version || get(key) !== next) return fail(new Error(t("compose.readChanged")));
   source.dirty = false;
   source.failed = false;
+  if (source.owner && body.editor) {
+    invalidateCertificate(source.certificate);
+    source.certificate = { origin: "materialized", authority: next, state: body.editor.state, doc: body.editor.doc, owner: source.owner, source, version, valid: true };
+  }
   return next;
 }
 
@@ -424,7 +590,7 @@ const writer = (key: string): Writer => {
 
 declare const ackReadBrand: unique symbol;
 export type DraftAckRead = { readonly [ackReadBrand]: true };
-type AckRead = DraftAckRead & { key: string; writer?: Writer; noWriter?: true; current?: LocalDraft; source?: BodySource; version: number; phase: "strict" | "forward"; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
+type AckRead = DraftAckRead & { key: string; writer?: Writer; noWriter?: true; current?: LocalDraft; source?: BodySource; version: number; phase: "strict" | "forward"; ui?: UiReceipt; body?: BodyRead; edge?: { before: LocalDraft; after: LocalDraft }; stop?: () => void };
 type AckAdmission = { kind: "proof"; proof: DraftAckRead } | { kind: "no-writer"; continuity: DraftAckRead } | { kind: "refused" };
 let noWriterRead: AckRead | undefined;
 function invalidateNoWriterRead(key: string): void { if (noWriterRead?.key === key) endDraftAckRead(noWriterRead); }
@@ -432,22 +598,49 @@ function invalidateNoWriterRead(key: string): void { if (noWriterRead?.key === k
 /** A conversion may observe only exact, writer-owned acknowledgement publications. */
 export function beginDraftAckRead(expected: LocalDraft): AckAdmission {
   const w = writers.get(expected.key), source = sources.get(expected.key);
-  if (draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached || w?.publishing || w?.stopping) return { kind: "refused" };
+  if (constructing(expected.key) || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached || w?.publishing || w?.stopping) return { kind: "refused" };
   const read = beginAckRead(expected, "strict", !w);
   if (!read) return { kind: "refused" };
   return w ? { kind: "proof", proof: read } : { kind: "no-writer", continuity: read };
 }
+/** Only a leased conversion can reserve a certified editor arrival/departure. */
+export function beginComposeBodyAckRead(expected: LocalDraft): AckAdmission {
+  const admission = beginDraftAckRead(expected);
+  if (admission.kind === "refused") return admission;
+  const read = (admission.kind === "proof" ? admission.proof : admission.continuity) as AckRead;
+  const source = sources.get(expected.key), certificate = bodyCertificate(expected.key);
+  if (certificate && validCertificate(certificate)) {
+    read.body = { phase: source ? "attached" : "parked", certificate, entry: certificate.entry };
+    certificate.read = read;
+  } else if (!source && !keptBodies.has(expected.key)) read.body = { phase: "raw", authority: expected };
+  return admission;
+}
+function validBodyRead(read: AckRead): boolean {
+  const body = read.body;
+  if (!body) return true;
+  if (body.phase === "raw") return body.authority === read.current && !sources.has(read.key) && !keptBodies.has(read.key);
+  return !!body.certificate && validCertificate(body.certificate) && body.certificate.read === read && (body.phase === "attached" ? body.certificate.source === read.source : body.entry === body.certificate.entry && !read.source);
+}
 function beginAckRead(expected: LocalDraft, phase: AckRead["phase"], allowNoWriter = false): DraftAckRead | undefined {
   const w = writers.get(expected.key), source = sources.get(expected.key);
   if ((!w && !allowNoWriter) || w?.publishing || w?.stopping || draftEditsHeld() || expected.sending || expected.recovery || get(expected.key) !== expected || source?.dirty || source?.failed || source?.detached) return;
+  const frontier = uiFrame?.frontier;
+  if (uiFrame && (!frontier || frontier.state !== useDrafts.getState() || frontier.target !== expected || frontier.stamp !== notificationStamp)) return;
   if (w?.ackRead) endDraftAckRead(w.ackRead);
   if (!w && noWriterRead) endDraftAckRead(noWriterRead);
   const read = { key: expected.key, writer: w, ...(!w ? { noWriter: true as const } : {}), current: expected, source, version: source?.editVersion ?? 0, phase } as AckRead;
   if (w) w.ackRead = read; else noWriterRead = read;
+  if (uiFrame && frontier) { read.ui = { cursor: uiFrame, close: uiFrame, frontier }; uiFrame.read = read; }
   read.stop = useDrafts.subscribe((state, previous) => {
     const current = read.current, edge = read.edge;
     if (state.held || previous.held || !current) { endDraftAckRead(read); return; }
     const next = state.drafts[read.key], before = previous.drafts[read.key];
+    if (read.ui) {
+      const { cursor, frontier } = read.ui;
+      if (!validUiReceipt(read) || !cursor || cursor.closed || cursor.stamp === undefined || state !== frontier.state || previous !== cursor.before) { endDraftAckRead(read); return; }
+      read.ui.cursor = cursor.parent;
+      return;
+    }
     if (next === current && before === current) return;
     if (!edge || next !== edge.after || before !== edge.before) endDraftAckRead(read);
   });
@@ -456,12 +649,12 @@ function beginAckRead(expected: LocalDraft, phase: AckRead["phase"], allowNoWrit
 }
 export function beginForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | undefined {
   const read = token as AckRead, current = readDraftAck(read);
-  if (!current || read.phase !== "strict" || current.attachments?.length || current.attachmentOwner) return;
+  if (!current || read.ui || constructing(read.key) || read.phase !== "strict" || current.attachments?.length || current.attachmentOwner) return;
   return beginAckRead(current, "forward");
 }
 export function readDraftAck(token: DraftAckRead): LocalDraft | undefined {
   const read = token as AckRead, w = read.writer, source = sources.get(read.key);
-  if ((!w && (!read.noWriter || noWriterRead !== read)) || (w && w.ackRead !== read) || writers.get(read.key) !== w || !read.current || get(read.key) !== read.current || source !== read.source || (source && (source.editVersion !== read.version || source.dirty || source.failed || source.detached)) || w?.stopping || draftEditsHeld() || read.current.sending || read.current.recovery) { endDraftAckRead(read); return; }
+  if (!validUiReceipt(read) || !validBodyRead(read) || (!w && (!read.noWriter || noWriterRead !== read)) || (w && w.ackRead !== read) || writers.get(read.key) !== w || !read.current || get(read.key) !== read.current || source !== read.source || (source && (source.editVersion !== read.version || source.dirty || source.failed || source.detached)) || w?.stopping || draftEditsHeld() || read.current.sending || read.current.recovery) { endDraftAckRead(read); return; }
   return read.current;
 }
 export function endDraftAckRead(token: DraftAckRead): void {
@@ -469,14 +662,27 @@ export function endDraftAckRead(token: DraftAckRead): void {
   read.stop?.(); read.stop = undefined;
   if (w?.ackRead === read) w.ackRead = undefined;
   if (noWriterRead === read) noWriterRead = undefined;
+  if (read.body?.certificate?.read === read) read.body.certificate.read = undefined;
+  read.body = undefined;
+  if (read.ui?.close.read === read) read.ui.close.read = undefined;
+  read.ui = undefined;
   read.writer = undefined; read.current = undefined; read.source = undefined; read.edge = undefined;
 }
 
-function publishWriter(w: Writer, before: LocalDraft, after: LocalDraft, admitted: boolean): void {
+function validUiReceipt(read: AckRead): boolean {
+  const ui = read.ui;
+  return !ui || (!ui.close.closed && ui.frontier.stamp === notificationStamp && ui.frontier.state === useDrafts.getState() && ui.frontier.target === read.current);
+}
+
+function publishWriter(w: Writer, before: LocalDraft, after: LocalDraft, admitted: boolean, identity = false): void {
+  advanceBodyAuthority(before, after, identity);
   const read = w.ackRead;
   if (read && (!admitted || w.publishing || read.current !== before || get(before.key) !== before)) endDraftAckRead(read);
   const allowed = w.ackRead;
-  if (allowed) { allowed.edge = { before, after }; allowed.current = after; }
+  if (allowed) {
+    if (allowed.body?.phase === "raw" && allowed.body.authority === before) allowed.body.authority = after;
+    allowed.edge = { before, after }; allowed.current = after;
+  }
   w.publishing = (w.publishing ?? 0) + 1;
   try { put(after); }
   finally {
@@ -569,8 +775,26 @@ export function setDraftUi(key: string, uiState: LocalDraft["uiState"]): void {
   changeVersion++;
   const next = { ...d, uiState, ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" as const : "dirty" as const } : {}) };
   if (d.id !== null) writer(key);
-  put(next);
-  if (d.id !== null) schedule(key);
+  advanceBodyAuthority(d, next);
+  const before = useDrafts.getState(), after = { ...before, drafts: { ...before.drafts, [key]: next } };
+  const frame: UiFrame = { parent: uiFrame, before, after, target: next };
+  uiFrame = frame;
+  let complete = false;
+  try {
+    useDrafts.setState(after, true);
+    if (d.id !== null) schedule(key);
+    complete = true;
+  } finally {
+    const read = frame.read;
+    if (read?.ui?.close === frame) {
+      if (!complete || !validUiReceipt(read) || read.ui.cursor === frame) endDraftAckRead(read);
+      else if (frame.parent) { read.ui.close = frame.parent; frame.parent.read = read; }
+      else read.ui = undefined;
+    }
+    if (complete && frame.parent && frame.frontier?.state === useDrafts.getState() && frame.frontier.stamp === notificationStamp && !draftEditsHeld()) frame.parent.frontier = frame.frontier;
+    frame.closed = true; frame.read = undefined; frame.frontier = undefined;
+    uiFrame = frame.parent;
+  }
 }
 
 function schedule(key: string): void {
@@ -602,7 +826,7 @@ function save(key: string, copy = false): Promise<void> {
       w.timer = null;
     }
     const failed = get(key);
-    if (failed) put({ ...failed, status: "error" });
+    if (failed) { invalidateCertificate(bodyCertificate(key)); put({ ...failed, status: "error" }); }
     return Promise.resolve();
   }
   if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
@@ -650,7 +874,7 @@ function save(key: string, copy = false): Promise<void> {
       if (!cur) return;
       const saved = res as Draft | null;
       if (!saved) {
-        if (copy) put({ ...materializeOrCurrent(key)!, status: "error", recovery: { state: "unknown" } });
+        if (copy) { invalidateCertificate(bodyCertificate(key)); put({ ...materializeOrCurrent(key)!, status: "error", recovery: { state: "unknown" } }); }
         else markDraftMissing(key);
         return;
       }
@@ -673,7 +897,7 @@ function save(key: string, copy = false): Promise<void> {
         typeof placement === "number" && draftPresentationThread(d) === placement && saved.presentationThreadId === placement &&
         (d.sourceContextThreadId === undefined || d.sourceContextThreadId === placement) && (cur.sourceContextThreadId === undefined || cur.sourceContextThreadId === placement);
       const source = saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement) || canonicalNull);
-      publishWriter(w, cur, acknowledged, !copy && sameContext && currentMount && identity && source);
+      publishWriter(w, cur, acknowledged, !copy && sameContext && currentMount && identity && source, !copy && sameContext && currentMount && identity && source);
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
         if (!copy) return next;
@@ -689,16 +913,19 @@ function save(key: string, copy = false): Promise<void> {
         const refused = e?.code === "BAD_REQUEST" || e?.code === "NOT_FOUND" || e?.code === "STALE" || e?.code === "FORBIDDEN";
         const reason = Array.isArray(e?.details) && e.details.some((issue: { code?: string }) => issue?.code === "too_big") ? "size" : e?.details?.reason;
         const known = reason === "assets" || reason === "account" || reason === "context" || reason === "size" ? reason : "invalid";
+        invalidateCertificate(bodyCertificate(key));
         put({ ...cur, ...(refused && !uncertain && !cur.attachments?.length ? { attachmentOwner: false } : {}), status: "error", tooLong: false, recovery: refused && !uncertain ? { state: "refused", reason: known } : { state: "unknown", ...(refused ? { reason: known } : {}) } });
         return;
       }
       // refused as invalid (past the size limits): trying again won't help until it changes; Retry stays
       if ((error as { code?: string } | null)?.code === "BAD_REQUEST") {
+        invalidateCertificate(bodyCertificate(key));
         put({ ...cur, status: "error", tooLong: true });
         return;
       }
       const rejectedSource = sources.get(key), rejectedTimer = w.timer;
       const failed: LocalDraft = { ...cur, status: "error" };
+      invalidateCertificate(bodyCertificate(key));
       put(failed);
       if (writers.get(key) !== w || w.operation !== operation || get(key) !== failed || sources.get(key) !== rejectedSource || rejectedSource?.failed || w.stopping || w.timer !== rejectedTimer) return;
       const delay = RETRY_MS[Math.min(w.attempts, RETRY_MS.length - 1)]!;
@@ -724,6 +951,7 @@ export function markDraftMissing(key: string): void {
   const w = writers.get(key);
   if (w?.timer) clearTimeout(w.timer);
   if (w) { w.timer = null; w.dirtySince = null; }
+  invalidateCertificate(bodyCertificate(key));
   put({ ...d, status: "error", tooLong: false, recovery: { state: "missing" }, attachmentOwner: Boolean(d.attachments?.length) });
 }
 
@@ -801,7 +1029,7 @@ export async function draftForSend(key: string): Promise<LocalDraft | undefined>
 /** A send started or settled: while it runs the draft can't be edited or discarded. */
 export function markSending(key: string, sending: boolean): void {
   const d = get(key);
-  if (d && d.sending !== sending) { changeVersion++; put({ ...d, sending }); }
+  if (d && d.sending !== sending) { changeVersion++; invalidateCertificate(bodyCertificate(key)); put({ ...d, sending }); }
 }
 
 /** A send didn't happen (refused or failed): the autosave it paused picks up whatever isn't saved yet. */
@@ -818,6 +1046,7 @@ export function forgetDraft(key: string): void {
   if (current) retireHydrationIdentity(current);
   changeVersion++;
   invalidateNoWriterRead(key);
+  invalidateCertificate(bodyCertificate(key)); forgetEditorBody(key);
   sources.delete(key);
   const w = writers.get(key);
   if (w?.ackRead) endDraftAckRead(w.ackRead);
@@ -893,6 +1122,7 @@ export function expireDraftPresentation(threadId: number): void {
     for (const d of Object.values(s.drafts)) {
       if (draftPresentationThread(d) !== threadId || (!d.showSourceContext && d.presentationThreadId === undefined)) continue;
       if (drafts === s.drafts) drafts = { ...drafts };
+      invalidateCertificate(bodyCertificate(d.key));
       drafts[d.key] = { ...d, departedThreadId: threadId, presentationThreadId: undefined, sourceContextThreadId: d.sourceContextThreadId ?? threadId, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 };
     }
     return drafts === s.drafts ? s : { drafts };
@@ -902,13 +1132,13 @@ export function expireDraftPresentation(threadId: number): void {
 /** Retire one display association without changing its durable fields or editor revision. */
 export function invalidateDraftPresentation(key: string): void {
   const d = get(key);
-  if (d) put({ ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
+  if (d) { const next = { ...d, departedThreadId: d.departedThreadId ?? draftPresentationThread(d) ?? undefined, presentationThreadId: undefined, presentationExpired: true, presentationEpoch: (d.presentationEpoch ?? 0) + 1 }; advanceBodyAuthority(d, next); put(next); }
 }
 
 /** Explicit strip open has just validated this source; no authored edit or save is needed. */
 export function validateDraftPresentation(key: string, threadId: number): void {
   const d = get(key);
-  if (d) put({ ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 });
+  if (d) { const next = { ...d, presentationThreadId: undefined, sourceContextThreadId: threadId, presentationExpired: false, presentationEpoch: (d.presentationEpoch ?? 0) + 1 }; advanceBodyAuthority(d, next); put(next); }
 }
 
 /** One pass per drafts update (the map is replaced on every change), shared by every row, the reader and the strip. */

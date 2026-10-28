@@ -13,7 +13,7 @@ import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
 import { prepareInlineFocusMove } from "./compose-focus-move";
 
 /**
@@ -518,10 +518,12 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   let proof: DraftAckRead | undefined, noWriter = false;
   const sameModeSource = Boolean(existing && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
   if (existing && (existing.mode !== mode || sameModeSource) && !existing.presentationExpired && lease) {
-    const admission = beginDraftAckRead(existing);
+    if (mine !== intent || !focusAllowed()) return;
+    const admission = existing.mode !== mode ? beginComposeBodyAckRead(existing) : beginDraftAckRead(existing);
     if (admission.kind === "refused") return;
     noWriter = admission.kind === "no-writer";
     proof = admission.kind === "proof" ? admission.proof : admission.continuity;
+    if (mine !== intent || !focusAllowed() || readDraftAck(proof) !== existing) { endDraftAckRead(proof); return; }
   }
   const originalSourceId = existing ? activeSourceId(existing) : null;
   const canonicalNullSource = Boolean(proof && existing && existing.threadId === null && existing.showSourceContext === true && !existing.presentationExpired && originalSourceId !== null && draftPresentationThread(existing) === threadId);

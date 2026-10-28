@@ -37,7 +37,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { attachBody, bodyCheckpoint, draftEditsHeld, retainedBodyState, useDrafts, validBodyCheckpoint, type BodyCheckpoint } from "~/lib/drafts";
+import { attachBody, bodyCheckpoint, draftEditsHeld, enterEditorBodyConstruction, keptEditorBody, retainedBodyState, useDrafts, validBodyCheckpoint, type BodyCheckpoint } from "~/lib/drafts";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
@@ -47,7 +47,7 @@ import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { takeEarly, takeStandInFocus } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
-import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, keptState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
+import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
  * The rich composer (plan 16), lazy: the editable body of a draft, its format
@@ -140,6 +140,7 @@ interface LinkDraft {
 }
 
 export function RichBody({ draftKey, placeholder, className, checkpoint, focusOwner }: { draftKey: string; placeholder: string; className?: string; checkpoint?: BodyCheckpoint; focusOwner?: object }) {
+  const constructionOwner = useRef({}).current;
   const mountRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -165,150 +166,160 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     const mount = mountRef.current!;
     const d = useDrafts.getState().drafts[draftKey];
     if (!d) return;
-    versionRef.current = d.bodyVersion;
-    // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
-    const replay = checkpoint && adoptedRef.current?.original === checkpoint ? adoptedRef.current.replay : undefined;
-    const lease = replay ?? checkpoint;
-    if (checkpoint && (!lease || lease.key !== draftKey || !validBodyCheckpoint(lease) || (useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
-    const early = checkpoint ? null : takeEarly(draftKey, focusOwner);
-    const state = lease ? lease.retained.state as EditorState : early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retainedBodyState<EditorState>(draftKey, d.bodyVersion) ?? keptState(draftKey, d.bodyVersion) ?? newState(docOf(d.bodyHtml, d.bodyText)));
-    let format: FormatState = EMPTY_FORMAT;
-    const listeners = new Set<() => void>();
-    let frame = 0;
-    let focusedOnce = false;
-    // the toolbar's state, once per frame at most (a long selection is walked once, not per transaction)
-    const publish = () => {
-      frame = 0;
-      const view = viewRef.current;
-      if (!view) return;
-      const t0 = performance.now();
-      const next = formatState(view.state, !sendingRef.current && !draftEditsHeld());
-      if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
-      if (!sameFormat(next, format)) {
-        format = next;
-        for (const l of listeners) l();
-      }
-      updateBubble(view);
-    };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(publish);
-    };
-    // the placeholder, and (thousands of lines) skipping layout for lines off screen
-    const emptyClass = (view: EditorView) => {
-      view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
-      view.dom.classList.toggle("rt-huge", view.state.doc.childCount > HUGE_BLOCKS);
-    };
-    const editor = createEditor(mount, {
-      state,
-      editable: canMutate,
-      attributes: {
-        role: "textbox",
-        "aria-multiline": "true",
-        "aria-label": t("compose.body"),
-        "aria-placeholder": placeholder,
-        "data-placeholder": placeholder,
-        "data-testid": "compose-body",
-        spellcheck: "true",
-        // a huge draft skips its lines off screen from the first style pass on: anything that reads style or layout
-        // before emptyClass() runs would otherwise style every line (typing then cost twice as much, plan 16)
-        class: cn("rt-body type-body", className, state.doc.childCount > HUGE_BLOCKS && "rt-huge"),
-      },
-      hooks: {
-        onChange: () => {
-          if (import.meta.env.VITE_RENDER_PROBE) probe("tx", performance.now());
-          bodyRef.current?.changed();
-          if (viewRef.current) emptyClass(viewRef.current);
-        },
-        onUpdate: schedule,
-        onLink: () => openLinkRef.current(),
-        openLink,
-        ghost: ghostHooks(draftKey, canMutate, (text) => {
-          const el = announceRef.current;
-          if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
-        }),
-      },
-    });
-    const view = editor.view;
-    let unregister: (() => void) | undefined;
+    const construction = enterEditorBodyConstruction(draftKey, constructionOwner);
+    let constructed = false;
     try {
-      viewRef.current = view;
-      views.add(view);
-      emptyClass(view);
-      const focus = (where: "end" | "keep" = "keep") => {
-        if (!canMutate()) return;
-        if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-        focusedOnce = true;
-        view.focus();
-      };
-      const controller: ComposerController = {
-        run: (command: FormatCommand) => {
-          // nothing changes under a send in flight (the draft is sending what is there now)
-          if (!canMutate()) return;
-          COMMANDS[command](view.state, view.dispatch, view);
-          view.focus();
-        },
-        setFont: (v) => run(setMark(schema.marks.font, v)),
-        setSize: (v) => run(setMark(schema.marks.size, v)),
-        setColor: (v, f) => run(setMark(schema.marks.color, v), f),
-        setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
-        setAlign: (v: Align) => run(setAlign(v)),
-        openLink: () => openLinkRef.current(),
-        focus,
-        dom: view.dom as HTMLElement,
-        getState: () => format,
-        subscribe: (l) => {
-          listeners.add(l);
-          return () => listeners.delete(l);
-        },
-      };
-      function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
-        if (!canMutate()) return;
-        cmd(view.state, view.dispatch);
-        if (focusAfter) view.focus();
-      }
-      format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
-      refreshRef.current = schedule;
-      // the stand-in had focus (typed into or not): the editor that replaces it takes it
-      const standInFocused = takeStandInFocus(draftKey, focusOwner);
-      const replayFocus = replayFocusRef.current === draftKey && document.activeElement === document.body;
-      replayFocusRef.current = null;
-      if (replayFocus) focus("keep");
-      else if (!checkpoint && (early?.focused || standInFocused) && (document.activeElement === document.body || mount.contains(document.activeElement))) focus("end");
-      unregister = registerController(draftKey, controller);
-      if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
-      bodyRef.current = attachBody(draftKey, () => {
+      versionRef.current = d.bodyVersion;
+      // keys typed into the stand-in while this chunk loaded: the document is what the draft had then, plus them
+      const replay = checkpoint && adoptedRef.current?.original === checkpoint ? adoptedRef.current.replay : undefined;
+      const lease = replay ?? checkpoint;
+      if (checkpoint && (!lease || lease.key !== draftKey || !validBodyCheckpoint(lease) || (useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
+      const early = checkpoint ? null : takeEarly(draftKey, focusOwner);
+      const retained = lease || early ? undefined : retainedBodyState<EditorState>(draftKey, d.bodyVersion);
+      const kept = lease || early || retained ? undefined : keptEditorBody(draftKey, d.bodyVersion);
+      const state = lease ? lease.retained.state as EditorState : early ? newState(appendTyped(docOf(early.base.html, early.base.text), early.text)) : (retained ?? kept?.state as EditorState | undefined) ?? newState(docOf(d.bodyHtml, d.bodyText));
+      construction.supplyState(lease || early || retained ? "other" : kept ? "kept" : "raw", state, state.doc, kept);
+      let format: FormatState = EMPTY_FORMAT;
+      const listeners = new Set<() => void>();
+      let frame = 0;
+      let focusedOnce = false;
+      // the toolbar's state, once per frame at most (a long selection is walked once, not per transaction)
+      const publish = () => {
+        frame = 0;
+        const view = viewRef.current;
+        if (!view) return;
         const t0 = performance.now();
-        const out = readBody(view.state.doc);
-        if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
-        return out;
-      }, { checkpoint: lease });
-      if (early?.text) bodyRef.current.changed();
-      if (checkpoint) useDraftRecovery.setState({ checkpoint: undefined });
-      return () => {
-        if (frame) cancelAnimationFrame(frame);
-        replayFocusRef.current = view.dom.contains(document.activeElement) ? draftKey : null;
-        // a suggestion is never brought back by a remount
-        const state = withoutGhost(view.state);
-        keepState(draftKey, state, versionRef.current);
-        bodyRef.current?.dispose({ state, version: versionRef.current, read: () => readBody(state.doc) });
-        if (checkpoint) {
-          const next = bodyCheckpoint(draftKey);
-          adoptedRef.current = { original: checkpoint, replay: next?.retained.state === state ? next : undefined };
+        const next = formatState(view.state, !sendingRef.current && !draftEditsHeld());
+        if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
+        if (!sameFormat(next, format)) {
+          format = next;
+          for (const l of listeners) l();
         }
-        bodyRef.current = null;
+        updateBubble(view);
+      };
+      const schedule = () => {
+        if (!frame) frame = requestAnimationFrame(publish);
+      };
+      // the placeholder, and (thousands of lines) skipping layout for lines off screen
+      const emptyClass = (view: EditorView) => {
+        view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
+        view.dom.classList.toggle("rt-huge", view.state.doc.childCount > HUGE_BLOCKS);
+      };
+      const editor = createEditor(mount, {
+        state,
+        editable: canMutate,
+        attributes: {
+          role: "textbox",
+          "aria-multiline": "true",
+          "aria-label": t("compose.body"),
+          "aria-placeholder": placeholder,
+          "data-placeholder": placeholder,
+          "data-testid": "compose-body",
+          spellcheck: "true",
+          // a huge draft skips its lines off screen from the first style pass on: anything that reads style or layout
+          // before emptyClass() runs would otherwise style every line (typing then cost twice as much, plan 16)
+          class: cn("rt-body type-body", className, state.doc.childCount > HUGE_BLOCKS && "rt-huge"),
+        },
+        hooks: {
+          onChange: () => {
+            if (import.meta.env.VITE_RENDER_PROBE) probe("tx", performance.now());
+            construction.changed();
+            bodyRef.current?.changed();
+            if (viewRef.current) emptyClass(viewRef.current);
+          },
+          onUpdate: schedule,
+          onLink: () => openLinkRef.current(),
+          openLink,
+          ghost: ghostHooks(draftKey, canMutate, (text) => {
+            const el = announceRef.current;
+            if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
+          }),
+        },
+      });
+      const view = editor.view;
+      let unregister: (() => void) | undefined;
+      try {
+        viewRef.current = view;
+        views.add(view);
+        emptyClass(view);
+        const focus = (where: "end" | "keep" = "keep") => {
+          if (!canMutate()) return;
+          if (where === "end" && !focusedOnce) view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+          focusedOnce = true;
+          view.focus();
+        };
+        const controller: ComposerController = {
+          run: (command: FormatCommand) => {
+            // nothing changes under a send in flight (the draft is sending what is there now)
+            if (!canMutate()) return;
+            COMMANDS[command](view.state, view.dispatch, view);
+            view.focus();
+          },
+          setFont: (v) => run(setMark(schema.marks.font, v)),
+          setSize: (v) => run(setMark(schema.marks.size, v)),
+          setColor: (v, f) => run(setMark(schema.marks.color, v), f),
+          setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
+          setAlign: (v: Align) => run(setAlign(v)),
+          openLink: () => openLinkRef.current(),
+          focus,
+          dom: view.dom as HTMLElement,
+          getState: () => format,
+          subscribe: (l) => {
+            listeners.add(l);
+            return () => listeners.delete(l);
+          },
+        };
+        function run(cmd: (s: EditorState, d?: EditorView["dispatch"]) => boolean, focusAfter = true) {
+          if (!canMutate()) return;
+          cmd(view.state, view.dispatch);
+          if (focusAfter) view.focus();
+        }
+        format = formatState(view.state, !sendingRef.current && !draftEditsHeld());
+        refreshRef.current = schedule;
+        // the stand-in had focus (typed into or not): the editor that replaces it takes it
+        const standInFocused = takeStandInFocus(draftKey, focusOwner);
+        const replayFocus = replayFocusRef.current === draftKey && document.activeElement === document.body;
+        replayFocusRef.current = null;
+        if (replayFocus) focus("keep");
+        else if (!checkpoint && (early?.focused || standInFocused) && (document.activeElement === document.body || mount.contains(document.activeElement))) focus("end");
+        unregister = registerController(draftKey, controller);
+        if (checkpoint && ((useDraftRecovery.getState().checkpoint !== checkpoint && (!replay || useDraftRecovery.getState().checkpoint !== undefined)) || !useDraftRecovery.getState().open)) throw new Error("Draft checkpoint is no longer available");
+        bodyRef.current = attachBody(draftKey, () => {
+          const t0 = performance.now();
+          const state = view.state;
+          const out = readBody(state.doc);
+          if (import.meta.env.VITE_RENDER_PROBE) probe("serialize", performance.now() - t0);
+          return { ...out, editor: { state, doc: state.doc } };
+        }, { checkpoint: lease, editor: construction });
+        if (early?.text) bodyRef.current.changed();
+        if (checkpoint) useDraftRecovery.setState({ checkpoint: undefined });
+        constructed = true;
+        return () => {
+          if (frame) cancelAnimationFrame(frame);
+          replayFocusRef.current = view.dom.contains(document.activeElement) ? draftKey : null;
+          // a suggestion is never brought back by a remount
+          const state = withoutGhost(view.state);
+          const entry = keepState(draftKey, state, versionRef.current);
+          bodyRef.current?.dispose({ state, version: versionRef.current, editor: entry, read: () => ({ ...readBody(state.doc), editor: { state, doc: state.doc } }) });
+          if (checkpoint) {
+            const next = bodyCheckpoint(draftKey);
+            adoptedRef.current = { original: checkpoint, replay: next?.retained.state === state ? next : undefined };
+          }
+          bodyRef.current = null;
+          unregister?.();
+          viewRef.current = null;
+          views.delete(view);
+          editor.destroy();
+        };
+      } catch (error) {
+        if (frame) cancelAnimationFrame(frame);
         unregister?.();
         viewRef.current = null;
         views.delete(view);
         editor.destroy();
-      };
-    } catch (error) {
-      if (frame) cancelAnimationFrame(frame);
-      unregister?.();
-      viewRef.current = null;
-      views.delete(view);
-      editor.destroy();
-      throw error;
-    }
+        throw error;
+      }
+    } finally { construction.close(constructed); }
   }, [draftKey]);
 
   // a body set from elsewhere (a conversion's undo, an import): the editor shows it
@@ -318,9 +329,16 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
     versionRef.current = version;
     const d = useDrafts.getState().drafts[draftKey];
     if (!d) return;
-    view.updateState(newState(docOf(d.bodyHtml, d.bodyText)));
-    view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
-    bodyRef.current?.reset();
+    const construction = enterEditorBodyConstruction(draftKey, constructionOwner);
+    let complete = false;
+    try {
+      const state = newState(docOf(d.bodyHtml, d.bodyText));
+      construction.supplyState("raw", state, state.doc);
+      view.updateState(state);
+      view.dom.classList.toggle("is-empty", serializeEmpty(view.state));
+      bodyRef.current?.reset(construction);
+      complete = true;
+    } finally { construction.close(complete); }
   }, [version, draftKey]);
 
   // read-only while its send is in flight (edits would be dropped)
