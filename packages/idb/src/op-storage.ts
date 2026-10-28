@@ -181,15 +181,90 @@ export function readOpCopyBatch(db: IDBDatabase, name: OpPhysicalStore, after: I
   });
 }
 
+function readCompleteOpStep(db: IDBDatabase, name: OpPhysicalStore, after: IDBValidKey | undefined): Promise<IDBValidKey | undefined> {
+  const layout = db.version >= OP_STORAGE_VERSION ? "parts" : "legacy";
+  const names = layout === "parts" ? ["ops", ...OP_PART_STORES, "meta"] : ["ops", "meta"];
+  return new Promise((resolve, reject) => {
+    let tx: IDBTransaction;
+    try { tx = db.transaction(names, "readonly"); } catch { reject(unreadable()); return; }
+    let failure: unknown, failed = false, ready = false, pending = 0;
+    let next: IDBValidKey | undefined, base: unknown, cells: PartCell[] = [];
+    const listeners: (() => void)[] = [];
+    const release = () => {
+      // Drop app-owned values and request closures before returning a key to the yielding loop.
+      base = undefined;
+      cells = [];
+      for (const remove of listeners) remove();
+      listeners.length = 0;
+    };
+    const abort = (error: unknown) => {
+      if (!failed) { failed = true; failure = error; }
+      try { tx.abort(); } catch { /* Reconcile only at the actual terminal. */ }
+    };
+    const watch = <T>(request: IDBRequest<T>, success: (value: T) => void) => {
+      pending++;
+      const onError = () => abort(unreadable());
+      const onSuccess = () => {
+        try { success(request.result); pending--; } catch (error) { abort(error); }
+      };
+      request.addEventListener("error", onError);
+      request.addEventListener("success", onSuccess);
+      listeners.push(() => {
+        request.removeEventListener("error", onError);
+        request.removeEventListener("success", onSuccess);
+      });
+    };
+    tx.addEventListener("error", () => { if (!failed) { failed = true; failure = unreadable(); } }, true);
+    tx.addEventListener("abort", () => { release(); reject(failure ?? unreadable()); });
+    tx.addEventListener("complete", () => {
+      release();
+      if (failed || !ready || pending) reject(failure ?? unreadable());
+      else resolve(next);
+    });
+    try {
+      inspectOpLayout(db, tx);
+      watch(tx.objectStore("meta").getKey(UNCERTAINTY_KEY), (marker) => {
+        if (marker !== undefined) throw new UncertainWriteError();
+        const range = after === undefined ? undefined : IDBKeyRange.lowerBound(after, true);
+        if (name === "ops") {
+          watch(tx.objectStore(name).openCursor(range), (cursor) => {
+            if (!cursor) { ready = true; return; }
+            next = cursor.primaryKey;
+            if (layout === "legacy") { ready = true; return; }
+            base = cursor.value;
+            let remaining = OP_PART_STORES.length;
+            OP_PART_STORES.forEach((storeName, at) => {
+              watch(tx.objectStore(storeName).openCursor(IDBKeyRange.only(next!)), (partCursor) => {
+                cells[at] = { present: partCursor !== null, value: partCursor?.value };
+                if (--remaining === 0) { checkParts(next!, base, cells); ready = true; }
+              });
+            });
+          });
+        } else {
+          watch(tx.objectStore(name).openKeyCursor(range), (cursor) => {
+            if (!cursor) { ready = true; return; }
+            next = cursor.primaryKey;
+            if (typeof next !== "string") throw unreadable();
+            watch(tx.objectStore("ops").getKey(next), (present) => {
+              if (present === undefined) throw unreadable();
+              ready = true;
+            });
+          });
+        }
+      });
+    } catch (error) { abort(error); }
+  });
+}
+
 export async function validateCompleteOpStorage(db: IDBDatabase): Promise<void> {
   const layout = db.version >= OP_STORAGE_VERSION ? "parts" : "legacy";
   let started = performance.now();
   for (const name of ["ops", ...(layout === "parts" ? OP_PART_STORES : [])] as OpPhysicalStore[]) {
     let after: IDBValidKey | undefined;
     for (;;) {
-      const batch = await readOpCopyBatch(db, name, after, 1);
-      if (!batch.keys.length) break;
-      after = batch.keys[0];
+      const key = await readCompleteOpStep(db, name, after);
+      if (key === undefined) break;
+      after = key;
       started = await slice(started);
     }
   }

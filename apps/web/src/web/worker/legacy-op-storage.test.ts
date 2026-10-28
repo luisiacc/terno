@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it, vi } from "vitest";
 import { IdbMailStore } from "@terno/idb";
+import { ingest, msg, threadOf } from "@terno/store/conformance";
 import { UncertainWriteError, UNCERTAINTY_KEY } from "@terno/idb/uncertainty";
 import { validateCompleteOpStorage } from "@terno/idb/op-storage";
 import { MIGRATION_JOURNAL, migrateLegacyIdb } from "./legacy-storage";
@@ -216,5 +217,118 @@ it("source-absent COPYING remains kept/reported with its prefix and journal", as
     await migrateLegacyIdb(f.factory, "case", (message) => reports.push(message));
     expect(reports).toHaveLength(1);
     expect(await snapshot(f.factory)).toEqual(before);
+  } finally { await dispose(f.factory); }
+});
+
+async function streamingFixture() {
+  const factory = new IDBFactory();
+  const store = await IdbMailStore.open({ factory, name: "seed", instantSearch: false, platform });
+  const expected = new Map<string, NonNullable<Awaited<ReturnType<typeof store.ops.get>>>>();
+  try {
+    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: 1 });
+    const send = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "streaming", bodyText: "~".repeat(32 * 1024), recordReply: false, now: 1 });
+    await store.ops.claimReady(2, 1);
+    await store.ops.awaitAuth(send.opId, "synthetic-error-".repeat(1024), 3);
+    await ingest(store, Array.from({ length: 129 }, (_, i) => msg({ accountId: account.id, providerMsgId: `stream-${i}`, providerThreadId: `stream-thread-${i}` })));
+    const threads = await Promise.all(Array.from({ length: 129 }, (_, i) => threadOf(store, `stream-${i}`)));
+    const flags = await store.threads.act({ threadIds: threads, action: "markRead", signal: null, now: 4 });
+    expect(flags.opIds).toHaveLength(1);
+    const flagId = flags.opIds[0]!;
+    expect((await store.ops.claimReady(5, 10)).some((op) => op.id === flagId)).toBe(true);
+    await store.ops.awaitAuth(flagId, "synthetic-target-error-".repeat(1024), 6);
+    const superseding = await store.threads.act({ threadIds: [threads[0]!], action: "markUnread", signal: null, now: 7 });
+    for (const id of [send.opId, flagId, ...superseding.opIds]) {
+      const op = await store.ops.get(id);
+      expect(op).not.toBeNull();
+      expected.set(id, op!);
+    }
+    expect(expected.get(flagId)!.target_json.length).toBeGreaterThan(400);
+    expect(expected.get(flagId)!.last_error!.length).toBeGreaterThan(16 * 1024);
+    await store.debug.verify();
+  } finally { await store.close(); }
+  const saved = await image(factory, "terno-seed");
+  for (const name of ["op_control", "op_target", "op_error"]) expect(saved.stores.find((s) => s.name === name)!.keys.length).toBeGreaterThan(0);
+  await request(factory.deleteDatabase("terno-seed"));
+  await create(factory, "unica-case", saved);
+  return { factory, saved, expected };
+}
+
+function migrationRequests() {
+  const names = ["ops", "op_control", "op_target", "op_error"];
+  const calls: { method: string; store: string; db: string; selector: unknown; point: boolean; succeeded: boolean }[] = [];
+  const transactions: { mode: IDBTransactionMode; terminal: string | null }[] = [];
+  const spies: { mockRestore(): void }[] = [];
+  let drops = 0;
+  const transaction = IDBDatabase.prototype.transaction;
+  spies.push(vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+    const tx = Reflect.apply(transaction, this, args) as IDBTransaction;
+    if (["unica-case", "terno-case"].includes(this.name) && names.some((name) => tx.objectStoreNames.contains(name))) {
+      const entry = { mode: tx.mode, terminal: null as string | null };
+      transactions.push(entry);
+      tx.addEventListener("complete", () => { entry.terminal = "complete"; });
+      tx.addEventListener("abort", () => { entry.terminal = "abort"; });
+    }
+    return tx;
+  }));
+  for (const method of ["getAll", "openCursor", "openKeyCursor", "getKey", "put"] as const) {
+    const delegate = IDBObjectStore.prototype[method];
+    spies.push(vi.spyOn(IDBObjectStore.prototype, method).mockImplementation(function (this: IDBObjectStore, ...args: unknown[]) {
+      const result = Reflect.apply(delegate, this, args) as IDBRequest;
+      if (names.includes(this.name) && ["unica-case", "terno-case"].includes(this.transaction.db.name)) {
+        if (calls.length === 2048) drops++;
+        else {
+          const query = method === "put" ? args[1] : args[0];
+          const selector = query instanceof IDBKeyRange ? { lower: query.lower, upper: query.upper, lowerOpen: query.lowerOpen, upperOpen: query.upperOpen } : query;
+          const point = query instanceof IDBKeyRange && typeof query.lower === "string" && query.lower === query.upper && !query.lowerOpen && !query.upperOpen;
+          const entry = { method, store: this.name, db: this.transaction.db.name, selector, point, succeeded: false };
+          calls.push(entry);
+          result.addEventListener("success", () => { entry.succeeded = true; });
+        }
+      }
+      return result;
+    }));
+  }
+  return { calls, transactions, get drops() { return drops; }, restore: () => { for (const spy of spies) spy.mockRestore(); } };
+}
+
+for (const copied of [true, false]) it(`public streaming admission ${copied ? "COPIED uses cursor and key-only validation" : "fresh copy retains batched values"}`, async () => {
+  const f = await streamingFixture();
+  try {
+    if (copied) { await create(f.factory, "terno-case", f.saved); await journal(f.factory, "copied"); }
+    const observed = migrationRequests();
+    try { await migrateLegacyIdb(f.factory, "case"); }
+    finally { observed.restore(); }
+    expect((await f.factory.databases()).map((d) => d.name)).toEqual(["terno-case"]);
+    // These full public reads deliberately happen after instrumentation ends.
+    for (const [id, op] of f.expected) await assertPublic(f.factory, id, op);
+    expect(observed.drops).toBe(0);
+    expect(observed.calls.length).toBeGreaterThan(0);
+    expect(observed.calls.every((call) => call.succeeded)).toBe(true);
+    expect(observed.transactions.filter((tx) => tx.mode === "readonly").length).toBeGreaterThan(0);
+    expect(observed.transactions.every((tx) => tx.terminal === "complete")).toBe(true);
+    const count = (method: string, store: string, db?: string) => observed.calls.filter((call) => call.method === method && call.store === store && (!db || call.db === db)).length;
+    console.info("streaming-admission-witness", JSON.stringify({ copied, publicReopened: f.expected.size,
+      requests: observed.calls.length, successes: observed.calls.filter((call) => call.succeeded).length,
+      terminals: observed.transactions.length, complete: observed.transactions.filter((tx) => tx.terminal === "complete").length,
+      counts: ["ops", "op_control", "op_target", "op_error"].map((store) => ({ store,
+        getAll: count("getAll", store), cursor: count("openCursor", store), keyCursor: count("openKeyCursor", store),
+        getKey: count("getKey", store), put: count("put", store) })) }));
+    if (copied) {
+      expect(count("getAll", "ops"), "complete admission must not batch BASE values").toBe(0);
+      for (const name of ["op_control", "op_target", "op_error"]) {
+        expect(count("getAll", name), "complete admission must not reread part value batches").toBe(0);
+        expect(count("openCursor", name)).toBeGreaterThan(0);
+        expect(observed.calls.filter((call) => call.method === "openCursor" && call.store === name).every((call) => call.point)).toBe(true);
+        expect(count("openKeyCursor", name)).toBeGreaterThan(0);
+      }
+      expect(count("openCursor", "ops")).toBeGreaterThan(0);
+      expect(count("getKey", "ops")).toBeGreaterThan(0);
+    } else {
+      for (const name of ["ops", "op_control", "op_target", "op_error"]) {
+        expect(count("getAll", name, "unica-case")).toBeGreaterThan(0);
+        expect(count("put", name, "terno-case")).toBeGreaterThan(0);
+      }
+      expect(count("getAll", "ops", "terno-case")).toBe(0);
+    }
   } finally { await dispose(f.factory); }
 });
