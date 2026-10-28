@@ -1,4 +1,4 @@
-# 55 · Reply from the context menu always opens
+# 56 · Reply never silently does nothing
 
 ## Request
 
@@ -29,3 +29,20 @@ Waiting for `onOpenChangeComplete` was tried first. Base UI fires it before the 
 ## Out of scope
 
 The focus-lease design itself (plan 43, owned by ongoing work): a focus move during an open cancels the whole open rather than only its focus step.
+
+## Revisions after the Codex review
+
+Codex had six findings. Its analysis of the quick-reply bar gave the most likely cause of the user's report:
+
+- **A refresh mid-open cancels the reply silently (#2).** Any change to the open conversation (its read state, a sync, a send landing; the user's screenshot followed a send) refetches it. If that lands while the quote is being measured, `loadThread(threadId) !== detail` returns. Now `openComposeNow` reports `"stale"`, and `openCompose` retries with the refreshed conversation (twice at most) when nothing newer was asked for.
+- **Failures with no message (#3, #4).** A failed thread load and a failed `drafts.sourceContext` returned silently. While the request is still current they now report `"failed"`, and the user sees "Couldn't start the reply. Try again." (or the forward version, in `en` and `es`). A request superseded by a newer choice stays silent.
+- **The menu callback opted out of Base UI's guard (#1).** A `finalFocus` callback skips Base UI's "focus already moved elsewhere" check, so the callback now applies it itself. With the modal context menu that move can't happen by pointer, so the check is defensive.
+- **A refused menu reply left focus on the page body (#5).** When the reply didn't open (judged from the drafts store, since the editor may focus a frame later), focus goes back to the list.
+- **Coverage (#6).** The e2e now covers Reply, Reply all (body focus) and Forward (To focus) from the menu, plus a plain close that still returns focus to the list after a hand-off.
+
+Found on the way: **the React Compiler miscompiled a reassigned module-level `let`**. In `const handedOff = focusHandedOff; focusHandedOff = false; if (handedOff) …` it folded the copy into the later read, so the build cleared the flag and then read it. The flag is now a property on a module-level object.
+
+Tests:
+
+- `open-compose-outcome.test.tsx`: a mid-open refresh retries and opens; source-context and load failures show the message; a superseded request stays silent. The first three fail without the fix.
+- `selection.spec.ts`: the three menu tests fail against main's menu and pass 150 of 150 across the designs (twice each).

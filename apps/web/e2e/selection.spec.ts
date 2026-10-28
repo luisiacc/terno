@@ -91,9 +91,9 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
     await expect(page.getByTestId("compose-subject")).toHaveValue(subject.startsWith("Re:") ? subject : `Re: ${subject}`);
   });
 
-  test("reply from the menu: the closing menu never hands focus back to the list, so the reply always opens", async ({ app: page }) => {
+  test("reply, reply all and forward from the menu: the closing menu never hands focus back to the list, so they always open", async ({ app: page }) => {
     // the hand-back landed while the reply was still opening and made it give up: nothing opened, often
-    for (const n of [3, 5, 6]) {
+    for (const [n, action, field] of [[3, "menu-reply", "compose-body"], [5, "menu-reply-all", "compose-body"], [6, "menu-forward", "compose-to"]] as const) {
       await rightClick(page, rows(page).nth(n));
       // from the menu on (the right-click itself focuses the list)
       await page.evaluate(() => {
@@ -102,12 +102,28 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
         if (!w.__listWatch) document.addEventListener("focusin", (e) => { if ((e.target as Element).getAttribute?.("role") === "listbox") w.__listFocus++; }, true);
         w.__listWatch = true;
       });
-      await item(page, "menu-reply").click();
+      await item(page, action).click();
       await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
-      await expect(page.getByTestId("compose-body")).toBeFocused();
-      expect(await page.evaluate(() => (window as unknown as { __listFocus: number }).__listFocus)).toBe(0);
+      await expect(page.getByTestId(field)).toBeFocused();
+      expect(await page.evaluate(() => (window as unknown as { __listFocus: number }).__listFocus), action).toBe(0);
       await page.keyboard.press("Escape");
     }
+  });
+
+  test("an ordinary menu close still returns focus to the list, after a reply's hand-off too", async ({ app: page }) => {
+    const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+    await rightClick(page, rows(page).nth(2));
+    await page.keyboard.press("Escape");
+    await expect(menu(page)).toBeHidden();
+    await expect(list).toBeFocused();
+    // a reply first (its hand-off is spent on that close), then a plain close: back to the list again
+    await rightClick(page, rows(page).nth(3));
+    await item(page, "menu-reply").click();
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await rightClick(page, rows(page).nth(4));
+    await page.keyboard.press("Escape");
+    await expect(menu(page)).toBeHidden();
+    await expect(list).toBeFocused();
   });
 
   test("sender items: search their mail, copy the address, a filter prefilled with them", async ({ app: page }) => {

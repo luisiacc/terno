@@ -425,7 +425,10 @@ export async function openStoredDraft(key: string): Promise<void> {
  * in another), else a fresh one. With a bulk selection there is no single
  * target: nothing happens.
  */
-export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId): Promise<void> {
+/** Why an open that still mattered stopped short: the conversation was refreshed under it, or loading it failed. */
+type OpenOutcome = "stale" | "failed" | undefined;
+
+export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
@@ -439,7 +442,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
-  try { await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
+  let outcome: OpenOutcome;
+  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
     lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
     lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
     if (lease?.ackRead) { endDraftAckRead(lease.ackRead); lease.ackRead = undefined; }
@@ -447,9 +451,14 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
     if (lease && lease.seq === undefined) releaseFocusLease(lease, true);
     finish();
   }
+  // nothing newer was asked for: a refresh that replaced the conversation mid-open (a sync, its own read state, a send
+  // landing) is retried with it, and a failure says so instead of leaving the click without an answer
+  if (mine !== intent || !outcome) return;
+  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1);
+  snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
 }
 
-async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<void> {
+async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<OpenOutcome> {
   const focusAllowed = () => !lease || (lease.valid && focusLease === lease && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
@@ -575,7 +584,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const selectionRevision = getSelectionWriteRevision();
   const detail = loaded === undefined ? await loadThread(threadId) : loaded;
   const currentIntent = () => mine === intent && destinationAvailable(lease) && getSelectionWriteRevision() === selectionRevision && (!proof || Boolean(readDraftAck(proof))) && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey;
-  if (!detail) return;
+  if (!detail) return currentIntent() ? "failed" : undefined;
   if (canonicalNullSource && (!originalContext || detail.thread.id !== threadId || originalContext.threadId !== threadId || originalContext.accountId !== detail.thread.accountId)) return;
   if (!currentIntent()) {
     if (mode === "forward" && mine === intent && destinationAvailable(lease) && (!lease || (lease.valid && focusLease === lease)) && getSelectionWriteRevision() === selectionRevision && getApp().selectedId === selected && shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) === existingKey) {
@@ -667,7 +676,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const snapshot = existing;
   const signature = getApp().accounts.find((a) => a.id === converted.accountId)?.signature;
   const admitted = await draftAttachmentBudget(converted, signature);
-  if (!currentIntent() || (!canonicalNullSource && await loadThread(threadId) !== detail)) return;
+  if (!currentIntent()) return;
+  if (!canonicalNullSource && await loadThread(threadId) !== detail) return currentIntent() ? "stale" : undefined;
   const sourceId = converted.mode === "forward" ? converted.forwardOfMessageId : converted.inReplyToMessageId;
   let sourceContext: { threadId: number; accountId: number } | null, finalOriginalContext: typeof sourceContext;
   try {
@@ -676,7 +686,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       if (!currentIntent() || !lease?.valid || focusLease !== lease || lease.ackRead !== proof) return;
       finalOriginalContext = originalSourceId ? await client.call("drafts.sourceContext", { messageId: originalSourceId }) : null;
     } else finalOriginalContext = sourceContext;
-  } catch { return; }
+  } catch { return currentIntent() ? "failed" : undefined; }
   if (!currentIntent() || (lease && !lease.valid) || !sourceContext || sourceContext.threadId !== threadId || sourceContext.accountId !== detail.thread.accountId) return;
   if (canonicalNullSource && (!finalOriginalContext || finalOriginalContext.threadId !== threadId || finalOriginalContext.accountId !== detail.thread.accountId)) return;
   if (canonicalNullSource && (await loadThread(threadId) !== detail || !currentIntent() || !lease?.valid || focusLease !== lease || lease.ackRead !== proof)) return;

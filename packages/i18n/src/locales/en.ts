@@ -834,6 +834,8 @@ const en = {
   "compose.status.tooLong": "Too long to save · <retry>Retry</retry>",
   "compose.forwardAccountMismatch": "To forward these attachments, choose {account} in From.",
   "compose.forwardUnavailable": "The original files are not ready. Wait for the download or choose Retry, then try Forward again.",
+  "compose.openFailed.reply": "Couldn't start the reply. Try again.",
+  "compose.openFailed.forward": "Couldn't start the forward. Try again.",
   "compose.format.toolbar": "Formatting",
   "compose.format.toggle": "Formatting options",
   "compose.format.more": "More formatting",

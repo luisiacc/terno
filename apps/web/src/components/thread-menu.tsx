@@ -48,6 +48,7 @@ import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
+import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
 import { applyScope } from "./category-snackbar";
 import { listScroller } from "./thread-list";
@@ -118,7 +119,9 @@ export function openMenuForSelection(): void {
  * to hand focus back to the list. That hand-back lands while the reply is still opening, reads as the user going
  * elsewhere, and makes the reply give up (its focus lease), so nothing opened.
  */
-let focusHandedOff = false;
+// (a property, not a reassigned module let: the React Compiler folds a local copy of such a let into its later
+// reads, so "read, then clear" compiled to "clear, then read")
+const handOff = { pending: false };
 
 /**
  * The thread context menu: one Base UI ContextMenu around the whole list (no
@@ -157,9 +160,13 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
         className="w-64"
         data-testid="thread-menu"
         finalFocus={() => {
-          const back = !focusHandedOff;
-          focusHandedOff = false;
-          return back;
+          const handedOff = handOff.pending;
+          handOff.pending = false;
+          if (handedOff) return false;
+          // Base UI's own rule, which a callback opts out of: focus the user already moved elsewhere (a click into
+          // search) stays there; from the menu itself (or nowhere) it goes back to the list
+          const active = document.activeElement;
+          return !active || active === document.body || active.closest("[role=menu]") !== null;
         }}
       >
         <MenuItems />
@@ -222,9 +229,16 @@ function MenuItems() {
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
     // the menu's own thread, passed explicitly (the selection follows, it isn't read back); the composer takes focus
-    focusHandedOff = true;
+    handOff.pending = true;
     openThread(single.id);
-    void openCompose(mode, single.id);
+    // a reply that didn't open (refused, failed) leaves focus nowhere: it goes back to the list. One that opened
+    // takes focus itself, maybe a frame later (the editor loads lazily), so that is read from the drafts, not the DOM
+    const id = single.id;
+    void openCompose(mode, id).then(() => {
+      const key = shownDraftKey(useDrafts.getState().drafts, id, getApp().draftShown);
+      const opened = key !== null && useDrafts.getState().drafts[key]?.uiState === "open";
+      if (!opened && document.activeElement === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [role=listbox]")?.focus({ preventScroll: true });
+    });
   };
   const inAll = (categoryId: number) => rows.length > 0 && rows.every((t) => t.categoryIds.includes(categoryId));
   const toggleCategory = (categoryId: number) => {

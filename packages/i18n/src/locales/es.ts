@@ -828,6 +828,8 @@ const es = {
   "compose.status.tooLong": "Demasiado largo para guardarlo · <retry>Reintentar</retry>",
   "compose.forwardAccountMismatch": "Para reenviar estos adjuntos, elige {account} en De.",
   "compose.forwardUnavailable": "Los archivos originales aún no están listos. Espera a que se descarguen o elige Reintentar y vuelve a elegir Reenviar.",
+  "compose.openFailed.reply": "No se pudo empezar la respuesta. Inténtalo de nuevo.",
+  "compose.openFailed.forward": "No se pudo empezar el reenvío. Inténtalo de nuevo.",
   "compose.format.toolbar": "Formato",
   "compose.format.toggle": "Opciones de formato",
   "compose.format.more": "Más formato",
