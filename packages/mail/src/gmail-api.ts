@@ -2,13 +2,14 @@ import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import type { IncomingMessage } from "@terno/store";
-import { collectGooglePhotos, type GoogleFailureReason } from "./google-photos";
+import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
+import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError, type FlagUpdate, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
   auth: string;
@@ -156,8 +157,8 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
 }
 
 class GmailApiError extends ProviderError {
-  constructor(readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GoogleFailureReason) {
-    super(L("errors.gmail.requestFailed", { status }), retryable, ambiguous);
+  constructor(readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GoogleFailureReason, httpResponse?: HttpResponseEvidence) {
+    super(L("errors.gmail.requestFailed", { status }), retryable, ambiguous, false, httpResponse);
   }
 }
 
@@ -403,8 +404,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     } catch (error) { body?.release(); throw error; }
   }
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, ...request } = init;
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, ...request } = init;
     preparationSignal?.throwIfAborted();
     const token = preparationSignal ? await untilAborted(tokens.get(), preparationSignal) : await tokens.get();
     preparationSignal?.throwIfAborted();
@@ -421,11 +422,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     };
     try {
       let res: Response;
+      let httpResponse: HttpResponseEvidence | undefined;
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
         deadline.signal.throwIfAborted();
         res = await untilAborted(netFetch(path.startsWith("https://") ? path : `${ep.api}${path}`, { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } }).then((response) => {
           if (deadline.signal.aborted) { cancelResponse(response); throw deadline.signal.reason; }
+          if (!response.ok) httpResponse = captureHttpResponseEvidence(response, httpContext ?? (path.startsWith("https://") ? { endpoint: "unknown", purpose: "unknown" } : { endpoint: "gmail-api", purpose: "mail" }), Date.now());
           return response;
         }), deadline.signal);
       } catch (e) {
@@ -436,13 +439,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         deadline.done();
         tokens.invalidate(token);
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
-        if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"));
+        if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
         return await api<T>(path, init, true);
       }
       if (!res.ok) {
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
         const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
-        throw new GmailApiError(res.status, retryable, Boolean(sending && res.status >= 500), googleFailureReason(text));
+        throw new GmailApiError(res.status, retryable, Boolean(sending && res.status >= 500), googleFailureReason(text), httpResponse);
       }
       if (responseMode === "void") {
         cancelResponse(res);
@@ -763,7 +766,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     photos(want, signal) {
-      return collectGooglePhotos((url, sig) => api(url, { signal: sig }), ep.userinfo, want, signal);
+      return collectGooglePhotos((url, sig) => api(url, { signal: sig, httpContext: url === ep.userinfo ? { endpoint: "google-userinfo", purpose: "photos" } : url.startsWith(`${PEOPLE_API}/`) ? { endpoint: "google-people", purpose: "photos" } : { endpoint: "unknown", purpose: "unknown" } }), ep.userinfo, want, signal);
     },
 
     async sync(sink) {

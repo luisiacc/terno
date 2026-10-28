@@ -117,7 +117,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
       }));
       const body = new URLSearchParams({ client_id: options.clientId, code: code.code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: code.redirectUri });
       if (options.clientSecret) body.set("client_secret", options.clientSecret);
-      const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+      const tokens = await flow.json(ep.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, { endpoint: "oauth-token", purpose: "authorization-code" });
       if (typeof tokens.access_token !== "string" || tokens.access_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.access_token) ||
         (Object.hasOwn(tokens, "refresh_token") ? (typeof tokens.refresh_token !== "string" || tokens.refresh_token.length > 4096 || !/^[\x21-\x7e]+$/.test(tokens.refresh_token)) : !options.allowOmittedRefreshToken) ||
         typeof tokens.token_type !== "string" || tokens.token_type.toLowerCase() !== "bearer" ||

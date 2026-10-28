@@ -1,6 +1,7 @@
 import { L } from "@terno/i18n";
 import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError } from "./types";
+import { ProviderAuthError, ProviderError, type HttpResponseEvidence } from "./types";
+import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 export interface GmailRefreshExchange {
   accessToken: string;
@@ -13,7 +14,7 @@ export interface GmailRefreshExchange {
 
 const invalid = () => new ProviderError(L("errors.gmail.invalidResponse"), false);
 const networkFailure = () => ProviderError.network(L("errors.network.offline"));
-const statusFailure = (status: number) => Object.assign(new ProviderError(L("errors.gmail.refreshFailed", { status }), status === 429 || status >= 500), { status });
+const statusFailure = (status: number, httpResponse?: HttpResponseEvidence) => Object.assign(new ProviderError(L("errors.gmail.refreshFailed", { status }), status === 429 || status >= 500, false, false, httpResponse), { status });
 const token = (value: unknown): value is string => typeof value === "string" && value.length <= 4096 && /^[\x21-\x7e]+$/.test(value);
 
 /** A refresh exchange only: the caller owns durable credential replacement before access publication. */
@@ -30,6 +31,7 @@ export async function exchangeGmailRefresh(options: {
   const cancel = () => controller.abort(new DOMException("closed", "AbortError"));
   const timer = setTimeout(() => controller.abort(networkFailure()), 30_000);
   let responseStatus: number | undefined;
+  let httpResponse: HttpResponseEvidence | undefined;
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   const wait = async <T,>(work: Promise<T>): Promise<T> => {
@@ -55,6 +57,7 @@ export async function exchangeGmailRefresh(options: {
         void res.body?.cancel().catch(() => {});
         throw signal.reason;
       }
+      if (!res.ok) httpResponse = captureHttpResponseEvidence(res, { endpoint: "oauth-token", purpose: "refresh" }, Date.now());
       return res;
     }));
     const receivedAt = Date.now();
@@ -87,15 +90,15 @@ export async function exchangeGmailRefresh(options: {
       }
     } catch (error) {
       // Error bodies cannot turn a quota/server status into a permanent failure or a grant refusal.
-      if (!response.ok) throw statusFailure(response.status);
+      if (!response.ok) throw statusFailure(response.status, httpResponse);
       if (signal.aborted) throw signal.reason;
       if (error instanceof ProviderError) throw error;
       if (isFetchNetworkFailure(error)) throw networkFailure();
       throw invalid();
     }
     signal.throwIfAborted();
-    if (response.status === 400 && value.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"));
-    if (!response.ok) throw statusFailure(response.status);
+    if (response.status === 400 && value.error === "invalid_grant") throw new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
+    if (!response.ok) throw statusFailure(response.status, httpResponse);
     if (!token(value.access_token) ||
       (Object.hasOwn(value, "refresh_token") && !token(value.refresh_token)) ||
       typeof value.token_type !== "string" || value.token_type.toLowerCase() !== "bearer" ||
@@ -115,7 +118,7 @@ export async function exchangeGmailRefresh(options: {
     };
   } catch (error) {
     if (options.signal?.aborted) throw new DOMException("closed", "AbortError");
-    if (signal.aborted && responseStatus !== undefined && responseStatus >= 400) throw statusFailure(responseStatus);
+    if (signal.aborted && responseStatus !== undefined && responseStatus >= 400) throw statusFailure(responseStatus, httpResponse);
     if (signal.aborted) throw signal.reason;
     if (error instanceof RequestNotDispatchedError || error instanceof ProviderError) throw error;
     throw isFetchNetworkFailure(error) ? networkFailure() : new ProviderError(L("errors.network.offline"), true);

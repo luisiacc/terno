@@ -1,0 +1,160 @@
+# Plan 55: bounded provider HTTP failure evidence
+
+Status: approved evidence-only implementation and focused qualification recorded below after root SMALLCHECK release. Fresh independent two-axis code review remains root-owned and pending. This does not close W05/T04/A09/A10/S25/S26 or approve a parser, throttling or release.
+
+## Request (verbatim, Plan26)
+
+> I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:
+> 1. Go for that item.
+> 2. Spec it out a bit more.
+> 3. Do maybe a better investigation on it to see what's truly needed for us.
+> 4. Build a test case reproducing that scenario, that potential scenario, or multiple test cases.
+> 5. Fix it.
+> 6. That will do it.
+> 7. Spawn a subagent with Codex doing a code review of that fix, of that code you have just fixed and/or added.
+> 8. Fix any findings.
+> create atomic commits as you are fixing things.
+> That way there is a double check on what you're doing and this can be better. Of course we need to maintain our performance while doing this and follow the directives that we have. You're going to do this for each and every one of the items that you have done here.
+> Let's not create a separate branch or anything like that. Let's just do the fixes right here in the main branch. You should not stop until everything in that report is done.
+
+## First-slice authorization (verbatim)
+
+> Root read COMPLETE36KB external design (first100lines through17594,chars16000-24000,24000-30000,30000-end), actual ProviderError/API/refresh source, current full AGENTS including foreignPlan54. Exact scope ACK: failed-response EVIDENCE ONLY first7productionfiles in design; optional readonly bounded ProviderError.httpResponse fiftharg + optionalAuthsecondarg; nonenumerable absentcompatible property; accepted failing real response captures Retry-After/Date exactly once BEFORE body using bounded256UTF16 each plus explicit receiptwall validity/requestpurpose; no URL/Response/body retained, no new classification/deadline/retry/admission/timer/schema/RPC/UI/logging/parser. Cover existing API/refresh/sign-in/portable/cold-proof/People-userinfo purpose without inferring quota, no successful-response evidence. No quotascope taxonomy inferred (constantunknown may staytype or simplify if critique identifies redundancy). Raw header cannot escape existing RPC/diag/log/durable projections, even malicious synthetic fields. Keep current top-levelstatusclasses/booleans and callback/cancel/expiry semantics, no catch rewrite. Root approves exact extra private helper params/context tags named in candidate; no broad newoutcome framework. Separate pure parser NOT approved this slice. Prepare Plan55 docs/plans/55-provider-http-evidence.md (currently free) requestverbatimPlan26andfirstslice/exclusions, and your meaningful public HTTP additive test file(s) may be prepared but NOT executed yet. Ownership yours7mailproductionfiles + new focused tests +Plan55; root owns Plan26/worklist updates, do notedit them yet. Preserve renderer edits/foreignicons/AGENTS/other source. Root decision paragraph in external design currently says Rootdecision; untilthismessage it wascandidate, record chronology. Now run EXACTLY ONE bounded read-only codex exec critique <=6 on actual current source/design/new plan, prompt<16KiB, no nestedtests/agents/CLI. Capture actualPID/start/argv/exit/DONE/naturalreap; full finalread; acceptrefineallpoints and ask root ifinterface scopechanges. Existing critique prompt good. NO production changes and NO functional/types/lint/build/browser/perf until root SMALLCHECK release after critique+test plan READY (avoid overlapfocus owner). State exact intended boundedcommands and likelyrealHTTPtimeout ownership. No schema reservation/no queuedthrottleclaim. Existing docs/plans55 collision =>stopandreport beforecreate. ReturncritiqueREADY andprocessIDLE, notfinalcompletionwholefeature.
+
+The initial external design's “Root decision” wording described a candidate at that time. Approval begins with the quoted later message above. The parser section of the candidate remains unapproved. Plan55 was checked free immediately before exclusive creation; a collision would stop creation. Root retains Plan26/worklist ownership.
+
+## Current sources and contracts
+
+Source baseline for this plan: `2f7ab8f17ecd356e45c56bf9c0dc898c7eee3fa7`. The mail sources are unchanged from the external design's pinned `6be6cdfe`; the design records content hashes and exact line ranges. Current full AGENTS was read, including Plan54 Tab-only focus rings. Renderer, focus, icons, AGENTS and unrelated work are not owned here.
+
+Relevant contracts: Plan26 slice3 (structured quota classification and OAuth404 provenance), Plan20 (network/reset/send ambiguity), Plan25 (auth/credential/token ownership), Plan32 (bounded refresh decoding, durable rotation and cancellation). Current SQL23/IDBphysical10logical23 remain unchanged; no new version is reserved. The older `/tmp/terno-provider-throttle-investigation.md` schema numbers are obsolete.
+
+`ProviderError` currently takes message/retryable/ambiguous/network, with localized fixed copy and expected getter. Private GmailApiError carries resource status and photo reason. API failure bodies are bounded to65,536bytes; read failure becomes empty text without replacing status. Refresh has three statusFailure exits (body catch, ordinary refusal, internal deadline), real400invalid_grant auth precedence, and explicit caller close precedence. Desktop refresh preserves ProviderError identity across the shared exchange/persistence promise. Sign-in's HTTP helper cancels non-OK bodies without parsing and uses its own fixed sign-in error/429/5xx policy. Portable broker get/set/invalidate is memory-only, while broker.inspect reaches real profile/userinfo HTTP. GIS callbacks expose no HTTP headers.
+
+Exact source inventory, callsites and compatibility audit: [external design](/tmp/terno-quota-header-metadata-design.md). No external provider/RFC guarantees were newly verified. There is no evidence here of a completed quota scheduler or executed test outcome.
+
+## Approved evidence interface
+
+Add these readonly types to `packages/mail/src/types.ts`, already re-exported by both entrypoints:
+
+```ts
+export type HttpRequestContext =
+  | { readonly endpoint: "gmail-api"; readonly purpose: "mail" | "identity-proof" }
+  | { readonly endpoint: "oauth-token"; readonly purpose: "refresh" | "authorization-code" }
+  | { readonly endpoint: "google-people"; readonly purpose: "photos" | "grant-proof" }
+  | { readonly endpoint: "google-userinfo"; readonly purpose: "photos" | "identity-proof" }
+  | { readonly endpoint: "unknown"; readonly purpose: "unknown" };
+export type BoundedHttpHeader =
+  | { readonly kind: "not-visible" }
+  | { readonly kind: "value"; readonly value: string }
+  | { readonly kind: "too-long" };
+export type HttpReceipt =
+  | { readonly source: "date-now"; readonly kind: "wall"; readonly wallMs: number }
+  | { readonly source: "date-now"; readonly kind: "invalid" };
+export interface HttpResponseEvidence {
+  readonly source: "http-response";
+  readonly request: HttpRequestContext;
+  readonly status: number;
+  readonly quotaScope: "unknown";
+  readonly received: HttpReceipt;
+  readonly retryAfter: BoundedHttpHeader;
+  readonly serverDate: BoundedHttpHeader;
+}
+```
+
+ProviderError gains only an optional fifth constructor argument and declared optional readonly `httpResponse` property defined nonenumerably/nonwritably/nonconfigurably only when supplied. ProviderAuthError gains an optional second argument passed through without changing its name/expected/booleans. Old constructors, subclasses and absent-property shape remain compatible. No ordinary initialized field or enumerable parameter property for evidence.
+
+New internal `http-response-evidence.ts` exports constant `HTTP_EVIDENCE_HEADER_LIMIT =256` and synchronous `captureHttpResponseEvidence(response,request,receivedWallMs): HttpResponseEvidence|undefined`. It returns undefined for success/status outside100–599. Copy the request descriptor and freeze the small owned graph, not caller objects. Exactly two Fetch header lookups, each length-checked before further processing: retain unchanged value at length≤256UTF16units; larger is too-long without prefix/tail/raw length; null is not-visible (absence versus web exposure cannot be distinguished). No parsing, trimming, header enumeration or body access. Fetch may already have allocated/combined fields; this cap bounds added retained evidence, not transport allocation or wire field recovery.
+
+Receipt Date.now sample is captured in the accepted failing response callback before any body read/cancel; finite safe integer within ±8.64e15ms is wall, otherwise invalid without retaining the invalid input. No invented zero/fallback/recomputed timestamp. It means local header visibility, not server time or elapsed time across restart. No monotonic/deadline policy. Numeric/date/zero/past/overflow/duplicate/malformed directives are preserved raw when bounded; no parser is implemented or called and no server minimum is interpreted or shortened. Date is merely untrusted evidence. Request context is intended purpose, not verified origin or quota identity. Scope stays unknown.
+
+## Exact boundary changes and preservation rules
+
+1. `gmail-api.ts`: optional private init httpContext removed before fetch spread; relative routes default gmail-api/mail; absolute untagged defaults unknown. Capture once after existing aborted-response guard. Pass snapshot through private GmailApiError to ProviderError. Final401 auth gets its own snapshot; first401 retains existing invalidate/single retry. Token errors between attempts propagate unchanged. No resource404 authority from generic metadata. Existing relative raw/minimal/profile/list/history/send/trash/batchModify calls need no per-route capture. Photo wrapper explicitly tags configured userinfo or exact PEOPLE_API + slash; all else unknown. No foreign icon edits.
+2. `gmail-refresh.ts`: capture in accepted failing response callback; preserve existing later receivedAt sample for token expiry and responseStatus assignment/control flow. statusFailure receives snapshot at all three current exits. Genuine400invalid_grant auth receives its own snapshot. Explicit close still wins with original AbortError/no stale evidence; preheader/no-response errors have none. No candidate, CAS, refresh coalescing, expiry or callback changes.
+3. `gmail-web.ts`: private flow.json optional third context defaults unknown; capture before non-OK cancellation, pass to existing fixed signInFailed error without adding a new top-level status or changing its booleans/body handling/cancellation. readGoogleIdentity tags profile identity-proof and userinfo identity-proof. Broker.provider inherits shared API behavior; missing/expired broker token and GIS callback have no fabricated evidence.
+4. `gmail.ts`: only authorization-code flow.json context tag. Normal desktop refresh already reaches shared exchange; its rethrow-by-identity preserves snapshot.
+5. `gmail-renewal.ts`: only People proof flow.json context tag. Cold refresh and identity proof reuse the boundaries above; preserve cumulative budget and continuation ownership.
+
+No metadata for2xx success or malformed successful body, local processing/capacity/persistence errors or response-less transport errors. No catch rewrite.503 send remains ambiguous despite Retry-After; definitive403quota/429 send remains definitive; unreadable quota body cannot manufacture a403reason. Cancellation/lifetime can suppress stale evidence, never change outcome authority.
+
+## Ownership and exclusions
+
+Production ownership: exactly seven mail files (`types.ts`, new `http-response-evidence.ts`, `gmail-api.ts`, `gmail-refresh.ts`, `gmail-web.ts`, `gmail.ts`, `gmail-renewal.ts`). Additional ownership: this Plan55 and new focused additive tests. No production edit is authorized before SMALLCHECK release. This worker is not alone and must preserve others' changes.
+
+Excluded: parser/date conversion, retry/deadline/minimum/manual-hold policy, quota taxonomy/numbers/identity, admission/scheduler/durable cooldown, retry timers or loops, schema/RPC/UI/i18n/diagnostic/log changes, network-policy changes, global outcome framework, full report completion, Outlook implementation. Do not claim metadata fixes current offline labeling or restart bursts. No commit/push of this draft phase is proposed.
+
+## Meaningful additive tests (prepared plan; not executed)
+
+Proposed new `packages/mail/src/gmail-http-evidence.test.ts` owns a bounded node:http loopback server on port0 and drives public createGmailApiProvider/createGmailProvider, connectGmail, inspectGmailToken, broker.inspect/provider and beginGmailRenewal. Use synthetic tokens/mail only; no real profile/provider. Real Response headers/error objects, remote request/submission counts, credential write counts and current public booleans/classes are the oracles. Helper-only tests supplement, never substitute for public HTTP REDs.
+
+- API read/send:429/403structuredquota/503 with exact Retry-After/Date evidence and requestpurpose. Controls: unrelated permission/disabled/daily403, malformed403,404, final401; body invalidJSON/UTF8/over64KiB/reset-afterheaders. Assert unchanged original status/reason/classes/booleans and one send invocation. Successful malformed-send response still ambiguous and has no evidence.
+- Refresh via public provider:429/503 with malformed/empty/oversized/truncated/stalled body retain exact token snapshot, status, original network=false and no API/CAS; actual400invalid_grant still auth; contradictory429invalid_grant stays nonauth; API401→token404/429 remains token evidence and never deletes message/advances cursor. Body delay must not replace receipt timestamp with body-completion time. Preserve shared-refresh and existing expiry semantics as controls.
+- Explicit sign-in/cold proof: synthetic authorization-code callback and real token/profile/userinfo responses distinguish all context tags, unchanged fixed signInFailed/top-level shape and no next-stage request on refusal. Use synthetic HTTPS logical api/token/userinfo endpoints and exact fixed People URLs, remapped by an allowlisted test fetch seam to owned loopback routes. Assert exact logical URL, route and server request count, including own-photo failures: a swallowed result alone cannot prove the intended boundary was exercised. Never pass loopback HTTP userinfo directly to api.photos, since api recognizes only https absolute URLs and would concatenate it with ep.api. Cold refresh/identity/People grant proof uses the same explicit test-only remapping, not production policy. Public photo flow remains swallowed source state; supplementary collector dependency seam may inspect its thrown AuthorizedGet error without a production test hook.
+- Headers: absent/empty/256/257units, mixed case, each field independently overlong, duplicate-combined values, zero/past/date/huge decimal retained raw; no prefix parsing. Native Headers/fetch can normalize whitespace, so expect exact exposed value, never claim original wire bytes. Successful responses do not inspect evidence headers. Web non-exposure and wire absence remain indistinguishable, not falsely proven by Node.
+- Compatibility/privacy: constructors with1–4arguments and unrelated subclasses unchanged/no own evidence. New readonly evidence is nonenumerable and survives existing rethrow identity. Malicious synthetic private markers in both raw fields/body must not appear in actual toErrorPayload, normalized diagnostic entries/sinks, JSON/spread projection, backend fixed log/durable error messages. The owned new focused tests may include `packages/backend/src/gmail-http-evidence.int.test.ts` for actual Backend/RPC/log/SQL+IDB operation-message projections; no backend production file is owned or changed. No raw evidence logging.
+- Cancellation/resources: explicit close before/afterheaders, internal timeout with knownstatus, late ignored-abort response, undispatched/network rejection: original outcomes and evidence absence/presence preserved; canceled/unlocked readers, no residual timer/socket/listener/secret write. Bounded fake timers at the existing30second refresh budget test stream mechanics; real HTTP receives headers first and uses only test-owned abort/cleanup. Do not fake a full wall30second wait or change production timeout options.
+
+Fixture ownership: a response header gate signals accepted headers before body stall/reset; synthetic server owns all its sockets and requests. Per-test real watchdog≤5seconds via an AbortController only in the fixture, cleared in finally; retain its native node:timers clock so fake global timers cannot accidentally advance the watchdog ahead of the tested deadline. Existing read/send test options may reduce API deadlines where already supported. Real HTTP refresh tests cover complete/truncated/error bodies and explicit close of stalled bodies. Refresh's30second internal deadline is a separate public-provider controlled Response stream case with fake timers and actual bounded headers, clearly labeled as a decoder/deadline control rather than a real elapsed HTTP test. No new production option or30second real wait. Each test finally aborts pending test requests, closes test-owned sockets/server, awaits server.close and all settled promises, restores mocks/timers. The repository unit test timeout remains20seconds; native fixture watchdogs are5seconds, with each command separately guarded at180seconds. No global test configuration is changed. No killing by port/name and no browser/server left running.
+
+A second small new `packages/mail/src/http-response-evidence.test.ts` may exercise finite/invalid receipt samples,256UTF16boundary (including mocked exposed nonASCII string) and no body access with a bounded actual Response. No parser tests. These are proposed future REDs; none has run or been observed failing.
+
+## Exact future bounded commands (NOT authorized/run yet)
+
+After explicit root SMALLCHECK release, intended serial commands from checkout:
+
+1. After creating the new additive tests, `pnpm exec vitest run --project unit packages/mail/src/gmail-http-evidence.test.ts packages/mail/src/http-response-evidence.test.ts --maxWorkers=1 --no-file-parallelism` (must observe meaningful RED before production edit;≤180second supervisor ceiling). If the additive backend privacy suite is prepared, run it separately and serially: `pnpm exec vitest run --project unit packages/backend/src/gmail-http-evidence.int.test.ts --maxWorkers=1 --no-file-parallelism` (≤180seconds).
+2. After implementation, same focused command for GREEN, then controls once: `pnpm exec vitest run --project unit packages/mail/src/gmail-net.test.ts packages/mail/src/gmail-refresh.test.ts packages/mail/src/gmail-auth.test.ts packages/mail/src/gmail-renewal.test.ts packages/mail/src/gmail-token-lifecycle.test.ts --maxWorkers=1 --no-file-parallelism` (≤180seconds).
+3. Only if root releases package checks: `pnpm --filter @terno/mail typecheck` (≤120seconds). Exact owned-file lint once the files exist: `pnpm exec oxlint --deny-warnings packages/mail/src/types.ts packages/mail/src/http-response-evidence.ts packages/mail/src/gmail-api.ts packages/mail/src/gmail-refresh.ts packages/mail/src/gmail-web.ts packages/mail/src/gmail.ts packages/mail/src/gmail-renewal.ts packages/mail/src/gmail-http-evidence.test.ts packages/mail/src/http-response-evidence.test.ts` (≤120seconds). If created, lint the additive backend suite separately: `pnpm exec oxlint --deny-warnings packages/backend/src/gmail-http-evidence.int.test.ts` (≤120seconds).
+
+The Vitest unit project has globalSetup `packages/backend/scripts/test-worker-setup.mjs`. Its source was inspected: it calls buildIncomingWorker, whose esbuild bundle is written through a temporary directory and atomically renamed onto `packages/backend/dist/incoming.worker.cjs` (`build-incoming-worker.mjs:8–31`). Even a focused unit command therefore includes this build and shared output replacement. Root SMALLCHECK release must coordinate that overlap with the focus owner; no assumption that selecting one test removes global setup. Root owns broader required release/performance/package/e2e scheduling, including free E2E_PORT/WEB_PORT when relevant. All those gates remain pending, not waived. Final implementation still needs the separate mandatory Codex code review and regression-backed fixes; this plan critique is not that code review.
+
+## Revisions after the Codex review
+
+Exactly one authorized source-only critique completed; prompt3,364bytes requested at most6 findings, no edits/tests/checks/browser/perf/agents/nested CLI. All1,272bytes of its final result were read. It returned one medium finding, accepted: the API helper recognizes only https absolute URLs, so direct loopback http userinfo in photos would concatenate with ep.api and its swallowed failure could hide a misrouted fixture. The test design now uses synthetic HTTPS logical userinfo/People URLs, explicit allowlisted loopback remapping and exact logical/server request-count assertions. No production interface/scope change is needed; no second critique was launched.
+
+Lifecycle: actual Codex PID73853, supervisorPID73852; start `2026-10-28T00:31:22.738761+00:00`; natural exit0 and wait/reap at `2026-10-28T00:32:48.083118+00:00`,85.312seconds, under300second ceiling. Transcript ends `CODEX_EXIT=0` and `DONE`; lifecycle records naturalReap=true,reaped=true. Supervisor session99450 also completed exit0. No process remains from this critique.
+
+Exact argv: `codex exec -s read-only -C /Users/Luis/projects/emailclient --output-last-message /var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-plan55-critique-irta2730/final.md -`, prompt supplied on stdin. OS start/argv record identifies the node Codex launcher, PID and local start time. Artifacts in `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-plan55-critique-irta2730/`: `prompt.txt`, `final.md`, `review.log`, `lifecycle.json`, `run.py`. The recorded reviewer shell commands are read-only source inspection; no test/check/child critique execution was recorded. Reviewer observed baseline2f7ab8f.
+
+Additional in-scope test-plan refinements after source inspection: explicit native watchdog ownership; separate real HTTP coverage from fake-timer internal-deadline controls; acknowledge the focused unit command's implicit incoming-worker build. No additive test source or production source has been written/run in this planning phase. Critique READY; test plan READY; process IDLE. Await root SMALLCHECK release, without claiming feature completion or clearance.
+
+
+## Root SMALLCHECK window: implementation and observed evidence
+
+The subsequent root message explicitly released the bounded RED/implementation/GREEN/control/privacy/mail-types/owned-lint/diff window while the focus owner held source/check work through QUOTA END. IDB work remained external/static. Root permitted the additive backend privacy test; no production ownership or public interface was widened. Only the seven approved mail production paths, three new focused test files and this plan belong to this changeset. Plan26/worklist, AGENTS, icon commits, renderer WIP and reentrant RED remain owned by others and were preserved. No new critique/reviewer/agent, browser, native app, perf or global check was launched.
+
+Implemented: bounded immutable prebody failure-response observations on API/refresh/sign-in boundaries, optional nonenumerable absent-compatible ProviderError/Auth fields and intended-purpose tags. The helper copies only the known request fields and retains no Response/Headers/body/URL. All three token statusFailure exits share the original snapshot; final API401 and actual token400 auth preserve class/top-level-shape precedence. Successful and late canceled responses do not publish evidence. No parser, scope inference, scheduling, schema, RPC, UI, logging or retry/deadline behavior was added.
+
+The RED suite imported only existing public provider modules and inspected an optional field; it did not import the then-nonexistent helper. Before any production edit, all37 public cases reached real loopback HTTP and failed on absent httpResponse. Existing status/class/request-count assertions before that point and all socket/server cleanup completed; there was no compile/import/fixture failure in that RED. The RED command exited1 naturally. Helper tests were created only after its module existed.
+
+The focused GREEN passed57cases (public boundaries plus helper clock/bounds/constructor controls). Five unchanged control files passed182cases. The additive backend privacy suite passed2cases with actual Backend, public RPC/memory transport, real Gmail HTTP, diagnostics/log sinks and SQL/IndexedDB stores; both reopen with the same sanitized durable operation error and no extra HTTP. In-memory raw hostile header markers are present on the local provider error and absent from diagnostic/RPC/JSON/log/account/operation projections. There is no claim of browser CORS exposure coverage or of time-based throttle enforcement. Photo failures retain their public swallowed source states; their exact logical/server routes and counts are checked, while hidden photo error context is verified by the literal source mapping rather than a new test hook.
+
+Two non-product failures are fully accounted for: the first additive backend run passed SQL but failed IndexedDB's expected second profile request because the fixture had not installed fake-indexeddb/auto and the sync's flag path requires browser IDB globals. Adding that fixture import and asserting the account's actual HTTP429 error made both cases pass. The first owned lint reported only one unused inspectGmailToken test import; removing it made exact owned lint pass. The import-only removal changed no tested assertion or production byte. Neither failure was called a product RED, hidden or left unexplained.
+
+Test resource ownership: every HTTP fixture used an ephemeral loopback port, an explicit HTTPS logical-URL allowlist/remapping where needed, bounded synthetic payloads and a native node:timers5second watchdog. Finally cleanup aborts test-owned requests, clears all watchdogs, destroys only fixture-owned sockets, awaits their close events and server.close, closes backend/client/store and removes only its temp directory. Controlled public-provider Response streams plus fake timers exercise the internal30second refresh deadline, canceled/unlocked readers and zero leftover timers; those controls are expressly not real30second network measurements. No production timeout option was introduced.
+
+The TDD skill was read for this root-approved public-boundary RED-first work. User/root authority explicitly required the initial public suite before the seven-file implementation; existing seams and interface had already been approved. No extra confirmation was needed.
+
+### Exact bounded command/process record
+
+Artifacts: `/tmp/terno-plan55-checks-rcw6jayi/`. Each command has `<name>.log` and `<name>.json`, plus `ledger.json` and `run.py`. JSON records exact argv, actual PID/OS start argv, UTC start/finish, ceiling, natural reap, observed command-group children and remaining group. No timeout/kill was used. Supervisor logs end ACTUAL_EXIT plus DONE, not a fabricated literal DONE in a test result file. All observed command groups were empty after natural wait/reap. The plan-only critique remains the single earlier PID73853 invocation; these commands did not start another critique.
+
+| Command record | PID | Actual exit | Runtime seconds | Disposition |
+|---|---:|---:|---:|---|
+| red-public | 86306 | 1 | 1.065 | Expected37 absent-metadata behavior failures before production |
+| green-focused | 90243 | 0 | 1.592 | 57 passed |
+| controls | 90577 | 0 | 3.195 | 182 passed |
+| backend-privacy | 91510 | 1 | 1.582 | Fixture-only IDB global omission; SQL passed |
+| backend-privacy-fixture-fixed | 93070 | 0 | 2.736 | 2 passed, including both durable reopens |
+| mail-typecheck | 93164 | 0 | 1.071 | Passed |
+| owned-lint | 93739 | 1 | 0.533 | Unused test import only |
+| owned-lint-fixed | 94426 | 0 | 0.521 | Passed |
+
+All test commands were bounded≤180seconds and serial; mail typecheck and exact owned lint≤120seconds. The functional/check aggregate so far is recorded exactly in ledger.json and remains far below the600second root ceiling. Owned diff check≤15seconds and the shared-helper atomic commit follow this record; their actual logs are in the same folder. No broader check is implied. The final report supplies the resulting commit SHA rather than changing this plan after commit.
+
+Each command's before/after SHA256 map covers the seven owned production paths, all three tests, Plan55, AGENTS, Vitest config, incoming worker source, test-worker-setup emitter entrypoint, build-incoming-worker emitter script and generated incoming.worker.cjs. The rebuild was expected via unit globalSetup; worker output and both emitter inputs stayed byte-identical in the executed runs. Source maps show production unchanged across the initial RED and stable during each later check. Only deliberate authoring between commands changed owned inputs; no emitter/source/global config was edited. Raw mail/secrets or real profiles were never inspected.
+
+Remaining qualification is root-owned: a fresh independent two-axis code review and regression-backed correction loop, any requested backend test type qualification, full repository type/lint/test/e2e/web/UI-perf/perf gates and desktop build/smoke where the final series requires them. These focused checks do not waive AGENTS or provide production/release clearance. Account/project/mailbox quota, durable scheduling, restart protection, Date skew/minimum interpretation and parser work remain open outside this evidence commit. No schema version is reserved.
+
+Tracked owned-path git diff --check completed0 (PID96704). The first additive-file diff wrapper (PID2659) stopped on git diff --no-index's normal content-difference exit1 despite empty whitespace diagnostics; this was a wrapper interpretation failure, not a source defect. The corrected wrapper accepts only exit0/1 with no stdout/stderr and still rejects any whitespace diagnostic or other error; its guarded rerun follows in additive-diffs-fixed.log/json. This correction changes no repository source/test behavior. The final evidence summary explicitly includes these process results, the final diff run and the shared-helper commit.

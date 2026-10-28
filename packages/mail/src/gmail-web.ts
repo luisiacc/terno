@@ -2,12 +2,13 @@ import { isValidEmail } from "@terno/core";
 import { L } from "@terno/i18n";
 import { createGmailApiProvider, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
-import { ProviderAuthError, ProviderError, type GmailTokenBroker, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
+import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 interface GoogleSignInFlow {
   signal: AbortSignal;
   wait<T>(work: Promise<T>): Promise<T>;
-  json(url: string, init?: RequestInit): Promise<Record<string, unknown>>;
+  json(url: string, init?: RequestInit, httpContext?: HttpRequestContext): Promise<Record<string, unknown>>;
 }
 
 /** One deadline covers headers and bodies, including fetch implementations that ignore abort. */
@@ -30,18 +31,20 @@ export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeo
       if (stop) signal.removeEventListener("abort", stop);
     }
   };
-  const json = async (url: string, init?: RequestInit): Promise<Record<string, unknown>> => {
+  const json = async (url: string, init?: RequestInit, httpContext: HttpRequestContext = { endpoint: "unknown", purpose: "unknown" }): Promise<Record<string, unknown>> => {
     signal.throwIfAborted();
+    let httpResponse: HttpResponseEvidence | undefined;
     const response = await wait(options.fetch(url, { ...init, signal }).then((res) => {
       if (signal.aborted) {
         void res.body?.cancel().catch(() => {});
         throw signal.reason;
       }
+      if (!res.ok) httpResponse = captureHttpResponseEvidence(res, httpContext, Date.now());
       return res;
     }));
     if (!response.ok) {
       void response.body?.cancel().catch(() => {});
-      throw new ProviderError(L("errors.google.signInFailed", { detail: response.status }), response.status === 429 || response.status >= 500);
+      throw new ProviderError(L("errors.google.signInFailed", { detail: response.status }), response.status === 429 || response.status >= 500, false, false, httpResponse);
     }
     const reader = response.body?.getReader();
     if (!reader) throw new ProviderError(L("errors.google.invalidResponse"), false);
@@ -87,10 +90,10 @@ export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeo
 export async function readGoogleIdentity(accessToken: string, ep: GmailEndpoints, flow: GoogleSignInFlow): Promise<Omit<import("./types").GmailConnectResult, "refreshToken">> {
   if (typeof accessToken !== "string" || !/^[\x21-\x7e]+$/.test(accessToken)) throw new ProviderError(L("errors.google.invalidResponse"), false);
   const auth = { authorization: `Bearer ${accessToken}` };
-  const profile = await flow.json(`${ep.api}/profile`, { headers: auth });
+  const profile = await flow.json(`${ep.api}/profile`, { headers: auth }, { endpoint: "gmail-api", purpose: "identity-proof" });
   const email = profile.emailAddress;
   if (typeof email !== "string" || email.length > 254 || (!isValidEmail(email) || /\p{Cc}/u.test(email))) throw new ProviderError(L("errors.google.invalidResponse"), false);
-  const info = await flow.json(ep.userinfo, { headers: auth });
+  const info = await flow.json(ep.userinfo, { headers: auth }, { endpoint: "google-userinfo", purpose: "identity-proof" });
   if (typeof info.sub !== "string" || !info.sub || info.sub.length > 255 || /[\s\p{Cc}]/u.test(info.sub) ||
     (info.name !== undefined && typeof info.name !== "string") ||
     (info.email_verified !== undefined && typeof info.email_verified !== "boolean") ||

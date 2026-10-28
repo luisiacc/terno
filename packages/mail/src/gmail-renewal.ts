@@ -26,7 +26,7 @@ export async function beginGmailRenewal(options: GmailRenewalOptions & { endpoin
       for (const scope of scopes) {
         const path = scope === CONTACTS_SCOPE ? "people/me/connections?personFields=photos&pageSize=1" : scope === OTHER_CONTACTS_SCOPE ? "otherContacts?readMask=photos&pageSize=1" : null;
         if (!path || (grant.grantedScopes && !grant.grantedScopes.includes(scope))) throw new ProviderError(L("errors.google.invalidResponse"), false);
-        await flow.json(`${PEOPLE_API}/${path}`, { headers: { authorization: `Bearer ${grant.accessToken}` } });
+        await flow.json(`${PEOPLE_API}/${path}`, { headers: { authorization: `Bearer ${grant.accessToken}` } }, { endpoint: "google-people", purpose: "grant-proof" });
         proved.push(scope);
       }
       return proved;

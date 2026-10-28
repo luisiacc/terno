@@ -31,6 +31,32 @@ export interface ProviderOp {
   payload: unknown;
 }
 
+export type HttpRequestContext =
+  | { readonly endpoint: "gmail-api"; readonly purpose: "mail" | "identity-proof" }
+  | { readonly endpoint: "oauth-token"; readonly purpose: "refresh" | "authorization-code" }
+  | { readonly endpoint: "google-people"; readonly purpose: "photos" | "grant-proof" }
+  | { readonly endpoint: "google-userinfo"; readonly purpose: "photos" | "identity-proof" }
+  | { readonly endpoint: "unknown"; readonly purpose: "unknown" };
+
+export type BoundedHttpHeader =
+  | { readonly kind: "not-visible" }
+  | { readonly kind: "value"; readonly value: string }
+  | { readonly kind: "too-long" };
+
+export type HttpReceipt =
+  | { readonly source: "date-now"; readonly kind: "wall"; readonly wallMs: number }
+  | { readonly source: "date-now"; readonly kind: "invalid" };
+
+export interface HttpResponseEvidence {
+  readonly source: "http-response";
+  readonly request: HttpRequestContext;
+  readonly status: number;
+  readonly quotaScope: "unknown";
+  readonly received: HttpReceipt;
+  readonly retryAfter: BoundedHttpHeader;
+  readonly serverDate: BoundedHttpHeader;
+}
+
 /**
  * retryable: transient (network, 5xx, 429) → backoff and retry.
  * ambiguous: the outcome is unknown (e.g. connection lost after SMTP DATA) → never retried.
@@ -40,16 +66,20 @@ export interface ProviderOp {
 export class ProviderError extends Error {
   /** set when the message is a catalog message (L()): the renderer translates it */
   readonly i18n?: TextRef;
+  /** Local evidence only: raw response fields must never enter error projections. */
+  declare readonly httpResponse?: HttpResponseEvidence;
   constructor(
     message: string | Localized,
     readonly retryable: boolean,
     readonly ambiguous = false,
     readonly network = false,
+    httpResponse?: HttpResponseEvidence,
   ) {
     super(typeof message === "string" ? message : message.message);
     this.name = "ProviderError";
     const i18n = textRef(message);
     if (i18n) this.i18n = i18n;
+    if (httpResponse) Object.defineProperty(this, "httpResponse", { value: httpResponse });
   }
 
   /** the server couldn't be reached: retryable, and the network is the likely cause */
@@ -69,8 +99,8 @@ export class ProviderError extends Error {
  * again (a successful sync, a reconnect).
  */
 export class ProviderAuthError extends ProviderError {
-  constructor(message: string | Localized) {
-    super(message, false);
+  constructor(message: string | Localized, httpResponse?: HttpResponseEvidence) {
+    super(message, false, false, false, httpResponse);
     this.name = "ProviderAuthError";
   }
 
