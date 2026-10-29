@@ -201,10 +201,12 @@ it("Codex R50: 250 cold lookups of different envelopes among 50,000 sharing a Me
   const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
   for (let i = 1; i <= 50_000; i++) c.db.table("messages").load({ id: i, account_id: account, thread_id: i, provider_msg_id: `m${i}`, rfc_message_id: "<reused@x>", from_email: "a@x", subject: `S${i}`, date: 1, size: 1, is_trash: 0, is_spam: 0 });
   const locations = store.providerStore(account).locations;
+  // load-aware (timing.ts): on a busy machine a sample the OS held counts at its CPU time
   const lookups = async () => {
-    const t0 = performance.now();
-    for (let i = 0; i < 250; i++) expect(await locations.twins({ subject: `S${i * 199 + 1}`, fromEmail: "a@x", date: 1, size: 1, rfcMessageId: "<reused@x>" }, 0, 500)).toEqual([i * 199 + 1]);
-    return performance.now() - t0;
+    const s = await sampleAsync(async () => {
+      for (let i = 0; i < 250; i++) expect(await locations.twins({ subject: `S${i * 199 + 1}`, fromEmail: "a@x", date: 1, size: 1, rfcMessageId: "<reused@x>" }, 0, 500)).toEqual([i * 199 + 1]);
+    });
+    return settle([s]).ms[0]!;
   };
   const cold = await lookups();
   c.db.tx(() => c.db.table("threads").put({ id: 50_001, account_id: account, last_date: 1, unread_count: 0, message_count: 1 }));
@@ -251,5 +253,23 @@ it("Codex R51: select all in a folder of 150,000 threads, cold and after an arri
   expect(cold).toBeLessThan(32 * MULT);
   expect(Math.max(...reads)).toBeLessThan(32 * MULT);
   expect(arrival).toBeLessThan(2 * MULT);
+  await store.close();
+});
+
+it("Codex R52: the cold select-all count of a folder of 60,000 members in reverse order within the worker's stall budget", { timeout: 1_200_000 }, async () => {
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
+  for (let i = 60_000; i >= 1; i--) {
+    c.db.table("threads").load({ id: i, account_id: account, last_date: i, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+    c.db.table("thread_folders").load({ thread_id: i, account_id: account, folder: "Label_big", last_date: i, unread: 0 });
+  }
+  const s = await sampleAsync(() => store.threads.scopeCount({ view: "all", accountId: account, folder: "Label_big", limit: 100_001 }));
+  const ms = settle([s]).ms[0]!;
+  console.log(`cold select-all count of 60,000: ${ms.toFixed(1)} ms`);
+  expect(s.result).toBe(60_000);
+  expect(ms).toBeLessThan(32 * MULT);
   await store.close();
 });

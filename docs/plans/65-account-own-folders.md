@@ -462,3 +462,9 @@ Also: the IndexedDB folder gates' cold reads (rounds 48, 49) are load-aware now 
 
 **Round 51.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **Select all in a big IndexedDB folder sorted its member ids whole** (500,000: 126 to 142 ms), and any member in or out threw them away. The ascending ids are kept across changes (up to 64 placed by search), built in the background as typed runs merged a pass at a time once asked for, and until then a scope page is the smallest `limit` members above its cursor from one walk. Gate: 150,000 members in no order, the cold page 13 ms, pages while built 9 ms, a page after an arrival 0.3 ms (57 before).
+
+**Round 52.** Codex found two medium problems; each is fixed with a test or gate that fails without the fix:
+1. **A cold select-all count was quadratic:** its limit of 100,001 went through round 51's sorted insertion, a splice each (60,000 members in reverse order: 269 ms). A page (a limit of at most 5,000) is still placed in order as found, the view and filter only for what can still make it; a count's collects the members above its cursor and sorts them natively once, the view and filter looked at only until it's full. Gate: the cold count of 60,000 members in reverse order, 8 ms.
+2. **Resets in many folders piled up the cursor's journal:** each folder's pending reset ids were bounded alone (20 folders with the same 200,000 copies: 4 million ids, 27 MB written with each reset). `resetRoom` bounds every folder's together by the cursor's limit; past it, `overflow`, and the scan for messages with no place finds the rest (rounds 15, 16). Tests: twenty such folders stay within the limit; the cursor at its largest, every journal full, written and read back within a frame.
+
+Also: the round 50 twin gate is load-aware now (it measured 35 ms of wall time at a load of 11, 16 of CPU).

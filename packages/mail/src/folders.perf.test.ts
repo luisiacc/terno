@@ -315,3 +315,9 @@ it("Codex R49: reconciling 50,000 messages (a renamed folder's) never holds the 
   await stall();
   expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
 });
+
+it("Codex R52: the sync cursor at its largest (every journal full) is written and read back within a frame", () => {
+  const ids = (n: number, from: number) => Array.from({ length: n }, (_, i) => from + i);
+  const cursor = { mailboxes: { INBOX: { uidvalidity: 1, uidnext: 2 } }, unlocated: ids(200_000, 1), orphans: ids(100_000, 300_000), resetPending: { A: ids(100_000, 500_000), B: ids(100_000, 700_000) }, overflow: true };
+  expect(best(() => JSON.parse(JSON.stringify(cursor)))).toBeLessThan(16);
+});

@@ -39,6 +39,17 @@ interface Cursor {
   overflow?: boolean;
 }
 
+/**
+ * Plan 65 (Codex R52): how many more reset ids this folder may keep: the limit is the cursor's, every folder's together
+ * (20 folders reset with the same 200,000 copies were 4 million ids, 27 MB of cursor written each time); past it,
+ * `overflow`, and the scan for messages with no place finds the rest
+ */
+export function resetRoom(pending: Readonly<Record<string, readonly number[]>>, path: string): number {
+  let others = 0;
+  for (const [p, ids] of Object.entries(pending)) if (p !== path) others += ids.length;
+  return Math.max(0, IMAP_JOURNAL_LIMITS.resetPending - others);
+}
+
 /** Plan 65: how many ids each journal in the cursor keeps (the cursor stays bounded; past them, `overflow`). */
 export const IMAP_JOURNAL_LIMITS = { unlocated: 200_000, resetPending: 200_000, orphans: 100_000 };
 
@@ -700,7 +711,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     await addAll(ids, (await readMailbox(locations, path, olduidvalidity)).map((l) => l.message_id));
     const list = [...ids];
     cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
-    cursor.resetPending[path] = bounded(cursor, list, IMAP_JOURNAL_LIMITS.resetPending, "oldest");
+    cursor.resetPending[path] = bounded(cursor, list, resetRoom(cursor.resetPending, path), "oldest");
     const journaled = new Set<number>();
     await addAll(journaled, cursor.unlocated ?? []);
     await addAll(journaled, list);

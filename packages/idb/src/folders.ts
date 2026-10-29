@@ -320,17 +320,32 @@ export function folderScopeIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   const ids = T(c, "folders").has(p.accountId, p.folder) ? c.scopes.folder(c, p.accountId!, p.folder!) : [];
   const pass = keeps(p);
   if (ids === null) {
-    // still being built (Codex R51): the smallest `limit` members above `after` that pass, from one walk
+    // still being built (Codex R51): the smallest `limit` members above `after` that pass, from one walk and one
+    // native sort (Codex R52: a count's limit of 100,001 placed by splice was quadratic)
     const memberships = T(c, "thread_folders");
     const after = p.after ?? 0;
-    const top: number[] = [];
+    if (p.limit <= 5000) {
+      // a page: placed in order as found, the view and filter only for what can still make it
+      const top: number[] = [];
+      for (const k of memberships.keysBy("folder", p.accountId, p.folder)) {
+        const id = memberships.rows.get(k)!.thread_id as number;
+        if (id <= after || (top.length >= p.limit && id > top[p.limit - 1]!) || !pass(threads.get(id))) continue;
+        top.splice(seekAfter(top, id - 1), 0, id);
+        if (top.length > p.limit) top.pop();
+      }
+      return top;
+    }
+    // a count's (a limit of 100,001): one native sort, never a splice each
+    const found: number[] = [];
     for (const k of memberships.keysBy("folder", p.accountId, p.folder)) {
       const id = memberships.rows.get(k)!.thread_id as number;
-      if (id <= after || (top.length >= p.limit && id > top[p.limit - 1]!) || !pass(threads.get(id))) continue;
-      top.splice(seekAfter(top, id - 1), 0, id);
-      if (top.length > p.limit) top.pop();
+      if (id > after) found.push(id);
     }
-    return top;
+    // sorted, then the view and filter looked at only until the page is full
+    const sorted = Float64Array.from(found).sort();
+    const out: number[] = [];
+    for (let i = 0; i < sorted.length && out.length < p.limit; i++) if (pass(threads.get(sorted[i]!))) out.push(sorted[i]!);
+    return out;
   }
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) if (pass(threads.get(ids[i]!))) out.push(ids[i]!);

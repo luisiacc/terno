@@ -3,7 +3,7 @@
  */
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { customFolders, heldUidnext } from "./imap";
+import { customFolders, heldUidnext, IMAP_JOURNAL_LIMITS, resetRoom } from "./imap";
 
 type Listed = Parameters<typeof customFolders>[0][number];
 const box = (path: string, o: { flags?: string[]; specialUse?: string; delimiter?: string } = {}) =>
@@ -67,5 +67,16 @@ describe("heldUidnext", () => {
     expect(heldUidnext(700_000, held)).toBe(100_001);
     expect(heldUidnext(50, held)).toBe(50);
     expect(heldUidnext(9, [])).toBe(9);
+  });
+});
+
+describe("resetRoom", () => {
+  it("Codex R52: every folder's reset ids together stay within the cursor's limit", () => {
+    const pending: Record<string, number[]> = {};
+    const ids = Array.from({ length: 200_000 }, (_, i) => i + 1);
+    for (let f = 0; f < 20; f++) pending[`F${f}`] = ids.slice(0, resetRoom(pending, `F${f}`));
+    expect(Object.values(pending).reduce((n, list) => n + list.length, 0)).toBeLessThanOrEqual(IMAP_JOURNAL_LIMITS.resetPending);
+    // a folder's own ids don't count against it again
+    expect(resetRoom({ A: [1, 2, 3] }, "A")).toBe(IMAP_JOURNAL_LIMITS.resetPending);
   });
 });
