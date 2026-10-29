@@ -29,6 +29,9 @@ let store: SqlMailStore;
 let engine: InstantSearchEngine;
 let head: Revision;
 const stats: Stat[] = [];
+/** plan 68: a batch of new mail is new to its folders too: the generated IMAP locations' uids past every batch before */
+const uids = { base: 0 };
+const newUids = <T extends { locations?: { uid: number }[] }>(m: T, base: number): T => (m.locations ? { ...m, locations: m.locations.map((l) => ({ ...l, uid: l.uid + base })) } : m);
 const meta: Record<string, unknown> = {};
 
 /** heap + array buffers after full collections (array buffers are freed lazily: settle, then collect again) */
@@ -179,15 +182,17 @@ describe("the store's search path", () => {
 describe("the write path", () => {
   it("new mail commits at the same speed with the index on; the index catches up once writes settle", async () => {
     const accounts = store.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
-    const batch = (tag: string) =>
-      generateDataset({ threads: 1_200, accounts: 8, seed: 31, now: NOW, bodyScale: 4 }).messages.map((m) => ({
-        ...m,
+    const batch = (tag: string) => {
+      const base = (uids.base += 1_000_000);
+      return generateDataset({ threads: 1_200, accounts: 8, seed: 31, now: NOW, bodyScale: 4 }).messages.map((m) => ({
+        ...newUids(m, base),
         providerMsgId: `${tag}-${m.providerMsgId}`,
         rfcMessageId: `${tag}-${m.rfcMessageId}`,
         references: m.references.map((r) => `${tag}-${r}`),
         inReplyTo: m.inReplyTo ? `${tag}-${m.inReplyTo}` : null,
         accountId: accounts[m.accountIndex]!,
       }));
+    };
     const ingest = async (s: SqlMailStore, tag: string) => {
       const msgs = batch(tag);
       const cpu = process.cpuUsage();
@@ -340,9 +345,10 @@ describe("restore and compaction with a history", () => {
 
     const accounts = hist.db.all<{ id: number }>("SELECT id FROM accounts ORDER BY id").map((r) => r.id);
     const lived = generateDataset({ threads: 3_300, accounts: 8, seed: 404, now: NOW, bodyScale: 4 }).messages.slice(0, 8_000);
+    const livedBase = (uids.base += 1_000_000);
     for (let i = 0; i < lived.length; i += 200) {
       const slice = lived.slice(i, i + 200).map((m, k) => ({
-        ...m,
+        ...newUids(m, livedBase),
         providerMsgId: `h-${m.providerMsgId}`,
         rfcMessageId: `h-${m.rfcMessageId}`,
         references: m.references.map((r) => `h-${r}`),

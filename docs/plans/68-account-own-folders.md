@@ -478,3 +478,15 @@ Also: the round 50 twin gate is load-aware now (it measured 35 ms of wall time a
 3. **"N more folders" focused, then taken away by a smaller catalog, left focus on the document.** The folders' focus recovery follows that button too, handing focus to the last folder shown. Test: e2e, 300 folders cut to 250 while the button is focused.
 
 Also: the round 53 gate's types (its remove callback returned the store's result).
+
+## Landing (after Codex round 54)
+
+Rebased onto main at cc8008c0. Main's plans 63 (act on similar) and 64 (search everywhere) had taken our numbers, so hover, account folders and own folders are now 66, 67 and 68.
+
+The full suites caught two of ours, both fixed:
+- A search from a folder now looks everywhere (main's plan 64), so the R8 test expects no account.
+- The mock dataset now gives IMAP messages locations in their folders, and `instant.perf` re-ingested the same dataset as new mail with the same UIDs (a UNIQUE failure). Each batch now gets UIDs past the last, as a server gives new mail.
+
+Failing on main at cc8008c0 as well (each run side by side on both): `idb.persistence` (2), `ops-scale` under load, `scan.test` and `selection-write-source` (both from `forward-raw-obligation-test-utils.tsx`), `gmail-response.perf` (2), `attachment-admission.perf` (2), `ingest.perf` (0.88–0.91 on both), `incoming-inline.perf` (same CPU on both, load-bound), `load.perf`'s slow-disk gate, and e2e `compose:109` and `composer:651`. E2e `designs:161` and `settings-pass:81` failed once under load and passed 27 of 27 alone. UI perf: 62 of 62 on the second run (a 2 MB draft frame at 52.5 against 50 the first time, under load 12).
+
+Still open: round 54's finding 1 (orphan removal for one long conversation refolds the thread per batch), a follow-up for a deferred, store-level refold.
