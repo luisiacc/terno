@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Plan 65 (Codex R14): an account's folder rows are built only while it's open, the first step before the paint
+ * Plan 68 (Codex R14): an account's folder rows are built only while it's open, the first step before the paint
  * (a usual catalog is there at once), a huge one a few milliseconds a task; a closed account never rebuilds.
  */
 import type { Folder } from "@terno/core";

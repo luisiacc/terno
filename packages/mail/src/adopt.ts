@@ -1,4 +1,4 @@
-/** A stored message's envelope, as a renamed folder's copy of it is recognised (plan 65). */
+/** A stored message's envelope, as a renamed folder's copy of it is recognised (plan 68). */
 export interface Envelope {
   id: number;
   subject: string;
@@ -11,7 +11,7 @@ export interface Envelope {
 const keyOf = (e: Omit<Envelope, "id">) => `${e.rfcMessageId ?? ""}\u0000${e.subject}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}`;
 
 /**
- * Plan 65 (Codex R4): the messages of folders that vanished this pass (a rename), by envelope, built once and
+ * Plan 68 (Codex R4): the messages of folders that vanished this pass (a rename), by envelope, built once and
  * consumed as their copies are found under the new name, so recovery is linear in the folder, never a scan of
  * every candidate per message.
  */
@@ -111,7 +111,7 @@ function breather(budgetMs = 4): () => Promise<void> {
 }
 
 /**
- * Plan 65 (Codex R43): ids ascending, a step at a time: copied out a few thousand at a time, sorted as typed runs of
+ * Plan 68 (Codex R43): ids ascending, a step at a time: copied out a few thousand at a time, sorted as typed runs of
  * 16,384, then merged a pass at a time, the loop given a turn every few milliseconds throughout.
  */
 export async function sortIds(ids: Iterable<number>): Promise<Float64Array> {

@@ -84,7 +84,7 @@ describe("navigation", () => {
     gate("list category ∩ inbox", 5, () => listThreads(db, { view: "inbox", categoryId: largest.category_id, limit: 100 }));
   });
 
-  it("lists an account's own folders (plan 65): big, sparse, deep, filtered, scopes", async () => {
+  it("lists an account's own folders (plan 68): big, sparse, deep, filtered, scopes", async () => {
     // checkpoints off the thread, as on desktop: in-thread ones every thousand pages would be the stalls measured
     const checkpoints = startCheckpointWorker(db)!;
     // the biggest account's every thread in one folder, beside the dataset's own folders

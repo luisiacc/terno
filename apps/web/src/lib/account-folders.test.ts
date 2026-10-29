@@ -1,5 +1,5 @@
 /**
- * Plan 64: the top of the sidebar is all your mail, what's under an account is that account's. The scope rules
+ * Plan 67: the top of the sidebar is all your mail, what's under an account is that account's. The scope rules
  * of shortcuts, the palette and an account's row, and the open account. Node, the RPC client mocked.
  */
 import type { Account } from "@terno/core";
@@ -122,7 +122,7 @@ describe("accounts that come and go", () => {
   });
 });
 
-describe("an account's own folders (plan 65)", () => {
+describe("an account's own folders (plan 68)", () => {
   const f = (accountId: number, key: string, path: string[], selectable = true) => ({ accountId, key, path, selectable });
 
   it("rows nest by path in listed order; a parent that isn't listed is drawn once, not a place to go", () => {

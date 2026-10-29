@@ -288,7 +288,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
           return new TextEncoder().encode("synthetic raw");
         },
       }),
-      // The test drives real Gmail execution; no mailbox enumeration is needed (nor plan 65's label list).
+      // The test drives real Gmail execution; no mailbox enumeration is needed (nor plan 68's label list).
       async sync() {},
       async folders() {},
     });

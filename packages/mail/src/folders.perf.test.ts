@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R17): a provider's catalog of 10,000 folders, names of 225 characters sharing a long prefix, becomes
+ * Plan 68 (Codex R17): a provider's catalog of 10,000 folders, names of 225 characters sharing a long prefix, becomes
  * the folder list within a small part of a frame on the backend's loop (no sort there: the sidebar draws by name).
  */
 import { FOLDER_NAME_MAX } from "@terno/core";

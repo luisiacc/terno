@@ -125,7 +125,7 @@ export interface SyncSink {
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
-  /** plan 65: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink has it; a bare test sink may not */
+  /** plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink has it; a bare test sink may not */
   setFolders?(folders: readonly ProviderFolder[]): Promise<void>;
   signal: AbortSignal;
 }
@@ -165,7 +165,7 @@ export interface MailProvider {
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
   /**
-   * Plan 65: after a pass that worked, the account's own folders when the provider keeps them apart from its
+   * Plan 68: after a pass that worked, the account's own folders when the provider keeps them apart from its
    * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.
    */
   folders?(sink: SyncSink): Promise<void>;

@@ -703,7 +703,7 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
 });
 
 test("a hovered row next to the selected one: a hairline between their fills, the rows' pitch unchanged", { tag: "@design" }, async ({ app: page }) => {
-  // two neighbors under an open account (plan 64): its Inbox selected, its Sent hovered
+  // two neighbors under an open account (plan 67): its Inbox selected, its Sent hovered
   const account = page.locator('[data-testid^="nav-account-"]').first();
   await account.click();
   const id = (await account.getAttribute("data-testid"))!.slice("nav-account-".length);
@@ -718,7 +718,7 @@ test("a hovered row next to the selected one: a hairline between their fills, th
       return { top: r.top, height: r.height, paintTop: r.top + parseFloat(s.borderTopWidth), paintBottom: r.bottom - parseFloat(s.borderBottomWidth), clip: s.backgroundClip, bg: s.backgroundColor, navH: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--nav-h")) * parseFloat(getComputedStyle(document.documentElement).fontSize) };
     });
   const [a, b] = [await fill(selected), await fill(hovered)];
-  // both filled, the case the seam is for; hover a step softer than selected (plan 63)
+  // both filled, the case the seam is for; hover a step softer than selected (plan 66)
   expect([a.bg, b.bg]).not.toContain("rgba(0, 0, 0, 0)");
   expect(b.bg).not.toBe(a.bg);
   expect(a.clip).toBe("padding-box");

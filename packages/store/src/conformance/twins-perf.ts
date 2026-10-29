@@ -3,7 +3,7 @@ import type { MailStore } from "../mail-store";
 import { ingest, msg, withAccounts } from "./fixtures";
 
 /**
- * Plan 65 (Codex R20): an ID-less message's twins are found by exactly its envelope: with 50,000 ID-less messages
+ * Plan 68 (Codex R20): an ID-less message's twins are found by exactly its envelope: with 50,000 ID-less messages
  * from one sender at one date and size (distinct subjects), 250 lookups take a few milliseconds, never a cohort scan.
  */
 export async function twinLookupsMs(store: MailStore, rfc: string | null = null): Promise<number> {
@@ -23,7 +23,7 @@ export async function twinLookupsMs(store: MailStore, rfc: string | null = null)
   return Math.min(...runs);
 }
 
-/** Plan 65 (Codex R21): 50,000 ID-less messages of one envelope, paged 500 at a time from the first to the last. */
+/** Plan 68 (Codex R21): 50,000 ID-less messages of one envelope, paged 500 at a time from the first to the last. */
 export async function twinPagesMs(store: MailStore, rfc: string | null = null): Promise<number> {
   const [, m] = await withAccounts(store);
   const base = { from: { name: "", email: "boletin@example.test" }, subject: "Igual", date: 1_800_000_000_000, size: 4096, rfcMessageId: rfc };

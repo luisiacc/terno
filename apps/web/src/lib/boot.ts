@@ -31,7 +31,7 @@ export async function boot(): Promise<void> {
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
-    // a remembered open account that's no longer there (plan 64)
+    // a remembered open account that's no longer there (plan 67)
     reconcileAccounts(b.accounts);
     installAppearanceListeners();
     // every stored draft comes back: replies onto their conversations, new ones to the drafts strip

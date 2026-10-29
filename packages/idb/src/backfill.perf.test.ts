@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R45): the web upgrade's backfill on a mailbox of 1,000,000 messages: every folders.rebuild call, the
+ * Plan 68 (Codex R45): the web upgrade's backfill on a mailbox of 1,000,000 messages: every folders.rebuild call, the
  * scan of the messages included, within a frame (a slice looks at a bounded stretch, the scan kept between slices).
  */
 import "fake-indexeddb/auto";

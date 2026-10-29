@@ -98,7 +98,7 @@ test.describe("the receiving account on rows", { tag: "@design" }, () => {
     await expect(rows(page).first()).toBeVisible();
     await expect(labels(page)).toHaveCount(0);
     for (const a of accounts.slice(1)) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
-    // the top folders are all accounts (plan 64)
+    // the top folders are all accounts (plan 67)
     await page.getByTestId("nav-inbox").click();
     await expect(rows(page).first()).toBeVisible();
     await expect(labels(page)).toHaveCount(0);

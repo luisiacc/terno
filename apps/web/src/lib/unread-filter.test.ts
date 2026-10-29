@@ -36,7 +36,7 @@ describe("the quick filter's state (plan 12's unread filter, generalized in plan
     expect(() => saveListFilters(new Map([["a", "unread"]]), { setItem: () => { throw new Error("QuotaExceededError"); } })).not.toThrow();
   });
 
-  it("plan 65 (Codex R1): a folder's filter with a long IMAP path survives a reload", () => {
+  it("plan 68 (Codex R1): a folder's filter with a long IMAP path survives a reload", () => {
     const key = mailboxKey({ view: "all", accountId: 2, categoryId: null, reviewCategoryId: null, folder: `Archive/${"Proyecto ".repeat(110)}` });
     expect(key.length).toBeGreaterThan(64);
     const store = new Map<string, string>();

@@ -1,5 +1,5 @@
 /**
- * Plan 63: a hovered row in a sidebar is a step lighter than the selected one, so the open row still reads as
+ * Plan 66: a hovered row in a sidebar is a step lighter than the selected one, so the open row still reads as
  * open while the pointer rests on another. Checked in every design, in light and dark.
  */
 import type { Locator, Page } from "@playwright/test";

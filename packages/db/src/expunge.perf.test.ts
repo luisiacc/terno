@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R34): one conversation of 150,000 messages in a folder, every one expunged at once: its locations go
+ * Plan 68 (Codex R34): one conversation of 150,000 messages in a folder, every one expunged at once: its locations go
  * a slice at a time and the thread's membership is decided once, a page of the thread a turn: linear in all, never
  * a frame without a turn.
  */

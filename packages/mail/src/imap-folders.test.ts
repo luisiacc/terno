@@ -1,5 +1,5 @@
 /**
- * Plan 65: which mailboxes of a LIST are the account's own folders, and how they're named.
+ * Plan 68: which mailboxes of a LIST are the account's own folders, and how they're named.
  */
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";

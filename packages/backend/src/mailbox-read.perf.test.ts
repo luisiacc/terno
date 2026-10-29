@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R40): what a reset or a vanished folder reads first, a mailbox of 100,000 stored locations, comes a
+ * Plan 68 (Codex R40): what a reset or a vanished folder reads first, a mailbox of 100,000 stored locations, comes a
  * page at a time from SQLite, the loop given a turn between pages: never a frame held before the deletes begin.
  */
 import { openDatabase, SqlMailStore } from "@terno/db";

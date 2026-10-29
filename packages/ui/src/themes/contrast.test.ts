@@ -18,7 +18,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 08: error and "saved" inks on background, tint (and menus); the ring on tint and the sidebar, an on switch on tint; sidebar text
     // plan 15: unread ink on 4 surfaces, 8 badge inks over 5 row/draft surfaces, the sidebar's accent as text on 2
     // plan 34: an invalid recipient chip's mark on the chip
-    // plan 63: a hovered sidebar row's four inks and its glyph
+    // plan 66: a hovered sidebar row's four inks and its glyph
     expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1);
   });
 

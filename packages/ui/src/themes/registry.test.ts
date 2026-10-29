@@ -107,7 +107,7 @@ describe("custom themes", () => {
   });
 });
 
-describe("plan 63: a hovered sidebar row", () => {
+describe("plan 66: a hovered sidebar row", () => {
   // a fill as painted over the sidebar, and how far it sits from the bare sidebar
   const away = (fill: string, sidebar: string) => {
     const under = { ...oklchToRgb(parseColor(sidebar)), alpha: 1 };

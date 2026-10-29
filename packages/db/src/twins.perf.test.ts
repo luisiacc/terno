@@ -1,4 +1,4 @@
-/** Plan 65 (Codex R20): an ID-less message's twins, by exactly its envelope (`messages_twins`), at 50,000 in a cohort. */
+/** Plan 68 (Codex R20): an ID-less message's twins, by exactly its envelope (`messages_twins`), at 50,000 in a cohort. */
 import { twinLookupsMs, twinPagesMs } from "@terno/store/conformance";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

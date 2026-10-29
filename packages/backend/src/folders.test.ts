@@ -1,5 +1,5 @@
 /**
- * Plan 65: the backend's side of an account's own folders. A pass hands the list to the store (an unchanged one
+ * Plan 68: the backend's side of an account's own folders. A pass hands the list to the store (an unchanged one
  * writes and says nothing); a provider's folders() runs after a pass that worked, and its own failure waits
  * for the next pass, while a sign-in to redo doesn't.
  */
@@ -63,7 +63,7 @@ async function setup() {
   return { backend, client, account, script, events };
 }
 
-describe("an account's own folders (plan 65): the backend", () => {
+describe("an account's own folders (plan 68): the backend", () => {
   it("a pass hands the list to the store and says so once; the same list again says nothing; bootstrap has it", async () => {
     const t = await setup();
     t.script.list = [{ key: "Work", path: ["Work"], selectable: true }];

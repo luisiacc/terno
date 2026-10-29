@@ -664,7 +664,7 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   expect(folderRenders / TOGGLES).toBeLessThanOrEqual(5);
 });
 
-test("opening and closing an account (plans 64, 65): smooth frames, no long frame; only its own rows render, nothing below", async ({ app: page, server }) => {
+test("opening and closing an account (plans 67, 68): smooth frames, no long frame; only its own rows render, nothing below", async ({ app: page, server }) => {
   const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
   const row = page.getByTestId(`nav-account-${acme}`);
   // its five standard folders and its three own ones
@@ -695,7 +695,7 @@ test("opening and closing an account (plans 64, 65): smooth frames, no long fram
   expect(folders).toBeLessThanOrEqual((TOGGLES / 2) * OWN_ROWS * 2);
 });
 
-test("counts while an account with 300 folders is open (plan 65, Codex R2): an unchanged update renders nothing, a folder's change only its row", async ({ app: page, server }) => {
+test("counts while an account with 300 folders is open (plan 68, Codex R2): an unchanged update renders nothing, a folder's change only its row", async ({ app: page, server }) => {
   const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
   await server.backend.store.folders.replace(acme, Array.from({ length: 300 }, (_, i) => ({ key: `Label_c${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true })));
   server.backend.server.emit("folders", await server.backend.store.folders.list());
@@ -711,7 +711,7 @@ test("counts while an account with 300 folders is open (plan 65, Codex R2): an u
   let folders0 = await renders(page, "NavItem:account-folder");
   await emit({ ...counts });
   await emit({ ...counts, folderUnread: { ...counts.folderUnread } });
-  // the category rows re-render with any counts update (as before plan 65); the accounts and their folders don't
+  // the category rows re-render with any counts update (as before plan 68); the accounts and their folders don't
   const categories = await page.locator("[data-testid^=nav-category-]").count();
   expect((await renders(page, "NavItem:below")) - below0, "unchanged: account rows (beside the categories')").toBeLessThanOrEqual(2 * categories);
   expect((await renders(page, "NavItem:account-folder")) - folders0, "unchanged: folder rows").toBe(0);

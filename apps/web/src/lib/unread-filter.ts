@@ -21,11 +21,11 @@ export interface Mailbox {
   accountId: number | null;
   categoryId: number | null;
   reviewCategoryId: number | null;
-  /** plan 65: one of the account's own folders */
+  /** plan 68: one of the account's own folders */
   folder?: string | null;
 }
 
-/** "inbox||", "all||7", "inbox|2|", and a folder's "all|2||Work" (plan 65) */
+/** "inbox||", "all||7", "inbox|2|", and a folder's "all|2||Work" (plan 68) */
 export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}${m.folder ? `|${m.folder}` : ""}`;
 
 /** Plan 15's filters: what a backend that doesn't say (older than plan 17) knows. */
@@ -51,7 +51,7 @@ export function isUnreadOnly(m: Mailbox & { listFilters: ListFilters }): boolean
   return activeFilter(m) === "unread";
 }
 
-/** a mailbox key: short, or a folder's (plan 65, Codex R1: an IMAP path is up to 1,000 characters) */
+/** a mailbox key: short, or a folder's (plan 68, Codex R1: an IMAP path is up to 1,000 characters) */
 const goodKey = (k: unknown): k is string => typeof k === "string" && k.length > 0 && k.length <= 1100;
 
 /** What was stored: [key, filter] pairs, else nothing on (storage may be unavailable or hold anything). */

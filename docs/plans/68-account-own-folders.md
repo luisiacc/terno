@@ -4,7 +4,7 @@
 
 > also, when clicking on an account from a multiple accounts, it has to expand, to show its inside folders like custom folders created by gmail or by us, or its own spam/inbox/sent and other common folders, of course this needs to follow and have simple intuitive ux
 
-Plan 64 shipped the layout and each account's standard folders. This is step two: the folders the account itself has.
+Plan 67 shipped the layout and each account's standard folders. This is step two: the folders the account itself has.
 - **Gmail:** the user's labels.
 - **IMAP:** the folders on the server.
 
@@ -24,7 +24,7 @@ The user asked for both steps in full now ("since the app has not launched, it n
   - `threads.list` takes `view`, `accountId`, `categoryId` and filters.
   - A category is a membership table joined to `threads` (`listSql` / `scopeFrom` in SQLite; a membership test on the walk in IndexedDB).
   - Selection scopes ("select all N") use the same parameters.
-- **Plan 64:** the sidebar shows an open account's standard folders. With one account, the account lists none, since they'd be the top ones.
+- **Plan 67:** the sidebar shows an open account's standard folders. With one account, the account lists none, since they'd be the top ones.
 
 ## Design
 
@@ -194,7 +194,7 @@ Codex made 12 points; they change the design as follows.
 - **`sink.setFolders` is optional on `SyncSink`.** The backend's sink always has it; bare test sinks don't need it.
 - **SQLite membership is folded in `recomputeThreads`.** It reads a thread's user labels with its messages (`instr(gmail_labels, 'Label_')`, so other labels are never parsed), reads the locations of accounts that list folders and the existing memberships in one batch read each, and writes only the differences.
   - Location writes refresh set at a time.
-  - Ingest throughput (paired against the same reference commit, same load): 0.895× vs 0.915× for plan 64; CPU 0.819× vs 0.825× (under 1%), with real membership work in this dataset.
+  - Ingest throughput (paired against the same reference commit, same load): 0.895× vs 0.915× for plan 67; CPU 0.819× vs 0.825× (under 1%), with real membership work in this dataset.
   - The ingest gate already fails on `main` (≈0.91×, the storage work before this plan).
 - **IndexedDB caches each folder's members by id and by date** (`ScopeIndex`), dropped when a membership changes or a membership's date moves. Pages binary-search their cursor; select all seeks.
 - **Measured at 29.5k threads (SQLite) and 28.4k threads (IndexedDB):**

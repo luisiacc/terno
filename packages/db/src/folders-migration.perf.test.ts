@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R13): migration v24 on what an install holds: a v23 database of 50,000 conversations whose Gmail
+ * Plan 68 (Codex R13): migration v24 on what an install holds: a v23 database of 50,000 conversations whose Gmail
  * messages carry 20 user labels each (a million memberships). The migration writes none of them: it's timed as the
  * app opens the file; then the backfill drains in the backend's slices, each within a frame, to every membership.
  */
@@ -22,7 +22,7 @@ const SLICE_MS = 16;
 const dir = mkdtempSync(join(tmpdir(), "terno-v24-perf-"));
 const stats: Stat[] = [];
 afterAll(() => {
-  report("folders-migration.json", "Plan 65: migration v24 at 50,000 threads", {}, stats);
+  report("folders-migration.json", "Plan 68: migration v24 at 50,000 threads", {}, stats);
   rmSync(dir, { recursive: true, force: true });
 });
 

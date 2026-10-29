@@ -181,7 +181,7 @@ export interface Category {
 }
 
 /**
- * Plan 65: a folder of the account's own: an IMAP mailbox that holds no role, a Gmail user label. Standard
+ * Plan 68: a folder of the account's own: an IMAP mailbox that holds no role, a Gmail user label. Standard
  * folders (Inbox, Sent…) are views, never folders.
  */
 export interface Folder {
@@ -194,7 +194,7 @@ export interface Folder {
   selectable: boolean;
 }
 
-/** Folder names (Gmail's own limit) and how many an account lists (plan 65: a catalog is bounded) */
+/** Folder names (Gmail's own limit) and how many an account lists (plan 68: a catalog is bounded) */
 export const FOLDER_NAME_MAX = 225;
 export const FOLDERS_PER_ACCOUNT_MAX = 10_000;
 /** A folder's place in counts: "accountId:key" */
@@ -223,7 +223,7 @@ export interface Counts {
   /** plan 17: inbox threads waiting for your reply (inside the window); null until the store's facts are complete, absent from an older backend */
   inboxWaiting?: number | null;
   inboxWaitingByAccount?: Record<AccountId, number>;
-  /** plan 65: unread threads per folder, by folderRef (listed folders only; absent from an older backend) */
+  /** plan 68: unread threads per folder, by folderRef (listed folders only; absent from an older backend) */
   folderUnread?: Record<string, number>;
 }
 

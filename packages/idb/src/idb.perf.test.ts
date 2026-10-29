@@ -147,7 +147,7 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
   await store.categories.delete(cat);
 }, 900_000);
 
-it("an account's own folders (plan 65) page from their members: big, sparse, empty, deep, filtered, select all and counts within a frame", async () => {
+it("an account's own folders (plan 68) page from their members: big, sparse, empty, deep, filtered, select all and counts within a frame", async () => {
   const all = (await store.debug.snapshot()).threads;
   // the biggest account's every thread in one folder: the store's own membership writes (a label on each message)
   const byAccount = new Map<number, number>();
@@ -258,7 +258,7 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
   expect(scopeMs.reduce((a, b) => a + b, 0), "select all: every page").toBeLessThanOrEqual(25 * MULT);
 }, 900_000);
 
-it("relisting a populated IMAP folder (plan 65, Codex R6): every rebuild slice within a frame, the folder's order sorted once", async () => {
+it("relisting a populated IMAP folder (plan 68, Codex R6): every rebuild slice within a frame, the folder's order sorted once", async () => {
   const snap = await store.debug.snapshot();
   const account = (await store.accounts.list()).find((a) => a.kind === "imap")!.id;
   const mine = snap.messages.filter((m) => m.accountId === account);

@@ -1,5 +1,5 @@
 /**
- * Plan 65: Gmail's user labels as the account's own folders. /labels is read bounded and validated, never on
+ * Plan 68: Gmail's user labels as the account's own folders. /labels is read bounded and validated, never on
  * every pass: when it was never read, after 15 quiet minutes, or when a pass met a label it didn't have.
  */
 import { FOLDER_NAME_MAX } from "@terno/core";

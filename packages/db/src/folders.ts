@@ -3,7 +3,7 @@ import type { ProviderFolder } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 
 /**
- * Plan 65: an account's own folders and which threads are in them.
+ * Plan 68: an account's own folders and which threads are in them.
  *
  * Membership is the store's, written in the same transaction as what decides it: recomputeThreads (ingest,
  * flag and label updates, actions, deletion) and every IMAP location write. A thread is in a folder when one

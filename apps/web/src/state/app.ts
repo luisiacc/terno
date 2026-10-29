@@ -42,9 +42,9 @@ export interface AppState {
   view: View;
   accountId: number | null;
   categoryId: number | null;
-  /** plan 65: one of the account's own folders (with accountId; its view "all") */
+  /** plan 68: one of the account's own folders (with accountId; its view "all") */
   folder: string | null;
-  /** plan 65: every account's own folders */
+  /** plan 68: every account's own folders */
   folders: Folder[];
   /** "Revisar": the engine's pending suggestions for this category */
   reviewCategoryId: number | null;
@@ -150,7 +150,7 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
 }
 
 /**
- * Plan 65 (Codex R2): a folder is its account's, alone, in "all". Any write that leaves it otherwise (a search
+ * Plan 68 (Codex R2): a folder is its account's, alone, in "all". Any write that leaves it otherwise (a search
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
@@ -165,7 +165,7 @@ export function setListAutoSelection(selectedId: number | null): void {
 export const getApp = useApp.getState;
 
 export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null }): void {
-  // plan 65: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
+  // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
   setApp((s) => ({
     reviewCategoryId: folder ? null : (to.reviewCategoryId ?? null),
@@ -183,7 +183,7 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
   }));
 }
 
-/** plan 65: the folder list changed: a folder you're in that's gone sends you to its account's Inbox. */
+/** plan 68: the folder list changed: a folder you're in that's gone sends you to its account's Inbox. */
 export function setFolders(folders: Folder[]): void {
   setApp({ folders });
   const { folder, accountId } = getApp();

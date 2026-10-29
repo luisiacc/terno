@@ -12,7 +12,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  * Version 10 fences older adapters from mailboxes with incomplete-save markers.
- * Version 12 adds an account's own folders and their memberships (SQL v24, plan 65).
+ * Version 12 adds an account's own folders and their memberships (SQL v24, plan 68).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
@@ -48,7 +48,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "attachment_links", key: ["id"], indexes: { ...fk("asset_id"), ...fk("draft_id"), ...fk("message_id"), ...fk("op_id") } },
   { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
   { name: "categories", early: true, key: ["id"], autoId: true },
-  // plan 65: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
+  // plan 68: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
   { name: "folders", early: true, key: ["account_id", "key"], indexes: fk("account_id") },
   { name: "folder_rebuilds", key: ["account_id", "key"], indexes: fk("account_id") },
   { name: "thread_folders", early: true, key: ["thread_id", "folder"], indexes: { ...fk("thread_id"), folder: ["account_id", "folder"], unread: { columns: ["account_id", "folder"], where: (r) => r.unread === 1 } } },

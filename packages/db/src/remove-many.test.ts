@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R36): an expunge's membership decision is made where the row is deleted, so a message made eligible
+ * Plan 68 (Codex R36): an expunge's membership decision is made where the row is deleted, so a message made eligible
  * in between ("Not spam" on another of the thread's messages there) keeps the thread in the folder.
  */
 import { ingest, msg, withAccounts } from "@terno/store/conformance";

@@ -15,7 +15,7 @@ interface Migration {
  * partial index ordered (last_date DESC, id DESC) so list pages are index walks.
  */
 /**
- * Plan 65: an account's own folders as its provider lists them, and which threads are in them (see folders.ts).
+ * Plan 68: an account's own folders as its provider lists them, and which threads are in them (see folders.ts).
  * Pages walk (account, folder, date); selection scopes (account, folder, thread); counts the unread memberships.
  * Gmail memberships come from the labels already stored, so a mailbox from before has them at once.
  */
@@ -950,7 +950,7 @@ CREATE INDEX flag_effect_parked_current ON flag_op_effects(message_id,field,coal
   { version: 23, name: "durable draft source context", sql: `
 ALTER TABLE drafts ADD COLUMN show_source_context INTEGER NOT NULL DEFAULT 0 CHECK (show_source_context IN (0, 1));
 ` },
-  { version: 24, name: "an account's own folders (plan 65)", sql: FOLDERS_V24 },
+  { version: 24, name: "an account's own folders (plan 68)", sql: FOLDERS_V24 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

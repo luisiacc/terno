@@ -556,7 +556,7 @@ describe("migration v23: durable draft source context", () => {
   });
 });
 
-describe("migration v24: an account's own folders (plan 65)", () => {
+describe("migration v24: an account's own folders (plan 68)", () => {
   it("adds the folder tables, and a Gmail mailbox from before is in its labels after the upgrade's slices (not trash, not spam, user labels only)", () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-mig24-"));
     dirs.push(dir);

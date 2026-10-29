@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R4, R5, R12–R14): the recovery index's timing at scale: built and consumed in linear time, the event
+ * Plan 68 (Codex R4, R5, R12–R14): the recovery index's timing at scale: built and consumed in linear time, the event
  * loop never held long while candidates are read, merged or taken. The perf project runs it alone (nothing competes
  * for CPU); what it holds to is in adopt.test.ts.
  */

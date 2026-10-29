@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R4): a renamed folder's messages are recognised by envelope from an index built once: each taken
+ * Plan 68 (Codex R4): a renamed folder's messages are recognised by envelope from an index built once: each taken
  * once, oldest first, never one already claimed. Its timing at scale is in adopt.perf.test.ts.
  */
 import { expect, it } from "vitest";

@@ -81,7 +81,7 @@ refreshPolicy.keepWindow = listLayout;
 // Another list under a page (a search from the palette, a sender's "more from", a folder or category while writing):
 // the list shows, with its rows; a new message is left the way Esc leaves it (kept if written).
 useApp.subscribe((s, p) => {
-  // a folder of the same account is another list too (plan 65, Codex R5)
+  // a folder of the same account is another list too (plan 68, Codex R5)
   const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.reviewCategoryId !== p.reviewCategoryId;
   if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
 });

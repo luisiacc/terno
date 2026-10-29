@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R11, R14): an account's folder rows from a catalog of 10,000 folders a hundred levels deep, a step
+ * Plan 68 (Codex R11, R14): an account's folder rows from a catalog of 10,000 folders a hundred levels deep, a step
  * at a time: never a frame's work between two pauses (the sidebar gives the frame back at each).
  */
 import type { Folder } from "@terno/core";

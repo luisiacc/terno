@@ -9,7 +9,7 @@ Asked which layout to use, the user chose the **Apple Mail model**:
 - Clicking an account opens its Inbox and expands its folders underneath, one account at a time.
 - "All accounts" goes away.
 
-On scope, the user agreed to two steps but wants both built in full now: "since the app has not launched, it needs to be fully built from now". This plan is step one, the layout and each account's standard folders. Plan 65 is step two: the account's own folders (Gmail labels and IMAP folders), synced, stored and listed in the same place.
+On scope, the user agreed to two steps but wants both built in full now: "since the app has not launched, it needs to be fully built from now". This plan is step one, the layout and each account's standard folders. Plan 68 is step two: the account's own folders (Gmail labels and IMAP folders), synced, stored and listed in the same place.
 
 ## What exists
 
@@ -89,7 +89,7 @@ At most one row in the sidebar is selected:
 - At most 5 extra rows are rendered, only for the open account.
 - The UI-perf gate runs as usual.
 
-## Out of scope (plan 65)
+## Out of scope (plan 68)
 
 The account's own folders: Gmail labels and IMAP folders, listed under its standard folders.
 
@@ -115,7 +115,7 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
 7. **Designs that greet** (`listHeader: "greeting"`) leave the account out of the Inbox's title, as they do today. The sidebar still shows the scope. The e2e test checks the "· Personal" suffix only where the design shows it.
 8. **The sign-in marker stays with its row:** the row and marker get their own positioning wrapper, apart from the folder group. Opening sign-in neither navigates nor opens the account.
 9. **Back/Forward and reload:** scope isn't in the URL today, and this plan doesn't change that. Restoring scope through history is out of scope.
-10. **With one account,** its standard folders would be exactly the top ones, so it lists none. Its row isn't a disclosure until it has its own folders (plan 65); it stays a plain row that scopes to the account. Tests cover going from one account to two and back to one.
+10. **With one account,** its standard folders would be exactly the top ones, so it lists none. Its row isn't a disclosure until it has its own folders (plan 68); it stays a plain row that scopes to the account. Tests cover going from one account to two and back to one.
 11. **Drag and drop:** account rows and their folder rows don't accept drops (moving to folders is a later feature). An e2e test checks that dropping on a category still works with an account open and the sidebar scrolled, and that account rows never become drop targets.
 12. **Accessibility:**
     - The selected row gets `aria-current="page"`.

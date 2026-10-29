@@ -91,7 +91,7 @@ describe("the renderer's sender icons (plan 22)", () => {
   it("leaving Spam: the rows still on screen were loaded for Spam, so they don't ask (second Codex review)", () => {
     expect(iconsAllowedForList(JSON.stringify(["spam", null, null, null, null, ""]))).toBe(false);
     expect(iconsAllowedForList(JSON.stringify(["inbox", null, null, null, null, "en:spam"]))).toBe(false);
-    // plan 65 (Codex R2): a folder's key puts the folder before the query, which stays last
+    // plan 68 (Codex R2): a folder's key puts the folder before the query, which stays last
     expect(iconsAllowedForList(JSON.stringify(["all", 2, null, null, null, "Label_1", "in:spam"]))).toBe(false);
     expect(iconsAllowedForList(JSON.stringify(["all", 2, null, null, null, "Label_1", ""]))).toBe(true);
     expect(iconsAllowedForList(JSON.stringify(["inbox", null, null, null, null, ""]))).toBe(true);

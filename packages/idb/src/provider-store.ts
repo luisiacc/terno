@@ -168,7 +168,7 @@ class IdbImapLocations implements ImapLocationStore {
     return T(this.c, "message_locations");
   }
 
-  /** plan 65: a location in a listed folder decides membership, in the same unit and incrementally (the SQL adapter's, Codex R10) */
+  /** plan 68: a location in a listed folder decides membership, in the same unit and incrementally (the SQL adapter's, Codex R10) */
   private located(messageIds: readonly number[], mailbox: string, added: boolean) {
     if (!messageIds.length || !isFolder(this.c, this.accountId, mailbox)) return;
     const messages = T(this.c, "messages");

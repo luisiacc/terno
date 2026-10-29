@@ -9,7 +9,7 @@ const NOW = Date.UTC(2026, 9, 22, 15, 30);
 const loc = (mailbox: string, uid: number) => ({ mailbox, uidvalidity: 1, uid, flags: [] as string[] });
 
 /**
- * Plan 65: an account's own folders. Membership is written with what decides it (labels, locations, trash and
+ * Plan 68: an account's own folders. Membership is written with what decides it (labels, locations, trash and
  * spam, read state, deletion), never later; Gmail's doesn't wait for the folder list, IMAP's counts listed
  * folders only. Pages, scopes and counts read it in both stores alike.
  */
@@ -35,7 +35,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
     }
   };
 
-  describe(`folders (plan 65): ${name}`, () => {
+  describe(`folders (plan 68): ${name}`, () => {
     it("Gmail: a user label is membership at once, listed or not: listing it later rewrites nothing; system labels never are", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

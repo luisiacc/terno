@@ -404,7 +404,7 @@ export function setMessageBody(
 }
 
 interface ThreadMessage extends FactRow {
-  /** plan 65: the raw labels, only when one is a user label (a folder) */
+  /** plan 68: the raw labels, only when one is a user label (a folder) */
   user_labels: string | null;
   account_id: number;
   from_name: string;
@@ -430,7 +430,7 @@ function newer(a: ThreadMessage, b: ThreadMessage): boolean {
  */
 export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   const written: number[] = [];
-  // plan 65: what each written thread's folders are made of, folded with the rest
+  // plan 68: what each written thread's folders are made of, folded with the rest
   const folded: FoldedThread[] = [];
   // read once per call, on the first thread that has messages
   let facts: FactContext | null | undefined;
@@ -507,7 +507,7 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   }
   // the search outbox: what changed for search is decided when the batch is served
   if (written.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 1, value FROM json_each(?)", JSON.stringify(written));
-  // plan 65: folder memberships, with the aggregates they carry (date, unread); only what changed is written
+  // plan 68: folder memberships, with the aggregates they carry (date, unread); only what changed is written
   writeFolders(db, folded);
 }
 

@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R53): a folder of 50,000 messages with no other place, deleted on the server: reconciliation removes
+ * Plan 68 (Codex R53): a folder of 50,000 messages with no other place, deleted on the server: reconciliation removes
  * them (and recomputes their threads) a batch at a time with turns between, never one transaction for all of them.
  */
 import { openDatabase, SqlMailStore } from "@terno/db";

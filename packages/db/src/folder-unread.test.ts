@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R4): each folder's unread tally is kept by the memberships' own writes (triggers), so counts
+ * Plan 68 (Codex R4): each folder's unread tally is kept by the memberships' own writes (triggers), so counts
  * read one row per folder. Through any sequence of ingests, reads, trash, label moves, deletions and an
  * account's removal, the tallies equal a count of the memberships.
  */

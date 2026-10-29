@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R32): the IndexedDB twin cache follows only the buckets looked up, at most 10,000 of them, so mail
+ * Plan 68 (Codex R32): the IndexedDB twin cache follows only the buckets looked up, at most 10,000 of them, so mail
  * churn and many lookups never pile up keys; letting them all go starts a new generation, so no kept order is stale.
  */
 import "fake-indexeddb/auto";

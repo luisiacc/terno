@@ -39,7 +39,7 @@ export interface MockMessage {
   tags: ThreadTag[];
   /** set on adversarial threads */
   family?: AdversarialFamily;
-  /** plan 65: Gmail: its user labels (folder keys); IMAP: its locations in the account's own folders */
+  /** plan 68: Gmail: its user labels (folder keys); IMAP: its locations in the account's own folders */
   gmailLabels?: string[];
   locations?: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }[];
 }
@@ -54,7 +54,7 @@ export interface MockAccount {
   ownerName: string;
   /** relative share of threads (skewed on purpose) */
   weight: number;
-  /** plan 65: the account's own folders (Gmail labels, IMAP folders); keys are what its messages carry */
+  /** plan 68: the account's own folders (Gmail labels, IMAP folders); keys are what its messages carry */
   folders?: { key: string; path: string[]; selectable: boolean; tags: ThreadTag[] }[];
 }
 
@@ -90,7 +90,7 @@ export interface MockDataset {
   messages: MockMessage[];
 }
 
-/** plan 65: each account's own folders, and which threads (by tag) a share of them hold */
+/** plan 68: each account's own folders, and which threads (by tag) a share of them hold */
 const PERSONAL_LABELS: MockAccount["folders"] = [
   { key: "Label_11", path: ["Familia"], selectable: true, tags: ["personal"] },
   { key: "Label_12", path: ["Recibos"], selectable: true, tags: ["receipt", "bank"] },
@@ -489,7 +489,7 @@ function hash(text: string): number {
 }
 
 /**
- * Plan 65: a third of the threads whose tags a folder takes are in it, whole: Gmail labels on every message,
+ * Plan 68: a third of the threads whose tags a folder takes are in it, whole: Gmail labels on every message,
  * IMAP locations in the folder (beside wherever else the message is).
  */
 function placeInFolders(accounts: readonly MockAccount[], messages: MockMessage[]): void {

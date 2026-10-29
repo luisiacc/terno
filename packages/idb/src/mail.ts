@@ -203,7 +203,7 @@ export class ThreadOrder {
 export class ScopeIndex {
   private threadIds: number[] | null = null;
   private readonly members = new Map<number, number[]>();
-  /** plan 65: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
+  /** plan 68: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
   private readonly folderIds = new Map<string, { ids: number[]; changes: { gone: number | null; added: number | null }[] }>();
   private readonly folderIdBuilds = new Map<string, Generator<void, number[], void>>();
   /**
@@ -213,7 +213,7 @@ export class ScopeIndex {
    */
   private readonly folderDates = new Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>();
   private readonly folderBuilds = new Map<string, Generator<void, Dated[], void>>();
-  /** plan 65 (Codex R12): a folder's unread members newest first, kept across reads; a few changes placed by search */
+  /** plan 68 (Codex R12): a folder's unread members newest first, kept across reads; a few changes placed by search */
   private readonly folderUnread = new Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>();
   /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
   private readonly filtered = new Map<ListFilter, number[]>();
@@ -304,7 +304,7 @@ export class ScopeIndex {
   }
 
   /**
-   * plan 65: a folder's member thread ids, ascending, kept across changes; built a step at a time (in the background
+   * plan 68: a folder's member thread ids, ascending, kept across changes; built a step at a time (in the background
    * once asked for: Codex R51, 500,000 sorted at once were 140 ms), null until then (a scope selects its page)
    */
   folder(c: Ctx, accountId: number, key: string): readonly number[] | null {
@@ -351,7 +351,7 @@ export class ScopeIndex {
     }
   }
 
-  /** plan 65: a folder's member thread ids, newest first (last date, then id: the list's order) */
+  /** plan 68: a folder's member thread ids, newest first (last date, then id: the list's order) */
   folderByDate(c: Ctx, accountId: number, key: string): readonly Dated[] | null {
     const at = `${accountId}:${key}`;
     const cached = this.folderDates.get(at);
@@ -394,7 +394,7 @@ export class ScopeIndex {
     }
   }
 
-  /** plan 65 (Codex R12): a folder's unread member thread ids, newest first: sorted once, then kept as they change */
+  /** plan 68 (Codex R12): a folder's unread member thread ids, newest first: sorted once, then kept as they change */
   folderUnreadByDate(c: Ctx, accountId: number, key: string): readonly Dated[] | null {
     const at = `${accountId}:${key}`;
     const cached = this.folderUnread.get(at);
@@ -927,7 +927,7 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
     });
     written.push(threadId);
   }
-  // plan 65: folder memberships, with the aggregates they carry (date, unread)
+  // plan 68: folder memberships, with the aggregates they carry (date, unread)
   refreshFolders(c, written);
 }
 

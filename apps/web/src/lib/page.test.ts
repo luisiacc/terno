@@ -164,7 +164,7 @@ describe("what the Codex code review found", () => {
     expect(getApp().selectedId).toBe(3);
   });
 
-  it("plan 65 (Codex R5): another folder of the same account under a page is another list", () => {
+  it("plan 68 (Codex R5): another folder of the same account under a page is another list", () => {
     setApp({ view: "all", accountId: 2, folder: "Label_1" });
     setApp({ selectedId: 2, readerOpen: true });
     expect(currentPage()).toBe("thread");

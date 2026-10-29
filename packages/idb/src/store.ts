@@ -200,7 +200,7 @@ export class IdbMailStore implements MailStore {
   private queue: Promise<unknown> = Promise.resolve();
   /** the late tables (messages and their satellites) are in memory */
   private loaded: Promise<void> = Promise.resolve();
-  /** plan 65: a mailbox from before schema 24, its Gmail memberships still to add (the labelled messages, how far) */
+  /** plan 68: a mailbox from before schema 24, its Gmail memberships still to add (the labelled messages, how far) */
   private backfill: { scan: Iterator<R> | null; done: boolean; pending: number[] | null } | null = null;
   private inflight: Promise<unknown> | null = null;
   private open = true;
@@ -266,7 +266,7 @@ export class IdbMailStore implements MailStore {
         await persist(idb, commit, "strict", o.platform);
         db.confirm();
       }
-      // plan 65 (SQL v24): a mailbox from before gets its Gmail memberships once, after its messages load; the mark
+      // plan 68 (SQL v24): a mailbox from before gets its Gmail memberships once, after its messages load; the mark
       // goes in with the upgrade and comes off only when they're saved, so a close or a failure meanwhile resumes (Codex R1)
       const foldersPending = (typeof meta.logicalSchema === "number" && meta.logicalSchema < 24) || meta.foldersPending === true;
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
@@ -1708,7 +1708,7 @@ export class IdbMailStore implements MailStore {
       this.seeding = true;
       try {
         const accountIds = await this.command(() => dataset.accounts.map((a) => createAccount(this.c, { kind: a.kind, email: a.email, displayName: a.displayName, color: a.color }, now).id));
-        // plan 65: listed before the mail, so IMAP locations in them are membership as they're written
+        // plan 68: listed before the mail, so IMAP locations in them are membership as they're written
         await this.command(() => dataset.accounts.forEach((a, i) => a.folders && replaceFolders(this.c, accountIds[i]!, a.folders.map(({ key, path, selectable }) => ({ key, path, selectable })))));
         const categories = await this.command(() => dataset.categories.map((cat) => ({ ...cat, id: createCategory(this.c, cat.name, cat.color).id })));
         const threadTags = new Map<number, Set<string>>();
@@ -1749,7 +1749,7 @@ export class IdbMailStore implements MailStore {
   };
 }
 
-/** plan 65: an upgrade's folder backfill: threads per batch, and the time a command keeps taking batches */
+/** plan 68: an upgrade's folder backfill: threads per batch, and the time a command keeps taking batches */
 
 const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
 

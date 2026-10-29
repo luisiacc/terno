@@ -141,7 +141,7 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   // picks a view's date index instead and reads a row per thread, or sorts a category: measured in plan 12)
   const filter = listFilterOf(p);
   const f = filter ? filterSql(filter, p.now) : null;
-  // plan 65: a folder walks its memberships by date (outer, CROSS JOIN), filtered or not, and joins the threads
+  // plan 68: a folder walks its memberships by date (outer, CROSS JOIN), filtered or not, and joins the threads
   const threads = f && p.folder === undefined ? `threads t INDEXED BY ${f.byDate}` : "threads t";
   if (f) {
     where.push(f.where);
@@ -208,7 +208,7 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   const f = filter ? filterSql(filter, p.now) : null;
   let from = f ? `threads t INDEXED BY ${f.byId ?? f.byDate}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
   if (p.folder !== undefined) {
-    // plan 65: a folder's memberships by (account, folder, thread), outer like a category's
+    // plan 68: a folder's memberships by (account, folder, thread), outer like a category's
     from = paged ? "thread_folders tf INDEXED BY thread_folders_id CROSS JOIN threads t ON t.id = tf.thread_id" : "thread_folders tf JOIN threads t ON t.id = tf.thread_id";
     where.unshift("tf.account_id = ? AND tf.folder = ? AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
     params.unshift(p.accountId!, p.folder, p.accountId!, p.folder);
@@ -367,7 +367,7 @@ export function getCounts(db: Db, now: number): Counts {
   return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
 }
 
-/** plan 65: unread threads per listed folder ("accountId:key"). */
+/** plan 68: unread threads per listed folder ("accountId:key"). */
 export function folderUnreadCounts(db: Db): Record<string, number> {
   const out: Record<string, number> = {};
   // the tallies the memberships keep (migration v24's triggers), one row per folder, never the memberships themselves

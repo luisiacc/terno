@@ -112,7 +112,7 @@ describe("opening a tab", () => {
     expect(getApp().categoryId).toBeNull();
   });
 
-  it("plan 64 (Codex R2): the sidebar's + opens it for all accounts; the tabs' + keeps the account you're in", async () => {
+  it("plan 67 (Codex R2): the sidebar's + opens it for all accounts; the tabs' + keeps the account you're in", async () => {
     setApp({ categories: [] as never });
     fake.handlers["categories.create"] = async () => ({ id: 9, name: "Recibos" });
     at({ view: "sent", accountId: 2 });

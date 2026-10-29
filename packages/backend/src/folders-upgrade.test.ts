@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R17): a web mailbox from before schema 24 gets its Gmail memberships through the backend's folder
+ * Plan 68 (Codex R17): a web mailbox from before schema 24 gets its Gmail memberships through the backend's folder
  * runner, which publishes what each slice touched: the list and the counts refresh as it goes, and once done.
  */
 import "fake-indexeddb/auto";

@@ -59,7 +59,7 @@ function navigatePatch(s: AppState): Partial<AppState> {
  * A new category from its name (the sidebar's +, the tabs' +): the next
  * color, then its list. False when nothing was created (empty, or refused:
  * the reason is in the snack). `allAccounts`: the sidebar's, whose
- * categories are cross-account (plan 64); the tabs' keeps the account you're in.
+ * categories are cross-account (plan 67); the tabs' keeps the account you're in.
  */
 export async function createCategory(name: string, o: { allAccounts?: boolean } = {}): Promise<boolean> {
   const trimmed = name.trim();

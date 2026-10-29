@@ -79,7 +79,7 @@ class SqlImapLocations implements ImapLocationStore {
   ) {}
 
   /**
-   * plan 65: a location in a listed folder decides membership, kept in the same transaction and incrementally
+   * plan 68: a location in a listed folder decides membership, kept in the same transaction and incrementally
    * (Codex R10: refolding the whole thread per location was quadratic in a long conversation): a new location adds
    * its thread's row; one that goes takes it only when no other message of the thread is still there.
    */

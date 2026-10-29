@@ -212,7 +212,7 @@ export interface ImapLocation {
 export interface ImapLocationStore {
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
-  /** plan 65 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */
+  /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */
   removeMany(messageIds: readonly number[], mailbox: string): Promise<void>;
   setFlags(messageId: number, mailbox: string, flags: string): Promise<void>;
   of(messageIds: readonly number[]): Promise<ImapLocation[]>;
@@ -221,22 +221,22 @@ export interface ImapLocationStore {
   count(messageId: number): Promise<number>;
   inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
   /**
-   * plan 65 (Codex R40): the same, UIDs above `afterUid` ascending, at most `limit`: a store whose reads hold the
+   * plan 68 (Codex R40): the same, UIDs above `afterUid` ascending, at most `limit`: a store whose reads hold the
    * loop (SQLite's) pages a big mailbox; one in memory may leave it out (its whole read is quick)
    */
   inMailboxPage?(mailbox: string, uidvalidity: number, afterUid: number, limit: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
   /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
   resetMailbox(mailbox: string): Promise<number[]>;
   /**
-   * plan 65 (Codex R15): the account's messages with no location, ids in (afterId, afterId + span], ascending; `more`
+   * plan 68 (Codex R15): the account's messages with no location, ids in (afterId, afterId + span], ascending; `more`
    * while messages above the window exist. A cut journal's messages are found again this way, a window at a time.
    */
   unlocated(afterId: number, span: number): Promise<{ ids: number[]; more: boolean }>;
-  /** plan 65 (Codex R19, R20, R26): the account's ID-less messages (or, with `rfcMessageId`, those with that Message-ID) with this envelope (under any key), ids above `afterId` ascending, at most `limit` (an index of exactly that) */
+  /** plan 68 (Codex R19, R20, R26): the account's ID-less messages (or, with `rfcMessageId`, those with that Message-ID) with this envelope (under any key), ids above `afterId` ascending, at most `limit` (an index of exactly that) */
   twins(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, afterId: number, limit: number): Promise<number[]>;
-  /** plan 65: these messages' envelopes (a renamed folder's copies are recognised by them) */
+  /** plan 68: these messages' envelopes (a renamed folder's copies are recognised by them) */
   envelopes(messageIds: readonly number[]): Promise<{ id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }[]>;
-  /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox`; `rfcMessageId`: one with that Message-ID instead (plan 65: a renamed folder's twin) */
+  /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox`; `rfcMessageId`: one with that Message-ID instead (plan 68: a renamed folder's twin) */
   resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }): Promise<{ id: number } | null>;
 }
 
@@ -368,7 +368,7 @@ export interface MailStore {
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
   };
 
-  /** plan 65: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */
+  /** plan 68: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */
   folders: {
     list(): Promise<Folder[]>;
     /** an account's list now (a sync pass); `changed`: false when it's the same; a newly listed IMAP folder whose mailbox already has locations gets a rebuild job */

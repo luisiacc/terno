@@ -1,5 +1,5 @@
 /**
- * Plan 65: an account's own folders (Gmail labels, IMAP folders) under its standard ones, on the seeded demo
+ * Plan 68: an account's own folders (Gmail labels, IMAP folders) under its standard ones, on the seeded demo
  * mailbox: Acme Studio's labels ("Proyectos" › "Rediseño web", "Equipo"), Freelance's IMAP folders with a group
  * that's only a parent ("Facturación" › "2026").
  */

@@ -74,7 +74,7 @@ export async function threadOf(store: MailStore, providerMsgId: string): Promise
 export async function seedThroughCommands(store: MailStore, data: MockDataset, now: number, rate = 0.7) {
   const accountIds: number[] = [];
   for (const a of data.accounts) accountIds.push((await store.accounts.create({ kind: a.kind, email: a.email, displayName: a.displayName, color: a.color, now })).account.id);
-  // plan 65: listed before the mail, so IMAP locations in them are membership as they're written
+  // plan 68: listed before the mail, so IMAP locations in them are membership as they're written
   for (const [i, a] of data.accounts.entries()) if (a.folders) await store.folders.replace(accountIds[i]!, a.folders.map(({ key, path, selectable }) => ({ key, path, selectable })));
   const categories: { id: number; tags: readonly string[] }[] = [];
   for (const c of data.categories) categories.push({ id: (await store.categories.create(c.name, c.color)).id, tags: c.tags });

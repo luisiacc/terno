@@ -52,7 +52,7 @@ function readMore(): boolean {
  * leaving a hairline between neighbors while the rows keep their height and pitch.
  */
 const ROW_SEAM = "border-y-[0.5px] border-transparent bg-clip-padding";
-/** An account's folders: one step in under it, one more per level of its own folders (plan 65), up to four */
+/** An account's folders: one step in under it, one more per level of its own folders (plan 68), up to four */
 const INSET = ["pl-7", "pl-10", "pl-13", "pl-16"];
 
 export const useSidebarMore = create<{ open: boolean }>(() => ({ open: readMore() }));
@@ -93,11 +93,11 @@ function NavItem({
   dropTarget?: number;
   /** room at the end for a control drawn over the row (a review badge; "icon": the sign-in key, plan 25) */
   reserveEnd?: boolean | "icon";
-  /** a folder under its account (plan 64) */
+  /** a folder under its account (plan 67) */
   inset?: boolean;
-  /** plan 65: how deep an account's own folder sits under its parents */
+  /** plan 68: how deep an account's own folder sits under its parents */
   depth?: number;
-  /** an account: a disclosure of its folders (plan 64) */
+  /** an account: a disclosure of its folders (plan 67) */
   expanded?: boolean;
   controls?: string;
 }) {
@@ -336,7 +336,7 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
   );
 }
 
-/** One of an account's own folders (plan 65): memoized, so a counts update renders only the rows whose count moved. */
+/** One of an account's own folders (plan 68): memoized, so a counts update renders only the rows whose count moved. */
 const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, depth, active, count }: { accountId: number; folderKey: string; name: string; depth: number; active: boolean; count: number }) {
   return (
     <NavItem
@@ -355,14 +355,14 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, de
 /** what the folder-focus recovery calls "N more folders" (no folder's key) */
 const MORE = "\u0000more";
 
-/** An open account's own folders mounted at once, and revealed per "more" (plan 65, Codex R1: a catalog may hold 10,000). */
+/** An open account's own folders mounted at once, and revealed per "more" (plan 68, Codex R1: a catalog may hold 10,000). */
 const FOLDER_BATCH = 250;
 
 /** How long a closing account keeps its rows for the slide (past `slow`; transitionend never comes without motion). */
 const CLOSING_MS = 400;
 
 /**
- * An open account's own folders under its row (plan 64), on the More group's 0fr→1fr row: what's below slides with
+ * An open account's own folders under its row (plan 67), on the More group's 0fr→1fr row: what's below slides with
  * it, and closed it's inert (not focusable, not in the accessibility tree). Its rows are mounted only while it's open
  * or closing, so closed accounts cost nothing. A focused folder that closes hands focus to its account's row.
  */
@@ -379,10 +379,10 @@ function AccountFolders({
 }: {
   account: Account;
   open: boolean;
-  /** its Inbox, Sent… (with one account they'd be the top ones: plan 64) */
+  /** its Inbox, Sent… (with one account they'd be the top ones: plan 67) */
   standard: boolean;
   active: View | null;
-  /** plan 65: the account's own folder you're in */
+  /** plan 68: the account's own folder you're in */
   activeFolder: string | null;
   rows: readonly FolderRow[];
   folderUnread: Record<string, number>;
@@ -481,7 +481,7 @@ function AccountFolders({
               />
             );
           })}
-        {/* plan 65: its own folders, under its standard ones, nested by path */}
+        {/* plan 68: its own folders, under its standard ones, nested by path */}
         {mounted && standard && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
         {mounted &&
           visible.map((r) =>
@@ -550,7 +550,7 @@ function useFolderUnreadByAccount(all: Record<string, number> | undefined): Read
 }
 
 /**
- * An account in the sidebar: its row and, open, its folders (plans 64, 65). Memoized: opening one account, or a
+ * An account in the sidebar: its row and, open, its folders (plans 67, 68). Memoized: opening one account, or a
  * count of another, never renders the rest (they get the same props: where you are is passed only to its own).
  */
 const AccountEntry = memo(function AccountEntry({
@@ -578,7 +578,7 @@ const AccountEntry = memo(function AccountEntry({
   folderUnread: Record<string, number> | undefined;
   countTone: "muted" | "unread";
 }) {
-  // with one account its standard folders would be the top ones: it lists only its own (plan 65),
+  // with one account its standard folders would be the top ones: it lists only its own (plan 68),
   // and with none of those its row just scopes to it
   const hasOwn = useMemo(() => folders.some((f) => f.accountId === a.id), [folders, a.id]);
   const rows = useFolderRows(folders, a.id, openHere);
@@ -703,7 +703,7 @@ export function Sidebar() {
     await createNamedCategory(name, { allAccounts: true });
   };
 
-  // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 64)
+  // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
   const folderView = accountId === null && categoryId === null && reviewCategoryId === null ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <Tooltip key={v}>
@@ -752,7 +752,7 @@ export function Sidebar() {
               <NavItem
                 testId={`nav-category-${c.id}`}
                 dropTarget={c.id}
-                // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 64)
+                // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 67)
                 active={categoryId === c.id && reviewCategoryId === null && accountId === null}
                 onClick={() => navigate({ categoryId: c.id, accountId: null })}
                 icon={<CategoryDot color={c.color as CategoryColor} />}

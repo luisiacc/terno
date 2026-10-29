@@ -60,7 +60,7 @@ function indexOf(items: ThreadSummary[]): Map<number, number> {
 export function listKey(): string {
   const s = getApp();
   // the query stays last (the UI perf gate reads it from data-results-for)
-  // plan 65: a folder goes before the query, only when there is one (every other list's key is as it was)
+  // plan 68: a folder goes before the query, only when there is one (every other list's key is as it was)
   return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), s.query.trim()]);
 }
 
@@ -126,7 +126,7 @@ export function currentScope(): ThreadScope | null {
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
   if (q) return { kind: "search", query: q, ...(filter ? { filter } : {}) };
-  // plan 65: a folder's list is its own (a search from it looks everywhere, as any search does)
+  // plan 68: a folder's list is its own (a search from it looks everywhere, as any search does)
   return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}), ...(s.folder ? { folder: s.folder } : {}) };
 }
 

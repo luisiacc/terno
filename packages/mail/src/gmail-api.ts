@@ -58,7 +58,7 @@ interface Cursor {
   historyId: string;
 }
 
-/** Plan 65: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
+/** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
 export const LABELS_EVERY_MS = 15 * 60_000;
 /**
  * /labels read bounded: Gmail's 10,000 labels (and a few system ones) of at most 225 characters, each up to six
@@ -788,7 +788,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await ctx.saveCursor({ historyId: latest } satisfies Cursor);
   }
 
-  /** plan 65: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
+  /** plan 68: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
   let catalog: { at: number; known: Set<string> } | null = null;
   let unknownLabel = false;
 
@@ -813,7 +813,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     async sync(outer) {
-      // plan 65: the user labels this pass meets; one /labels didn't have (made since) asks for it after the pass
+      // plan 68: the user labels this pass meets; one /labels didn't have (made since) asks for it after the pass
       const meet = (labels: readonly string[] | null | undefined) => {
         for (const l of labels ?? []) if (l.startsWith("Label_") && !catalog?.known.has(l)) unknownLabel = true;
       };

@@ -795,7 +795,7 @@ describe("IMAP provider against ImapKit", () => {
   });
 });
 
-describe("an account's own folders (plan 65)", () => {
+describe("an account's own folders (plan 68)", () => {
   const folderOf = async (client: RpcClient, accountId: number, folder: string) => (await client.call("threads.list", { view: "all", accountId, folder })).items.map((t) => t.subject).sort();
 
   it("lists its own folders (nested; roles and specials left out) and syncs them; a message only in one is archived mail", async () => {

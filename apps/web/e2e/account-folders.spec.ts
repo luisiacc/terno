@@ -1,5 +1,5 @@
 /**
- * Plan 64: what's at the top of the sidebar is all your mail; what's under an account is that account's.
+ * Plan 67: what's at the top of the sidebar is all your mail; what's under an account is that account's.
  * An account row opens into its folders (one at a time), the top folders and categories are cross-account,
  * and at most one row is selected.
  */
@@ -246,7 +246,7 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
 test("with one account it lists no folders of its own: the top ones are the same mail", async ({ app: page, server }) => {
   const ids = await accountIds(page);
   for (const id of ids.slice(1)) await server.backend.server.invoke("accounts.remove", { id }, ctx);
-  // plan 65: an account with folders of its own lists those; this one has none
+  // plan 68: an account with folders of its own lists those; this one has none
   await server.backend.store.folders.replace(ids[0]!, []);
   server.backend.server.emit("folders", await server.backend.store.folders.list());
   await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);

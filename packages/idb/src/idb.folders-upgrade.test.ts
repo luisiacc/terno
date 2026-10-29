@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R1, R17): a web mailbox from before schema 24 gets its Gmail folder memberships once, after its
+ * Plan 68 (Codex R1, R17): a web mailbox from before schema 24 gets its Gmail folder memberships once, after its
  * messages load, through folders.rebuild (the backend's runner, which publishes what each slice touched). The mark
  * that says so goes in with the upgrade and comes off only when they're saved, so a close in between, or a failure,
  * resumes on the next open.

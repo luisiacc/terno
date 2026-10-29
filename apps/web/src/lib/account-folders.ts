@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { getApp, navigate } from "~/state/app";
 
 /**
- * Plan 64: what's at the top of the sidebar is all your mail; what's under an account is that account's.
+ * Plan 67: what's at the top of the sidebar is all your mail; what's under an account is that account's.
  * The folders an account lists under it. Starred and All Mail are cross-account: at the top only.
  */
 export const ACCOUNT_VIEWS = ["inbox", "sent", "archive", "spam", "trash"] as const satisfies readonly View[];
@@ -65,7 +65,7 @@ export function reconcileAccounts(accounts: readonly Account[]): void {
   if (accountId !== null && !has(accountId)) navigate({ view: "inbox", accountId: null });
 }
 
-// ── plan 65: the account's own folders
+// ── plan 68: the account's own folders
 
 /** The folder you're in, by name (its last path step); null outside one. */
 export function folderName(s: { folders: readonly Folder[]; accountId: number | null; folder: string | null }): string | null {

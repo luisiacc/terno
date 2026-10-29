@@ -5,7 +5,7 @@ import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } fro
 import type { Key } from "./mem";
 
 /**
- * Plan 65: an account's own folders and which threads are in them (the SQL adapter's folders.ts). Membership is
+ * Plan 68: an account's own folders and which threads are in them (the SQL adapter's folders.ts). Membership is
  * written in the same unit as what decides it: recomputeThreads and every IMAP location write. A thread is in a
  * folder when one of its messages (not in trash or spam) carries the key: a Gmail user label (`Label_*`, listed
  * or not yet), or a location in a mailbox the account lists. Rows carry the thread's date and unread state.

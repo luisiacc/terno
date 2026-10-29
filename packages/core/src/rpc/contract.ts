@@ -209,7 +209,7 @@ export interface Bootstrap {
   host: HostInfo;
   accounts: Account[];
   categories: Category[];
-  /** plan 65: every account's own folders */
+  /** plan 68: every account's own folders */
   folders: Folder[];
   counts: Counts;
   settings: AppSettings;
@@ -458,7 +458,7 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
-/** plan 65: an account's folder (its key: an IMAP path, a Gmail label id) */
+/** plan 68: an account's folder (its key: an IMAP path, a Gmail label id) */
 const folderKey = z.string().min(1).max(1000);
 /** A folder is an account's, alone: no category or review with it, its view "all" (no trash, no spam) */
 const folderScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string }>(p: T, ctx: z.RefinementCtx) => {
@@ -521,7 +521,7 @@ export const contract = {
       view: z.enum(VIEWS),
       accountId: id.optional(),
       categoryId: id.optional(),
-      /** plan 65: one of the account's own folders (with accountId, view "all") */
+      /** plan 68: one of the account's own folders (with accountId, view "all") */
       folder: folderKey.optional(),
       /** the unread filter: threads with something unread only (plan 12; `filter: "unread"` since plan 15) */
       unreadOnly: z.boolean().optional(),
@@ -850,7 +850,7 @@ export interface Events {
   counts: Counts;
   accounts: Account[];
   categories: Category[];
-  /** plan 65: the folders of every account, when an account's list changed */
+  /** plan 68: the folders of every account, when an account's list changed */
   folders: Folder[];
   op: OpInfo;
   owner: OwnerIdentity | null;

@@ -15,32 +15,32 @@ type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 interface MailboxState {
   uidvalidity: number;
   uidnext: number;
-  /** plan 65: what STATUS compares before a custom folder is synced again (absent: never skipped) */
+  /** plan 68: what STATUS compares before a custom folder is synced again (absent: never skipped) */
   messages?: number;
   modseq?: string;
 }
 
 interface Cursor {
   mailboxes: Record<string, MailboxState>;
-  /** plan 65: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
+  /** plan 68: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
   pass?: number;
-  /** plan 65 (Codex R4): messages a failed pass left without a location; the next complete pass reconciles them */
+  /** plan 68 (Codex R4): messages a failed pass left without a location; the next complete pass reconciles them */
   orphans?: number[];
-  /** plan 65 (Codex R5): per mailbox, the messages a UIDVALIDITY reset unlocated, kept until that mailbox syncs, so a retry can still recognise them */
+  /** plan 68 (Codex R5): per mailbox, the messages a UIDVALIDITY reset unlocated, kept until that mailbox syncs, so a retry can still recognise them */
   resetPending?: Record<string, number[]>;
-  /** plan 65 (Codex R8, R9): messages any step unlocated (a sweep, a reset, a vanished folder), written down before their locations go; cleared once reconciled */
+  /** plan 68 (Codex R8, R9): messages any step unlocated (a sweep, a reset, a vanished folder), written down before their locations go; cleared once reconciled */
   unlocated?: number[];
-  /** plan 65 (Codex R9): orphans are waiting for a pass that reads every folder (no STATUS skip), the only kind that may delete them */
+  /** plan 68 (Codex R9): orphans are waiting for a pass that reads every folder (no STATUS skip), the only kind that may delete them */
   fullCheck?: boolean;
   /**
-   * plan 65 (Codex R15): a journal above was cut at its limit: the next pass that reads every folder looks for every
+   * plan 68 (Codex R15): a journal above was cut at its limit: the next pass that reads every folder looks for every
    * message with no location (a window of ids at a time), so none is left behind with neither a place nor a record
    */
   overflow?: boolean;
 }
 
 /**
- * Plan 65 (Codex R52): how many more reset ids this folder may keep: the limit is the cursor's, every folder's together
+ * Plan 68 (Codex R52): how many more reset ids this folder may keep: the limit is the cursor's, every folder's together
  * (20 folders reset with the same 200,000 copies were 4 million ids, 27 MB of cursor written each time); past it,
  * `overflow`, and the scan for messages with no place finds the rest
  */
@@ -50,7 +50,7 @@ export function resetRoom(pending: Readonly<Record<string, readonly number[]>>, 
   return Math.max(0, IMAP_JOURNAL_LIMITS.resetPending - others);
 }
 
-/** Plan 65: how many ids each journal in the cursor keeps (the cursor stays bounded; past them, `overflow`). */
+/** Plan 68: how many ids each journal in the cursor keeps (the cursor stays bounded; past them, `overflow`). */
 export const IMAP_JOURNAL_LIMITS = { unlocated: 200_000, resetPending: 200_000, orphans: 100_000 };
 
 /** The newest `max` of `ids`, marking the cursor when any had to go. */
@@ -60,7 +60,7 @@ function bounded(cursor: Cursor, ids: readonly number[], max: number, keep: "new
   return keep === "newest" ? ids.slice(-max) : ids.slice(0, max);
 }
 
-/** Plan 65 (Codex R18): an ID-less message held back until every folder is read (a copy, or its twin moved here) */
+/** Plan 68 (Codex R18): an ID-less message held back until every folder is read (a copy, or its twin moved here) */
 interface Ambiguous {
   /** the stored ID-less messages with its envelope, oldest first */
   candidates: number[];
@@ -82,7 +82,7 @@ interface Ambiguous {
 
 
 /**
- * Plan 65 (Codex R18–R30): what each held-back message is, in one linear pass. Per envelope, its twins with no place
+ * Plan 68 (Codex R18–R30): what each held-back message is, in one linear pass. Per envelope, its twins with no place
  * left on the server, oldest first, go to the held-back messages in order (each moved here); a Message-ID's copy is the
  * same message in one more folder, once a folder (the plain-key one first, else the next twin with no place there,
  * from a cursor per envelope and folder: Codex R27, R29, R30); anything else is a copy of its own (none for old mail).
@@ -170,7 +170,7 @@ function breather(budgetMs = 4): () => Promise<void> {
   };
 }
 
-/** Plan 65 (Codex R33): the stored ids of messages just written, by key, looked up a few milliseconds a turn (one per key, null where none) */
+/** Plan 68 (Codex R33): the stored ids of messages just written, by key, looked up a few milliseconds a turn (one per key, null where none) */
 export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>, aligned: true): Promise<(number | null)[]>;
 export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>): Promise<number[]>;
 export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>, aligned = false): Promise<(number | null)[]> {
@@ -186,7 +186,7 @@ export async function storedIds(keys: readonly string[], lookup: (key: string) =
 }
 
 /**
- * Plan 65 (Codex R34, R35): messages just written join the twin groups kept for their envelopes: each group's
+ * Plan 68 (Codex R34, R35): messages just written join the twin groups kept for their envelopes: each group's
  * additions gathered, then merged once (new ids sort after the old, so mostly an append), a few milliseconds a turn,
  * never a search and a sort per message.
  */
@@ -234,7 +234,7 @@ export async function joinGroups(groups: ReadonlyMap<string, number[]>, keys: re
 }
 
 /**
- * Plan 65 (Codex R40): a mailbox's stored locations, 2,000 UIDs a page where the store pages (its reads hold the loop),
+ * Plan 68 (Codex R40): a mailbox's stored locations, 2,000 UIDs a page where the store pages (its reads hold the loop),
  * a turn between pages every few milliseconds; whole where it doesn't (in memory)
  */
 export async function readMailbox<L extends { uid: number }>(
@@ -255,7 +255,7 @@ export async function readMailbox<L extends { uid: number }>(
 }
 
 /**
- * Plan 65 (Codex R44): the journal with these ids added, gathered a few thousand at a time (a big expunge's 500,000
+ * Plan 68 (Codex R44): the journal with these ids added, gathered a few thousand at a time (a big expunge's 500,000
  * onto 200,000 was 28 ms at once); null when nothing new
  */
 export async function journalUnion(journaled: readonly number[], ids: Iterable<number>): Promise<number[] | null> {
@@ -267,7 +267,7 @@ export async function journalUnion(journaled: readonly number[], ids: Iterable<n
 }
 
 /**
- * Plan 65 (Codex R46): a sweep's stored locations split against the server's UIDs, a few thousand at a time: by UID,
+ * Plan 68 (Codex R46): a sweep's stored locations split against the server's UIDs, a few thousand at a time: by UID,
  * the ones gone, and the UIDs still there
  */
 export async function partitionKnown<K extends { uid: number }>(known: readonly K[], serverUids: ReadonlySet<number>): Promise<{ byUid: Map<number, K>; gone: K[]; stillThere: number[] }> {
@@ -288,7 +288,7 @@ export async function partitionKnown<K extends { uid: number }>(known: readonly 
 /**
  * Messages that may have lost places: their flags from the places left, and the ones with none (orphans: a local
  * optimistic send with no server copy yet is kept) removed unless `keepOrphans`. A chunk of 500 at a time, its flag
- * updates sent with it and the loop given a turn between chunks (plan 65, Codex R49: 50,000 at once, 64 ms, every
+ * updates sent with it and the loop given a turn between chunks (plan 68, Codex R49: 50,000 at once, 64 ms, every
  * update in one batch).
  */
 export async function reconcileMessages(
@@ -339,7 +339,7 @@ export async function reconcileMessages(
   return orphans;
 }
 
-/** Plan 65 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
+/** Plan 68 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
 export async function addAll(target: Set<number>, ids: Iterable<number>): Promise<void> {
   const breathe = breather();
   let n = 0;
@@ -349,7 +349,7 @@ export async function addAll(target: Set<number>, ids: Iterable<number>): Promis
   }
 }
 
-/** Plan 65 (Codex R20, R39): every stored twin of an envelope, 500 a page, the loop given a turn every few milliseconds */
+/** Plan 68 (Codex R20, R39): every stored twin of an envelope, 500 a page, the loop given a turn every few milliseconds */
 export async function readTwins(page: (after: number) => Promise<readonly number[]>): Promise<number[]> {
   const breathe = breather();
   const group: number[] = [];
@@ -368,7 +368,7 @@ function twinKey(e: { subject: string; fromEmail: string; date: number; size: nu
 }
 
 /**
- * Plan 65 (Codex R32): the held-back messages' candidates and every place of theirs, by mailbox, read 500 at a time and
+ * Plan 68 (Codex R32): the held-back messages' candidates and every place of theirs, by mailbox, read 500 at a time and
  * gathered a few milliseconds a turn (150,000 of them were 50 ms at once before the planner began).
  */
 export async function gatherPlaces<L extends { message_id: number; mailbox: string; uid: number; uidvalidity: number }>(
@@ -402,33 +402,33 @@ export async function gatherPlaces<L extends { message_id: number; mailbox: stri
   return { places, byMailbox };
 }
 
-/** Plan 65 (Codex R23, R24): a folder's UIDNEXT, kept below its first held-back message (a loop: any number of them) */
+/** Plan 68 (Codex R23, R24): a folder's UIDNEXT, kept below its first held-back message (a loop: any number of them) */
 export function heldUidnext(uidnext: number, held: readonly { uid: number }[]): number {
   let at = uidnext;
   for (const a of held) if (a.uid < at) at = a.uid;
   return at;
 }
 
-/** Plan 65 (Codex R15): message ids looked at a window at a time for ones with no location */
+/** Plan 68 (Codex R15): message ids looked at a window at a time for ones with no location */
 const UNLOCATED_SPAN = 5000;
 
-/** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
+/** Plan 68: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
 const LISTED_MAX = 2 * FOLDERS_PER_ACCOUNT_MAX;
 
-/** Plan 65: a mailbox as STATUS compares it (its message count, its mod-sequence where the server has one). */
+/** Plan 68: a mailbox as STATUS compares it (its message count, its mod-sequence where the server has one). */
 interface Snapshot {
   messages: number;
   modseq?: string;
 }
 const snapshotOf = (mb: { exists: number; highestModseq?: bigint }): Snapshot => ({ messages: mb.exists, ...(mb.highestModseq !== undefined && { modseq: String(mb.highestModseq) }) });
 
-/** Plan 65: without HIGHESTMODSEQ, flag changes don't show in STATUS: a quiet folder is checked on every fourth pass. */
+/** Plan 68: without HIGHESTMODSEQ, flag changes don't show in STATUS: a quiet folder is checked on every fourth pass. */
 const CHECK_EVERY = 4;
 
 type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
 
 /**
- * Plan 65: the account's own folders in a LIST: what holds no role, isn't a server special (Gmail's Starred,
+ * Plan 68: the account's own folders in a LIST: what holds no role, isn't a server special (Gmail's Starred,
  * Important…) and exists. A \Noselect parent is listed only to group folders under it. A leading INBOX in the
  * path (servers that keep every folder under it) isn't shown. Bounded: names, path length and count.
  */
@@ -692,12 +692,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   const upsertLocation = (messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) => locations.upsert(messageId, mailbox, uidvalidity, uid, flags);
 
-  /** `keepOrphans` (plan 65, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
+  /** `keepOrphans` (plan 68, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
   async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false): Promise<number[]> {
     return reconcileMessages(messageIds, { of: (ids) => locations.of(ids), providerIds: (ids) => store.providerIds(ids), state: stateFromLocations, updateFlags: (u) => sink.updateFlags(u), removeMessages: (ids) => sink.removeMessages(ids) }, keepOrphans);
   }
 
-  /** Plan 65 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */
+  /** Plan 68 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */
   async function journal(cursor: Cursor, ids: Iterable<number>) {
     const next = await journalUnion(cursor.unlocated ?? [], ids);
     if (next === null) return;
@@ -730,7 +730,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /**
-   * `reidentify` (plan 65, Codex R1): a folder seen for the first time is read whole once, so mail already stored
+   * `reidentify` (plan 68, Codex R1): a folder seen for the first time is read whole once, so mail already stored
    * (older than the window too) gains its location; mail it doesn't know is fetched only inside the window.
    * `recover`: every message that lost a location this pass or before (a vanished folder, a sweep, a reset, kept
    * orphans), by envelope, one index for every mailbox (Codex R11): a copy found anywhere is the same message, even
@@ -923,7 +923,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
             // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
-            // already stored under the old path's key: found by its envelope, re-attached (plan 65, Codex R2)
+            // already stored under the old path's key: found by its envelope, re-attached (plan 68, Codex R2)
             if (recover.size) {
               const twin = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
               if (twin !== null) {
@@ -1002,7 +1002,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /**
-   * Plan 65 (Codex R18): ID-less messages set aside because their stored twin was still placed elsewhere, told apart
+   * Plan 68 (Codex R18): ID-less messages set aside because their stored twin was still placed elsewhere, told apart
    * now that every folder is read: where the twin's places are all gone from the server (one lock and one search per
    * mailbox), it moved here after its folder's sweep, so it keeps its identity, thread and categories; otherwise it's
    * a copy. A mailbox no longer listed holds nothing (a rename's old name); one that can't be read fails the pass, and
@@ -1066,7 +1066,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
 
   /**
-   * Plan 65 (Codex R5): what the server expunged, and flags it changed, for mail we already have: run for every
+   * Plan 68 (Codex R5): what the server expunged, and flags it changed, for mail we already have: run for every
    * mailbox before any new mail is identified, so a message moved between folders (the destination synced first)
    * finds its old location gone and keeps its identity, its thread and categories, never a second copy.
    */
@@ -1115,7 +1115,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
   }
 
-  /** Plan 65: a custom folder STATUS says hasn't changed since the cursor (UIDVALIDITY included) needs no pass. */
+  /** Plan 68: a custom folder STATUS says hasn't changed since the cursor (UIDVALIDITY included) needs no pass. */
   async function unchanged(c: ImapFlow, path: string, cursor: Cursor): Promise<boolean> {
     const state = cursor.mailboxes[path];
     if (!state || state.messages === undefined) return false;
@@ -1242,10 +1242,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async sync(sink) {
       await withConnection(async (c) => {
-        // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 65)
+        // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 68)
         const list = await c.list();
         const r = await discoverRoles(c, list);
-        // plan 65 (Codex R3): mailboxes by path in a map with no prototype, so a folder named "__proto__" is a path like any other
+        // plan 68 (Codex R3): mailboxes by path in a map with no prototype, so a folder named "__proto__" is a path like any other
         const loaded = await ctx.loadCursor<Cursor>();
         const cursor: Cursor = {
           ...loaded,

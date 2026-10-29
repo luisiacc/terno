@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Plan 65 (Codex R36, R48): an expunge's membership decision in IndexedDB: a thread whose other message is made
+ * Plan 68 (Codex R36, R48): an expunge's membership decision in IndexedDB: a thread whose other message is made
  * eligible between its decision and the delete ("Not spam") keeps its place (the watch marks it).
  */
 import "fake-indexeddb/auto";

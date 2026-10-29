@@ -1,5 +1,5 @@
 /**
- * Plan 65 (Codex R9): a folder is its account's, alone: the list and every scope refuse it without its account,
+ * Plan 68 (Codex R9): a folder is its account's, alone: the list and every scope refuse it without its account,
  * with a category, or with a view other than All Mail.
  */
 import { describe, expect, it } from "vitest";
