@@ -710,6 +710,8 @@ const es = {
   "reader.group.respond": "Responder",
   "reader.group.print": "Imprimir",
   "reader.group.navigate": "Conversaciones",
+  "codes.copy": "Copiar el código de verificación {code}",
+  "codes.copied": "Copiado",
   "reader.to": "Para:",
   "reader.cc": "Cc:",
   "reader.downloading": "Descargando el contenido…",

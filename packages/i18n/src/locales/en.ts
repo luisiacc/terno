@@ -716,6 +716,8 @@ const en = {
   "reader.group.respond": "Respond",
   "reader.group.print": "Print",
   "reader.group.navigate": "Conversations",
+  "codes.copy": "Copy verification code {code}",
+  "codes.copied": "Copied",
   "reader.to": "To:",
   "reader.cc": "Cc:",
   "reader.downloading": "Downloading…",
