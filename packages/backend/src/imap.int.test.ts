@@ -1469,6 +1469,46 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
   });
 
+  it("Codex R23: a folder whose read fails part-way, a message held back in it, isn't acknowledged past what it read", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Copia retenida" }).replace(/^Message-ID: .*\r\n/m, "");
+    ctl.addMessage("Z", { raw: twin });
+    ctl.addMessage("A", { raw: raw({ subject: "Primero en A" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    // a copy of Z's (held back: its twin is placed), then a message after it
+    ctl.addMessage("A", { raw: twin });
+    ctl.addMessage("A", { raw: raw({ subject: "Tercero en A" }) });
+    const original = ImapFlow.prototype.fetch;
+    let failed = false;
+    const failing = vi.spyOn(ImapFlow.prototype, "fetch").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const it = original.apply(this, args);
+      const reading = (args[1] as { envelope?: boolean } | undefined)?.envelope === true;
+      if (failed || !reading || (this.mailbox && this.mailbox.path) !== "A") return it;
+      failed = true;
+      return (async function* () {
+        for await (const m of it) {
+          yield m;
+          throw Object.assign(new Error("Fetch failed"), { responseStatus: "NO", serverResponseCode: "UNAVAILABLE" });
+        }
+      })() as unknown as ReturnType<typeof original>;
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      failing.mockRestore();
+    }
+    expect(failed).toBe(true);
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Tercero en A'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Copia retenida'")).toBe(2);
+  });
+
   it("Codex R22: a move told apart that stops before its new place is written, then deleted there, leaves nothing behind", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();

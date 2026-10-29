@@ -578,12 +578,31 @@ const AccountEntry = memo(function AccountEntry({
   const rows = useFolderRows(folders, a.id, openHere);
   const discloses = many || hasOwn;
   const open = discloses && openHere;
+  // with one account, its last own folder taken away takes the whole group: focus in it goes to the account's row
+  // (Codex R23), as when a focused folder goes with others left (AccountFolders)
+  const focusInFolders = useRef(false);
+  const noteFocus = (e: React.FocusEvent) => {
+    focusInFolders.current = (e.target as HTMLElement).closest(`#account-folders-${a.id}`) !== null;
+  };
+  const noteBlur = (e: React.FocusEvent) => {
+    if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) return;
+    const left = e.target as HTMLElement;
+    requestAnimationFrame(() => {
+      if (left.isConnected) focusInFolders.current = false;
+    });
+  };
+  useLayoutEffect(() => {
+    if (discloses || !focusInFolders.current) return;
+    focusInFolders.current = false;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    document.querySelector<HTMLElement>(`[data-testid="nav-account-${a.id}"]`)?.focus({ preventScroll: true });
+  }, [discloses, a.id]);
   // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
   const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);
   const child = here && open && many && ownFolder === null && view !== null ? (inCategory ? "inbox" : view) : null;
   const childActive = ownActive || (child !== null && listedByAccount(child));
   return (
-    <div data-account-id={a.id}>
+    <div data-account-id={a.id} onFocus={noteFocus} onBlur={noteBlur}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below */}
       <div className="relative">
         <NavItem

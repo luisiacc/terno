@@ -186,6 +186,21 @@ test("Codex R10: a focused folder renamed to sort past the 250 shown keeps the f
   await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
 });
 
+test("Codex R23: with one account, its last own folder taken away while focused hands focus to the account's row", async ({ app: page, server }) => {
+  const acme = accountOf(server, "Acme Studio");
+  for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
+  await page.getByTestId(`nav-account-${acme}`).click();
+  const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
+  await expect(rows.first()).toBeVisible();
+  await rows.first().focus();
+  await expect(rows.first()).toBeFocused();
+  await server.backend.store.folders.replace(acme, []);
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await expect(rows).toHaveCount(0);
+  await expect(page.locator(`#account-folders-${acme}`)).toHaveCount(0);
+  await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
+});
+
 test("with one account, its row opens onto its own folders alone (its standard ones are the top ones)", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);

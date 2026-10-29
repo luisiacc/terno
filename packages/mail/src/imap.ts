@@ -466,6 +466,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           ? (await c.search({ all: true }, { uid: true })) || []
           : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
       const fresh: IncomingMessage[] = [];
+      // held back here, handed over only once this folder's read completes: one that fails part-way keeps its old
+      // cursor and is read again, never acknowledged past what it didn't read (Codex R23)
+      const held: Ambiguous[] = [];
       /** provider keys already claimed in this pass (by UID): duplicates within one batch stay distinct */
       const claimed = new Map<string, number>();
       for (let i = 0; i < found.length; i += 250) {
@@ -606,7 +609,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
-          if (ambiguousOf !== null && opts.ambiguous) opts.ambiguous.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
+          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
           else if (!old) fresh.push(incoming);
         }
       }
@@ -619,10 +622,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
-      const waiting = (opts.ambiguous ?? []).filter((a) => a.path === path).map((a) => a.uid);
+      const waiting = held.map((a) => a.uid);
       const uidnext = waiting.length ? Math.min(Number(mb.uidNext), ...waiting) : Number(mb.uidNext);
       cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
+      opts.ambiguous?.push(...held);
     } finally {
       lock.release();
     }
