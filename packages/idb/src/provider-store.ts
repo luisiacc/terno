@@ -35,7 +35,18 @@ function expungeWatch(c: { db: { onRow(fn: (table: string, row: Record<string, u
 }
 
 /** each twins bucket's ids by envelope, ascending, as of its revision (a page seeks into it) */
-const twinOrders = new WeakMap<ReadonlySet<unknown>, { revision: string; byEnvelope: Map<string, number[]> }>();
+const twinOrders = new WeakMap<ReadonlySet<unknown>, { revision: string; asked: Map<string, number[]>; bySubject: Map<string, number[]> | null; byRest: Map<string, Map<string, number[]>> }>();
+/** the first position in ascending ids above `after` */
+function seek(ids: readonly number[], after: number): number {
+  let lo = 0;
+  let hi = ids.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ids[mid]! <= after) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 /**
  * per database, the revision of each twins bucket looked up: a row in it written, put in or taken out moves it on.
  * Only buckets looked up are followed, and at most TWIN_WATCHED of them (Codex R32: every changed message's key was
@@ -319,21 +330,48 @@ class IdbImapLocations implements ImapLocationStore {
       const bucket = rfc ? messages.bucket("rfc", this.accountId, rfc) : messages.bucket("twins", this.accountId, e.fromEmail, e.date, e.size, e.subject);
       if (!bucket) return [];
       const revision = twinRevision(this.c.db, twinBucketKey(this.accountId, rfc, envelope));
-      // the asked envelope's ids only, found by comparing fields (never a string built per message: Codex R49), kept
-      // per envelope while the bucket's revision holds
-      let byEnvelope = twinOrders.get(bucket);
-      if (!byEnvelope || byEnvelope.revision !== revision) twinOrders.set(bucket, (byEnvelope = { revision, byEnvelope: new Map() }));
-      let found = byEnvelope.byEnvelope.get(envelope);
-      if (!found) {
-        found = [];
+      // the first few envelopes asked for in a revision found by comparing fields along the bucket (one lookup stays a
+      // single cheap walk: Codex R49); past them the bucket is split once by subject, then a subject's ids by the rest
+      // of the envelope the first time it's asked for (never a walk per envelope: Codex R50)
+      let split = twinOrders.get(bucket);
+      if (!split || split.revision !== revision) twinOrders.set(bucket, (split = { revision, asked: new Map(), bySubject: null, byRest: new Map() }));
+      const known = split.asked.get(envelope);
+      if (known) return known.slice(seek(known, afterId), seek(known, afterId) + limit);
+      if (!split.bySubject && split.asked.size < 3) {
+        const found: number[] = [];
         for (const k of bucket) {
           const m = messages.rows.get(k)!;
           if (m.date === e.date && m.size === e.size && m.from_email === e.fromEmail && m.subject === e.subject) found.push(m.id as number);
         }
         found.sort((x, y) => x - y);
-        byEnvelope.byEnvelope.set(envelope, found);
+        split.asked.set(envelope, found);
+        return found.slice(seek(found, afterId), seek(found, afterId) + limit);
       }
-      const cached = byEnvelope;
+      if (!split.bySubject) {
+        const bySubject = new Map<string, number[]>();
+        for (const k of bucket) {
+          const m = messages.rows.get(k)!;
+          const ids = bySubject.get(m.subject as string);
+          if (ids) ids.push(m.id as number);
+          else bySubject.set(m.subject as string, [m.id as number]);
+        }
+        split.bySubject = bySubject;
+      }
+      let rest = split.byRest.get(e.subject);
+      if (!rest) {
+        rest = new Map();
+        for (const id of split.bySubject!.get(e.subject) ?? []) {
+          const m = messages.get(id)!;
+          const at = `${m.date}\u0000${m.size}\u0000${m.from_email}`;
+          const ids = rest.get(at);
+          if (ids) ids.push(id);
+          else rest.set(at, [id]);
+        }
+        for (const ids of rest.values()) ids.sort((x, y) => x - y);
+        split.byRest.set(e.subject, rest);
+      }
+      const found = rest.get(`${e.date}\u0000${e.size}\u0000${e.fromEmail}`) ?? [];
+      const cached = { byEnvelope: new Map([[envelope, found]]) };
       const ids = cached.byEnvelope.get(envelope) ?? [];
       let lo = 0;
       let hi = ids.length;
