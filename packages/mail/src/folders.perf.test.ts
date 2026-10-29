@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, distinctCandidates, planTellApart } from "./imap";
+import { customFolders, distinctCandidates, planSteps, planTellApart } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -50,4 +50,29 @@ it("Codex R30: 5,000 copies of a Message-ID with 5,000 placed twins are planned 
   expect(plan.placed.every((p) => !p.moved)).toBe(true);
   expect(plan.copies).toHaveLength(0);
   expect(best(() => planTellApart(list, places, present))).toBeLessThan(20);
+});
+
+it("Codex R31: 150,000 held-back copies are planned a step at a time: 99% of steps under 2 ms, none over a frame", () => {
+  const candidates = Array.from({ length: 150_000 }, (_, i) => i + 1);
+  const places = new Map(candidates.map((id) => [id, [{ mailbox: "Z", uid: id }]]));
+  const present = new Set(candidates.map((id) => `Z\u0000${id}`));
+  const list = Array.from({ length: 150_000 }, () => ({ candidates, path: "A", attachTo: 1, idCopy: true, old: false }));
+  // (a step now and then is a collection or a set growing past a power of two: what's ours is every other step)
+  const steps = () => {
+    const it = planSteps(list, places, present);
+    const times: number[] = [];
+    for (let r: IteratorResult<void, unknown> | null = null; !r?.done; ) {
+      const t0 = performance.now();
+      r = it.next();
+      times.push(performance.now() - t0);
+    }
+    return times.sort((a, b) => a - b);
+  };
+  steps();
+  const runs = [steps(), steps(), steps()];
+  const p99 = Math.min(...runs.map((t) => t[Math.floor(t.length * 0.99)]!));
+  expect(runs[0]!.length).toBeGreaterThan(100);
+  expect(p99).toBeLessThan(2);
+  expect(Math.min(...runs.map((t) => t.at(-1)!))).toBeLessThan(16);
+  expect(planTellApart(list, places, present).placed).toHaveLength(150_000);
 });

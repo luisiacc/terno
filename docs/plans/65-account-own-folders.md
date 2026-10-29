@@ -381,3 +381,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 30.** Codex found one medium problem; it's fixed with a gate that fails without the fix:
 1. **Telling 5,000 held-back copies apart was quadratic** (each searched 5,000 twins from the start: about a second, the event loop held). What each held-back message is, is now planned by a pure function (`planTellApart`) in one linear pass, a cursor per envelope and folder for the next twin with no place there; the plan is then written with a yield every 500 writes. Gate: 5,000 copies of a Message-ID with 5,000 placed twins planned in under 20 ms (589 when each copy searched from the start); the IMAP suite holds the behaviour.
+
+**Round 31.** Codex found one medium problem and reported nothing else; it's fixed with a gate:
+1. **Planning what held-back messages are still ran in one go** (150,000 copies: about 80 ms). `planSteps` yields every thousand messages or candidates, and the backend drives it 4 ms a turn before the sliced writes. Gate: 150,000 copies, 99% of steps under 2 ms and none over a frame (a step now and then is a collection, or the given-places set growing past a power of two).

@@ -86,11 +86,29 @@ export function distinctCandidates(list: readonly { candidates: readonly number[
  * same message in one more folder, once a folder (the plain-key one first, else the next twin with no place there,
  * from a cursor per envelope and folder: Codex R27, R29, R30); anything else is a copy of its own (none for old mail).
  */
-export function planTellApart<A extends { candidates: readonly number[]; path: string; attachTo: number | null; idCopy: boolean; old: boolean }>(
-  list: readonly A[],
-  places: ReadonlyMap<number, readonly { mailbox: string; uid: number }[]>,
-  present: ReadonlySet<string>,
-): { placed: { id: number; a: A; moved: boolean }[]; copies: A[] } {
+export function planTellApart<A extends HeldShape>(list: readonly A[], places: ReadonlyMap<number, readonly { mailbox: string; uid: number }[]>, present: ReadonlySet<string>): Plan<A> {
+  const steps = planSteps(list, places, present);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+interface HeldShape {
+  candidates: readonly number[];
+  path: string;
+  attachTo: number | null;
+  idCopy: boolean;
+  old: boolean;
+}
+interface Plan<A> {
+  placed: { id: number; a: A; moved: boolean }[];
+  copies: A[];
+}
+
+/** planTellApart a step at a time: a pause every thousand messages or candidates (Codex R31: 150,000 were 80 ms at once) */
+export function* planSteps<A extends HeldShape>(list: readonly A[], places: ReadonlyMap<number, readonly { mailbox: string; uid: number }[]>, present: ReadonlySet<string>): Generator<void, Plan<A>, void> {
+  let work = 0;
   const gone = new Map<readonly number[], { ids: number[]; next: number }>();
   const cursors = new Map<readonly number[], Map<string, number>>();
   /** stored messages given a place in a folder here: each (message, folder) once */
@@ -99,8 +117,16 @@ export function planTellApart<A extends { candidates: readonly number[]; path: s
   const placed: { id: number; a: A; moved: boolean }[] = [];
   const copies: A[] = [];
   for (const a of list) {
+    if (++work % 1000 === 0) yield;
     let free = gone.get(a.candidates);
-    if (!free) gone.set(a.candidates, (free = { ids: a.candidates.filter((id) => (places.get(id) ?? []).every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))), next: 0 }));
+    if (!free) {
+      const ids: number[] = [];
+      for (const id of a.candidates) {
+        if ((places.get(id) ?? []).every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))) ids.push(id);
+        if (++work % 1000 === 0) yield;
+      }
+      gone.set(a.candidates, (free = { ids, next: 0 }));
+    }
     const id = free.ids[free.next];
     if (id !== undefined) {
       free.next++;
@@ -117,7 +143,10 @@ export function planTellApart<A extends { candidates: readonly number[]; path: s
         let byPath = cursors.get(a.candidates);
         if (!byPath) cursors.set(a.candidates, (byPath = new Map()));
         let at = byPath.get(a.path) ?? 0;
-        while (at < a.candidates.length && placedHere(a.candidates[at]!, a.path)) at++;
+        while (at < a.candidates.length && placedHere(a.candidates[at]!, a.path)) {
+          at++;
+          if (++work % 1000 === 0) yield;
+        }
         byPath.set(a.path, at);
         target = a.candidates[at];
       }
@@ -762,8 +791,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         lock.release();
       }
     }
-    // what each held-back message is (planned in one linear pass, then written a slice at a time: Codex R30)
-    const plan = planTellApart(list, places, present);
+    // what each held-back message is (planned in one linear pass, a few milliseconds a turn, then written a slice at
+    // a time: Codex R30, R31)
+    const steps = planSteps(list, places, present);
+    let plan: Plan<Ambiguous>;
+    for (;;) {
+      const until = performance.now() + 4;
+      let r = steps.next();
+      while (!r.done && performance.now() < until) r = steps.next();
+      if (r.done) {
+        plan = r.value;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
     // at a time re-read a long conversation each time)
     const leaving = new Map<string, number[]>();
