@@ -114,6 +114,14 @@ describe("parseRaw: MIME tree compatibility (W10)", () => {
 });
 
 describe("parseRaw: nested alternative selection (W10 patch)", () => {
+  it("preserves the original CommonJS constructor and static parse API", async () => {
+    const CommonJS: typeof PostalMime = createRequire(import.meta.url)("postal-mime");
+    const source = envelope(wireMultipart("alternative", "o", [wirePart("text/plain", "Fallback"), wireMultipart("alternative", "i", [wirePart("text/plain", "Chosen"), wirePart("text/html", "<p>Chosen HTML</p>")])]));
+    const parsed = await CommonJS.parse(source);
+    expect(parsed).toMatchObject({ messageId: "<outer@test>", text: "Chosen", html: "<p>Chosen HTML</p>" });
+    expect(await new CommonJS().parse(source)).toEqual(parsed);
+  });
+
   const plain = (text: string) => wirePart("text/plain", text);
   const html = (text: string) => wirePart("text/html", text);
   const chosen = wireMultipart("alternative", "i", [plain("Chosen plain"), html("<p>Chosen HTML</p>")]);
