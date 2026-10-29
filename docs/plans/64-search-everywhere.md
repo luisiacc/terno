@@ -169,3 +169,13 @@ Round 2 (`a4f677c3..9831710a`) found three issues, each fixed with a test that f
 1. **The selection bar could act on a previous selection.** It captured ids at render time, and a same-size selection made since rendered nothing new.
 2. **IndexedDB's early reads made trashed spam look icon-safe.** Lists answer before the messages load, so `hasSpam` read as false. Until the late tables are in, a trashed thread counts as `hasSpam` (no icon). Test: `spam-early.test.ts` holds the messages' load, lists Trash, and finds `hasSpam` true before and after.
 3. **`!` and the Spam button acted on different rows.** Fix for this and for 1: `act()` itself narrows a place action, in a search, to the rows it fits, read when it runs. Buttons, the menu and keys all go through it; the bar re-renders on the checked set. Tests: `actions.test.ts` (a key acts on the fitting rows; a same-size selection made since is the one acted on; outside a search, every row).
+
+Round 3 (`9831710a..88afd1e0`) found one issue, fixed with a test that fails without the fix: **early reads still missed spam outside Trash**, for example received spam beside the user's own reply, still in the Inbox. Until IndexedDB's messages load, every thread now counts as `hasSpam`, so icons wait the moment it takes. `spam-early.test.ts` covers that thread too.
+
+**What the full e2e run changed:** six existing specs encoded the old scoping on purpose:
+- the heading staying "Inbox" or "All Mail" during a search;
+- a trashed result leaving the results;
+- the Inbox's first `has:attachment` result;
+- the Inbox's unread set.
+
+They now say what they mean. The heading test expects "Search". The Inbox-specific tests type `in:inbox` (list focus, filters, reader, unread filter).

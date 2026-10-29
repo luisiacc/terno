@@ -16,6 +16,10 @@ it("trashed spam isn't icon-safe while the messages are still loading (an early 
   await ingest(store, [m]);
   const threadId = (await store.threads.list({ view: "spam", limit: 5, now: 0 })).items[0]!.id;
   await store.threads.act({ threadIds: [threadId], action: "trash", signal: null, now: 0 });
+  // and one outside Trash and Spam: received spam beside the user's (not spam) reply, still in the Inbox
+  const root = msg({ accountId: acct!, providerThreadId: "mixed", rfcMessageId: "mixed@x", from: { name: "Promo", email: "win@spammer.com" }, isSpam: true, inInbox: false });
+  await ingest(store, [root, msg({ accountId: acct!, providerThreadId: "mixed", inReplyTo: "<mixed@x>", references: ["<mixed@x>"], from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: true })]);
+  const mixed = (await store.threads.list({ view: "inbox", limit: 5, now: 0 })).items.find((t) => t.subject === root.subject)!.id;
   await store.close();
 
   // the messages table's load waits for the gate: lists answer from the early tables
@@ -43,10 +47,13 @@ it("trashed spam isn't icon-safe while the messages are still loading (an early 
     const early = (await store.threads.list({ view: "trash", limit: 5, now: 0 })).items.find((t) => t.id === threadId)!;
     expect(delayed).toBe(true);
     expect(early).toMatchObject({ inTrash: true, inSpam: false, hasSpam: true });
+    const mixedEarly = (await store.threads.list({ view: "inbox", limit: 5, now: 0 })).items.find((t) => t.id === mixed)!;
+    expect(mixedEarly).toMatchObject({ inTrash: false, inSpam: false, hasSpam: true });
     release();
     await store.whenLoaded();
     const later = (await store.threads.list({ view: "trash", limit: 5, now: 0 })).items.find((t) => t.id === threadId)!;
     expect(later).toMatchObject({ inTrash: true, inSpam: false, hasSpam: true });
+    expect((await store.threads.list({ view: "inbox", limit: 5, now: 0 })).items.find((t) => t.id === mixed)).toMatchObject({ inSpam: false, hasSpam: true });
   } finally {
     release();
     spy.mockRestore();

@@ -119,7 +119,8 @@ test.describe("the toggle", () => {
 
   test("a search in a filtered mailbox is filtered too: unread results only, counted as such", async ({ app: page, server }) => {
     await filterOn(page);
-    await page.getByTestId("search-input").fill("factura");
+    // the Inbox's search, compared with the Inbox's unread (a search everywhere is filtered the same way)
+    await page.getByTestId("search-input").fill("in:inbox factura");
     await expect(page.getByTestId("search-stats")).toBeVisible();
     await expect(status(page)).toHaveText("Filtered by: Unread");
     const shown = await loadedIds(page);

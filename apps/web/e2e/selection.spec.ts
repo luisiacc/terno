@@ -138,7 +138,7 @@ test.describe("context menu on one thread", { tag: "@design" }, () => {
     await rightClick(page, row(page, id));
     await item(page, "menu-search-sender").click();
     await expect(page.getByTestId("search-input")).toHaveValue(`from:${copied}`);
-    await expect(page.getByTestId("list-title")).toHaveText("All Mail");
+    await expect(page.getByTestId("list-title")).toHaveText("Search");
     await rightClick(page, rows(page).first());
     await item(page, "menu-filter").click();
     await expect(page.getByTestId("filters-dialog")).toBeVisible();

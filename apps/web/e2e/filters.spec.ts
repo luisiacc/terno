@@ -31,7 +31,8 @@ test.describe("AI filters and learned filters", () => {
     await expect(page.getByTestId("filter-item")).toContainText(["AI"]);
     await expect.poll(inboxUber).toBe(0);
     await page.keyboard.press("Escape");
-    await search(page, "from:uber.receipts@uber.com");
+    // nothing of theirs is left in the Inbox (a search everywhere still finds them, where the filter put them)
+    await search(page, "in:inbox from:uber.receipts@uber.com");
     await expect(page.getByTestId("list-empty")).toBeVisible();
   });
 

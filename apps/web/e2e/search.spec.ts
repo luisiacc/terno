@@ -5,7 +5,8 @@ test.describe("search", () => {
     const inboxFirst = await rows(page).first().getAttribute("data-thread-id");
     await search(page, "factura");
     await expect(page.getByTestId("search-stats")).toHaveText(/\d+\+? results · (<1|\d+) ms/);
-    await expect(page.getByTestId("list-title")).toHaveText("Inbox"); // scoped to the current view
+    // plan 64: a search looks everywhere, so the list is the search's
+    await expect(page.getByTestId("list-title")).toHaveText("Search");
     const n = await rows(page).count();
     expect(n).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Clear search" }).click();

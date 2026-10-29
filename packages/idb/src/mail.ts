@@ -833,8 +833,8 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     inInbox: t.in_inbox === 1,
     inSpam: t.in_spam === 1,
     inTrash: t.in_trash === 1,
-    // before the messages load (an early read) a trashed thread may be spam: no icon until it's known (plan 22)
-    hasSpam: c.late && !c.late.loaded ? t.in_trash === 1 : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
+    // before the messages load (an early read) any thread may hold spam (trashed, or beside a reply): no icon until it's known (plan 22)
+    hasSpam: c.late && !c.late.loaded ? true : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
   };
 }
 

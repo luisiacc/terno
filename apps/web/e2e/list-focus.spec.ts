@@ -60,7 +60,8 @@ test.describe("no focus ring around the conversation list @design", () => {
 
   test("trashing the last conversation hands keyboard focus to a visible control, not the empty list", async ({ app: page }) => {
     const list = page.getByRole("listbox", { name: "Conversations", exact: true });
-    await search(page, "291 gadgets");
+    // the Inbox's: a trashed result leaves it (a search everywhere keeps it, tagged Trash)
+    await search(page, "in:inbox 291 gadgets");
     await expect(rows(page)).toHaveCount(1);
     await rows(page).first().click();
     await page.keyboard.press("#");
@@ -109,7 +110,8 @@ test.describe("no focus ring around the conversation list @design", () => {
   test("the hand-off brings a scrolled-away sidebar item into sight", async ({ app: page }) => {
     await page.setViewportSize({ width: 1200, height: 420 });
     const nav = page.locator("#app-sidebar nav");
-    await search(page, "291 gadgets");
+    // the Inbox's: a trashed result leaves it (a search everywhere keeps it, tagged Trash)
+    await search(page, "in:inbox 291 gadgets");
     await expect(rows(page)).toHaveCount(1);
     await rows(page).first().click();
     await nav.evaluate((el) => { el.scrollTop = el.scrollHeight; });

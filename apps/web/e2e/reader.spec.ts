@@ -64,7 +64,7 @@ test.describe("reader conversation", { tag: "@design" }, () => {
   });
 
   test("attachment metadata names its download control and unavailable bytes", async ({ app: page }) => {
-    await search(page, "has:attachment");
+    await search(page, "in:inbox has:attachment");
     await openRow(page, 0);
     const tile = page.getByTestId("attachment").first();
     await expect(tile).toBeVisible();
