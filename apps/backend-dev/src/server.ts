@@ -5,6 +5,7 @@ import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTranspor
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
+import { logBackend } from "./log";
 
 export interface DevServerOptions {
   port: number;
@@ -64,7 +65,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     connectivity: o.connectivity,
     iconTransport: o.iconTransport,
     openExternal: o.openExternal,
-    log: (level, message, extra) => (level === "error" ? console.error : console.log)(`[backend] ${message}`, extra ?? ""),
+    log: logBackend,
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
     await backend.store.settings.set("app", { ai: { provider: "fake" } });
