@@ -146,7 +146,16 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
   } : partial;
   if (typeof update !== "function" && !Object.is(update, useApp.getState()) && update != null && Object.hasOwn(update, "selectedId")) markSelectionIntent();
   if (replace) useApp.setState(update as AppState | ((state: AppState) => AppState), true);
-  else useApp.setState(update, replace);
+  else useApp.setState((state) => keepFolderValid(state, typeof update === "function" ? update(state) : update));
+}
+
+/**
+ * Plan 65 (Codex R2): a folder is its account's, alone, in "all". Any write that leaves it otherwise (a search
+ * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
+ */
+function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  const m = { ...state, ...next };
+  return m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.view !== "all") ? { ...next, folder: null } : next;
 }
 
 /** First-page selection is passive; nested explicit writes still use setApp. */

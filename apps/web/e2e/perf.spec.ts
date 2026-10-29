@@ -695,6 +695,37 @@ test("opening and closing an account (plans 64, 65): smooth frames, no long fram
   expect(folders).toBeLessThanOrEqual((TOGGLES / 2) * OWN_ROWS * 2);
 });
 
+test("counts while an account with 300 folders is open (plan 65, Codex R2): an unchanged update renders nothing, a folder's change only its row", async ({ app: page, server }) => {
+  const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
+  await server.backend.store.folders.replace(acme, Array.from({ length: 300 }, (_, i) => ({ key: `Label_c${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true })));
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await page.getByTestId(`nav-account-${acme}`).click();
+  await expect(page.locator(`[data-testid^="nav-own-${acme}-"]`)).toHaveCount(250);
+  await page.waitForTimeout(300);
+  const counts = await server.backend.store.threads.counts(Date.now());
+  const emit = async (c: typeof counts) => {
+    server.backend.server.emit("counts", c);
+    await page.waitForTimeout(150);
+  };
+  let below0 = await renders(page, "NavItem:below");
+  let folders0 = await renders(page, "NavItem:account-folder");
+  await emit({ ...counts });
+  await emit({ ...counts, folderUnread: { ...counts.folderUnread } });
+  // the category rows re-render with any counts update (as before plan 65); the accounts and their folders don't
+  const categories = await page.locator("[data-testid^=nav-category-]").count();
+  expect((await renders(page, "NavItem:below")) - below0, "unchanged: account rows (beside the categories')").toBeLessThanOrEqual(2 * categories);
+  expect((await renders(page, "NavItem:account-folder")) - folders0, "unchanged: folder rows").toBe(0);
+  below0 = await renders(page, "NavItem:below");
+  folders0 = await renders(page, "NavItem:account-folder");
+  await emit({ ...counts, folderUnread: { ...counts.folderUnread, [`${acme}:Label_c7`]: 3 } });
+  await expect(page.getByTestId(`nav-own-${acme}-Label_c7`).locator("[data-slot=nav-count]")).toHaveText("3");
+  const folderRenders = (await renders(page, "NavItem:account-folder")) - folders0;
+  stats.push({ name: `a folder's count moving: folder rows rendered ${folderRenders} of 255`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  // its own row, and the account's five standard ones beside it at most: never the 250
+  expect(folderRenders).toBeLessThanOrEqual(6);
+  expect((await renders(page, "NavItem:below")) - below0).toBeLessThanOrEqual(categories + 1);
+});
+
 test("dragging rows to the sidebar: starts within a frame, no row renders, two NavItems per target change", async ({ app: page, server }) => {
   const cats = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories ORDER BY position");
   const row = rows(page).nth(2);

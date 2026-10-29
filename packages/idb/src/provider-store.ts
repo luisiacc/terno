@@ -149,19 +149,19 @@ class IdbImapLocations implements ImapLocationStore {
     return this.command(() => {
       const rows: R[] = this.t.by("mailbox", this.accountId, mailbox);
       for (const r of rows) this.t.deleteRow(r);
-      const ids = rows.map((r) => r.message_id as number);
-      this.located(ids, mailbox);
-      return ids;
+      // membership in an IMAP folder is its locations there: with every one gone its rows go, no thread refolded (Codex R2)
+      for (const r of T(this.c, "thread_folders").by("folder", this.accountId, mailbox)) T(this.c, "thread_folders").deleteRow(r);
+      return rows.map((r) => r.message_id as number);
     });
   }
 
-  resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string }) {
+  resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }) {
     return this.read(() => {
       const messages = T(this.c, "messages");
       const hit = [...c.candidates]
         .sort((x, y) => x - y)
         .map((id) => messages.get(id))
-        .find((m) => m && m.account_id === this.accountId && m.rfc_message_id === null && m.subject === c.subject && m.from_email === c.fromEmail && m.date === c.date && m.size === c.size && !this.t.has(m.id, c.mailbox));
+        .find((m) => m && m.account_id === this.accountId && m.rfc_message_id === (c.rfcMessageId ?? null) && m.subject === c.subject && m.from_email === c.fromEmail && m.date === c.date && m.size === c.size && !this.t.has(m.id, c.mailbox));
       return hit ? { id: hit.id as number } : null;
     });
   }

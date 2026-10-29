@@ -311,13 +311,15 @@ export function iconsAllowed(view: string, query: string): boolean {
 
 /**
  * The same for the rows on screen, by the key they were loaded for (`[view, account, category,
- * review, filter, query]`): leaving Spam, its rows stay until the next results replace them.
+ * review, filter, (folder,) query]`, the query always last): leaving Spam, its rows stay until the next results replace them.
  */
 export function iconsAllowedForList(itemsKey: string | null): boolean {
   if (!itemsKey) return false;
   try {
     const key = JSON.parse(itemsKey) as unknown[];
-    return iconsAllowed(String(key[0] ?? ""), typeof key[5] === "string" ? key[5] : "");
+    // the query is the key's last element (plan 65 puts a folder before it, Codex R2)
+    const query = key.at(-1);
+    return iconsAllowed(String(key[0] ?? ""), typeof query === "string" ? query : "");
   } catch {
     return false;
   }

@@ -220,8 +220,8 @@ export interface ImapLocationStore {
   inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
   /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
   resetMailbox(mailbox: string): Promise<number[]>;
-  /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox` */
-  resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string }): Promise<{ id: number } | null>;
+  /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox`; `rfcMessageId`: one with that Message-ID instead (plan 65: a renamed folder's twin) */
+  resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }): Promise<{ id: number } | null>;
 }
 
 /** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */

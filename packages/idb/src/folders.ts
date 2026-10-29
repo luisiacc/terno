@@ -103,7 +103,8 @@ function keeps(p: ScopeParams): (t: R | undefined) => t is R {
   const test = VIEW_TEST[p.view];
   const filter = listFilterOf(p);
   const cutoff = filter === "waiting" ? waitingCutoff(p.now!) : null;
-  return (t): t is R => !!t && test(t) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff);
+  // the folder's account's threads only (another account may have a folder with the same key, Codex R2)
+  return (t): t is R => !!t && t.account_id === p.accountId && test(t) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff);
 }
 
 /**

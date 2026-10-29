@@ -44,6 +44,10 @@ describe("customFolders", () => {
     expect(customFolders([box("AA"), box("A/Z"), box("A")], {}).map((f) => f.key)).toEqual(["A", "A/Z", "AA"]);
   });
 
+  it("Codex R2: a folder named like a role in another case is its own (only INBOX is case-insensitive)", () => {
+    expect(customFolders([box("Sent", { specialUse: "\\Sent" }), box("sent"), box("inbox")], { inbox: "INBOX", sent: "Sent" }).map((f) => f.key)).toEqual(["sent"]);
+  });
+
   it("is bounded: names, path length and count", () => {
     const long = "x".repeat(FOLDER_NAME_MAX + 50);
     expect(customFolders([box(long)], {})[0]!.path[0]).toHaveLength(FOLDER_NAME_MAX);

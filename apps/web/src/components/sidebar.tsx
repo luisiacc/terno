@@ -336,6 +336,22 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
   );
 }
 
+/** One of an account's own folders (plan 65): memoized, so a counts update renders only the rows whose count moved. */
+const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, depth, active, count }: { accountId: number; folderKey: string; name: string; depth: number; active: boolean; count: number }) {
+  return (
+    <NavItem
+      testId={`nav-own-${accountId}-${folderKey}`}
+      inset
+      depth={depth}
+      active={active}
+      onClick={() => navigate({ accountId, folder: folderKey })}
+      icon={<FolderIcon className="size-4" />}
+      label={name}
+      count={count || undefined}
+    />
+  );
+});
+
 /** An open account's own folders mounted at once, and revealed per "more" (plan 65, Codex R1: a catalog may hold 10,000). */
 const FOLDER_BATCH = 250;
 
@@ -419,17 +435,7 @@ function AccountFolders({
         {mounted &&
           rows.slice(0, shown).map((r) =>
             r.selectable && r.key !== null ? (
-              <NavItem
-                key={r.key}
-                testId={`nav-own-${account.id}-${r.key}`}
-                inset
-                depth={r.depth}
-                active={activeFolder === r.key}
-                onClick={() => navigate({ accountId: account.id, folder: r.key })}
-                icon={<FolderIcon className="size-4" />}
-                label={r.name}
-                count={folderUnread[folderRef(account.id, r.key)] || undefined}
-              />
+              <OwnFolderRow key={r.key} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
             ) : (
               // a parent that only groups what's under it: not a place to go
               <div key={`group:${r.key ?? ""}:${r.depth}:${r.name}`} data-testid="nav-own-group" className={cn("type-nav flex h-(--nav-h) items-center gap-2.5 px-2 text-muted-foreground", INSET[r.depth] ?? INSET.at(-1))}>
@@ -459,6 +465,32 @@ function AccountFolders({
 }
 
 const NO_UNREAD: Record<string, number> = {};
+
+/**
+ * Folder unread counts per account, each account's slice kept as the same object while its numbers are the same
+ * (Codex R2): a counts update that changes nothing of an account renders none of it.
+ */
+// an object property, not a module let (React Compiler: memory note react-compiler-module-let)
+const unreadSlices = { last: new Map<number, Record<string, number>>() };
+function folderUnreadByAccount(all: Record<string, number> | undefined): ReadonlyMap<number, Record<string, number>> {
+  const next = new Map<number, Record<string, number>>();
+  for (const [ref, n] of Object.entries(all ?? {})) {
+    const id = Number(ref.slice(0, ref.indexOf(":")));
+    let slice = next.get(id);
+    if (!slice) next.set(id, (slice = {}));
+    slice[ref] = n;
+  }
+  for (const [id, slice] of next) {
+    const before = unreadSlices.last.get(id);
+    const keys = Object.keys(slice);
+    if (before && keys.length === Object.keys(before).length && keys.every((k) => before[k] === slice[k])) next.set(id, before);
+  }
+  unreadSlices.last = next;
+  return next;
+}
+function useFolderUnreadByAccount(all: Record<string, number> | undefined): ReadonlyMap<number, Record<string, number>> {
+  return useMemo(() => folderUnreadByAccount(all), [all]);
+}
 
 /**
  * An account in the sidebar: its row and, open, its folders (plans 64, 65). Memoized: opening one account, or a
@@ -554,6 +586,7 @@ export function Sidebar() {
   const inlineReview = design.variants.categoryReview === "inline-badge";
 
   const openAccount = useOpenAccount((s) => s.id);
+  const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
   // a focused account that's removed hands focus to the row now in its place (or Add account), not to the document
   const accountsRef = useRef<HTMLDivElement>(null);
   const focusedAccount = useRef<number | null>(null);
@@ -698,7 +731,8 @@ export function Sidebar() {
                 ownFolder={accountId === a.id ? ownFolder : null}
                 folders={folders}
                 unread={counts.inboxUnreadByAccount[a.id]}
-                folderUnread={counts.folderUnread}
+                // only the open account's folders show counts; its own slice, the same object while nothing in it moved
+                folderUnread={openAccount === a.id ? unreadByAccount.get(a.id) : undefined}
                 countTone={design.surfaces.inboxCount}
               />
             ))}

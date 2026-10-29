@@ -40,8 +40,9 @@ type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
  * path (servers that keep every folder under it) isn't shown. Bounded: names, path length and count.
  */
 export function customFolders(list: readonly ListedMailbox[], roles: Partial<Record<Role, string>>): ProviderFolder[] {
-  const rolePaths = new Set(Object.values(roles).map((p) => p!.toUpperCase()));
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path.toUpperCase()) || m.path.toUpperCase() === "INBOX" || Boolean(m.specialUse);
+  // paths compare exactly (a server may hold "Sent" and "sent"); only INBOX is case-insensitive (RFC 3501, Codex R2)
+  const rolePaths = new Set(Object.values(roles) as string[]);
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || m.path.toUpperCase() === "INBOX" || Boolean(m.specialUse);
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
@@ -412,7 +413,25 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
-            // that reuses the Message-ID. Keep both instead of collapsing them.
+            // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
+            // already stored under the old path's key: found by its envelope, re-attached (plan 65, Codex R2)
+            if (adopt.size) {
+              const twin = await locations.resetCandidate({
+                candidates: [...adopt],
+                subject: env?.subject ?? "",
+                fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
+                date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
+                size: m.size ?? 0,
+                mailbox: path,
+                rfcMessageId: messageKey(env?.messageId),
+              });
+              if (twin) {
+                adopt.delete(twin.id);
+                await upsertLocation(twin.id, path, uidvalidity, m.uid, flags);
+                touched.add(twin.id);
+                continue;
+              }
+            }
             key = `${key}#${path}:${uidvalidity}:${m.uid}`;
           }
           if (claimed.has(key) && claimed.get(key) !== m.uid) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
@@ -632,6 +651,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const adopt = new Set<number>();
         for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) adopt.add(l.message_id);
+        // a folder that couldn't sync this pass may be a vanished one's new name: their locations wait (Codex R2)
+        let incomplete = false;
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
@@ -642,10 +663,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // a folder the server won't open (permissions, gone since the LIST) waits for the next pass; the rest syncs
             const e = toProviderError(error);
             if (e.retryable || e instanceof ProviderAuthError) throw e;
+            incomplete = true;
           }
         }
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
-        for (const path of vanished) {
+        for (const path of incomplete ? [] : vanished) {
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }

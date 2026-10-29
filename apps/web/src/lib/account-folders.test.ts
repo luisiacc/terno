@@ -181,6 +181,19 @@ describe("an account's own folders (plan 65)", () => {
     expect(getApp().folder).toBeNull();
   });
 
+  it("Codex R2: a write that leaves the folder's scope (a search across accounts, a tab back to the Inbox) leaves the folder", () => {
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    // the category snackbar's "View": all accounts, a search
+    setApp({ query: "factura", view: "all", categoryId: null, accountId: null, reviewCategoryId: null });
+    expect(getApp().folder).toBeNull();
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    setApp({ view: "inbox" });
+    expect(getApp().folder).toBeNull();
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    setApp({ selectedId: 5 });
+    expect(getApp().folder).toBe("Label_3");
+  });
+
   it("an account's row counts a folder as inside it: it opens without moving you", () => {
     setOpenAccount(null);
     at({ view: "all", accountId: 2, folder: "Label_3" });

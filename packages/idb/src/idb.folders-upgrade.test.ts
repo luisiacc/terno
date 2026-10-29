@@ -26,7 +26,7 @@ vi.mock("./folders", async (original) => {
 
 const { databaseName, LOGICAL_SCHEMA } = await import("./schema");
 const { IdbMailStore } = await import("./store");
-type IdbMailStore = InstanceType<typeof IdbMailStore>;
+type IdbMailStore = import("./store").IdbMailStore;
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

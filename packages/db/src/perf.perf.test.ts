@@ -17,6 +17,7 @@ import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
 import { listFolders, replaceFolders } from "./folders";
+import { SqlProviderStore } from "./sql-provider-store";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
 import { BUDGET_MULTIPLIER, measure, report, type Stat } from "./test/perf";
@@ -82,7 +83,7 @@ describe("navigation", () => {
     gate("list category ∩ inbox", 5, () => listThreads(db, { view: "inbox", categoryId: largest.category_id, limit: 100 }));
   });
 
-  it("lists an account's own folders (plan 65): big, sparse, deep, filtered, scopes", () => {
+  it("lists an account's own folders (plan 65): big, sparse, deep, filtered, scopes", async () => {
     // the biggest account's every thread in one folder, beside the dataset's own folders
     const big = db.get<{ account_id: number; c: number }>("SELECT account_id, count(*) c FROM threads WHERE in_trash = 0 AND in_spam = 0 GROUP BY 1 ORDER BY 2 DESC LIMIT 1")!;
     db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Label_everything', '[\"Everything\"]', 1, 99)", big.account_id);
@@ -101,11 +102,41 @@ describe("navigation", () => {
     gate("select all in a folder: its count", 5, () => countScopeThreads(db, { ...folder, limit: 100_001 }));
     // Codex R1: a filtered folder keeps the open and checked threads by key, never by walking the folder
     const kept = db.all<{ thread_id: number }>("SELECT thread_id FROM thread_folders WHERE account_id = ? AND folder = 'Label_everything' ORDER BY thread_id LIMIT 500", big.account_id).map((r) => r.thread_id);
-    gate("list a folder, unread only, keeping 500 threads", 5, () => listThreads(db, { ...folder, filter: "unread", keepIds: kept, limit: 100 }));
+    gate("list a folder, unread only, keeping the open thread", 5, () => listThreads(db, { ...folder, filter: "unread", keepIds: [kept[0]!], limit: 100 }));
+    // the most the contract keeps (500 checked threads): by key, a lookup each, never a walk of the folder
+    gate("list a folder, unread only, keeping 500 threads (the contract's most)", 10, () => listThreads(db, { ...folder, filter: "unread", keepIds: kept, limit: 100 }));
     // Codex R1: unlisting a populated label and listing it back rewrite no membership
     const listed = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
     gate(`unlist and relist a folder of ${big.c} threads`, 5, (i) => replaceFolders(db, big.account_id, i % 2 ? listed : listed.filter((f) => f.key !== "Label_everything")), 20);
     replaceFolders(db, big.account_id, listed);
+    // Codex R2: a UIDVALIDITY reset of a big IMAP folder drops its memberships as they are, refolding no thread
+    db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Big', '[\"Big\"]', 1, 100)", big.account_id);
+    const located = () => {
+      db.run("INSERT OR IGNORE INTO message_locations (message_id, account_id, mailbox, uidvalidity, uid, flags) SELECT id, account_id, 'Big', 1, id, '[]' FROM messages WHERE account_id = ?", big.account_id);
+      db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) SELECT id, account_id, 'Big', last_date, unread_count > 0 FROM threads WHERE account_id = ? AND in_trash = 0 AND in_spam = 0", big.account_id);
+    };
+    const locations = new SqlProviderStore(db, big.account_id).locations;
+    const messagesInBig = db.get<{ c: number }>("SELECT count(*) c FROM messages WHERE account_id = ?", big.account_id)!.c;
+    // the longest the event loop went without a turn during a reset: one slice, never the whole folder
+    const stalls: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      located();
+      let last = performance.now();
+      let max = 0;
+      const tick = setInterval(() => {
+        const now = performance.now();
+        max = Math.max(max, now - last);
+        last = now;
+      }, 1);
+      expect(await locations.resetMailbox("Big")).toHaveLength(messagesInBig);
+      clearInterval(tick);
+      max = Math.max(max, performance.now() - last);
+      stalls.push(max);
+      expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Big'")!.c).toBe(0);
+    }
+    stalls.sort((a, b) => a - b);
+    stats.push({ name: `reset an IMAP folder of ${messagesInBig} messages: longest stall (best of 3)`, budgetMs: 16, p50: stalls[0]!, p95: stalls[0]!, max: stalls[2]!, n: 3 } as never);
+    expect(stalls[0]!, "reset: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
   });
 
   it("computes sidebar counts", () => {

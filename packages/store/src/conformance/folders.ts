@@ -145,6 +145,15 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, g!, "Label_1", { filter: "unread", keepIds: [read] })).not.toContain(read);
     });
 
+    it("Codex R2: a kept thread of another account with a folder of the same key never joins the page", async () => {
+      const store = await fresh();
+      const [a, b] = await withAccounts(store, 3).then((ids) => [ids[0], ids[2]]);
+      for (const id of [a!, b!]) await store.folders.replace(id, [{ key: "Label_1", path: ["Same"], selectable: true }]);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "a1", gmailLabels: ["Label_1"] }), msg({ accountId: b!, providerMsgId: "b1", isRead: true, gmailLabels: ["Label_1"] })]);
+      const theirs = await threadOf(store, "b1");
+      expect(await ids(store, a!, "Label_1", { filter: "unread", keepIds: [theirs] })).toEqual([await threadOf(store, "a1")]);
+    });
+
     it("selection scopes: a folder's thread ids in key order and its count; an unlisted one has none", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

@@ -870,6 +870,57 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
   });
 
+  it("Codex R2: a rename whose new path can't be opened this pass keeps the old folder's mail until a pass where it can", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato", date: old }), internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.renameMailbox("Work", "Proyectos");
+    const original = ImapFlow.prototype.getMailboxLock;
+    const refuse = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "Proyectos") return Promise.reject(Object.assign(new Error("Mailbox unavailable"), { responseStatus: "NO", serverResponseCode: "UNAVAILABLE" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      refuse.mockRestore();
+    }
+    // nothing lost while the new name couldn't be read
+    expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+  });
+
+  it("Codex R2: a rename keeps both messages that share a Message-ID and an envelope, older than the window", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    const twin = raw({ subject: "Gemelo", id: "twin@x", date: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    expect(before).toHaveLength(2);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.renameMailbox("Work", "Proyectos");
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Proyectos'")).toBe(2);
+  });
+
   it("a folder seen for the first time is read whole: mail already stored, older than the window, gains its location", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

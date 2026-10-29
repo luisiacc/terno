@@ -69,6 +69,9 @@ export class SqlProviderStore implements ProviderStore {
   }
 }
 
+/** Rows a reset forgets per transaction (each well inside the backend's slice). */
+const RESET_SLICE = 1000;
+
 class SqlImapLocations implements ImapLocationStore {
   constructor(
     private readonly db: Db,
@@ -160,26 +163,49 @@ class SqlImapLocations implements ImapLocationStore {
     );
   }
 
+  /**
+   * UIDVALIDITY changed (or the folder is gone): forgets every location in the mailbox, a slice at a time with a
+   * yield between (Codex R2: a big folder in one transaction held the backend for tens of milliseconds). Membership
+   * in an IMAP folder is its locations there, so its rows go as they are, with no thread refolded; re-identified
+   * mail comes back location by location.
+   */
   async resetMailbox(mailbox: string) {
-    return this.db.tx(() => {
-      const ids = this.db
-        .all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox)
-        .map((r) => r.message_id);
-      this.db.run("DELETE FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox);
-      this.located(ids, mailbox);
-      return ids;
-    });
+    const ids = this.db
+      .all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox)
+      .map((r) => r.message_id);
+    for (;;) {
+      const removed = this.db.tx(
+        () =>
+          this.db.run(
+            "DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (SELECT message_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT ?)",
+            mailbox,
+            this.accountId,
+            mailbox,
+            RESET_SLICE,
+          ).changes +
+          this.db.run(
+            "DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT ?)",
+            mailbox,
+            this.accountId,
+            mailbox,
+            RESET_SLICE,
+          ).changes,
+      );
+      if (removed === 0) return ids;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
-  async resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string }) {
+  async resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }) {
     return (
       this.db.get<{ id: number }>(
         `SELECT id FROM messages WHERE account_id = ? AND id IN (SELECT value FROM json_each(?))
-           AND rfc_message_id IS NULL AND subject = ? AND from_email = ? AND date = ? AND size = ?
+           AND rfc_message_id IS ? AND subject = ? AND from_email = ? AND date = ? AND size = ?
            AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = messages.id AND l.mailbox = ?)
          ORDER BY id LIMIT 1`,
         this.accountId,
         JSON.stringify(c.candidates),
+        c.rfcMessageId ?? null,
         c.subject,
         c.fromEmail,
         c.date,
