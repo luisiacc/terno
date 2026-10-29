@@ -1469,6 +1469,30 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
   });
 
+  it("Codex R25: of two messages sharing a Message-ID and envelope, the one moved keeps its identity; the other stays", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Gemelos con Message-ID", id: "shared-twin@x" });
+    ctl.addMessage("Z", { raw: twin });
+    const second = ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number; provider_msg_id: string }>("SELECT id, thread_id, provider_msg_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(2);
+    const moved = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", second.uid)!.id;
+    const stays = before.find((m) => m.id !== moved)!.id;
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+    ctl.moveMessages("Z", [second.uid], "A");
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number; provider_msg_id: string }>("SELECT id, thread_id, provider_msg_id FROM messages ORDER BY id")).toEqual(before);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", stays)).toEqual([{ mailbox: "Z" }]);
+  });
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

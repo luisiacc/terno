@@ -553,6 +553,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
             }
           }
+          // a Message-ID twin that lost its place this pass (moved here) is this one, not the twin still placed under the
+          // plain key, which would otherwise take its place and leave it to be deleted (Codex R25)
+          if (existing && messageKey(env?.messageId) && recover.size && !recover.ids.has(existing.id) && (await locations.count(existing.id)) > 0) {
+            const twin = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
+            if (twin !== null) {
+              resetOrphans.delete(twin);
+              await upsertLocation(twin, path, uidvalidity, m.uid, flags);
+              touched.add(twin);
+              continue;
+            }
+          }
           if (existing) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
             const sameMailbox = await locations.get(existing.id, path);
