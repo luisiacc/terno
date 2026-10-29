@@ -410,3 +410,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 38.** Codex found one high problem and reported nothing else; it's fixed with a test that fails without the fix:
 1. **Round 37's case with the copy's folder read first still merged:** dropping a placed message from the recovery index happened only when its own folder was read. Now the index is built from candidates with no place left: one the journal names that's placed in a folder still here isn't one (a vanished folder's places don't count), whatever order the folders are read in. Test: the moved message placed in Z, the pass dropped as ZZ is read while an identical copy arrives in A; on the retry A, read before Z, keeps its copy as its own message.
+
+**Round 39.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **Reading a large twin group held the loop** (500 a page, but no turn between pages: 120 ms for 500,000). `readTwins` gives the loop a turn every 4 ms between pages. Gate: 500,000 stored twins read, longest stall under a frame (106 ms without the turns).

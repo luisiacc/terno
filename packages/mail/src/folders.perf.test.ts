@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, gatherPlaces, joinGroups, planSteps, planTellApart, storedIds } from "./imap";
+import { customFolders, gatherPlaces, joinGroups, planSteps, planTellApart, readTwins, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -172,4 +172,29 @@ it("Codex R36: an initial import of 500,000 identical envelopes joins its group 
     await run(older);
     expect(Math.min(await run(older), await run(older), await run(older))).toBeLessThan(16);
   }
+});
+
+it("Codex R39: reading 500,000 stored twins of one envelope never holds the loop a frame", async () => {
+  // a synchronous store behind a resolved promise (as SQLite's is): a page of 500 costs what an indexed read does
+  const page = async (after: number) => {
+    let spin = 0;
+    for (let j = 0; j < 100_000; j++) spin += j;
+    return spin < 0 || after >= 500_000 ? [] : Array.from({ length: Math.min(500, 500_000 - after) }, (_, i) => after + i + 1);
+  };
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const group = await readTwins(page);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(group).toHaveLength(500_000);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
 });

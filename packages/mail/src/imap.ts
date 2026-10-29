@@ -222,6 +222,19 @@ export async function joinGroups(groups: ReadonlyMap<string, number[]>, keys: re
   }
 }
 
+/** Plan 65 (Codex R20, R39): every stored twin of an envelope, 500 a page, the loop given a turn every few milliseconds */
+export async function readTwins(page: (after: number) => Promise<readonly number[]>): Promise<number[]> {
+  const breathe = breather();
+  const group: number[] = [];
+  for (let after = 0; ; ) {
+    const ids = await page(after);
+    for (const id of ids) group.push(id);
+    if (ids.length < 500) return group;
+    after = ids.at(-1)!;
+    await breathe();
+  }
+}
+
 /** an envelope's key among the twins kept in a pass (its Message-ID, or none) */
 function twinKey(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }): string {
   return `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
@@ -620,13 +633,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const at = twinKey(e);
         let group = twinsOf.get(at);
         if (!group) {
-          group = [];
-          for (let after = 0; ; ) {
-            const page = await locations.twins(e, after, 500);
-            group.push(...page);
-            if (page.length < 500) break;
-            after = page.at(-1)!;
-          }
+          group = await readTwins((after) => locations.twins(e, after, 500));
           twinsOf.set(at, group);
         }
         // the row found under the plain key, if its stored envelope differs (no date at all): one of them too
