@@ -25,14 +25,12 @@ mkdirSync(out, { recursive: true });
 const dbPath = join(out, "terno.db");
 for (const suffix of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + suffix, { force: true });
 
-const started = performance.now();
 const db = openDatabase(dbPath);
 const store = new SqlMailStore(db);
 const now = Date.now();
 await seedDemo(store, { accounts, threads, now });
 if (process.argv.includes("--print-fixtures")) await seedPrintFixtures(store, { now });
 await store.settings.set("app", { ai: { provider: "fake" } });
-const counts = db.get<{ m: number; t: number }>("SELECT (SELECT count(*) FROM messages) AS m, (SELECT count(*) FROM threads) AS t")!;
 db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 await store.close();
-console.log(`[seed] ${counts.m.toLocaleString()} messages in ${counts.t.toLocaleString()} conversations across ${accounts} accounts → ${dbPath} (${((performance.now() - started) / 1000).toFixed(1)}s)`);
+console.log("[seed] demo mailbox ready");
