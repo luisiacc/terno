@@ -10,7 +10,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { sqlDb } from "@terno/db";
 
@@ -792,6 +792,91 @@ describe("IMAP provider against ImapKit", () => {
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "¿Comemos?", body: "¿El jueves?" }) });
     await expect.poll(() => notices.length, { timeout: 10_000 }).toBe(1);
     expect(notices[0]).toMatchObject({ count: 1, senders: ["Ana Pérez"], subject: "¿Comemos?" });
+  });
+});
+
+describe("an account's own folders (plan 65)", () => {
+  const folderOf = async (client: RpcClient, accountId: number, folder: string) => (await client.call("threads.list", { view: "all", accountId, folder })).items.map((t) => t.subject).sort();
+
+  it("lists its own folders (nested; roles and specials left out) and syncs them; a message only in one is archived mail", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("Work");
+    ctl.createMailbox("Work/Clients");
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
+    ctl.addMessage("Work/Clients", { raw: raw({ subject: "Logo" }), flags: ["\\Seen"] });
+    ctl.addMessage("INBOX", { raw: raw({ subject: "Hola" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect((await backend.store.folders.list()).map((f) => [f.key, f.path, f.selectable])).toEqual([
+      ["Work", ["Work"], true],
+      ["Work/Clients", ["Work", "Clients"], true],
+    ]);
+    expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
+    expect(await folderOf(client, account.id, "Work/Clients")).toEqual(["Logo"]);
+    expect((await client.call("threads.list", { view: "archive" })).items.map((t) => t.subject).sort()).toEqual(["Contrato", "Logo"]);
+    expect((await client.call("counts.get", {})).folderUnread).toEqual({ [`${account.id}:Work`]: 1 });
+  });
+
+  it("a move between folders moves the thread, keeping the message; a rename keeps it too; a deleted folder takes what was only there", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("Work");
+    ctl.createMailbox("Clients");
+    const m = ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id;
+    ctl.moveMessages("Work", [m.uid], "Clients");
+    await backend.syncAccount(account.id);
+    expect(await folderOf(client, account.id, "Work")).toEqual([]);
+    expect(await folderOf(client, account.id, "Clients")).toEqual(["Contrato"]);
+    ctl.renameMailbox("Clients", "Proyectos");
+    await backend.syncAccount(account.id);
+    expect((await backend.store.folders.list()).map((f) => f.key)).toEqual(["Proyectos", "Work"]);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
+    // the same message, never removed and fetched again; its old path's locations are gone
+    expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id).toBe(id);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Clients'")).toBe(0);
+    ctl.deleteMailbox("Proyectos");
+    await backend.syncAccount(account.id);
+    expect((await backend.store.folders.list()).map((f) => f.key)).toEqual(["Work"]);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(0);
+  });
+
+  it("a folder STATUS says is unchanged isn't opened again; a flag change in it is seen (CONDSTORE)", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("Work");
+    const m = ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const opened: string[] = [];
+    const original = ImapFlow.prototype.getMailboxLock;
+    const spy = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      opened.push(String(args[0]));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+      expect(opened).not.toContain("Work");
+      ctl.setFlags("Work", [m.uid], ["\\Seen"], "add");
+      opened.length = 0;
+      await backend.syncAccount(account.id);
+      expect(opened).toContain("Work");
+      expect((await client.call("counts.get", {})).folderUnread).toEqual({});
+      // Codex R2: a UIDVALIDITY reset that keeps UIDNEXT, MESSAGES and the mod-sequence is still a reset
+      const before = sqlDb(backend.store).get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE mailbox = 'Work'")!.uidvalidity;
+      ctl.resetUidValidity("Work");
+      opened.length = 0;
+      await backend.syncAccount(account.id);
+      expect(opened).toContain("Work");
+      expect(sqlDb(backend.store).get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE mailbox = 'Work'")!.uidvalidity).toBeGreaterThan(before);
+      expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

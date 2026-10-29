@@ -164,6 +164,7 @@ export function createHandlers(b: Backend): Handlers {
       host: { ...b.host, storage: store.capabilities.engine },
       accounts: await store.accounts.list(),
       categories: await store.categories.list(),
+      folders: await store.folders.list(),
       counts: await store.threads.counts(b.now()),
       // plan 17 (Codex R12): the quick filters this backend knows; a renderer offers only these
       filters: [...LIST_FILTERS],

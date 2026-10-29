@@ -1,9 +1,9 @@
-import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
+import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
 import { bulkHeaders } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
-import type { IncomingMessage } from "@terno/store";
+import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { sendViaSmtp } from "./smtp";
@@ -14,10 +14,44 @@ type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 interface MailboxState {
   uidvalidity: number;
   uidnext: number;
+  /** plan 65: what STATUS compares before a custom folder is synced again (absent: never skipped) */
+  messages?: number;
+  modseq?: string;
 }
 
 interface Cursor {
   mailboxes: Record<string, MailboxState>;
+  /** plan 65: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
+  pass?: number;
+}
+
+/** Plan 65: without HIGHESTMODSEQ, flag changes don't show in STATUS: a quiet folder is checked on every fourth pass. */
+const CHECK_EVERY = 4;
+
+type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
+
+/**
+ * Plan 65: the account's own folders in a LIST: what holds no role, isn't a server special (Gmail's Starred,
+ * Important…) and exists. A \Noselect parent is listed only to group folders under it. A leading INBOX in the
+ * path (servers that keep every folder under it) isn't shown. Bounded: names, path length and count.
+ */
+export function customFolders(list: readonly ListedMailbox[], roles: Partial<Record<Role, string>>): ProviderFolder[] {
+  const rolePaths = new Set(Object.values(roles).map((p) => p!.toUpperCase()));
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path.toUpperCase()) || m.path.toUpperCase() === "INBOX" || Boolean(m.specialUse);
+  const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
+  const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
+  const candidates = list.filter((m) => !isRole(m) && !unusable(m) && m.path.length <= 1000);
+  const names = (m: ListedMailbox) => {
+    const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
+    if (parts.length > 1 && parts[0]!.toUpperCase() === "INBOX") parts.shift();
+    return parts.map((p) => p.slice(0, FOLDER_NAME_MAX));
+  };
+  // a group with nothing under it says nothing
+  const out = candidates.filter((m) => !groupOnly(m) || (m.delimiter !== undefined && candidates.some((c) => c !== m && !groupOnly(c) && c.path.startsWith(m.path + m.delimiter))));
+  return out
+    .map((m) => ({ key: m.path, path: names(m), selectable: !groupOnly(m) }))
+    .sort((a, b) => a.path.join("\u0000").localeCompare(b.path.join("\u0000")))
+    .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 
 export interface ImapProviderOptions {
@@ -199,10 +233,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
   }
 
-  async function discoverRoles(c: ImapFlow): Promise<Partial<Record<Role, string>>> {
+  async function discoverRoles(c: ImapFlow, listed?: readonly ListedMailbox[]): Promise<Partial<Record<Role, string>>> {
     if (roles) return roles;
     const found: Partial<Record<Role, string>> = { inbox: "INBOX" };
-    const list = await c.list();
+    const list = listed ?? (await c.list());
     for (const mb of list) {
       const role = mb.specialUse ? SPECIAL_USE[mb.specialUse] : undefined;
       if (role && !found[role]) found[role] = mb.path;
@@ -428,10 +462,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const row = await store.messageByProviderId(m.providerMsgId!);
         if (row) touched.add(row.id);
       }
-      cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext) };
+      cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext), messages: mb.exists, ...(mb.highestModseq !== undefined && { modseq: String(mb.highestModseq) }) };
     } finally {
       lock.release();
     }
+  }
+
+  /** Plan 65: a custom folder STATUS says hasn't changed since the cursor (UIDVALIDITY included) needs no pass. */
+  async function unchanged(c: ImapFlow, path: string, cursor: Cursor): Promise<boolean> {
+    const state = cursor.mailboxes[path];
+    if (!state || state.messages === undefined) return false;
+    const s = await c.status(path, { uidValidity: true, uidNext: true, messages: true, highestModseq: true });
+    if (!s) return false;
+    if (Number(s.uidValidity) !== state.uidvalidity || Number(s.uidNext) !== state.uidnext || s.messages !== state.messages) return false;
+    if (s.highestModseq !== undefined) return state.modseq === String(s.highestModseq);
+    return (cursor.pass ?? 0) % CHECK_EVERY !== 0;
   }
 
   /** Downloads bodies newest-first (search, snippets and body filters depend on them). */
@@ -543,14 +588,39 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async sync(sink) {
       await withConnection(async (c) => {
-        const r = await discoverRoles(c);
+        // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 65)
+        const list = await c.list();
+        const r = await discoverRoles(c, list);
         const cursor = (await ctx.loadCursor<Cursor>()) ?? { mailboxes: {} };
+        cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
+        const folders = customFolders(list, r);
+        // listed before they sync: a location in a listed folder is membership as it's written
+        await sink.setFolders?.(folders);
         // Gmail-style servers keep archived mail only in "All Mail"
-        const boxes = [r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p));
-        for (const path of new Set(boxes)) {
+        const boxes = new Set([r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p)));
+        for (const path of boxes) {
           if (sink.signal.aborted) return;
           await syncMailbox(c, path, cursor, sink, touched);
+        }
+        const custom = folders.filter((f) => f.selectable && !boxes.has(f.key)).map((f) => f.key);
+        for (const path of custom) {
+          if (sink.signal.aborted) return;
+          try {
+            if (await unchanged(c, path, cursor)) continue;
+            await syncMailbox(c, path, cursor, sink, touched);
+          } catch (error) {
+            // a folder the server won't open (permissions, gone since the LIST) waits for the next pass; the rest syncs
+            const e = toProviderError(error);
+            if (e.retryable || e instanceof ProviderAuthError) throw e;
+          }
+        }
+        // a folder that's gone (deleted, renamed: its new path synced above) takes its locations; what was only there goes in reconcile
+        const kept = new Set([...boxes, ...custom]);
+        for (const path of Object.keys(cursor.mailboxes)) {
+          if (kept.has(path) || list.some((m) => m.path === path)) continue;
+          for (const id of await locations.resetMailbox(path)) touched.add(id);
+          delete cursor.mailboxes[path];
         }
         await reconcile(touched, sink);
         await ctx.saveCursor(cursor);

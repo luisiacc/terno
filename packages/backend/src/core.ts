@@ -1144,6 +1144,13 @@ export class BackendCore {
         },
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
+        // plan 65: the account's own folders; an unchanged list writes and says nothing
+        setFolders: async (folders) => {
+          const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders));
+          if (!r.changed) return;
+          this.server.emit("folders", await this.store.folders.list());
+          this.notifyChanged(r.touched);
+        },
       };
       const before = await this.store.accounts.get(accountId);
       if (!this.current(life)) return;

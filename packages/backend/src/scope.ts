@@ -29,7 +29,7 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
     for (let after = 0; ids.length <= cap; ) {
       const limit = sizer.size;
       const started = performance.now();
-      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, filter, now, after, limit });
+      const page = await b.store.threads.scopeIds({ view: scope.view, accountId, categoryId, folder: scope.folder, filter, now, after, limit });
       sizer.record(Math.max(1, page.length), performance.now() - started);
       for (const id of page) ids.push(id);
       if (page.length < limit) break;
@@ -66,7 +66,7 @@ export async function resolveThreadScope(b: BackendCore, scope: ThreadScope, cap
 /** How many threads a scope holds: a view is counted, a search is resolved. */
 export async function countThreadScope(b: BackendCore, scope: ThreadScope, cap = SCOPE_CAP): Promise<{ count: number; capped: boolean }> {
   if (scope.kind === "view") {
-    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, filter: listFilterOf(scope), now: b.now(), limit: cap + 1 });
+    const n = await b.store.threads.scopeCount({ view: scope.view, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, filter: listFilterOf(scope), now: b.now(), limit: cap + 1 });
     return { count: Math.min(n, cap), capped: n > cap };
   }
   const { ids, capped } = await resolveThreadScope(b, scope, cap);
