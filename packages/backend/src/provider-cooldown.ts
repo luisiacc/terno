@@ -88,6 +88,25 @@ export class ProviderCooldown {
     this.ledger.rows.push(row);
     if (BigInt(row.revision) > BigInt(this.ledger.revision)) this.ledger.revision = row.revision;
   }
+  private reconcile(row: CooldownRow): CooldownRow {
+    const local = this.row(row.owner, row.service);
+    const checkpoint = this.anchors.get(keyOf(row.owner, row.service));
+    const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
+    let merged = mergeCooldownRows(local, row);
+    this.put(merged);
+    if (!merged.hold && (!epoch(wall) || !elapsedValid(elapsed) || (checkpoint ? !epoch(checkpoint.wall) || !elapsedValid(checkpoint.elapsed) || wall < checkpoint.lastWall || elapsed < checkpoint.lastElapsed : merged.wall !== null && BigInt(wall) < BigInt(merged.wall)))) {
+      merged = { ...merged, hold: "clock", revision: this.revision(), repair: null };
+      this.put(merged);
+      this.enqueue(merged, false);
+      return merged;
+    }
+    if (!local || local.minimum !== merged.minimum || local.wall !== merged.wall || local.replay !== merged.replay || local.hold !== merged.hold || local.repair !== merged.repair) this.anchor(merged, wall, elapsed);
+    else if (!merged.hold && checkpoint) {
+      checkpoint.lastWall = wall;
+      checkpoint.lastElapsed = elapsed;
+    }
+    return merged;
+  }
   private revision(): string {
     try { this.ledger.revision = nextCooldownRevision(this.ledger.revision); }
     catch {
@@ -329,12 +348,7 @@ export class ProviderCooldown {
       return false;
     }
     this.ledger.overflow ||= committed.overflow;
-    for (const row of committed.rows) {
-      const local = this.row(row.owner, row.service);
-      const merged = mergeCooldownRows(local, row);
-      this.put(merged);
-      if (!local || local.minimum !== merged.minimum || local.replay !== merged.replay || local.hold !== merged.hold) this.anchor(merged);
-    }
+    for (const row of committed.rows) this.reconcile(row);
     for (const row of batch) {
       const key = keyOf(row.owner, row.service);
       if (!this.pending.has(key)) this.maintenance.delete(key);
@@ -393,10 +407,8 @@ export class ProviderCooldown {
       let reconciled = false;
       for (const row of persisted.rows) {
         const local = this.row(row.owner, row.service);
-        const merged = mergeCooldownRows(local, row);
+        const merged = this.reconcile(row);
         if (!local || local.revision !== merged.revision || local.minimum !== merged.minimum || local.wall !== merged.wall || local.replay !== merged.replay || local.sample !== merged.sample || local.position !== merged.position || local.hold !== merged.hold || local.repair !== merged.repair) reconciled = true;
-        this.put(merged);
-        if (!local || local.revision !== merged.revision || local.minimum !== merged.minimum || local.replay !== merged.replay) this.anchor(merged);
       }
       const bindings = new Map<number, CooldownLedger["bindings"][number]>();
       for (const binding of this.ledger.bindings) bindings.set(binding.id, binding);

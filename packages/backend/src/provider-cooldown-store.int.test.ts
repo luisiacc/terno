@@ -788,3 +788,147 @@ for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
     });
   });
 }
+
+async function r2BoundClock(mode: StoreMode, initialElapsed = 10) {
+  const f = await storeFixture(mode), actual = f.store.providerCooldown;
+  const a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+  expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+  let wall = 1000, elapsed = initialElapsed, samples = 0, calls = 0;
+  const clock = { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } };
+  const gate = await ProviderCooldown.open(actual, clock);
+  cleanup.gate(`R2/${mode}/bound-clock`, gate);
+  const requests = await gate.requestsForAccount(stamp, () => true), ticket = requests.reserve(gmail);
+  await ticket.dispatch(async () => { calls++; return new Response(null, { status: 429 }); });
+  expect(await ticket.headers429(reviewEvidence(1000))).toBe("committed"); ticket.release();
+  expect(await gate.drain(5000)).toBe("drained");
+  const original = (await reviewLedger(f.store)).rows.find((row) => row.owner === verifiedMailbox)!;
+  expect(original).toMatchObject({ minimum: "3000", replay: "2000", sample: 2000, position: 1, hold: null });
+  return { f, actual, stamp, gate, clock, original,
+    time: (w: number, e: number) => { wall = w; elapsed = e; },
+    samples: () => samples, calls: () => calls };
+}
+async function r2BoundRollback(mode: StoreMode, kind: "elapsed" | "wall" | "fractional" | "no-bind") {
+  const f = await r2BoundClock(mode, kind === "fractional" ? 10.75 : 10);
+  const obsolete = f.gate.revisionFor(verifiedMailbox, "gmail-api")!;
+  if (kind !== "no-bind") expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+  f.time(kind === "wall" ? 999 : 1001, kind === "fractional" ? 10.5 : kind === "wall" ? 11 : 9);
+  if (kind === "no-bind") {
+    expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+    expect(await f.gate.drain(5000)).toBe("drained");
+    expect(await f.gate.recoverStorage()).toBe("confirmed");
+  } else expect(await f.gate.refreshAfterBind()).toBe("confirmed");
+  const held = (await reviewLedger(f.f.store)).rows.find((row) => row.owner === verifiedMailbox)!;
+  expect(held.hold).toBe("clock");
+  expect(held).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: f.original.phaseRevision, sample: 2000, position: 1, repair: null });
+  expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  const requests = await f.gate.requestsForAccount(f.stamp, () => true);
+  expect(await responseOrRefusal(requestHttp(requests, gmail, async () => { throw new Error("R2 held transport reached"); }, f.clock.wallNow))).toBeInstanceOf(ProviderCooldownError);
+  expect(f.calls()).toBe(1); expect(f.samples()).toBe(1);
+  await f.gate.close();
+  const reopened = await f.f.reopen(), stored = await reopened.providerCooldown.read();
+  const after = await ProviderCooldown.open(reopened.providerCooldown, f.clock);
+  cleanup.gate(`R2/${mode}/${kind}/reopened`, after);
+  expect(after.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  f.time(4000, 100);
+  expect(after.checkClock(verifiedMailbox, "gmail-api", obsolete)).toEqual({ kind: "hold", reason: "clock" });
+  expect(await reopened.providerCooldown.read()).toBe(stored);
+  const current = after.revisionFor(verifiedMailbox, "gmail-api")!;
+  expect(current).not.toBe(obsolete);
+  expect(after.checkClock(verifiedMailbox, "gmail-api", current)).toEqual({ kind: "at", atMs: 3000 });
+  expect(await after.drain(5000)).toBe("drained");
+  const repaired = await reopened.providerCooldown.read();
+  f.time(4500, 600);
+  expect(after.checkClock(verifiedMailbox, "gmail-api", current)).toEqual({ kind: "at", atMs: 3000 });
+  expect(await reopened.providerCooldown.read()).toBe(repaired);
+  f.time(5999, 2099); expect(after.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
+  f.time(6000, 2100); expect(after.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "ready" });
+  expect((await reviewLedger(reopened)).rows.find((row) => row.owner === verifiedMailbox)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: f.original.phaseRevision, sample: 2000, position: 1, repair: current });
+  expect(f.samples()).toBe(1); expect(f.calls()).toBe(1);
+}
+
+for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+  describe(`R2 bind clock ${mode}`, () => {
+    it("01 repeat bind preserves elapsed rollback evidence", async () => { await r2BoundRollback(mode, "elapsed"); });
+    it("02 no bind detects the same elapsed rollback", async () => { await r2BoundRollback(mode, "no-bind"); });
+    it("03 repeat bind preserves wall rollback evidence", async () => { await r2BoundRollback(mode, "wall"); });
+    it("04 repeat bind preserves fractional raw rollback evidence", async () => { await r2BoundRollback(mode, "fractional"); });
+    it("05 forward repeat bind preserves the original deadline", async () => {
+      const f = await r2BoundClock(mode);
+      expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+      f.time(2999, 2009);
+      expect(await f.gate.refreshAfterBind()).toBe("confirmed");
+      expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
+      f.time(3000, 2010);
+      expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "ready" });
+      expect((await reviewLedger(f.f.store)).rows.find((row) => row.owner === verifiedMailbox)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: f.original.phaseRevision, sample: 2000, position: 1, hold: null });
+      expect(f.samples()).toBe(1); expect(f.calls()).toBe(1);
+    });
+    it("06 forward fractional bind preserves ceil floor boundary", async () => {
+      const f = await r2BoundClock(mode, 10.75);
+      expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+      f.time(2999, 2009.75);
+      expect(await f.gate.refreshAfterBind()).toBe("confirmed");
+      f.time(3000, 2010.75);
+      expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
+      f.time(3000, 2011);
+      expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "ready" });
+      expect((await reviewLedger(f.f.store)).rows.find((row) => row.owner === verifiedMailbox)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: f.original.phaseRevision, sample: 2000, position: 1, hold: null });
+      expect(f.samples()).toBe(1); expect(f.calls()).toBe(1);
+    });
+  });
+
+  describe(`R2 equal phase ${mode}`, () => {
+    for (const conflict of ["sample", "position", "identical", "newer"] as const) {
+      it(conflict === "sample" ? "01 conflicting sample refuses bind and preserves evidence" : conflict === "position" ? "02 conflicting position refuses bind and preserves evidence" : conflict === "identical" ? "03 identical phase binds and preserves lineage" : "04 newer phase binds and preserves its sample", async () => {
+        const f = await storeFixture(mode), a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+        const ledger: ReviewLedger = JSON.parse(rowLedger());
+        const installation = { ...ledger.rows[0]!, owner: "installation" };
+        const mailbox = { ...installation, owner: verifiedMailbox, revision: conflict === "newer" ? "2" : "1", phaseRevision: conflict === "newer" ? "2" : "1", sample: conflict === "sample" || conflict === "newer" ? 5000 : 2000, position: conflict === "position" || conflict === "newer" ? 2 : 1 };
+        ledger.revision = conflict === "newer" ? "2" : "1";
+        for (const row of [installation, mailbox]) {
+          const individual = JSON.stringify({ ...ledger, rows: [row] });
+          await f.store.providerCooldown.update(() => ({ encoded: individual, result: undefined }));
+          expect(await f.store.providerCooldown.read()).toBe(individual);
+        }
+        ledger.rows = [installation, mailbox];
+        const encoded = JSON.stringify(ledger);
+        await f.store.providerCooldown.update(() => ({ encoded, result: undefined }));
+        let durableStore = f.store;
+        if (conflict === "identical" || conflict === "newer") {
+          expect(await f.store.providerCooldown.bind(stamp, verifiedMailbox)).toBe(true);
+          const next = await reviewLedger(f.store);
+          expect(next.rows.map((row) => ({ owner: row.owner, phase: row.phaseRevision, sample: row.sample, position: row.position, minimum: row.minimum, replay: row.replay }))).toEqual([
+            { owner: "installation", phase: "1", sample: 2000, position: 1, minimum: "121000", replay: "120000" },
+            { owner: verifiedMailbox, phase: conflict === "newer" ? "2" : "1", sample: conflict === "newer" ? 5000 : 2000, position: conflict === "newer" ? 2 : 1, minimum: "121000", replay: "120000" },
+          ]);
+          expect(next.bindings).toEqual([{ id: stamp.id, createdAt: stamp.createdAt, emailDigest: verifiedMailbox, mailboxKey: verifiedMailbox }]);
+          const durable = await f.store.providerCooldown.read(), reopened = await f.reopen();
+          expect(await reopened.providerCooldown.read()).toBe(durable);
+          expect(await reopened.providerCooldown.bind(stamp, verifiedMailbox)).toBe(true);
+          const after = await reviewLedger(reopened);
+          expect(after.rows.map((row) => ({ phase: row.phaseRevision, sample: row.sample, position: row.position }))).toEqual([{ phase: "1", sample: 2000, position: 1 }, { phase: conflict === "newer" ? "2" : "1", sample: conflict === "newer" ? 5000 : 2000, position: conflict === "newer" ? 2 : 1 }]);
+          durableStore = reopened;
+        } else {
+          await expect(f.store.providerCooldown.bind(stamp, verifiedMailbox)).rejects.toThrow(/^Private cooldown action failed$/);
+          expect(await f.store.providerCooldown.read()).toBe(encoded);
+          const reopened = await f.reopen();
+          expect(await reopened.providerCooldown.read()).toBe(encoded);
+          await expect(reopened.providerCooldown.bind(stamp, verifiedMailbox)).rejects.toThrow(/^Private cooldown action failed$/);
+          expect(await reopened.providerCooldown.read()).toBe(encoded);
+          const after = await reviewLedger(reopened);
+          expect(after.bindings).toEqual([]);
+          expect(after.rows).toEqual([installation, mailbox]);
+          durableStore = reopened;
+        }
+        let samples = 0, transports = 0;
+        const gate = await ProviderCooldown.open(durableStore.providerCooldown, { wallNow, elapsedNow, random: () => { samples++; return 0.5; } });
+        cleanup.gate(`R2/${mode}/phase-${conflict}/reopened`, gate);
+        expect(await responseOrRefusal((async () => {
+          const requests = await gate.requestsForAccount(stamp, () => true);
+          return requestHttp(requests, gmail, async () => { transports++; return new Response(); }, wallNow);
+        })())).toBeInstanceOf(ProviderCooldownError);
+        expect(samples).toBe(0); expect(transports).toBe(0);
+      });
+    }
+  });
+}

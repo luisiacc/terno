@@ -583,3 +583,164 @@ describe("cooldown review unit", () => {
     expect(f.samples()).toBe(1); await g.close();
   });
 });
+
+function r2Phase(f: ReturnType<typeof fixture>) {
+  return decodeCooldown(f.encoded()).rows.find((row) => row.owner === A && row.service === "gmail-api")!;
+}
+async function r2Metadata(f: ReturnType<typeof fixture>, revision: string) {
+  await f.port.update((encoded) => {
+    const ledger = decodeCooldown(encoded);
+    ledger.revision = revision;
+    ledger.rows[0] = { ...ledger.rows[0]!, revision };
+    return { encoded: encodeCooldown(ledger), result: undefined };
+  });
+}
+async function r2Stronger(f: ReturnType<typeof fixture>) {
+  await f.port.update((encoded) => {
+    const ledger = decodeCooldown(encoded);
+    ledger.revision = "2";
+    ledger.rows[0] = { ...ledger.rows[0]!, revision: "2", phaseRevision: "2", minimum: "7000", wall: "1100", replay: "6000", sample: 5000, position: 2 };
+    return { encoded: encodeCooldown(ledger), result: undefined };
+  });
+}
+
+describe("R2 anchor reconciliation", () => {
+  it("01 metadata recovery keeps the original elapsed boundary", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000" })), g = await f.open();
+    f.time(2999, 2009); await r2Metadata(f, "2");
+    const writes = f.writes();
+    expect(await g.refreshAfterBind()).toBe("confirmed");
+    expect(g.revisionFor(A, "gmail-api")).toBe("2");
+    f.time(3000, 2010);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    expect(f.writes()).toBe(writes); expect(f.samples()).toBe(0);
+  });
+
+  it("02 stronger recovery checks the old raw checkpoint first", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000" })), g = await f.open();
+    await r2Stronger(f); f.time(1001, 9);
+    expect(await g.recoverStorage()).toBe("confirmed");
+    expect(r2Phase(f).hold).toBe("clock");
+    expect(r2Phase(f)).toMatchObject({ minimum: "7000", replay: "6000", phaseRevision: "2", sample: 5000, position: 2, hold: "clock", repair: null });
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+    f.time(9000, 8000);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+    const revision = g.revisionFor(A, "gmail-api")!;
+    expect(g.checkClock(A, "gmail-api", revision)).toEqual({ kind: "at", atMs: 7000 });
+    expect(await g.drain(5000)).toBe("drained");
+    f.time(15000, 13999); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 7000 });
+    f.time(15000, 14000); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    expect(f.samples()).toBe(0);
+  });
+
+  it("03 forward stronger recovery starts one full conservative wait", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000" })), g = await f.open();
+    await r2Stronger(f); f.time(1100, 110);
+    expect(await g.recoverStorage()).toBe("confirmed");
+    expect(r2Phase(f)).toMatchObject({ minimum: "7000", replay: "6000", sample: 5000, position: 2, hold: null });
+    f.time(7000, 6109); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 7000 });
+    f.time(7000, 6110); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    expect(f.samples()).toBe(0);
+  });
+
+  it("04 metadata recovery cannot convert an unresolved calendar hold", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000", hold: "calendar" })), g = await f.open();
+    await r2Metadata(f, "2"); f.time(999, 9);
+    const writes = f.writes();
+    expect(await g.refreshAfterBind()).toBe("confirmed");
+    expect(r2Phase(f)).toMatchObject({ revision: "2", phaseRevision: "1", minimum: "3000", replay: "2000", sample: 2000, position: 1, hold: "calendar", repair: null });
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "calendar" });
+    expect(g.checkClock(A, "gmail-api", "2")).toEqual({ kind: "hold", reason: "calendar" });
+    expect(f.writes()).toBe(writes); expect(f.samples()).toBe(0);
+  });
+
+  it("05 failed rollback persistence retains the candidate for recovery", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000" })); let fail = false;
+    cleanups.release(() => { fail = false; });
+    const g = await ProviderCooldown.open({ read: f.port.read, update: (fn) => { if (fail) return Promise.reject(new Error("R2 rollback write failure")); return f.port.update(fn); } }, f.clock, f.hooks);
+    let stopping: Promise<void> | undefined;
+    cleanups.gate("R2/recover-write/terminal", {
+      resources: () => g.resources(),
+      close: () => stopping ??= (async () => { fail = false; await g.drain(5000); expect(await g.recoverStorage()).toBe("confirmed"); await g.close(); })(),
+    });
+    await r2Metadata(f, "2"); const durable = f.encoded(); fail = true; f.time(1001, 9);
+    expect(await g.refreshAfterBind()).toBe("pending-terminal");
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "storage" });
+    expect(f.encoded()).toBe(durable); expect(g.resources().pendingScopes).toBe(1);
+    fail = false;
+    expect(await g.recoverStorage()).toBe("confirmed");
+    expect(r2Phase(f)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: "1", sample: 2000, position: 1, hold: "clock" });
+    expect(g.resources().pendingScopes).toBe(0); expect(f.samples()).toBe(0);
+  });
+
+  for (const rollback of [true, false] as const) {
+    it(rollback ? "06 committed readback checks the old raw checkpoint" : "07 forward committed readback keeps its new conservative wait", async () => {
+      const f = fixture(); let updates = 0;
+      const g = await f.open({ read: f.port.read, update: async (fn) => {
+        updates++;
+        return f.port.update((encoded) => {
+          if (updates !== 1) return fn(encoded);
+          const ledger = decodeCooldown(seeded());
+          ledger.revision = "2";
+          ledger.rows[0] = { ...ledger.rows[0]!, revision: "2", phaseRevision: "2", minimum: "7000", wall: "1100", replay: "6000", sample: 5000, position: 2 };
+          f.time(1100, rollback ? 9 : 110);
+          return fn(encodeCooldown(ledger));
+        });
+      } });
+      expect(await observe(g)).toBe("committed"); expect(await g.drain(5000)).toBe("drained");
+      expect(r2Phase(f).hold).toBe(rollback ? "clock" : null);
+      expect(r2Phase(f)).toMatchObject({ minimum: "7000", replay: "6000", phaseRevision: "2", sample: 5000, position: 2, hold: rollback ? "clock" : null });
+      if (rollback) {
+        f.time(9000, 8000); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+        expect(updates).toBe(2);
+      } else {
+        f.time(7000, 6109); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 7000 });
+        f.time(7000, 6110); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+        expect(updates).toBe(1);
+      }
+      expect(f.samples()).toBe(1);
+    });
+  }
+
+  it("08 metadata observations advance raw checkpoints without sliding the wait", async () => {
+    const f = fixture(seeded({ minimum: "3000", replay: "2000" })), g = await f.open();
+    await r2Metadata(f, "2"); f.time(1100, 110);
+    expect(await g.recoverStorage()).toBe("confirmed");
+    await r2Metadata(f, "3"); f.time(1101, 109);
+    expect(await g.recoverStorage()).toBe("confirmed");
+    expect(r2Phase(f).hold).toBe("clock");
+    expect(r2Phase(f)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: "1", sample: 2000, position: 1 });
+    expect(f.samples()).toBe(0);
+  });
+
+  for (const invalid of ["wall", "elapsed"] as const) {
+    it(invalid === "wall" ? "09 invalid wall recovery persists the clock hold" : "10 invalid elapsed recovery persists the clock hold", async () => {
+      const f = fixture(seeded({ minimum: "3000", replay: "2000" })), g = await f.open();
+      await r2Metadata(f, "2");
+      f.time(invalid === "wall" ? NaN : 1001, invalid === "elapsed" ? Infinity : 11);
+      expect(await g.recoverStorage()).toBe("confirmed");
+      expect(r2Phase(f).hold).toBe("clock");
+      expect(r2Phase(f)).toMatchObject({ minimum: "3000", replay: "2000", phaseRevision: "1", sample: 2000, position: 1, hold: "clock", repair: null });
+      f.time(7000, 6010);
+      expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+      expect(f.samples()).toBe(0);
+    });
+  }
+
+  for (const rollback of [true, false] as const) {
+    it(rollback ? "11 first recovered row retains its persisted wall reference" : "12 forward first recovered row starts a full wait", async () => {
+      const f = fixture(), g = await f.open();
+      await f.port.update(() => ({ encoded: seeded({ minimum: "3000", replay: "2000" }), result: undefined }));
+      f.time(rollback ? 999 : 1100, 110);
+      expect(await g.recoverStorage()).toBe("confirmed");
+      expect(r2Phase(f).hold).toBe(rollback ? "clock" : null);
+      if (rollback) {
+        f.time(7000, 6010); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+      } else {
+        f.time(3100, 2109); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
+        f.time(3100, 2110); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+      }
+      expect(f.samples()).toBe(0);
+    });
+  }
+});
