@@ -92,7 +92,7 @@ it("a backfill that doesn't save leaves the mark; the next open finishes it and 
   expect(await inFolder(third, account)).toBe(1);
 });
 
-it("Codex R3: a big mailbox's backfill goes a slice of threads per command, never all at once", async () => {
+it("Codex R3, R9: a big mailbox's backfill goes in small batches, a command per slice of time, never all at once", async () => {
   const factory = new IDBFactory();
   const name = crypto.randomUUID();
   const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
@@ -111,7 +111,8 @@ it("Codex R3: a big mailbox's backfill goes a slice of threads per command, neve
   opened.push(reopened);
   await reopened.whenLoaded();
   await expect.poll(() => meta(factory, name, "foldersPending")).toBe(false);
-  expect(fail.batches.length).toBeGreaterThanOrEqual(3);
-  expect(Math.max(...fail.batches)).toBeLessThanOrEqual(1000);
+  // batches of 50 threads (Codex R9: a thread with many labels is many memberships), as many commands as time takes
+  expect(fail.batches.length).toBeGreaterThanOrEqual(50);
+  expect(Math.max(...fail.batches)).toBeLessThanOrEqual(50);
   expect((await reopened.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 500 })).items).toHaveLength(500);
 }, 120_000);

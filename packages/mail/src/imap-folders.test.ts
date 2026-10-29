@@ -48,9 +48,12 @@ describe("customFolders", () => {
     expect(customFolders([box("Sent", { specialUse: "\\Sent" }), box("sent"), box("inbox")], { inbox: "INBOX", sent: "Sent" }).map((f) => f.key)).toEqual(["sent"]);
   });
 
-  it("is bounded: names, path length and count", () => {
+  it("is bounded: path length and count; names whole (Codex R9: shortened ones could merge two hierarchies)", () => {
     const long = "x".repeat(FOLDER_NAME_MAX + 50);
-    expect(customFolders([box(long)], {})[0]!.path[0]).toHaveLength(FOLDER_NAME_MAX);
+    expect(customFolders([box(long)], {})[0]!.path[0]).toHaveLength(FOLDER_NAME_MAX + 50);
+    const a = `${"p".repeat(FOLDER_NAME_MAX)}a`;
+    const b = `${"p".repeat(FOLDER_NAME_MAX)}b`;
+    expect(customFolders([box(a), box(`${a}/x`), box(b), box(`${b}/y`)], {}).map((f) => f.path)).toEqual([[a], [a, "x"], [b], [b, "y"]]);
     expect(customFolders([box("y".repeat(1001))], {})).toEqual([]);
     const many = Array.from({ length: FOLDERS_PER_ACCOUNT_MAX + 5 }, (_, i) => box(`F${i}`));
     expect(customFolders(many, {})).toHaveLength(FOLDERS_PER_ACCOUNT_MAX);

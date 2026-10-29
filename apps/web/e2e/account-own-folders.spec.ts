@@ -132,6 +132,17 @@ test("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn
   await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
 });
 
+test("Codex R9: a focused label renamed on Gmail keeps the focus (the same row, by its label)", async ({ app: page, server }) => {
+  const acme = accountOf(server, "Acme Studio");
+  await page.getByTestId(`nav-account-${acme}`).click();
+  await own(page, acme, "Label_23").focus();
+  const renamed = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path: key === "Label_23" ? ["Equipo de diseño"] : path, selectable }));
+  await server.backend.store.folders.replace(acme, renamed);
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await expect(own(page, acme, "Label_23")).toHaveText("Equipo de diseño");
+  await expect(own(page, acme, "Label_23")).toBeFocused();
+});
+
 test("with one account, its row opens onto its own folders alone (its standard ones are the top ones)", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);

@@ -438,7 +438,8 @@ function AccountFolders({
         {mounted &&
           visible.map((r) =>
             r.selectable && r.key !== null ? (
-              <OwnFolderRow key={r.id} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
+              // keyed by the provider's folder (Codex R9: a renamed label stays the same row, focus and all)
+              <OwnFolderRow key={`own:${r.key}`} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
             ) : (
               // a parent that only groups what's under it: not a place to go
               // keyed by its full path (Codex R6: "A/X/Y" and "B/X/Z" both draw an "X")

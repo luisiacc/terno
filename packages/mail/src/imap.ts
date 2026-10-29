@@ -1,4 +1,4 @@
-import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
+import { FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
 import { bulkHeaders } from "@terno/core";
@@ -29,8 +29,10 @@ interface Cursor {
   orphans?: number[];
   /** plan 65 (Codex R5): per mailbox, the messages a UIDVALIDITY reset unlocated, kept until that mailbox syncs, so a retry can still recognise them */
   resetPending?: Record<string, number[]>;
-  /** plan 65 (Codex R8): messages a sweep unlocated (expunged, or moved), written down before their locations go; a pass that completes reconciles them */
+  /** plan 65 (Codex R8, R9): messages any step unlocated (a sweep, a reset, a vanished folder), written down before their locations go; cleared once reconciled */
   unlocated?: number[];
+  /** plan 65 (Codex R9): orphans are waiting for a pass that reads every folder (no STATUS skip), the only kind that may delete them */
+  fullCheck?: boolean;
 }
 
 /** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
@@ -65,7 +67,8 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const names = (m: ListedMailbox) => {
     const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
     if (parts.length > 1 && parts[0]!.toUpperCase() === "INBOX") parts.shift();
-    return parts.map((p) => p.slice(0, FOLDER_NAME_MAX));
+    // whole segments (a path is at most 1,000 characters): a shortened one could merge two hierarchies (Codex R9)
+    return parts;
   };
   // a group with nothing under it says nothing: the ancestors of every real folder, gathered once (linear, Codex R1)
   const ancestors = new Set<string>();
@@ -321,6 +324,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return orphans;
   }
 
+  /** Plan 65 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */
+  async function journal(cursor: Cursor, ids: Iterable<number>) {
+    const next = new Set([...(cursor.unlocated ?? []), ...ids]);
+    if (next.size === (cursor.unlocated?.length ?? 0)) return;
+    cursor.unlocated = [...next].slice(-200_000);
+    await ctx.saveCursor(cursor);
+  }
+
   /**
    * `reidentify` (plan 65, Codex R1): a folder seen for the first time is read whole once, so mail already stored
    * (older than the window too) gains its location; mail it doesn't know is fetched only inside the window.
@@ -350,6 +361,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const l of await locations.inMailbox(path, state.uidvalidity)) resetOrphans.add(l.message_id);
         cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
         cursor.resetPending[path] = [...resetOrphans].slice(0, 200_000);
+        // the journal too: reconciliation looks at them even if this pass fails after the mailbox finishes (Codex R9)
+        cursor.unlocated = [...new Set([...(cursor.unlocated ?? []), ...resetOrphans])].slice(-200_000);
         await ctx.saveCursor(cursor);
         for (const id of await locations.resetMailbox(path)) resetOrphans.add(id);
         for (const id of resetOrphans) touched.add(id);
@@ -550,8 +563,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (gone.length) {
         // written down first, durably: a moved message is recognised under its new folder, an expunged one
         // reconciled, even if the connection drops before this pass ends (Codex R8)
-        cursor.unlocated = [...new Set([...(cursor.unlocated ?? []), ...gone.map((k) => k.message_id)])].slice(-200_000);
-        await ctx.saveCursor(cursor);
+        await journal(cursor, gone.map((k) => k.message_id));
       }
       for (const k of gone) {
         await locations.remove(k.message_id, path);
@@ -721,11 +733,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           incomplete = true;
         };
         // the custom folders to read this pass: new ones, and known ones STATUS says changed
+        // (a pass owing a full check reads every folder: STATUS may have skipped where a moved message went, Codex R9)
         const custom: string[] = [];
+        let skipped = 0;
         for (const f of folders) {
           if (!f.selectable || boxes.has(f.key)) continue;
           try {
-            if (cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
+            if (cursor.fullCheck || cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
+            else skipped++;
           } catch (error) {
             tolerate(error);
           }
@@ -769,15 +784,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
         for (const path of incomplete ? [] : vanished) {
+          // written down before they go (Codex R9): a crash right after still reconciles them
+          await journal(cursor, (await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }
         // what a failed pass kept is looked at again once a pass completes: still nowhere on the server, it goes
-        if (!incomplete) for (const id of cursor.orphans ?? []) touched.add(id);
-        const kept = await reconcile(touched, sink, incomplete);
-        if (incomplete) cursor.orphans = [...new Set([...(cursor.orphans ?? []), ...kept])].slice(-100_000);
-        else delete cursor.orphans;
-        // reconciled (or kept above as orphans): the sweeps' journal is done with
+        // only a pass that read every folder and failed nowhere may delete an orphan: one that skipped a quiet
+        // folder (STATUS) may have missed where a message moved, so its orphans wait and the next pass reads all (Codex R9)
+        const full = !incomplete && skipped === 0;
+        for (const id of cursor.unlocated ?? []) touched.add(id);
+        if (full) for (const id of cursor.orphans ?? []) touched.add(id);
+        const kept = await reconcile(touched, sink, !full);
+        if (full) {
+          delete cursor.orphans;
+          delete cursor.fullCheck;
+        } else if (kept.length) {
+          cursor.orphans = [...new Set([...(cursor.orphans ?? []), ...kept])].slice(-100_000);
+          cursor.fullCheck = true;
+        }
+        // reconciled, or kept above as orphans: the journal is done with
         delete cursor.unlocated;
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });

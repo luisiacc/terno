@@ -283,11 +283,20 @@ export class IdbMailStore implements MailStore {
         },
       );
       if (foldersPending) {
-        // a slice of threads per command with a yield between (Codex R3: one command over a big mailbox held the worker)
+        // a command per slice of time, small batches inside it, a yield between (Codex R3, R9: a thread with many
+        // labels is many memberships, so the work, not the thread count, bounds a slice)
         void (async () => {
           const threads = await store.command(() => threadsWithUserLabels(store.c));
-          for (let i = 0; i < threads.length && store.open; i += BACKFILL_SLICE) {
-            await store.command(() => refreshFolders(store.c, threads.slice(i, i + BACKFILL_SLICE)));
+          for (let i = 0; i < threads.length && store.open; ) {
+            i = await store.command(() => {
+              const started = performance.now();
+              let at = i;
+              while (at < threads.length && (at === i || performance.now() - started < BACKFILL_MS)) {
+                refreshFolders(store.c, threads.slice(at, at + BACKFILL_SLICE));
+                at += BACKFILL_SLICE;
+              }
+              return at;
+            });
             await o.platform.yield();
           }
           if (store.open) await writeMeta(idb, { foldersPending: false });
@@ -1721,8 +1730,9 @@ export class IdbMailStore implements MailStore {
   };
 }
 
-/** plan 65: threads an upgrade's folder backfill rewrites per command */
-const BACKFILL_SLICE = 1000;
+/** plan 65: an upgrade's folder backfill: threads per batch, and the time a command keeps taking batches */
+const BACKFILL_SLICE = 50;
+const BACKFILL_MS = 8;
 
 const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
 

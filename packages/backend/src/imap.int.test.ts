@@ -841,6 +841,10 @@ describe("an account's own folders (plan 65)", () => {
     ctl.deleteMailbox("Proyectos");
     await backend.syncAccount(account.id);
     expect((await backend.store.folders.list()).map((f) => f.key)).toEqual(["Work"]);
+    // the pass skipped quiet "Work" (STATUS), so it may have missed a move there: the orphan waits for the next
+    // pass, which reads every folder (Codex R9), and goes then
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    await backend.syncAccount(account.id);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(0);
   });
 
@@ -1159,6 +1163,70 @@ describe("an account's own folders (plan 65)", () => {
     }
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Nuevo"]);
+  });
+
+  it("Codex R9: a message moved into a folder STATUS skipped just before keeps its identity: the orphan waits for a full pass", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const m = ctl.addMessage("Z", { raw: raw({ subject: "Movido entre STATUS" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")!;
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before.thread_id] });
+    // another client moves it right after STATUS(A) says A is quiet, before Z is looked at
+    const original = ImapFlow.prototype.status;
+    let moved = false;
+    const status = vi.spyOn(ImapFlow.prototype, "status").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const r = await original.apply(this, args);
+      if (String(args[0]) === "A" && !moved) {
+        moved = true;
+        ctl.moveMessages("Z", [m.uid], "A");
+      }
+      return r;
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      status.mockRestore();
+    }
+    expect(moved).toBe(true);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
+    expect(await folderOf(client, account.id, "A")).toEqual(["Movido entre STATUS"]);
+  });
+
+  it("Codex R9: a reset that finishes, then another that fails, still reconciles what the first found deleted", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("B");
+    const gone = ctl.addMessage("A", { raw: raw({ subject: "Borrado en A" }) });
+    ctl.addMessage("A", { raw: raw({ subject: "Queda en A" }) });
+    ctl.addMessage("B", { raw: raw({ subject: "En B" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.expungeMessages("A", [gone.uid]);
+    ctl.resetUidValidity("A");
+    ctl.resetUidValidity("B");
+    const original = ImapFlow.prototype.search;
+    const dropping = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && (this.mailbox as { path: string }).path === "B") return Promise.reject(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      dropping.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((r) => r.subject)).toEqual(["En B", "Queda en A"]);
   });
 
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {

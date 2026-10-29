@@ -264,3 +264,16 @@ Codex made 12 points; they change the design as follows.
 1. **Two identical ID-less messages moved between folders lost the second's identity.** The sweep had unlocated them, and only the first was recognised. What a sweep unlocates is now an envelope index too, consulted wherever a moved, renamed or reset message could be recognised (`takeAny`). Tests: twins moved into an existing folder, and into a new folder with mail older than the window, keep their messages, threads and category.
 2. **A disconnect between the sweep and identification left a ghost message**, since the sweep had already deleted its location. A sweep now writes what it unlocates into the cursor (`unlocated`) before deleting anything. The next pass reconciles those messages (and can still recognise them), and the journal is cleared once reconciled. Test: the identification fetch drops; the next sync removes the expunged message.
 3. **The web store's rebuild deletion phase read every remaining membership per slice.** It now reads the index only up to the slice's limit. The backend's slice is 250 rows (within a frame in IndexedDB, where each slice is a commit). Gate (now seeded with rows a past listing left): 6.8k locations in 44 slices, 12.1 ms at the longest.
+
+**Round 9.** Codex found six more problems; each is fixed with a test that fails without the fix. The first three share one structural fix:
+- Every step that unlocates mail (a sweep, a reset, a vanished folder's cleanup) now writes the messages into the cursor's journal (`unlocated`) before deleting any location, and the journal is cleared only after reconciliation.
+- Orphans are deleted only in a **full** pass, one that read every folder (no STATUS skip) and failed nowhere. Any other pass keeps them and makes the next pass full (`fullCheck`), so a deletion waits at most one pass.
+
+1. **A message moved into a folder STATUS had just skipped was deleted, then recreated.** Test: the move between the two STATUS calls keeps the message, its thread and its category.
+2. **A crash after a vanished folder's cleanup left ghosts.** Covered by the journal.
+3. **A reset that finished, then another that failed, lost what the first had found deleted.** Covered by the journal. Test: the deleted message goes on later passes and the others stay.
+4. **The web upgrade's slices counted threads, not memberships** (20 overlapping labels: 32 ms per slice). A command now takes batches of 50 threads until 8 ms have passed, then yields. Test: batches of at most 50 threads, over many commands.
+5. **Renaming a label dropped keyboard focus,** because rows were keyed by their display path. A folder row is now keyed by its provider key. Test: e2e, a focused label renamed keeps the focus.
+6. **Shortened parent names could merge two IMAP hierarchies.** IMAP names are now whole: a path is at most 1,000 characters, and Gmail's own limit stays 225. Test: unit, two 226-character parents with children.
+
+The existing deletion test now shows the full-pass rule: a deleted folder's message goes on the pass after (the first pass skipped a quiet folder).
