@@ -5,6 +5,9 @@ import { isFolder } from "./folders";
 type Command = <V>(fn: () => V) => Promise<V>;
 
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
+/** each twins bucket's ids ascending, while the bucket is the same size (a page seeks into it) */
+const twinOrders = new WeakMap<ReadonlySet<unknown>, number[]>();
+
 export class IdbProviderStore implements ProviderStore {
   readonly locations: ImapLocationStore;
 
@@ -192,14 +195,29 @@ class IdbImapLocations implements ImapLocationStore {
   }
 
   twins(e: { subject: string; fromEmail: string; date: number; size: number }, afterId: number, limit: number) {
-    // the bucket holds exactly the envelope's ID-less messages (Codex R20: never a sender's or a date's every one)
+    // the bucket holds exactly the envelope's ID-less messages (Codex R20: never a sender's or a date's every one),
+    // sorted once and kept while it's unchanged, each page a seek into it (Codex R21: never a scan and a sort a page)
     return this.read(() => {
-      const ids: number[] = [];
-      for (const k of T(this.c, "messages").keysBy("twins", this.accountId, e.fromEmail, e.date, e.size, e.subject)) {
-        const id = T(this.c, "messages").rows.get(k)!.id as number;
-        if (id > afterId) ids.push(id);
+      const messages = T(this.c, "messages");
+      const bucket = messages.bucket("twins", this.accountId, e.fromEmail, e.date, e.size, e.subject);
+      if (!bucket) return [];
+      let sorted = twinOrders.get(bucket);
+      if (!sorted || sorted.length !== bucket.size) {
+        sorted = [...bucket].map((k) => messages.rows.get(k)!.id as number).sort((x, y) => x - y);
+        twinOrders.set(bucket, sorted);
       }
-      return ids.sort((x, y) => x - y).slice(0, limit);
+      let lo = 0;
+      let hi = sorted.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sorted[mid]! <= afterId) lo = mid + 1;
+        else hi = mid;
+      }
+      // a row gone since the order was kept (as many put in as went) means a fresh sort, never a gone id
+      const page = sorted.slice(lo, lo + limit);
+      if (page.every((id) => messages.has(id) && bucket.has(messages.key(id)))) return page;
+      twinOrders.delete(bucket);
+      return [...bucket].map((k) => messages.rows.get(k)!.id as number).filter((id) => id > afterId).sort((x, y) => x - y).slice(0, limit);
     });
   }
 

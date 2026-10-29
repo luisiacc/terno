@@ -1612,6 +1612,31 @@ describe("an account's own folders (plan 65)", () => {
     });
   }
 
+  it("Codex R21: with the plain-key twin gone, identical copies appended to two folders stay two messages", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("X");
+    ctl.createMailbox("Z");
+    ctl.createMailbox("A");
+    ctl.createMailbox("B");
+    const twin = raw({ subject: "Copias en dos carpetas" }).replace(/^Message-ID: .*\r\n/m, "");
+    const inX = ctl.addMessage("X", { raw: twin });
+    const inZ = ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const plain = sqlDb(backend.store).get<{ mailbox: string }>("SELECT l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
+    ctl.expungeMessages(plain.mailbox, [plain.mailbox === "X" ? inX.uid : inZ.uid]);
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    ctl.addMessage("A", { raw: twin });
+    ctl.addMessage("B", { raw: twin });
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(3);
+    expect(count(backend, "SELECT DISTINCT message_id FROM message_locations WHERE mailbox IN ('A', 'B')")).toBe(2);
+  });
+
   it("Codex R20: of 55 stored ID-less twins, the last moved late keeps its identity (no candidate cut at 50)", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();

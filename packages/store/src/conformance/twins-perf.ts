@@ -21,3 +21,31 @@ export async function twinLookupsMs(store: MailStore): Promise<number> {
   }
   return Math.min(...runs);
 }
+
+/** Plan 65 (Codex R21): 50,000 ID-less messages of one envelope, paged 500 at a time from the first to the last. */
+export async function twinPagesMs(store: MailStore): Promise<number> {
+  const [, m] = await withAccounts(store);
+  const base = { from: { name: "", email: "boletin@example.test" }, subject: "Igual", date: 1_800_000_000_000, size: 4096, rfcMessageId: null };
+  for (let i = 0; i < 50_000; i += 5000) await ingest(store, Array.from({ length: 5000 }, (_, j) => msg({ accountId: m!, providerMsgId: `nomid:x#${i + j}`, ...base })));
+  const locations = store.providerStore(m!).locations;
+  const e = { subject: base.subject, fromEmail: base.from.email, date: base.date, size: base.size };
+  const all = async () => {
+    const ids: number[] = [];
+    for (let after = 0; ; ) {
+      const page = await locations.twins(e, after, 500);
+      ids.push(...page);
+      if (page.length < 500) return ids;
+      after = page.at(-1)!;
+    }
+  };
+  const first = await all();
+  expect(first).toHaveLength(50_000);
+  expect(first.every((id, i) => i === 0 || id > first[i - 1]!)).toBe(true);
+  const runs: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    await all();
+    runs.push(performance.now() - t0);
+  }
+  return Math.min(...runs);
+}

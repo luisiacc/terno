@@ -65,6 +65,17 @@ interface Ambiguous {
   uidnext: number;
 }
 
+/**
+ * Plan 65 (Codex R21): every candidate of the held-back messages, once: each envelope's list is shared by every
+ * message held back with it, so each list is visited once (never copied per message: 5,000 by 5,000 was 25 million).
+ */
+export function distinctCandidates(list: readonly { candidates: readonly number[] }[]): number[] {
+  const lists = new Set(list.map((a) => a.candidates));
+  const ids = new Set<number>();
+  for (const group of lists) for (const id of group) ids.add(id);
+  return [...ids];
+}
+
 /** Plan 65 (Codex R15): message ids looked at a window at a time for ones with no location */
 const UNLOCATED_SPAN = 5000;
 
@@ -526,7 +537,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // late; told apart like the rest, before the window decides anything (Codex R20)
           if (!existing && ambiguousOf === null && !messageKey(env?.messageId)) {
             const group = await twinGroup(envelope, null);
-            if (group.length) ambiguousOf = group;
+            if (group.length) {
+              ambiguousOf = group;
+              // a copy held back gets a key of its own place: two of them, in two folders, are never one (Codex R21)
+              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+            }
           }
           if (existing) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
@@ -624,7 +639,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     if (!list.length) return;
     // every candidate's places, read 500 at a time (another UID in the same folder counts: Codex R19)
     const places = new Map<number, Loc[]>();
-    const ids = [...new Set(list.flatMap((a) => a.candidates))];
+    const ids = distinctCandidates(list);
     for (const id of ids) places.set(id, []);
     for (let i = 0; i < ids.length; i += 500) for (const l of await locations.of(ids.slice(i, i + 500))) places.get(l.message_id)!.push(l);
     const byMailbox = new Map<string, { uidvalidity: number; uids: Set<number> }>();
