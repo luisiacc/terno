@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, distinctCandidates } from "./imap";
+import { customFolders, distinctCandidates, planTellApart } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -37,4 +37,17 @@ it("Codex R21: 5,000 held-back messages sharing 5,000 twins: their candidates ga
   const list = Array.from({ length: 5000 }, () => ({ candidates: shared }));
   expect(distinctCandidates(list)).toHaveLength(5000);
   expect(best(() => distinctCandidates(list))).toBeLessThan(10);
+});
+
+it("Codex R30: 5,000 copies of a Message-ID with 5,000 placed twins are planned in linear time, under 20 ms", () => {
+  const candidates = Array.from({ length: 5000 }, (_, i) => i + 1);
+  const places = new Map(candidates.map((id) => [id, [{ mailbox: "Z", uid: id }]]));
+  const present = new Set(candidates.map((id) => `Z\u0000${id}`));
+  const list = Array.from({ length: 5000 }, () => ({ candidates, path: "A", attachTo: 1, idCopy: true, old: false }));
+  const plan = planTellApart(list, places, present);
+  // each twin gains its place in A once; nothing is a copy of its own, nothing moved
+  expect(plan.placed.map((p) => p.id)).toEqual(candidates);
+  expect(plan.placed.every((p) => !p.moved)).toBe(true);
+  expect(plan.copies).toHaveLength(0);
+  expect(best(() => planTellApart(list, places, present))).toBeLessThan(20);
 });

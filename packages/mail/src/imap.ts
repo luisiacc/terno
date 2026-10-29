@@ -80,6 +80,56 @@ export function distinctCandidates(list: readonly { candidates: readonly number[
   return [...ids];
 }
 
+/**
+ * Plan 65 (Codex R18–R30): what each held-back message is, in one linear pass. Per envelope, its twins with no place
+ * left on the server, oldest first, go to the held-back messages in order (each moved here); a Message-ID's copy is the
+ * same message in one more folder, once a folder (the plain-key one first, else the next twin with no place there,
+ * from a cursor per envelope and folder: Codex R27, R29, R30); anything else is a copy of its own (none for old mail).
+ */
+export function planTellApart<A extends { candidates: readonly number[]; path: string; attachTo: number | null; idCopy: boolean; old: boolean }>(
+  list: readonly A[],
+  places: ReadonlyMap<number, readonly { mailbox: string; uid: number }[]>,
+  present: ReadonlySet<string>,
+): { placed: { id: number; a: A; moved: boolean }[]; copies: A[] } {
+  const gone = new Map<readonly number[], { ids: number[]; next: number }>();
+  const cursors = new Map<readonly number[], Map<string, number>>();
+  /** stored messages given a place in a folder here: each (message, folder) once */
+  const attached = new Set<string>();
+  const placedHere = (id: number, path: string) => attached.has(`${id}\u0000${path}`) || (places.get(id) ?? []).some((l) => l.mailbox === path);
+  const placed: { id: number; a: A; moved: boolean }[] = [];
+  const copies: A[] = [];
+  for (const a of list) {
+    let free = gone.get(a.candidates);
+    if (!free) gone.set(a.candidates, (free = { ids: a.candidates.filter((id) => (places.get(id) ?? []).every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))), next: 0 }));
+    const id = free.ids[free.next];
+    if (id !== undefined) {
+      free.next++;
+      // its place here is given: no copy after it takes it (Codex R28)
+      attached.add(`${id}\u0000${a.path}`);
+      placed.push({ id, a, moved: true });
+      continue;
+    }
+    let target: number | undefined;
+    if (a.idCopy) {
+      if (a.attachTo !== null && !placedHere(a.attachTo, a.path)) target = a.attachTo;
+      else {
+        // the next twin with no place in this folder: a cursor that only moves on (a twin passed over stays placed)
+        let byPath = cursors.get(a.candidates);
+        if (!byPath) cursors.set(a.candidates, (byPath = new Map()));
+        let at = byPath.get(a.path) ?? 0;
+        while (at < a.candidates.length && placedHere(a.candidates[at]!, a.path)) at++;
+        byPath.set(a.path, at);
+        target = a.candidates[at];
+      }
+    }
+    if (target !== undefined) {
+      attached.add(`${target}\u0000${a.path}`);
+      placed.push({ id: target, a, moved: false });
+    } else if (!a.old) copies.push(a);
+  }
+  return { placed, copies };
+}
+
 /** Plan 65 (Codex R23, R24): a folder's UIDNEXT, kept below its first held-back message (a loop: any number of them) */
 export function heldUidnext(uidnext: number, held: readonly { uid: number }[]): number {
   let at = uidnext;
@@ -712,48 +762,31 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         lock.release();
       }
     }
-    // per envelope, its twins with no place left on the server, oldest first: the held-back messages take them in
-    // order (each moved here), the rest are copies; one pass over each list
-    const gone = new Map<number[], { ids: number[]; next: number }>();
-    const copies: IncomingMessage[] = [];
+    // what each held-back message is (planned in one linear pass, then written a slice at a time: Codex R30)
+    const plan = planTellApart(list, places, present);
     // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
     // at a time re-read a long conversation each time)
     const leaving = new Map<string, number[]>();
-    /** stored messages given a place in a folder here: each (message, folder) once */
-    const attached = new Set<string>();
-    for (const a of list) {
-      let free = gone.get(a.candidates);
-      if (!free) gone.set(a.candidates, (free = { ids: a.candidates.filter((id) => places.get(id)!.every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))), next: 0 }));
-      const id = free.ids[free.next];
-      if (id !== undefined) {
-        free.next++;
-        // its place here is given: no copy after it takes it (Codex R28)
-        attached.add(`${id}\u0000${a.path}`);
-        // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
-        await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
+    let writes = 0;
+    for (const { id, a, moved } of plan.placed) {
+      // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
+      await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
+      if (moved) {
         for (const l of places.get(id)!) {
           if (l.mailbox === a.path) continue;
           const ids = leaving.get(l.mailbox) ?? [];
           ids.push(id);
           leaving.set(l.mailbox, ids);
         }
-        touched.add(id);
-      } else {
-        // a Message-ID's copy: the same message in one more folder, once a folder (a second copy there is a message of
-        // its own: Codex R27); the plain-key one first, else the first twin with no place there (Codex R29)
-        const unplacedHere = (x: number) => !(places.get(x) ?? []).some((l) => l.mailbox === a.path) && !attached.has(`${x}\u0000${a.path}`);
-        const target = a.idCopy ? [...(a.attachTo === null ? [] : [a.attachTo]), ...a.candidates].find(unplacedHere) : undefined;
-        if (target !== undefined) {
-          attached.add(`${target}\u0000${a.path}`);
-          await upsertLocation(target, a.path, a.uidvalidity, a.uid, a.flags);
-          touched.add(target);
-        } else if (!a.old) copies.push(a.incoming);
       }
+      touched.add(id);
+      if (++writes % 500 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
     }
+    const copies = plan.copies;
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
-    if (copies.length) await sink.ingest(copies, { live: list.some((a) => a.live) });
-    for (const m of copies) {
-      const row = await store.messageByProviderId(m.providerMsgId!);
+    if (copies.length) await sink.ingest(copies.map((a) => a.incoming), { live: list.some((a) => a.live) });
+    for (const a of copies) {
+      const row = await store.messageByProviderId(a.incoming.providerMsgId!);
       if (row) touched.add(row.id);
     }
   }

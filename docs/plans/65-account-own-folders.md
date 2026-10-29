@@ -378,3 +378,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 29.** Codex found one medium problem and reported nothing else; it's fixed with a test that fails without the fix:
 1. **A copy of a Message-ID twin whose plain-key one was deleted became a second message** (or, older than the window in a new folder, wasn't shown at all): held back with no plain-key row, it had no stored message to gain the place. A Message-ID's copy is the same message in one more folder: the plain-key one if there is one, else the first of its twins with no place in that folder, gains it (once a folder). Tests: the survivor copied into a known folder, and into a new one outside the window, is one message in both.
+
+**Round 30.** Codex found one medium problem; it's fixed with a gate that fails without the fix:
+1. **Telling 5,000 held-back copies apart was quadratic** (each searched 5,000 twins from the start: about a second, the event loop held). What each held-back message is, is now planned by a pure function (`planTellApart`) in one linear pass, a cursor per envelope and folder for the next twin with no place there; the plan is then written with a yield every 500 writes. Gate: 5,000 copies of a Message-ID with 5,000 placed twins planned in under 20 ms (589 when each copy searched from the start); the IMAP suite holds the behaviour.
