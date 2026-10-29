@@ -1697,6 +1697,41 @@ describe("an account's own folders (plan 65)", () => {
     });
   }
 
+  it("Codex R34: a Message-ID duplicate written in one folder and moved on before the next is read stays its own message", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("B");
+    const twin = raw({ subject: "Duplicado que sigue", id: "moves-on@x" });
+    ctl.addMessage("A", { raw: twin });
+    ctl.addMessage("B", { raw: raw({ subject: "En B" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const original = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Duplicado que sigue'")!.id;
+    // a duplicate in A (read this pass, written as its own message), moved to B as B is read
+    const dup = ctl.addMessage("A", { raw: twin });
+    ctl.addMessage("B", { raw: raw({ subject: "Nuevo en B" }) });
+    const lockOriginal = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof lockOriginal>) {
+      if (String(args[0]) === "B" && ++locks === 2) ctl.moveMessages("A", [dup.uid], "B");
+      return lockOriginal.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(locks).toBeGreaterThanOrEqual(2);
+    await backend.syncAccount(account.id);
+    const rows = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Duplicado que sigue' ORDER BY id").map((r) => r.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe(original);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", original)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "B" }]);
+  });
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

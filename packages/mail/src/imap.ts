@@ -159,16 +159,24 @@ function breather(budgetMs = 4): () => Promise<void> {
   };
 }
 
-/** Plan 65 (Codex R33): the stored ids of messages just written, by key, looked up a few milliseconds a turn */
-export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>): Promise<number[]> {
+/** Plan 65 (Codex R33): the stored ids of messages just written, by key, looked up a few milliseconds a turn (one per key, null where none) */
+export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>, aligned: true): Promise<(number | null)[]>;
+export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>): Promise<number[]>;
+export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>, aligned = false): Promise<(number | null)[]> {
   const breathe = breather();
-  const ids: number[] = [];
+  const ids: (number | null)[] = [];
   for (const key of keys) {
     const row = await lookup(key);
     if (row) ids.push(row.id);
+    else if (aligned) ids.push(null);
     await breathe();
   }
   return ids;
+}
+
+/** an envelope's key among the twins kept in a pass (its Message-ID, or none) */
+function twinKey(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }): string {
+  return `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
 }
 
 /**
@@ -561,7 +569,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
        * cut: Codex R20), one list shared by every message held back with it, so telling them apart stays linear.
        */
       const twinGroup = async (e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, include: number | null): Promise<number[]> => {
-        const at = `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
+        const at = twinKey(e);
         let group = twinsOf.get(at);
         if (!group) {
           group = [];
@@ -603,6 +611,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           ? (await c.search({ all: true }, { uid: true })) || []
           : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
       const fresh: IncomingMessage[] = [];
+      /** each fresh message's twin key: once written, it joins its envelope's group if one is kept (Codex R34) */
+      const freshTwins: string[] = [];
       // held back here, handed over only once this folder's read completes: one that fails part-way keeps its old
       // cursor and is read again, never acknowledged past what it didn't read (Codex R23)
       const held: Ambiguous[] = [];
@@ -781,12 +791,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
           if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext), attachTo, idCopy });
-          else if (!old) fresh.push(incoming);
+          else if (!old) {
+            fresh.push(incoming);
+            freshTwins.push(twinKey({ ...envelope, rfcMessageId: messageKey(env?.messageId) }));
+          }
         }
       }
       if (fresh.length) await sink.ingest(fresh, { live });
 
-      for (const id of await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key))) touched.add(id);
+      // written: in the groups kept for its envelope, so a folder read later (or a message held back) sees it as a
+      // twin, never only the ones there were before (Codex R34: a copy moved on would take the original's place)
+      const written = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key), true);
+      written.forEach((id, i) => {
+        if (id === null) return;
+        touched.add(id);
+        const group = twinsOf.get(freshTwins[i]!);
+        if (group && !group.includes(id)) {
+          group.push(id);
+          group.sort((x, y) => x - y);
+        }
+      });
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
@@ -859,7 +883,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const copies = plan.copies;
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
     if (copies.length) await sink.ingest(copies.map((a) => a.incoming), { live: list.some((a) => a.live) });
-    for (const id of await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key))) touched.add(id);
+    for (const id of await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key), true)) if (id !== null) touched.add(id);
   }
 
 

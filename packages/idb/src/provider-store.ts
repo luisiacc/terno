@@ -164,23 +164,39 @@ class IdbImapLocations implements ImapLocationStore {
   }
 
   async removeMany(messageIds: readonly number[], mailbox: string) {
+    const threads = new Set<number>();
     for (let i = 0; i < messageIds.length; i += 500) {
       const chunk = messageIds.slice(i, i + 500);
       await this.command(() => {
         const messages = T(this.c, "messages");
-        const threads = new Set<number>();
         for (const id of chunk) {
           this.t.delete(id, mailbox);
           const m = messages.get(id);
           if (m) threads.add(m.thread_id as number);
         }
+      });
+    }
+    // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
+    // a few thousand of them looked at a command (Codex R34: per slice, a long conversation was walked again each time)
+    for (const thread of threads) {
+      const keys = await this.read(() => [...T(this.c, "messages").keysBy("fk_thread_id", thread)]);
+      let here = false;
+      for (let i = 0; i < keys.length && !here; i += 2000) {
+        here = await this.read(() => {
+          const messages = T(this.c, "messages");
+          return keys.slice(i, i + 2000).some((k) => {
+            const o = messages.rows.get(k);
+            return !!o && !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox);
+          });
+        });
+      }
+      if (here) continue;
+      await this.command(() => {
         if (!isFolder(this.c, this.accountId, mailbox)) return;
         const memberships = T(this.c, "thread_folders");
-        // a thread's row goes only when none of its messages is still there: once per thread (Codex R11)
-        for (const thread of threads) {
-          const row = memberships.get(thread, mailbox);
-          if (row && !messages.by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
-        }
+        const row = memberships.get(thread, mailbox);
+        // still none there (a location written meanwhile keeps it)
+        if (row && !T(this.c, "messages").by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
       });
     }
   }

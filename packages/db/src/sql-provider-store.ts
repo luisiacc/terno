@@ -137,26 +137,41 @@ class SqlImapLocations implements ImapLocationStore {
   }
 
   async removeMany(messageIds: readonly number[], mailbox: string) {
+    const threads = new Set<number>();
     for (let i = 0; i < messageIds.length; i += RESET_SLICE) {
       const chunk = messageIds.slice(i, i + RESET_SLICE);
       this.db.tx(() => {
-        const threads = this.db.all<{ thread_id: number }>(`SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk).map((r) => r.thread_id);
+        for (const r of this.db.all<{ thread_id: number }>(`SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)) threads.add(r.thread_id);
         this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
-        if (!isFolder(this.db, this.accountId, mailbox)) return;
-        // a thread's row goes only when none of its messages is still there: once per thread, not per message
-        for (const thread of threads) {
-          this.db.run(
-            `DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?
-               AND NOT EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
-                               WHERE o.thread_id = ? AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`,
-            thread,
-            mailbox,
-            thread,
-            mailbox,
-          );
-        }
       });
-      if (i + RESET_SLICE < messageIds.length) await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (!isFolder(this.db, this.accountId, mailbox)) return;
+    // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
+    // looked for a page of the thread at a time, from where the last page ended (Codex R34: per slice, a long
+    // conversation's removed part was read again each time)
+    for (const thread of threads) {
+      let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
+      let here = false;
+      for (;;) {
+        const page = this.db.all<{ id: number; date: number; here: number }>(
+          `SELECT o.id, o.date, (o.is_trash = 0 AND o.is_spam = 0 AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = o.id AND l.mailbox = ?)) AS here
+             FROM messages o INDEXED BY messages_thread WHERE o.thread_id = ? AND (o.date, o.id) > (?, ?) ORDER BY o.date, o.id LIMIT ?`,
+          mailbox,
+          thread,
+          after.date,
+          after.id,
+          RESET_SLICE,
+        );
+        if (page.some((r) => r.here === 1)) {
+          here = true;
+          break;
+        }
+        if (page.length < RESET_SLICE) break;
+        after = { date: page.at(-1)!.date, id: page.at(-1)!.id };
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (!here) this.db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, mailbox);
     }
   }
 
