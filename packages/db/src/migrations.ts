@@ -14,6 +14,37 @@ interface Migration {
  * Views derive from them (see queries.ts VIEW_WHERE). Each hot view has its own
  * partial index ordered (last_date DESC, id DESC) so list pages are index walks.
  */
+/**
+ * Plan 65: an account's own folders as its provider lists them, and which threads are in them (see folders.ts).
+ * Pages walk (account, folder, date); selection scopes (account, folder, thread); counts the unread memberships.
+ * Gmail memberships come from the labels already stored, so a mailbox from before has them at once.
+ */
+const FOLDERS_V24 = /* sql */ `
+CREATE TABLE folders (
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  path_json TEXT NOT NULL,
+  selectable INTEGER NOT NULL DEFAULT 1,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (account_id, key)
+) WITHOUT ROWID;
+CREATE TABLE thread_folders (
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL,
+  folder TEXT NOT NULL,
+  last_date INTEGER NOT NULL,
+  unread INTEGER NOT NULL,
+  PRIMARY KEY (thread_id, folder)
+) WITHOUT ROWID;
+CREATE INDEX thread_folders_date ON thread_folders(account_id, folder, last_date DESC, thread_id DESC);
+CREATE INDEX thread_folders_id ON thread_folders(account_id, folder, thread_id);
+CREATE INDEX thread_folders_unread ON thread_folders(account_id, folder) WHERE unread = 1;
+INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
+  SELECT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
+  FROM messages m JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
+  WHERE m.gmail_labels IS NOT NULL AND m.is_trash = 0 AND m.is_spam = 0 AND j.value LIKE 'Label\\_%' ESCAPE '\\';
+`;
+
 const SCHEMA_V1 = /* sql */ `
 CREATE TABLE accounts (
   id INTEGER PRIMARY KEY,
@@ -880,6 +911,7 @@ CREATE INDEX flag_effect_parked_current ON flag_op_effects(message_id,field,coal
   { version: 23, name: "durable draft source context", sql: `
 ALTER TABLE drafts ADD COLUMN show_source_context INTEGER NOT NULL DEFAULT 0 CHECK (show_source_context IN (0, 1));
 ` },
+  { version: 24, name: "an account's own folders (plan 65)", sql: FOLDERS_V24 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

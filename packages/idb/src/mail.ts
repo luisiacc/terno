@@ -1,3 +1,4 @@
+import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { copyOpAdmission, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
@@ -603,6 +604,7 @@ function newer(x: R, y: R): boolean {
 export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
   const threads = T(c, "threads");
   const messages = T(c, "messages");
+  const written: number[] = [];
   // plan 17: read once per call; null while the backfill still collects your addresses (facts stay NULL)
   let facts: FactContext | null | undefined;
   for (const threadId of threadIds) {
@@ -658,7 +660,10 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
       person: f ? f.person : null,
       waiting_since: f ? f.waitingSince : null,
     });
+    written.push(threadId);
   }
+  // plan 65: folder memberships, with the aggregates they carry (date, unread)
+  refreshFolders(c, written);
 }
 
 export function deleteMessages(c: Ctx, messageIds: readonly number[]): Set<number> {
@@ -839,6 +844,7 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
 }
 
 export function listThreads(c: Ctx, p: ListParams): Page {
+  if (p.folder !== undefined) return folderPage(c, p);
   const threads = T(c, "threads");
   const filter = listFilterOf(p);
   const order = filter ? c.filterOrders[filter] : c.order;
@@ -874,6 +880,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
 
 /** A view's thread ids above `after`, ascending, up to `limit`: a category walks its memberships, not the whole mailbox. */
 export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
+  if (p.folder !== undefined) return folderScopeIds(c, p);
   const threads = T(c, "threads");
   const test = VIEW_TEST[p.view];
   // ascending ids, seeked past the last page and walked until this one is full
@@ -992,7 +999,7 @@ export function getCounts(c: Ctx, now: number): Counts {
     categoryTotal[tc.category_id] = (categoryTotal[tc.category_id] ?? 0) + 1;
     categoryUnread[tc.category_id] = (categoryUnread[tc.category_id] ?? 0) + (t.unread_count > 0 ? 1 : 0);
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now), folderUnread: folderUnreadCounts(c) };
 }
 
 /** Inbox threads waiting for your reply (plan 17): the waiting order from the top to the cutoff; unknown while facts are pending. */

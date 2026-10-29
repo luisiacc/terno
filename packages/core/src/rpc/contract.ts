@@ -27,6 +27,7 @@ import {
   VIEWS,
   type Account,
   type Category,
+  type Folder,
   type Counts,
   type OpState,
   type ThreadDetail,
@@ -208,6 +209,8 @@ export interface Bootstrap {
   host: HostInfo;
   accounts: Account[];
   categories: Category[];
+  /** plan 65: every account's own folders */
+  folders: Folder[];
   counts: Counts;
   settings: AppSettings;
   owner: OwnerIdentity | null;
@@ -455,9 +458,19 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
+/** plan 65: an account's folder (its key: an IMAP path, a Gmail label id) */
+const folderKey = z.string().min(1).max(1000);
+/** A folder is an account's, alone: no category or review with it, its view "all" (no trash, no spam) */
+const folderScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string }>(p: T, ctx: z.RefinementCtx) => {
+  if (p.folder === undefined) return;
+  if (p.accountId === undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: "a folder needs its account" });
+  if (p.categoryId !== undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: "a folder has no category" });
+  if (p.view !== undefined && p.view !== "all") ctx.addIssue({ code: "custom", path: ["view"], message: "a folder's view is all" });
+};
+
 /** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `filter`: the list's quick filter (`unreadOnly`: plan 12's name for "unread", still accepted). */
 const threadScope = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }),
+  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), folder: folderKey.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }).superRefine(folderScope),
   z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }),
 ]);
 export type ThreadScope = z.output<typeof threadScope>;
@@ -508,6 +521,8 @@ export const contract = {
       view: z.enum(VIEWS),
       accountId: id.optional(),
       categoryId: id.optional(),
+      /** plan 65: one of the account's own folders (with accountId, view "all") */
+      folder: folderKey.optional(),
       /** the unread filter: threads with something unread only (plan 12; `filter: "unread"` since plan 15) */
       unreadOnly: z.boolean().optional(),
       /** the quick filter: unread, with attachments or starred threads only */
@@ -516,7 +531,7 @@ export const contract = {
       keepIds: z.array(id).max(500).optional(),
       cursor: cursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
-    }),
+    }).superRefine(folderScope),
   ),
   "threads.search": m<SearchPage>()(
     z.object({
@@ -835,6 +850,8 @@ export interface Events {
   counts: Counts;
   accounts: Account[];
   categories: Category[];
+  /** plan 65: the folders of every account, when an account's list changed */
+  folders: Folder[];
   op: OpInfo;
   owner: OwnerIdentity | null;
   /** progress of a scope action (threads.actScope / undoScope, categories.addScope), at most ~10 per second */

@@ -1,5 +1,6 @@
 import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
+import { isFolder, refreshFolders, threadsOfMessages } from "./folders";
 
 type Command = <V>(fn: () => V) => Promise<V>;
 
@@ -88,12 +89,25 @@ class IdbImapLocations implements ImapLocationStore {
     return T(this.c, "message_locations");
   }
 
+  /** plan 65: a location in a listed folder decides membership: rewritten in the same unit */
+  private located(messageIds: readonly number[], mailbox: string) {
+    if (messageIds.length && isFolder(this.c, this.accountId, mailbox)) refreshFolders(this.c, threadsOfMessages(this.c, messageIds));
+  }
+
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
-    return this.command(() => void this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) }));
+    return this.command(() => {
+      // a known location (new flags, a new UID) moves no membership
+      const known = this.t.has(messageId, mailbox);
+      this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
+      if (!known) this.located([messageId], mailbox);
+    });
   }
 
   remove(messageId: number, mailbox: string) {
-    return this.command(() => void this.t.delete(messageId, mailbox));
+    return this.command(() => {
+      this.t.delete(messageId, mailbox);
+      this.located([messageId], mailbox);
+    });
   }
 
   setFlags(messageId: number, mailbox: string, flags: string) {
@@ -135,7 +149,9 @@ class IdbImapLocations implements ImapLocationStore {
     return this.command(() => {
       const rows: R[] = this.t.by("mailbox", this.accountId, mailbox);
       for (const r of rows) this.t.deleteRow(r);
-      return rows.map((r) => r.message_id as number);
+      const ids = rows.map((r) => r.message_id as number);
+      this.located(ids, mailbox);
+      return ids;
     });
   }
 

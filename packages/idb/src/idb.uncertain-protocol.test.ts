@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { expect, it, vi } from "vitest";
-import { databaseName, writeMeta } from "./schema";
+import { databaseName, LOGICAL_SCHEMA, writeMeta } from "./schema";
 import { IdbMailStore } from "./store";
 import { UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
@@ -102,7 +102,7 @@ for (const stage of ["guard", "marker", "clear"] as const) {
           expect(values).toEqual([
             complete && stage === "clear" ? UNCERTAINTY_KEY : undefined,
             { key: "retained", value_json: JSON.stringify(complete && stage === "clear" ? { text: "after", draft: true } : { text: "before", draft: false }) },
-            23,
+            LOGICAL_SCHEMA,
           ]);
           raw.close(); raw = undefined;
           if (complete && stage === "clear") await expect(IdbMailStore.open({ factory, name, instantSearch: false, platform })).rejects.toBeInstanceOf(UncertainWriteError);
@@ -187,7 +187,7 @@ it("refuses the reserved metadata key before a transaction, while ordinary metad
     vi.restoreAllMocks();
     const tx = raw.transaction("meta"), finished = ended(tx);
     const values = await Promise.all([request(tx.objectStore("meta").get("qualification")), request(tx.objectStore("meta").get("logicalSchema")), request(tx.objectStore("meta").getKey(UNCERTAINTY_KEY))]);
-    await finished; expect(values).toEqual([{ exact: true }, 23, undefined]);
+    await finished; expect(values).toEqual([{ exact: true }, LOGICAL_SCHEMA, undefined]);
     raw.close(); raw = undefined;
     store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
     expect(await store.settings.get("public-control", null)).toBe("exact");
@@ -214,7 +214,7 @@ for (const stage of ["guard", "marker", "clear"] as const) {
       vi.restoreAllMocks();
       const tx = raw.transaction("meta"), finished = ended(tx);
       const values = await Promise.all([request(tx.objectStore("meta").get("qualification")), request(tx.objectStore("meta").get("logicalSchema")), request(tx.objectStore("meta").getKey(UNCERTAINTY_KEY))]);
-      await finished; expect(values).toEqual([undefined, 23, undefined]);
+      await finished; expect(values).toEqual([undefined, LOGICAL_SCHEMA, undefined]);
       raw.close(); raw = undefined;
       store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
       expect(await store.settings.get("public-control", null)).toBe("kept");
@@ -240,7 +240,7 @@ it("metadata writes cannot replace or clear a present undefined marker", async (
     const tx = raw.transaction(["meta", "settings"]), finished = ended(tx);
     const values = await Promise.all([request(tx.objectStore("meta").getKey(UNCERTAINTY_KEY)), request(tx.objectStore("meta").get(UNCERTAINTY_KEY)), request(tx.objectStore("meta").get("logicalSchema")), request(tx.objectStore("settings").get("public-control"))]);
     await finished;
-    expect(values).toEqual([UNCERTAINTY_KEY, undefined, 23, { key: "public-control", value_json: '"preserved"' }]);
+    expect(values).toEqual([UNCERTAINTY_KEY, undefined, LOGICAL_SCHEMA, { key: "public-control", value_json: '"preserved"' }]);
     raw.close(); raw = undefined;
     await expect(IdbMailStore.open({ factory, name, instantSearch: false, platform })).rejects.toBeInstanceOf(UncertainWriteError);
   } finally { vi.restoreAllMocks(); raw?.close(); await seed.close(); }

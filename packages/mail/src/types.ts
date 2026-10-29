@@ -2,7 +2,7 @@ import type { IncomingReadAdmission } from "./incoming";
 import type { IncomingProcessor } from "./incoming-processing";
 import { textRef, type Account, type AccountSyncState, type Address, type TextRef } from "@terno/core";
 import type { Localized } from "@terno/i18n";
-import type { FlagUpdate, IncomingMessage, ProviderStore } from "@terno/store";
+import type { FlagUpdate, IncomingMessage, ProviderFolder, ProviderStore } from "@terno/store";
 
 export type { FlagUpdate } from "@terno/store";
 
@@ -125,6 +125,8 @@ export interface SyncSink {
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
+  /** plan 65: the account's own folders now (the store compares; an unchanged list writes nothing) */
+  setFolders(folders: readonly ProviderFolder[]): Promise<void>;
   signal: AbortSignal;
 }
 

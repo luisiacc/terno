@@ -1,4 +1,4 @@
-import { cleanFromName, listFilterOf, storedAddresses, waitingCutoff } from "@terno/core";
+import { cleanFromName, folderRef, listFilterOf, storedAddresses, waitingCutoff } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
@@ -141,12 +141,20 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   // picks a view's date index instead and reads a row per thread, or sorts a category: measured in plan 12)
   const filter = listFilterOf(p);
   const f = filter ? filterSql(filter, p.now) : null;
-  const threads = f ? `threads t INDEXED BY ${f.byDate}` : "threads t";
+  // plan 65: a folder walks its memberships by date (outer, CROSS JOIN), filtered or not, and joins the threads
+  const threads = f && p.folder === undefined ? `threads t INDEXED BY ${f.byDate}` : "threads t";
   if (f) {
     where.push(f.where);
     params.push(...f.params);
   }
   let from = threads;
+  let order = "t.last_date DESC, t.id DESC";
+  if (p.folder !== undefined) {
+    from = `thread_folders tf INDEXED BY thread_folders_date CROSS JOIN ${threads} ON t.id = tf.thread_id`;
+    where.unshift("tf.account_id = ? AND tf.folder = ?");
+    params.unshift(p.accountId!, p.folder);
+    order = "tf.last_date DESC, tf.thread_id DESC";
+  }
   if (p.categoryId !== undefined) {
     from = `thread_categories tc JOIN ${threads} ON t.id = tc.thread_id`;
     where.unshift("tc.category_id = ?");
@@ -157,7 +165,7 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
     params.push(p.accountId);
   }
   if (p.cursor) {
-    where.push("(t.last_date, t.id) < (?, ?)");
+    where.push(p.folder !== undefined ? "(tf.last_date, tf.thread_id) < (?, ?)" : "(t.last_date, t.id) < (?, ?)");
     params.push(p.cursor.lastDate, p.cursor.id);
   }
   if (only !== undefined) {
@@ -167,7 +175,7 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   params.push(p.limit + 1);
   return {
     sql: `SELECT ${SUMMARY_COLUMNS} FROM ${from} WHERE ${where.join(" AND ")}
-     ORDER BY t.last_date DESC, t.id DESC LIMIT ?`,
+     ORDER BY ${order} LIMIT ?`,
     params,
   };
 }
@@ -185,6 +193,12 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   const filter = listFilterOf(p);
   const f = filter ? filterSql(filter, p.now) : null;
   let from = f ? `threads t INDEXED BY ${f.byId ?? f.byDate}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
+  if (p.folder !== undefined) {
+    // plan 65: a folder's memberships by (account, folder, thread), outer like a category's
+    from = paged ? "thread_folders tf INDEXED BY thread_folders_id CROSS JOIN threads t ON t.id = tf.thread_id" : "thread_folders tf JOIN threads t ON t.id = tf.thread_id";
+    where.unshift("tf.account_id = ? AND tf.folder = ?");
+    params.unshift(p.accountId!, p.folder);
+  }
   if (p.categoryId !== undefined) {
     // CROSS JOIN keeps the memberships outer (SQLite never reorders it)
     from = paged ? "thread_categories tc INDEXED BY thread_categories_c CROSS JOIN threads t ON t.id = tc.thread_id" : "thread_categories tc JOIN threads t ON t.id = tc.thread_id";
@@ -215,7 +229,7 @@ export function scopeThreadIds(db: Db, p: ScopeParams & { after?: number; limit:
 /** The SQL a scope page runs (query-plan tests: an index walk in key order, never a sort). */
 export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }): { sql: string; params: Param[] } {
   const s = scopeFrom(p, true);
-  const key = p.categoryId !== undefined ? "tc.thread_id" : "t.id";
+  const key = p.folder !== undefined ? "tf.thread_id" : p.categoryId !== undefined ? "tc.thread_id" : "t.id";
   return { sql: `SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, params: [...s.params, p.after ?? 0, p.limit] };
 }
 
@@ -336,7 +350,17 @@ export function getCounts(db: Db, now: number): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
+}
+
+/** plan 65: unread threads per listed folder ("accountId:key"), from the unread memberships alone. */
+export function folderUnreadCounts(db: Db): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of db.all<{ account_id: number; folder: string; c: number }>(
+    `SELECT tf.account_id, tf.folder, count(*) AS c FROM thread_folders tf INDEXED BY thread_folders_unread
+     JOIN folders f ON f.account_id = tf.account_id AND f.key = tf.folder WHERE tf.unread = 1 GROUP BY tf.account_id, tf.folder`,
+  )) out[folderRef(r.account_id, r.folder)] = r.c;
+  return out;
 }
 
 /**

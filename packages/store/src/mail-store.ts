@@ -10,6 +10,7 @@ import type {
   CategorizeScope,
   CategorizerModel,
   Category,
+  Folder,
   CategoryColor,
   CategoryModelStats,
   Counts,
@@ -56,6 +57,7 @@ import type {
   Page,
   MessageState,
   PendingSuggestion,
+  ProviderFolder,
   ScopeParams,
   ThreadFeatureSet,
 } from "./types";
@@ -348,6 +350,13 @@ export interface MailStore {
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
+  };
+
+  /** plan 65: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */
+  folders: {
+    list(): Promise<Folder[]>;
+    /** an account's list now (a sync pass); `changed`: false when it's the same; `touched`: threads whose membership a newly listed folder changed */
+    replace(accountId: number, folders: readonly ProviderFolder[]): Promise<{ changed: boolean; touched: number[] }>;
   };
 
   categories: {

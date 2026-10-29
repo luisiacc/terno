@@ -13,6 +13,9 @@ export interface IncomingAttachment {
   bytes?: Uint8Array;
 }
 
+/** plan 65: a folder as its provider lists it (its account is the sync's) */
+export type ProviderFolder = Omit<import("@terno/core").Folder, "accountId">;
+
 export interface IncomingLocation {
   mailbox: string;
   uidvalidity: number;
@@ -115,6 +118,8 @@ export interface ScopeParams {
   view: View;
   accountId?: number;
   categoryId?: number;
+  /** plan 65: one of the account's own folders (with accountId; never with a category) */
+  folder?: string;
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */
@@ -127,6 +132,8 @@ export interface ListParams {
   view: View;
   accountId?: number;
   categoryId?: number;
+  /** plan 65: one of the account's own folders (with accountId; never with a category) */
+  folder?: string;
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */

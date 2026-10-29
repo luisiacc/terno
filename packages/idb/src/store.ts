@@ -1,3 +1,4 @@
+import { listFolders, refreshFolders, replaceFolders, threadsWithUserLabels } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -263,6 +264,7 @@ export class IdbMailStore implements MailStore {
         await persist(idb, commit, "strict", o.platform);
         db.confirm();
       }
+      const upgradedFrom = meta.logicalSchema;
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
       else if (meta.logicalSchema !== LOGICAL_SCHEMA) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA });
       const store = new IdbMailStore(idb, db, o);
@@ -278,6 +280,8 @@ export class IdbMailStore implements MailStore {
           throw error;
         },
       );
+      // plan 65 (SQL v24): a mailbox from before has its Gmail labels already; their memberships are written once, after the messages load
+      if (typeof upgradedFrom === "number" && upgradedFrom < 24) void store.command(() => refreshFolders(store.c, threadsWithUserLabels(store.c))).catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
       return store;
     } catch (error) {
       idb.close();
@@ -1274,6 +1278,11 @@ export class IdbMailStore implements MailStore {
   };
 
   // ───────────────────────────── categories ─────────────────────────────
+
+  readonly folders: MailStore["folders"] = {
+    list: () => this.early(() => listFolders(this.c)),
+    replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
+  };
 
   readonly categories: MailStore["categories"] = {
     list: () => this.early(() => listCategories(this.c)),

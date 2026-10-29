@@ -1,4 +1,4 @@
-import { OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
+import { IDB_VERSION, OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
 import { installAssetAccounting } from "./asset-accounting";
 import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
 import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
@@ -12,10 +12,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * version 3 is SQL's v9 (drafts v2); version 4 is SQL's v14 (plan 17: correspondents, thread facts); version 5 is SQL's v15 (Reply-To, defaulted on read).
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  * Version 10 fences older adapters from mailboxes with incomplete-save markers.
+ * Version 12 adds an account's own folders and their memberships (SQL v24, plan 65).
  */
-export const IDB_VERSION = OP_STORAGE_VERSION;
+export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 23;
+export const LOGICAL_SCHEMA = 24;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -47,6 +48,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "attachment_links", key: ["id"], indexes: { ...fk("asset_id"), ...fk("draft_id"), ...fk("message_id"), ...fk("op_id") } },
   { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
   { name: "categories", early: true, key: ["id"], autoId: true },
+  // plan 65: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
+  { name: "folders", early: true, key: ["account_id", "key"], indexes: fk("account_id") },
+  { name: "thread_folders", early: true, key: ["thread_id", "folder"], indexes: { ...fk("thread_id"), folder: ["account_id", "folder"], unread: { columns: ["account_id", "folder"], where: (r) => r.unread === 1 } } },
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
   { name: "filters", early: true, key: ["id"], autoId: true },
   { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
@@ -99,6 +103,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("attachment_links", "message_id", "messages"),
   c("attachment_links", "op_id", "ops"),
   c("attachments", "message_id", "messages"),
+  c("folders", "account_id", "accounts"),
+  c("thread_folders", "thread_id", "threads"),
   c("thread_categories", "thread_id", "threads"),
   c("thread_categories", "category_id", "categories"),
   c("filter_applications", "filter_id", "filters"),
@@ -248,6 +254,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
           scan(messages.openCursor(), (cursor) => track(cursor.update({ ...cursor.value, attachment_pending: 1 })));
         }
       }
+      if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders"]) db.createObjectStore(name);
       if (event.oldVersion < 8) {
         open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
         open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);

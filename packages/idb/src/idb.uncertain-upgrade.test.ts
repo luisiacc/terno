@@ -31,8 +31,9 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
   await finished; return values;
 }
 
+/** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 65) */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source, ...["op_control", "op_target", "op_error"].map((name) => ({
+  return [...source, ...["op_control", "op_target", "op_error", "folders", "thread_folders"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   }))].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }
@@ -57,7 +58,7 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 11, logical: 23 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 12, logical: 24 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -73,7 +74,7 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
     raw = await request(factory.open(databaseName(`${name}-source`)));
     expect(raw.version).toBe(IDB_VERSION);
     const original = legacyImage(await image(raw), 9);
-    expect(original.find((s) => s.name === "meta")?.values[original.find((s) => s.name === "meta")!.keys.indexOf("logicalSchema")]).toBe(23);
+    expect(original.find((s) => s.name === "meta")?.values[original.find((s) => s.name === "meta")!.keys.indexOf("logicalSchema")]).toBe(LOGICAL_SCHEMA);
     expect(original.find((s) => s.name === "drafts")?.values).toHaveLength(3);
     expect(original.find((s) => s.name === "search_state")?.values).toHaveLength(1);
     raw.close();
@@ -100,7 +101,7 @@ it("preserves a complete canonical physical10/logical23 fixture through the phys
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 11, logical: 23 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 12, logical: 24 });
     const [account] = await withAccounts(seed, 1);
     await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
     await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);
@@ -134,7 +135,7 @@ it("preserves a complete canonical physical10/logical23 fixture through the phys
     expect({ snapshot: await store.debug.snapshot(), drafts: await store.drafts.list(), head: await store.feed.head(), ops: await store.ops.recent(100) }).toEqual(publicBefore);
     await store.debug.verify(); await store.close();
     raw = await request(factory.open(databaseName(name)));
-    expect(raw.version).toBe(11); expect(await image(raw)).toEqual(withEmptyParts(original));
+    expect(raw.version).toBe(IDB_VERSION); expect(await image(raw)).toEqual(withEmptyParts(original));
     raw.close(); raw = undefined;
     // The barrier must protect a now-stale wide BASE after a real public control transition.
     store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);

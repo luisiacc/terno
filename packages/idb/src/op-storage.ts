@@ -2,6 +2,8 @@ import type { Committed, Key, Row } from "./mem";
 import { UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
 export const OP_STORAGE_VERSION = 11;
+/** the database's physical version (schema.ts says what each one added); a newer one is another adapter's */
+export const IDB_VERSION = 12;
 export const OP_PART_STORES = ["op_control", "op_target", "op_error"] as const;
 export type OpPartStore = typeof OP_PART_STORES[number];
 export type OpPhysicalStore = "ops" | OpPartStore;
@@ -81,7 +83,7 @@ export async function prepareOpWrites(commit: Committed, host?: YieldHost): Prom
 }
 
 export function inspectOpLayout(db: IDBDatabase, tx: IDBTransaction): "legacy" | "parts" {
-  if (db.version > OP_STORAGE_VERSION || !db.objectStoreNames.contains("meta") || !db.objectStoreNames.contains("ops")) throw unreadable();
+  if (db.version > IDB_VERSION || !db.objectStoreNames.contains("meta") || !db.objectStoreNames.contains("ops")) throw unreadable();
   for (const name of ["ops", "meta"]) {
     const store = tx.objectStore(name);
     if (store.keyPath !== null || store.autoIncrement) throw unreadable();

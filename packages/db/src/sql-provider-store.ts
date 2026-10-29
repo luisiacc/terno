@@ -1,3 +1,4 @@
+import { isFolder, refreshFolders, threadsOfMessages } from "./folders";
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting } from "./repos";
 import { sqlFlags } from "./flag-intents";
@@ -74,7 +75,21 @@ class SqlImapLocations implements ImapLocationStore {
     private readonly accountId: number,
   ) {}
 
+  /** plan 65: a location in a listed folder decides membership: rewritten in the same transaction */
+  private located(messageIds: readonly number[], mailbox: string) {
+    if (messageIds.length && isFolder(this.db, this.accountId, mailbox)) refreshFolders(this.db, threadsOfMessages(this.db, messageIds));
+  }
+
   async upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
+    this.db.tx(() => {
+      // a known location (new flags, a new UID) moves no membership
+      const known = this.db.get("SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox) !== undefined;
+      this.write(messageId, mailbox, uidvalidity, uid, flags);
+      if (!known) this.located([messageId], mailbox);
+    });
+  }
+
+  private write(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
     this.db.run(
       `INSERT INTO message_locations (message_id, account_id, mailbox, uidvalidity, uid, flags) VALUES (?,?,?,?,?,?)
        ON CONFLICT (message_id, mailbox) DO UPDATE SET uidvalidity = excluded.uidvalidity, uid = excluded.uid, flags = excluded.flags`,
@@ -88,7 +103,10 @@ class SqlImapLocations implements ImapLocationStore {
   }
 
   async remove(messageId: number, mailbox: string) {
-    this.db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
+    this.db.tx(() => {
+      this.db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
+      this.located([messageId], mailbox);
+    });
   }
 
   async setFlags(messageId: number, mailbox: string, flags: string) {
@@ -148,6 +166,7 @@ class SqlImapLocations implements ImapLocationStore {
         .all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox)
         .map((r) => r.message_id);
       this.db.run("DELETE FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox);
+      this.located(ids, mailbox);
       return ids;
     });
   }

@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { openDatabase } from "./index";
 import { SqlMailStore } from "./sql-store";
+import { SCHEMA_VERSION } from "./migrations";
 
 it("reaffirmation avoids materializing parked history", async () => {
   const db = openDatabase(":memory:"), store = new SqlMailStore(db);
@@ -55,7 +56,7 @@ it("upgrades a real schema 21 mailbox with parked effects", async () => {
     writeLegacyCopy(source.db, path, 21);
     await source.close();
     const db = openDatabase(path); source = new SqlMailStore(db);
-    expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(23);
+    expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(SCHEMA_VERSION);
     expect(db.get<{ count: number }>("SELECT count(*) AS count FROM flag_op_effects")!.count).toBe(1);
     const fresh = await source.sync.beginObservation(account!, { authoritativeFlags: true });
     await source.sync.updateFlags(account!, [{ messageId: message.id, expectedProviderMsgId: "upgrade", flags: { isRead: false } }], fresh!);

@@ -544,13 +544,34 @@ describe("migration v23: durable draft source context", () => {
     db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'synthetic@example.test', '', '{}', 0)");
     db.run("INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (1, 'generation', 1, 2, 'reply', '[]', '[]', 'subject', 'exact text', '<b>exact</b>', 5)");
     const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
-    expect(migrate(db)).toEqual({ from: 22, to: 23 });
+    expect(migrate(db)).toEqual({ from: 22, to: SCHEMA_VERSION });
     expect(db.get("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, show_source_context: 0 });
     expect(() => db.run("UPDATE drafts SET show_source_context = 2 WHERE id = 1")).toThrow();
     db.run("UPDATE drafts SET show_source_context = 1 WHERE id = 1");
     expect(db.get("SELECT generation, body_text, body_html, show_source_context FROM drafts WHERE id = 1")).toEqual({ generation: "generation", body_text: "exact text", body_html: "<b>exact</b>", show_source_context: 1 });
-    expect(migrate(db)).toEqual({ from: 23, to: 23 });
-    db.exec("PRAGMA user_version = 24");
+    expect(migrate(db)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION });
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
     expect(() => migrate(db)).toThrow(/newer than this app/);
+  });
+});
+
+describe("migration v24: an account's own folders (plan 65)", () => {
+  it("adds the folder tables, and a Gmail mailbox from before is in its labels at once (not trash, not spam, user labels only)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-mig24-"));
+    dirs.push(dir);
+    const db = new Db(nodeSqliteDriver, join(dir, "v23.db"));
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 23)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 23");
+    db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'gmail', 'synthetic@example.test', '', '{}', 0)");
+    db.run("INSERT INTO threads (id, account_id, last_date, unread_count) VALUES (1, 1, 50, 1), (2, 1, 40, 0), (3, 1, 30, 0)");
+    const add = (id: number, thread: number, labels: string | null, trash = 0) =>
+      db.run("INSERT INTO messages (id, account_id, thread_id, provider_msg_id, date, gmail_labels, is_trash) VALUES (?, 1, ?, ?, 0, ?, ?)", id, thread, `g${id}`, labels, trash);
+    add(1, 1, JSON.stringify(["INBOX", "Label_1", "CATEGORY_UPDATES"]));
+    add(2, 2, JSON.stringify(["Label_2"]), 1);
+    add(3, 3, "not json");
+    expect(migrate(db)).toEqual({ from: 23, to: SCHEMA_VERSION });
+    expect(db.all("SELECT thread_id, account_id, folder, last_date, unread FROM thread_folders ORDER BY thread_id")).toEqual([{ thread_id: 1, account_id: 1, folder: "Label_1", last_date: 50, unread: 1 }]);
+    expect(db.all("SELECT * FROM folders")).toEqual([]);
   });
 });

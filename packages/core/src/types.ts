@@ -180,6 +180,26 @@ export interface Category {
   autoApply: boolean;
 }
 
+/**
+ * Plan 65: a folder of the account's own: an IMAP mailbox that holds no role, a Gmail user label. Standard
+ * folders (Inbox, Sent…) are views, never folders.
+ */
+export interface Folder {
+  accountId: AccountId;
+  /** IMAP: the mailbox path; Gmail: the label id */
+  key: string;
+  /** the names from the top, the last one shown ("Work", "Clients") */
+  path: string[];
+  /** false: it only groups the folders under it (an IMAP \Noselect parent) */
+  selectable: boolean;
+}
+
+/** Folder names (Gmail's own limit) and how many an account lists (plan 65: a catalog is bounded) */
+export const FOLDER_NAME_MAX = 225;
+export const FOLDERS_PER_ACCOUNT_MAX = 10_000;
+/** A folder's place in counts: "accountId:key" */
+export const folderRef = (accountId: AccountId, key: string) => `${accountId}:${key}`;
+
 export const CATEGORY_COLORS = [
   "rose",
   "amber",
@@ -203,6 +223,8 @@ export interface Counts {
   /** plan 17: inbox threads waiting for your reply (inside the window); null until the store's facts are complete, absent from an older backend */
   inboxWaiting?: number | null;
   inboxWaitingByAccount?: Record<AccountId, number>;
+  /** plan 65: unread threads per folder, by folderRef (listed folders only; absent from an older backend) */
+  folderUnread?: Record<string, number>;
 }
 
 export type ThreadAction =

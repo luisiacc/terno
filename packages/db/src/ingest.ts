@@ -1,3 +1,4 @@
+import { refreshFolders } from "./folders";
 import { replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
@@ -495,6 +496,8 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   }
   // the search outbox: what changed for search is decided when the batch is served
   if (written.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 1, value FROM json_each(?)", JSON.stringify(written));
+  // plan 65: folder memberships, with the aggregates they carry (date, unread)
+  refreshFolders(db, written);
 }
 
 /** Deletes messages (e.g. IMAP expunge with no remaining locations) and fixes their threads. */
