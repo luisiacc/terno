@@ -81,8 +81,27 @@ describe("navigation", () => {
     gate("list category ∩ inbox", 5, () => listThreads(db, { view: "inbox", categoryId: largest.category_id, limit: 100 }));
   });
 
+  it("lists an account's own folders (plan 65): big, sparse, deep, filtered, scopes", () => {
+    // the biggest account's every thread in one folder, beside the dataset's own folders
+    const big = db.get<{ account_id: number; c: number }>("SELECT account_id, count(*) c FROM threads WHERE in_trash = 0 AND in_spam = 0 GROUP BY 1 ORDER BY 2 DESC LIMIT 1")!;
+    db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Label_everything', '[\"Everything\"]', 1, 99)", big.account_id);
+    db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) SELECT id, account_id, 'Label_everything', last_date, unread_count > 0 FROM threads WHERE account_id = ? AND in_trash = 0 AND in_spam = 0", big.account_id);
+    const sparse = db.get<{ account_id: number; folder: string; c: number }>("SELECT account_id, folder, count(*) c FROM thread_folders GROUP BY 1, 2 ORDER BY 3 ASC LIMIT 1")!;
+    meta.biggestFolderThreads = big.c;
+    meta.folders = db.get<{ c: number }>("SELECT count(*) c FROM folders")!.c;
+    const folder = { view: "all" as const, accountId: big.account_id, folder: "Label_everything" };
+    gate(`list a folder (${big.c} threads), first page`, 5, () => listThreads(db, { ...folder, limit: 100 }));
+    const deep = db.get<{ last_date: number; thread_id: number }>("SELECT last_date, thread_id FROM thread_folders WHERE account_id = ? AND folder = 'Label_everything' ORDER BY last_date DESC, thread_id DESC LIMIT 1 OFFSET ?", big.account_id, Math.floor(big.c / 2))!;
+    gate("list a folder, page at its middle", 5, () => listThreads(db, { ...folder, limit: 100, cursor: { lastDate: deep.last_date, id: deep.thread_id } }));
+    gate("list a folder, unread only", 5, () => listThreads(db, { ...folder, filter: "unread", limit: 100 }));
+    gate(`list a sparse folder (${sparse.c} threads)`, 5, () => listThreads(db, { view: "all", accountId: sparse.account_id, folder: sparse.folder, limit: 100 }));
+    gate("list a folder that's empty", 5, () => listThreads(db, { view: "all", accountId: big.account_id, folder: "Label_nothing", limit: 100 }));
+    gate("select all in a folder: a scope page (2,000 ids)", 5, () => scopeThreadIds(db, { ...folder, after: 0, limit: 2000 }));
+    gate("select all in a folder: its count", 5, () => countScopeThreads(db, { ...folder, limit: 100_001 }));
+  });
+
   it("computes sidebar counts", () => {
-    gate("sidebar unread counts (accounts + categories)", 5, () => getCounts(db, NOW));
+    gate("sidebar unread counts (accounts + categories + folders)", 5, () => getCounts(db, NOW));
   });
 
   it("opens threads", () => {

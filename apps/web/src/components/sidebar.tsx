@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { folderRef, type Account, type CategoryColor, type View } from "@terno/core";
+import { folderRef, type Account, type CategoryColor, type Folder, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -103,7 +103,9 @@ function NavItem({
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
-  if (import.meta.env.VITE_RENDER_PROBE) renderProbe(testId?.startsWith("nav-category-") || testId?.startsWith("nav-account-") || testId?.startsWith("nav-folder-") || testId?.startsWith("nav-own-") ? "NavItem:below" : "NavItem:folder");
+  if (import.meta.env.VITE_RENDER_PROBE) renderProbe(
+      testId?.startsWith("nav-folder-") || testId?.startsWith("nav-own-") ? "NavItem:account-folder" : testId?.startsWith("nav-category-") || testId?.startsWith("nav-account-") ? "NavItem:below" : "NavItem:folder",
+    );
   // only the item under the pointer (and the one it left) re-renders during a drag
   const drop = useDropState(dropTarget);
   return (
@@ -436,6 +438,88 @@ function AccountFolders({
   );
 }
 
+const NO_UNREAD: Record<string, number> = {};
+
+/**
+ * An account in the sidebar: its row and, open, its folders (plans 64, 65). Memoized: opening one account, or a
+ * count of another, never renders the rest (they get the same props: where you are is passed only to its own).
+ */
+const AccountEntry = memo(function AccountEntry({
+  account: a,
+  many,
+  open: openHere,
+  here,
+  view,
+  inCategory,
+  ownFolder,
+  folders,
+  unread,
+  folderUnread,
+  countTone,
+}: {
+  account: Account;
+  many: boolean;
+  open: boolean;
+  here: boolean;
+  view: View | null;
+  inCategory: boolean;
+  ownFolder: string | null;
+  folders: readonly Folder[];
+  unread: number | undefined;
+  folderUnread: Record<string, number> | undefined;
+  countTone: "muted" | "unread";
+}) {
+  // with one account its standard folders would be the top ones: it lists only its own (plan 65),
+  // and with none of those its row just scopes to it
+  const rows = useMemo(() => folderRows(folders, a.id), [folders, a.id]);
+  const discloses = many || rows.length > 0;
+  const open = discloses && openHere;
+  // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
+  const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);
+  const child = here && open && many && ownFolder === null && view !== null ? (inCategory ? "inbox" : view) : null;
+  const childActive = ownActive || (child !== null && listedByAccount(child));
+  return (
+    <div data-account-id={a.id}>
+      {/* the row and its sign-in key together (plan 25), apart from the folders below */}
+      <div className="relative">
+        <NavItem
+          testId={`nav-account-${a.id}`}
+          // closed over where you are, the account is what's selected
+          active={here && !childActive}
+          expanded={discloses ? open : undefined}
+          controls={discloses ? `account-folders-${a.id}` : undefined}
+          // one account: its own folders open and close, where you are stays (its Inbox is the top one)
+          onClick={() => (many ? toggleAccount(a.id) : discloses ? setOpenAccount(open ? null : a.id) : navigate({ accountId: a.id, view: "inbox" }))}
+          icon={
+            <span className="relative">
+              <CategoryDot color={a.color as CategoryColor} />
+              {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
+            </span>
+          }
+          label={a.displayName}
+          // open, the count is its Inbox's (with one account, the top Inbox's)
+          count={open && many ? undefined : unread || undefined}
+          reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+        />
+        {a.syncState.authRequired && <SignInMarker account={a} />}
+      </div>
+      {discloses && (
+        <AccountFolders
+          account={a}
+          open={open}
+          standard={many}
+          active={child !== null && listedByAccount(child) ? child : null}
+          activeFolder={ownActive ? ownFolder : null}
+          rows={rows}
+          folderUnread={folderUnread ?? NO_UNREAD}
+          unread={unread}
+          countTone={countTone}
+        />
+      )}
+    </div>
+  );
+});
+
 export function Sidebar() {
   const view = useApp((s) => s.view);
   const accountId = useApp((s) => s.accountId);
@@ -581,59 +665,23 @@ export function Sidebar() {
 
           <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
           <div ref={accountsRef} onFocus={rememberFocus} onBlur={forgetFocus}>
-            {accounts.map((a) => {
-              // with one account its standard folders would be the top ones: it lists only its own (plan 65),
-              // and with none of those its row just scopes to it
-              const many = accounts.length > 1;
-              const rows = folderRows(folders, a.id);
-              const discloses = many || rows.length > 0;
-              const open = discloses && openAccount === a.id;
-              const here = accountId === a.id && reviewCategoryId === null;
-              // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
-              const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);
-              const child = here && open && many && ownFolder === null ? (categoryId !== null ? "inbox" : view) : null;
-              const childActive = ownActive || (child !== null && listedByAccount(child));
-              return (
-                <div key={a.id} data-account-id={a.id}>
-                  {/* the row and its sign-in key together (plan 25), apart from the folders below */}
-                  <div className="relative">
-                    <NavItem
-                      testId={`nav-account-${a.id}`}
-                      // closed over where you are, the account is what's selected
-                      active={here && !childActive}
-                      expanded={discloses ? open : undefined}
-                      controls={discloses ? `account-folders-${a.id}` : undefined}
-                      // one account: its own folders open and close, where you are stays (its Inbox is the top one)
-                      onClick={() => (many ? toggleAccount(a.id) : discloses ? setOpenAccount(open ? null : a.id) : navigate({ accountId: a.id, view: "inbox" }))}
-                      icon={
-                        <span className="relative">
-                          <CategoryDot color={a.color as CategoryColor} />
-                          {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
-                        </span>
-                      }
-                      label={a.displayName}
-                      // open, the count is its Inbox's (with one account, the top Inbox's)
-                      count={open && many ? undefined : counts.inboxUnreadByAccount[a.id] || undefined}
-                      reserveEnd={a.syncState.authRequired ? "icon" : undefined}
-                    />
-                    {a.syncState.authRequired && <SignInMarker account={a} />}
-                  </div>
-                  {discloses && (
-                    <AccountFolders
-                      account={a}
-                      open={open}
-                      standard={many}
-                      active={child !== null && listedByAccount(child) ? child : null}
-                      activeFolder={ownActive ? ownFolder : null}
-                      rows={rows}
-                      folderUnread={counts.folderUnread ?? {}}
-                      unread={counts.inboxUnreadByAccount[a.id]}
-                      countTone={design.surfaces.inboxCount}
-                    />
-                  )}
-                </div>
-              );
-            })}
+            {accounts.map((a) => (
+              <AccountEntry
+                key={a.id}
+                account={a}
+                many={accounts.length > 1}
+                open={openAccount === a.id}
+                // where you are, only for the account it's in: the others' props stay the same, so they don't render
+                here={accountId === a.id && reviewCategoryId === null}
+                view={accountId === a.id ? view : null}
+                inCategory={accountId === a.id && categoryId !== null}
+                ownFolder={accountId === a.id ? ownFolder : null}
+                folders={folders}
+                unread={counts.inboxUnreadByAccount[a.id]}
+                folderUnread={counts.folderUnread}
+                countTone={design.surfaces.inboxCount}
+              />
+            ))}
           </div>
           <button
             type="button"

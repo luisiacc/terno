@@ -146,6 +146,59 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
   await store.categories.delete(cat);
 }, 900_000);
 
+it("an account's own folders (plan 65) page from their members: big, sparse, empty, deep, filtered, select all and counts within a frame", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  // the biggest account's every thread in one folder: the store's own membership writes (a label on each message)
+  const byAccount = new Map<number, number>();
+  for (const t of all) if (!t.inTrash && !t.inSpam) byAccount.set(t.accountId, (byAccount.get(t.accountId) ?? 0) + 1);
+  const [account, size] = [...byAccount].sort((a, b) => b[1] - a[1])[0]!;
+  const messages = (await store.debug.snapshot()).messages.filter((m) => m.accountId === account);
+  for (let i = 0; i < messages.length; i += 2000) {
+    await store.sync.updateFlags(account, messages.slice(i, i + 2000).map((m) => ({ messageId: m.id, flags: {}, gmailLabels: ["Label_everything"] })));
+  }
+  await store.folders.replace(account, [...(await store.folders.list()).filter((f) => f.accountId === account).map(({ key, path, selectable }) => ({ key, path, selectable })), { key: "Label_everything", path: ["Everything"], selectable: true }]);
+  const folder = { view: "all" as const, accountId: account, folder: "Label_everything" };
+  const first = await store.threads.list({ ...folder, limit: 100, now: NOW });
+  expect(first.items.length).toBe(100);
+  const pages: Sample[] = [];
+  let cursor = first.nextCursor;
+  let seen = first.items.length;
+  while (cursor) {
+    const s = await sampleAsync(() => store.threads.list({ ...folder, cursor: cursor!, limit: 100, now: NOW }));
+    pages.push(s);
+    seen += s.result.items.length;
+    cursor = s.result.nextCursor;
+  }
+  const pageMs = settle(pages).ms.sort((a, b) => a - b);
+  console.log(`folder of ${size}: ${pages.length + 1} pages, max ${pageMs.at(-1)!.toFixed(2)} ms`);
+  expect(pageMs.at(-1)!, "a folder page").toBeLessThanOrEqual(FRAME * MULT);
+  for (const [label, read] of [
+    ["first page (warm)", () => store.threads.list({ ...folder, limit: 100, now: NOW })],
+    ["unread only", () => store.threads.list({ ...folder, filter: "unread", limit: 100, now: NOW })],
+    ["sparse folder", async () => store.threads.list({ view: "all", accountId: account, folder: (await store.folders.list()).find((f) => f.accountId === account && f.key !== "Label_everything")?.key ?? "Label_nothing", limit: 100, now: NOW })],
+    ["empty folder", () => store.threads.list({ view: "all", accountId: account, folder: "Label_nothing", limit: 100, now: NOW })],
+    ["count", () => store.threads.scopeCount({ ...folder, limit: 100_001 })],
+    ["counts (sidebar)", () => store.threads.counts(NOW)],
+  ] as const) {
+    const r = await warm(read as () => Promise<unknown>);
+    console.log(`folder ${label}: ${r.ms.toFixed(2)} ms`);
+    expect(r.ms, `folder ${label}`).toBeLessThanOrEqual(FRAME * MULT);
+  }
+  // select all walks the folder's cached members: every page a seek
+  const scope: Sample[] = [];
+  const ids: number[] = [];
+  for (let after = 0; ; ) {
+    const s = await sampleAsync(() => store.threads.scopeIds({ ...folder, after, limit: 500 }));
+    scope.push(s);
+    ids.push(...s.result);
+    if (s.result.length < 500) break;
+    after = s.result.at(-1)!;
+  }
+  const scopeMs = settle(scope).ms;
+  expect(ids.length).toBe(seen);
+  expect(scopeMs.reduce((a, b) => a + b, 0), "select all: every page").toBeLessThanOrEqual(25 * MULT);
+}, 900_000);
+
 it("the unread filter pages from its own order: a cold build, every page, and 5,000 reads at once each within a frame", async () => {
   const all = (await store.debug.snapshot()).threads;
   const unread = all.filter((t) => t.unreadCount > 0);

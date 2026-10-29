@@ -664,6 +664,37 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   expect(folderRenders / TOGGLES).toBeLessThanOrEqual(5);
 });
 
+test("opening and closing an account (plans 64, 65): smooth frames, no long frame; only its own rows render, nothing below", async ({ app: page, server }) => {
+  const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
+  const row = page.getByTestId(`nav-account-${acme}`);
+  // its five standard folders and its three own ones
+  const OWN_ROWS = 8;
+  // the first open goes to its Inbox (a list load, gated elsewhere); from then on opening and closing stay put
+  await row.click();
+  await row.click();
+  await expect(row).toHaveAttribute("aria-expanded", "false");
+  await page.waitForTimeout(600);
+  const TOGGLES = 20;
+  const below0 = await renders(page, "NavItem:below");
+  const folders0 = await renders(page, "NavItem:account-folder");
+  await startFrames(page);
+  for (let i = 0; i < TOGGLES; i++) {
+    await row.click();
+    await expect(row).toHaveAttribute("aria-expanded", i % 2 === 0 ? "true" : "false");
+    // past the slide (it's 100 ms at most) and the closing rows' release
+    await page.waitForTimeout(450);
+  }
+  const f = await stopFrames(page);
+  const below = (await renders(page, "NavItem:below")) - below0;
+  const folders = (await renders(page, "NavItem:account-folder")) - folders0;
+  stats.push({ name: `account toggles: NavItem renders per toggle, account rows ${(below / TOGGLES).toFixed(1)}, its folders ${(folders / TOGGLES).toFixed(1)}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+  frameGate("opening and closing an account", f);
+  expect(f.loaf, "long animation frames").toBe(0);
+  // the account's own row each time (open, count) and the categories never; its folders when they mount, about once each
+  expect(below / TOGGLES).toBeLessThanOrEqual(2);
+  expect(folders).toBeLessThanOrEqual((TOGGLES / 2) * OWN_ROWS * 2);
+});
+
 test("dragging rows to the sidebar: starts within a frame, no row renders, two NavItems per target change", async ({ app: page, server }) => {
   const cats = sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM categories ORDER BY position");
   const row = rows(page).nth(2);

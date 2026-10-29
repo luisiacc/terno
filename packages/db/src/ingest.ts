@@ -1,4 +1,4 @@
-import { refreshFolders } from "./folders";
+import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
@@ -404,6 +404,9 @@ export function setMessageBody(
 }
 
 interface ThreadMessage extends FactRow {
+  /** plan 65: the raw labels, only when one is a user label (a folder) */
+  user_labels: string | null;
+  account_id: number;
   from_name: string;
   snippet: string;
   subject: string;
@@ -427,12 +430,15 @@ function newer(a: ThreadMessage, b: ThreadMessage): boolean {
  */
 export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   const written: number[] = [];
+  // plan 65: what each written thread's folders are made of, folded with the rest
+  const folded: FoldedThread[] = [];
   // read once per call, on the first thread that has messages
   let facts: FactContext | null | undefined;
   for (const threadId of threadIds) {
     // one read of the thread's messages; the aggregates are folded here
     const messages = db.all<ThreadMessage>(
-      `SELECT id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments, ${FACT_COLUMNS}
+      `SELECT id, account_id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments, ${FACT_COLUMNS},
+         CASE WHEN instr(gmail_labels, 'Label_') THEN gmail_labels END AS user_labels
        FROM messages WHERE thread_id = ?`,
       threadId,
     );
@@ -451,7 +457,11 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
     let latest = messages[0]!;
     let counterpart: ThreadMessage | null = null;
     let first = messages[0]!;
+    const labels = new Set<string>();
+    let accountId = 0;
     for (const m of messages) {
+      accountId = m.account_id;
+      if (m.user_labels && !m.is_trash && !m.is_spam) for (const l of userLabels(m.user_labels)) labels.add(l);
       if (!m.is_read && !m.is_trash) unread++;
       if (m.has_attachments) att = 1;
       if (m.is_starred && !m.is_trash) starred = 1;
@@ -493,11 +503,12 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       threadId,
     );
     written.push(threadId);
+    folded.push({ id: threadId, accountId, lastDate: latest.date, unread: unread > 0 ? 1 : 0, labels });
   }
   // the search outbox: what changed for search is decided when the batch is served
   if (written.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 1, value FROM json_each(?)", JSON.stringify(written));
-  // plan 65: folder memberships, with the aggregates they carry (date, unread)
-  refreshFolders(db, written);
+  // plan 65: folder memberships, with the aggregates they carry (date, unread); only what changed is written
+  writeFolders(db, folded);
 }
 
 /** Deletes messages (e.g. IMAP expunge with no remaining locations) and fixes their threads. */

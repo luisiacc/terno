@@ -203,6 +203,9 @@ export class ThreadOrder {
 export class ScopeIndex {
   private threadIds: number[] | null = null;
   private readonly members = new Map<number, number[]>();
+  /** plan 65: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
+  private readonly folderIds = new Map<string, number[]>();
+  private readonly folderDates = new Map<string, number[]>();
   /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
   private readonly filtered = new Map<ListFilter, number[]>();
   private readonly crossed: Record<ListFilter, Set<number>> = { unread: new Set(), people: new Set(), waiting: new Set(), attachments: new Set(), starred: new Set() };
@@ -212,6 +215,10 @@ export class ScopeIndex {
       if (table === "threads") {
         if (!row || !prev) this.threadIds = null;
         for (const f of LIST_FILTERS) if (FILTER_TEST[f](row) !== FILTER_TEST[f](prev)) this.crossed[f].add((row ?? prev)!.id as number);
+      } else if (table === "thread_folders") {
+        const key = `${(row ?? prev)!.account_id}:${(row ?? prev)!.folder}`;
+        if (!row || !prev) this.folderIds.delete(key);
+        if (!row || !prev || row.last_date !== prev.last_date) this.folderDates.delete(key);
       } else if (table === "thread_categories") {
         const was = prev?.category_id as number | undefined;
         const is = row?.category_id as number | undefined;
@@ -259,6 +266,30 @@ export class ScopeIndex {
   /** every unread thread id, ascending */
   unread(c: Ctx): readonly number[] {
     return this.matching(c, "unread");
+  }
+
+  /** plan 65: a folder's member thread ids, ascending */
+  folder(c: Ctx, accountId: number, key: string): readonly number[] {
+    const at = `${accountId}:${key}`;
+    let ids = this.folderIds.get(at);
+    if (!ids) {
+      ids = T(c, "thread_folders").by("folder", accountId, key).map((m) => m.thread_id as number).sort((x, y) => x - y);
+      this.folderIds.set(at, ids);
+    }
+    return ids;
+  }
+
+  /** plan 65: a folder's member thread ids, newest first (last date, then id: the list's order) */
+  folderByDate(c: Ctx, accountId: number, key: string): readonly number[] {
+    const at = `${accountId}:${key}`;
+    let ids = this.folderDates.get(at);
+    if (!ids) {
+      const rows = T(c, "thread_folders").by("folder", accountId, key);
+      rows.sort((x, y) => y.last_date - x.last_date || y.thread_id - x.thread_id);
+      ids = rows.map((m) => m.thread_id as number);
+      this.folderDates.set(at, ids);
+    }
+    return ids;
   }
 
   /** a category's member thread ids, ascending */

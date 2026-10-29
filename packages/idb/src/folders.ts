@@ -1,7 +1,7 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
 import type { ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
 import { keepInPage } from "@terno/store";
-import { FILTER_TEST, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
+import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 
 /**
  * Plan 65: an account's own folders and which threads are in them (the SQL adapter's folders.ts). Membership is
@@ -94,47 +94,55 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
   return { changed: true, touched: [...touched] };
 }
 
-/** A folder's threads that the view and filter keep, read from its memberships (a sparse folder never walks the mailbox). */
-function members(c: Ctx, p: ScopeParams & { accountId?: number; folder?: string }): R[] {
-  const threads = T(c, "threads");
+/** Does a thread pass the folder's view and the list's filter (Waiting: inside its window)? */
+function keeps(p: ScopeParams): (t: R | undefined) => t is R {
   const test = VIEW_TEST[p.view];
   const filter = listFilterOf(p);
   const cutoff = filter === "waiting" ? waitingCutoff(p.now!) : null;
-  const out: R[] = [];
-  for (const r of T(c, "thread_folders").by("folder", p.accountId, p.folder)) {
-    const t = threads.get(r.thread_id);
-    if (!t || !test(t) || (filter && !FILTER_TEST[filter](t)) || (cutoff !== null && t.waiting_since < cutoff)) continue;
-    out.push(t);
-  }
-  return out;
+  return (t): t is R => !!t && test(t) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff);
 }
 
-/** A page of a folder: its members by date, after the cursor; kept threads only while they're in the folder. */
+/**
+ * A page of a folder: its members newest first (cached until they change), from the cursor by binary search,
+ * walked until the page is full; kept threads only while they're in the folder. A sparse or empty folder never
+ * walks the mailbox, and a deep page never walks the folder's top.
+ */
 export function folderPage(c: Ctx, p: ListParams): Page {
-  const after = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
-  const rows = members(c, p)
-    .filter(after)
-    .sort((x, y) => y.last_date - x.last_date || y.id - x.id)
-    .slice(0, p.limit + 1);
+  const threads = T(c, "threads");
+  const order = c.scopes.folderByDate(c, p.accountId!, p.folder!);
+  const pass = keeps(p);
+  const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
+  let lo = 0;
+  let hi = order.length;
+  while (p.cursor && lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (before(threads.get(order[mid]!)!)) hi = mid;
+    else lo = mid + 1;
+  }
+  const rows: R[] = [];
+  for (let i = lo; i < order.length && rows.length <= p.limit; i++) {
+    const t = threads.get(order[i]!);
+    if (pass(t)) rows.push(t);
+  }
   const hasMore = rows.length > p.limit;
   const items: ThreadSummary[] = (hasMore ? rows.slice(0, p.limit) : rows).map((t) => toSummary(c, t));
   const last = items[items.length - 1];
   const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
   if (!listFilterOf(p) || !p.keepIds?.length) return page;
-  const inFolder = new Set(members(c, { ...p, filter: undefined, unreadOnly: false }).map((t) => t.id as number));
-  const threads = T(c, "threads");
-  const kept = [...new Set(p.keepIds)].filter((id) => inFolder.has(id)).map((id) => threads.get(id)!).filter(after);
+  const inView = keeps({ ...p, filter: undefined, unreadOnly: false });
+  const memberships = T(c, "thread_folders");
+  const kept = [...new Set(p.keepIds)].filter((id) => memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
   return keepInPage(page, kept.map((t) => toSummary(c, t)));
 }
 
-/** A folder's thread ids above `after`, ascending. */
+/** A folder's thread ids above `after`, ascending: its cached members from a seek, walked until the page is full. */
 export function folderScopeIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
-  const after = p.after ?? 0;
-  return members(c, p)
-    .map((t) => t.id as number)
-    .filter((id) => id > after)
-    .sort((x, y) => x - y)
-    .slice(0, p.limit);
+  const threads = T(c, "threads");
+  const ids = c.scopes.folder(c, p.accountId!, p.folder!);
+  const pass = keeps(p);
+  const out: number[] = [];
+  for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) if (pass(threads.get(ids[i]!))) out.push(ids[i]!);
+  return out;
 }
 
 /** Unread threads per listed folder: the size of each one's bucket in the unread index (no walk at all). */
