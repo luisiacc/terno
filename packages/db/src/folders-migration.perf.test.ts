@@ -26,13 +26,16 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-it(`migrates a v23 mailbox of 50,000 conversations, 20 labels a message, in ≤ ${MIGRATION_MS} ms; its backfill slices stay within ${SLICE_MS} ms`, { timeout: 1_800_000 }, async () => {
+it(`migrates a v23 mailbox of 50,000 conversations (one of 50,000 messages), 20 labels a message, in ≤ ${MIGRATION_MS} ms; its backfill slices stay within ${SLICE_MS} ms`, { timeout: 1_800_000 }, async () => {
   const source = openDatabase(join(dir, "source.db"));
   seedDataset(source, generateDataset({ threads: 50_000, accounts: 4, seed: 9, now: NOW, bodyScale: 1 }), { now: NOW, chunkSize: 2000 });
   const labels = JSON.stringify(["INBOX", ...Array.from({ length: 20 }, (_, i) => `Label_${i}`)]);
   source.run("UPDATE messages SET gmail_labels = ? WHERE account_id IN (SELECT id FROM accounts WHERE kind = 'gmail')", labels);
+  // Codex R14: and one conversation of 50,000 of them (a thread count bounds no slice)
+  source.run("UPDATE messages SET thread_id = (SELECT min(thread_id) FROM messages WHERE gmail_labels IS NOT NULL) WHERE id IN (SELECT id FROM messages WHERE gmail_labels IS NOT NULL ORDER BY id LIMIT 50000)");
+  expect(source.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE thread_id = (SELECT min(thread_id) FROM messages WHERE gmail_labels IS NOT NULL)")!.c).toBeGreaterThanOrEqual(50_000);
   const expected = source.get<{ c: number }>("SELECT count(DISTINCT thread_id) * 20 AS c FROM messages WHERE gmail_labels IS NOT NULL AND is_trash = 0 AND is_spam = 0")!.c;
-  expect(expected).toBeGreaterThan(200_000);
+  expect(expected).toBeGreaterThan(100_000);
   const v23 = join(dir, "v23.db");
   writeLegacyCopy(source, v23, 23);
   source.close();

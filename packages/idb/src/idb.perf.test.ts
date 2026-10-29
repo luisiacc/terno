@@ -219,6 +219,19 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
     accountThreads.forEach((t) => tables.table("threads").put(t));
     unreadThreads.forEach((t) => tables.table("threads").put(t));
   });
+  // Codex R14: a catalog of 10,000 folders 20 levels deep, one renamed: the differences written, never the catalog
+  const listedBefore = (await store.folders.list()).filter((f) => f.accountId === account).map(({ key, path, selectable }) => ({ key, path, selectable }));
+  const catalog = [...listedBefore, ...Array.from({ length: 10_000 }, (_, i) => ({ key: `Cat${i}`, path: Array.from({ length: 20 }, (_, j) => `Nivel ${j} de la carpeta ${i}`), selectable: true }))];
+  await store.folders.replace(account, catalog);
+  const renames: Sample[] = [];
+  for (let i = 0; i < 5; i++) {
+    const renamed = catalog.map((f) => (f.key === "Cat5000" ? { ...f, path: [...f.path.slice(0, -1), `Renombrada ${i}`] } : f));
+    renames.push(await sampleAsync(() => store.folders.replace(account, renamed)));
+  }
+  const renameMs = settle(renames).ms.sort((a, b) => a - b);
+  console.log(`rename one folder of 10,000: median ${renameMs[2]!.toFixed(2)} ms`);
+  expect(renameMs[2]!, "rename one folder of 10,000").toBeLessThanOrEqual(FRAME * MULT);
+  await store.folders.replace(account, listedBefore);
   // select all walks the folder's cached members: every page a seek
   const scope: Sample[] = [];
   const ids: number[] = [];

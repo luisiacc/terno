@@ -19,7 +19,7 @@ const fake = vi.hoisted(() => {
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.resolve({ items: [], nextCursor: null }), on: () => () => {} } }));
 
-const { folderName, folderRows, goToAccount, goToFolder, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
+const { folderName, folderRows, folderRowSteps, goToAccount, goToFolder, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
 const { getApp, navigate, setApp, setFolders } = await import("~/state/app");
 const { currentScope, listKey } = await import("~/state/list");
 
@@ -150,9 +150,20 @@ describe("an account's own folders (plan 65)", () => {
     expect(rows).toHaveLength(8);
     expect(rows.at(-1)).toMatchObject({ key: "Deep", depth: 7, name: deep.slice(7).join("/") });
     const many = Array.from({ length: 10_000 }, (_, i) => f(2, `K${i}`, Array.from({ length: 100 }, (_, j) => `S${i}-${j}`)));
-    const started = performance.now();
     expect(folderRows(many, 2)).toHaveLength(80_000);
-    expect(performance.now() - started).toBeLessThan(1500);
+    // Codex R14: built a step at a time, never a frame's work between two pauses (warmed once; the best of three)
+    const longest = () => {
+      const steps = folderRowSteps(many, 2);
+      let worst = 0;
+      for (let r: IteratorResult<void, unknown> | null = null; !r?.done; ) {
+        const t0 = performance.now();
+        r = steps.next();
+        worst = Math.max(worst, performance.now() - t0);
+      }
+      return worst;
+    };
+    longest();
+    expect(Math.min(longest(), longest(), longest())).toBeLessThan(8);
   });
 
   it("Codex R4: two folders whose shortened names match are both rows, both places to go", () => {

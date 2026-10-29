@@ -208,6 +208,21 @@ describe("navigation", () => {
     stats.push({ name: `expunge a 5,000-message conversation: ${expungeMs.toFixed(0)} ms in all, longest stall`, budgetMs: 16, p50: expungeStall, p95: expungeStall, max: expungeStall, n: 1 } as never);
     expect(expungeStall, "expunge: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(0);
+    // Codex R14: a catalog of 10,000 folders 20 levels deep, one renamed: the differences written, never the catalog
+    const catalog = Array.from({ length: 10_000 }, (_, i) => ({ key: `Cat${i}`, path: Array.from({ length: 20 }, (_, j) => `Nivel ${j} de la carpeta ${i}`), selectable: true }));
+    replaceFolders(db, big.account_id, catalog);
+    const renames: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const renamed = catalog.map((f, at) => (at === 5000 ? { ...f, path: [...f.path.slice(0, -1), `Renombrada ${i}`] } : f));
+      const t0 = performance.now();
+      expect(replaceFolders(db, big.account_id, renamed).changed).toBe(true);
+      renames.push(performance.now() - t0);
+    }
+    renames.sort((a, b) => a - b);
+    // within the backend's stall budget (two frames, plan 17): reading and comparing the 5 MB of paths is most of it
+    stats.push({ name: "rename one folder of 10,000 (20 levels deep)", budgetMs: 32, p50: renames[2]!, p95: renames[4]!, max: renames[4]!, n: 5 } as never);
+    expect(renames[2]!, "rename one folder of 10,000").toBeLessThanOrEqual(32 * BUDGET_MULTIPLIER);
+    replaceFolders(db, big.account_id, withConvo);
     await checkpoints.stop();
   });
 

@@ -105,3 +105,29 @@ it("Codex R13: a candidate taken or found by its own key is never one again, eve
   expect(await index.take(e, async () => true)).toBe(3);
   expect(await index.take(e, async () => true)).toBeNull();
 });
+
+it("Codex R14: 200,000 waiting and 200,000 more added later, older and interleaved: linear, never a long stall", async () => {
+  const e = { subject: "Same", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: null };
+  const index = new AdoptIndex();
+  await index.add(Array.from({ length: 200_000 }, (_, i) => 2 * i + 2), async (ids) => ids.map((id) => ({ id, ...e })));
+  expect(await index.take(e, async () => true)).toBe(2);
+  const older = Array.from({ length: 200_000 }, (_, i) => 2 * i + 1);
+  let last = performance.now();
+  let worst = 0;
+  const tick = setInterval(() => {
+    const now = performance.now();
+    worst = Math.max(worst, now - last);
+    last = now;
+  }, 1);
+  const started = performance.now();
+  await index.add(older, async (ids) => ids.map((id) => ({ id, ...e })));
+  const total = performance.now() - started;
+  clearInterval(tick);
+  expect(total).toBeLessThan(1000);
+  expect(worst).toBeLessThan(10);
+  // oldest first across both, every one once
+  for (const id of [1, 3, 4, 5, 6, 7]) expect(await index.take(e, async () => true)).toBe(id);
+  let n = 6;
+  while ((await index.take(e, async () => true)) !== null) n++;
+  expect(n).toBe(399_999);
+});

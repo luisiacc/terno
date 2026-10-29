@@ -572,10 +572,10 @@ describe("migration v24: an account's own folders (plan 65)", () => {
     add(2, 2, JSON.stringify(["Label_2"]), 1);
     add(3, 3, "not json");
     expect(migrate(db)).toEqual({ from: 23, to: SCHEMA_VERSION });
-    // Codex R13: nothing written in the migration; a thread a slice (limit 5) until done, durable between slices
+    // Codex R13, R14: nothing written in the migration; a message a slice (limit 5) until done, durable between slices
     expect(db.all("SELECT * FROM thread_folders")).toEqual([]);
     expect(rebuildFolders(db, 5)).toEqual({ more: true, touched: [1] });
-    expect(db.all("SELECT after_thread_id FROM folder_backfill")).toEqual([{ after_thread_id: 1 }]);
+    expect(db.all("SELECT after_message_id FROM folder_backfill")).toEqual([{ after_message_id: 1 }]);
     for (let r = rebuildFolders(db, 5); r.more; r = rebuildFolders(db, 5));
     expect(db.all("SELECT * FROM folder_backfill")).toEqual([]);
     expect(rebuildFolders(db, 5)).toEqual({ more: false, touched: [] });

@@ -833,7 +833,7 @@ describe("an account's own folders (plan 65)", () => {
     expect(await folderOf(client, account.id, "Clients")).toEqual(["Contrato"]);
     ctl.renameMailbox("Clients", "Proyectos");
     await backend.syncAccount(account.id);
-    expect((await backend.store.folders.list()).map((f) => f.key)).toEqual(["Proyectos", "Work"]);
+    expect((await backend.store.folders.list()).map((f) => f.key).sort()).toEqual(["Proyectos", "Work"]);
     expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
     // the same message, never removed and fetched again; its old path's locations are gone
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id).toBe(id);

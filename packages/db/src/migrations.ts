@@ -72,8 +72,8 @@ CREATE TRIGGER thread_folders_unread_down AFTER UPDATE OF unread ON thread_folde
 END;
 -- a mailbox from before has its Gmail labels as memberships after the upgrade, a slice of threads at a time
 -- (folders.ts rebuildFolders; Codex R13: a million rows in the migration's one transaction stalled the open)
-CREATE TABLE folder_backfill (after_thread_id INTEGER NOT NULL);
-INSERT INTO folder_backfill (after_thread_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM messages WHERE gmail_labels IS NOT NULL);
+CREATE TABLE folder_backfill (after_message_id INTEGER NOT NULL);
+INSERT INTO folder_backfill (after_message_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM messages WHERE gmail_labels IS NOT NULL);
 `;
 
 const SCHEMA_V1 = /* sql */ `

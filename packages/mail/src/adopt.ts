@@ -17,65 +17,53 @@ const keyOf = (e: Omit<Envelope, "id">) => `${e.rfcMessageId ?? ""}\u0000${e.sub
  */
 export class AdoptIndex {
   /**
-   * each envelope's candidates and how many were taken (a head offset: never a shift of the rest, Codex R5); ones
-   * added later and older than some still waiting wait in `late`, merged in once a slice (Codex R13: never a splice each)
+   * each envelope's candidates as sorted runs, each with how many were taken (a head offset: never a shift of the
+   * rest, Codex R5): one run per add, its ids ascending, so candidates added later never move the ones waiting
+   * (Codex R13, R14: neither a splice each nor a merge of the whole bucket); a take is the oldest of the runs' heads
    */
-  private readonly byKey = new Map<string, { ids: number[]; head: number; late: number[] }>();
+  private readonly byKey = new Map<string, Run[]>();
   readonly ids = new Set<number>();
   /** taken or found by their own key this pass: never candidates again, even if a reset lists them later (Codex R13) */
   private readonly claimed = new Set<number>();
-  private readonly unmerged = new Set<{ ids: number[]; head: number; late: number[] }>();
 
   constructor(rows: readonly Envelope[] = []) {
-    for (const r of [...rows].sort((a, b) => a.id - b.id)) this.insert(r);
-    this.merge();
+    const runs = new Map<Run[], Run>();
+    for (const r of [...rows].sort((a, b) => a.id - b.id)) this.insert(r, runs);
   }
 
   /**
    * These messages' envelopes added, a slice at a time with the event loop free between slices (Codex R12: 50,000
-   * candidates read and indexed in one go stalled it): ids ascending, so each bucket stays oldest first.
+   * candidates read and indexed in one go stalled it): ids ascending, so each run stays oldest first.
    */
   async add(ids: Iterable<number>, envelopes: (ids: number[]) => Promise<readonly Envelope[]>, slice = 1000): Promise<void> {
-    const sorted = Float64Array.from(new Set(ids)).sort();
+    // a typed array's sort (no Set: a repeated id is skipped as the slices are cut)
+    const sorted = Float64Array.from(ids).sort();
+    const runs = new Map<Run[], Run>();
     for (let i = 0; i < sorted.length; i += slice) {
       if (i > 0) await new Promise((resolve) => setTimeout(resolve, 0));
-      const rows = [...(await envelopes([...sorted.subarray(i, i + slice)]))].sort((a, b) => a.id - b.id);
-      for (const r of rows) this.insert(r);
-      this.merge();
+      const chunk: number[] = [];
+      for (let j = i; j < Math.min(i + slice, sorted.length); j++) if (j === 0 || sorted[j] !== sorted[j - 1]) chunk.push(sorted[j]!);
+      const rows = [...(await envelopes(chunk))].sort((a, b) => a.id - b.id);
+      for (const r of rows) this.insert(r, runs);
     }
   }
 
-  /** each envelope's candidates oldest first (a reset re-binds them in the order they were stored) */
-  private insert(r: Envelope): void {
+  /** a candidate onto this add's run of its envelope (each envelope's candidates are taken oldest first: a reset re-binds them in the order they were stored) */
+  private insert(r: Envelope, runs: Map<Run[], Run>): void {
     if (this.ids.has(r.id) || this.claimed.has(r.id)) return;
     this.ids.add(r.id);
     const key = keyOf(r);
-    const bucket = this.byKey.get(key);
-    if (!bucket) {
-      this.byKey.set(key, { ids: [r.id], head: 0, late: [] });
-      return;
+    let bucket = this.byKey.get(key);
+    if (!bucket) this.byKey.set(key, (bucket = []));
+    let run = runs.get(bucket);
+    if (!run) {
+      // the bucket's last run, if everything in it is older, goes on; else a new run
+      const last = bucket.at(-1);
+      run = last && last.ids.at(-1)! < r.id ? last : { ids: [], head: 0 };
+      if (run !== last) bucket.push(run);
+      runs.set(bucket, run);
     }
-    // added later (a reset found mid-pass) and older than candidates still waiting: merged into its place
-    if (bucket.head < bucket.ids.length && bucket.ids.at(-1)! > r.id) {
-      bucket.late.push(r.id);
-      this.unmerged.add(bucket);
-    } else bucket.ids.push(r.id);
-  }
-
-  /** each bucket's late candidates into their places: one sort and one merge per bucket, linear in what waits */
-  private merge(): void {
-    for (const bucket of this.unmerged) {
-      const late = bucket.late.sort((a, b) => a - b);
-      const waiting = bucket.ids.slice(bucket.head);
-      const merged: number[] = [];
-      let i = 0;
-      let j = 0;
-      while (i < waiting.length || j < late.length) merged.push(j >= late.length || (i < waiting.length && waiting[i]! < late[j]!) ? waiting[i++]! : late[j++]!);
-      bucket.ids = merged;
-      bucket.head = 0;
-      bucket.late = [];
-    }
-    this.unmerged.clear();
+    run.ids.push(r.id);
   }
 
   get size(): number {
@@ -85,8 +73,12 @@ export class AdoptIndex {
   /** The first candidate with this envelope that `usable` accepts (not already in the folder), taken out of the index. */
   async take(e: Omit<Envelope, "id">, usable: (id: number) => Promise<boolean>): Promise<number | null> {
     const bucket = this.byKey.get(keyOf(e));
-    while (bucket && bucket.head < bucket.ids.length) {
-      const id = bucket.ids[bucket.head++]!;
+    while (bucket?.length) {
+      let at = 0;
+      for (let i = 1; i < bucket.length; i++) if (bucket[i]!.ids[bucket[i]!.head]! < bucket[at]!.ids[bucket[at]!.head]!) at = i;
+      const run = bucket[at]!;
+      const id = run.ids[run.head++]!;
+      if (run.head === run.ids.length) bucket.splice(at, 1);
       if (!this.ids.delete(id)) continue;
       if (await usable(id)) {
         this.claimed.add(id);
@@ -101,4 +93,9 @@ export class AdoptIndex {
     this.ids.delete(id);
     this.claimed.add(id);
   }
+}
+
+interface Run {
+  ids: number[];
+  head: number;
 }

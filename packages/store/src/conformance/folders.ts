@@ -148,6 +148,21 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Big")).toHaveLength(6);
     });
 
+    it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {
+      const store = await fresh();
+      const [g] = await withAccounts(store);
+      const a = { key: "Label_a", path: ["Alfa"], selectable: true };
+      const b = { key: "Label_b", path: ["Beta"], selectable: true };
+      expect((await store.folders.replace(g!, [a, b])).changed).toBe(true);
+      expect((await store.folders.replace(g!, [b, a])).changed).toBe(false);
+      expect((await store.folders.replace(g!, [b, { ...a, path: ["Zeta"] }])).changed).toBe(true);
+      const list = async () => (await store.folders.list()).map((f) => `${f.key}:${f.path.join("/")}`).sort();
+      expect(await list()).toEqual(["Label_a:Zeta", "Label_b:Beta"]);
+      await store.folders.replace(g!, [{ key: "Label_c", path: ["Gamma"], selectable: false }, b]);
+      expect(await list()).toEqual(["Label_b:Beta", "Label_c:Gamma"]);
+      expect((await store.folders.list()).find((f) => f.key === "Label_c")!.selectable).toBe(false);
+    });
+
     it("Codex R12: the Unread filter's order stays exact as threads are read, unread, added, and read by the hundred", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

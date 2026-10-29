@@ -123,14 +123,32 @@ export function listFolders(db: Db): Folder[] {
  */
 export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
   return db.tx(() => {
-    const before = db.all<FolderRow>("SELECT account_id, key, path_json, selectable FROM folders WHERE account_id = ? ORDER BY position", accountId);
-    const same = before.length === folders.length && before.every((r, i) => r.key === folders[i]!.key && r.path_json === JSON.stringify(folders[i]!.path) && (r.selectable === 1) === folders[i]!.selectable);
-    if (same) return { changed: false, touched: [] };
-    const known = new Set(before.map((r) => r.key));
-    db.run("DELETE FROM folders WHERE account_id = ?", accountId);
-    folders.forEach((f, position) =>
-      db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, ?, ?)", accountId, f.key, JSON.stringify(f.path), f.selectable ? 1 : 0, position),
-    );
+    // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
+    // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
+    const before = new Map(db.all<FolderRow & { position: number }>("SELECT account_id, key, path_json, selectable, position FROM folders WHERE account_id = ?", accountId).map((r) => [r.key, r]));
+    const known = new Set(before.keys());
+    const next = new Set<string>();
+    let position = Math.max(-1, ...[...before.values()].map((r) => r.position));
+    let changed = false;
+    for (const f of folders) {
+      if (next.has(f.key)) continue;
+      next.add(f.key);
+      const path = JSON.stringify(f.path);
+      const was = before.get(f.key);
+      if (!was) {
+        db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, ?, ?)", accountId, f.key, path, f.selectable ? 1 : 0, ++position);
+        changed = true;
+      } else if (was.path_json !== path || (was.selectable === 1) !== f.selectable) {
+        db.run("UPDATE folders SET path_json = ?, selectable = ? WHERE account_id = ? AND key = ?", path, f.selectable ? 1 : 0, accountId, f.key);
+        changed = true;
+      }
+    }
+    for (const key of known) {
+      if (next.has(key)) continue;
+      db.run("DELETE FROM folders WHERE account_id = ? AND key = ?", accountId, key);
+      changed = true;
+    }
+    if (!changed) return { changed: false, touched: [] };
     // a job for a folder no longer listed has nothing to do
     db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key NOT IN (SELECT key FROM folders WHERE account_id = ?)", accountId, accountId);
     if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "imap") {
@@ -152,17 +170,28 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
  * are walked in UID order and their threads refolded (`limit` at a time). Each slice is its own transaction, its
  * progress saved with it, so a quit resumes where it was. Location writes meanwhile keep membership as ever.
  */
+/** a slice of the upgrade's backfill: these messages' user labels as their threads' memberships */
+const MESSAGE_LABELS = /* sql */ `
+INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
+SELECT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
+FROM (SELECT thread_id, gmail_labels FROM messages WHERE id > ?1 AND id <= ?2 AND gmail_labels IS NOT NULL AND is_trash = 0 AND is_spam = 0 AND instr(gmail_labels, 'Label_') > 0) m
+JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
+WHERE j.value LIKE 'Label\\_%' ESCAPE '\\'
+RETURNING thread_id`;
+
 /**
- * The upgrade's slice (schema 24): the memberships of a mailbox from before, a few threads at a time (a thread may
- * carry many labels), added beside any a sync wrote meanwhile (those are already right).
+ * The upgrade's slice (schema 24): the memberships of a mailbox from before, a few messages at a time, whatever
+ * their threads (Codex R14: one conversation of 50,000 is many slices, never one), added beside any a sync wrote
+ * meanwhile (those are already right; a label is a membership if any message carries it).
  */
 function backfill(db: Db, limit: number, left: () => boolean): { more: boolean; touched: number[] } {
-  const fill = db.get<{ after_thread_id: number }>("SELECT after_thread_id FROM folder_backfill LIMIT 1");
+  const fill = db.get<{ after_message_id: number }>("SELECT after_message_id FROM folder_backfill LIMIT 1");
   if (!fill) return { more: false, touched: [] };
-  const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE id > ? ORDER BY id LIMIT ?", fill.after_thread_id, Math.max(1, Math.floor(limit / 10))).map((r) => r.id);
-  const touched = ids.length ? [...new Set(db.all<{ thread_id: number }>(`${MEMBERSHIP} RETURNING thread_id`, JSON.stringify(ids)).map((r) => r.thread_id))] : [];
-  if (ids.length < Math.max(1, Math.floor(limit / 10))) db.run("DELETE FROM folder_backfill");
-  else db.run("UPDATE folder_backfill SET after_thread_id = ?", ids.at(-1)!);
+  const n = Math.max(1, Math.floor(limit / 5));
+  const range = db.get<{ last: number | null; c: number }>("SELECT max(id) AS last, count(*) AS c FROM (SELECT id FROM messages WHERE id > ? ORDER BY id LIMIT ?)", fill.after_message_id, n)!;
+  const touched = range.last === null ? [] : [...new Set(db.all<{ thread_id: number }>(MESSAGE_LABELS, fill.after_message_id, range.last).map((r) => r.thread_id))];
+  if (range.c < n) db.run("DELETE FROM folder_backfill");
+  else db.run("UPDATE folder_backfill SET after_message_id = ?", range.last);
   return { more: left(), touched };
 }
 

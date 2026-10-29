@@ -1,4 +1,5 @@
 import type { Account, Folder, View } from "@terno/core";
+import { useLayoutEffect, useState } from "react";
 import { create } from "zustand";
 import { getApp, navigate } from "~/state/app";
 
@@ -92,14 +93,31 @@ export interface FolderRow {
  * drawn once (not a place to go).
  */
 export function folderRows(folders: readonly Folder[], accountId: number): FolderRow[] {
+  const steps = folderRowSteps(folders, accountId);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * folderRows a step at a time (Codex R14: 10,000 folders a hundred levels deep took a renderer 60 ms at once):
+ * each yield a pause where the caller may give the frame back, a few hundred folders or a thousand rows apart.
+ */
+export function* folderRowSteps(folders: readonly Folder[], accountId: number): Generator<void, FolderRow[], void> {
+  // a node's children only once it has some, and sorted only when there are two (Codex R14: a frame for 10,000
+  // folders a hundred levels deep, most nodes a single child or none)
   interface Node {
     name: string;
     own?: Folder;
-    children: Map<string, Node>;
+    children?: Map<string, Node>;
   }
-  const root: Node = { name: "", children: new Map() };
+  const root: Node = { name: "" };
+  const byName = new Intl.Collator().compare;
+  let placed = 0;
   for (const f of folders) {
     if (f.accountId !== accountId || f.path.length === 0) continue;
+    if (++placed % 256 === 0) yield;
     let node = root;
     // at most DEPTH levels drawn: deeper names join the last one (Codex R11: 10,000 paths of 100 levels drew a million rows)
     const path = f.path.length > DEPTH ? [...f.path.slice(0, DEPTH - 1), f.path.slice(DEPTH - 1).join("/")] : f.path;
@@ -108,21 +126,66 @@ export function folderRows(folders: readonly Folder[], accountId: number): Folde
       // never written over the other (Codex R4)
       const leaf = i === path.length - 1;
       let id = name;
-      while (leaf && node.children.get(id)?.own && node.children.get(id)!.own!.key !== f.key) id = `${id}\u0000${f.key}`;
-      let next = node.children.get(id);
-      if (!next) node.children.set(id, (next = { name, children: new Map() }));
+      const children = (node.children ??= new Map());
+      while (leaf && children.get(id)?.own && children.get(id)!.own!.key !== f.key) id = `${id}\u0000${f.key}`;
+      let next = children.get(id);
+      if (!next) children.set(id, (next = { name }));
       node = next;
     });
     node.own = f;
   }
   const rows: FolderRow[] = [];
-  const walk = (node: Node, depth: number, at: string) => {
-    for (const [childId, child] of [...node.children.entries()].sort(([, a], [, b]) => a.name.localeCompare(b.name))) {
-      const id = `${at}\u0000${childId}`;
-      rows.push({ id, key: child.own?.key ?? null, name: child.name, depth, selectable: child.own?.selectable ?? false });
-      walk(child, depth + 1, id);
-    }
+  // depth first, each level in name order: a stack of the levels still being walked
+  const stack: { entries: [string, Node][]; next: number; depth: number; at: string }[] = [];
+  const enter = (node: Node, depth: number, at: string) => {
+    if (!node.children) return;
+    const entries = [...node.children.entries()];
+    if (entries.length > 1) entries.sort(([, a], [, b]) => byName(a.name, b.name));
+    stack.push({ entries, next: 0, depth, at });
   };
-  walk(root, 0, "");
+  enter(root, 0, "");
+  while (stack.length) {
+    const level = stack.at(-1)!;
+    if (level.next === level.entries.length) {
+      stack.pop();
+      continue;
+    }
+    const [childId, child] = level.entries[level.next++]!;
+    const id = `${level.at}\u0000${childId}`;
+    rows.push({ id, key: child.own?.key ?? null, name: child.name, depth: level.depth, selectable: child.own?.selectable ?? false });
+    enter(child, level.depth + 1, id);
+    if (rows.length % 1024 === 0) yield;
+  }
   return rows;
+}
+
+const NO_ROWS: readonly FolderRow[] = [];
+/** a step of building an account's folder rows: a frame's share, the rest in the tasks after */
+const ROWS_STEP_MS = 4;
+
+/**
+ * An account's folder rows, built only while it's open (Codex R11, R14: a closed one costs nothing, even as its
+ * folders change; one closing keeps what it drew). The first step runs before the paint, so a catalog of any usual
+ * size is there at once; a huge one goes on a few milliseconds a task, the rows it had shown until then.
+ */
+export function useFolderRows(folders: readonly Folder[], accountId: number, open: boolean): readonly FolderRow[] {
+  const [built, setBuilt] = useState<{ folders: readonly Folder[]; rows: readonly FolderRow[] } | null>(null);
+  useLayoutEffect(() => {
+    if (!open || built?.folders === folders) return;
+    const steps = folderRowSteps(folders, accountId);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const step = () => {
+      const until = performance.now() + ROWS_STEP_MS;
+      for (let r = steps.next(); ; r = steps.next()) {
+        if (r.done) return setBuilt({ folders, rows: r.value });
+        if (performance.now() >= until) {
+          timer = setTimeout(step, 0);
+          return;
+        }
+      }
+    };
+    step();
+    return () => clearTimeout(timer);
+  }, [open, folders, accountId, built]);
+  return built?.rows ?? NO_ROWS;
 }

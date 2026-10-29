@@ -14,7 +14,7 @@ import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
-import { ACCOUNT_VIEWS, folderRows, listedByAccount, setOpenAccount, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
+import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, setOpenAccount, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
@@ -553,11 +553,8 @@ const AccountEntry = memo(function AccountEntry({
 }) {
   // with one account its standard folders would be the top ones: it lists only its own (plan 65),
   // and with none of those its row just scopes to it
-  // built only for an open account (or one still closing): a closed one costs nothing (Codex R11)
-  const [built, setBuilt] = useState(openHere);
-  if (openHere && !built) setBuilt(true);
   const hasOwn = useMemo(() => folders.some((f) => f.accountId === a.id), [folders, a.id]);
-  const rows = useMemo(() => (built ? folderRows(folders, a.id) : []), [built, folders, a.id]);
+  const rows = useFolderRows(folders, a.id, openHere);
   const discloses = many || hasOwn;
   const open = discloses && openHere;
   // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)

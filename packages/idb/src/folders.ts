@@ -74,15 +74,32 @@ export function listFolders(c: Ctx): Folder[] {
  */
 export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
   const folders = T(c, "folders");
-  const before = folders.by("fk_account_id", accountId).sort((x, y) => x.position - y.position);
-  const same = before.length === next.length && before.every((r, i) => r.key === next[i]!.key && r.path_json === JSON.stringify(next[i]!.path) && (r.selectable === 1) === next[i]!.selectable);
-  if (same) return { changed: false, touched: [] };
-  const known = new Set(before.map((r) => r.key as string));
-  for (const r of before) folders.deleteRow(r);
-  next.forEach((f, position) => folders.put({ account_id: accountId, key: f.key, path_json: JSON.stringify(f.path), selectable: f.selectable ? 1 : 0, position }));
+  // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
+  // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
+  const before = new Map(folders.by("fk_account_id", accountId).map((r) => [r.key as string, r]));
+  const known = new Set(before.keys());
+  const listed = new Set<string>();
+  let position = Math.max(-1, ...[...before.values()].map((r) => r.position as number));
+  let changed = false;
+  for (const f of next) {
+    if (listed.has(f.key)) continue;
+    listed.add(f.key);
+    const path = JSON.stringify(f.path);
+    const was = before.get(f.key);
+    if (!was) folders.put({ account_id: accountId, key: f.key, path_json: path, selectable: f.selectable ? 1 : 0, position: ++position });
+    else if (was.path_json !== path || (was.selectable === 1) !== f.selectable) folders.put({ ...was, path_json: path, selectable: f.selectable ? 1 : 0 });
+    else continue;
+    changed = true;
+  }
+  for (const [key, r] of before) {
+    if (listed.has(key)) continue;
+    folders.deleteRow(r);
+    changed = true;
+  }
+  if (!changed) return { changed: false, touched: [] };
   // a job for a folder no longer listed has nothing to do; a newly listed IMAP folder with something to rebuild gets one (Codex R5)
   const jobs = T(c, "folder_rebuilds");
-  const now = new Set(next.map((f) => f.key));
+  const now = listed;
   // a job cancelled or replaced lets its cached order go: the next one sorts what's there then (Codex R7)
   const forget = (key: string) => rebuildOrders.get(c)?.delete(`${accountId}\u0000${key}`);
   for (const j of jobs.by("fk_account_id", accountId)) {
