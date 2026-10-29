@@ -283,10 +283,15 @@ export class IdbMailStore implements MailStore {
         },
       );
       if (foldersPending) {
-        void store
-          .command(() => refreshFolders(store.c, threadsWithUserLabels(store.c)))
-          .then(() => (store.open ? writeMeta(idb, { foldersPending: false }) : undefined))
-          .catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
+        // a slice of threads per command with a yield between (Codex R3: one command over a big mailbox held the worker)
+        void (async () => {
+          const threads = await store.command(() => threadsWithUserLabels(store.c));
+          for (let i = 0; i < threads.length && store.open; i += BACKFILL_SLICE) {
+            await store.command(() => refreshFolders(store.c, threads.slice(i, i + BACKFILL_SLICE)));
+            await o.platform.yield();
+          }
+          if (store.open) await writeMeta(idb, { foldersPending: false });
+        })().catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
       }
       return store;
     } catch (error) {
@@ -1714,6 +1719,9 @@ export class IdbMailStore implements MailStore {
     },
   };
 }
+
+/** plan 65: threads an upgrade's folder backfill rewrites per command */
+const BACKFILL_SLICE = 1000;
 
 const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
 

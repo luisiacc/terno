@@ -921,6 +921,60 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Proyectos'")).toBe(2);
   });
 
+  it("Codex R3: a UIDVALIDITY reset that fails part-way never deletes the folder's mail; the next pass finds it again", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato", date: old }), internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.resetUidValidity("Work");
+    const original = ImapFlow.prototype.search;
+    const failing = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && (this.mailbox as { path: string }).path === "Work") return Promise.reject(Object.assign(new Error("Search refused"), { responseStatus: "NO" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      failing.mockRestore();
+    }
+    expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
+    expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
+  });
+
+  it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("__proto__");
+    ctl.addMessage("__proto__", { raw: raw({ subject: "Rara" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(await folderOf(client, account.id, "__proto__")).toEqual(["Rara"]);
+    const config = JSON.parse(sqlDb(backend.store).get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", account.id)!.provider_config) as { cursor: { mailboxes: Record<string, unknown> } };
+    expect(Object.hasOwn(config.cursor.mailboxes, "__proto__")).toBe(true);
+    const opened: string[] = [];
+    const original = ImapFlow.prototype.getMailboxLock;
+    const spy = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      opened.push(String(args[0]));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+      expect(opened).not.toContain("__proto__");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("a folder seen for the first time is read whole: mail already stored, older than the window, gains its location", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

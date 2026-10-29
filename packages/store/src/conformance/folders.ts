@@ -133,7 +133,8 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       const page2 = await store.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 4, cursor: page1.nextCursor!, now: NOW });
       expect([...page1.items, ...page2.items].map((t) => t.id)).toEqual(all);
       expect(page2.nextCursor).toBeNull();
-      expect(page1.items.map((t) => t.lastDate)).toEqual([...page1.items.map((t) => t.lastDate)].sort((a, b) => b - a));
+      const dates = page1.items.map((t) => t.lastDate);
+      expect(dates).toEqual(dates.toSorted((a, b) => b - a));
       const unreadOnly = await ids(store, g!, "Label_1", { filter: "unread" });
       expect(unreadOnly.length).toBeGreaterThan(0);
       expect(unreadOnly.every((id) => all.includes(id))).toBe(true);

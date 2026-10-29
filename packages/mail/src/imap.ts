@@ -280,7 +280,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   const upsertLocation = (messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) => locations.upsert(messageId, mailbox, uidvalidity, uid, flags);
 
-  async function reconcile(messageIds: Set<number>, sink: SyncSink) {
+  /** `keepOrphans` (plan 65, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
+  async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false) {
     if (messageIds.size === 0) return;
     const ids = [...messageIds];
     const updates: FlagUpdate[] = [];
@@ -302,7 +303,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
     }
     if (updates.length) await sink.updateFlags(updates);
-    if (orphans.length) await sink.removeMessages(orphans);
+    if (orphans.length && !keepOrphans) await sink.removeMessages(orphans);
   }
 
   /**
@@ -632,7 +633,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 65)
         const list = await c.list();
         const r = await discoverRoles(c, list);
-        const cursor = (await ctx.loadCursor<Cursor>()) ?? { mailboxes: {} };
+        // plan 65 (Codex R3): mailboxes by path in a map with no prototype, so a folder named "__proto__" is a path like any other
+        const loaded = await ctx.loadCursor<Cursor>();
+        const cursor: Cursor = { ...loaded, mailboxes: Object.assign(Object.create(null) as Cursor["mailboxes"], loaded?.mailboxes) };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
         const folders = customFolders(list, r);
@@ -671,7 +674,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }
-        await reconcile(touched, sink);
+        await reconcile(touched, sink, incomplete);
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);

@@ -9,11 +9,16 @@ import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, expect, it, vi } from "vitest";
 
 // the backfill can be made to fail once (what a close mid-way or a storage failure leaves behind)
-const fail = vi.hoisted(() => ({ next: false }));
+const fail = vi.hoisted(() => ({ next: false, batches: [] as number[] }));
 vi.mock("./folders", async (original) => {
   const real = await original<typeof import("./folders")>();
   return {
     ...real,
+    refreshFolders: (c: Parameters<typeof real.refreshFolders>[0], ids: Parameters<typeof real.refreshFolders>[1]) => {
+      const list = [...ids];
+      fail.batches.push(list.length);
+      return real.refreshFolders(c, list);
+    },
     threadsWithUserLabels: (...args: Parameters<typeof real.threadsWithUserLabels>) => {
       if (fail.next) {
         fail.next = false;
@@ -86,3 +91,27 @@ it("a backfill that doesn't save leaves the mark; the next open finishes it and 
   await third.whenLoaded();
   expect(await inFolder(third, account)).toBe(1);
 });
+
+it("Codex R3: a big mailbox's backfill goes a slice of threads per command, never all at once", async () => {
+  const factory = new IDBFactory();
+  const name = crypto.randomUUID();
+  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  const [g] = await withAccounts(store, 1);
+  await store.folders.replace(g!, [{ key: "Label_1", path: ["Clientes"], selectable: true }]);
+  for (let i = 0; i < 2500; i += 500) await ingest(store, Array.from({ length: 500 }, (_, j) => msg({ accountId: g!, providerMsgId: `m${i + j}`, gmailLabels: ["Label_1"] })));
+  await store.close();
+  const raw = await request(factory.open(databaseName(name)));
+  const tx = raw.transaction(["thread_folders", "meta"], "readwrite");
+  tx.objectStore("thread_folders").clear();
+  tx.objectStore("meta").put(23, "logicalSchema");
+  await done(tx);
+  raw.close();
+  fail.batches.length = 0;
+  const reopened = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  opened.push(reopened);
+  await reopened.whenLoaded();
+  await expect.poll(() => meta(factory, name, "foldersPending")).toBe(false);
+  expect(fail.batches.length).toBeGreaterThanOrEqual(3);
+  expect(Math.max(...fail.batches)).toBeLessThanOrEqual(1000);
+  expect((await reopened.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 500 })).items).toHaveLength(500);
+}, 120_000);
