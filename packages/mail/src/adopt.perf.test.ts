@@ -104,3 +104,38 @@ it("Codex R14: 200,000 waiting and 200,000 more added later, older and interleav
   while ((await index.take(e, async () => true)) !== null) n++;
   expect(n).toBe(399_999);
 });
+
+it("Codex R43: 500,000 recovery candidates in no order are sorted and their first envelopes read without holding the loop a frame", async () => {
+  const { sortIds } = await import("./adopt");
+  // a shuffled permutation (a folder's UID order is no message-id order)
+  const ids = Array.from({ length: 500_000 }, (_, i) => i + 1);
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = (i * 7919 + 13) % (i + 1);
+    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+  }
+  const given = new Set(ids);
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const sorted = await sortIds(given);
+    const index = new AdoptIndex();
+    // up to the first envelopes read
+    let reads = 0;
+    await index.add(sorted, async (chunk) => {
+      reads++;
+      return reads > 2 ? [] : chunk.map((id) => ({ id, subject: "S", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: null }));
+    });
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(sorted).toHaveLength(500_000);
+    expect(sorted.every((id, i) => i === 0 || id > sorted[i - 1]!)).toBe(true);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
+});

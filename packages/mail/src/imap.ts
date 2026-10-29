@@ -1207,12 +1207,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const listed = new Set(list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent")).map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
-        for (const path of vanished) for (const l of await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
+        for (const path of vanished) await addAll(vanishedIds, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
         // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
-        for (const id of cursor.unlocated ?? []) touched.add(id);
+        await addAll(touched, cursor.unlocated ?? []);
         // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
         // pass kept, resets still pending; shared by every mailbox, so each message is claimed once (Codex R10, R11)
-        const pending = new Set([...vanishedIds, ...(cursor.unlocated ?? []), ...(cursor.orphans ?? []), ...Object.values(cursor.resetPending ?? {}).flat()]);
+        // gathered a few thousand at a time (Codex R43: 500,000 spread and flattened at once)
+        const pending = new Set<number>();
+        await addAll(pending, vanishedIds);
+        await addAll(pending, cursor.unlocated ?? []);
+        await addAll(pending, cursor.orphans ?? []);
+        for (const ids of Object.values(cursor.resetPending ?? {})) await addAll(pending, ids);
         // a journal that was cut: every message with no location, a window at a time, before any mail is identified,
         // so one moved past the limit is recognised like the rest, never a new message beside a deleted one (Codex R15, R16)
         const lost: number[] = [];
@@ -1267,8 +1272,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // only a pass that read every folder and failed nowhere may delete an orphan: one that skipped a quiet
         // folder (STATUS) may have missed where a message moved, so its orphans wait and the next pass reads all (Codex R9)
         const full = !incomplete && skipped === 0;
-        for (const id of cursor.unlocated ?? []) touched.add(id);
-        if (full) for (const id of cursor.orphans ?? []) touched.add(id);
+        await addAll(touched, cursor.unlocated ?? []);
+        if (full) await addAll(touched, cursor.orphans ?? []);
         // what the cut journal's scan found (those found again have a place now: their flags, nothing more)
         const overflowed = full && cursor.overflow === true;
         if (overflowed) for (const id of lost) touched.add(id);

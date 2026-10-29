@@ -36,8 +36,8 @@ export class AdoptIndex {
    * candidates read and indexed in one go stalled it): ids ascending, so each run stays oldest first.
    */
   async add(ids: Iterable<number>, envelopes: (ids: number[]) => Promise<readonly Envelope[]>, slice = 1000): Promise<void> {
-    // a typed array's sort (no Set: a repeated id is skipped as the slices are cut)
-    const sorted = Float64Array.from(ids).sort();
+    // sorted in steps (no Set: a repeated id is skipped as the slices are cut; Codex R43: 500,000 sorted at once, 40 ms)
+    const sorted = await sortIds(ids);
     const runs = new Map<Run[], Run>();
     for (let i = 0; i < sorted.length; i += slice) {
       if (i > 0) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -99,3 +99,52 @@ interface Run {
   ids: number[];
   head: number;
 }
+
+/** the loop given a turn once a few milliseconds of work have gone by */
+function breather(budgetMs = 4): () => Promise<void> {
+  let since = performance.now();
+  return async () => {
+    if (performance.now() - since < budgetMs) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    since = performance.now();
+  };
+}
+
+/**
+ * Plan 65 (Codex R43): ids ascending, a step at a time: copied out a few thousand at a time, sorted as typed runs of
+ * 16,384, then merged a pass at a time, the loop given a turn every few milliseconds throughout.
+ */
+export async function sortIds(ids: Iterable<number>): Promise<Float64Array> {
+  const breathe = breather();
+  const list: number[] = [];
+  for (const id of ids) {
+    list.push(id);
+    if (list.length % 5000 === 0) await breathe();
+  }
+  let from = Float64Array.from(list);
+  const RUN = 16_384;
+  for (let i = 0; i < from.length; i += RUN) {
+    from.subarray(i, Math.min(i + RUN, from.length)).sort();
+    await breathe();
+  }
+  let to = new Float64Array(from.length);
+  for (let width = RUN; width < from.length; width *= 2) {
+    for (let lo = 0; lo < from.length; lo += 2 * width) {
+      const mid = Math.min(lo + width, from.length);
+      const hi = Math.min(lo + 2 * width, from.length);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      while (i < mid && j < hi) {
+        to[k++] = from[j]! < from[i]! ? from[j++]! : from[i++]!;
+        if ((k & 0x3fff) === 0) await breathe();
+      }
+      while (i < mid) to[k++] = from[i++]!;
+      while (j < hi) to[k++] = from[j++]!;
+      await breathe();
+    }
+    [from, to] = [to, from];
+  }
+  return from;
+}
+

@@ -422,3 +422,8 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 42.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **A reset merged its ids into the journal's sets in one go** (between the paged read and the sliced deletes: 500,000 ids, 55 to 82 ms). `addAll` adds them a few thousand at a time with the loop given turns, for the pending set, the journal and the pass's touched ids; the journal is still saved before any location goes. Gate: a reset's 500,000 ids, with 200,000 pending, gathered with the longest stall under a frame (65 ms without the turns).
+
+**Round 43.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **Getting recovery ready still held the loop:** the candidates spread and flattened into one set, and `AdoptIndex.add` sorting them at once (500,000: 40 to 50 ms each). The candidates (vanished folders, the journal, orphans, pending resets) and the pass's touched ids are gathered with `addAll`; `sortIds` copies the ids out a few thousand at a time, sorts typed runs of 16,384 and merges them a pass at a time, with turns throughout. Gate: 500,000 candidates in no order, sorted and their first envelopes read, longest stall under a frame (30 ms without the turns).
+
+(`gmail-response.perf.test.ts` fails on main too, outside this plan: its two raw-response gates error before measuring.)
