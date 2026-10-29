@@ -160,6 +160,12 @@ describe("an account's own folders (plan 65)", () => {
     expect(r.value).toEqual(folderRows(many, 2));
   });
 
+  it("Codex R16: a big level, sorted in steps, is in the same name order as a plain sort", () => {
+    const names = Array.from({ length: 3000 }, (_, i) => `Carpeta ${(i * 7919) % 1000} ${["á", "a", "B", "b", "ñ", "n"][i % 6]}${i}`);
+    const rows = folderRows(names.map((name, i) => f(2, `K${i}`, [name])), 2);
+    expect(rows.map((r) => r.name)).toEqual([...names].sort(new Intl.Collator().compare));
+  });
+
   it("Codex R4: two folders whose shortened names match are both rows, both places to go", () => {
     const name = "x".repeat(225);
     const rows = folderRows([f(2, `${name}a`, [name]), f(2, `${name}b`, [name])], 2);

@@ -786,6 +786,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
         // pass kept, resets still pending; shared by every mailbox, so each message is claimed once (Codex R10, R11)
         const pending = new Set([...vanishedIds, ...(cursor.unlocated ?? []), ...(cursor.orphans ?? []), ...Object.values(cursor.resetPending ?? {}).flat()]);
+        // a journal that was cut: every message with no location, a window at a time, before any mail is identified,
+        // so one moved past the limit is recognised like the rest, never a new message beside a deleted one (Codex R15, R16)
+        const lost: number[] = [];
+        for (let after = 0, more = cursor.overflow === true; more; after += UNLOCATED_SPAN) {
+          if (sink.signal.aborted) return;
+          const w = await locations.unlocated(after, UNLOCATED_SPAN);
+          lost.push(...w.ids);
+          more = w.more;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        for (const id of lost) pending.add(id);
         const recover = new AdoptIndex();
         await recover.add(pending, (ids) => locations.envelopes(ids));
         for (const path of boxes) {
@@ -813,15 +824,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const full = !incomplete && skipped === 0;
         for (const id of cursor.unlocated ?? []) touched.add(id);
         if (full) for (const id of cursor.orphans ?? []) touched.add(id);
-        // a journal that was cut: every message with no location, a window at a time (Codex R15)
+        // what the cut journal's scan found (those found again have a place now: their flags, nothing more)
         const overflowed = full && cursor.overflow === true;
-        for (let after = 0, more = overflowed; more && !sink.signal.aborted; after += UNLOCATED_SPAN) {
-          const w = await locations.unlocated(after, UNLOCATED_SPAN);
-          for (const id of w.ids) touched.add(id);
-          more = w.more;
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-        if (sink.signal.aborted) return;
+        if (overflowed) for (const id of lost) touched.add(id);
         const kept = await reconcile(touched, sink, !full);
         if (full) {
           delete cursor.orphans;

@@ -76,6 +76,30 @@ export function folderName(s: { folders: readonly Folder[]; accountId: number | 
 /** levels of an account's own folders drawn in the sidebar */
 const DEPTH = 8;
 
+/** A stable merge sort, bottom up, that pauses every thousand comparisons (the caller may give the frame back). */
+function* sortSteps<T>(items: T[], compare: (a: T, b: T) => number): Generator<void, T[], void> {
+  let from = items;
+  let to: T[] = Array.from({ length: items.length });
+  let compared = 0;
+  for (let width = 1; width < items.length; width *= 2) {
+    for (let lo = 0; lo < items.length; lo += 2 * width) {
+      const mid = Math.min(lo + width, items.length);
+      const hi = Math.min(lo + 2 * width, items.length);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      while (i < mid && j < hi) {
+        to[k++] = compare(from[j]!, from[i]!) < 0 ? from[j++]! : from[i++]!;
+        if (++compared % 1000 === 0) yield;
+      }
+      while (i < mid) to[k++] = from[i++]!;
+      while (j < hi) to[k++] = from[j++]!;
+    }
+    [from, to] = [to, from];
+  }
+  return from;
+}
+
 export interface FolderRow {
   /** the row's identity: its full path from the top (and its key): unique, stable as the list changes */
   id: string;
@@ -137,13 +161,16 @@ export function* folderRowSteps(folders: readonly Folder[], accountId: number): 
   const rows: FolderRow[] = [];
   // depth first, each level in name order: a stack of the levels still being walked
   const stack: { entries: [string, Node][]; next: number; depth: number; at: string }[] = [];
-  const enter = (node: Node, depth: number, at: string) => {
+  // a level in name order; a big one sorted a thousand comparisons a step (Codex R16: 10,000 names of 225
+  // characters sharing a long prefix were 30 to 85 ms in one sort)
+  function* enter(node: Node, depth: number, at: string): Generator<void, void, void> {
     if (!node.children) return;
-    const entries = [...node.children.entries()];
-    if (entries.length > 1) entries.sort(([, a], [, b]) => byName(a.name, b.name));
+    let entries = [...node.children.entries()];
+    if (entries.length > 64) entries = yield* sortSteps(entries, ([, a], [, b]) => byName(a.name, b.name));
+    else if (entries.length > 1) entries.sort(([, a], [, b]) => byName(a.name, b.name));
     stack.push({ entries, next: 0, depth, at });
-  };
-  enter(root, 0, "");
+  }
+  yield* enter(root, 0, "");
   while (stack.length) {
     const level = stack.at(-1)!;
     if (level.next === level.entries.length) {
@@ -153,7 +180,7 @@ export function* folderRowSteps(folders: readonly Folder[], accountId: number): 
     const [childId, child] = level.entries[level.next++]!;
     const id = `${level.at}\u0000${childId}`;
     rows.push({ id, key: child.own?.key ?? null, name: child.name, depth: level.depth, selectable: child.own?.selectable ?? false });
-    enter(child, level.depth + 1, id);
+    yield* enter(child, level.depth + 1, id);
     if (rows.length % 1024 === 0) yield;
   }
   return rows;

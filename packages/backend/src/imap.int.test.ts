@@ -1388,6 +1388,51 @@ describe("an account's own folders (plan 65)", () => {
     }
   });
 
+  it("Codex R16: ID-less twins moved past the journals' limit, while their destination was skipped, keep their identities", async () => {
+    const { IMAP_JOURNAL_LIMITS } = await import("@terno/mail");
+    const { ImapFlow } = await import("imapflow");
+    const limits = { ...IMAP_JOURNAL_LIMITS };
+    Object.assign(IMAP_JOURNAL_LIMITS, { unlocated: 2, resetPending: 2, orphans: 2 });
+    try {
+      const { imap, backend, client, addAccount } = await setup();
+      const ctl = imap.server.control;
+      ctl.createMailbox("A");
+      ctl.createMailbox("Z");
+      ctl.addMessage("A", { raw: raw({ subject: "Quieto en A" }) });
+      const twin = raw({ subject: "Gemelo en masa" }).replace(/^Message-ID: .*\r\n/m, "");
+      const twins = Array.from({ length: 5 }, () => ctl.addMessage("Z", { raw: twin }));
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+      expect(before).toHaveLength(6);
+      const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+      await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+      // moved into A right after STATUS(A) says it's quiet: this pass skips A and keeps more orphans than it may
+      const original = ImapFlow.prototype.status;
+      let moved = false;
+      const status = vi.spyOn(ImapFlow.prototype, "status").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+        const r = await original.apply(this, args);
+        if (String(args[0]) === "A" && !moved) {
+          moved = true;
+          ctl.moveMessages("Z", twins.map((m) => m.uid), "A");
+        }
+        return r;
+      });
+      try {
+        await backend.syncAccount(account.id);
+      } finally {
+        status.mockRestore();
+      }
+      expect(moved).toBe(true);
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(6);
+    } finally {
+      Object.assign(IMAP_JOURNAL_LIMITS, limits);
+    }
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
