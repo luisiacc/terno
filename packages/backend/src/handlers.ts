@@ -9,6 +9,7 @@ import { changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, re
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
+import { StorageMaintenance } from "./storage";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
@@ -54,6 +55,7 @@ function toDraft(r: DraftRow): Draft {
 
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
+  const storage = new StorageMaintenance(b);
   let attachmentCalls = 0;
   const attachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
     if (origin !== "renderer" || attachmentCalls >= 2) throw new RpcError("UNAVAILABLE", L("attachments.busy"));
@@ -736,6 +738,9 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged([]);
       return { ok: true as const };
     },
+
+    "storage.report": () => storage.report(),
+    "storage.remove": ({ buckets, olderThanDays, jobId }) => storage.remove({ buckets, olderThanDays, jobId }),
 
     "settings.update": async (patch) => {
       const endpoint = patch.ai?.baseURL ?? (await readSettings(store)).ai.profiles.compatible?.baseURL;

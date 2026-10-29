@@ -74,6 +74,8 @@ export function defineStorageConformance(name: string, h: StoreHarness): void {
       await ingest(store, [
         old("plain"),
         old("starred", { isStarred: true }),
+        // the thread's own star ignores Trash; the message's still counts
+        old("starred-trash", { isStarred: true, isTrash: true }),
         old("drafted"),
         old("forwarded"),
         old("queued"),
@@ -84,7 +86,7 @@ export function defineStorageConformance(name: string, h: StoreHarness): void {
       await store.drafts.save({ accountId: a!, to: [], cc: [], subject: "fwd", bodyText: "", forwardOfMessageId: forwarded }, NOW);
       await store.threads.act({ threadIds: [await threadOf(store, "queued")], action: "markRead", signal: null, now: NOW });
       await store.accounts.setSyncState(b!, { authRequired: true });
-      for (const id of ["starred", "drafted", "forwarded", "queued", "signed-out"]) expect({ id, kept: (await rowOf(id)).kept }).toEqual({ id, kept: true });
+      for (const id of ["starred", "starred-trash", "drafted", "forwarded", "queued", "signed-out"]) expect({ id, kept: (await rowOf(id)).kept }).toEqual({ id, kept: true });
       expect((await rowOf("plain")).kept).toBe(false);
       // only sending refused: the mailbox itself still syncs, so its mail may go
       await store.accounts.setSyncState(b!, { authRequired: true, authScope: "send" });

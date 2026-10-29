@@ -33,10 +33,11 @@ function signedOut(c: Ctx): Set<number> {
   return out;
 }
 
-/** A message that must stay: a draft, local or unsent, an op not settled, a flag not yet confirmed (Codex R4). */
+/** A message that must stay: starred, a draft, local or unsent, an op not settled, a flag not yet confirmed (Codex R4). */
 function held(c: Ctx, m: Record<string, unknown>): boolean {
   const provider = m.provider_msg_id as string | null;
-  if (m.is_draft === 1 || provider == null || provider.startsWith("local:")) return true;
+  // a star counts even in Trash, where the thread's own flag ignores it
+  if (m.is_draft === 1 || m.is_starred === 1 || provider == null || provider.startsWith("local:")) return true;
   const ops = T(c, "ops");
   for (const t of T(c, "op_targets").by("message", m.id)) if (PENDING.has(ops.get(t.op_id)?.state as string)) return true;
   for (const f of T(c, "message_flag_intents").by("fk_message_id", m.id)) if ((f.pending_count as number) > 0 || f.needs_snapshot === 1) return true;

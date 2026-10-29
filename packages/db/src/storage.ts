@@ -23,13 +23,13 @@ interface Row {
 
 /**
  * What every row needs, one indexed aggregate per thread: its messages and their size, and whether one is held
- * (a draft, local or unsent, an op not settled, a flag not yet confirmed: Codex R4).
+ * (a star, even in Trash where the thread's own flag ignores it; a draft, local or unsent, an op not settled, a flag not yet confirmed: Codex R4).
  */
 const SELECT = /* sql */ `
 SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has_sent, t.is_starred,
   count(m.id) AS messages, coalesce(sum(m.size), 0) AS bytes,
   coalesce(max(
-    m.is_draft = 1 OR m.provider_msg_id IS NULL OR m.provider_msg_id LIKE 'local:%'
+    m.is_draft = 1 OR m.is_starred = 1 OR m.provider_msg_id IS NULL OR m.provider_msg_id LIKE 'local:%'
     OR EXISTS (SELECT 1 FROM op_targets ot INDEXED BY op_targets_msg JOIN ops o ON o.id = ot.op_id WHERE ot.message_id = m.id AND o.state IN ('queued', 'running', 'unknown'))
     OR EXISTS (SELECT 1 FROM message_flag_intents fi WHERE fi.message_id = m.id AND (fi.pending_count > 0 OR fi.needs_snapshot = 1))
   ), 0) AS held

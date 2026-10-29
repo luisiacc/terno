@@ -26,6 +26,7 @@ import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readLocal
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
+import { Evictions } from "./storage";
 
 class FlagConnectionError extends ProviderError {
   constructor() { super(L("errors.mail.flagConnection"), false); }
@@ -187,6 +188,12 @@ export class BackendCore {
   private workerRunning = false;
   private workerKicked = false;
   private stopped = false;
+  /** plan 69: what a storage removal took off this device, kept from sync passes that overlapped it */
+  readonly evictions = new Evictions();
+  /** the backend is shutting down: long jobs stop between units */
+  get isStopped(): boolean {
+    return this.stopped;
+  }
   /** quitting or updating (quiesce): no op starts; claimed ones go back to the queue */
   private draining = false;
   /** sends talking to their server or recording its outcome, and who waits for them to finish */
@@ -1212,6 +1219,8 @@ export class BackendCore {
       // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
+      // plan 69: a pass that overlaps a storage removal doesn't put back what it removed
+      const pass = this.evictions.pass();
       let observation: FlagObservation | null = null;
       const before = await this.store.accounts.get(accountId);
       if (!this.current(life)) return;
@@ -1223,7 +1232,9 @@ export class BackendCore {
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent);
+          const admitted = this.evictions.admit(accountId, pass, messages);
+          if (!admitted.length) return;
+          await this.ingestSliced(admitted, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent);
         },
         // the account's own window, else the general one
         windowDays,
@@ -1292,6 +1303,7 @@ export class BackendCore {
         } finally { arrivals.end(); }
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
+        this.evictions.passDone(accountId, pass);
         this.attention.prime(accountId);
         this.connectivity.succeeded(accountId);
         if (!this.connectivity.online && !startedOffline) {
