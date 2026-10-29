@@ -270,6 +270,11 @@ function undoFailed(error: unknown, undo: Undo): void {
   snack.error(t("snack.undoFailed", { error: error instanceof Error ? error.message : String(error) }), { action: { label: t("common.retry"), name: t("snack.retryUndo"), undo } });
 }
 
+/** A snack body's own Undo button: runs it once, a failure says so with a retry. */
+export function undoNow(undo: Undo): void {
+  runUndo(undo).catch((e: unknown) => undoFailed(e, undo));
+}
+
 /** z: the last undo, if it's still there. */
 export function undoLast(): void {
   const undo = useSnack.getState().undo;

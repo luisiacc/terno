@@ -1,5 +1,5 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
-import { parseAddressList, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { parseAddressList, type SimilarAction, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
@@ -125,9 +125,58 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     ids = target.ids;
   }
   const targets = ids;
-  const s = getApp();
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
+  leaveList(action, targets, options);
+  // z right after the key: this action is the last one already, its undo waits for the backend's answer
+  const undoIds = deferred<number[]>();
+  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined)));
+  try {
+    // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
+    const ids: number[] = [];
+    for (let i = 0; i < targets.length; i += 5000) {
+      const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
+      if (r.undoId !== null) ids.push(r.undoId);
+    }
+    undoIds.resolve(ids);
+    invalidateThreads(targets);
+    // the read-after-dwell: nothing to announce or to undo
+    if (options.quiet) return;
+    // undone with z before the answer came: nothing to say
+    if (!undo || undo.state !== "ready") return;
+    if (SNACK_ALWAYS.has(action) || targets.length > 1) {
+      const id = snack(said(action, targets.length), { action: ids.length ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
+      // plan 63: the same snack offers the rest from this sender, subject, domain or list
+      if (ids.length && SIMILAR.has(action) && targets.length <= 200) void offerSimilar(id, action as SimilarAction, targets, undo);
+    }
+  } catch (error) {
+    undoIds.resolve([]);
+    captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
+    snack.error(failed(error));
+    void reloadList({ keepSelection: true });
+  }
+}
+
+const SIMILAR = new Set<ThreadAction>(["archive", "trash", "spam"]);
+
+/** The similar snackbar loads with its offers (its own chunk): the plain snack grows into it, or stays as it is. */
+async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo): Promise<void> {
+  try {
+    const [{ showSimilarSnackbar }, offers] = await Promise.all([import("~/components/similar-snackbar"), client.call("similar.offers", { threadIds: [...targets], action })]);
+    showSimilarSnackbar(snackId, { action, count: targets.length, offers, undo });
+  } catch {
+    // the plain snack already says what happened
+  }
+}
+
+/**
+ * The optimistic side of an action on these threads: the list updates in the
+ * same frame (rows that leave the view go, a filter's open row stays), the
+ * cursor moves to the next thread, List's page closes when done reading, and
+ * what the user acted on stops being selected.
+ */
+export function leaveList(action: ThreadAction, targets: readonly number[], options: { quiet?: boolean } = {}): void {
+  const s = getApp();
   const { items, index } = useList.getState();
   // in a filtered list a row that stops matching leaves (a search too), except the open one: it stays put until the selection moves
   const reading = unmatches(action, activeFilter(s));
@@ -151,29 +200,6 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
-  // z right after the key: this action is the last one already, its undo waits for the backend's answer
-  const undoIds = deferred<number[]>();
-  const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined)));
-  try {
-    // the contract takes ≤ 5,000 ids a call (the backend slices each); each call can be undone exactly
-    const ids: number[] = [];
-    for (let i = 0; i < targets.length; i += 5000) {
-      const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
-      if (r.undoId !== null) ids.push(r.undoId);
-    }
-    undoIds.resolve(ids);
-    invalidateThreads(targets);
-    // the read-after-dwell: nothing to announce or to undo
-    if (options.quiet) return;
-    // undone with z before the answer came: nothing to say
-    if (!undo || undo.state !== "ready") return;
-    if (SNACK_ALWAYS.has(action) || targets.length > 1) snack(said(action, targets.length), { action: ids.length ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
-  } catch (error) {
-    undoIds.resolve([]);
-    captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
-    snack.error(failed(error));
-    void reloadList({ keepSelection: true });
-  }
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve(v: T): void } {

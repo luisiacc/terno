@@ -1,4 +1,4 @@
-import { shortcutsFor, type CategoryColor, type Command, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { shortcutsFor, type CategoryColor, type Command, type SimilarAction, type SimilarOffers, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -36,7 +36,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { t } from "@terno/i18n";
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { act, openCompose, targetRows } from "~/lib/actions";
@@ -50,7 +50,9 @@ import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
-import { applyScope } from "./category-snackbar";
+import { applyScope, formatCount } from "./category-snackbar";
+import { actSimilar, scopeLabel, visibleOffers } from "~/lib/similar";
+import { client } from "~/rpc/connection";
 import { listScroller } from "./thread-list";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -223,6 +225,74 @@ function placeItems(view: View, run: (a: ThreadAction) => void) {
   }
 }
 
+/** "Archive similar ▸" / "Mark similar as spam ▸": its offers are read when it opens. */
+function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
+  /** opened from the keyboard: the first offer takes focus once counted (a hover leaves focus alone) */
+  const byKey = useRef(false);
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger
+        data-testid={`menu-${action}-similar`}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Enter" || e.key === " ") byKey.current = true;
+        }}
+        onPointerMove={() => (byKey.current = false)}
+      >
+        {action === "archive" ? <Archive /> : <OctagonAlert />}
+        <span className="min-w-0 flex-1 truncate">{t(action === "archive" ? "similar.archive" : "similar.spam")}</span>
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-72" data-testid={`menu-${action}-similar-list`}>
+        <SimilarItems action={action} ids={ids} byKey={byKey} />
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: number[]; byKey: { current: boolean } }) {
+  const [offers, setOffers] = useState<SimilarOffers | null>(null);
+  const first = useRef<HTMLDivElement>(null);
+  // the keyboard opened it while it was counting (nothing to focus yet): Enter must reach the first offer
+  useLayoutEffect(() => {
+    if (offers && byKey.current) first.current?.focus();
+  }, [offers]);
+  useEffect(() => {
+    let alive = true;
+    void client.call("similar.offers", { threadIds: ids, action }).then(
+      (o) => alive && setOffers(o),
+      () => alive && setOffers({ senderName: null, offers: [] }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [action, ids]);
+  const shown = offers ? visibleOffers(action, offers.offers) : [];
+  return (
+    <>
+      {action === "spam" && (
+        <div className="px-1.5 py-1 text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
+          {t("similar.spamFuture")}
+        </div>
+      )}
+      {!offers ? (
+        <ContextMenuItem disabled data-testid="menu-similar-counting">
+          {t("similar.counting")}
+        </ContextMenuItem>
+      ) : shown.length === 0 ? (
+        <ContextMenuItem disabled data-testid="menu-similar-nothing">
+          {t("similar.nothing")}
+        </ContextMenuItem>
+      ) : (
+        shown.map((o, i) => (
+          <ContextMenuItem key={o.scope.kind} ref={i === 0 ? first : undefined} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+            <span className="min-w-0 flex-1 truncate">{scopeLabel(o.scope, offers.senderName)}</span>
+            <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{formatCount(o)}</ContextMenuShortcut>
+          </ContextMenuItem>
+        ))
+      )}
+    </>
+  );
+}
+
 function MenuItems() {
   renderProbe("ThreadMenu");
   const { ids, scope } = useMenuTarget();
@@ -287,6 +357,9 @@ function MenuItems() {
       {placeItems(view, run).map((it) => (
         <Item key={it.testId} {...it} />
       ))}
+      {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
+      {!scope && ids.length <= 200 && (view === "inbox" || view === "all" || view === "starred" || view === "sent") && <SimilarSub action="archive" ids={ids} />}
+      {!scope && ids.length <= 200 && view !== "spam" && view !== "trash" && <SimilarSub action="spam" ids={ids} />}
       <ContextMenuSeparator />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-categories">

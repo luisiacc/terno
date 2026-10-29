@@ -25,7 +25,7 @@ export const snackbarControls: { current: Controls | null } = { current: null };
 type Slot = "sender" | "domain" | "list" | "topic";
 type Count = { count: number; capped: boolean } | null;
 
-const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(1000)}+` : formatNumber(c.count));
+export const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(1000)}+` : formatNumber(c.count));
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function titleOf(filed: Filed, name: string): string {
@@ -78,11 +78,11 @@ function undoScope(categoryId: number, batchId: number, name: string): void {
 
 const chip = "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-tint pr-2 pl-1 text-xs whitespace-nowrap transition-colors duration-fast hover:bg-muted";
 
-function Chip({ n, label, count, onClick, testId }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string }) {
+export function Chip({ n, label, count, onClick, testId, title }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; title?: string }) {
   if (count === null) return null;
   return (
     <span data-testid={testId} className="inline-flex shrink-0">
-      <button type="button" onClick={onClick} className={chip}>
+      <button type="button" onClick={onClick} className={chip} title={title}>
         <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">{n}</Kbd>
         <span>{label}</span>
         {count === "loading" ? (
@@ -98,7 +98,7 @@ function Chip({ n, label, count, onClick, testId }: { n: number; label: string; 
 }
 
 /** The chips' row: one line that scrolls sideways (the wheel too), fading at the edge that has more. */
-function Strip({ children }: { children: React.ReactNode }) {
+export function Strip({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ left: false, right: false });
   useEffect(() => {
