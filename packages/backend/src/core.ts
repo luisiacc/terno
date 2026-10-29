@@ -1047,8 +1047,8 @@ export class BackendCore {
         live: () => this.current(life), credentials: () => this.credentialsOf(accountId),
         write: (work) => this.accountWrite(life, work), changed: () => this.cooldownChanged(),
       }) : undefined;
-      if (google) this.google.set(accountId, google);
       if (!this.current(life)) { google?.close(); return null; }
+      if (google) this.google.set(accountId, google);
       const provider = this.options.providers.create({
         google,
         flagObservation: true,

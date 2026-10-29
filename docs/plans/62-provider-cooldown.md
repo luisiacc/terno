@@ -1,5 +1,7 @@
 # Plan 62: durable Google HTTP429 cooldown and admission
 
+Current status (2026-10-29): the saved-account activation slice in the final sections is implemented and qualified. Two code-review rounds are complete; two medium findings remain backlogged. Full W05, recovery actions and physical worker/desktop ownership remain open. Earlier static-packet status records below are historical.
+
 Status: STATIC RED PACKET PREPARATION ONLY. Root accepted the sole P1 finding and selected graceful handoff A plus5s/30s LOGICAL notification budgets, never physical cancellation. Original critique/process/display deviations remain retained; no fully compliant procedure claim or second critique. Only Plan62 and external source artifacts are written. No production/test application, imports or functional checks/commit; root must read the sealed packet before any scaffold application or launch. No stage below is implemented. Initial HEAD `a4af85cb41262c21018ddfc7e66f2917a6cf9efc`, later source-preparation pin3c14cd50; path originally checked absent. Preserve P0/physical11, Plan43, foreign Plan60 and receipt work; no schema or API reservation.
 
 ## Request and evidence scope
@@ -530,3 +532,17 @@ E2E_PORT=54340 pnpm --filter @terno/web exec playwright test -c playwright.coold
 ```
 
 Typechecks were `pnpm --filter @terno/<package> typecheck` for mail, backend, store, db, idb, i18n and web. Strict lint was `pnpm exec oxlint --deny-warnings` with only the26-file series' TypeScript paths; no full lint/test/perf/e2e/web or production build. Logs/review text: `/tmp/terno-w05-d0e87d77/`.
+
+
+### Final R2 verdict and high-severity follow-up
+
+Actual native Standards+Spec R2 reviewed372652ea..9ee8247f: threeP2 findings, no high-severity/data-loss findings reported. NoR3 was launched. In accordance with the user cap, the following remain explicit backlog:
+
+- R2#1: an unverified account's OAuth dependency unconditionally excludes its queued operations even after a non-cooldown token failure such as503. Independent sync or provider closure can recover it; admission should eventually depend on the actual OAuth constraint. This slice does not claim full retry recovery.
+- R2#2: a native429 from the post-sync folders/labels request is swallowed by the existing optional-folder catch and can publish idle while the durable Gmail gate correctly blocks later work. Propagating that status is follow-up UX/classification work.
+
+R2#3 originally reported a medium stale registry-entry leak. A further **public replacement-lifetime counterexample demonstrated P1 worker spin**, rather than only leakage: hold the old factory's binding lookup; drop/reconnect; let the new provider latch a binding failure; release the old factory; enqueue an operation. The stale continuation overwrote the new paused capability with a closed, non-paused one, allowing endless claim/refund. A bounded three-claim witness failed on both SQLite and IndexedDB (`r2-stale-red.log`,2/2 expected functional failures). This concrete correctness failure meets the user’s high-severity-only post-R2 allowance. The minimal fix checks the exact lifetime before publishing the capability to the registry. No other R2 finding was changed.
+
+Final qualification after that fix:513/513 targeted cases across the same17 files, including all205 unchanged prerequisites and the two new replacement-lifetime regressions; backend normal/lifecycle typechecks, changed core/test strict lint and whitespace pass. The four scoped perf cases, seven package typechecks and four dev-only en/es × light/dark UI/axe cases remain passing as recorded above; unchanged checks were not needlessly rerun. All final screenshots were personally inspected after the shorter copy, with no panel overflow. Final high-severity fix has regression qualification but no third independent review, per the explicit cap. No known high-severity blocker remains; the two medium findings and listed physical/fairness/recovery boundaries remain open.
+
+Handoff: branch `t3/gmail-cooldown-activation`, worktree `/Users/Luis/.t3/worktrees/emailclient/t3-d0e87d77`, based on372652ea. Atomic commits are activation, R1 ownership/admission fixes, then this high-severity stale-initialization fix and review record. Root owns serial rebase, targeted rerun, fast-forward landing and separate worklist documentation. This child did not access/edit main, launch nested work, modify the worklist, touch the forbidden untracked baseline, push/fetch/rebase, use real profiles/secrets, run full suites or build the application.

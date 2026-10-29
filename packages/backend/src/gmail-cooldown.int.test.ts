@@ -300,4 +300,38 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     expect(h.requests).toEqual(["/token", "/gmail/profile"]);
   });
 
+
+  it("R2 stale initialization cannot replace a paused new lifetime and spin operation admission", async () => {
+    const h = await setup(kind); h.answer(healthyProfile);
+    const entered = latch(), factory = latch();
+    cleanup.push(async () => factory.resolve());
+    const bindingFor = ProviderCooldown.prototype.bindingFor;
+    vi.spyOn(ProviderCooldown.prototype, "bindingFor").mockImplementationOnce(async function (this: ProviderCooldown, ...args) {
+      const owner = await bindingFor.call(this, ...args);
+      entered.resolve(); await factory.promise; return owner;
+    });
+    const stale = h.backend.provider(h.account.id);
+    await entered.promise;
+    await h.backend.dropAccount(h.account.id);
+    await h.backend.signedIn(h.account.id);
+    const provider = (await h.backend.provider(h.account.id))!;
+    vi.spyOn(h.backend.store.providerCooldown, "bind").mockRejectedValueOnce(new Error("Synthetic binding failure"));
+    await expect(provider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
+    factory.resolve();
+    expect(await stale).toBeNull();
+    const [local, remote] = createMemoryTransportPair();
+    h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => rpc.close());
+    const { opId } = await rpc.call("compose.send", { accountId: h.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Synthetic", bodyText: "Synthetic" });
+    const claim = h.backend.store.ops.claimReady; let claims = 0;
+    vi.spyOn(h.backend.store.ops, "claimReady").mockImplementation(async (...args) => {
+      if (++claims > 2) throw new Error("Synthetic stale-lifetime claim-loop bound");
+      return claim(...args);
+    });
+    expect(await h.backend.runWorker().catch((error: unknown) => error)).toBe(0);
+    expect(claims).toBe(1);
+    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "queued", attempts: 0 });
+    expect(h.requests).toEqual(["/token", "/gmail/profile"]);
+  });
+
 });
