@@ -197,11 +197,11 @@ describe("an account's own folders (plan 68)", () => {
     expect(JSON.parse(listKey())).toEqual(["inbox", null, null, null, null, ""]);
   });
 
-  it("the list's scope is the folder; a search from it searches its account, not the folder (Codex R8)", () => {
+  it("the list's scope is the folder; a search from it looks everywhere, as any search does (Codex R8, plan 64)", () => {
     at({ view: "all", accountId: 2, folder: "Label_3" });
     expect(currentScope()).toEqual({ kind: "view", view: "all", accountId: 2, folder: "Label_3" });
     setApp({ query: "factura" });
-    expect(currentScope()).toEqual({ kind: "search", query: "factura", accountId: 2 });
+    expect(currentScope()).toEqual({ kind: "search", query: "factura" });
     // clearing the search is the folder again
     setApp({ query: "" });
     expect(currentScope()).toMatchObject({ folder: "Label_3" });

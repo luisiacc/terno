@@ -165,7 +165,7 @@ Codex made 12 points; they change the design as follows.
    - Pages take the folder's members by index, sort them by date and page with the cursor. Sparse and empty folders never walk the mailbox.
    - Counts walk only the unread memberships (their own index).
    - Perf tests: an empty folder, a sparse one, a large one (30k), 20 overlapping labels, the last page, and repeated counts, in both stores.
-8. **Search from a folder keeps the account and drops the folder.** It searches that account, like a search from its Inbox. Displayed results and "select all" use the same parameters, and clearing the search restores the folder and your place in it. Tested.
+8. **Search from a folder keeps the account and drops the folder.** It searches that account, like a search from its Inbox. Displayed results and "select all" use the same parameters, and clearing the search restores the folder and your place in it. Tested. *(Since main's plan 64, every search looks everywhere, so a search from a folder drops the account too; clearing it still restores the folder.)*
 9. **Validation at the RPC boundary:**
    - `folder` requires `accountId`, can't be combined with `categoryId` or a review, and implies `view: "all"`. The list and bulk-action schemas both enforce this.
    - `keepIds` in both stores keeps a thread only while it's still in the folder.
