@@ -1469,6 +1469,60 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
   });
 
+  it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("P");
+    ctl.createMailbox("P/C");
+    ctl.addMessage("P", { raw: raw({ subject: "En el padre" }) });
+    ctl.addMessage("P/C", { raw: raw({ subject: "En el hijo" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el padre'")).toBe(1);
+    ctl.deleteMailbox("P");
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el padre'")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'P'")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el hijo'")).toBe(1);
+    const folders = (await client.call("app.bootstrap", {})).folders.filter((f) => f.accountId === account.id);
+    expect(folders.find((f) => f.key === "P")).toMatchObject({ selectable: false });
+  });
+
+  it("Codex R24: late moves told apart take their old places away a mailbox at a time, never one by one", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Muchos movidos" }).replace(/^Message-ID: .*\r\n/m, "");
+    const all = Array.from({ length: 30 }, () => ctl.addMessage("Z", { raw: twin }));
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages("Z", all.map((m) => m.uid), "A");
+      return original.apply(this, args);
+    });
+    const proto = Object.getPrototypeOf(backend.store.providerStore(account.id).locations) as { remove(...a: unknown[]): Promise<void> };
+    const removes = vi.spyOn(proto, "remove");
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    const singles = removes.mock.calls.length;
+    removes.mockRestore();
+    expect(singles).toBe(0);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Muchos movidos' ORDER BY id")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.subject = 'Muchos movidos' AND l.mailbox = 'Z'")).toBe(0);
+  });
+
   it("Codex R23: a folder whose read fails part-way, a message held back in it, isn't acknowledged past what it read", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();

@@ -76,6 +76,13 @@ export function distinctCandidates(list: readonly { candidates: readonly number[
   return [...ids];
 }
 
+/** Plan 65 (Codex R23, R24): a folder's UIDNEXT, kept below its first held-back message (a loop: any number of them) */
+export function heldUidnext(uidnext: number, held: readonly { uid: number }[]): number {
+  let at = uidnext;
+  for (const a of held) if (a.uid < at) at = a.uid;
+  return at;
+}
+
 /** Plan 65 (Codex R15): message ids looked at a window at a time for ones with no location */
 const UNLOCATED_SPAN = 5000;
 
@@ -622,11 +629,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
-      const waiting = held.map((a) => a.uid);
-      const uidnext = waiting.length ? Math.min(Number(mb.uidNext), ...waiting) : Number(mb.uidNext);
+      const uidnext = heldUidnext(Number(mb.uidNext), held);
       cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
-      opts.ambiguous?.push(...held);
+      // one at a time: a folder may hold back more than an argument list takes (Codex R24: 150,000 copies)
+      if (opts.ambiguous) for (const a of held) opts.ambiguous.push(a);
     } finally {
       lock.release();
     }
@@ -671,6 +678,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     // order (each moved here), the rest are copies; one pass over each list
     const gone = new Map<number[], { ids: number[]; next: number }>();
     const copies: IncomingMessage[] = [];
+    // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
+    // at a time re-read a long conversation each time)
+    const leaving = new Map<string, number[]>();
     for (const a of list) {
       let free = gone.get(a.candidates);
       if (!free) gone.set(a.candidates, (free = { ids: a.candidates.filter((id) => places.get(id)!.every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))), next: 0 }));
@@ -679,10 +689,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         free.next++;
         // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
         await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
-        for (const l of places.get(id)!) if (l.mailbox !== a.path) await locations.remove(id, l.mailbox);
+        for (const l of places.get(id)!) {
+          if (l.mailbox === a.path) continue;
+          const ids = leaving.get(l.mailbox) ?? [];
+          ids.push(id);
+          leaving.set(l.mailbox, ids);
+        }
         touched.add(id);
       } else if (!a.old) copies.push(a.incoming);
     }
+    for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
     if (copies.length) await sink.ingest(copies, { live: list.some((a) => a.live) });
     for (const m of copies) {
       const row = await store.messageByProviderId(m.providerMsgId!);
@@ -918,7 +934,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // folders gone since the last pass (deleted, or renamed: the new path is among the custom ones); their
         // messages may be found again under it, or anywhere they were moved before the folder went (Codex R10: every
         // destination, role mailboxes too, gets the index), so their locations stay until every folder has synced (Codex R1)
-        const listed = new Set(list.map((m) => m.path));
+        // a place mail can be: listed, existing and selectable (Codex R24: one that became a \Noselect parent holds
+        // nothing, its old locations go like a deleted folder's; it's still drawn as a group)
+        const listed = new Set(list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent")).map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
         for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
@@ -954,7 +972,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             tolerate(error);
           }
         }
-        await tellApart(c, ambiguous, new Set([...boxes, ...list.map((m) => m.path)]), sink, touched);
+        await tellApart(c, ambiguous, new Set([...boxes, ...listed]), sink, touched);
         if (sink.signal.aborted) return;
         // told apart: their folders acknowledged up to what the server had when read
         for (const a of ambiguous) {

@@ -3,7 +3,7 @@
  */
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { customFolders } from "./imap";
+import { customFolders, heldUidnext } from "./imap";
 
 type Listed = Parameters<typeof customFolders>[0][number];
 const box = (path: string, o: { flags?: string[]; specialUse?: string; delimiter?: string } = {}) =>
@@ -58,5 +58,14 @@ describe("customFolders", () => {
     expect(customFolders([box("y".repeat(1001))], {})).toEqual([]);
     const many = Array.from({ length: FOLDERS_PER_ACCOUNT_MAX + 5 }, (_, i) => box(`F${i}`));
     expect(customFolders(many, {})).toHaveLength(FOLDERS_PER_ACCOUNT_MAX);
+  });
+});
+
+describe("heldUidnext", () => {
+  it("Codex R24: a folder's UIDNEXT below its first held-back message, with more of them than an argument list takes", () => {
+    const held = Array.from({ length: 500_000 }, (_, i) => ({ uid: 600_000 - i }));
+    expect(heldUidnext(700_000, held)).toBe(100_001);
+    expect(heldUidnext(50, held)).toBe(50);
+    expect(heldUidnext(9, [])).toBe(9);
   });
 });
