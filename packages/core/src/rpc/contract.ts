@@ -19,6 +19,7 @@ import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
+import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
@@ -792,6 +793,22 @@ export const contract = {
    */
   "accounts.reconnect": m<Account>()(z.object({ id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
   "accounts.remove": m<{ ok: true }>()(z.object({ id })),
+
+  /** Plan 69: what the mailbox takes on this device, by view, and what each age would remove (read in slices; nothing kept). */
+  "storage.report": m<StorageReport>()(empty, { timeoutMs: 120_000 }),
+  /**
+   * Plan 69: removes this device's copy of old conversations (the mail server keeps its own): those of `buckets`
+   * whose newest message is older than `olderThanDays`, never starred, replied, drafted or unsettled ones. Sliced,
+   * with `bulkProgress` for `jobId` (in messages); one at a time. Not undoable.
+   */
+  "storage.remove": m<{ threads: number; messages: number; compact: "done" | "onRestart" | "none" }>()(
+    z.object({
+      buckets: z.array(z.enum(REMOVABLE_BUCKETS)).min(1).max(REMOVABLE_BUCKETS.length),
+      olderThanDays: z.number().int().refine((d) => (STORAGE_AGES as readonly number[]).includes(d)),
+      jobId: jobId.optional(),
+    }).strict(),
+    { timeoutMs: 600_000 },
+  ),
 
   "settings.update": m<AppSettings>()(settingsPatch),
   "settings.setSecret": m<{ ok: true }>()(z.object({ name: z.enum(["gmailClientSecret"]), value: z.string().max(500) })),

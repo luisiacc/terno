@@ -57,6 +57,8 @@ export interface SqliteDriver {
     externalReaders: boolean;
     checkpointWorker: boolean;
     mmap: boolean;
+    /** plan 69: a VACUUM the store asked for may run when the file is next opened (a host with disk to check) */
+    compactOnOpen: boolean;
   };
   /** runs WAL checkpoints off the writer's thread (desktop) */
   startCheckpointWorker?(path: string, onExit: () => void, intervalMs: number): CheckpointWorker;

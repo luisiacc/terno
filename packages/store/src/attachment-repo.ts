@@ -18,6 +18,8 @@ export interface AssetDb {
   used(accountId: number): number;
   beginOrphanGrace(accountId: number, now: number): void;
   orphans(accountId: number, before: number): string[];
+  /** plan 69: these assets, where nothing pins them, are collectable now (no Undo can bring their owners back) */
+  expireGrace(ids: readonly string[]): void;
   pinned(id: string): boolean;
   chunk(id: string): string | undefined;
   putChunk(id: string, assetId: string, index: number, size: number, data: string): void;

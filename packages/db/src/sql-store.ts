@@ -69,6 +69,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
+import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
@@ -831,6 +832,25 @@ export class SqlMailStore implements MailStore {
     offers: async (threadIds, action) => similarOffers(this.db, threadIds, action),
     resolvePage: async (scope, action, targets, cursor, limit) => resolveSimilarPage(this.db, scope, action, targets, cursor, limit),
     kept: async (threadIds) => keptThreads(this.db, threadIds),
+  };
+
+  readonly storage: MailStore["storage"] = {
+    threads: async (after, limit) => storageThreads(this.db, after, limit),
+    remove: async (r) => removeStorage(this.db, r),
+    collect: async (now) =>
+      this.db.tx(() => {
+        const account = this.db.get<{ account_id: number }>("SELECT account_id FROM attachment_orphans WHERE grace_started_at < ? LIMIT 1", now - 86_400_000);
+        return account ? cleanupAssets(sqlAssets(this.db), account.account_id, now) : false;
+      }),
+    footprint: async () => footprint(this.db),
+    compact: async (pages) => {
+      if (incrementalVacuum(this.db)) return { ...compactPages(this.db, pages), onRestart: false };
+      // an older file can't give pages back without a VACUUM: where the host runs one on open, it's asked for (plan 69)
+      if (!this.db.driver.features.compactOnOpen || this.db.path === ":memory:" || !footprint(this.db).free) return { more: false, onRestart: false };
+      setSetting(this.db, COMPACT_KEY, { state: "pending" });
+      return { more: false, onRestart: true };
+    },
+    compactPending: async () => getSetting<{ state?: string }>(this.db, COMPACT_KEY, {}).state === "pending",
   };
 
   readonly categorize: MailStore["categorize"] = {

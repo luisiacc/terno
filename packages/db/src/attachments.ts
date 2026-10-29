@@ -16,6 +16,13 @@ export function sqlAssets(db: Db): AssetDb {
     used: (id) => (db.get<{ bytes: number }>("SELECT bytes FROM attachment_usage WHERE account_id = ?", id)?.bytes ?? 0) + (db.get<{ bytes: number }>("SELECT coalesce(sum(reserved),0) AS bytes FROM send_copies WHERE accountId=?", id)?.bytes ?? 0),
     beginOrphanGrace: (id, now) => { db.run("UPDATE attachment_orphans SET grace_started_at = ? WHERE asset_id IN (SELECT asset_id FROM attachment_orphans WHERE account_id = ? AND grace_started_at IS NULL ORDER BY asset_id LIMIT 50)", now, id); },
     orphans: (id, before) => db.all<{ id: string }>("SELECT asset_id AS id FROM attachment_orphans WHERE account_id = ? AND grace_started_at < ? ORDER BY grace_started_at, asset_id LIMIT 50", id, before).map((a) => a.id),
+    // an orphan row exists only while nothing pins the asset (the unpin trigger): the pinned ones are left alone
+    expireGrace: (ids) => {
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        db.run(`UPDATE attachment_orphans SET grace_started_at = 0 WHERE asset_id IN (${chunk.map(() => "?").join(",")})`, ...chunk);
+      }
+    },
     pinned: (id) => !!db.get("SELECT 1 FROM attachment_links WHERE asset_id = ? LIMIT 1", id),
     chunk: (id) => db.get<{ data_base64: string }>("SELECT data_base64 FROM attachment_bytes WHERE chunk_id = ?", id)?.data_base64,
     putChunk: (id, assetId, index, size, data) => {

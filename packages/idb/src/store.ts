@@ -3,6 +3,8 @@ import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCop
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
+import { removeStorage, storageThreads } from "./storage";
+import { assetAccounting } from "./asset-accounting";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
@@ -1411,6 +1413,28 @@ export class IdbMailStore implements MailStore {
     offers: (threadIds, action) => this.read(() => similarOffers(this.c, threadIds, action)),
     resolvePage: (scope, action, targets, cursor, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, cursor, limit)),
     kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
+  };
+
+  readonly storage: MailStore["storage"] = {
+    // the message tables (late) must be in
+    threads: (after, limit) => this.read(() => storageThreads(this.c, after, limit)),
+    // strict: what it removed is gone for good once it says so (Codex R7)
+    remove: (r) => this.command(() => removeStorage(this.c, r)),
+    collect: (now) =>
+      this.command(() => {
+        const accounting = assetAccounting(this.db);
+        for (const a of T(this.c, "accounts").all()) {
+          if (accounting.aged(a.id as number, now - 86_400_000).length) return cleanupAssets(idbAssets(this.db), a.id as number, now);
+        }
+        return false;
+      }),
+    // the browser's own measure of everything this origin keeps (it compacts IndexedDB itself)
+    footprint: async () => {
+      const usage = (await globalThis.navigator?.storage?.estimate?.())?.usage;
+      return typeof usage === "number" ? { bytes: usage, free: 0 } : null;
+    },
+    compact: async () => ({ more: false, onRestart: false }),
+    compactPending: async () => false,
   };
 
   readonly categorize: MailStore["categorize"] = {

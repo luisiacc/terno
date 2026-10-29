@@ -25,6 +25,8 @@ import type {
   SimilarOffers,
   SimilarPage,
   SimilarScope,
+  StorageBucket,
+  StorageThreadRow,
   ThreadAction,
   ThreadDetail,
   ThreadSummary,
@@ -240,6 +242,18 @@ export interface ImapLocationStore {
   resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }): Promise<{ id: number } | null>;
 }
 
+/** Plan 69: what one storage.remove unit did. */
+export interface StorageRemoval {
+  touched: number[];
+  /** conversations now gone entirely */
+  threads: number;
+  messages: number;
+  /** messages of eligible threads still there (a thread larger than the unit): the caller runs another */
+  remaining: number;
+  /** the provider ids it removed, per account (a sync pass that fetched one before may not bring it back) */
+  removed: { accountId: number; providerMsgIds: string[] }[];
+}
+
 /** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */
 export type SecretIntent =
   | { kind: "retain"; name: string; expectedBlob: Uint8Array }
@@ -423,6 +437,32 @@ export interface MailStore {
     undoMoveBegin(batchId: number, now: number): Promise<boolean>;
     undoMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; restored: number[]; deltas: ModelDelta[] }>;
     restoreMoveSlice(batchId: number, threadIds: readonly number[]): Promise<ModelDelta[]>;
+  };
+
+  /**
+   * Plan 69: what the mailbox takes on this device, and removing this device's copy of old conversations (the
+   * provider keeps its own: nothing here is sent to it).
+   */
+  storage: {
+    /** the conversations above `after`, ascending, at most `limit`, as the report and removal read them */
+    threads(after: number, limit: number): Promise<StorageThreadRow[]>;
+    /**
+     * One unit: re-reads these threads and keeps only those `removable()` passes now (their account synced and
+     * signed in), then deletes at most `maxMessages` of their messages, oldest first (a thread's age holds until it
+     * is gone). Expires the orphan grace of the attachments it unpinned (only those), for collect().
+     */
+    remove(r: { threadIds: readonly number[]; buckets: readonly StorageBucket[]; cutoff: number; maxMessages: number }): Promise<StorageRemoval>;
+    /** one bounded cleanup unit of an expired orphan attachment (any account); false: none left */
+    collect(now: number): Promise<boolean>;
+    /** what the database takes, measured (null: the store can't tell); `free`: pages it reuses for new mail */
+    footprint(): Promise<{ bytes: number; free: number } | null>;
+    /**
+     * Gives up to `pages` free pages back to the disk; `more` while some remain. A store that can't do it now
+     * says whether it will the next time it opens (`onRestart`, then also in footprint's report).
+     */
+    compact(pages: number): Promise<{ more: boolean; onRestart: boolean }>;
+    /** a compaction waits for the next open */
+    compactPending(): Promise<boolean>;
   };
 
   /** Plan 63: received mail similar to some threads (same sender, sender + subject, domain or list), for archive, trash and spam. */

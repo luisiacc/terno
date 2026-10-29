@@ -15,6 +15,7 @@ import { defineFactsConformance } from "./facts";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 import { defineFolderConformance } from "./folders";
+import { defineStorageConformance } from "./storage";
 
 export interface StoreHarness {
   /** a fresh, empty, migrated store */
@@ -46,6 +47,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
   defineFlagIntentConformance(name, harness);
   defineDurableFlagIntentConformance(name, harness);
   defineFolderConformance(name, harness);
+  defineStorageConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {
     const s = await harness.open();

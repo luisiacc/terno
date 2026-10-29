@@ -164,9 +164,11 @@ export function wasmSqliteDriver(sqlite3: Sqlite3Static, options: WasmDriverOpti
       const pragmas = ["temp_store = MEMORY", "cache_size = -65536", "foreign_keys = ON"];
       // OPFS: a rollback journal kept between commits (a sahpool delete re-associates a handle every time); WAL gains nothing there (04 §2)
       if (pool && !readonly && !memory) pragmas.unshift("journal_mode = TRUNCATE");
+      // plan 69: first, so a new file gives freed pages back (an old one ignores it)
+      if (!readonly && !memory) pragmas.unshift("auto_vacuum = INCREMENTAL");
       return pragmas;
     },
-    features: { externalReaders: false, checkpointWorker: false, mmap: false },
+    features: { externalReaders: false, checkpointWorker: false, mmap: false, compactOnOpen: false },
   };
 }
 

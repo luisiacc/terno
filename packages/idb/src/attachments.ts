@@ -20,6 +20,12 @@ export function idbAssets(db: MemDb): AssetDb {
     used: (id) => assetAccounting(db).used(id) + db.table("send_copies").by("fk_accountId", id).reduce((n, r) => n + Number(r.reserved), 0),
     beginOrphanGrace: (id, now) => assetAccounting(db).beginGrace(id, now),
     orphans: (id, before) => assetAccounting(db).aged(id, before),
+    expireGrace: (ids) => {
+      for (const id of ids) {
+        const row = assets.get(id);
+        if (row && !links.count("fk_asset_id", id)) assets.update(row, { orphan_grace_started_at: 0 });
+      }
+    },
     pinned: (id) => links.count("fk_asset_id", id) > 0,
     chunk: (id) => db.table("attachment_bytes").get(id)?.data_base64 as string | undefined,
     putChunk: (id, assetId, position, size, data) => {
