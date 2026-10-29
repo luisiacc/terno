@@ -139,13 +139,13 @@ At 57k threads and 100.6k messages (`search-everywhere.perf.test.ts` in `db` and
 - **SQLite's FTS path** (while the index catches up): every case is within 25 ms except broad prefixes ("pro": 24–27 ms). Those are the same in either scope; their cost is the hit count at twice today's gate size. The gate here is 35 ms, scaled to the mailbox. `perf.perf.test.ts` keeps 25 ms at 29.5k threads.
 - **Searching everywhere is never meaningfully slower than `in:all`,** and is often faster: one predicate fewer, and the walk over `threads_order` instead of a partial index.
 - **"Select all N" over broad searches:** 1–53 ms.
-- **The web's index cap (open decision).**
-  - At this size the instant index needs about 123 MiB. The web's cap is 96 MiB (`WEB_SEARCH_MEMORY`), so on the web the index turns itself off at about 95k messages, and search falls back to the exact scan:
+- **The web's index cap (decided: raised).**
+  - At this size the instant index needs about 123 MiB. The web's cap was 96 MiB, so on the web the index turned itself off at about 95k messages, and search fell back to the exact scan:
     - operators, sender and dates: 13–124 ms;
     - free text: 3.5–6.7 s.
   - The scan never stalls a frame (largest stall 15 ms), but it isn't instant.
   - With room for the index, every web search everywhere takes ≤ 0.6 ms.
-  - Raising the cap trades memory for instant search on large mailboxes. This is the user's call; the IndexedDB gate measures with room for the index until it's made.
+  - **The user chose to raise the web cap to desktop's: 192 MiB steady, 256 MiB peak** (`WEB_SEARCH_MEMORY`). The index holds only what a mailbox needs, so small mailboxes are unaffected. The IndexedDB gate now runs at the shipping configuration and requires the index to be current at 57k threads and 100k messages.
 
 ## What the Codex code review changed
 
@@ -156,10 +156,16 @@ Round 1 (`7e933d19..a4f677c3`) found five issues. Four are fixed, each with a te
    - Fix: summaries carry `hasSpam` (some message is spam, wherever it lives now). Rows and the reader (`iconsFor`) refuse icons on `inSpam || hasSpam`.
    - Found on the way: **the reader had this leak before plan 64.** Opening trashed spam from Trash asked for its icon. The e2e caught it as a request to the spammer's site.
    - Tests: conformance (trashed spam is `hasSpam`), and e2e (trash a spam result, search again, open it: no request, 20 runs in a row).
-2. **(Open) The IndexedDB instant gate measures with room for the index.** The shipping 96 MiB web cap turns the index off at about 95k messages. That's the user's call (see "The web's index cap" above). The exact-scan gate runs at the shipping configuration.
+2. **The IndexedDB instant gate measured with room for the index** while the shipping 96 MiB cap turned it off. Resolved by the user's decision to raise the web cap to 192/256 MiB. The gate now uses the shipping configuration and asserts the index is current.
 3. **A mixed selection in a search lost place-specific actions.** `placeActions` offers each action for the rows it fits, and acts on those only: Restore the trashed rows, Not spam the spam, Archive what's in the Inbox. Both the menu and the selection bar use it. A "select all N" scope keeps the view's actions; the backend's per-message actions are idempotent. Tests: `places.test.ts`, and an e2e where Restore on an Inbox+Trash selection restores only the trashed row.
 4. **The optimistic patch contradicted the stores.** The patch now follows `db/actions.ts`: trash keeps the spam flag, spam keeps a trashed thread in Trash, and Not spam keeps it in Trash. Tests: `places-patch.test.ts`, covering spam on Trash, trash on Spam, Not spam and Move to Inbox on trashed spam.
 5. **The exact scan had no completion budget.** It now has one per query class:
    - operators, a sender, dates or a subject: ≤ 500 ms (measured 14–238 ms);
    - free text: ≤ 10 s (measured about 3 s);
    - plus the frame-stall gate.
+
+Round 2 (`a4f677c3..9831710a`) found three issues, each fixed with a test that fails without the fix:
+
+1. **The selection bar could act on a previous selection.** It captured ids at render time, and a same-size selection made since rendered nothing new.
+2. **IndexedDB's early reads made trashed spam look icon-safe.** Lists answer before the messages load, so `hasSpam` read as false. Until the late tables are in, a trashed thread counts as `hasSpam` (no icon). Test: `spam-early.test.ts` holds the messages' load, lists Trash, and finds `hasSpam` true before and after.
+3. **`!` and the Spam button acted on different rows.** Fix for this and for 1: `act()` itself narrows a place action, in a search, to the rows it fits, read when it runs. Buttons, the menu and keys all go through it; the bar re-renders on the checked set. Tests: `actions.test.ts` (a key acts on the fitting rows; a same-size selection made since is the one acted on; outside a search, every row).

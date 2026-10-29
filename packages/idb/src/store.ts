@@ -268,8 +268,11 @@ export class IdbMailStore implements MailStore {
       const store = new IdbMailStore(idb, db, o);
       Object.assign(store.openTimings, timings);
       // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
+      store.c.late = { loaded: false };
       store.loaded = loadAll(idb, db, {}, LATE_TABLES, () => o.platform.yield()).then(
-        () => undefined,
+        () => {
+          store.c.late!.loaded = true;
+        },
         (error: unknown) => {
           store.log("error", "could not load the mailbox", error instanceof Error ? error.message : error);
           throw error;

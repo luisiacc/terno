@@ -57,7 +57,9 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   // plan 64: a search's checked rows can span places: each action for the rows it fits ("select all N": the view's)
   const searching = useApp((s) => s.query.trim() !== "");
   const places = searching && !scope ? placeActions(targetRows()) : null;
-  const runOn = (a: ThreadAction, ids: number[]) => () => void act(a, ids);
+  // re-read whenever the selection changes (a same-size selection too); act() takes the rows each action fits when it runs
+  useApp((s) => s.checked);
+  const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
   const bar = variant;
   const title = scope ? t("selection.scope", { count, label: scope.label }) : t("selection.count", { count });
   const placeButtons = places && (

@@ -7,8 +7,12 @@ const MiB = 1024 * 1024;
 /** Plans 03/04: desktop caps the index at 192 MiB steady, 256 MiB while building, compacting or snapshotting. */
 export const DESKTOP_SEARCH_MEMORY = { steadyBytes: 192 * MiB, peakBytes: 256 * MiB };
 
-/** The web shares the tab's memory with the page and the SQLite page cache: 96 MiB steady, 128 MiB peak. */
-export const WEB_SEARCH_MEMORY = { steadyBytes: 96 * MiB, peakBytes: 128 * MiB };
+/**
+ * The web, as desktop (plan 64, the user's call): search must stay instant on large mailboxes (the
+ * index needs ~123 MiB at 100k messages; 96 MiB turned it off at ~95k, and free text took seconds).
+ * The index holds only what the mailbox needs: a small one stays small.
+ */
+export const WEB_SEARCH_MEMORY = { steadyBytes: 192 * MiB, peakBytes: 256 * MiB };
 
 export interface InstantSearchOptions {
   feed: SearchFeed;

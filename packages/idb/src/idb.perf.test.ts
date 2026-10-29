@@ -370,7 +370,7 @@ it("People and Waiting (plan 17) page from their own orders: every page, counts 
   expect(counts.ms, "counts with waiting").toBeLessThanOrEqual(5 * MULT);
   // a search narrowed to People or Waiting: the instant index keeps those threads before paging
   // (on a freshly built index: after the earlier tests' bulk changes the running one reported 213 MiB, over the web's
-  // 96 MiB cap, and turned itself off; a fresh build of the same mailbox stays under it)
+  // 192 MiB cap, and turned itself off; a fresh build of the same mailbox stays under it)
   await store.close();
   store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: { sliceMs: 4 } });
   await store.whenLoaded();

@@ -371,7 +371,7 @@ function MenuItems() {
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
       <ContextMenuSeparator />
-      {(searchPlaces ? searchPlaceItems(searchPlaces, (a, only) => void act(a, only)) : placeItems(view, run)).map((it) => (
+      {(searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run)).map((it) => (
         <Item key={it.testId} {...it} />
       ))}
       {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}

@@ -71,3 +71,42 @@ describe("action snacks", () => {
     expect(useSnack.getState().current?.message).toBe("Couldn’t complete: offline");
   });
 });
+
+describe("a search's selection spanning places (plan 64)", () => {
+  const placed = (id: number, inInbox: boolean, inSpam = false, inTrash = false) => ({ ...row(id), inInbox, inSpam, inTrash }) as ThreadSummary;
+  const sent: { action: string; threadIds: number[] }[] = [];
+  beforeEach(() => {
+    sent.length = 0;
+    fake.handlers["threads.act"] = async (p) => {
+      sent.push(p as { action: string; threadIds: number[] });
+      return { undoId: 1 };
+    };
+    const items = [placed(1, true), placed(2, false, false, true), placed(3, false, true), placed(4, true)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+  });
+
+  it("a key on the selection acts on the rows it fits, as the buttons do (! never spams the trashed one)", async () => {
+    setApp({ query: "factura", checked: new Set([1, 2]) });
+    await act("spam");
+    // acting clears the selection: the same two again
+    setApp({ checked: new Set([1, 2]) });
+    await act("moveToInbox");
+    expect(sent).toEqual([
+      { action: "spam", threadIds: [1] },
+      { action: "moveToInbox", threadIds: [2] },
+    ]);
+  });
+
+  it("it reads the selection when it runs: a same-size selection made since is the one acted on", async () => {
+    setApp({ query: "factura", checked: new Set([1, 2]) });
+    setApp({ checked: new Set([3, 4]) });
+    await act("trash");
+    expect(sent).toEqual([{ action: "trash", threadIds: [3, 4] }]);
+  });
+
+  it("outside a search, the view's rule: every selected row", async () => {
+    setApp({ query: "", checked: new Set([1, 2]) });
+    await act("spam");
+    expect(sent).toEqual([{ action: "spam", threadIds: [1, 2] }]);
+  });
+});

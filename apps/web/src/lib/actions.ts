@@ -11,6 +11,7 @@ import { getApp, setApp, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
+import { placeActions } from "~/lib/places";
 
 /** Does a thread still belong in the current view after an action? */
 function staysInView(view: View, action: ThreadAction): boolean {
@@ -137,7 +138,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     if ("scope" in target) return actScope(action, target.scope);
     ids = target.ids;
   }
-  const targets = ids;
+  // plan 64: a search's rows can span places: a place action takes the rows it fits, read now (buttons, menu and keys alike)
+  const targets = fitting(action, ids);
   if (targets.length === 0) return;
   breadcrumb("action", "action.thread", { action, count: targets.length });
   leaveList(action, targets, options);
@@ -171,6 +173,16 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
 }
 
 const SIMILAR = new Set<ThreadAction>(["archive", "trash", "spam"]);
+
+const FITS = { archive: "archive", trash: "trash", spam: "spam", notSpam: "notSpam", moveToInbox: "toInbox" } as const;
+
+/** In a search, the rows a place action fits (Restore the trashed ones…); elsewhere, all of them (the view's own rule). */
+function fitting(action: ThreadAction, ids: number[]): number[] {
+  const kind = FITS[action as keyof typeof FITS];
+  if (!kind || !getApp().query.trim()) return ids;
+  const places = placeActions(targetRows(ids));
+  return places ? places[kind] : ids;
+}
 
 /** The similar snackbar loads with its offers (its own chunk): the plain snack grows into it, or stays as it is. */
 async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo): Promise<void> {

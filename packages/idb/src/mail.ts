@@ -70,6 +70,8 @@ export interface Ctx {
   scopes: ScopeIndex;
   /** plan 17: the threads whose facts the backfill hasn't computed yet */
   facts: FactsQueue;
+  /** the late tables (messages…) are in: until then a thread's messages read as none (plan 64: spam mail isn't known yet) */
+  late?: { loaded: boolean };
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null } | null;
 }
@@ -831,7 +833,8 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     inInbox: t.in_inbox === 1,
     inSpam: t.in_spam === 1,
     inTrash: t.in_trash === 1,
-    hasSpam: T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
+    // before the messages load (an early read) a trashed thread may be spam: no icon until it's known (plan 22)
+    hasSpam: c.late && !c.late.loaded ? t.in_trash === 1 : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
   };
 }
 
