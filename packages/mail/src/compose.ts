@@ -26,7 +26,7 @@ export async function buildRaw(p: SendPayload, options: { keepBcc?: boolean; now
       previous = checkLineBreaks(Buffer.from(a.dataBase64.slice(offset, offset + width), "base64"), previous);
       await yieldPreparation();
     }
-    if (previous !== 10) throw nonCanonicalWire();
+    if (previous === 13) throw nonCanonicalWire();
   }
   const now = options.now ?? new Date();
   const composer = new MailComposer({

@@ -89,18 +89,27 @@ it("validates CRLF across scan slices and excludes bytes outside the prepared vi
   await expect(checkSmtpWire(padded.subarray(1, 1 + wire.length))).resolves.toBeUndefined();
 });
 
-it.each(["LF", "CR", "unterminated"])("refuses a message/rfc822 attachment with %s before immutable preparation", async (ending) => {
-  const data = Buffer.from("From: nested@example.test\r\n\r\n" + (ending === "LF" ? "One\nTwo\r\n" : ending === "CR" ? "One\rTwo\r\n" : "One"));
+it.each(["LF", "CR", "terminal CR"])("refuses a message/rfc822 attachment with %s before immutable preparation", async (ending) => {
+  const data = Buffer.from("From: nested@example.test\r\n\r\n" + (ending === "LF" ? "One\nTwo\r\n" : ending === "CR" ? "One\rTwo\r\n" : "One\r"));
   const prepare = vi.fn(async (raw: Uint8Array) => raw);
   const transport = vi.spyOn(nodemailer, "createTransport");
   await expect(sendViaSmtp({ host: "127.0.0.1", port: 1, secure: false, user: "synthetic", password: "synthetic", allowInsecure: true }, { ...base, attachments: [{ assetId: "nested", filename: "mail.eml", mime: "message/rfc822", size: data.length, dataBase64: data.toString("base64") }] }, { prepare })).rejects.toMatchObject({ retryable: false, ambiguous: false });
   expect(prepare).not.toHaveBeenCalled(); expect(transport).not.toHaveBeenCalled();
 });
 
-it("keeps a canonical message/rfc822 attachment byte-exact without transfer encoding it", async () => {
-  const data = Buffer.from("From: nested@example.test\r\nTo: other@example.test\r\nSubject: Nested\r\n\r\nOne\r\n.Dot\r\n");
+it.each([true, false])("keeps a canonical message/rfc822 attachment byte-exact (terminal newline=%s)", async (terminal) => {
+  const data = Buffer.from("From: nested@example.test\r\nTo: other@example.test\r\nSubject: Nested\r\n\r\nOne\r\n.Dot" + (terminal ? "\r\n" : ""));
   const raw = await buildRaw({ ...base, attachments: [{ assetId: "nested", filename: "mail.eml", mime: "message/rfc822", size: data.length, dataBase64: data.toString("base64") }] }, { smtp: true });
   await checkSmtpWire(raw);
   const parsed = await new PostalMime({ forceRfc822Attachments: true }).parse(raw);
   expect(Buffer.from(parsed.attachments[0]!.content as ArrayBuffer).equals(data)).toBe(true);
+});
+
+it("refuses a changed preparation confirmation before SMTP", async () => {
+  const original = await buildRaw(base, { smtp: true });
+  const changed = Buffer.from(original.toString().replace("First", "Other"));
+  let calls = 0;
+  const transport = vi.spyOn(nodemailer, "createTransport");
+  await expect(sendViaSmtp({ host: "127.0.0.1", port: 1, secure: false, user: "synthetic", password: "synthetic", allowInsecure: true }, base, { prepare: async () => ++calls === 1 ? original : changed })).rejects.toMatchObject({ retryable: false, ambiguous: false });
+  expect(calls).toBe(2); expect(transport).not.toHaveBeenCalled();
 });

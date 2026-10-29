@@ -83,7 +83,8 @@ it("SMTP validator yields over maximum canonical captured bytes and newline-dens
   const raw = Buffer.alloc(MAX_MIME_BYTES, 65);
   for (let i = 998; i + 1 < raw.length; i += 1000) { raw[i] = 13; raw[i + 1] = 10; }
   raw[raw.length - 2] = 13; raw[raw.length - 1] = 10;
-  const scan = await measured(async () => { await checkSmtpWire(raw); return raw; });
+  const confirmed = Buffer.from(raw);
+  const scan = await measured(async () => { await checkSmtpWire(raw); expect(confirmed.equals(raw)).toBe(true); return raw; });
   expect(scan.turns).toBeGreaterThan(100); expect(scan.maxCpu).toBeLessThanOrEqual(15);
   const dense = await measured(async () => { const wire = await buildRaw({ ...base, text: "x\n".repeat(8000) }, { smtp: true }); await checkSmtpWire(wire); return wire; });
   expect(dense.maxCpu).toBeLessThanOrEqual(15);

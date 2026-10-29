@@ -1,3 +1,4 @@
+import nodemailer from "../../mail/node_modules/nodemailer/dist/esm/nodemailer.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ import { buildRaw } from "../../mail/src/compose";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   const results = await Promise.allSettled(cleanups.splice(0).reverse().map((close) => close()));
   const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
   if (errors.length) throw new AggregateError(errors, "SMTP isolation fixture cleanup failed");
@@ -206,6 +208,49 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     expect(t.received[0]!.raw.toString()).toContain("Exact lf-wire send.\r\n.Dot line");
     expect(copy?.raw).toEqual(t.received[0]!.raw);
     expect(captured).toEqual(t.received[0]!.raw);
+  });
+
+  it("removal after sealed-wire validation starts cannot create an SMTP transport", async () => {
+    const t = await setup(); const account = await t.add();
+    const { opId } = await t.send("remove-during-validation", account.id);
+    let sealed = false, held = false;
+    let arrive = () => {}, release = () => {};
+    const reached = new Promise<void>((resolve) => { arrive = resolve; });
+    const resumed = new Promise<void>((resolve) => { release = resolve; });
+    const seal = t.backend.store.sendCopies.sealWire.bind(t.backend.store.sendCopies);
+    vi.spyOn(t.backend.store.sendCopies, "sealWire").mockImplementation(async (id) => { await seal(id); sealed = true; });
+    vi.stubGlobal("scheduler", { yield: async () => {
+      if (sealed && !held) { held = true; arrive(); await resumed; }
+    } });
+    const transport = vi.spyOn(nodemailer, "createTransport");
+    const worker = t.backend.runWorker();
+    try {
+      await bounded(reached);
+      expect(await t.backend.store.sendCopies.get(opId)).toMatchObject({ ready: true, submission: "pending" });
+      await t.client.call("accounts.remove", { id: account.id });
+      expect((await t.client.call("app.bootstrap", {})).accounts).toHaveLength(0);
+    } finally { release(); await worker; }
+    expect(transport).not.toHaveBeenCalled();
+    expect(t.auths).toHaveLength(1); expect(t.received).toHaveLength(0);
+    expect(t.smtpCommands).not.toContain("MAIL"); expect(t.smtpCommands).not.toContain("DATA");
+  });
+
+  it("reuses canonical sealed legacy MIME with an unterminated attached message after reopen", async () => {
+    const t = await setup(); const account = await t.add();
+    const bytes = Buffer.from("From: nested@example.test\r\nSubject: Old message\r\n\r\nNo final newline");
+    const ref = await t.client.call("attachments.create", { accountId: account.id, filename: "old.eml", mime: "message/rfc822", size: bytes.length });
+    await t.client.call("attachments.append", { accountId: account.id, assetId: ref.assetId, index: 0, dataBase64: bytes.toString("base64") });
+    await t.client.call("attachments.seal", { accountId: account.id, assetId: ref.assetId });
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "recipient@example.test" }], subject: "Old canonical wire", bodyText: "Canonical body.\r\n.Dot line", attachments: [ref] });
+    const payload = JSON.parse((await t.backend.store.ops.get(opId))!.payload_json) as SendPayload;
+    const old = await buildRaw({ ...payload, attachments: [{ ...ref, dataBase64: bytes.toString("base64") }] }, { now: new Date("2026-01-01T00:00:00Z") });
+    expect(old.toString()).not.toMatch(/(?<!\r)\n|\r(?!\n)/);
+    await prepareCopyWire(t.backend.store, opId, old, async () => {}, () => {});
+    await t.reopen(); await t.backend.runWorker();
+    expect((await t.ops()).find((op) => op.id === opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+    expect(t.received.map((r) => r.raw)).toEqual([old]);
+    expect(t.imap.control.listMessages("Sent", { raw: true })[0]?.raw).toEqual(old);
+    await t.backend.runWorker(); expect(t.received).toHaveLength(1);
   });
 
   async function legacyCapture(t: Awaited<ReturnType<typeof setup>>, opId: string) {

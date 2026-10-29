@@ -53,7 +53,14 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
     const prepared = await hooks.prepare(raw);
     raw = Buffer.from(prepared.buffer, prepared.byteOffset, prepared.byteLength);
   }
-  await checkSmtpWire(raw);
+  if (hooks?.prepare) {
+    await checkSmtpWire(raw);
+    // Re-enter preparation's lifetime/credential fence after the yielding scan.
+    const confirmed = await hooks.prepare(raw);
+    const snapshot = Buffer.from(confirmed.buffer, confirmed.byteOffset, confirmed.byteLength);
+    if (!snapshot.equals(raw)) throw new ProviderError(L("errors.sentCopy.unavailable"), false);
+    raw = snapshot;
+  }
   let accepted = false;
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.
