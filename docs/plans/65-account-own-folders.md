@@ -471,3 +471,10 @@ Also: the round 50 twin gate is load-aware now (it measured 35 ms of wall time a
 
 **Round 53.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **A deleted folder's orphans were removed in one transaction** (50,000 messages with no other place, their threads recomputed: 1.8 s without a turn). Reconciliation removes them 100 at a time with the loop given a turn between batches. Gate (`reconcile.perf.test.ts`, the real SQLite store, load-aware): 50,000 orphans reconciled, the longest stall within the worker's budget, two frames (23 to 28 ms, a batch's commit now and then; 1,856 before).
+
+**Round 54.** Codex found two medium problems and a low one; two are fixed with a test that fails without the fix, one is open:
+1. *(open)* **Removing the orphans of one long conversation is quadratic:** each batch of 100 goes through `deleteMessages`, which refolds the thread from every message left (50,000 in one thread: 112 to 119 ms a batch). Bounding it needs the store to defer a thread's refold across commands, durably (a crash in between would leave its aggregates stale), which is a change to message deletion itself, beyond this plan; recorded here, not fixed.
+2. **Moving a long conversation (to Inbox, to Trash, to Spam, archiving) took its old places away one message at a time**, each removal walking the conversation again (10,000: 6.6 s). The new places are written first, then the old ones go through `removeMany` a mailbox at a time (sliced, each thread looked at once). Test: moving a 60-message conversation from a folder to Inbox runs no single-message delete (60 before), only sliced ones.
+3. **"N more folders" focused, then taken away by a smaller catalog, left focus on the document.** The folders' focus recovery follows that button too, handing focus to the last folder shown. Test: e2e, 300 folders cut to 250 while the button is focused.
+
+Also: the round 53 gate's types (its remove callback returned the store's result).

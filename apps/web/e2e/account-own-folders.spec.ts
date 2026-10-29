@@ -147,6 +147,22 @@ test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 
   await expect(own(page, acme, "Label_m500")).toBeFocused();
 });
 
+test("Codex R54: \"N more folders\" focused, then taken away by a smaller catalog, hands focus to the last folder shown", async ({ app: page, server }) => {
+  const acme = accountOf(server, "Acme Studio");
+  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+  await server.backend.store.folders.replace(acme, many(300));
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await page.getByTestId(`nav-account-${acme}`).click();
+  const more = page.getByTestId(`nav-own-more-${acme}`);
+  await expect(more).toHaveText("50 more folders");
+  await more.focus();
+  await expect(more).toBeFocused();
+  await server.backend.store.folders.replace(acme, many(250));
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await expect(more).toHaveCount(0);
+  await expect(own(page, acme, "Label_m249")).toBeFocused();
+});
+
 test("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn alone after the rows shown, never with every row before it", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));

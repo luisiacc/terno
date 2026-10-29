@@ -352,6 +352,9 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, de
   );
 });
 
+/** what the folder-focus recovery calls "N more folders" (no folder's key) */
+const MORE = "\u0000more";
+
 /** An open account's own folders mounted at once, and revealed per "more" (plan 65, Codex R1: a catalog may hold 10,000). */
 const FOLDER_BATCH = 250;
 
@@ -410,11 +413,14 @@ function AccountFolders({
   // the folder now in its place, or the account's row (Codex R22), never to the document
   const focusedAt = useRef<{ key: string; index: number } | null>(null);
   const placesToGo = visible.filter((r) => r.selectable && r.key !== null);
+  const morePrefix = `nav-own-more-${account.id}`;
   const trackFocus = (e: React.FocusEvent) => {
     const id = (e.target as HTMLElement).dataset.testid;
     const key = id?.startsWith(ownPrefix) ? id.slice(ownPrefix.length) : null;
     setFocusedKey(key);
-    focusedAt.current = key === null ? null : { key, index: placesToGo.findIndex((r) => r.key === key) };
+    // "N more folders" too: a catalog update that takes it away hands focus to the last folder shown (Codex R54)
+    if (id === morePrefix) focusedAt.current = { key: MORE, index: placesToGo.length };
+    else focusedAt.current = key === null ? null : { key, index: placesToGo.findIndex((r) => r.key === key) };
   };
   const dropFocus = (e: React.FocusEvent) => {
     if (groupRef.current?.contains(e.relatedTarget as Node | null)) return;
@@ -427,7 +433,7 @@ function AccountFolders({
   };
   useLayoutEffect(() => {
     const was = focusedAt.current;
-    if (was === null || placesToGo.some((r) => r.key === was.key)) return;
+    if (was === null || (was.key === MORE ? hidden > 0 : placesToGo.some((r) => r.key === was.key))) return;
     focusedAt.current = null;
     if (document.activeElement && document.activeElement !== document.body) return;
     const next = placesToGo[Math.min(Math.max(was.index, 0), placesToGo.length - 1)];

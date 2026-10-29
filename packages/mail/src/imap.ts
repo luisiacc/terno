@@ -1174,7 +1174,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     if (mode === "move" && !targetedCapability(c, "MOVE") && !targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
     const target = typeof destination === "string" ? destination : await destination();
     const byMailbox = new Map<string, typeof locs>();
-    for (const l of locs) if (l.mailbox !== target) byMailbox.set(l.mailbox, [...(byMailbox.get(l.mailbox) ?? []), l]);
+    for (const l of locs) {
+      if (l.mailbox === target) continue;
+      const list = byMailbox.get(l.mailbox);
+      if (list) list.push(l);
+      else byMailbox.set(l.mailbox, [l]);
+    }
     for (const [mailbox, items] of byMailbox) {
       const lock = await c.getMailboxLock(mailbox);
       try {
@@ -1183,11 +1188,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const uids = items.map((i) => i.uid);
         const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
+        // the new places first, then the old ones go together (sliced, each thread looked at once: Codex R54, one
+        // removal a message walked a long conversation again each time)
         for (const item of items) {
-          if (mode === "move") await locations.remove(item.message_id, mailbox);
           const newUid = res.uidMap?.get(item.uid);
           if (newUid && res.uidValidity) await upsertLocation(item.message_id, target, Number(res.uidValidity), newUid, []);
         }
+        if (mode === "move") await locations.removeMany(items.map((i) => i.message_id), mailbox);
       } finally {
         lock.release();
       }
@@ -1438,7 +1445,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
               const deleted = await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
               if (!deleted) throw new ProviderError(L("errors.imap.changeRefused"), false);
-              for (const l of inbox) await locations.remove(l.message_id, r.inbox!);
+              await locations.removeMany(inbox.map((l) => l.message_id), r.inbox!);
             } finally {
               lock.release();
             }

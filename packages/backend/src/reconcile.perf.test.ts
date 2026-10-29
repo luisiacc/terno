@@ -29,7 +29,9 @@ it("reconciling 50,000 orphans of a deleted folder: the longest stall within the
       providerIds: async (chunk) => new Map(chunk.map((id) => [id, `o${id}`] as const)),
       state: () => ({}) as never,
       updateFlags: async () => {},
-      removeMessages: (chunk) => store.sync.remove(chunk),
+      removeMessages: async (chunk) => {
+        await store.sync.remove(chunk);
+      },
     });
     const total = performance.now() - t0;
     const worst = stallLessGc(loop.stop(), await gc.stop());

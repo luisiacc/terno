@@ -1817,6 +1817,40 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "A" }]);
   });
 
+  it("Codex R54: moving a long conversation to Inbox takes its old places away together, never one at a time", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    // an ordinary folder (Archive here is All Mail: a move to Inbox from it is a copy)
+    ctl.createMailbox("Proyectos");
+    const first = raw({ subject: "Conversación larga", id: "long-0@x" });
+    ctl.addMessage("Proyectos", { raw: first });
+    for (let i = 1; i < 60; i++) ctl.addMessage("Proyectos", { raw: raw({ subject: "Re: Conversación larga", id: `long-${i}@x`, inReplyTo: "long-0@x" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Conversación larga'")!.thread_id;
+    expect(count(backend, "SELECT 1 FROM messages WHERE thread_id = ?", thread)).toBe(60);
+    // the deletes the store runs: one a message, or a slice at a time
+    const db = sqlDb(backend.store);
+    const run = db.run.bind(db);
+    let singles = 0;
+    let slices = 0;
+    const spy = vi.spyOn(db, "run").mockImplementation((sql: string, ...params: Parameters<typeof run> extends [string, ...infer P] ? P : never) => {
+      if (/DELETE FROM message_locations WHERE message_id = \? AND mailbox = \?/.test(sql)) singles++;
+      if (/DELETE FROM message_locations WHERE mailbox = \? AND message_id IN/.test(sql)) slices++;
+      return run(sql, ...params);
+    });
+    try {
+      await client.call("threads.act", { threadIds: [thread], action: "moveToInbox" });
+      await backend.runWorker();
+      await expect.poll(() => count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.thread_id = ? AND l.mailbox = 'INBOX'", thread), { timeout: 10_000 }).toBe(60);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(singles).toBe(0);
+    expect(slices).toBeGreaterThan(0);
+    expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.thread_id = ? AND l.mailbox = 'Proyectos'", thread)).toBe(0);
+  });
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
