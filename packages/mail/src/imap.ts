@@ -174,6 +174,37 @@ export async function storedIds(keys: readonly string[], lookup: (key: string) =
   return ids;
 }
 
+/**
+ * Plan 65 (Codex R34, R35): messages just written join the twin groups kept for their envelopes: each group's
+ * additions gathered, then merged once (new ids sort after the old, so mostly an append), a few milliseconds a turn,
+ * never a search and a sort per message.
+ */
+export async function joinGroups(groups: ReadonlyMap<string, number[]>, keys: readonly string[], ids: readonly (number | null)[]): Promise<void> {
+  const breathe = breather();
+  const adding = new Map<number[], number[]>();
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const group = id === null || id === undefined ? undefined : groups.get(keys[i]!);
+    if (group) {
+      const add = adding.get(group) ?? [];
+      add.push(id!);
+      adding.set(group, add);
+    }
+    if (i % 1000 === 999) await breathe();
+  }
+  for (const [group, add] of adding) {
+    const known = new Set(group);
+    const fresh = [...new Set(add)].filter((id) => !known.has(id)).sort((x, y) => x - y);
+    if (fresh.length && (group.length === 0 || fresh[0]! > group.at(-1)!)) for (const id of fresh) group.push(id);
+    else if (fresh.length) {
+      const merged = [...group, ...fresh].sort((x, y) => x - y);
+      group.length = 0;
+      for (const id of merged) group.push(id);
+    }
+    await breathe();
+  }
+}
+
 /** an envelope's key among the twins kept in a pass (its Message-ID, or none) */
 function twinKey(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }): string {
   return `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
@@ -802,15 +833,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // written: in the groups kept for its envelope, so a folder read later (or a message held back) sees it as a
       // twin, never only the ones there were before (Codex R34: a copy moved on would take the original's place)
       const written = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key), true);
-      written.forEach((id, i) => {
-        if (id === null) return;
-        touched.add(id);
-        const group = twinsOf.get(freshTwins[i]!);
-        if (group && !group.includes(id)) {
-          group.push(id);
-          group.sort((x, y) => x - y);
-        }
-      });
+      for (const id of written) if (id !== null) touched.add(id);
+      await joinGroups(twinsOf, freshTwins, written);
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again

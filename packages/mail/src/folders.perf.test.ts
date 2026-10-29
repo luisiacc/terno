@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, gatherPlaces, planSteps, planTellApart, storedIds } from "./imap";
+import { customFolders, gatherPlaces, joinGroups, planSteps, planTellApart, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -118,4 +118,32 @@ it("Codex R33: 50,000 copies just written are looked up again without holding th
   };
   await stall();
   expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
+});
+
+it("Codex R35: 50,000 messages just written join one twin group in linear time, the loop never held a frame", async () => {
+  const run = async () => {
+    const group = [1, 2, 3];
+    const groups = new Map([["k", group]]);
+    const keys = Array.from({ length: 50_000 }, () => "k");
+    const ids = Array.from({ length: 50_000 }, (_, i) => i + 10);
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const t0 = performance.now();
+    await joinGroups(groups, keys, ids);
+    const total = performance.now() - t0;
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(group).toHaveLength(50_003);
+    expect(group.every((id, i) => i === 0 || id > group[i - 1]!)).toBe(true);
+    return { worst, total };
+  };
+  await run();
+  const runs = [await run(), await run(), await run()];
+  expect(Math.min(...runs.map((r) => r.worst))).toBeLessThan(16);
+  expect(Math.min(...runs.map((r) => r.total))).toBeLessThan(100);
 });

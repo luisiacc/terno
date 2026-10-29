@@ -42,3 +42,31 @@ it("expunging a 150,000-message conversation: under 1.5 s in all, the longest st
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("Codex R35: expunging a folder of 50,000 one-message conversations: the longest stall within a frame", { timeout: 1_800_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-expunge-"));
+  // checkpoints off the thread, as on desktop (in-thread ones every thousand pages would be the stalls measured)
+  const store = new SqlMailStore(openDatabase(join(dir, "e.db")), { checkpointWorker: true });
+  try {
+    const [, m] = await withAccounts(store);
+    await store.folders.replace(m!, [{ key: "Many", path: ["Many"], selectable: true }]);
+    for (let i = 0; i < 50_000; i += 5000) {
+      await ingest(store, Array.from({ length: 5000 }, (_, j) => msg({ accountId: m!, providerMsgId: `s${i + j}`, providerThreadId: `t${i + j}`, locations: [{ mailbox: "Many", uidvalidity: 1, uid: i + j + 1, flags: [] }] })));
+    }
+    const db = sqlDb(store);
+    const ids = db.all<{ id: number }>("SELECT id FROM messages WHERE account_id = ? ORDER BY id", m!).map((r) => r.id);
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE folder = 'Many'")!.c).toBe(50_000);
+    const loop = watchLoop(16);
+    const gc = watchGc();
+    const t0 = performance.now();
+    await store.providerStore(m!).locations.removeMany(ids, "Many");
+    const total = performance.now() - t0;
+    const worst = stallLessGc(loop.stop(), await gc.stop());
+    console.log(`expunge 50,000 short conversations: ${total.toFixed(0)} ms, longest stall ${worst.toFixed(1)} ms`);
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE folder = 'Many'")!.c).toBe(0);
+    expect(worst).toBeLessThan(16 * MULT);
+  } finally {
+    await store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

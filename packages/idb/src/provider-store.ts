@@ -178,7 +178,29 @@ class IdbImapLocations implements ImapLocationStore {
     }
     // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
     // a few thousand of them looked at a command (Codex R34: per slice, a long conversation was walked again each time)
+    let since = performance.now();
+    // the rows that go, 500 a command (never a transaction each), each looked at again as it goes: a location written
+    // meanwhile keeps it
+    const going: number[] = [];
+    const flush = async () => {
+      const batch = going.splice(0);
+      if (!batch.length) return;
+      await this.command(() => {
+        if (!isFolder(this.c, this.accountId, mailbox)) return;
+        const memberships = T(this.c, "thread_folders");
+        const messages = T(this.c, "messages");
+        for (const thread of batch) {
+          const row = memberships.get(thread, mailbox);
+          if (row && !messages.by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
+        }
+      });
+    };
     for (const thread of threads) {
+      // a few milliseconds a turn across threads (Codex R35: many short ones never yielded)
+      if (performance.now() - since >= 4) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        since = performance.now();
+      }
       const keys = await this.read(() => [...T(this.c, "messages").keysBy("fk_thread_id", thread)]);
       let here = false;
       for (let i = 0; i < keys.length && !here; i += 2000) {
@@ -190,15 +212,10 @@ class IdbImapLocations implements ImapLocationStore {
           });
         });
       }
-      if (here) continue;
-      await this.command(() => {
-        if (!isFolder(this.c, this.accountId, mailbox)) return;
-        const memberships = T(this.c, "thread_folders");
-        const row = memberships.get(thread, mailbox);
-        // still none there (a location written meanwhile keeps it)
-        if (row && !T(this.c, "messages").by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
-      });
+      if (!here) going.push(thread);
+      if (going.length >= 500) await flush();
     }
+    await flush();
   }
 
   setFlags(messageId: number, mailbox: string, flags: string) {

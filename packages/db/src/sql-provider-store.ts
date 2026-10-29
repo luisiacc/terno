@@ -150,6 +150,19 @@ class SqlImapLocations implements ImapLocationStore {
     // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
     // looked for a page of the thread at a time, from where the last page ended (Codex R34: per slice, a long
     // conversation's removed part was read again each time)
+    // a few milliseconds a turn across threads (Codex R35: 50,000 short ones never filled a page to yield on), the
+    // rows that go deleted in bounded batches
+    let since = performance.now();
+    const breathe = async () => {
+      if (performance.now() - since < 4) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      since = performance.now();
+    };
+    const going: number[] = [];
+    const flush = () => {
+      if (going.length) this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(going.length)})`, mailbox, ...going));
+      going.length = 0;
+    };
     for (const thread of threads) {
       let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
       let here = false;
@@ -171,8 +184,11 @@ class SqlImapLocations implements ImapLocationStore {
         after = { date: page.at(-1)!.date, id: page.at(-1)!.id };
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      if (!here) this.db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, mailbox);
+      if (!here) going.push(thread);
+      if (going.length >= 250) flush();
+      await breathe();
     }
+    flush();
   }
 
   async setFlags(messageId: number, mailbox: string, flags: string) {
