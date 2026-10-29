@@ -1,4 +1,5 @@
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
+import { keptThreads, resolveSimilar, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
@@ -1302,6 +1303,13 @@ export class IdbMailStore implements MailStore {
     undoMoveBegin: (batchId, now) => this.command(() => undoMoveBegin(this.c, batchId, now)),
     undoMoveSlice: (batchId, threadIds, now) => this.command(() => undoMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     restoreMoveSlice: (batchId, threadIds) => this.command(() => restoreMoveSlice(this.c, batchId, threadIds)),
+  };
+
+  readonly similar: MailStore["similar"] = {
+    // the message indexes (late tables) must be in
+    offers: (threadIds, action) => this.read(() => similarOffers(this.c, threadIds, action)),
+    resolve: (scope, action, targets) => this.read(() => resolveSimilar(this.c, scope, action, targets)),
+    kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
   };
 
   readonly categorize: MailStore["categorize"] = {

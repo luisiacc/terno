@@ -15,3 +15,4 @@ export * from "./attention";
 export * from "./localized";
 
 export * from "./attachments";
+export * from "./similar";

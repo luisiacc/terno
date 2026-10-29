@@ -20,6 +20,9 @@ import type {
   Prediction,
   QuickActions,
   Reason,
+  SimilarAction,
+  SimilarOffers,
+  SimilarScope,
   ThreadAction,
   ThreadDetail,
   ThreadSummary,
@@ -376,6 +379,16 @@ export interface MailStore {
     undoMoveBegin(batchId: number, now: number): Promise<boolean>;
     undoMoveSlice(batchId: number, threadIds: readonly number[], now: number): Promise<{ removed: number[]; restored: number[]; deltas: ModelDelta[] }>;
     restoreMoveSlice(batchId: number, threadIds: readonly number[]): Promise<ModelDelta[]>;
+  };
+
+  /** Plan 63: received mail similar to some threads (same sender, sender + subject, domain or list), for archive, trash and spam. */
+  similar: {
+    /** what the threads' root inbound messages share (≤ 200 read), with eligible counts; targets still in place count too */
+    offers(threadIds: readonly number[], action: SimilarAction): Promise<SimilarOffers>;
+    /** every thread to act on, newest first: eligible ones (still in place, not starred or replied) plus the targets still in place; the others it leaves out are counted */
+    resolve(scope: SimilarScope, action: SimilarAction, targets: readonly number[]): Promise<{ ids: number[]; skipped: number }>;
+    /** which of these threads the user values now (starred, or with a message they sent): a sweep re-reads it per slice */
+    kept(threadIds: readonly number[]): Promise<number[]>;
   };
 
   categorize: {

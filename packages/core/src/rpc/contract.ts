@@ -18,6 +18,7 @@ import type { CategoryModelStats, Prediction, QuickActions } from "../categorize
 import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
+import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
@@ -461,6 +462,16 @@ const threadScope = z.discriminatedUnion("kind", [
 ]);
 export type ThreadScope = z.output<typeof threadScope>;
 
+/** Plan 63: mail like some threads (same sender, sender + subject, domain or list). */
+const similarScope = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("sender"), email: z.string().trim().min(1).max(320) }),
+  z.object({ kind: z.literal("subject"), email: z.string().trim().min(1).max(320), subject: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("domain"), domain: z.string().trim().min(1).max(253) }),
+  z.object({ kind: z.literal("list"), listId: z.string().trim().min(1).max(400) }),
+]);
+/** the filter's name in the user's language (the backend falls back to English) */
+const filterName = z.string().trim().min(1).max(120).optional();
+
 export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar"] as const;
 const jobId = z.string().min(1).max(64);
 
@@ -542,6 +553,23 @@ export const contract = {
   ),
   /** Takes an action back (threads.act or actScope): each message it changed returns to its previous read, star and place. Once. */
   "threads.undo": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
+
+  /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
+  "similar.offers": m<SimilarOffers>()(z.object({ threadIds: z.array(id).min(1).max(200), action: z.enum(SIMILAR_ACTIONS) })),
+  /**
+   * Archives, deletes or spams a scope (resolved once, sliced, with progress) plus the
+   * targets still in place; starred and replied threads are skipped unless targeted.
+   * Spam also sends future mail there (a filter). A failure after some slices carries
+   * `{ undoId }` in its details. `filterUndo` lets similar.undo take the filter back.
+   */
+  "similar.apply": m<{ affected: number; skipped: number; undoId: number | null; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
+    z.object({ threadIds: z.array(id).max(200), scope: similarScope, action: z.enum(SIMILAR_ACTIONS), jobId: jobId.optional(), filterName }),
+    { timeoutMs: 300_000 },
+  ),
+  /** "Always": the scope as a filter for future mail (an identical one is reused, a disabled one enabled). */
+  "similar.always": m<{ filter: Filter; filterUndo: number | null }>()(z.object({ scope: similarScope, action: z.enum(SIMILAR_ACTIONS), filterName })),
+  /** Takes back similar.apply: the filter first (no new mail caught meanwhile), then the threads. Retryable: a failure keeps it. */
+  "similar.undo": m<{ restored: number }>()(z.object({ undoId: id.nullable(), filterUndo: id.nullable(), jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 
   "categories.create": m<Category>()(
     z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS) }),

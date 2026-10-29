@@ -1231,6 +1231,91 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("similar mail (plan 63)", () => {
+      async function setup() {
+        const store = await fresh();
+        const [acct] = await withAccounts(store, 1);
+        let n = 0;
+        const thread = async (over: Partial<Parameters<typeof msg>[0]> = {}) => {
+          const m = msg({ accountId: acct!, from: { name: "Uber", email: "receipts@uber.com" }, subject: "Your receipt", date: NOW - DAY + ++n * 1000, ...over });
+          await ingest(store, [m]);
+          return threadOf(store, m.providerMsgId!);
+        };
+        return { store, acct: acct!, thread };
+      }
+      const sorted = (ids: number[]) => [...ids].sort((a, b) => a - b);
+
+      it("scopes match received mail exactly, newest first; starred and replied threads are skipped unless targeted", async () => {
+        const { store, acct, thread } = await setup();
+        const a = await thread();
+        const b = await thread({ subject: "Your trip" });
+        const starred = await thread({ isStarred: true });
+        const replied = await thread({ providerThreadId: "R", rfcMessageId: "root@uber" });
+        await ingest(store, [msg({ accountId: acct, providerThreadId: "R", inReplyTo: "<root@uber>", references: ["<root@uber>"], from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: false, date: NOW })]);
+        const archived = await thread({ inInbox: false });
+        const spam = await thread({ isSpam: true, inInbox: false });
+        const other = await thread({ from: { name: "Uber Eats", email: "eats@uber.com" } });
+        const padded = await thread({ subject: "Your receipt " });
+        // the user's own mail to the sender is never part of it
+        await ingest(store, [msg({ accountId: acct, from: { name: "Me", email: "me0@example.com" }, to: [{ name: "Uber", email: "receipts@uber.com" }], isSent: true, inInbox: false })]);
+        void spam;
+
+        const sender = await store.similar.resolve({ kind: "sender", email: "Receipts@Uber.com" }, "archive", []);
+        expect(sender).toEqual({ ids: [padded, b, a], skipped: 2 });
+        // trash and spam reach the archive too, never what is already in spam or trash
+        expect(sorted((await store.similar.resolve({ kind: "sender", email: "receipts@uber.com" }, "spam", [])).ids)).toEqual(sorted([a, b, archived, padded]));
+        // a targeted starred thread is acted on; it no longer counts as skipped
+        expect(await store.similar.resolve({ kind: "sender", email: "receipts@uber.com" }, "archive", [starred])).toEqual({ ids: [padded, starred, b, a].sort((x, y) => y - x), skipped: 1 });
+        // the same sender and exactly this subject (padding is a different subject)
+        expect((await store.similar.resolve({ kind: "subject", email: "receipts@uber.com", subject: "your RECEIPT" }, "archive", [])).ids).toEqual([a]);
+        expect(sorted((await store.similar.resolve({ kind: "domain", domain: "uber.com" }, "archive", [])).ids)).toEqual(sorted([a, b, other, padded]));
+        expect(await store.similar.kept([a, starred, replied, other])).toEqual(expect.arrayContaining([starred, replied]));
+        expect(sorted(await store.similar.kept([a, starred, replied]))).toEqual(sorted([starred, replied]));
+      });
+
+      it("offers what every target shares, with counts; nothing for a target without received mail or over 200 targets", async () => {
+        const { store, acct, thread } = await setup();
+        const a = await thread({ listId: "receipts.uber.com" });
+        const b = await thread({ listId: "receipts.uber.com" });
+        await thread({ isStarred: true });
+        const gmail = await thread({ from: { name: "Ana", email: "ana@gmail.com" } });
+        const offers = await store.similar.offers([a], "archive");
+        expect(offers.senderName).toBe("Uber");
+        expect(offers.offers.map((o) => [o.scope, o.count, o.skipped])).toEqual([
+          [{ kind: "sender", email: "receipts@uber.com" }, 2, 1],
+          [{ kind: "subject", email: "receipts@uber.com", subject: "Your receipt" }, 2, 1],
+          [{ kind: "domain", domain: "uber.com" }, 2, 1],
+          [{ kind: "list", listId: "receipts.uber.com" }, 2, 0],
+        ]);
+        // after the target moved (the snackbar asks then), it no longer counts
+        await store.threads.act({ threadIds: [a], action: "archive", signal: null, now: NOW });
+        expect((await store.similar.offers([a], "archive")).offers[0]).toMatchObject({ count: 1, skipped: 1 });
+        // a consumer domain is no scope; two senders share nothing but nothing
+        expect((await store.similar.offers([gmail], "spam")).offers.map((o) => o.scope.kind)).toEqual(["sender", "subject"]);
+        expect((await store.similar.offers([a, gmail], "spam")).offers).toEqual([]);
+        // a thread the user only wrote in has no received mail: nothing is shared
+        await ingest(store, [msg({ accountId: acct, providerMsgId: "mine", from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: false })]);
+        const mine = await threadOf(store, "mine");
+        expect((await store.similar.offers([b, mine], "trash")).offers).toEqual([]);
+        expect((await store.similar.offers(Array.from({ length: 201 }, () => b), "trash")).offers.length).toBeGreaterThan(0);
+        expect((await store.similar.offers([...Array.from({ length: 200 }, (_, i) => b + 10_000 + i), b], "trash")).offers).toEqual([]);
+      });
+
+      it("a blank or padded subject is no subject offer; counts cap at 1 000", async () => {
+        const { store, acct, thread } = await setup();
+        const blank = await thread({ subject: "" });
+        const padded = await thread({ subject: " Hi" });
+        expect((await store.similar.offers([blank], "archive")).offers.map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
+        expect((await store.similar.offers([padded], "archive")).offers.map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
+        const many = [];
+        for (let i = 0; i < 1003; i++) many.push(msg({ accountId: acct, from: { name: "Brew", email: "crew@brew.com" }, subject: `Daily ${i}` }));
+        await ingest(store, many);
+        const brew = await threadOf(store, many[0]!.providerMsgId!);
+        expect((await store.similar.offers([brew], "archive")).offers[0]).toMatchObject({ count: 1000, capped: true });
+        expect((await store.similar.resolve({ kind: "sender", email: "crew@brew.com" }, "archive", [])).ids).toHaveLength(1003);
+      });
+    });
+
     describe("search outbox", () => {
       async function mailbox() {
         const store = await fresh();
