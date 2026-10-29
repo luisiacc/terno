@@ -2649,6 +2649,187 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(trashed[0]!.raw.toString()).toContain("Subject: uno");
   });
 
+  describe("queued actions across UIDVALIDITY reuse (A25/S12)", () => {
+    const witness = (ctl: ImapKitServer["control"], path: string) => ({
+      mailbox: path,
+      uidvalidity: ctl.getMailbox(path).uidvalidity,
+      messages: ctl.listMessages(path, { raw: true }).map((m) => ({ uid: m.uid, raw: m.raw!.toString(), flags: [...m.flags].sort() })),
+    });
+    const mutations = (server: ImapKitServer) => {
+      const commands: { command: string; mailbox: string | null; line: string }[] = [];
+      server.script.add({ on: "command", run: true, when: (context) => {
+        if (/^(?:UID )?(?:COPY|MOVE|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+          if (commands.length >= 16) throw new Error("Unexpected unbounded queued mutations");
+          commands.push({ command: context.command!, mailbox: context.mailbox, line: context.data.trim() });
+        }
+        return false;
+      } });
+      return commands;
+    };
+    const reopen = async (t: Awaited<ReturnType<typeof setup>>) => {
+      await t.stop();
+      const backend = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false });
+      cleanups.push(() => backend.stop());
+      const [c, s] = createMemoryTransportPair();
+      backend.connect(s, { clientId: "queued-identity-reopen", origin: "renderer" });
+      await backend.ready;
+      return { backend, client: new RpcClient(c) };
+    };
+
+    it.each([
+      { mode: "synced", action: "trash" },
+      { mode: "stale dispatch", action: "trash" },
+      { mode: "stale dispatch", action: "markRead" },
+      { mode: "reopened", action: "trash" },
+      { mode: "synced then reopened", action: "trash" },
+      { mode: "interrupted reset", action: "trash" },
+      { mode: "recreated mailbox", action: "trash" },
+      { mode: "disappeared", action: "trash" },
+      { mode: "reopened", action: "markRead" },
+    ] as const)("keeps an old queued $action away from different mail: $mode", async ({ mode, action }) => {
+      const t = await setup();
+      const ctl = t.imap.server.control;
+      ctl.createMailbox("Work");
+      const epoch = Math.max(ctl.getMailbox("Work").uidvalidity, ctl.getMailbox("Archive").uidvalidity) + 1;
+      ctl.resetUidValidity("Work", { uidvalidity: epoch });
+      ctl.resetUidValidity("Archive", { uidvalidity: epoch });
+      const date = new Date();
+      const oldRaw = raw({ subject: "Same envelope", id: "old@x", body: "AAAA", date });
+      const newRaw = raw({ subject: "Same envelope", id: "new@x", body: "BBBB", date });
+      expect(Buffer.byteLength(oldRaw)).toBe(Buffer.byteLength(newRaw));
+      const old = ctl.addMessage("Work", { raw: oldRaw });
+      const otherRaw = raw({ subject: "Other folder", body: "Other UID one" });
+      const other = ctl.addMessage("Archive", { raw: otherRaw });
+      expect(other.uid).toBe(old.uid);
+      expect(other.uidvalidity).toBe(old.uidvalidity);
+      const account = await t.addAccount(t.imap.port);
+      await t.backend.syncAccount(account.id);
+      expect(witness(ctl, "Work")).toEqual({ mailbox: "Work", uidvalidity: old.uidvalidity, messages: [{ uid: old.uid, raw: oldRaw, flags: [] }] });
+      const original = sqlDb(t.backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE rfc_message_id = 'old@x'")!;
+      expect(await t.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([expect.objectContaining({ mailbox: "Work", uidvalidity: old.uidvalidity, uid: old.uid })]);
+      await t.client.call("threads.act", { threadIds: [original.thread_id], action });
+      let [queued] = await t.client.call("ops.list", {});
+      expect(queued).toMatchObject({ kind: action, state: "queued", attempts: 0 });
+      expect(JSON.parse((await t.backend.store.ops.get(queued!.id))!.target_json)).toEqual({ messageIds: [original.id] });
+      const otherBefore = witness(ctl, "Archive");
+      ctl.expungeMessages("Work", [old.uid]);
+      if (mode === "recreated mailbox") {
+        ctl.deleteMailbox("Work");
+        ctl.createMailbox("Work");
+      }
+      if (mode !== "disappeared") ctl.addMessage("Work", { raw: newRaw });
+      const reset = ctl.resetUidValidity("Work", { uids: "renumber" });
+      expect(reset.uidvalidity).not.toBe(old.uidvalidity);
+      const replacement = witness(ctl, "Work");
+      expect(replacement.messages).toEqual(mode === "disappeared" ? [] : [{ uid: old.uid, raw: newRaw, flags: [] }]);
+      const commands = mutations(t.imap.server);
+      if (mode === "stale dispatch") {
+        await t.backend.runWorker();
+        [queued] = await t.client.call("ops.list", {});
+        expect(queued).toMatchObject({ state: "queued", attempts: 1, lastError: expect.stringContaining("UIDVALIDITY") });
+        expect(commands).toEqual([]);
+        expect(witness(ctl, "Work")).toEqual(replacement);
+        expect(witness(ctl, "Archive")).toEqual(otherBefore);
+      }
+      // Drop both read attempts after reset journaling; this must stop before reconciliation.
+      const interrupted = mode === "interrupted reset" ? t.imap.server.script.add({ on: "command", command: "UID SEARCH", when: (context) => context.mailbox === "Work", times: 2, drop: true, close: "reset" }) : null;
+      let active = mode === "reopened" ? await reopen(t) : { backend: t.backend, client: t.client };
+      expect(await active.client.call("ops.list", {})).toEqual([queued]);
+      expect(JSON.parse((await active.backend.store.ops.get(queued!.id))!.target_json)).toEqual({ messageIds: [original.id] });
+      await active.backend.syncAccount(account.id);
+      if (interrupted) {
+        expect(interrupted.hits).toBe(2);
+        const config = JSON.parse(sqlDb(t.backend.store).get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", account.id)!.provider_config) as { cursor: { resetPending: Record<string, number[]>; unlocated: number[] } };
+        expect(config.cursor.resetPending.Work).toContain(original.id);
+        expect(config.cursor.unlocated).toContain(original.id);
+        expect(await t.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([]);
+        expect((await t.client.call("threads.get", { threadId: original.thread_id })).messages[0]).toMatchObject({ id: original.id, bodyText: "AAAA\n" });
+      }
+      if (interrupted) expect(await t.client.call("ops.list", {})).toEqual([queued]);
+      else expect(await active.client.call("ops.list", {})).toEqual([]);
+      if (mode === "interrupted reset" || mode === "synced then reopened") {
+        const savedConfig = sqlDb(t.backend.store).get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", account.id)!.provider_config;
+        active = await reopen(t);
+        expect(sqlDb(active.backend.store).get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", account.id)!.provider_config).toEqual(savedConfig);
+        expect(await active.client.call("ops.list", {})).toEqual(interrupted ? [queued] : []);
+        if (interrupted) {
+          expect(await active.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([]);
+          await active.backend.syncAccount(account.id);
+        }
+      }
+      expect(await active.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([]);
+      expect(sqlDb(active.backend.store).get("SELECT id FROM messages WHERE id = ?", original.id)).toBeUndefined();
+      if (mode !== "disappeared") {
+        const fresh = sqlDb(active.backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE rfc_message_id = 'new@x'")!;
+        expect(fresh.id).not.toBe(original.id);
+        expect(await active.backend.store.providerStore(account.id).locations!.of([fresh.id])).toEqual([expect.objectContaining({ mailbox: "Work", uidvalidity: reset.uidvalidity, uid: old.uid })]);
+        expect((await active.client.call("threads.get", { threadId: fresh.thread_id })).messages[0]).toMatchObject({ id: fresh.id, rfcMessageId: "new@x", bodyText: "BBBB\n" });
+      }
+      // Complete reconciliation prunes an operation whose entire logical target disappeared.
+      expect(await active.backend.store.ops.get(queued!.id)).toBeNull();
+      expect(await active.backend.runWorker()).toBe(0);
+      expect(await active.client.call("ops.list", {})).toEqual([]);
+      await active.backend.runWorker();
+      expect(commands).toEqual([]);
+      expect(witness(ctl, "Work")).toEqual(replacement);
+      expect(witness(ctl, "Archive")).toEqual(otherBefore);
+      expect(witness(ctl, "Trash").messages).toEqual([]);
+    });
+
+    it.each(["current validity", "reset in place", "relocated across reset", "interrupted reset"] as const)("still applies a queued delete to genuine mail: %s", async (mode) => {
+      const t = await setup();
+      const ctl = t.imap.server.control;
+      ctl.createMailbox("Work");
+      const bytes = raw({ subject: "Genuine target", id: "genuine@x", body: "Exact genuine body" });
+      const old = ctl.addMessage("Work", { raw: bytes });
+      const other = ctl.addMessage("Archive", { raw: raw({ subject: "Other folder", body: "Other UID one" }) });
+      expect(other.uid).toBe(old.uid);
+      const account = await t.addAccount(t.imap.port);
+      await t.backend.syncAccount(account.id);
+      const original = sqlDb(t.backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE rfc_message_id = 'genuine@x'")!;
+      await t.client.call("threads.act", { threadIds: [original.thread_id], action: "trash" });
+      const [queued] = await t.client.call("ops.list", {});
+      expect(queued).toMatchObject({ state: "queued", attempts: 0 });
+      let path = "Work", uid = old.uid;
+      if (mode === "relocated across reset") {
+        const moved = ctl.moveMessages("Work", [old.uid], "Archive");
+        path = "Archive";
+        uid = moved.uids[0]!.targetUid;
+        ctl.addMessage("Work", { raw: raw({ subject: "Different replacement", id: "replacement@x", body: "Leave this body alone" }) });
+        ctl.resetUidValidity("Work", { uids: "renumber" });
+      } else if (mode === "reset in place" || mode === "interrupted reset") {
+        const reset = ctl.resetUidValidity("Work", { uids: "offset", offset: 100 });
+        uid = reset.uids[0]!.newUid;
+      }
+      const interrupted = mode === "interrupted reset" ? t.imap.server.script.add({ on: "command", command: "UID SEARCH", when: (context) => context.mailbox === "Work", times: 2, drop: true, close: "reset" }) : null;
+      await t.backend.syncAccount(account.id);
+      const expected = { mailbox: path, uidvalidity: ctl.getMailbox(path).uidvalidity, uid };
+      if (interrupted) {
+        expect(interrupted.hits).toBe(2);
+        expect(await t.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([]);
+      } else expect(await t.backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([expect.objectContaining(expected)]);
+      expect((await t.client.call("threads.get", { threadId: original.thread_id })).messages[0]).toMatchObject({ id: original.id, bodyText: "Exact genuine body\n" });
+      const { backend, client } = await reopen(t);
+      expect(await client.call("ops.list", {})).toEqual([queued]);
+      if (interrupted) await backend.syncAccount(account.id);
+      expect(await backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([expect.objectContaining(expected)]);
+      const sourceBefore = witness(ctl, "Work"), otherBefore = witness(ctl, "Archive"), trashBefore = witness(ctl, "Trash");
+      const commands = mutations(t.imap.server);
+      await backend.runWorker();
+      expect(await client.call("ops.list", {})).toEqual([expect.objectContaining({ id: queued!.id, state: "succeeded", attempts: 1, lastError: null })]);
+      expect(commands).toEqual([{ command: "UID MOVE", mailbox: path, line: expect.stringMatching(new RegExp(` UID MOVE ${uid} Trash$`)) }]);
+      const trash = witness(ctl, "Trash");
+      expect(trash.uidvalidity).toBe(trashBefore.uidvalidity);
+      expect(trash.messages).toEqual([{ uid: ctl.getMailbox("Trash").uidnext - 1, raw: bytes, flags: [] }]);
+      expect(witness(ctl, "Work")).toEqual({ ...sourceBefore, messages: sourceBefore.messages.filter((m) => path !== "Work" || m.uid !== uid) });
+      expect(witness(ctl, "Archive")).toEqual({ ...otherBefore, messages: otherBefore.messages.filter((m) => path !== "Archive" || m.uid !== uid) });
+      expect(await backend.store.providerStore(account.id).locations!.of([original.id])).toEqual([expect.objectContaining({ mailbox: "Trash", uidvalidity: trash.uidvalidity, uid: trash.messages[0]!.uid })]);
+      expect((await client.call("threads.get", { threadId: original.thread_id })).messages[0]).toMatchObject({ id: original.id, bodyText: "Exact genuine body\n" });
+      await backend.runWorker();
+      expect(commands).toHaveLength(1);
+    });
+  });
+
   it("refuses to log in over plaintext when the server doesn't offer STARTTLS", async () => {
     const imap = await startImap();
     const { createRegistry: strictRegistry } = await import("@terno/mail");
