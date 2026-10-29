@@ -909,7 +909,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // written: in the groups kept for its envelope, so a folder read later (or a message held back) sees it as a
       // twin, never only the ones there were before (Codex R34: a copy moved on would take the original's place)
       const written = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key), true);
-      for (const id of written) if (id !== null) touched.add(id);
+      await addAll(touched, written.filter((id): id is number => id !== null));
       await joinGroups(twinsOf, freshTwins, written);
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
@@ -983,7 +983,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const copies = plan.copies;
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
     if (copies.length) await sink.ingest(copies.map((a) => a.incoming), { live: list.some((a) => a.live) });
-    for (const id of await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key), true)) if (id !== null) touched.add(id);
+    await addAll(touched, (await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key), true)).filter((id): id is number => id !== null));
   }
 
 
@@ -1019,7 +1019,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
       // in slices, each thread's membership looked at once (Codex R11: one at a time was quadratic in a long conversation)
       await locations.removeMany(gone.map((k) => k.message_id), path);
-      for (const k of gone) touched.add(k.message_id);
+      await addAll(touched, gone.map((k) => k.message_id));
       const stillThere = known.filter((k) => serverUids.has(k.uid)).map((k) => k.uid);
       for (let i = 0; i < stillThere.length; i += 1000) {
         for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
@@ -1277,7 +1277,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const path of incomplete ? [] : vanished) {
           // written down before they go (Codex R9): a crash right after still reconciles them
           await journal(cursor, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
-          for (const id of await locations.resetMailbox(path)) touched.add(id);
+          await addAll(touched, await locations.resetMailbox(path));
           delete cursor.mailboxes[path];
         }
         // what a failed pass kept is looked at again once a pass completes: still nowhere on the server, it goes
@@ -1288,14 +1288,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (full) await addAll(touched, cursor.orphans ?? []);
         // what the cut journal's scan found (those found again have a place now: their flags, nothing more)
         const overflowed = full && cursor.overflow === true;
-        if (overflowed) for (const id of lost) touched.add(id);
+        if (overflowed) await addAll(touched, lost);
         const kept = await reconcile(touched, sink, !full);
         if (full) {
           delete cursor.orphans;
           delete cursor.fullCheck;
           if (overflowed) delete cursor.overflow;
         } else if (kept.length) {
-          cursor.orphans = bounded(cursor, [...new Set([...(cursor.orphans ?? []), ...kept])], IMAP_JOURNAL_LIMITS.orphans);
+          cursor.orphans = bounded(cursor, (await journalUnion(cursor.orphans ?? [], kept)) ?? cursor.orphans ?? [], IMAP_JOURNAL_LIMITS.orphans);
           cursor.fullCheck = true;
         }
         // a cut journal waits for a pass that reads every folder

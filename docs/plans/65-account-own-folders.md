@@ -430,3 +430,7 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 44.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **A big expunge's journal union held the loop** (the journal and the ids spread into one set: 500,000 onto 200,000, 28 ms). `journalUnion` gathers them with `addAll`; the journal is still saved before any location goes. Gate: that union, longest stall under a frame (34 ms without the turns).
+
+**Round 45.** Codex found two medium problems; each is fixed (the second with a gate that fails without the fix):
+1. **An expunge's bookkeeping still added every removed id to the pass's touched set in one loop** (500,000: 21 to 29 ms), and a partial pass joined its orphans unsliced. Both, and the other places a pass gathers ids into `touched` (written mail, held-back copies, vanished folders, a cut journal's scan), go through `addAll` / `journalUnion`, whose gates (rounds 42, 44) hold the stall at 500,000.
+2. **The web upgrade's first backfill slice scanned every message first** (a million: 20 to 46 ms). The scan is kept between `folders.rebuild` calls, each looking at no more than 5,000 messages and writing no more than a batch of labelled ones; a batch whose command rolls back is written again before the scan goes on (round 18's case). Gate (`backfill.perf.test.ts`): a million messages, one in twenty labelled, every rebuild call within a frame (worst 4.7 ms; 23 before), every label a membership.

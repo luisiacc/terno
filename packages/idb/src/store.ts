@@ -1,4 +1,4 @@
-import { addMessageLabels, listFolders, messagesWithUserLabels, rebuildFolders, replaceFolders } from "./folders";
+import { addMessageLabels, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -201,7 +201,7 @@ export class IdbMailStore implements MailStore {
   /** the late tables (messages and their satellites) are in memory */
   private loaded: Promise<void> = Promise.resolve();
   /** plan 65: a mailbox from before schema 24, its Gmail memberships still to add (the labelled messages, how far) */
-  private backfill: { ids: number[] | null; at: number } | null = null;
+  private backfill: { scan: Iterator<R> | null; done: boolean; pending: number[] | null } | null = null;
   private inflight: Promise<unknown> | null = null;
   private open = true;
   private unusable = false;
@@ -286,7 +286,7 @@ export class IdbMailStore implements MailStore {
       );
       // the upgrade's backfill goes through folders.rebuild (the backend's runner: a slice a turn, what it touched
       // published), a batch of messages at a time once no folder job is left (Codex R17)
-      if (foldersPending) store.backfill = { ids: null, at: 0 };
+      if (foldersPending) store.backfill = { scan: null, done: false, pending: null };
       return store;
     } catch (error) {
       idb.close();
@@ -1288,20 +1288,34 @@ export class IdbMailStore implements MailStore {
     list: () => this.early(() => listFolders(this.c)),
     replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
     rebuild: async (limit) => {
-      const { r, next } = await this.command(() => {
+      const r = await this.command(() => {
         const own = rebuildFolders(this.c, limit);
         const fill = this.backfill;
-        if (own.more || !fill) return { r: own, next: null };
-        // a batch of the labelled messages (by message, never a thread whole: Codex R15), their labels added
-        fill.ids ??= messagesWithUserLabels(this.c);
-        const batch = fill.ids.slice(fill.at, fill.at + Math.max(1, Math.floor(limit / 5)));
-        const next = fill.at + batch.length;
-        return { r: { more: next < fill.ids.length, touched: [...own.touched, ...addMessageLabels(this.c, batch)] }, next };
+        if (own.more || !fill) return own;
+        // a bounded stretch of the messages each slice, the scan kept between slices (Codex R45: one command scanning
+        // every message first); at most a batch of labelled ones written a slice (by message: Codex R15)
+        // a batch scanned but not saved yet (its command rolled back) is written again first (Codex R18)
+        if (!fill.pending) {
+          fill.scan ??= T(this.c, "messages").all();
+          const batch: number[] = [];
+          for (let looked = 0; batch.length < Math.max(1, Math.floor(limit / 5)) && looked < 5000; looked++) {
+            const next = fill.scan.next();
+            if (next.done) {
+              fill.done = true;
+              break;
+            }
+            const m = next.value;
+            if (typeof m.gmail_labels === "string" && m.gmail_labels.includes("Label_")) batch.push(m.id as number);
+          }
+          fill.pending = batch;
+        }
+        return { more: !fill.done, touched: [...own.touched, ...addMessageLabels(this.c, fill.pending)] };
       });
-      // the position moves once the batch is saved: one rolled back is done again (Codex R18)
-      if (next !== null && this.backfill) this.backfill.at = next;
-      // done: the mark comes off only now, so a close before resumes the next time it opens
-      if (this.backfill?.ids && this.backfill.at >= this.backfill.ids.length) {
+      // saved: the batch is done with
+      if (this.backfill) this.backfill.pending = null;
+      // done: the mark comes off only now, so a close before resumes the next time it opens (a batch rolled back is
+      // scanned again then: Codex R18)
+      if (this.backfill?.done) {
         this.backfill = null;
         await writeMeta(this.idb, { foldersPending: false });
       }

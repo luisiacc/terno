@@ -17,6 +17,10 @@ vi.mock("./folders", async (original) => {
   return {
     ...real,
     addMessageLabels: (c: Parameters<typeof real.addMessageLabels>[0], ids: Parameters<typeof real.addMessageLabels>[1]) => {
+      if (fail.next) {
+        fail.next = false;
+        throw new Error("synthetic backfill failure");
+      }
       const started = performance.now();
       const touched = real.addMessageLabels(c, ids);
       fail.batches.push(ids.length);
