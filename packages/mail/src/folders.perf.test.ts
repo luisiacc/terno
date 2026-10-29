@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, gatherPlaces, joinGroups, planSteps, planTellApart, readTwins, storedIds } from "./imap";
+import { addAll, customFolders, gatherPlaces, joinGroups, planSteps, planTellApart, readTwins, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -193,6 +193,33 @@ it("Codex R39: reading 500,000 stored twins of one envelope never holds the loop
     clearInterval(tick);
     worst = Math.max(worst, performance.now() - last);
     expect(group).toHaveLength(500_000);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
+});
+
+it("Codex R42: a reset's 500,000 ids gathered into its sets without holding the loop a frame", async () => {
+  const located = Array.from({ length: 500_000 }, (_, i) => i + 1);
+  const pending = Array.from({ length: 200_000 }, (_, i) => 2 * i + 1);
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const ids = new Set<number>();
+    await addAll(ids, pending);
+    await addAll(ids, located);
+    const journaled = new Set<number>();
+    await addAll(journaled, pending);
+    await addAll(journaled, ids);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(ids.size).toBe(500_000);
+    expect(journaled.size).toBe(500_000);
     return worst;
   };
   await stall();

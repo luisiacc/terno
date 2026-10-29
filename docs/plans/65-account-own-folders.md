@@ -419,3 +419,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 41.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **`resetMailbox` still read the whole mailbox's ids before its sliced deletes.** It takes them from the deletes (`RETURNING message_id`), a slice at a time. Gate: the reset of a mailbox of 100,000 locations, longest stall 6 ms (27 before).
+
+**Round 42.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **A reset merged its ids into the journal's sets in one go** (between the paged read and the sliced deletes: 500,000 ids, 55 to 82 ms). `addAll` adds them a few thousand at a time with the loop given turns, for the pending set, the journal and the pass's touched ids; the journal is still saved before any location goes. Gate: a reset's 500,000 ids, with 200,000 pending, gathered with the longest stall under a frame (65 ms without the turns).

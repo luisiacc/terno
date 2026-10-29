@@ -243,6 +243,16 @@ export async function readMailbox<L extends { uid: number }>(
   }
 }
 
+/** Plan 65 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
+export async function addAll(target: Set<number>, ids: Iterable<number>): Promise<void> {
+  const breathe = breather();
+  let n = 0;
+  for (const id of ids) {
+    target.add(id);
+    if (++n % 5000 === 0) await breathe();
+  }
+}
+
 /** Plan 65 (Codex R20, R39): every stored twin of an envelope, 500 a page, the loop given a turn every few milliseconds */
 export async function readTwins(page: (after: number) => Promise<readonly number[]>): Promise<number[]> {
   const breathe = breather();
@@ -613,14 +623,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * identification, so every destination can recognise them (Codex R11).
    */
   async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
-    const ids = new Set<number>(cursor.resetPending?.[path] ?? []);
-    for (const l of await readMailbox(locations, path, olduidvalidity)) ids.add(l.message_id);
+    // every id gathered a few thousand at a time, the loop given turns (Codex R42: 500,000 merged at once, 80 ms)
+    const ids = new Set<number>();
+    await addAll(ids, cursor.resetPending?.[path] ?? []);
+    await addAll(ids, (await readMailbox(locations, path, olduidvalidity)).map((l) => l.message_id));
+    const list = [...ids];
     cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
-    cursor.resetPending[path] = bounded(cursor, [...ids], IMAP_JOURNAL_LIMITS.resetPending, "oldest");
-    cursor.unlocated = bounded(cursor, [...new Set([...(cursor.unlocated ?? []), ...ids])], IMAP_JOURNAL_LIMITS.unlocated);
+    cursor.resetPending[path] = bounded(cursor, list, IMAP_JOURNAL_LIMITS.resetPending, "oldest");
+    const journaled = new Set<number>();
+    await addAll(journaled, cursor.unlocated ?? []);
+    await addAll(journaled, list);
+    cursor.unlocated = bounded(cursor, [...journaled], IMAP_JOURNAL_LIMITS.unlocated);
     await ctx.saveCursor(cursor);
-    for (const id of await locations.resetMailbox(path)) ids.add(id);
-    for (const id of ids) touched.add(id);
+    await addAll(ids, await locations.resetMailbox(path));
+    await addAll(touched, ids);
     return ids;
   }
 
