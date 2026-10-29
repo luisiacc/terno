@@ -69,3 +69,31 @@ One subtraction per message render for old mail. Fresh mail: one regex pass over
 ## Out of scope
 
 Codes in the thread list or notifications, alphanumeric codes, 4- and 8-digit codes, auto-fill into other apps.
+
+## Revisions after the Codex review
+
+The plan review made twelve points:
+
+1. Bare words are broad, so Spanish uses phrases (`clave de verificación`, `clave de acceso`, `clave dinámica`) rather than bare `clave`; `code` stays, as asked, with the 120-character proximity and the 2-hour window bounding the damage.
+2. Quoted mail is ignored: lines starting with `>`, everything after an "On … wrote:" / "El … escribió:" header (the categorizer's `QUOTE_HEADER`, now exported), and `<blockquote>` content.
+3. Per-digit layouts read as codes (`\d(\s\d){5}`, cells become spaces); inline tags between digits don't split them.
+4. The body read is the one shown: HTML when there is one.
+5. `12.123456` and `123456/789` are rejected (tests added).
+6. The match policy is per script: whole words in spaced scripts, substrings in Han, Kana, Thai, Lao, Khmer and Myanmar. Words and text go through the same normalization.
+7. Fresh means `−5 min ≤ now − date ≤ 2 h` and a finite date; `subject` is a memo dependency.
+8. The chip mounts inside the open body only; the HTML is capped before any work.
+9. "Blue" is the palette's `primary` (blue in the default macOS palettes; the theme's own accent elsewhere). `primary-foreground` on `primary` is already a 4.5:1 `CONTRAST_PAIRS` entry; the outlined state is foreground on background. axe passes in every design, light and dark.
+10. A focused chip outlives its expiry until it loses focus. The live region sits outside the button, always mounted, and clears when the check goes so the next copy is announced.
+11. Lifecycle tests cover a second click restarting the 5 s, clipboard failure, remounts and expiry. The code is passed to `t()` as a string, so leading zeros stay.
+12. Motion uses `duration-base`/`duration-slow` with the spring and standard eases, which the global motion setting scales and turns off.
+
+## What the code review changed
+
+Codex's code review found six problems, each now covered by a test that fails without the fix:
+
+1. **Hostile HTML froze the reader** (200 000 spaces took 31 s, 200 000 `<` took 19 s; the regex pipeline was quadratic). `htmlText` is now one forward scan: every search moves on, a `<` that can't start a tag is text before any `>` is sought, and whitespace collapses per line. A test bounds nine hostile inputs at 250 ms each.
+2. **Hidden HTML won over the visible code.** Elements hidden by `display:none`, `visibility:hidden`, a zero `font-size`, `max-height` or `opacity`, or the `hidden` attribute are skipped with their content.
+3. **Nested blockquotes leaked quoted codes.** Skipped elements are skipped to their matching close, counting nesting.
+4. **Named entities weren't decoded:** `c&oacute;digo` missed and `&pound;123456` passed. Common named entities (spaces, punctuation, currencies, accented letters) are decoded before matching.
+5. **A reply's subject brought back the original's code.** Subjects with a `Re:`/`Fwd:` prefix (any language `baseSubject` knows) aren't read.
+6. **A clipboard answer after the chip unmounted** started an uncancelled timer, or showed "Couldn't copy" over another thread. Late answers now only remember the copy.

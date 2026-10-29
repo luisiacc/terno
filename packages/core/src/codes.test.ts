@@ -93,6 +93,38 @@ describe("verification codes (plan 69)", () => {
     expect(findCode("Hi", "Your code is 111222", "<p>Your code is 482913</p>")).toBe("482913");
   });
 
+  // Codex review (plan 69)
+  it("never reads hidden HTML: the code shown is the one copied", () => {
+    expect(html('<div style="display:none">code 111222.</div><p>Your code is 482913.</p>')).toBe("482913");
+    expect(html('<span style="font-size: 0px">code 111222</span><p>Your code is 482913.</p>')).toBe("482913");
+    expect(html("<div hidden>code 111222</div><p>Your code is 482913.</p>")).toBe("482913");
+    expect(html('<div style="display:none"><div>code 111222</div></div><p>Your code is 482913.</p>')).toBe("482913");
+  });
+
+  it("skips nested quotes whole", () => {
+    expect(html("<p>Thanks!</p><blockquote><blockquote>Older message</blockquote><p>Your code is 482913.</p></blockquote>")).toBeNull();
+  });
+
+  it("decodes named entities before matching", () => {
+    expect(html("<p>Tu c&oacute;digo: 482913</p>")).toBe("482913");
+    expect(html("<p>Your code: &pound;123456</p>")).toBeNull();
+    expect(html("<p>Your code: &euro;123456</p>")).toBeNull();
+  });
+
+  it("doesn't take a code from a reply's or forward's subject", () => {
+    expect(findCode("Re: Your verification code 482913", "Thanks, that worked!", null)).toBeNull();
+    expect(findCode("Fwd: Your verification code 482913", "FYI", null)).toBeNull();
+    expect(findCode("RE: Your verification code", "Enter 482913 to continue", null)).toBeNull();
+  });
+
+  it("stays linear on hostile HTML", () => {
+    for (const hostile of [" ".repeat(200_000), "<".repeat(200_000), "<a".repeat(100_000), "<a>".repeat(66_000), "<blockquote>".repeat(16_000), "&".repeat(200_000), "<!--".repeat(50_000), "1 ".repeat(100_000), `code ${"1 ".repeat(100_000)}`]) {
+      const start = performance.now();
+      findCode("Hi", null, hostile);
+      expect(performance.now() - start).toBeLessThan(250);
+    }
+  });
+
   it("htmlText drops what isn't shown", () => {
     expect(htmlText("<head><title>code</title></head><script>code 1</script><!-- code --><p>Hi</p>").trim()).toBe("Hi");
   });

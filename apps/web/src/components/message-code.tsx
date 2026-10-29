@@ -75,11 +75,20 @@ function CodeChip({
   const [usedOnce, setUsedOnce] = useState(() => used.has(id));
   const [said, setSaid] = useState("");
   const hold = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(hold.current), []);
+  // the clipboard answers later: a chip gone by then (folded, another thread) only remembers the copy
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(hold.current);
+    };
+  }, []);
   const copy = () => {
     navigator.clipboard.writeText(code).then(
       () => {
         remember(id);
+        if (!alive.current) return;
         clearTimeout(hold.current);
         setCopied(true);
         setSaid(t("codes.copied"));
@@ -89,7 +98,9 @@ function CodeChip({
           setSaid("");
         }, COPIED_MS);
       },
-      () => snack.error(t("threadMenu.copyFailed")),
+      () => {
+        if (alive.current) snack.error(t("threadMenu.copyFailed"));
+      },
     );
   };
   return (

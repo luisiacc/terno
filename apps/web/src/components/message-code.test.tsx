@@ -112,3 +112,23 @@ it("goes away at expiry when not focused", async () => {
   await act(async () => vi.advanceTimersByTime(1001));
   expect(chip()).toBeNull();
 });
+
+// Codex review (plan 69): the clipboard answers after the chip is gone
+it("a copy that settles after the chip is gone leaves no timer and no snack", async () => {
+  let settle!: { ok: () => void; fail: () => void };
+  writeText.mockImplementation(() => new Promise<void>((ok, fail) => (settle = { ok, fail: () => fail(new Error("denied")) })));
+  const { useSnack } = await import("~/lib/snack");
+  const before = useSnack.getState().current;
+  await show(message());
+  await click();
+  act(() => root.unmount());
+  await act(async () => settle.fail());
+  expect(useSnack.getState().current).toBe(before);
+  root = createRoot(host);
+  await show(message({ id: 2 }));
+  await click();
+  act(() => root.unmount());
+  await act(async () => settle.ok());
+  expect(vi.getTimerCount()).toBe(0);
+  root = createRoot(host);
+});
