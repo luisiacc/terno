@@ -179,6 +179,15 @@ export const snack = Object.assign((input: SnackInput | string, options?: Option
   custom: (input: { id?: string; message: string; duration: number; render: () => ReactNode }) => show(input),
 });
 
+/** Gives the current snack (if still `id`) a body of its own, in place: same entry, the countdown and duration run on, nothing said again. */
+export function growSnack(id: string, render: () => ReactNode): boolean {
+  const s = useSnack.getState();
+  if (s.current?.id !== id) return false;
+  const current = { ...s.current, render };
+  useSnack.setState({ current, last: current });
+  return true;
+}
+
 /** Changes the current snack if it's still `id`: no new entry, the lifetime runs on; `announce` says it again. */
 export function patchSnack(id: string, patch: Partial<Pick<Snack, "message" | "description" | "tone">>, announce = false): void {
   const s = useSnack.getState();

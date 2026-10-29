@@ -168,4 +168,46 @@ describe("similar.apply", () => {
     expect(pages).toHaveLength(3);
     expect(inInbox(db, ids)).toEqual(Array(30).fill(1));
   });
+
+  it("concurrent sweeps resolve one at a time (their walks never interleave) and all finish", async () => {
+    const { backend, db, client, thread } = await setup({ similarPage: 2 });
+    const all: number[] = [];
+    const senders = Array.from({ length: 9 }, (_, i) => `s${i}@bulk.example`);
+    for (const email of senders) for (let i = 0; i < 5; i++) all.push(await thread({ from: { name: email, email } }));
+    const order: string[] = [];
+    const resolvePage = backend.store.similar.resolvePage.bind(backend.store.similar);
+    backend.store.similar.resolvePage = (scope, ...rest) => {
+      order.push("email" in scope ? scope.email : "");
+      return resolvePage(scope, ...rest);
+    };
+    const results = await Promise.all(senders.map((email) => client.call("similar.apply", { threadIds: [], scope: { kind: "sender", email }, action: "archive" })));
+    expect(results.map((r) => r.affected)).toEqual(Array(9).fill(5));
+    expect(inInbox(db, all)).toEqual(Array(all.length).fill(0));
+    // each sweep's pages in one run: a sender never comes back after another started
+    const runs = order.filter((e, i) => i === 0 || order[i - 1] !== e);
+    expect(runs).toHaveLength(9);
+  });
+
+  it("a starred-only scope says how many it left out; threads.undo that fails is kept for a retry", async () => {
+    const { backend, db, client, thread } = await setup();
+    const starred: number[] = [];
+    for (let i = 0; i < 12; i++) starred.push(await thread({ isStarred: true }));
+    const r = await client.call("similar.apply", { threadIds: [], scope: sender, action: "archive" });
+    expect(r).toMatchObject({ affected: 0, skipped: 12, undoId: null });
+    expect(inInbox(db, starred)).toEqual(Array(12).fill(1));
+
+    const acted = await client.call("threads.act", { threadIds: starred.slice(0, 3), action: "archive" });
+    const restore = backend.store.threads.restore.bind(backend.store.threads);
+    let failOnce = true;
+    backend.store.threads.restore = async (x) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("busy");
+      }
+      return restore(x);
+    };
+    await expect(client.call("threads.undo", { undoId: acted.undoId! })).rejects.toThrow("busy");
+    await client.call("threads.undo", { undoId: acted.undoId! });
+    expect(inInbox(db, starred)).toEqual(Array(12).fill(1));
+  });
 });

@@ -151,6 +151,12 @@ export function createHandlers(b: Backend): Handlers {
     return restored;
   };
   const similarFilters = new SimilarFilters(store, () => b.now());
+  let resolveQueue: Promise<unknown> = Promise.resolve();
+  const resolving = <T,>(work: () => Promise<T>): Promise<T> => {
+    const next = resolveQueue.then(work, work);
+    resolveQueue = next.catch(() => undefined);
+    return next;
+  };
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
 
   return {
@@ -242,26 +248,37 @@ export function createHandlers(b: Backend): Handlers {
     "threads.undo": async ({ undoId, jobId }) => {
       const before = undoJournal.take(undoId);
       if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
-      return { restored: (await restore(before, jobId)).size };
+      try {
+        return { restored: (await restore(before, jobId)).size };
+      } catch (error) {
+        // restoring is idempotent: a retry repeats all of it
+        undoJournal.putBack(undoId, before);
+        throw error;
+      }
     },
 
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
     "similar.apply": async ({ threadIds, scope, action, jobId, filterName }) => {
       const targets = new Set(threadIds);
-      // resolved once, in pages of the scope's messages with a turn between them; refused as soon as it passes the cap
-      const found = new Set<number>();
-      const left = new Set<number>();
-      for (let cursor: number | null = null; ; ) {
-        const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
-        for (const id of page.ids) found.add(id);
-        for (const id of page.kept) left.add(id);
-        if (found.size > (b.options.similarCap ?? SCOPE_CAP)) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
-        if (page.next === null) break;
-        cursor = page.next;
-        await b.yieldTurn();
-      }
-      const ids = [...found];
-      const skipped = [...left].filter((id) => !found.has(id)).length;
+      // resolved once, in pages of the scope's messages with a turn between them, refused as soon as it passes the cap;
+      // one sweep resolves at a time (a store keeps a few walks between pages: sweeps never crowd out each other's)
+      const { ids, skipped } = await resolving(async () => {
+        const found = new Set<number>();
+        // the valued threads left out: counted up to what is ever said (the rest needn't be held)
+        const left = new Set<number>();
+        for (let cursor: number | null = null; ; ) {
+          const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
+          for (const id of page.ids) found.add(id);
+          for (const id of page.kept) if (left.size <= 2 * COUNT_CAP) left.add(id);
+          if (found.size > (b.options.similarCap ?? SCOPE_CAP)) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+          if (page.next === null) break;
+          cursor = page.next;
+          await b.yieldTurn();
+        }
+        let skipped = 0;
+        for (const id of left) if (!found.has(id)) skipped++;
+        return { ids: [...found], skipped };
+      });
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
       let late = 0;

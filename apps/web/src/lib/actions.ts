@@ -163,7 +163,7 @@ const SIMILAR = new Set<ThreadAction>(["archive", "trash", "spam"]);
 async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo): Promise<void> {
   try {
     const [{ showSimilarSnackbar }, offers] = await Promise.all([import("~/components/similar-snackbar"), client.call("similar.offers", { threadIds: [...targets], action })]);
-    showSimilarSnackbar(snackId, { action, count: targets.length, offers, undo });
+    showSimilarSnackbar(snackId, { action, undoName: t(UNDO_NAME[action]), count: targets.length, offers, undo });
   } catch {
     // the plain snack already says what happened
   }

@@ -3,15 +3,15 @@ import { t } from "@terno/i18n";
 import { useEffect } from "react";
 import { said } from "~/lib/actions";
 import { applySimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
-import { dismissSnack, snack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
+import { dismissSnack, growSnack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
 import { setApp } from "~/state/app";
 import { Chip, snackbarControls, Strip } from "./category-snackbar";
 import { SnackClose, SnackPill } from "./snack-dock";
 
-const LIFETIME_MS = 10_000;
-
 interface Shown {
   action: SimilarAction;
+  /** what its Undo takes back, for a screen reader ("Undo archive") */
+  undoName: string;
   /** how many the action itself moved */
   count: number;
   offers: SimilarOffers;
@@ -20,18 +20,17 @@ interface Shown {
 
 /**
  * Plan 63: the plain "Archived · Undo" snack grows chips for the rest from
- * the same sender, subject, domain or list (in place: same id, no new
- * entry). Nothing worth offering leaves it as it is.
+ * the same sender, subject, domain or list, in place: same entry, same
+ * countdown. Nothing worth offering leaves it as it is.
  */
 export function showSimilarSnackbar(snackId: string, shown: Shown): void {
-  const s = useSnack.getState();
-  // replaced, closed, or undone meanwhile: nothing to grow
-  if (s.current?.id !== snackId || shown.undo.state !== "ready") return;
-  if (visibleOffers(shown.action, shown.offers.offers).length === 0) return;
-  snack.custom({ id: snackId, message: said(shown.action, shown.count), duration: LIFETIME_MS, render: () => <SimilarSnackbar id={snackId} {...shown} /> });
+  // undone meanwhile: nothing to grow (a snack replaced or closed isn't grown either)
+  if (shown.undo.state !== "ready" || visibleOffers(shown.action, shown.offers.offers).length === 0) return;
+  // the same snack, its countdown running on: the ring never jumps back
+  growSnack(snackId, () => <SimilarSnackbar id={snackId} {...shown} />);
 }
 
-function SimilarSnackbar({ id, action, count, offers, undo }: Shown & { id: string }) {
+function SimilarSnackbar({ id, action, count, offers, undo, undoName }: Shown & { id: string }) {
   const z = useSnack((s) => zHolds(s, undo));
   const live = useSnack((s) => s.current?.id === id);
   const chips = visibleOffers(action, offers.offers);
@@ -64,7 +63,7 @@ function SimilarSnackbar({ id, action, count, offers, undo }: Shown & { id: stri
         <p className="min-w-0 flex-1 truncate text-sm" data-testid="snack-message" title={title}>
           {title}
         </p>
-        {undo.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={t("snack.undoName", { message: title })} shortcut={z ? "z" : undefined} onClick={doUndo} />}
+        {undo.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} onClick={doUndo} />}
         <SnackClose onClick={close} />
       </div>
       <Strip>

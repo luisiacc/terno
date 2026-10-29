@@ -175,3 +175,11 @@ Round 2 (`3121638c..`) found three more issues, each fixed with a test that fail
 3. **A capped zero isn't proof that nothing is left.**
    - A scope read in part stays offered even at 0, shown without a count.
    - Domain and list hide as the sender's equal only when neither count is partial.
+
+Round 3 (`3121638c..22b75cc0`) found three more issues, each fixed with a test that fails without the fix:
+
+1. **Concurrent IndexedDB sweeps could evict each other's walks forever.** The backend now resolves one sweep at a time (a queue). A walk is never crowded out, and a lost token still starts over safely. Test: nine concurrent applies all finish, and their pages never interleave.
+2. **`threads.undo` spent its journal before restoring.** A failed restore of the original action left nothing to retry. It now puts the entry back on failure, as `similar.undo` does. Test: a failing restore, then a retry that works.
+3. **Skipped-thread tracking grew with the scope.** Only up to twice the shown cap is held. Test: an all-starred scope reports what it left out and moves nothing.
+
+The full e2e run also found the snack's growth restarting its lifetime. The countdown ring jumped back, and the snack outlived the dock tests. `growSnack` now swaps in the body in place: same entry, same countdown and duration, nothing announced again. The Undo keeps its "Undo archive" name. `snack.spec` now checks that the first row is compact (at most 40 px) and that chips add one row. The thread-menu visual baselines (terno-light, dracula) were updated for the two new submenus, after looking at them.
