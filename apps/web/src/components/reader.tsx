@@ -1,3 +1,4 @@
+import { folderName } from "~/lib/account-folders";
 import { ReaderAttachments } from "./attachments";
 import type { Account, Category, CategoryColor, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -403,7 +404,7 @@ function useListTitle(): string {
     const review = s.categories.find((c) => c.id === s.reviewCategoryId);
     if (review) return t("list.reviewTitle", { category: review.name });
     if (s.query.trim()) return t("list.scope.quoted", { label: s.query.trim() });
-    return s.categories.find((c) => c.id === s.categoryId)?.name ?? viewLabel(s.view);
+    return folderName(s) ?? s.categories.find((c) => c.id === s.categoryId)?.name ?? viewLabel(s.view);
   });
 }
 

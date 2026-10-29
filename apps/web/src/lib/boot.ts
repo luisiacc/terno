@@ -5,7 +5,7 @@ import type { DesignId } from "@terno/core";
 import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts } from "~/lib/drafts";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
-import { getApp, navigate, setApp, setCategories } from "~/state/app";
+import { getApp, navigate, setApp, setCategories, setFolders } from "~/state/app";
 import { refreshList, reloadList, useList } from "~/state/list";
 import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
@@ -30,7 +30,7 @@ export async function boot(): Promise<void> {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
-    setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
+    setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
     // a remembered open account that's no longer there (plan 64)
     reconcileAccounts(b.accounts);
     installAppearanceListeners();
@@ -81,6 +81,7 @@ export async function boot(): Promise<void> {
       accountsChanged(accounts);
     });
     client.on("categories", (categories) => setCategories(categories));
+    client.on("folders", (folders) => setFolders(folders));
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
     client.on("drafts", () => void loadDrafts());

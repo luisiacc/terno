@@ -1,4 +1,4 @@
-import type { Account, View } from "@terno/core";
+import type { Account, Folder, View } from "@terno/core";
 import { create } from "zustand";
 import { getApp, navigate } from "~/state/app";
 
@@ -34,7 +34,7 @@ export function setOpenAccount(id: number | null): void {
 /** You're somewhere in this account's folders (a category tab filters its Inbox, so it counts as inside). */
 function inside(id: number): boolean {
   const s = getApp();
-  return s.accountId === id && s.reviewCategoryId === null && (s.categoryId !== null || listedByAccount(s.view));
+  return s.accountId === id && s.reviewCategoryId === null && (s.folder !== null || s.categoryId !== null || listedByAccount(s.view));
 }
 
 /** "Go to this account" (the palette): it opens (any other closes), and you land in its Inbox. */
@@ -62,4 +62,42 @@ export function reconcileAccounts(accounts: readonly Account[]): void {
   if (open !== null && !has(open)) setOpenAccount(null);
   const { accountId } = getApp();
   if (accountId !== null && !has(accountId)) navigate({ view: "inbox", accountId: null });
+}
+
+// ── plan 65: the account's own folders
+
+/** The folder you're in, by name (its last path step); null outside one. */
+export function folderName(s: { folders: readonly Folder[]; accountId: number | null; folder: string | null }): string | null {
+  if (s.folder === null) return null;
+  return s.folders.find((f) => f.accountId === s.accountId && f.key === s.folder)?.path.at(-1) ?? null;
+}
+
+export interface FolderRow {
+  /** null: a parent only drawn to group the folders under it (Gmail's "A/B" with no "A") */
+  key: string | null;
+  name: string;
+  depth: number;
+  /** a place to go (an IMAP \\Noselect parent or a drawn one isn't) */
+  selectable: boolean;
+}
+
+/**
+ * An account's folders as sidebar rows, nested by path in their listed order: a parent that isn't listed is
+ * drawn once (not a place to go), so every folder sits under its own.
+ */
+export function folderRows(folders: readonly Folder[], accountId: number): FolderRow[] {
+  const mine = folders.filter((f) => f.accountId === accountId && f.path.length > 0);
+  const listed = new Map(mine.map((f) => [f.path.join("\u0000"), f]));
+  const rows: FolderRow[] = [];
+  const drawn = new Set<string>();
+  for (const f of mine) {
+    for (let depth = 0; depth < f.path.length; depth++) {
+      const at = f.path.slice(0, depth + 1).join("\u0000");
+      if (drawn.has(at)) continue;
+      drawn.add(at);
+      const own = listed.get(at);
+      rows.push({ key: own?.key ?? null, name: f.path[depth]!, depth, selectable: own?.selectable ?? false });
+    }
+  }
+  return rows;
 }

@@ -21,10 +21,12 @@ export interface Mailbox {
   accountId: number | null;
   categoryId: number | null;
   reviewCategoryId: number | null;
+  /** plan 65: one of the account's own folders */
+  folder?: string | null;
 }
 
-/** "inbox||", "all||7", "inbox|2|" */
-export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}`;
+/** "inbox||", "all||7", "inbox|2|", and a folder's "all|2||Work" (plan 65) */
+export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}${m.folder ? `|${m.folder}` : ""}`;
 
 /** Plan 15's filters: what a backend that doesn't say (older than plan 17) knows. */
 export const LEGACY_FILTERS: readonly ListFilter[] = ["unread", "attachments", "starred"];

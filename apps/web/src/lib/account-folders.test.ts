@@ -19,10 +19,11 @@ const fake = vi.hoisted(() => {
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.resolve({ items: [], nextCursor: null }), on: () => () => {} } }));
 
-const { goToAccount, goToFolder, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
-const { getApp, setApp } = await import("~/state/app");
+const { folderName, folderRows, goToAccount, goToFolder, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
+const { getApp, navigate, setApp, setFolders } = await import("~/state/app");
+const { currentScope, listKey } = await import("~/state/list");
 
-const at = (o: Partial<ReturnType<typeof getApp>>) => setApp({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null, query: "", selectedId: null, checked: new Set(), scope: null, readerOpen: false, ...o });
+const at = (o: Partial<ReturnType<typeof getApp>>) => setApp({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null, folder: null, folders: [], query: "", listFilters: new Map(), selectedId: null, checked: new Set(), scope: null, readerOpen: false, ...o });
 const where = () => {
   const s = getApp();
   return { view: s.view, accountId: s.accountId, categoryId: s.categoryId };
@@ -118,5 +119,67 @@ describe("accounts that come and go", () => {
     reconcileAccounts([account(1), account(2), account(9)]);
     expect(useOpenAccount.getState().id).toBe(2);
     expect(where()).toEqual({ view: "sent", accountId: 2, categoryId: null });
+  });
+});
+
+describe("an account's own folders (plan 65)", () => {
+  const f = (accountId: number, key: string, path: string[], selectable = true) => ({ accountId, key, path, selectable });
+
+  it("rows nest by path in listed order; a parent that isn't listed is drawn once, not a place to go", () => {
+    const folders = [f(2, "Label_1", ["Work"]), f(2, "Label_3", ["Work", "Clients"]), f(2, "Label_9", ["Travel", "2026"]), f(2, "Label_10", ["Travel", "2027"]), f(3, "X", ["Other"]), f(2, "Lists", ["Lists"], false), f(2, "Lists/News", ["Lists", "News"])];
+    expect(folderRows(folders, 2)).toEqual([
+      { key: "Label_1", name: "Work", depth: 0, selectable: true },
+      { key: "Label_3", name: "Clients", depth: 1, selectable: true },
+      { key: null, name: "Travel", depth: 0, selectable: false },
+      { key: "Label_9", name: "2026", depth: 1, selectable: true },
+      { key: "Label_10", name: "2027", depth: 1, selectable: true },
+      { key: "Lists", name: "Lists", depth: 0, selectable: false },
+      { key: "Lists/News", name: "News", depth: 1, selectable: true },
+    ]);
+  });
+
+  it("going to a folder: its account's, alone (no category, no review), its view all; anywhere else leaves it", () => {
+    at({ view: "sent", accountId: 1, categoryId: 4, reviewCategoryId: 5 });
+    navigate({ accountId: 2, folder: "Label_1" });
+    expect(where()).toEqual({ view: "all", accountId: 2, categoryId: null });
+    expect([getApp().folder, getApp().reviewCategoryId]).toEqual(["Label_1", null]);
+    goToFolder("inbox");
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
+    expect(getApp().folder).toBeNull();
+  });
+
+  it("its name is the folder's last step; the list key carries it before the query, only when there is one", () => {
+    const folders = [f(2, "Label_3", ["Work", "Clients"])];
+    at({ view: "all", accountId: 2, folder: "Label_3", folders });
+    expect(folderName(getApp())).toBe("Clients");
+    expect(JSON.parse(listKey())).toEqual(["all", 2, null, null, null, "Label_3", ""]);
+    at({ view: "inbox" });
+    expect(JSON.parse(listKey())).toEqual(["inbox", null, null, null, null, ""]);
+  });
+
+  it("the list's scope is the folder; a search from it searches its account, not the folder (Codex R8)", () => {
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    expect(currentScope()).toEqual({ kind: "view", view: "all", accountId: 2, folder: "Label_3" });
+    setApp({ query: "factura" });
+    expect(currentScope()).toEqual({ kind: "search", query: "factura", accountId: 2 });
+    // clearing the search is the folder again
+    setApp({ query: "" });
+    expect(currentScope()).toMatchObject({ folder: "Label_3" });
+  });
+
+  it("a folder you're in that's gone sends you to its account's Inbox; one still listed keeps you", () => {
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    setFolders([f(2, "Label_3", ["Work"])]);
+    expect(getApp().folder).toBe("Label_3");
+    setFolders([f(2, "Label_1", ["Other"])]);
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
+    expect(getApp().folder).toBeNull();
+  });
+
+  it("an account's row counts a folder as inside it: it opens without moving you", () => {
+    setOpenAccount(null);
+    at({ view: "all", accountId: 2, folder: "Label_3" });
+    toggleAccount(2);
+    expect(getApp().folder).toBe("Label_3");
   });
 });

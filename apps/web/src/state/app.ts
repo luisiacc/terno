@@ -1,4 +1,4 @@
-import type { Account, Category, Counts, Filter, FilterRule, ListFilter, View } from "@terno/core";
+import type { Account, Category, Counts, Filter, FilterRule, Folder, ListFilter, View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
@@ -42,6 +42,10 @@ export interface AppState {
   view: View;
   accountId: number | null;
   categoryId: number | null;
+  /** plan 65: one of the account's own folders (with accountId; its view "all") */
+  folder: string | null;
+  /** plan 65: every account's own folders */
+  folders: Folder[];
   /** "Revisar": the engine's pending suggestions for this category */
   reviewCategoryId: number | null;
   query: string;
@@ -97,6 +101,8 @@ export const useApp = create<AppState>(() => ({
   view: "inbox",
   accountId: null,
   categoryId: null,
+  folder: null,
+  folders: [],
   reviewCategoryId: null,
   query: "",
   listFilters: loadListFilters(),
@@ -149,12 +155,15 @@ export function setListAutoSelection(selectedId: number | null): void {
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null }): void {
+  // plan 65: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
+  const folder = to.folder ?? null;
   setApp((s) => ({
-    reviewCategoryId: to.reviewCategoryId ?? null,
-    view: to.view ?? (to.categoryId ? "all" : s.view),
+    reviewCategoryId: folder ? null : (to.reviewCategoryId ?? null),
+    view: folder ? "all" : (to.view ?? (to.categoryId ? "all" : s.view)),
     accountId: to.accountId === undefined ? s.accountId : to.accountId,
-    categoryId: to.categoryId === undefined ? null : to.categoryId,
+    categoryId: folder || to.categoryId === undefined ? null : to.categoryId,
+    folder,
     query: "",
     selectedId: null,
     checked: new Set(),
@@ -163,6 +172,13 @@ export function navigate(to: { view?: View; accountId?: number | null; categoryI
     // another mailbox is the list (List layout); Split ignores it
     readerOpen: false,
   }));
+}
+
+/** plan 65: the folder list changed: a folder you're in that's gone sends you to its account's Inbox. */
+export function setFolders(folders: Folder[]): void {
+  setApp({ folders });
+  const { folder, accountId } = getApp();
+  if (folder !== null && !folders.some((f) => f.accountId === accountId && f.key === folder && f.selectable)) navigate({ view: "inbox", accountId });
 }
 
 /**

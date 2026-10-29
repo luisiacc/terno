@@ -1,3 +1,4 @@
+import { folderName } from "~/lib/account-folders";
 import { Input } from "@terno/ui/components/input";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
@@ -348,6 +349,7 @@ function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefine
 function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
+  const folder = useApp(folderName);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
@@ -361,7 +363,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
-  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
+  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : (folder ?? category?.name ?? viewLabel(view));
   // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -455,7 +457,7 @@ function SelectAllBanner() {
   const all = useApp((s) => s.checked.size > 0 && s.checked.size >= loaded);
   const scope = useApp((s) => s.scope);
   const view = useApp((s) => s.view);
-  const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId)?.name);
+  const category = useApp((s) => folderName(s) ?? s.categories.find((c) => c.id === s.categoryId)?.name);
   const query = useApp((s) => s.query.trim());
   const filter = useApp(activeFilter);
   const show = scope !== null || (all && more && loaded > 0);
