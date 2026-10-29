@@ -683,6 +683,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (atLocation !== null) {
             await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
             touched.add(atLocation);
+            // placed: no longer a candidate, even if a pass that stopped left it in the journal (Codex R37)
+            recover.drop(atLocation);
+            resetOrphans.delete(atLocation);
             continue;
           }
           // Without a Message-ID, identify by content (date, sender, subject, size): stable across

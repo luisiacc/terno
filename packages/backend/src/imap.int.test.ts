@@ -1732,6 +1732,47 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "B" }]);
   });
 
+  it("Codex R37: after a pass that stopped once a moved ID-less message was placed, an identical copy elsewhere is its own", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("C");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Colocado y copiado" }).replace(/^Message-ID: .*\r\n/m, "");
+    const lone = ctl.addMessage("Z", { raw: twin });
+    ctl.addMessage("C", { raw: raw({ subject: "En C" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado y copiado'")!.id;
+    // moved to A, and an identical copy appears in C; the pass stops (a dropped connection) as C is read
+    ctl.moveMessages("Z", [lone.uid], "A");
+    ctl.addMessage("C", { raw: twin });
+    const original = ImapFlow.prototype.fetch;
+    let dropped = false;
+    const failing = vi.spyOn(ImapFlow.prototype, "fetch").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const reading = (args[1] as { envelope?: boolean } | undefined)?.envelope === true;
+      if (!dropped && reading && (this.mailbox && this.mailbox.path) === "C") {
+        dropped = true;
+        throw Object.assign(new Error("Connection closed"), { code: "EConnectionClosed" });
+      }
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      failing.mockRestore();
+    }
+    expect(dropped).toBe(true);
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    const rows = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado y copiado' ORDER BY id").map((r) => r.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe(id);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", id)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "C" }]);
+  });
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

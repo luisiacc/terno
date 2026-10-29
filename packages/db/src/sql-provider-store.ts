@@ -165,7 +165,19 @@ class SqlImapLocations implements ImapLocationStore {
                                WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`;
     const conditional = (ids: readonly number[]) =>
       this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(ids.length)}) AND NOT ${stillThere}`, mailbox, ...ids, mailbox));
-    const changes = () => this.db.get<{ c: number }>("SELECT total_changes() AS c")!.c;
+    // a long thread being decided is watched (temporary triggers, this connection's): a location written for one of
+    // its messages, or one of them changing spam, trash or thread, marks it (Codex R37: any write anywhere moved
+    // total_changes, and three scans in a row fell back to the whole thread in one statement)
+    this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS expunge_watch (thread_id INTEGER PRIMARY KEY, dirty INTEGER NOT NULL DEFAULT 0);
+      CREATE TEMP TRIGGER IF NOT EXISTS expunge_watch_loc_in AFTER INSERT ON message_locations BEGIN
+        UPDATE expunge_watch SET dirty = 1 WHERE thread_id = (SELECT thread_id FROM messages WHERE id = NEW.message_id);
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS expunge_watch_loc_up AFTER UPDATE ON message_locations BEGIN
+        UPDATE expunge_watch SET dirty = 1 WHERE thread_id = (SELECT thread_id FROM messages WHERE id = NEW.message_id);
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS expunge_watch_msg AFTER UPDATE OF is_spam, is_trash, thread_id ON messages BEGIN
+        UPDATE expunge_watch SET dirty = 1 WHERE thread_id IN (NEW.thread_id, OLD.thread_id);
+      END;`);
     let batch: number[] = [];
     let batchMessages = 0;
     const flush = () => {
@@ -191,7 +203,7 @@ class SqlImapLocations implements ImapLocationStore {
       }
       let decided = false;
       for (let attempt = 0; attempt < 3 && !decided; attempt++) {
-        const stamp = changes();
+        this.db.run("INSERT OR REPLACE INTO expunge_watch (thread_id, dirty) VALUES (?, 0)", thread);
         let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
         let here = false;
         for (;;) {
@@ -213,13 +225,14 @@ class SqlImapLocations implements ImapLocationStore {
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
         if (here) decided = true;
-        else if (changes() === stamp) {
-          // nothing written since the scan began: still none there, deleted in this same turn
+        else if (this.db.get<{ dirty: number }>("SELECT dirty FROM expunge_watch WHERE thread_id = ?", thread)?.dirty === 0) {
+          // nothing that could put one back written since the scan began: still none there, deleted in this same turn
           this.db.tx(() => this.db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, mailbox));
           decided = true;
         }
       }
-      if (!decided) conditional([thread]);
+      this.db.run("DELETE FROM expunge_watch WHERE thread_id = ?", thread);
+      // (a thread changing under all three scans keeps its row: shown a while longer, never a whole thread in one go)
       await breathe();
     }
     flush();

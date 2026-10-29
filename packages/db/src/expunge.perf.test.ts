@@ -70,3 +70,33 @@ it("Codex R35: expunging a folder of 50,000 one-message conversations: the longe
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("Codex R37: expunging a 150,000-message conversation while other writes keep coming: the longest stall within a frame", { timeout: 1_800_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-expunge-"));
+  const store = new SqlMailStore(openDatabase(join(dir, "e.db")), { checkpointWorker: true });
+  try {
+    const [, m] = await withAccounts(store);
+    await store.folders.replace(m!, [{ key: "Big", path: ["Big"], selectable: true }]);
+    for (let i = 0; i < 150_000; i += 5000) {
+      await ingest(store, Array.from({ length: 5000 }, (_, j) => msg({ accountId: m!, providerMsgId: `m${i + j}`, providerThreadId: "one", locations: [{ mailbox: "Big", uidvalidity: 1, uid: i + j + 1, flags: [] }] })));
+    }
+    const db = sqlDb(store);
+    const ids = db.all<{ id: number }>("SELECT id FROM messages WHERE account_id = ? ORDER BY id", m!).map((r) => r.id);
+    // another account's state written every millisecond: nothing to do with this thread
+    const writer = setInterval(() => db.run("UPDATE accounts SET position = position WHERE id <> ?", m!), 1);
+    const loop = watchLoop(16);
+    const gc = watchGc();
+    try {
+      await store.providerStore(m!).locations.removeMany(ids, "Big");
+    } finally {
+      clearInterval(writer);
+    }
+    const worst = stallLessGc(loop.stop(), await gc.stop());
+    console.log(`expunge 150,000 with writes: longest stall ${worst.toFixed(1)} ms`);
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE folder = 'Big'")!.c).toBe(0);
+    expect(worst).toBeLessThan(16 * MULT);
+  } finally {
+    await store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
