@@ -204,7 +204,8 @@ export class ScopeIndex {
   private threadIds: number[] | null = null;
   private readonly members = new Map<number, number[]>();
   /** plan 65: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
-  private readonly folderIds = new Map<string, number[]>();
+  private readonly folderIds = new Map<string, { ids: number[]; changes: { gone: number | null; added: number | null }[] }>();
+  private readonly folderIdBuilds = new Map<string, Generator<void, number[], void>>();
   /**
    * a folder's members newest first, kept across reads, a few changes placed by search (Codex R48: an arrival used to
    * throw the order away); built a few milliseconds a turn, in the background once a read asked for it, so no read
@@ -225,7 +226,16 @@ export class ScopeIndex {
         for (const f of LIST_FILTERS) if (FILTER_TEST[f](row) !== FILTER_TEST[f](prev)) this.crossed[f].add((row ?? prev)!.id as number);
       } else if (table === "thread_folders") {
         const key = `${(row ?? prev)!.account_id}:${(row ?? prev)!.folder}`;
-        if (!row || !prev) this.folderIds.delete(key);
+        // a member in or out: placed in the kept ascending ids by search, a few at a time (Codex R51: one used to throw
+        // them away); an order being built from rows that just changed starts over
+        if (!row || !prev) {
+          const kept = this.folderIds.get(key);
+          if (kept) {
+            if (kept.changes.length >= 64) this.folderIds.delete(key);
+            else kept.changes.push({ gone: row ? null : (prev!.thread_id as number), added: row ? (row.thread_id as number) : null });
+          }
+          this.folderIdBuilds.delete(key);
+        }
         const dates = this.folderDates.get(key);
         const dw = prev ? { date: prev.last_date as number, id: prev.thread_id as number } : null;
         const di = row ? { date: row.last_date as number, id: row.thread_id as number } : null;
@@ -293,15 +303,52 @@ export class ScopeIndex {
     return this.matching(c, "unread");
   }
 
-  /** plan 65: a folder's member thread ids, ascending */
-  folder(c: Ctx, accountId: number, key: string): readonly number[] {
+  /**
+   * plan 65: a folder's member thread ids, ascending, kept across changes; built a step at a time (in the background
+   * once asked for: Codex R51, 500,000 sorted at once were 140 ms), null until then (a scope selects its page)
+   */
+  folder(c: Ctx, accountId: number, key: string): readonly number[] | null {
     const at = `${accountId}:${key}`;
-    let ids = this.folderIds.get(at);
-    if (!ids) {
-      ids = T(c, "thread_folders").by("folder", accountId, key).map((m) => m.thread_id as number).sort((x, y) => x - y);
-      this.folderIds.set(at, ids);
+    const kept = this.folderIds.get(at);
+    if (kept) {
+      for (const { gone, added } of kept.changes) {
+        if (gone !== null) {
+          const i = seekAfter(kept.ids, gone - 1);
+          if (kept.ids[i] === gone) kept.ids.splice(i, 1);
+        }
+        if (added !== null) {
+          const i = seekAfter(kept.ids, added - 1);
+          if (kept.ids[i] !== added) kept.ids.splice(i, 0, added);
+        }
+      }
+      kept.changes.length = 0;
+      return kept.ids;
     }
-    return ids;
+    let steps = this.folderIdBuilds.get(at);
+    if (!steps) {
+      steps = idSteps(c, accountId, key);
+      this.folderIdBuilds.set(at, steps);
+      const mine = steps;
+      const go = () => {
+        if (this.folderIdBuilds.get(at) !== mine) return;
+        if (!this.advanceIds(at, mine, 4)) setTimeout(go, 0);
+      };
+      setTimeout(go, 0);
+    }
+    return this.advanceIds(at, steps, readBudget(c, "folder", accountId, key)) ? this.folderIds.get(at)!.ids : null;
+  }
+
+  private advanceIds(at: string, steps: Generator<void, number[], void>, budgetMs: number): boolean {
+    const until = performance.now() + budgetMs;
+    for (;;) {
+      const r = steps.next();
+      if (r.done) {
+        this.folderIdBuilds.delete(at);
+        this.folderIds.set(at, { ids: r.value, changes: [] });
+        return true;
+      }
+      if (performance.now() >= until) return false;
+    }
   }
 
   /** plan 65: a folder's member thread ids, newest first (last date, then id: the list's order) */
@@ -385,6 +432,45 @@ export class ScopeIndex {
 /** what a read gives a folder's order build: a millisecond for a small one, nothing for a big one (its page is selected) */
 function readBudget(c: Ctx, index: "folder" | "unread", accountId: number, key: string): number {
   return (T(c, "thread_folders").bucket(index, accountId, key)?.size ?? 0) > 20_000 ? 0 : 1;
+}
+
+/** a folder's member ids ascending, a step at a time: read out, sorted as typed runs, merged a pass at a time */
+function* idSteps(c: Ctx, accountId: number, key: string): Generator<void, number[], void> {
+  const memberships = T(c, "thread_folders");
+  const list: number[] = [];
+  for (const k of memberships.keysBy("folder", accountId, key)) {
+    list.push(memberships.rows.get(k)!.thread_id as number);
+    if (list.length % 5000 === 0) yield;
+  }
+  let from = Float64Array.from(list);
+  const RUN = 16_384;
+  for (let i = 0; i < from.length; i += RUN) {
+    from.subarray(i, Math.min(i + RUN, from.length)).sort();
+    yield;
+  }
+  let to = new Float64Array(from.length);
+  for (let width = RUN; width < from.length; width *= 2) {
+    for (let lo = 0; lo < from.length; lo += 2 * width) {
+      const mid = Math.min(lo + width, from.length);
+      const hi = Math.min(lo + 2 * width, from.length);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      while (i < mid && j < hi) {
+        to[k++] = from[j]! < from[i]! ? from[j++]! : from[i++]!;
+        if ((k & 0x3fff) === 0) yield;
+      }
+      while (i < mid) to[k++] = from[i++]!;
+      while (j < hi) to[k++] = from[j++]!;
+    }
+    [from, to] = [to, from];
+  }
+  const out: number[] = [];
+  for (let i = 0; i < from.length; i++) {
+    out.push(from[i]!);
+    if (i % 20_000 === 19_999) yield;
+  }
+  return out;
 }
 
 /** a kept order's changes placed by binary search */

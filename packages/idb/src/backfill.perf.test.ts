@@ -215,3 +215,41 @@ it("Codex R50: 250 cold lookups of different envelopes among 50,000 sharing a Me
   expect(after).toBeLessThan(25 * MULT);
   await store.close();
 });
+
+it("Codex R51: select all in a folder of 150,000 threads, cold and after an arrival, within the worker's stall budget", { timeout: 1_200_000 }, async () => {
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
+  // ids in no order: nothing kept sorted to start from
+  for (let n = 1; n <= 150_000; n++) {
+    const i = ((n * 7919) % 150_000) + 1;
+    c.db.table("threads").load({ id: i, account_id: account, last_date: i, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+    c.db.table("thread_folders").load({ thread_id: i, account_id: account, folder: "Label_big", last_date: i, unread: 0 });
+  }
+  const scope = { view: "all" as const, accountId: account, folder: "Label_big" };
+  const coldSample = await sampleAsync(() => store.threads.scopeIds({ ...scope, after: 0, limit: 500 }));
+  expect(coldSample.result).toEqual(Array.from({ length: 500 }, (_, i) => i + 1));
+  const cold = settle([coldSample]).ms[0]!;
+  // pages while the ids are built, then once kept
+  const reads: number[] = [];
+  for (let after = 500, i = 0; i < 20; i++, after += 500) {
+    const s = await sampleAsync(() => store.threads.scopeIds({ ...scope, after, limit: 500 }));
+    expect(s.result[0]).toBe(after + 1);
+    reads.push(settle([s]).ms[0]!);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // an arrival: one more member
+  c.db.table("threads").load({ id: 150_001, account_id: account, last_date: 1, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+  c.db.tx(() => c.db.table("thread_folders").put({ thread_id: 150_001, account_id: account, folder: "Label_big", last_date: 1, unread: 0 }));
+  const afterSample = await sampleAsync(() => store.threads.scopeIds({ ...scope, after: 149_900, limit: 500 }));
+  expect(afterSample.result.at(-1)).toBe(150_001);
+  const arrival = settle([afterSample]).ms[0]!;
+  console.log(`select all in a folder of 150,000: cold ${cold.toFixed(1)} ms, pages while built ${Math.max(...reads).toFixed(1)} ms, after an arrival ${arrival.toFixed(2)} ms`);
+  expect(cold).toBeLessThan(32 * MULT);
+  expect(Math.max(...reads)).toBeLessThan(32 * MULT);
+  expect(arrival).toBeLessThan(2 * MULT);
+  await store.close();
+});
