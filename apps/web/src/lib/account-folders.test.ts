@@ -57,8 +57,16 @@ describe("an account's row", () => {
     expect(where()).toEqual({ view: "trash", accountId: 2, categoryId: null });
     setOpenAccount(null);
     at({ view: "all", accountId: 2, categoryId: 5 });
-    goToAccount(2);
+    toggleAccount(2);
     expect(where()).toEqual({ view: "all", accountId: 2, categoryId: 5 });
+  });
+
+  it("the palette's account command always lands in its Inbox, even from inside it (Codex R1)", () => {
+    setOpenAccount(2);
+    at({ view: "sent", accountId: 2, query: "factura" });
+    goToAccount(2);
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
+    expect(getApp().query).toBe("");
   });
 
   it("open: closes, and you stay where you are", () => {

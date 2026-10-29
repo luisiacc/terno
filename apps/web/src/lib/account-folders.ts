@@ -37,16 +37,17 @@ function inside(id: number): boolean {
   return s.accountId === id && s.reviewCategoryId === null && (s.categoryId !== null || listedByAccount(s.view));
 }
 
-/** "Go to this account" (the palette): it opens (any other closes), and you land in its Inbox unless you're already inside it. */
+/** "Go to this account" (the palette): it opens (any other closes), and you land in its Inbox. */
 export function goToAccount(id: number): void {
   setOpenAccount(id);
-  if (!inside(id)) navigate({ accountId: id, view: "inbox" });
+  navigate({ accountId: id, view: "inbox" });
 }
 
-/** An account's row: a closed one is "go to this account"; an open one closes, and you stay where you are. */
+/** An account's row: a closed one opens and lands in its Inbox, unless you're already inside it; an open one closes, and you stay. */
 export function toggleAccount(id: number): void {
-  if (useOpenAccount.getState().id === id) setOpenAccount(null);
-  else goToAccount(id);
+  if (useOpenAccount.getState().id === id) return setOpenAccount(null);
+  setOpenAccount(id);
+  if (!inside(id)) navigate({ accountId: id, view: "inbox" });
 }
 
 /** A folder by shortcut or palette: in the scope you're in when the account lists it, otherwise for all accounts. */

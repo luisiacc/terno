@@ -173,6 +173,39 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await expect(page.locator(`[data-thread-id="${id}"] [data-cat-dot="${viajes}"]`)).toHaveCount(1);
   });
 
+  test("closed accounts mount no folder rows; a closing one lets its rows go after the slide (Codex R1)", async ({ app: page }) => {
+    const ids = await accountIds(page);
+    await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(0);
+    await row(page, ids[0]!).click();
+    await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(5);
+    await expect(page.locator(`[data-testid^="nav-folder-${ids[0]}-"]`)).toHaveCount(5);
+    await row(page, ids[1]!).click();
+    await expect(page.locator(`[data-testid^="nav-folder-${ids[0]}-"]`)).toHaveCount(0);
+    await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(5);
+  });
+
+  test("the palette's account command lands in its Inbox even from inside it (Codex R1)", async ({ app: page }) => {
+    const [a] = await accountIds(page);
+    await row(page, a!).click();
+    await child(page, a!, "sent").click();
+    const name = (await row(page, a!).textContent())!.replace(/\d+$/, "").trim();
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-input").fill(name);
+    await page.getByRole("option", { name: new RegExp(name) }).first().click();
+    await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
+  });
+
+  test("two accounts to one: a focused folder of the one that stays hands focus to its row (Codex R1)", async ({ app: page, server }) => {
+    const ids = await accountIds(page);
+    for (const id of ids.slice(2)) await server.backend.server.invoke("accounts.remove", { id }, ctx);
+    await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(2);
+    await row(page, ids[0]!).click();
+    await child(page, ids[0]!, "sent").focus();
+    await server.backend.server.invoke("accounts.remove", { id: ids[1] }, ctx);
+    await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
+    await expect(row(page, ids[0]!)).toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`axe with an account open, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

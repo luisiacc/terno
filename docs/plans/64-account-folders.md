@@ -124,3 +124,10 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
     - Hidden rows are `inert` and out of the Tab order.
     - Focus returns to the account row when its folders close on a focused child, and to the next row when a focused account is removed.
     - The seam test (`sidebar-panels.spec.ts:705`) now uses two adjacent rows under an open account: Inbox selected, Sent hovered.
+
+## Code review
+
+**Round 1.** Codex found three problems; each is fixed with a test that fails without the fix:
+1. **Closed accounts mounted their five folder rows,** so N accounts cost 5N rows on every sidebar render. A closed account now mounts none; a closing one keeps its rows only through the slide (`CLOSING_MS`). Test: e2e checks how many folder rows are mounted as accounts open and close.
+2. **The palette's account command did nothing from inside that account** (from its Sent, or from a search). It now always lands in its Inbox; only the account's row keeps you where you are when it opens. Tests: unit and e2e.
+3. **Going from two accounts to one dropped keyboard focus** when a folder of the account that stays was focused, because its folders unmounted with nothing to hand focus to. Focus now goes to that account's row. Test: e2e.

@@ -329,13 +329,23 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
   );
 }
 
+/** How long a closing account keeps its rows for the slide (past `slow`; transitionend never comes without motion). */
+const CLOSING_MS = 400;
+
 /**
  * An open account's own folders under its row (plan 64), on the More group's 0fr→1fr row: what's below slides with
- * it, and closed it's inert (not focusable, not in the accessibility tree). A focused folder that closes hands focus
- * to its account's row.
+ * it, and closed it's inert (not focusable, not in the accessibility tree). Its rows are mounted only while it's open
+ * or closing, so closed accounts cost nothing. A focused folder that closes hands focus to its account's row.
  */
 function AccountFolders({ account, open, active, unread, countTone }: { account: Account; open: boolean; active: View | null; unread?: number; countTone: "muted" | "unread" }) {
   const groupRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(open);
+  if (open && !mounted) setMounted(true);
+  useEffect(() => {
+    if (open || !mounted) return;
+    const timer = setTimeout(() => setMounted(false), CLOSING_MS);
+    return () => clearTimeout(timer);
+  }, [open, mounted]);
   useLayoutEffect(() => {
     if (!open && groupRef.current?.contains(document.activeElement)) document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus({ preventScroll: true });
   }, [open, account.id]);
@@ -350,7 +360,7 @@ function AccountFolders({ account, open, active, unread, countTone }: { account:
       className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
     >
       <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">
-        {ACCOUNT_VIEWS.map((v) => {
+        {mounted && ACCOUNT_VIEWS.map((v) => {
           const Icon = VIEWS.find((f) => f.view === v)!.icon;
           return (
             <NavItem
@@ -395,7 +405,9 @@ export function Sidebar() {
     const before = lastAccounts.current;
     lastAccounts.current = accounts;
     const gone = focusedAccount.current;
-    if (gone === null || accounts.some((a) => a.id === gone) || (document.activeElement && document.activeElement !== document.body)) return;
+    if (gone === null || (document.activeElement && document.activeElement !== document.body)) return;
+    // still here, its folders gone with the other accounts (two to one): its row
+    if (accounts.some((a) => a.id === gone)) return accountsRef.current?.querySelector<HTMLElement>(`[data-testid="nav-account-${gone}"]`)?.focus({ preventScroll: true });
     focusedAccount.current = null;
     const next = accounts.find((a) => before.findIndex((b) => b.id === a.id) > before.findIndex((b) => b.id === gone));
     const target = next ? accountsRef.current?.querySelector<HTMLElement>(`[data-testid="nav-account-${next.id}"]`) : accountsRef.current?.nextElementSibling;
