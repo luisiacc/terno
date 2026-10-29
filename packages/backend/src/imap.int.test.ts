@@ -1665,6 +1665,38 @@ describe("an account's own folders (plan 65)", () => {
     });
   }
 
+  for (const how of ["into a folder it already knew", "into a new folder, older than the window"] as const) {
+    it(`Codex R29: with its plain-key twin deleted, a Message-ID twin copied ${how} is one message in both`, async () => {
+      const { imap, backend, client, addAccount } = await setup();
+      const ctl = imap.server.control;
+      const old = new Date(Date.now() - 400 * 86_400_000);
+      const outside = how !== "into a folder it already knew";
+      if (outside) await client.call("settings.update", { syncWindowDays: 3650 });
+      ctl.createMailbox("Z");
+      if (!outside) ctl.createMailbox("A");
+      const twin = raw({ subject: "Superviviente copiado", id: "copied-survivor@x", ...(outside && { date: old }) });
+      const opts = outside ? { raw: twin, internaldate: old } : { raw: twin };
+      ctl.addMessage("Z", opts);
+      ctl.addMessage("Z", opts);
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      const plain = sqlDb(backend.store).get<{ uid: number }>("SELECT l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
+      const survivor = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
+      ctl.expungeMessages("Z", [plain.uid]);
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      if (outside) {
+        await client.call("settings.update", { syncWindowDays: 30 });
+        ctl.createMailbox("A");
+      }
+      ctl.copyMessages("Z", [survivor.uid], "A");
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Superviviente copiado'").map((m) => m.id)).toEqual([survivor.id]);
+      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ? ORDER BY mailbox", survivor.id)).toEqual([{ mailbox: "A" }, { mailbox: "Z" }]);
+    });
+  }
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

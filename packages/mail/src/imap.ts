@@ -65,6 +65,8 @@ interface Ambiguous {
   uidnext: number;
   /** a Message-ID's: as a copy, this stored message gains the place (the same message in one more folder) */
   attachTo: number | null;
+  /** a Message-ID's: as a copy, the first of its twins (`attachTo` first) with no place in the folder gains it */
+  idCopy: boolean;
 }
 
 /**
@@ -489,6 +491,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           let ambiguousOf: number[] | null = null;
           /** a Message-ID held back: as a copy, the same message (this one) in one more folder (Codex R26) */
           let attachTo: number | null = null;
+          /** a Message-ID held back with no plain-key row: as a copy, one of its twins in one more folder (Codex R29) */
+          let idCopy = false;
           const env = m.envelope;
           // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
           const atLocation = await locations.at(path, uidvalidity, m.uid);
@@ -554,6 +558,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, null);
             if (group.length) {
               ambiguousOf = group;
+              // a Message-ID's copy is the same message in one more folder: one of its twins gains the place (Codex R29)
+              if (messageKey(env?.messageId)) idCopy = true;
               // a copy held back gets a key of its own place: two of them, in two folders, are never one (Codex R21)
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
             }
@@ -580,6 +586,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (group.length > 1) {
               ambiguousOf = group;
               idHeld = true;
+              idCopy = true;
               attachTo = existing.id;
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
             }
@@ -647,7 +654,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
-          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext), attachTo });
+          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext), attachTo, idCopy });
           else if (!old) fresh.push(incoming);
         }
       }
@@ -731,12 +738,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           leaving.set(l.mailbox, ids);
         }
         touched.add(id);
-      } else if (a.attachTo !== null && !(places.get(a.attachTo) ?? []).some((l) => l.mailbox === a.path) && !attached.has(`${a.attachTo}\u0000${a.path}`)) {
-        // the same message in one more folder: once a folder (a second copy there is a message of its own: Codex R27)
-        attached.add(`${a.attachTo}\u0000${a.path}`);
-        await upsertLocation(a.attachTo, a.path, a.uidvalidity, a.uid, a.flags);
-        touched.add(a.attachTo);
-      } else if (!a.old) copies.push(a.incoming);
+      } else {
+        // a Message-ID's copy: the same message in one more folder, once a folder (a second copy there is a message of
+        // its own: Codex R27); the plain-key one first, else the first twin with no place there (Codex R29)
+        const unplacedHere = (x: number) => !(places.get(x) ?? []).some((l) => l.mailbox === a.path) && !attached.has(`${x}\u0000${a.path}`);
+        const target = a.idCopy ? [...(a.attachTo === null ? [] : [a.attachTo]), ...a.candidates].find(unplacedHere) : undefined;
+        if (target !== undefined) {
+          attached.add(`${target}\u0000${a.path}`);
+          await upsertLocation(target, a.path, a.uidvalidity, a.uid, a.flags);
+          touched.add(target);
+        } else if (!a.old) copies.push(a.incoming);
+      }
     }
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
     if (copies.length) await sink.ingest(copies, { live: list.some((a) => a.live) });
