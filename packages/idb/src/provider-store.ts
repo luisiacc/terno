@@ -7,6 +7,8 @@ type Command = <V>(fn: () => V) => Promise<V>;
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
 /** each twins bucket's ids ascending, while the bucket is the same size (a page seeks into it) */
 const twinOrders = new WeakMap<ReadonlySet<unknown>, number[]>();
+/** each Message-ID bucket's ids by envelope, ascending, while the bucket is the same size */
+const idTwinOrders = new WeakMap<ReadonlySet<unknown>, { size: number; byEnvelope: Map<string, number[]> }>();
 
 export class IdbProviderStore implements ProviderStore {
   readonly locations: ImapLocationStore;
@@ -195,16 +197,39 @@ class IdbImapLocations implements ImapLocationStore {
   }
 
   twins(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, afterId: number, limit: number) {
-    // with a Message-ID: the messages that carry it (a handful), by envelope
+    // with a Message-ID: the messages that carry it, split by envelope once while the bucket is unchanged, each
+    // envelope's ids ascending (Codex R27: a reused Message-ID's every message never scanned again per lookup)
     if (e.rfcMessageId)
-      return this.read(() =>
-        T(this.c, "messages")
-          .by("rfc", this.accountId, e.rfcMessageId)
-          .filter((m) => m.from_email === e.fromEmail && m.date === e.date && m.size === e.size && m.subject === e.subject && (m.id as number) > afterId)
-          .map((m) => m.id as number)
-          .sort((x, y) => x - y)
-          .slice(0, limit),
-      );
+      return this.read(() => {
+        const messages = T(this.c, "messages");
+        const bucket = messages.bucket("rfc", this.accountId, e.rfcMessageId);
+        if (!bucket) return [];
+        let split = idTwinOrders.get(bucket);
+        if (!split || split.size !== bucket.size) {
+          const byEnvelope = new Map<string, number[]>();
+          for (const k of bucket) {
+            const m = messages.rows.get(k)!;
+            const at = `${m.from_email}\u0000${m.date}\u0000${m.size}\u0000${m.subject}`;
+            const ids = byEnvelope.get(at) ?? [];
+            ids.push(m.id as number);
+            byEnvelope.set(at, ids);
+          }
+          for (const ids of byEnvelope.values()) ids.sort((x, y) => x - y);
+          idTwinOrders.set(bucket, (split = { size: bucket.size, byEnvelope }));
+        }
+        const ids = split.byEnvelope.get(`${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`) ?? [];
+        let lo = 0;
+        let hi = ids.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (ids[mid]! <= afterId) lo = mid + 1;
+          else hi = mid;
+        }
+        const page = ids.slice(lo, lo + limit);
+        if (page.every((id) => messages.has(id) && bucket.has(messages.key(id)))) return page;
+        idTwinOrders.delete(bucket);
+        return [...bucket].map((k) => messages.rows.get(k)!).filter((m) => m.from_email === e.fromEmail && m.date === e.date && m.size === e.size && m.subject === e.subject && (m.id as number) > afterId).map((m) => m.id as number).sort((x, y) => x - y).slice(0, limit);
+      });
     // the bucket holds exactly the envelope's ID-less messages (Codex R20: never a sender's or a date's every one),
     // sorted once and kept while it's unchanged, each page a seek into it (Codex R21: never a scan and a sort a page)
     return this.read(() => {

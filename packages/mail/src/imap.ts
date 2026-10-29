@@ -571,14 +571,19 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // a Message-ID with twins (the same envelope stored more than once), the plain-key one still placed elsewhere:
           // a copy of it here, or one of the others moved here after its folder's sweep; told apart once every folder
           // is read, like ID-less twins (Codex R26)
-          if (existing && messageKey(env?.messageId) && ambiguousOf === null && (await locations.get(existing.id, path)) === null && (await locations.count(existing.id)) > 0) {
+          // (the plain-key one here already too: Codex R27); as a copy, the plain-key one gains this place if it has
+          // none here yet, else it's a message of its own, under a key of its place
+          let idHeld = false;
+          if (existing && messageKey(env?.messageId) && ambiguousOf === null && (await locations.count(existing.id)) > 0) {
             const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, existing.id);
             if (group.length > 1) {
               ambiguousOf = group;
+              idHeld = true;
               attachTo = existing.id;
+              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
             }
           }
-          if (existing && attachTo === null) {
+          if (existing && !idHeld) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
             const sameMailbox = await locations.get(existing.id, path);
             if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
@@ -706,6 +711,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
     // at a time re-read a long conversation each time)
     const leaving = new Map<string, number[]>();
+    /** stored messages given a place in a folder here: each (message, folder) once */
+    const attached = new Set<string>();
     for (const a of list) {
       let free = gone.get(a.candidates);
       if (!free) gone.set(a.candidates, (free = { ids: a.candidates.filter((id) => places.get(id)!.every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))), next: 0 }));
@@ -721,7 +728,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           leaving.set(l.mailbox, ids);
         }
         touched.add(id);
-      } else if (a.attachTo !== null) {
+      } else if (a.attachTo !== null && !(places.get(a.attachTo) ?? []).some((l) => l.mailbox === a.path) && !attached.has(`${a.attachTo}\u0000${a.path}`)) {
+        // the same message in one more folder: once a folder (a second copy there is a message of its own: Codex R27)
+        attached.add(`${a.attachTo}\u0000${a.path}`);
         await upsertLocation(a.attachTo, a.path, a.uidvalidity, a.uid, a.flags);
         touched.add(a.attachTo);
       } else if (!a.old) copies.push(a.incoming);

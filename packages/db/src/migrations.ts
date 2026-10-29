@@ -76,8 +76,11 @@ END;
 -- a mailbox from before has its Gmail labels as memberships after the upgrade, a slice of threads at a time
 -- (folders.ts rebuildFolders; Codex R13: a million rows in the migration's one transaction stalled the open)
 CREATE TABLE folder_backfill (after_message_id INTEGER NOT NULL);
--- an ID-less message's twins (the same envelope under any key), found by exactly that (Codex R20)
+-- an ID-less message's twins (the same envelope under any key), found by exactly that (Codex R20); a Message-ID's
+-- by it and the envelope (Codex R27: a reused Message-ID's every message never scanned; the old index was its prefix)
 CREATE INDEX messages_twins ON messages(account_id, from_email, date, size, subject) WHERE rfc_message_id IS NULL;
+DROP INDEX messages_rfc;
+CREATE INDEX messages_rfc ON messages(account_id, rfc_message_id, from_email, date, size, subject) WHERE rfc_message_id IS NOT NULL;
 INSERT INTO folder_backfill (after_message_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM messages WHERE gmail_labels IS NOT NULL);
 `;
 
