@@ -196,6 +196,19 @@ class SqlImapLocations implements ImapLocationStore {
     }
   }
 
+  async envelopes(messageIds: readonly number[]) {
+    const out: { id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }[] = [];
+    for (let i = 0; i < messageIds.length; i += 500) {
+      const chunk = messageIds.slice(i, i + 500);
+      out.push(...this.db.all<{ id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }>(
+        `SELECT id, subject, from_email AS fromEmail, date, size, rfc_message_id AS rfcMessageId FROM messages WHERE account_id = ? AND id IN (${placeholders(chunk.length)})`,
+        this.accountId,
+        ...chunk,
+      ));
+    }
+    return out;
+  }
+
   async resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }) {
     return (
       this.db.get<{ id: number }>(

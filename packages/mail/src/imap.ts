@@ -7,6 +7,7 @@ import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { comparePaths } from "./paths";
+import { AdoptIndex } from "./adopt";
 import { sendViaSmtp } from "./smtp";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -24,6 +25,8 @@ interface Cursor {
   mailboxes: Record<string, MailboxState>;
   /** plan 65: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
   pass?: number;
+  /** plan 65 (Codex R4): messages a failed pass left without a location; the next complete pass reconciles them */
+  orphans?: number[];
 }
 
 /** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
@@ -281,8 +284,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const upsertLocation = (messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) => locations.upsert(messageId, mailbox, uidvalidity, uid, flags);
 
   /** `keepOrphans` (plan 65, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
-  async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false) {
-    if (messageIds.size === 0) return;
+  async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false): Promise<number[]> {
+    if (messageIds.size === 0) return [];
     const ids = [...messageIds];
     const updates: FlagUpdate[] = [];
     const orphans: number[] = [];
@@ -304,6 +307,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
     if (updates.length) await sink.updateFlags(updates);
     if (orphans.length && !keepOrphans) await sink.removeMessages(orphans);
+    return orphans;
   }
 
   /**
@@ -312,7 +316,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * `adopt`: messages located in folders that vanished this pass (a rename): one of them is the same message here,
    * even without a Message-ID, never a second copy.
    */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: ReadonlySet<number> } = {}) {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: AdoptIndex } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -333,7 +337,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
-      const adopt = new Set(opts.adopt ?? []);
+      const adopt = opts.adopt ?? new AdoptIndex([]);
+      // a candidate is usable here while this folder doesn't already hold it
+      const notHere = async (id: number) => (await locations.get(id, path)) === null;
       // 1) messages we haven't seen
       // After a UIDVALIDITY reset every message must be re-identified, including ones older
       // than the sync window that we already have (otherwise they'd be dropped as orphans).
@@ -378,17 +384,27 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // with identical envelopes must stay separate.
             const live = await locations.count(existing.id);
             // a message of a folder that vanished this pass is this one, moved (a rename): re-attached, not copied
-            if (live > 0 && !adopt.has(existing.id)) {
+            if (live > 0 && !adopt.ids.has(existing.id)) {
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
               existing = await store.messageByProviderId(key);
             }
           }
-          if (!existing && (resetOrphans.size || adopt.size) && !messageKey(env?.messageId)) {
+          // a renamed folder's ID-less copy: by its envelope, from the index (Codex R4: never a scan per message)
+          const envelope = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
+          if (!existing && adopt.size && !messageKey(env?.messageId)) {
+            const moved = await adopt.take({ ...envelope, rfcMessageId: null }, notHere);
+            if (moved !== null) {
+              await upsertLocation(moved, path, uidvalidity, m.uid, flags);
+              touched.add(moved);
+              continue;
+            }
+          }
+          if (!existing && resetOrphans.size && !messageKey(env?.messageId)) {
             // After a reset, recognise previously-located ID-less mail stored under an older key
             // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
             // must match, and a row already re-attached in this mailbox can't be claimed twice.
             const candidate = await locations.resetCandidate({
-              candidates: [...resetOrphans, ...adopt],
+              candidates: [...resetOrphans],
               subject: env?.subject ?? "",
               fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
               date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
@@ -397,7 +413,6 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             });
             if (candidate) {
               resetOrphans.delete(candidate.id);
-              adopt.delete(candidate.id);
               await upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
               touched.add(candidate.id);
               continue;
@@ -410,26 +425,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               await upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
               touched.add(existing.id);
               resetOrphans.delete(existing.id);
-              adopt.delete(existing.id);
+              adopt.drop(existing.id);
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
             // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
             // already stored under the old path's key: found by its envelope, re-attached (plan 65, Codex R2)
             if (adopt.size) {
-              const twin = await locations.resetCandidate({
-                candidates: [...adopt],
-                subject: env?.subject ?? "",
-                fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
-                date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
-                size: m.size ?? 0,
-                mailbox: path,
-                rfcMessageId: messageKey(env?.messageId),
-              });
-              if (twin) {
-                adopt.delete(twin.id);
-                await upsertLocation(twin.id, path, uidvalidity, m.uid, flags);
-                touched.add(twin.id);
+              const twin = await adopt.take({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, notHere);
+              if (twin !== null) {
+                await upsertLocation(twin, path, uidvalidity, m.uid, flags);
+                touched.add(twin);
                 continue;
               }
             }
@@ -652,8 +658,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // messages may be found again under it, so their locations stay until every folder has synced (Codex R1)
         const listed = new Set(list.map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
-        const adopt = new Set<number>();
-        for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) adopt.add(l.message_id);
+        const vanishedIds = new Set<number>();
+        for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
+        const adopt = new AdoptIndex(vanishedIds.size ? await locations.envelopes([...vanishedIds]) : []);
         // a folder that couldn't sync this pass may be a vanished one's new name: their locations wait (Codex R2)
         let incomplete = false;
         for (const path of custom) {
@@ -674,7 +681,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }
-        await reconcile(touched, sink, incomplete);
+        // what a failed pass kept is looked at again once a pass completes: still nowhere on the server, it goes
+        if (!incomplete) for (const id of cursor.orphans ?? []) touched.add(id);
+        const kept = await reconcile(touched, sink, incomplete);
+        if (incomplete) cursor.orphans = [...new Set([...(cursor.orphans ?? []), ...kept])].slice(-100_000);
+        else delete cursor.orphans;
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);

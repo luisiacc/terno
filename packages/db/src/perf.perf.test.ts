@@ -141,6 +141,18 @@ describe("navigation", () => {
 
   it("computes sidebar counts", () => {
     gate("sidebar unread counts (accounts + categories + folders)", 5, () => getCounts(db, NOW));
+    // Codex R4: every thread unread in 20 overlapping labels (~590k memberships); counts read the tallies, one row a folder
+    const accounts = db.all<{ id: number }>("SELECT id FROM accounts").map((a) => a.id);
+    db.tx(() => {
+      for (const a of accounts) for (let l = 0; l < 20; l++) db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, 1, ?)", a, `Label_o${l}`, JSON.stringify([`Overlap ${l}`]), 200 + l);
+      for (let l = 0; l < 20; l++) db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) SELECT id, account_id, ?, last_date, 1 FROM threads", `Label_o${l}`);
+    });
+    meta.overlappingMemberships = db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder LIKE 'Label_o%'")!.c;
+    gate("sidebar unread counts with 20 overlapping labels on every thread", 5, () => getCounts(db, NOW));
+    db.tx(() => {
+      db.run("DELETE FROM thread_folders WHERE folder LIKE 'Label_o%'");
+      db.run("DELETE FROM folders WHERE key LIKE 'Label_o%'");
+    });
   });
 
   it("opens threads", () => {

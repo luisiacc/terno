@@ -359,12 +359,12 @@ export function getCounts(db: Db, now: number): Counts {
   return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
 }
 
-/** plan 65: unread threads per listed folder ("accountId:key"), from the unread memberships alone. */
+/** plan 65: unread threads per listed folder ("accountId:key"). */
 export function folderUnreadCounts(db: Db): Record<string, number> {
   const out: Record<string, number> = {};
+  // the tallies the memberships keep (migration v24's triggers), one row per folder, never the memberships themselves
   for (const r of db.all<{ account_id: number; folder: string; c: number }>(
-    `SELECT tf.account_id, tf.folder, count(*) AS c FROM thread_folders tf INDEXED BY thread_folders_unread
-     JOIN folders f ON f.account_id = tf.account_id AND f.key = tf.folder WHERE tf.unread = 1 GROUP BY tf.account_id, tf.folder`,
+    "SELECT u.account_id, u.folder, u.n AS c FROM folder_unread u JOIN folders f ON f.account_id = u.account_id AND f.key = u.folder WHERE u.n > 0",
   )) out[folderRef(r.account_id, r.folder)] = r.c;
   return out;
 }

@@ -155,6 +155,16 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
+  envelopes(messageIds: readonly number[]) {
+    return this.read(() => {
+      const messages = T(this.c, "messages");
+      return messageIds.flatMap((id) => {
+        const m = messages.get(id);
+        return m && m.account_id === this.accountId ? [{ id, subject: m.subject as string, fromEmail: m.from_email as string, date: m.date as number, size: m.size as number, rfcMessageId: (m.rfc_message_id as string | null) ?? null }] : [];
+      });
+    });
+  }
+
   resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }) {
     return this.read(() => {
       const messages = T(this.c, "messages");

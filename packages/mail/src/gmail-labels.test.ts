@@ -112,6 +112,20 @@ describe("when /labels is read", () => {
   });
 });
 
+describe("Codex R4: a list that couldn't be stored", () => {
+  it("is asked for again on the next pass, not after 15 minutes", async () => {
+    const t = setup({ labels: () => ({ labels: [{ id: "Label_1", name: "Work", type: "user" }] }) });
+    try {
+      let refuse = true;
+      const sink = { ...t.sink, setFolders: async (f: readonly ProviderFolder[]) => { if (refuse) { refuse = false; throw new Error("synthetic store failure"); } t.folders.push([...f]); } };
+      await expect(t.p.folders!(sink)).rejects.toThrow("synthetic store failure");
+      await t.p.folders!(sink);
+      expect(t.labelReads()).toBe(2);
+      expect(t.folders).toEqual([[{ key: "Label_1", path: ["Work"], selectable: true }]]);
+    } finally { await t.close(); }
+  });
+});
+
 describe("bounds and privacy", () => {
   it("a malformed catalog fails with a fixed message that never carries a label's name", async () => {
     for (const bad of [{ labels: "nope" }, { labels: [{ id: 3, name: MARKER }] }, { labels: [{ id: "Label_1", name: MARKER.repeat(200) }] }]) {

@@ -840,9 +840,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       // never read, stale (history doesn't report label changes), or a label met that it didn't have
       if (catalog && !unknownLabel && Date.now() - catalog.at < LABELS_EVERY_MS) return;
       const labels = readLabels(await api<unknown>("/labels"));
+      // the cache moves only once the list is stored: a failed write is tried again on the next pass (Codex R4)
+      await sink.setFolders?.(labelFolders(labels));
       catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
       unknownLabel = false;
-      await sink.setFolders?.(labelFolders(labels));
     },
 
     async execute(op: ProviderOp) {

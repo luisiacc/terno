@@ -941,6 +941,7 @@ export class BackendCore {
         count: (...args) => read(() => locations.count(...args)),
         inMailbox: (...args) => read(() => locations.inMailbox(...args)),
         resetCandidate: (...args) => read(() => locations.resetCandidate(...args)),
+        envelopes: (...args) => read(() => locations.envelopes(...args)),
       },
     };
   }

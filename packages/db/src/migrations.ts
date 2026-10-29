@@ -39,6 +39,26 @@ CREATE TABLE thread_folders (
 CREATE INDEX thread_folders_date ON thread_folders(account_id, folder, last_date DESC, thread_id DESC);
 CREATE INDEX thread_folders_id ON thread_folders(account_id, folder, thread_id);
 CREATE INDEX thread_folders_unread ON thread_folders(account_id, folder) WHERE unread = 1;
+-- each folder's unread threads, kept by the memberships' own writes (Codex R4: counting them on every counts
+-- refresh was ~115 ms with 50k unread threads in 20 labels); a cascade from a thread or an account counts too
+CREATE TABLE folder_unread (
+  account_id INTEGER NOT NULL,
+  folder TEXT NOT NULL,
+  n INTEGER NOT NULL,
+  PRIMARY KEY (account_id, folder)
+) WITHOUT ROWID;
+CREATE TRIGGER thread_folders_unread_ai AFTER INSERT ON thread_folders WHEN NEW.unread = 1 BEGIN
+  INSERT INTO folder_unread (account_id, folder, n) VALUES (NEW.account_id, NEW.folder, 1) ON CONFLICT (account_id, folder) DO UPDATE SET n = n + 1;
+END;
+CREATE TRIGGER thread_folders_unread_ad AFTER DELETE ON thread_folders WHEN OLD.unread = 1 BEGIN
+  UPDATE folder_unread SET n = n - 1 WHERE account_id = OLD.account_id AND folder = OLD.folder;
+END;
+CREATE TRIGGER thread_folders_unread_up AFTER UPDATE OF unread ON thread_folders WHEN OLD.unread = 0 AND NEW.unread = 1 BEGIN
+  INSERT INTO folder_unread (account_id, folder, n) VALUES (NEW.account_id, NEW.folder, 1) ON CONFLICT (account_id, folder) DO UPDATE SET n = n + 1;
+END;
+CREATE TRIGGER thread_folders_unread_down AFTER UPDATE OF unread ON thread_folders WHEN OLD.unread = 1 AND NEW.unread = 0 BEGIN
+  UPDATE folder_unread SET n = n - 1 WHERE account_id = OLD.account_id AND folder = OLD.folder;
+END;
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
   SELECT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
   FROM messages m JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j

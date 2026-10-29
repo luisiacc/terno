@@ -138,6 +138,13 @@ describe("an account's own folders (plan 65)", () => {
     ]);
   });
 
+  it("Codex R4: two folders whose shortened names match are both rows, both places to go", () => {
+    const name = "x".repeat(225);
+    const rows = folderRows([f(2, `${name}a`, [name]), f(2, `${name}b`, [name])], 2);
+    expect(rows.map((r) => r.key).sort()).toEqual([`${name}a`, `${name}b`]);
+    expect(rows.every((r) => r.selectable)).toBe(true);
+  });
+
   it("a folder sits under its own parent whatever order they come in (Codex R1: A, AA, A/Z)", () => {
     const rows = folderRows([f(2, "A", ["A"]), f(2, "AA", ["AA"]), f(2, "A/Z", ["A", "Z"])], 2);
     expect(rows.map((r) => [r.name, r.depth])).toEqual([["A", 0], ["Z", 1], ["AA", 0]]);

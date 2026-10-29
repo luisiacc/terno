@@ -950,6 +950,35 @@ describe("an account's own folders (plan 65)", () => {
     expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
   });
 
+  it("Codex R4: what a failed reset kept that the server deleted goes once a pass completes; what's still there stays", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    const gone = ctl.addMessage("Work", { raw: raw({ subject: "Borrado", date: old }), internaldate: old });
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato", date: old }), internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.expungeMessages("Work", [gone.uid]);
+    ctl.resetUidValidity("Work");
+    const original = ImapFlow.prototype.search;
+    const failing = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && (this.mailbox as { path: string }).path === "Work") return Promise.reject(Object.assign(new Error("Search refused"), { responseStatus: "NO" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      failing.mockRestore();
+    }
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Contrato"]);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Contrato"]);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

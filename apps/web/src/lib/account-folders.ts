@@ -96,11 +96,16 @@ export function folderRows(folders: readonly Folder[], accountId: number): Folde
   for (const f of folders) {
     if (f.accountId !== accountId || f.path.length === 0) continue;
     let node = root;
-    for (const name of f.path) {
-      let next = node.children.get(name);
-      if (!next) node.children.set(name, (next = { name, children: new Map() }));
+    f.path.forEach((name, i) => {
+      // a folder whose shortened name is another folder's (providers cap names at 225 characters) is its own row,
+      // never written over the other (Codex R4)
+      const leaf = i === f.path.length - 1;
+      let id = name;
+      while (leaf && node.children.get(id)?.own && node.children.get(id)!.own!.key !== f.key) id = `${id}\u0000${f.key}`;
+      let next = node.children.get(id);
+      if (!next) node.children.set(id, (next = { name, children: new Map() }));
       node = next;
-    }
+    });
     node.own = f;
   }
   const rows: FolderRow[] = [];
