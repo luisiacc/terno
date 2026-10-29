@@ -1,6 +1,6 @@
 import { isFullEmail, normalizeText, tokenize, type MessageTerm } from "@terno/core";
 import { RevisionError, StaleCursorError, type IndexBatch, type IndexChange, type ResolvedSearch, type Revision, type SearchCursor, type SearchRequest } from "@terno/store";
-import { messageDoc, T, threadDoc, VIEW_TEST, type Ctx, type R } from "./mail";
+import { messageDoc, SEARCH_VIEW_TEST, T, threadDoc, type Ctx, type R } from "./mail";
 
 /** Batches kept for engines catching up (bytes of their id lists), as on SQL. */
 export const SEARCH_LOG_BYTES = 32 * 1024 * 1024;
@@ -148,7 +148,7 @@ export function planScan(c: Ctx, r: ResolvedSearch): ScanPlan {
   const messageLevel = positive.length > 0 || emails.length > 0 || q.hasAttachment !== undefined || q.before !== undefined || q.after !== undefined;
   const accounts = r.accountIds ? new Set(r.accountIds) : null;
   const excludedAccounts = new Set(r.excludeAccountIds);
-  const view = VIEW_TEST[r.view];
+  const view = SEARCH_VIEW_TEST[r.view];
   return {
     impossible: r.impossible,
     messageLevel,

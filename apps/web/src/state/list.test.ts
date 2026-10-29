@@ -62,7 +62,9 @@ it("the unread filter: a filtered mailbox asks for unread threads, keeping the o
   answer = async () => ({ items: [row(1, true), row(3, true)], nextCursor: null, strategy: "fts", tookMs: 1, complete: true });
   setApp({ query: "factura" });
   await vi.waitFor(() => expect(useList.getState().itemsKey).toContain("factura"));
-  expect(calls.at(-1)!.params).toMatchObject({ query: "in:inbox factura", filter: "unread" });
+  // plan 64: a search looks everywhere, the Inbox's filter still goes with it
+  expect(calls.at(-1)!.params).toMatchObject({ query: "factura", filter: "unread" });
+  expect(calls.at(-1)!.params).toMatchObject({ accountId: undefined, categoryId: undefined });
   setApp({ selectedId: 3 });
   patchRows([3], (t) => ({ ...t, unread: false }));
   await reloadList({ keepSelection: true });

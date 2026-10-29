@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isFullEmail, parseDate, parseSearch, withUnreadOnly } from "./parse";
+import { resolveSearch } from "./resolve";
 
 const NOW = new Date(2026, 9, 22, 12).getTime();
 
@@ -146,5 +147,19 @@ describe("withUnreadOnly", () => {
   it("a query that asks for read threads matches nothing with the filter on", () => {
     for (const q of ["is:read factura", "-is:unread", "es:leido", "-es:noleido"]) expect(withUnreadOnly(q, NOW), q).toBeNull();
     expect(withUnreadOnly("is:unread", NOW)).toBe("is:unread is:unread");
+  });
+});
+
+describe("plan 64: a search looks everywhere", () => {
+  const lookup = { accounts: [], categories: [] };
+  it("by default every place (Spam and Trash too); in:all is still everything but them", () => {
+    expect(resolveSearch(parseSearch("factura", NOW), "factura", {}, lookup).view).toBe("anywhere");
+    expect(resolveSearch(parseSearch("in:all factura", NOW), "in:all factura", {}, lookup).view).toBe("all");
+    expect(resolveSearch(parseSearch("in:spam factura", NOW), "in:spam factura", {}, lookup).view).toBe("spam");
+  });
+  it("in:anywhere and its aliases say it", () => {
+    for (const q of ["in:anywhere", "in:everywhere", "en:todas", "en:cualquiera"]) expect(parseSearch(`${q} x`, NOW).view, q).toBe("anywhere");
+    // todo keeps meaning All Mail (es)
+    expect(parseSearch("en:todo x", NOW).view).toBe("all");
   });
 });

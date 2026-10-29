@@ -50,6 +50,7 @@ import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
+import { actionView } from "~/lib/places";
 import { applyScope, formatCount } from "./category-snackbar";
 import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { client } from "~/rpc/connection";
@@ -297,8 +298,9 @@ function MenuItems() {
   renderProbe("ThreadMenu");
   const { ids, scope } = useMenuTarget();
   const categories = useApp((s) => s.categories);
-  const view = useApp((s) => (s.query.trim() && /(^|\s)(in|en):/.test(s.query) ? "all" : s.view));
   const rows = scope ? scopeRows(useList.getState().items, scope.scope) : targetRows(ids);
+  // plan 64: in a search (it looks everywhere) the rows' places decide, not the sidebar ("select all N": every action)
+  const view = useApp((s) => actionView(s.view, s.query, scope ? [] : rows));
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
   const run = (action: ThreadAction) => void act(action, scope ? undefined : ids);
   const anyUnread = scope !== null || rows.some((t) => t.unread);

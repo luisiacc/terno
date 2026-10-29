@@ -1,5 +1,5 @@
-import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type ThreadFilter, type View } from "@terno/core";
-import { pageFrom, SUMMARY_COLUMNS, VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
+import { isFullEmail, normalizeText, parseSearch, resolveSearch, tokenize, type MessageTerm, type ResolvedSearch, type ScopeLookup, type SearchView, type ThreadFilter } from "@terno/core";
+import { pageFrom, SUMMARY_COLUMNS, SEARCH_VIEW_WHERE, type Cursor, type Page, type SummaryRow } from "./queries";
 import { placeholders, type Db, type Param } from "./sqlite";
 
 export interface SearchParams {
@@ -55,7 +55,7 @@ interface Compiled {
   /** thread-level predicates on alias t */
   threadWhere: string[];
   threadParams: Param[];
-  view: View;
+  view: SearchView;
   impossible: boolean;
 }
 
@@ -161,7 +161,7 @@ export function resolveQuery(db: Db, params: { query: string; accountId?: number
 }
 
 function threadClause(c: Compiled, cursor: Cursor | undefined): { where: string; params: Param[] } {
-  const where = [VIEW_WHERE[c.view], ...c.threadWhere];
+  const where = [SEARCH_VIEW_WHERE[c.view], ...c.threadWhere];
   const params = [...c.threadParams];
   if (cursor) {
     where.push("(t.last_date, t.id) < (?, ?)");

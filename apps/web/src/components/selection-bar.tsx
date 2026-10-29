@@ -4,7 +4,8 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "lucide-react";
 import { formatNumber, t } from "@terno/i18n";
-import { act } from "~/lib/actions";
+import { act, targetRows } from "~/lib/actions";
+import { actionView } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -49,7 +50,8 @@ function BarButton({ label, command, onClick, children, testId, disabled, bar }:
 export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const count = useApp((s) => s.scope?.count ?? s.checked.size);
   const scope = useApp((s) => s.scope);
-  const view = useApp((s) => s.view);
+  // plan 64: in a search (it looks everywhere) the selected rows' places decide, not the sidebar
+  const view = useApp((s) => actionView(s.view, s.query, s.scope ? [] : targetRows()));
   const loaded = useList((s) => s.items.length);
   const run = (a: ThreadAction) => () => void act(a);
   const bar = variant;

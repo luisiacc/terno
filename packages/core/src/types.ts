@@ -107,6 +107,12 @@ export interface ThreadSummary {
   person?: boolean;
   /** plan 17: the date of the message waiting for your reply, or null (the window is applied by whoever reads it) */
   waitingSince?: number | null;
+  /** plan 64: where it lives (a search looks everywhere; absent from an older backend) */
+  inInbox?: boolean;
+  inSpam?: boolean;
+  inTrash?: boolean;
+  /** renderer only: it was spam a moment ago (Not spam, not yet confirmed): still no sender icon */
+  spamHeld?: boolean;
 }
 
 export interface MessageDetail {

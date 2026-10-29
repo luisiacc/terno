@@ -1,8 +1,7 @@
 import { normalizeText } from "../text";
-import type { View } from "../types";
 import type { ThreadFilter } from "../list-filter";
 import { waitingCutoff } from "../people";
-import type { SearchQuery } from "./parse";
+import type { SearchQuery, SearchView } from "./parse";
 
 export interface ScopeLookup {
   accounts: readonly { id: number; email: string; display_name: string }[];
@@ -12,7 +11,8 @@ export interface ScopeLookup {
 /** account:/category: tokens resolved to ids, so every engine scopes a query identically. */
 export interface ResolvedSearch {
   query: SearchQuery;
-  view: View;
+  /** plan 64: anywhere unless the query says in:… */
+  view: SearchView;
   /** null = any account */
   accountIds: readonly number[] | null;
   excludeAccountIds: readonly number[];
@@ -81,7 +81,7 @@ export function resolveSearch(
   }
   return {
     query,
-    view: query.view ?? "all",
+    view: query.view ?? "anywhere",
     accountIds: accountIds.size > 0 ? [...accountIds] : null,
     excludeAccountIds: [...excludeAccountIds],
     categoryIds: [...categoryIds],

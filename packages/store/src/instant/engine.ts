@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, tokenize, type MessageTerm, type ResolvedSearch, type View } from "@terno/core";
+import { isFullEmail, normalizeText, tokenize, type MessageTerm, type ResolvedSearch, type SearchView } from "@terno/core";
 import {
   RevisionError,
   sameRevision,
@@ -50,7 +50,9 @@ const T_UNREAD = 64;
 const T_PERSON = 128;
 
 /** the oracle's VIEW_TEST as (flags & mask) === value */
-const VIEW_FLAGS: Record<View, [number, number]> = {
+const VIEW_FLAGS: Record<SearchView, [number, number]> = {
+  // plan 64: a search's default, every place
+  anywhere: [0, 0],
   inbox: [T_INBOX, T_INBOX],
   starred: [T_STARRED | T_TRASH | T_SPAM, T_STARRED],
   sent: [T_SENT | T_TRASH | T_SPAM, T_SENT],
@@ -1150,7 +1152,20 @@ export class InstantSearchEngine implements CachedSearchEngine {
   /** Alive docs passing the attribute predicates. */
   private attrSet(attr: Attr): Uint32Array {
     const set = new Uint32Array(this.alive.length);
-    for (let d = 0; d < this.n; d++) if (this.attrOk(attr, d)) setBit(set, d);
+    const n = this.n;
+    if (attr.sender < 0 && attr.notSenders.length === 0 && attr.att < 0) {
+      // dates only (before:, after:, a range): one pass over the dates, a word at a time (plan 64: every message, kept instant)
+      const dates = this.docDate;
+      const { before, after } = attr;
+      for (let w = 0, d = 0; d < n; w++) {
+        let word = 0;
+        for (let b = 0; b < 32 && d < n; b++, d++) {
+          const date = dates[d]!;
+          if (date < before && date >= after) word |= 1 << b;
+        }
+        set[w] = word;
+      }
+    } else for (let d = 0; d < n; d++) if (this.attrOk(attr, d)) setBit(set, d);
     return andInto(set, this.alive);
   }
 

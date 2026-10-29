@@ -65,6 +65,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const big = layout === "large-avatar";
   /** one line: compact density, or a wide list */
   const line = compact || wide;
+  /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
+  const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from text-foreground")}>
@@ -79,6 +81,12 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       ))}
       {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
       {thread.starred && <Star className="size-3 fill-star text-star" />}
+      {place && (
+        // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
+        <span aria-hidden data-testid="row-place" data-place={place} className={cn("text-2xs", checked && !selected ? "text-accent-foreground" : "text-muted-foreground")}>
+          {t(place === "spam" ? "list.place.spam" : "list.place.trash")}
+        </span>
+      )}
     </>
   );
   // Apple Mail's "to which account" (plan 23): muted, under the date (before it in compact), within a share of the line so the
@@ -127,7 +135,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       <SenderAvatar
         name={thread.fromName}
         email={thread.fromEmail}
-        icon={icons}
+        // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
+        icon={icons && !thread.inSpam && !thread.spamHeld}
         className={
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
@@ -239,6 +248,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           </div>
         </div>
       )}
+      {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
     </div>
   );

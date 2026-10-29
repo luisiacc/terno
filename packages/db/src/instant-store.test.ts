@@ -88,12 +88,13 @@ describe("routing", () => {
     expect(now.strategy).not.toMatch(/^instant/);
     await store.instant!.settled();
     expect(await ids(store, "zanahoria")).toEqual({ ids: now.ids, strategy: expect.stringMatching(/^instant/) });
-    // and a delete disappears the same way
+    // and a delete leaves All Mail the same way (plan 64: a search looks everywhere, Trash too)
     await store.threads.act({ threadIds: now.ids, action: "trash", signal: null, now: NOW });
-    expect((await ids(store, "zanahoria")).ids).toEqual([]);
+    expect((await ids(store, "in:all zanahoria")).ids).toEqual([]);
     await store.instant!.settled();
-    expect(await ids(store, "zanahoria")).toEqual({ ids: [], strategy: expect.stringMatching(/^instant/) });
+    expect(await ids(store, "in:all zanahoria")).toEqual({ ids: [], strategy: expect.stringMatching(/^instant/) });
     expect((await ids(store, "in:trash zanahoria")).ids).toEqual(now.ids);
+    expect(await ids(store, "zanahoria")).toEqual({ ids: now.ids, strategy: expect.stringMatching(/^instant/) });
     await store.close();
   });
 

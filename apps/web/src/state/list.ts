@@ -1,4 +1,4 @@
-import type { ThreadSummary, View } from "@terno/core";
+import type { ThreadSummary } from "@terno/core";
 import { RpcError, type ThreadScope } from "@terno/core/rpc";
 import { keepInPage } from "@terno/store/list";
 import { prune } from "~/lib/selection";
@@ -116,17 +116,16 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
   return { ...page, ...keepInPage(page, before.filter((t) => kept.has(t.id))) };
 }
 
-/** the sidebar view scopes the search unless the query says otherwise (in:…) */
-const searchQuery = (q: string, view: View) => (/(^|\s)(in|en):/.test(q) || view === "all" ? q : `in:${view} ${q}`);
 
 /** Every thread the current list shows, as a scope the backend can act on ("select all N"); null for "Revisar". */
 export function currentScope(): ThreadScope | null {
   const s = getApp();
   if (s.reviewCategoryId !== null) return null;
   const filter = activeFilter(s);
-  const narrow = { accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}) };
   const q = s.query.trim();
-  return q ? { kind: "search", query: searchQuery(q, s.view), ...narrow } : { kind: "view", view: s.view, ...narrow };
+  // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
+  if (q) return { kind: "search", query: q, ...(filter ? { filter } : {}) };
+  return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}) };
 }
 
 /** Rows that left the view leave the selection (one write, only when something left). */

@@ -359,9 +359,11 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   const searchOpen = useSearchOpen((s) => s.open);
   // a filtered search counts what matched, not the rows it kept in place
   const count = useList((s) => (filter ? s.items.reduce((n, t) => n + (matchesFilter(filter, t) ? 1 : 0), 0) : s.items.length));
-  const title = review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
+  // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
+  const searching = query.trim() !== "" && !review;
+  const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : (category?.name ?? viewLabel(view));
   // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
-  const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
+  const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
   const quick = useQuickFilters();
   const list = useAppearance((s) => s.layout === "list");
@@ -408,7 +410,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
       )}
     </>
   );
-  const accountSuffix = account && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
+  const accountSuffix = account && !searching && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
 
   return (
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
@@ -578,7 +580,8 @@ export function ThreadList() {
   const itemsKey = useList((s) => s.itemsKey);
   const compact = useApp((s) => s.settings?.density === "compact");
   const composing = useApp((s) => s.compose !== null);
-  const showAccount = useApp((s) => s.accountId === null && s.accounts.length > 1);
+  // results can span accounts: any search (it looks everywhere), or a mailbox of every account
+  const showAccount = useApp((s) => (s.accountId === null || (s.query.trim() !== "" && s.reviewCategoryId === null)) && s.accounts.length > 1);
   // plan 22: no sender icons in spam (no request to a spammer's site, no borrowed logo on a phish), the view or a search in it
   const iconsHere = useApp((s) => iconsAllowed(s.view, s.query));
   // and the rows on screen allow them too (leaving Spam, its rows stay until the new ones arrive)

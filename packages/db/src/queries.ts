@@ -7,6 +7,7 @@ import type {
   ThreadDetail,
   ThreadSummary,
   View,
+  SearchView,
 } from "@terno/core";
 import { keepInPage, type ListParams, type Page, type ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
@@ -28,8 +29,11 @@ export const VIEW_WHERE: Record<View, string> = {
   all: "t.in_trash = 0 AND t.in_spam = 0",
 };
 
+/** Plan 64: a search looks everywhere unless it says in:… (Spam and Trash too). */
+export const SEARCH_VIEW_WHERE: Record<SearchView, string> = { ...VIEW_WHERE, anywhere: "1" };
+
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
-  t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since,
+  t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since, t.in_inbox, t.in_spam, t.in_trash,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats`;
 
 export interface SummaryRow {
@@ -46,6 +50,9 @@ export interface SummaryRow {
   has_attachments: number;
   person: number | null;
   waiting_since: number | null;
+  in_inbox: number;
+  in_spam: number;
+  in_trash: number;
   cats: string | null;
 }
 
@@ -65,6 +72,9 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     categoryIds: r.cats ? r.cats.split(",").map(Number) : [],
     person: r.person === 1,
     waitingSince: r.waiting_since,
+    inInbox: r.in_inbox === 1,
+    inSpam: r.in_spam === 1,
+    inTrash: r.in_trash === 1,
   };
 }
 

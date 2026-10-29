@@ -69,6 +69,8 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
       starred: t.starred,
       attachments: t.hasAttachments,
       categories: t.categoryIds.map((id) => categories.get(id)).filter(Boolean),
+      // plan 64: a search looks everywhere; where each result lives
+      place: t.inTrash ? "trash" : t.inSpam ? "spam" : t.inInbox === undefined ? undefined : t.inInbox ? "inbox" : "archive",
     }));
   };
   const threadIds = z.array(z.number().int().positive()).min(1).max(500).describe("Thread ids from search_emails/list_threads");
@@ -94,7 +96,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     "search_emails",
     {
       title: "Search email",
-      description: "Full-text search across all accounts. Supports operators: from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox|archive|sent|trash|spam|all, account:, category:, before:YYYY-MM-DD, after:30d, \"exact phrase\", -negation.",
+      description: "Full-text search across all accounts, categories and places, Spam and Trash included (each result says its place). Narrow with operators: in:inbox|archive|sent|trash|spam|all (all = everything but Spam and Trash), from:, to:, subject:, has:attachment, is:unread, is:starred, account:, category:, before:YYYY-MM-DD, after:30d, \"exact phrase\", -negation.",
       inputSchema: { query: z.string().describe("Search query"), limit: z.number().int().min(1).max(100).default(25) },
       annotations: { readOnlyHint: true },
     },

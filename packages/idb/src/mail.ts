@@ -40,6 +40,7 @@ import {
   type ThreadSummary,
   type UserActionKind,
   type View,
+  type SearchView,
   cleanFromName,
   storedAddresses,
   withAccountPrefs,
@@ -801,6 +802,9 @@ export const VIEW_TEST: Record<View, (t: R) => boolean> = {
   all: (t) => t.in_trash === 0 && t.in_spam === 0,
 };
 
+/** Plan 64: a search looks everywhere unless it says in:… (Spam and Trash too). */
+export const SEARCH_VIEW_TEST: Record<SearchView, (t: R) => boolean> = { ...VIEW_TEST, anywhere: () => true };
+
 export function categoryIdsOf(c: Ctx, threadId: number): number[] {
   return T(c, "thread_categories")
     .by("fk_thread_id", threadId)
@@ -824,6 +828,9 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     categoryIds: categoryIdsOf(c, t.id),
     person: t.person === 1,
     waitingSince: t.waiting_since ?? null,
+    inInbox: t.in_inbox === 1,
+    inSpam: t.in_spam === 1,
+    inTrash: t.in_trash === 1,
   };
 }
 

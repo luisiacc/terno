@@ -1,4 +1,4 @@
-import { isFullEmail, normalizeText, parseSearch, tokenize, type MessageTerm, type View } from "@terno/core";
+import { isFullEmail, normalizeText, parseSearch, tokenize, type MessageTerm, type SearchView, type View } from "@terno/core";
 import type { SearchMessageDoc, SearchThreadDoc } from "../search";
 
 /**
@@ -54,6 +54,7 @@ export const VIEW_TEST: Record<View, (t: SearchThreadDoc) => boolean> = {
   trash: (t) => t.inTrash,
   all: (t) => !t.inTrash && !t.inSpam,
 };
+const SEARCH_VIEW_TEST: Record<SearchView, (t: SearchThreadDoc) => boolean> = { ...VIEW_TEST, anywhere: () => true };
 
 export function byRecency(a: SearchThreadDoc, b: SearchThreadDoc): number {
   return b.lastDate - a.lastDate || b.threadId - a.threadId;
@@ -116,12 +117,12 @@ export function oracleSearch(corpus: SearchCorpus, query: string, now: number, s
     else categoryIds.push(c);
   }
   if (impossible) return [];
-  const view = q.view ?? "all";
+  const view = q.view ?? "anywhere";
   return [...candidate]
     .map((id) => threads.get(id)!)
     .filter(
       (t) =>
-        VIEW_TEST[view](t) &&
+        SEARCH_VIEW_TEST[view](t) &&
         (accountIds.size === 0 || accountIds.has(t.accountId)) &&
         !excludedAccounts.has(t.accountId) &&
         excludedCategories.every((c) => !t.categoryIds.includes(c)) &&

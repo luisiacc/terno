@@ -95,6 +95,17 @@ function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
       return { ...t, starred: true };
     case "unstar":
       return { ...t, starred: false };
+    // plan 64: a row a search keeps says where it went (the stores' aggregate: trash wins over spam)
+    case "archive":
+      return { ...t, inInbox: false };
+    case "spam":
+      return { ...t, inSpam: true, inTrash: false, inInbox: false };
+    case "trash":
+      return { ...t, inTrash: true, inInbox: false };
+    case "notSpam":
+    case "moveToInbox":
+      // no sender icon until the backend's row says it isn't spam (plan 22)
+      return { ...t, inSpam: false, inTrash: false, inInbox: true, spamHeld: t.inSpam || t.spamHeld || undefined };
     default:
       return t;
   }

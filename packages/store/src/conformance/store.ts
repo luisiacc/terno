@@ -1336,6 +1336,38 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("search everywhere (plan 64)", () => {
+      it("a search finds mail in every place, Spam and Trash too, and each row says where it lives; in:all doesn't reach Spam or Trash", async () => {
+        const store = await fresh();
+        const [acct] = await withAccounts(store, 1);
+        const one = async (over: Partial<Parameters<typeof msg>[0]>) => {
+          const m = msg({ accountId: acct!, subject: "Pepinillo report", ...over });
+          await ingest(store, [m]);
+          return threadOf(store, m.providerMsgId!);
+        };
+        const inbox = await one({});
+        const archived = await one({ inInbox: false });
+        const spam = await one({ isSpam: true, inInbox: false });
+        const trash = await one({ isTrash: true, inInbox: false });
+        const found = async (query: string) => (await store.threads.searchText({ query, limit: 50, now: NOW })).items;
+        const all = await found("pepinillo");
+        expect(all.map((t) => t.id).sort((a, b) => a - b)).toEqual([inbox, archived, spam, trash].sort((a, b) => a - b));
+        const place = new Map(all.map((t) => [t.id, [t.inInbox, t.inSpam, t.inTrash]]));
+        expect(place.get(inbox)).toEqual([true, false, false]);
+        expect(place.get(archived)).toEqual([false, false, false]);
+        expect(place.get(spam)).toEqual([false, true, false]);
+        expect(place.get(trash)).toEqual([false, false, true]);
+        expect((await found("in:anywhere pepinillo")).length).toBe(4);
+        expect((await found("in:all pepinillo")).map((t) => t.id).sort((a, b) => a - b)).toEqual([inbox, archived].sort((a, b) => a - b));
+        expect((await found("in:spam pepinillo")).map((t) => t.id)).toEqual([spam]);
+        // the list's summaries carry it too (a view)
+        expect((await store.threads.list({ view: "inbox", limit: 10, now: NOW })).items.find((t) => t.id === inbox)).toMatchObject({ inInbox: true, inSpam: false, inTrash: false });
+        // bulk categorization's query scope still leaves Spam and Trash out
+        const cat = (await store.categories.create("Pickles", "amber")).id;
+        expect((await store.categorize.resolveScope(cat, { kind: "query", query: "pepinillo" }, NOW)).sort((a, b) => a - b)).toEqual([inbox, archived].sort((a, b) => a - b));
+      });
+    });
+
     describe("search outbox", () => {
       async function mailbox() {
         const store = await fresh();

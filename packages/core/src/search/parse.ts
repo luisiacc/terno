@@ -1,6 +1,9 @@
 import { normalizeText } from "../text";
 import type { View } from "../types";
 
+/** Where a search looks: a sidebar view, or everywhere (plan 64: every place, Spam and Trash too; what a search means by default). */
+export type SearchView = View | "anywhere";
+
 /** A message-level term: all message terms must match the *same* message. */
 export interface MessageTerm {
   field: "text" | "from" | "to" | "subject";
@@ -22,7 +25,7 @@ export interface SearchQuery {
   threadWaitingSince?: number;
   unread?: boolean;
   starred?: boolean;
-  view?: View;
+  view?: SearchView;
   accounts: string[];
   categories: string[];
   /** -account:x / -category:x */
@@ -58,7 +61,11 @@ const KEY_ALIASES: Record<string, string> = {
   despues: "after",
 };
 
-const VIEW_ALIASES: Record<string, View> = {
+const VIEW_ALIASES: Record<string, SearchView> = {
+  anywhere: "anywhere",
+  everywhere: "anywhere",
+  todas: "anywhere",
+  cualquiera: "anywhere",
   inbox: "inbox",
   entrada: "inbox",
   archive: "archive",

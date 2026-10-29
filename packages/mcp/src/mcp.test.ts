@@ -67,6 +67,20 @@ describe("terno MCP server", () => {
     expect(res.json.results[0]).toMatchObject({ threadId: expect.any(Number), subject: expect.any(String), date: expect.stringMatching(/^\d{4}-/) });
   });
 
+  it("searches everywhere, Spam and Trash too, and says where each result lives (plan 64)", async () => {
+    const all = await call("search_emails", { query: "factura", limit: 100 });
+    const [spam, trash] = all.json.results.slice(0, 2).map((r: { threadId: number }) => r.threadId);
+    await backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: Date.now() });
+    await backend.store.threads.act({ threadIds: [trash], action: "trash", signal: null, now: Date.now() });
+    const res = await call("search_emails", { query: "factura", limit: 100 });
+    const placeOf = (id: number) => res.json.results.find((r: { threadId: number }) => r.threadId === id)?.place;
+    expect([placeOf(spam), placeOf(trash)]).toEqual(["spam", "trash"]);
+    // in:all still means everything but Spam and Trash
+    const scoped = await call("search_emails", { query: "in:all factura", limit: 100 });
+    expect(scoped.json.results.map((r: { threadId: number }) => r.threadId)).not.toContain(spam);
+    await backend.store.threads.act({ threadIds: [spam, trash], action: "moveToInbox", signal: null, now: Date.now() });
+  });
+
   it("reads HTML-only mail as plain text", async () => {
     const res = await call("search_emails", { query: "from:boletin@xataka.com", limit: 1 });
     const thread = await call("get_thread", { threadId: res.json.results[0].threadId });
