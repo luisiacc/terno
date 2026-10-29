@@ -1362,6 +1362,18 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await found("in:spam pepinillo")).map((t) => t.id)).toEqual([spam]);
         // the list's summaries carry it too (a view)
         expect((await store.threads.list({ view: "inbox", limit: 10, now: NOW })).items.find((t) => t.id === inbox)).toMatchObject({ inInbox: true, inSpam: false, inTrash: false });
+        // trashed spam is in Trash and still spam mail (no sender icon, plan 22); spam on a trashed thread leaves it in Trash
+        await store.threads.act({ threadIds: [spam], action: "trash", signal: null, now: NOW });
+        await store.threads.act({ threadIds: [trash], action: "spam", signal: null, now: NOW });
+        const after = new Map((await found("pepinillo")).map((t) => [t.id, [t.inSpam, t.inTrash, t.hasSpam]]));
+        expect(after.get(spam)).toEqual([false, true, true]);
+        expect(after.get(trash)).toEqual([false, true, true]);
+        expect(after.get(inbox)).toEqual([false, false, false]);
+        await store.threads.act({ threadIds: [spam], action: "moveToInbox", signal: null, now: NOW });
+        expect((await found("pepinillo")).find((t) => t.id === spam)).toMatchObject({ inInbox: true, inSpam: false, inTrash: false, hasSpam: false });
+        await store.threads.act({ threadIds: [spam], action: "trash", signal: null, now: NOW });
+        await store.threads.act({ threadIds: [trash], action: "moveToInbox", signal: null, now: NOW });
+        await store.threads.act({ threadIds: [trash], action: "trash", signal: null, now: NOW });
         // bulk categorization's query scope still leaves Spam and Trash out
         const cat = (await store.categories.create("Pickles", "amber")).id;
         expect((await store.categorize.resolveScope(cat, { kind: "query", query: "pepinillo" }, NOW)).sort((a, b) => a - b)).toEqual([inbox, archived].sort((a, b) => a - b));

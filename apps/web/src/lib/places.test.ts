@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionView, placeOf } from "./places";
+import { actionView, placeActions, placeOf } from "./places";
 
 const row = (inInbox: boolean, inSpam = false, inTrash = false) => ({ inInbox, inSpam, inTrash });
 
@@ -20,5 +20,19 @@ describe("actions follow the rows' places in a search (plan 64)", () => {
   });
   it("trash wins over spam", () => {
     expect(placeOf(row(false, true, true))).toBe("trash");
+  });
+});
+
+describe("a mixed selection in a search: each action for the rows it fits (plan 64)", () => {
+  it("Inbox, archived, spam and trashed rows", () => {
+    const rows = [
+      { id: 1, inInbox: true, inSpam: false, inTrash: false },
+      { id: 2, inInbox: false, inSpam: false, inTrash: false },
+      { id: 3, inInbox: false, inSpam: true, inTrash: false },
+      { id: 4, inInbox: false, inSpam: false, inTrash: true },
+    ];
+    expect(placeActions(rows)).toEqual({ archive: [1], trash: [1, 2, 3], spam: [1, 2], notSpam: [3], toInbox: [2, 4], restoreOnly: false });
+    expect(placeActions([rows[0]!, rows[3]!])).toMatchObject({ toInbox: [4], restoreOnly: true });
+    expect(placeActions([{ id: 9, inInbox: undefined, inSpam: undefined, inTrash: undefined }])).toBeNull();
   });
 });

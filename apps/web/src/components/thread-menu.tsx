@@ -50,7 +50,7 @@ import { openPrint } from "~/lib/print-open";
 import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
-import { actionView } from "~/lib/places";
+import { actionView, placeActions } from "~/lib/places";
 import { applyScope, formatCount } from "./category-snackbar";
 import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { client } from "~/rpc/connection";
@@ -294,6 +294,18 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
   );
 }
 
+/** Plan 64: a search's rows, each action for the rows it fits (a selection can span places). */
+function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn: (a: ThreadAction, ids: number[]) => void) {
+  const item = (action: ThreadAction, ids: number[], o: { icon: ReactNode; label: string; testId: string; command?: Command; variant?: "destructive" }) => ({ ...o, onClick: () => runOn(action, ids), disabled: ids.length === 0 });
+  const items = [];
+  if (p.notSpam.length) items.push(item("notSpam", p.notSpam, { icon: <ShieldCheck />, label: t("actions.notSpam"), testId: "menu-not-spam" }));
+  if (p.toInbox.length) items.push(item("moveToInbox", p.toInbox, { icon: <Inbox />, label: t(p.restoreOnly ? "actions.restoreToInbox" : "actions.moveToInbox"), testId: "menu-inbox" }));
+  items.push(item("archive", p.archive, { icon: <Archive />, label: t("actions.archive"), command: "thread.archive", testId: "menu-archive" }));
+  items.push(item("trash", p.trash, { icon: <Trash2 />, label: t("actions.trash"), command: "thread.trash", testId: "menu-trash", variant: "destructive" }));
+  items.push(item("spam", p.spam, { icon: <OctagonAlert />, label: t("actions.markSpam"), command: "thread.spam", testId: "menu-spam" }));
+  return items;
+}
+
 function MenuItems() {
   renderProbe("ThreadMenu");
   const { ids, scope } = useMenuTarget();
@@ -301,6 +313,9 @@ function MenuItems() {
   const rows = scope ? scopeRows(useList.getState().items, scope.scope) : targetRows(ids);
   // plan 64: in a search (it looks everywhere) the rows' places decide, not the sidebar ("select all N": every action)
   const view = useApp((s) => actionView(s.view, s.query, scope ? [] : rows));
+  // a search's explicit rows: each action for the rows it fits ("select all N" acts on the scope: the view's actions)
+  const searching = useApp((s) => s.query.trim() !== "");
+  const searchPlaces = searching && !scope ? placeActions(rows) : null;
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
   const run = (action: ThreadAction) => void act(action, scope ? undefined : ids);
   const anyUnread = scope !== null || rows.some((t) => t.unread);
@@ -356,7 +371,7 @@ function MenuItems() {
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
       <ContextMenuSeparator />
-      {placeItems(view, run).map((it) => (
+      {(searchPlaces ? searchPlaceItems(searchPlaces, (a, only) => void act(a, only)) : placeItems(view, run)).map((it) => (
         <Item key={it.testId} {...it} />
       ))}
       {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}

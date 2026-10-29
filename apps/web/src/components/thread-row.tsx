@@ -136,7 +136,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
         name={thread.fromName}
         email={thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
-        icon={icons && !thread.inSpam && !thread.spamHeld}
+        icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
         className={
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"

@@ -111,6 +111,8 @@ export interface ThreadSummary {
   inInbox?: boolean;
   inSpam?: boolean;
   inTrash?: boolean;
+  /** a message of it is spam, wherever it is now (trashed spam too): never a sender icon (plan 22) */
+  hasSpam?: boolean;
   /** renderer only: it was spam a moment ago (Not spam, not yet confirmed): still no sender icon */
   spamHeld?: boolean;
 }

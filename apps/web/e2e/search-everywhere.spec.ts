@@ -9,7 +9,7 @@ import type { IncomingMessage } from "@terno/store";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, navTo, rows, search, test } from "./fixtures";
+import { expect, focusList, navTo, rows, search, selectRows, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 const SUBJECT = "Pepinillo quarterly report";
@@ -101,11 +101,22 @@ test.describe("search everywhere", { tag: "@design" }, () => {
     expect(hosts.some((h) => h.endsWith("pepinillo-inbox.com"))).toBe(true);
     expect(hosts.some((h) => h.endsWith("pepinillo-spam.com"))).toBe(false);
     await expect(row(page, ids.spam).getByTestId("sender-icon")).toHaveCount(0);
-    // Not spam: still no icon until the backend says it isn't spam, then the row is an ordinary one
-    await row(page, ids.spam).click({ button: "right" });
-    await page.getByTestId("menu-not-spam").click();
-    await expect(row(page, ids.spam).getByTestId("row-place")).toHaveCount(0);
+    // trashed, it is still spam mail: still no icon, after the backend's refresh too (plan 22)
+    await row(page, ids.spam).dispatchEvent("mousedown", { button: 0 });
+    await focusList(page);
+    await page.keyboard.press("#");
+    await expect(row(page, ids.spam).getByTestId("row-place")).toHaveText("Trash");
+    await search(page, "pepinill");
+    await search(page, "pepinillo");
+    await expect(rows(page)).toHaveCount(4);
+    await page.waitForTimeout(500);
     expect(server.icons.requests.map((u) => new URL(u).hostname).some((h) => h.endsWith("pepinillo-spam.com"))).toBe(false);
+    await expect(row(page, ids.spam).getByTestId("sender-icon")).toHaveCount(0);
+    await row(page, ids.spam).click({ button: "right" });
+    // restored to the Inbox: no longer spam once the backend says so (then its icon is an ordinary one)
+    await page.getByTestId("menu-inbox").click();
+    await expect(row(page, ids.spam).getByTestId("row-place")).toHaveCount(0);
+    await expect.poll(() => sqlDb(server.backend.store).get<{ s: number }>("SELECT count(*) AS s FROM messages WHERE thread_id = ? AND is_spam = 1", ids.spam)!.s).toBe(0);
   });
 
   test("actions follow each row's place: Restore for Trash, Not spam for Spam; marking a result spam tags it in place", async ({ app: page, server }) => {
@@ -134,5 +145,19 @@ test.describe("search everywhere", { tag: "@design" }, () => {
       const r = await new AxeBuilder({ page }).include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(r.violations, scheme).toEqual([]);
     }
+  });
+
+  test("a selection spanning places: each action for the rows it fits (Restore the trashed one, Archive the Inbox one)", async ({ app: page, server }) => {
+    const ids = await everyPlace(server);
+    await search(page, "pepinillo");
+    await expect(rows(page)).toHaveCount(4);
+    await selectRows(page, [ids.inbox, ids.trash]);
+    const bar = page.getByTestId("selection-bar");
+    await expect(bar.getByTestId("bar-inbox")).toHaveAccessibleName(/Restore to Inbox/);
+    await bar.getByTestId("bar-inbox").click();
+    const db = sqlDb(server.backend.store);
+    await expect.poll(() => db.get<{ t: number; i: number }>("SELECT in_trash AS t, in_inbox AS i FROM threads WHERE id = ?", ids.trash)).toEqual({ t: 0, i: 1 });
+    // the Inbox row was never touched
+    expect(db.get<{ i: number }>("SELECT in_inbox AS i FROM threads WHERE id = ?", ids.inbox)).toEqual({ i: 1 });
   });
 });

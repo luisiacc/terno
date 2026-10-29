@@ -85,7 +85,7 @@ export function said(action: ThreadAction, n: number): string {
 const failed = (error: unknown) => t("actions.failed", { error: error instanceof Error ? error.message : String(error) });
 
 /** The optimistic row for an action that keeps it in the view. */
-function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
+export function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
   switch (action) {
     case "markRead":
       return { ...t, unread: false };
@@ -95,17 +95,19 @@ function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
       return { ...t, starred: true };
     case "unstar":
       return { ...t, starred: false };
-    // plan 64: a row a search keeps says where it went (the stores' aggregate: trash wins over spam)
+    // plan 64: a row a search keeps says where it went, as the stores will (db/actions.ts): trash keeps the
+    // messages' spam flag and spam their trash flag (a thread in Trash stays there, and Trash wins over Spam)
     case "archive":
       return { ...t, inInbox: false };
     case "spam":
-      return { ...t, inSpam: true, inTrash: false, inInbox: false };
+      return t.inTrash ? { ...t, hasSpam: true } : { ...t, inSpam: true, inInbox: false, hasSpam: true };
     case "trash":
-      return { ...t, inTrash: true, inInbox: false };
+      return { ...t, inTrash: true, inSpam: false, inInbox: false };
     case "notSpam":
+      // still no sender icon until the backend's row says it isn't spam (plan 22)
+      return { ...t, inSpam: false, hasSpam: false, inInbox: t.inTrash ? t.inInbox : true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
     case "moveToInbox":
-      // no sender icon until the backend's row says it isn't spam (plan 22)
-      return { ...t, inSpam: false, inTrash: false, inInbox: true, spamHeld: t.inSpam || t.spamHeld || undefined };
+      return { ...t, inSpam: false, inTrash: false, hasSpam: false, inInbox: true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
     default:
       return t;
   }

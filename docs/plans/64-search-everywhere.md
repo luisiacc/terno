@@ -146,3 +146,20 @@ At 57k threads and 100.6k messages (`search-everywhere.perf.test.ts` in `db` and
   - The scan never stalls a frame (largest stall 15 ms), but it isn't instant.
   - With room for the index, every web search everywhere takes ≤ 0.6 ms.
   - Raising the cap trades memory for instant search on large mailboxes. This is the user's call; the IndexedDB gate measures with room for the index until it's made.
+
+## What the Codex code review changed
+
+Round 1 (`7e933d19..a4f677c3`) found five issues. Four are fixed, each with a test that fails without the fix. The fifth is the open decision on the web's index cap.
+
+1. **Trashed spam could get a sender icon.**
+   - Cause: a thread's `inSpam` is an aggregate that turns false once every message is trashed.
+   - Fix: summaries carry `hasSpam` (some message is spam, wherever it lives now). Rows and the reader (`iconsFor`) refuse icons on `inSpam || hasSpam`.
+   - Found on the way: **the reader had this leak before plan 64.** Opening trashed spam from Trash asked for its icon. The e2e caught it as a request to the spammer's site.
+   - Tests: conformance (trashed spam is `hasSpam`), and e2e (trash a spam result, search again, open it: no request, 20 runs in a row).
+2. **(Open) The IndexedDB instant gate measures with room for the index.** The shipping 96 MiB web cap turns the index off at about 95k messages. That's the user's call (see "The web's index cap" above). The exact-scan gate runs at the shipping configuration.
+3. **A mixed selection in a search lost place-specific actions.** `placeActions` offers each action for the rows it fits, and acts on those only: Restore the trashed rows, Not spam the spam, Archive what's in the Inbox. Both the menu and the selection bar use it. A "select all N" scope keeps the view's actions; the backend's per-message actions are idempotent. Tests: `places.test.ts`, and an e2e where Restore on an Inbox+Trash selection restores only the trashed row.
+4. **The optimistic patch contradicted the stores.** The patch now follows `db/actions.ts`: trash keeps the spam flag, spam keeps a trashed thread in Trash, and Not spam keeps it in Trash. Tests: `places-patch.test.ts`, covering spam on Trash, trash on Spam, Not spam and Move to Inbox on trashed spam.
+5. **The exact scan had no completion budget.** It now has one per query class:
+   - operators, a sender, dates or a subject: ≤ 500 ms (measured 14–238 ms);
+   - free text: ≤ 10 s (measured about 3 s);
+   - plus the frame-stall gate.

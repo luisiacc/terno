@@ -831,6 +831,7 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     inInbox: t.in_inbox === 1,
     inSpam: t.in_spam === 1,
     inTrash: t.in_trash === 1,
+    hasSpam: T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
   };
 }
 

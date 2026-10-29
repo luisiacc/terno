@@ -16,6 +16,6 @@ describe("local date boundaries in isolated timezone processes", () => {
       cwd: root, env: { ...process.env, TZ: zone }, timeout: 45_000, maxBuffer: 2_000_000,
     });
     const days = ["America/New_York", "Europe/Berlin", "Australia/Lord_Howe", "America/Sao_Paulo"].includes(zone) ? 2 : 1;
-    expect(stdout).toMatch(new RegExp(`Tests\\s+${days * (project === "unit" ? 30 : 12) + (project === "unit" ? 23 : 0)} passed`));
+    expect(stdout).toMatch(new RegExp(`Tests\\s+${days * (project === "unit" ? 30 : 12) + (project === "unit" ? 25 : 0)} passed`));
   }, 60_000);
 });

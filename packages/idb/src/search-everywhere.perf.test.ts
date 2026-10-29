@@ -45,6 +45,13 @@ const QUERIES = [
   "category:facturas uber",
   "subject:invitación",
 ];
+/**
+ * What the exact scan may take to finish (no index: it's building, or over its cap). What the
+ * thread rows or one field decide (operators, a sender, dates, a subject) reads no bodies: well
+ * under a second. Free text reads every body: seconds at this size (measured 3.5–6.7 s), bounded
+ * here so a slower scan fails; this is the fallback, not the instant path (plan 64).
+ */
+const scanBudget = (query: string) => (/^(is:|has:|before:|after:|from:\S+@|subject:)/.test(query) ? 500 : 10_000);
 const SCOPES = [
   ["everywhere", (q: string) => q],
   ["in:all", (q: string) => `in:all ${q}`],
@@ -110,6 +117,8 @@ it("the exact scan (no index yet): never stalls a frame, and finishes within its
       }
       log(`scan ${scope} "${query}": ${best!.ms.toFixed(0)} ms, max stall ${best!.stall.toFixed(1)} ms, ${best!.n} rows`);
       if (best!.stall > FRAME * MULT) over.push(`${scope} "${query}": stall ${best!.stall.toFixed(1)} ms`);
+      const budget = scanBudget(query);
+      if (best!.ms > budget * MULT) over.push(`${scope} "${query}": ${best!.ms.toFixed(0)} ms > ${budget} ms`);
     }
   }
   expect(over).toEqual([]);

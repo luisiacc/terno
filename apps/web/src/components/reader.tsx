@@ -377,7 +377,7 @@ function ReaderHeader({ detail, account, cats }: { detail: ThreadDetail; account
         <>
           {/* the message's id: a right-click here is a right-click on the message (Print this message, Copy) */}
           <div data-testid="sender-card" data-message-id={one?.id} className="mt-2 flex items-center gap-4">
-            <SenderAvatar name={who.name} email={who.email} icon={!detail.thread.inSpam} className="size-(--avatar-sender) text-lg" />
+            <SenderAvatar name={who.name} email={who.email} icon={iconsFor(detail.thread)} className="size-(--avatar-sender) text-lg" />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="flex items-baseline gap-3">
                 <span className="type-sender-name min-w-0 truncate">{who.name}</span>
@@ -434,6 +434,9 @@ function StepButtons({ id }: { id: number }) {
     </div>
   );
 }
+
+/** Plan 22: never icons for spam: a thread in Spam, or one with spam mail wherever it is now (trashed spam too). */
+const iconsFor = (t: { inSpam: boolean; hasSpam?: boolean }) => !t.inSpam && !t.hasSpam;
 
 export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
@@ -607,10 +610,10 @@ export function Reader() {
                 <div>
                   {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
                   <ReaderHeader detail={detail} account={account} cats={cats} />
-                  <Conversation key={detail.thread.id} messages={detail.messages} icons={!detail.thread.inSpam} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
+                  <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>
-              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={!detail.thread.inSpam} />
+              <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={iconsFor(detail.thread)} />
             </>
           )}
         </div>

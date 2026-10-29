@@ -23,3 +23,25 @@ export function actionView(view: View, query: string, rows: readonly Pick<Thread
   const first = placeOf(rows[0]!);
   return rows.every((r) => placeOf(r) === first) ? first : "all";
 }
+
+type Placed = Pick<ThreadSummary, "id" | "inInbox" | "inSpam" | "inTrash">;
+
+/**
+ * A search's selection can span places: each action is offered for the rows
+ * it fits, and acts on those only (Restore the trashed ones, Not spam the
+ * spam, Archive what's in the Inbox…). Null when a row's place is unknown
+ * (an older backend): the view's actions then.
+ */
+export function placeActions(rows: readonly Placed[]): { archive: number[]; trash: number[]; spam: number[]; notSpam: number[]; toInbox: number[]; restoreOnly: boolean } | null {
+  if (rows.length === 0 || rows.some((r) => r.inInbox === undefined)) return null;
+  const by = (keep: (p: ReturnType<typeof placeOf>) => boolean) => rows.filter((r) => keep(placeOf(r))).map((r) => r.id);
+  const toInbox = by((p) => p === "archive" || p === "trash");
+  return {
+    archive: by((p) => p === "inbox"),
+    trash: by((p) => p !== "trash"),
+    spam: by((p) => p === "inbox" || p === "archive"),
+    notSpam: by((p) => p === "spam"),
+    toInbox,
+    restoreOnly: toInbox.length > 0 && by((p) => p === "trash").length === toInbox.length,
+  };
+}

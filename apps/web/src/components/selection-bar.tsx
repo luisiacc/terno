@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "lucide-react";
 import { formatNumber, t } from "@terno/i18n";
 import { act, targetRows } from "~/lib/actions";
-import { actionView } from "~/lib/places";
+import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -54,11 +54,35 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const view = useApp((s) => actionView(s.view, s.query, s.scope ? [] : targetRows()));
   const loaded = useList((s) => s.items.length);
   const run = (a: ThreadAction) => () => void act(a);
+  // plan 64: a search's checked rows can span places: each action for the rows it fits ("select all N": the view's)
+  const searching = useApp((s) => s.query.trim() !== "");
+  const places = searching && !scope ? placeActions(targetRows()) : null;
+  const runOn = (a: ThreadAction, ids: number[]) => () => void act(a, ids);
   const bar = variant;
   const title = scope ? t("selection.scope", { count, label: scope.label }) : t("selection.count", { count });
+  const placeButtons = places && (
+    <>
+      {places.notSpam.length > 0 && (
+        <BarButton bar={bar} label={t("actions.notSpam")} onClick={runOn("notSpam", places.notSpam)} testId="bar-not-spam">
+          <ShieldCheck />
+        </BarButton>
+      )}
+      {places.toInbox.length > 0 && (
+        <BarButton bar={bar} label={t(places.restoreOnly ? "actions.restoreToInbox" : "actions.moveToInbox")} onClick={runOn("moveToInbox", places.toInbox)} testId="bar-inbox">
+          <Inbox />
+        </BarButton>
+      )}
+      <BarButton bar={bar} label={t("actions.archive")} command="thread.archive" onClick={runOn("archive", places.archive)} testId="bar-archive" disabled={places.archive.length === 0}>
+        <Archive />
+      </BarButton>
+      <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={runOn("trash", places.trash)} testId="bar-trash" disabled={places.trash.length === 0}>
+        <Trash2 />
+      </BarButton>
+    </>
+  );
   const actions = (
     <>
-      {view === "trash" || view === "spam" || view === "archive" ? (
+      {placeButtons ? placeButtons : view === "trash" || view === "spam" || view === "archive" ? (
         <BarButton bar={bar} label={view === "spam" ? t("actions.notSpam") : t("actions.moveToInbox")} onClick={run(view === "spam" ? "notSpam" : "moveToInbox")} testId="bar-inbox">
           {view === "spam" ? <ShieldCheck /> : <Inbox />}
         </BarButton>
@@ -67,9 +91,11 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           <Archive />
         </BarButton>
       )}
-      <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
-        <Trash2 />
-      </BarButton>
+      {!placeButtons && (
+        <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>
+          <Trash2 />
+        </BarButton>
+      )}
       <BarButton bar={bar} label={t("actions.markRead")} command="thread.markRead" onClick={run("markRead")} testId="bar-read">
         <MailOpen />
       </BarButton>
@@ -79,7 +105,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
       <BarButton bar={bar} label={t("actions.star")} command="thread.star" onClick={run("star")} testId="bar-star">
         <Star />
       </BarButton>
-      <BarButton bar={bar} label={t("actions.spam")} command="thread.spam" onClick={run("spam")} testId="bar-spam" disabled={view === "spam"}>
+      <BarButton bar={bar} label={t("actions.spam")} command="thread.spam" onClick={places ? runOn("spam", places.spam) : run("spam")} testId="bar-spam" disabled={places ? places.spam.length === 0 : view === "spam"}>
         <OctagonAlert />
       </BarButton>
       <BarButton bar={bar} label={t("actions.category")} command="thread.category" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="bar-category">

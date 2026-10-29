@@ -34,6 +34,7 @@ export const SEARCH_VIEW_WHERE: Record<SearchView, string> = { ...VIEW_WHERE, an
 
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
   t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since, t.in_inbox, t.in_spam, t.in_trash,
+  EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats`;
 
 export interface SummaryRow {
@@ -53,6 +54,7 @@ export interface SummaryRow {
   in_inbox: number;
   in_spam: number;
   in_trash: number;
+  has_spam: number;
   cats: string | null;
 }
 
@@ -75,6 +77,7 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     inInbox: r.in_inbox === 1,
     inSpam: r.in_spam === 1,
     inTrash: r.in_trash === 1,
+    hasSpam: r.has_spam === 1,
   };
 }
 
@@ -258,8 +261,9 @@ interface MessageRow {
 }
 
 export function getThread(db: Db, threadId: number): ThreadDetail | null {
-  const row = db.get<SummaryRow & { in_inbox: number; in_trash: number; in_spam: number }>(
-    `SELECT ${SUMMARY_COLUMNS}, t.in_inbox, t.in_trash, t.in_spam FROM threads t WHERE t.id = ?`,
+  // the summary's columns carry the place (plan 64)
+  const row = db.get<SummaryRow>(
+    `SELECT ${SUMMARY_COLUMNS} FROM threads t WHERE t.id = ?`,
     threadId,
   );
   if (!row) return null;
