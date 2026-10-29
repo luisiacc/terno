@@ -243,6 +243,18 @@ export async function readMailbox<L extends { uid: number }>(
   }
 }
 
+/**
+ * Plan 65 (Codex R44): the journal with these ids added, gathered a few thousand at a time (a big expunge's 500,000
+ * onto 200,000 was 28 ms at once); null when nothing new
+ */
+export async function journalUnion(journaled: readonly number[], ids: Iterable<number>): Promise<number[] | null> {
+  const next = new Set<number>();
+  await addAll(next, journaled);
+  const before = next.size;
+  await addAll(next, ids);
+  return next.size === before && before === journaled.length ? null : [...next];
+}
+
 /** Plan 65 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
 export async function addAll(target: Set<number>, ids: Iterable<number>): Promise<void> {
   const breathe = breather();
@@ -610,9 +622,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** Plan 65 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */
   async function journal(cursor: Cursor, ids: Iterable<number>) {
-    const next = new Set([...(cursor.unlocated ?? []), ...ids]);
-    if (next.size === (cursor.unlocated?.length ?? 0)) return;
-    cursor.unlocated = bounded(cursor, [...next], IMAP_JOURNAL_LIMITS.unlocated);
+    const next = await journalUnion(cursor.unlocated ?? [], ids);
+    if (next === null) return;
+    cursor.unlocated = bounded(cursor, next, IMAP_JOURNAL_LIMITS.unlocated);
     await ctx.saveCursor(cursor);
   }
 

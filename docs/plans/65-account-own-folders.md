@@ -427,3 +427,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 1. **Getting recovery ready still held the loop:** the candidates spread and flattened into one set, and `AdoptIndex.add` sorting them at once (500,000: 40 to 50 ms each). The candidates (vanished folders, the journal, orphans, pending resets) and the pass's touched ids are gathered with `addAll`; `sortIds` copies the ids out a few thousand at a time, sorts typed runs of 16,384 and merges them a pass at a time, with turns throughout. Gate: 500,000 candidates in no order, sorted and their first envelopes read, longest stall under a frame (30 ms without the turns).
 
 (`gmail-response.perf.test.ts` fails on main too, outside this plan: its two raw-response gates error before measuring.)
+
+**Round 44.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **A big expunge's journal union held the loop** (the journal and the ids spread into one set: 500,000 onto 200,000, 28 ms). `journalUnion` gathers them with `addAll`; the journal is still saved before any location goes. Gate: that union, longest stall under a frame (34 ms without the turns).
