@@ -21,7 +21,8 @@ export class AdoptIndex {
   readonly ids = new Set<number>();
 
   constructor(rows: readonly Envelope[]) {
-    for (const r of rows) {
+    // each envelope's candidates oldest first (a reset re-binds them in the order they were stored)
+    for (const r of [...rows].sort((a, b) => a.id - b.id)) {
       const key = keyOf(r);
       const bucket = this.byKey.get(key);
       if (bucket) bucket.ids.push(r.id);

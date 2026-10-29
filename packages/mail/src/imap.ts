@@ -353,6 +353,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const id of resetOrphans) touched.add(id);
         state = undefined;
       }
+      // the reset's messages by envelope, built once and consumed (Codex R7: never the whole set per message), for
+      // ID-less mail and for a Message-ID twin stored under a collision key alike
+      const recovery = new AdoptIndex(resetOrphans.size ? await locations.envelopes([...resetOrphans]) : []);
 
       // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
       const live = state !== undefined;
@@ -419,22 +422,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               continue;
             }
           }
-          if (!existing && resetOrphans.size && !messageKey(env?.messageId)) {
+          if (!existing && recovery.size && !messageKey(env?.messageId)) {
             // After a reset, recognise previously-located ID-less mail stored under an older key
             // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
             // must match, and a row already re-attached in this mailbox can't be claimed twice.
-            const candidate = await locations.resetCandidate({
-              candidates: [...resetOrphans],
-              subject: env?.subject ?? "",
-              fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
-              date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
-              size: m.size ?? 0,
-              mailbox: path,
-            });
-            if (candidate) {
-              resetOrphans.delete(candidate.id);
-              await upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
-              touched.add(candidate.id);
+            const candidate = await recovery.take({ ...envelope, rfcMessageId: null }, notHere);
+            if (candidate !== null) {
+              resetOrphans.delete(candidate);
+              await upsertLocation(candidate, path, uidvalidity, m.uid, flags);
+              touched.add(candidate);
               continue;
             }
           }
@@ -446,14 +442,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               touched.add(existing.id);
               resetOrphans.delete(existing.id);
               adopt.drop(existing.id);
+              recovery.drop(existing.id);
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
             // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
             // already stored under the old path's key: found by its envelope, re-attached (plan 65, Codex R2)
-            if (adopt.size) {
-              const twin = await adopt.take({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, notHere);
+            if (adopt.size || recovery.size) {
+              const twinEnvelope = { ...envelope, rfcMessageId: messageKey(env?.messageId) };
+              const twin = (await adopt.take(twinEnvelope, notHere)) ?? (await recovery.take(twinEnvelope, notHere));
               if (twin !== null) {
+                resetOrphans.delete(twin);
                 await upsertLocation(twin, path, uidvalidity, m.uid, flags);
                 touched.add(twin);
                 continue;

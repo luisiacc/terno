@@ -388,9 +388,12 @@ function AccountFolders({
 }) {
   const groupRef = useRef<HTMLDivElement>(null);
   const [batches, setBatches] = useState(1);
-  // the folder you're in is always among the rows (a deep one shows the batches before it)
+  const cap = batches * FOLDER_BATCH;
+  // the folder you're in is always among the rows: past the batches shown, it's drawn after them alone, never with
+  // every row before it (Codex R7: a rename that sorts it last could otherwise mount the whole catalog)
   const at = activeFolder === null ? -1 : rows.findIndex((r) => r.key === activeFolder);
-  const shown = Math.max(batches * FOLDER_BATCH, at + 1);
+  const visible = at >= cap ? [...rows.slice(0, cap), rows[at]!] : rows.slice(0, cap);
+  const hidden = rows.length - visible.length;
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {
@@ -433,7 +436,7 @@ function AccountFolders({
         {/* plan 65: its own folders, under its standard ones, nested by path */}
         {mounted && standard && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
         {mounted &&
-          rows.slice(0, shown).map((r) =>
+          visible.map((r) =>
             r.selectable && r.key !== null ? (
               <OwnFolderRow key={r.id} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
             ) : (
@@ -447,7 +450,7 @@ function AccountFolders({
               </div>
             ),
           )}
-        {mounted && rows.length > shown && (
+        {mounted && hidden > 0 && (
           <button
             type="button"
             data-testid={`nav-own-more-${account.id}`}
@@ -457,7 +460,7 @@ function AccountFolders({
             <span className="flex size-4 items-center justify-center">
               <ChevronDown className="size-3.5" />
             </span>
-            <span className="min-w-0 flex-1 truncate">{t("sidebar.moreOwnFolders", { count: rows.length - shown })}</span>
+            <span className="min-w-0 flex-1 truncate">{t("sidebar.moreOwnFolders", { count: hidden })}</span>
           </button>
         )}
       </div>

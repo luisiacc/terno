@@ -253,3 +253,9 @@ Codex made 12 points; they change the design as follows.
 2. **The checkpoint could acknowledge flag changes nobody read**: it was taken at identification, after the sweep had read the flags. A mailbox we already had is now acknowledged as its sweep saw it (count and mod-sequence when the sweep began), and a failed sweep acknowledges nothing, so the next pass looks again. Test: a failed sweep, then a pass that reads the flag change it missed.
 3. **The web store's rebuild slices rescanned and resorted the whole folder.** The order is now sorted once per job and each slice seeks into it. Gate: rebuild of 6.8k locations, every slice within a frame (7.1 ms at the longest).
 4. **Parent groups drawn twice under different folders (A/X/Y, B/X/Z) shared a React key**, which could leave a stale row after a change. Every row now has an identity from its full path. Test: unit.
+
+**Round 7.** (The first attempt hit "model at capacity" and was rerun.) Codex found four more problems; each is fixed with a test that fails without the fix:
+1. **A UIDVALIDITY reset lost a Message-ID twin older than the window:** reset matching only knew ID-less mail.
+2. **Reset recovery was quadratic** (the whole candidate set per message). Resets now build the same consumable envelope index as renames (`AdoptIndex`, candidates oldest first), for ID-less mail and Message-ID twins alike. Test: both twins survive a reset; the index's linear tests cover the scale.
+3. **The web store kept a cancelled rebuild's cached order**, so a relisting reused a stale snapshot. The cache is dropped whenever a job is cancelled or replaced. Test: conformance (unlist mid-rebuild, a location added, relist).
+4. **The folder you're in could bypass the 250-row cap** if a rename sorted it last. Past the batches shown, it's now drawn alone after them. Test: e2e, 2,000 folders with the active one renamed last, 251 rows.

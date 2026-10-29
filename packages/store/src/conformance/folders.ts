@@ -133,6 +133,21 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Old")).toEqual([]);
     });
 
+    it("Codex R7: a rebuild cancelled by unlisting, then relisted after a location changed, sees the change", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const r = await ingest(store, Array.from({ length: 6 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, locations: i < 5 ? [loc("Big", i + 1)] : [loc("INBOX", 1)] })));
+      const big = [{ key: "Big", path: ["Big"], selectable: true }];
+      await store.folders.replace(m!, big);
+      // into its second phase (the locations), then unlisted
+      for (let i = 0; i < 2; i++) await store.folders.rebuild(2);
+      await store.folders.replace(m!, []);
+      await store.providerStore(m!).locations.upsert(r.inserted[5]!, "Big", 1, 6, []);
+      await store.folders.replace(m!, big);
+      await drain(store);
+      expect(await ids(store, m!, "Big")).toHaveLength(6);
+    });
+
     it("Codex R5: a rebuild goes a slice at a time and survives a reopen mid-way", async () => {
       let store = await fresh();
       const [, m] = await withAccounts(store);

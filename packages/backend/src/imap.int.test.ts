@@ -1085,6 +1085,26 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).get<{ is_read: number }>("SELECT is_read FROM messages")!.is_read).toBe(1);
   });
 
+  it("Codex R7: a UIDVALIDITY reset keeps both messages that share a Message-ID and an envelope, older than the window", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    const twin = raw({ subject: "Gemelo", id: "twin-reset@x", date: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    expect(before).toHaveLength(2);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.resetUidValidity("Work");
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

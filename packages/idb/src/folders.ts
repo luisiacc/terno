@@ -83,11 +83,20 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
   // a job for a folder no longer listed has nothing to do; a newly listed IMAP folder with something to rebuild gets one (Codex R5)
   const jobs = T(c, "folder_rebuilds");
   const now = new Set(next.map((f) => f.key));
-  for (const j of jobs.by("fk_account_id", accountId)) if (!now.has(j.key as string)) jobs.deleteRow(j);
+  // a job cancelled or replaced lets its cached order go: the next one sorts what's there then (Codex R7)
+  const forget = (key: string) => rebuildOrders.get(c)?.delete(`${accountId}\u0000${key}`);
+  for (const j of jobs.by("fk_account_id", accountId)) {
+    if (now.has(j.key as string)) continue;
+    jobs.deleteRow(j);
+    forget(j.key as string);
+  }
   if (T(c, "accounts").get(accountId)?.kind === "imap") {
     for (const f of next) {
       if (known.has(f.key)) continue;
-      if (T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
+      if (T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) {
+        jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
+        forget(f.key);
+      }
     }
   }
   return { changed: true, touched: [] };
@@ -101,6 +110,7 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   const left = () => jobs.size > 0;
   if (!isFolder(c, job.account_id, job.key)) {
     jobs.deleteRow(job);
+    rebuildOrders.get(c)?.delete(`${job.account_id}\u0000${job.key}`);
     return { more: left(), touched: [] };
   }
   const memberships = T(c, "thread_folders");

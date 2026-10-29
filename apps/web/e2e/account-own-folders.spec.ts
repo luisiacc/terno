@@ -118,6 +118,20 @@ test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 
   await expect(more).toHaveText("1,500 more folders");
 });
 
+test("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn alone after the rows shown, never with every row before it", async ({ app: page, server }) => {
+  const acme = accountOf(server, "Acme Studio");
+  const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+  await server.backend.store.folders.replace(acme, many);
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await page.getByTestId(`nav-account-${acme}`).click();
+  await own(page, acme, "Label_m3").click();
+  await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_m3" ? { ...f, path: ["Zzz renamed"] } : f)));
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await expect(own(page, acme, "Label_m3")).toHaveText("Zzz renamed");
+  await expect(own(page, acme, "Label_m3")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
+});
+
 test("with one account, its row opens onto its own folders alone (its standard ones are the top ones)", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
