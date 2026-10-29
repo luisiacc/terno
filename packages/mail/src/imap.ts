@@ -1274,7 +1274,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           more = w.more;
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        for (const id of lost) pending.add(id);
+        await addAll(pending, lost);
         // a candidate is one with no place left: one the journal names that's placed in a folder still here (a pass
         // that stopped had placed it) isn't, whatever folder is read first (Codex R38); a vanished folder's are
         const vanishedPaths = new Set(vanished);

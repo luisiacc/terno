@@ -2,6 +2,7 @@ import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary
 import type { ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
 import { keepInPage } from "@terno/store";
 import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
+import type { Key } from "./mem";
 
 /**
  * Plan 65: an account's own folders and which threads are in them (the SQL adapter's folders.ts). Membership is
@@ -167,46 +168,47 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
     if (gone.length < limit) jobs.update(job, { phase: 1 });
     return { more: true, touched: gone.map((r) => r.thread_id as number) };
   }
-  // the folder's locations in UID order, sorted once for the job (Codex R6: never per slice); each slice seeks into it
+  // the folder's locations as its index holds them, walked by a cursor kept for the job: each slice its next
+  // `limit`, never the whole folder read, copied and sorted first (Codex R6, R47: 500,000 sorted in one slice, 170 ms).
+  // Adding a membership that's missing is idempotent, so a job resumed after a reload walks the folder again from its
+  // start; a location added meanwhile is the incremental writes' (and a live index visits it), one gone is skipped
   const at = `${job.account_id}\u0000${job.key}`;
   let cached = rebuildOrders.get(c);
   if (!cached) rebuildOrders.set(c, (cached = new Map()));
-  let order = cached.get(at);
-  if (!order) cached.set(at, (order = T(c, "message_locations").by("mailbox", job.account_id, job.key).map((l) => ({ id: l.message_id as number, uidvalidity: l.uidvalidity as number, uid: l.uid as number })).sort((x, y) => x.uidvalidity - y.uidvalidity || x.uid - y.uid)));
-  let lo = 0;
-  let hi = order.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    const l = order[mid]!;
-    if (l.uidvalidity < job.after_uidvalidity || (l.uidvalidity === job.after_uidvalidity && l.uid <= job.after_uid)) lo = mid + 1;
-    else hi = mid;
-  }
-  const rows = order.slice(lo, lo + limit).map((l) => ({ message_id: l.id, uidvalidity: l.uidvalidity, uid: l.uid }));
-  // this folder's rows only (its old ones went in phase 0), from the batch's messages: no thread refolded (Codex R11)
+  let walk = cached.get(at);
+  if (!walk) cached.set(at, (walk = T(c, "message_locations").keysBy("mailbox", job.account_id, job.key)));
+  const locations = T(c, "message_locations");
   const messages = T(c, "messages");
   const threadRows = T(c, "threads");
-  const locations = T(c, "message_locations");
   const threads: number[] = [];
-  for (const r of rows) {
-    // the order was read ahead: a location gone since then brings nothing back (Codex R12)
-    if (!locations.has(r.message_id, job.key)) continue;
-    const m = messages.get(r.message_id);
+  let read = 0;
+  let done = false;
+  while (read < limit) {
+    const next = walk.next();
+    if (next.done) {
+      done = true;
+      break;
+    }
+    read++;
+    const l = locations.rows.get(next.value);
+    // this folder's rows only (its old ones went in phase 0), from its messages: no thread refolded (Codex R11)
+    if (!l) continue;
+    const m = messages.get(l.message_id);
     if (!m || m.is_trash || m.is_spam || memberships.has(m.thread_id, job.key)) continue;
     const t = threadRows.get(m.thread_id);
     if (!t) continue;
     memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: job.key, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
     threads.push(t.id as number);
   }
-  const last = rows.at(-1);
-  if (rows.length < limit) {
+  if (done) {
     jobs.deleteRow(job);
     cached.delete(at);
-  } else jobs.update(job, { after_uidvalidity: last!.uidvalidity, after_uid: last!.uid });
+  }
   return { more: left(), touched: threads };
 }
 
-/** A job's locations in UID order, per store: built on its first slice (after a reload, again once) */
-const rebuildOrders = new WeakMap<Ctx, Map<string, { id: number; uidvalidity: number; uid: number }[]>>();
+/** A job's walk of its folder's locations, per store: started on its first slice (after a reload, again from the start) */
+const rebuildOrders = new WeakMap<Ctx, Map<string, Iterator<Key>>>();
 
 /** Does a thread pass the folder's view and the list's filter (Waiting: inside its window)? */
 function keeps(p: ScopeParams): (t: R | undefined) => t is R {
