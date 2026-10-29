@@ -942,7 +942,7 @@ export class SqlMailStore implements MailStore {
       setSetting(this.db, PROVIDER_COOLDOWN_KEY, next.encoded);
       return next.result;
     })),
-    bind: (input, mailboxKey) => {
+    bind: (input, mailboxKey, current = () => true) => {
       const captured = { ...input };
       return this.cooldownAction(async () => {
         const stamp = captured;
@@ -952,7 +952,7 @@ export class SqlMailStore implements MailStore {
         return this.db.tx(() => {
           const account = accountStamp(this.db, stamp.id);
           const kind = this.db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", stamp.id)?.kind;
-          if (!account || kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
+          if (!current() || !account || kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
           const next = bindCooldown(getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null), stamp, digest, mailboxKey);
           setSetting(this.db, PROVIDER_COOLDOWN_KEY, next);
           return decodeCooldown(next).bindings.some((b) => b.id === stamp.id && b.createdAt === stamp.createdAt && b.mailboxKey === mailboxKey && b.emailDigest === digest);

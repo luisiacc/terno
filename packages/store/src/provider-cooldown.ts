@@ -35,7 +35,7 @@ export interface CooldownStamp { id: number; email: string; createdAt: number }
 export interface ProviderCooldownStore {
   read(): Promise<string | null>;
   update<R>(fn: (encoded: string | null) => { encoded: string; result: R }): Promise<R>;
-  bind(stamp: CooldownStamp, mailboxKey: string): Promise<boolean>;
+  bind(stamp: CooldownStamp, mailboxKey: string, current?: () => boolean): Promise<boolean>;
 }
 export interface OpAdmission {
   blockedAccountIds: readonly number[];

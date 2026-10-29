@@ -1347,6 +1347,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.couldNotVerifyAccount": "Couldn’t verify {email}: {detail}",
   "errors.alreadyConnected": "{email} is already connected.",
   "errors.alreadyConnectedImap": "{email} is already connected over IMAP.",
+  "errors.gmail.paused": "Gmail is paused. Try again later.",
+  "errors.gmail.bindingPaused": "Gmail verification paused. Reconnect Gmail.",
   "errors.gmailClientIdMissing": "Add your Google OAuth client ID in Settings → Accounts.",
   "errors.gmailReconnectInBrowser": "In the browser, Gmail reconnects through the Google window.",
   "errors.googleConnectNeedsDesktop": "Connecting with Google needs the desktop app.",

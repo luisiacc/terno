@@ -1,6 +1,6 @@
 import { L } from "@terno/i18n";
 import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError, type HttpResponseEvidence } from "./types";
+import { ProviderAuthError, ProviderError, type GoogleRequests, type RequestRun, type HttpResponseEvidence } from "./types";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 export interface GmailRefreshExchange {
@@ -20,6 +20,9 @@ const token = (value: unknown): value is string => typeof value === "string" && 
 /** A refresh exchange only: the caller owns durable credential replacement before access publication. */
 export async function exchangeGmailRefresh(options: {
   fetch: typeof fetch;
+  google?: GoogleRequests;
+  run?: RequestRun;
+  generation?: number;
   url: string;
   clientId: string;
   clientSecret: string | null;
@@ -50,14 +53,14 @@ export async function exchangeGmailRefresh(options: {
     signal.throwIfAborted();
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: options.refreshToken, client_id: options.clientId });
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
-    const response = await wait(options.fetch(options.url, {
-      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal,
-    }).then((res) => {
+    const init = { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal };
+    const dispatched = options.google ? options.google.request({ request: { endpoint: "oauth-token", purpose: "refresh" }, run: options.run, generation: options.generation ?? options.google.generation(), onHeaders: (status, evidence) => { responseStatus = status; httpResponse = evidence; } }, options.url, init) : options.fetch(options.url, init);
+    const response = await wait(dispatched.then((res) => {
       if (signal.aborted) {
         void res.body?.cancel().catch(() => {});
         throw signal.reason;
       }
-      if (!res.ok) httpResponse = captureHttpResponseEvidence(res, { endpoint: "oauth-token", purpose: "refresh" }, Date.now());
+      if (!res.ok && !httpResponse) httpResponse = captureHttpResponseEvidence(res, { endpoint: "oauth-token", purpose: "refresh" }, Date.now());
       return res;
     }));
     const receivedAt = Date.now();
@@ -117,6 +120,7 @@ export async function exchangeGmailRefresh(options: {
       grantedScopes,
     };
   } catch (error) {
+    if (responseStatus === 429) throw statusFailure(429, httpResponse);
     if (options.signal?.aborted) throw new DOMException("closed", "AbortError");
     if (signal.aborted && responseStatus !== undefined && responseStatus >= 400) throw statusFailure(responseStatus, httpResponse);
     if (signal.aborted) throw signal.reason;

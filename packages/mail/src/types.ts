@@ -29,6 +29,7 @@ export interface ProviderOp {
   kind: string;
   target: { messageIds?: number[] };
   payload: unknown;
+  requestRun?: RequestRun;
   submissionAccepted?(): void;
   sentCopy?: import("./sent-copy").SentCopyHooks;
 }
@@ -133,7 +134,19 @@ export interface SyncSink {
 }
 
 
+export interface GoogleRequests {
+  generation(): number;
+  check(request: HttpRequestContext): void;
+  request(descriptor: RequestDescriptor, input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response>;
+  /** The host invokes read with a generation-fenced, shared proof starter. */
+  prove(read: () => Promise<string>): Promise<void>;
+  tokenUnavailable(): void;
+  accessAvailable(): void;
+}
+
 export interface ProviderContext {
+  /** Installed by BackendCore for every saved Gmail account; standalone transports own their policy. */
+  google?: GoogleRequests;
   /** The backend owns durable flag observations and committed snapshot paging. */
   flagObservation?: true;
   /** Shared by this backend; standalone provider callers may retain their own read limit. */
@@ -257,8 +270,9 @@ export interface RequestRun { markDispatched(): void }
 export interface RequestDescriptor {
   readonly request: HttpRequestContext;
   readonly run?: RequestRun;
+  readonly generation?: number;
   /** Host-owned synchronous status capture; no I/O, throw or await. */
-  readonly onHeaders?: (status: number) => void;
+  readonly onHeaders?: (status: number, evidence?: HttpResponseEvidence) => void;
 }
 export interface Observation429 {
   readonly received: HttpReceipt;

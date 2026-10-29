@@ -1,3 +1,4 @@
+import { ProviderCooldownError, RequestNotDispatchedError, requestHttp, type ProviderRequests, type RequestDescriptor } from "@terno/mail/portable";
 import { textRef, type TextRef } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
 
@@ -38,6 +39,8 @@ export interface NetworkPolicy {
   /** whether every address of the URL's host is loopback (what local mode would accept for AI) */
   isLoopbackEndpoint(url: string): Promise<boolean>;
   isLocalMode(): Promise<boolean>;
+  fetchGoogle(policy: ProviderRequests, descriptor: RequestDescriptor): typeof fetch;
+  googlePending(): number;
 }
 
 export type LookupAll = (host: string) => Promise<{ address: string; family: number }[]>;
@@ -57,6 +60,7 @@ export interface NetworkPolicyOptions {
    */
   lookup?: LookupAll;
   fetch?: typeof fetch;
+  googleChanged?: () => void;
 }
 
 /** 4 or 6 for an IP literal, 0 otherwise (node:net's isIP, portably). */
@@ -107,6 +111,32 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   const lookup = options.lookup ?? literalLookup;
   const baseFetch = options.fetch ?? globalThis.fetch;
 
+  let googlePending = 0;
+  const physical = (request: Request, release: () => void) => (response: Response): Response => {
+    if (!response.body) { release(); return response; }
+    const reader = response.body.getReader();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            if (!cancelled && !request.signal.aborted) release();
+            controller.close();
+          } else controller.enqueue(chunk.value);
+        } catch (error) {
+          if (!cancelled && !request.signal.aborted) release();
+          controller.error(error);
+        }
+      },
+      cancel(reason) {
+        cancelled = true;
+        return reader.cancel(reason);
+      },
+    }, { highWaterMark: 0 });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+
   /** The IP to connect to when every address of the host is loopback, else null. */
   async function loopbackTarget(hostname: string): Promise<string | null> {
     const host = hostname.replace(/^\[|\]$/g, "");
@@ -141,6 +171,37 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
 
   return {
     assert,
+    googlePending: () => googlePending,
+    fetchGoogle(policy, descriptor) {
+      return (input, init) => {
+        // Snapshot mutable init/Headers/body before the first asynchronous policy step.
+        const request = new Request(input, { ...init, redirect: "error" });
+        const run = async () => {
+          await assert("mail", new URL(request.url));
+          let release: (() => void) | undefined;
+          const response = await requestHttp(policy, descriptor, () => {
+            if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
+            if (googlePending >= 64) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
+            googlePending++;
+            if (googlePending === 64) options.googleChanged?.();
+            let released = false;
+            release = () => {
+              if (released) return;
+              released = true;
+              const wasFull = googlePending === 64;
+              googlePending--;
+              if (wasFull) options.googleChanged?.();
+            };
+            return baseFetch(request).catch((error: unknown) => {
+              if (!request.signal.aborted) release!();
+              throw error;
+            });
+          }, Date.now);
+          return physical(request, release!)(response);
+        };
+        return run();
+      };
+    },
     async isLoopbackEndpoint(url) {
       try {
         return (await loopbackTarget(new URL(url).hostname)) !== null;

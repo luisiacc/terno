@@ -47,7 +47,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
     if (req.url === "/gmail/profile") {
       mailboxRequests++;
       if (!access.has(String(req.headers.authorization).replace(/^Bearer /, ""))) return json({}, 401);
-      return json({ historyId: "9007199254740995" });
+      return json({ historyId: "9007199254740995", emailAddress: "synthetic@example.test" });
     }
     json({}, 404);
   });

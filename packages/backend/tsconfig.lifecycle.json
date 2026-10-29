@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2023", "DOM"] },
-  "include": ["src/ai-filter-output.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts"],
+  "include": ["src/ai-filter-output.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-cooldown.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts"],
   "exclude": []
 }

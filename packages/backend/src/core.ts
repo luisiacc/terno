@@ -1,3 +1,6 @@
+import { ProviderCooldown } from "./provider-cooldown";
+import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
+import { copyOpAdmission, type CooldownStamp, type OpAdmission } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
@@ -6,7 +9,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { IncomingPipeline, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingPipeline, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -160,6 +163,12 @@ export class BackendCore {
   readonly server: RpcServer;
   readonly options: Required<Pick<BackendCoreOptions, "now" | "sliceBudgetMs" | "syncIntervalMs">> & BackendCoreOptions;
   private readonly incoming: IncomingPipeline;
+  private cooldown?: ProviderCooldown;
+  private readonly google = new Map<number, SavedGoogleRequests>();
+  private readonly cooldownAccounts = new Map<number, CooldownStamp & { kind: string }>();
+  private admissionSnapshot?: Promise<OpAdmission>;
+  private cooldownVersion = 0;
+  private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
@@ -222,7 +231,7 @@ export class BackendCore {
     this.incoming = new IncomingPipeline(options.incomingProcessor);
     this.platform = options.platform;
     this.store = options.store;
-    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup });
+    this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged() });
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
@@ -307,12 +316,48 @@ export class BackendCore {
   }
 
   private async init(): Promise<void> {
+    this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() });
+    for (const id of this.cooldown.boundAccountIds()) {
+      const stamp = await this.store.accounts.stamp(id);
+      if (stamp) this.cooldownAccounts.set(id, { ...stamp, kind: (await this.store.accounts.get(id))?.kind ?? "" });
+    }
     await this.categorizer.load();
     const recovered = await this.store.ops.recover(this.now());
     if (recovered.requeued || recovered.unknown) {
       log.info("ops.recovered", { count: recovered.requeued + recovered.unknown });
       this.log("info", "recovered ops after restart", recovered);
     }
+  }
+
+  private cooldownChanged(): void {
+    this.cooldownVersion++;
+    this.admissionSnapshot = undefined;
+    if (this.stopped || this.options.autoSync === false || !this.cooldown) return;
+    if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
+    this.cooldownTimer = null;
+    const delay = this.cooldown.nextWakeDelay();
+    if (delay !== null) this.cooldownTimer = setTimeout(() => {
+      this.cooldownTimer = null;
+      this.cooldownChanged();
+      for (const id of this.google.keys()) if (this.googleReady(id)) void this.syncAccount(id);
+    }, delay);
+    this.kickWorker();
+  }
+
+  private googleReady(id: number): boolean {
+    try { this.google.get(id)?.check({ endpoint: "gmail-api", purpose: "mail" }); return true; }
+    catch { return false; }
+  }
+
+  private operationAdmission(): Promise<OpAdmission> {
+    if (this.admissionSnapshot) return this.admissionSnapshot;
+    const version = this.cooldownVersion;
+    return this.admissionSnapshot = (async () => {
+      const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
+      const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([, google]) => google.paused).map(([id]) => id)];
+      const all = snapshot.blockAllGoogle || this.net.googlePending() >= 64 || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
+      return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion });
+    })();
   }
 
   now(): number {
@@ -512,6 +557,7 @@ export class BackendCore {
     await this.facts.stop();
     this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
+    if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     for (const off of this.unwatch.values()) off();
     await accountsClosed;
     // let an in-flight ops batch finish writing before the database closes
@@ -528,6 +574,7 @@ export class BackendCore {
       this.log("warn", "could not persist the categorization model", error instanceof Error ? error.message : error);
     }
     const failedRetirement = await retirement;
+    await this.cooldown?.close();
     await this.store.close();
     if (failedRetirement) throw failedRetirement.error;
   }
@@ -986,13 +1033,24 @@ export class BackendCore {
     const existing = this.providers.get(accountId);
     if (existing) return existing;
     const created = (async () => {
+      await this.ready;
       const account = await this.store.accounts.get(accountId);
       if (!this.current(life) || !account) return null;
       const cfg = await this.store.accounts.config<Record<string, unknown>>(accountId);
       if (!this.current(life) || !cfg) return null;
       const stamp = await this.store.accounts.stamp(accountId);
       if (!this.current(life) || !stamp) return null;
+      this.cooldownAccounts.set(accountId, { ...stamp, kind: account.kind });
+      this.cooldownChanged();
+      const google = account.kind === "gmail" && !cfg.config.demo ? await savedGoogleRequests({
+        gate: this.cooldown!, net: this.net, store: this.store.providerCooldown, stamp,
+        live: () => this.current(life), credentials: () => this.credentialsOf(accountId),
+        write: (work) => this.accountWrite(life, work), changed: () => this.cooldownChanged(),
+      }) : undefined;
+      if (google) this.google.set(accountId, google);
+      if (!this.current(life)) { google?.close(); return null; }
       const provider = this.options.providers.create({
+        google,
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
         incoming: {
@@ -1019,13 +1077,13 @@ export class BackendCore {
         saveCursor: (cursor) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor)),
         // Providers cancel their reads on reset/close. Sends retain their own acceptance/ambiguity signal.
         fetch: (input, init) => {
-          if (!this.current(life)) throw new RequestNotDispatchedError(L("errors.accountGone"));
+          if (!this.current(life) || google) throw new RequestNotDispatchedError(L("errors.accountGone"));
           return this.net.fetchFor("mail")(input, init);
         },
       });
       life.provider = provider;
       return provider;
-    })();
+    })().catch((error: unknown) => { if (!this.current(life)) return null; throw error; });
     this.providers.set(accountId, created);
     const forget = () => {
       if (this.providers.get(accountId) !== created) return;
@@ -1070,8 +1128,8 @@ export class BackendCore {
     void this.provider(account.id).then((provider) => {
       if (!provider || !this.current(life)) return;
       this.watchAccount(account.id, provider);
-      void this.syncAccount(account.id);
-    });
+    }, () => {});
+    void this.syncAccount(account.id);
   }
 
   private watchAccount(accountId: number, known?: MailProvider): void {
@@ -1102,6 +1160,9 @@ export class BackendCore {
     this.flagSyncAgain.delete(accountId);
     this.syncing.delete(accountId);
     this.providers.delete(accountId);
+    this.google.get(accountId)?.close();
+    this.google.delete(accountId);
+    this.cooldownChanged();
     // Never wait for a stuck read, factory or close before cancelling its lifetime.
     if (life.provider) {
       life.provider.reset?.();
@@ -1119,6 +1180,8 @@ export class BackendCore {
     if (!life?.abort.signal.aborted) return;
     this.lifetimes.delete(accountId);
     this.credentials.delete(accountId);
+    this.cooldownAccounts.delete(accountId);
+    this.cooldownChanged();
     this.options.providers.gmailTokens?.forget?.(accountId);
   }
 
@@ -1208,7 +1271,7 @@ export class BackendCore {
             await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
-            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError) throw error;
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError) throw error;
           }
         } finally { arrivals.end(); }
         if (!this.current(life)) return;
@@ -1246,6 +1309,11 @@ export class BackendCore {
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (!this.store.isOpen) return;
+        if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && error.httpResponse?.status === 429)) {
+          this.connectivity.succeeded(accountId);
+          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null });
+          return;
+        }
         if (error instanceof FlagConnectionError) {
           await setState({ status: "error", lastError: message, lastErrorI18n });
           return;
@@ -1279,7 +1347,7 @@ export class BackendCore {
       this.syncing.delete(accountId);
       const explicit = this.syncAgain.delete(accountId);
       const flags = this.flagSyncAgain.delete(accountId);
-      if (this.current(life) && (explicit || (flags && this.connectivity.canSync(accountId)))) void this.syncAccount(accountId);
+      if (this.current(life) && this.googleReady(accountId) && (explicit || (flags && this.connectivity.canSync(accountId)))) void this.syncAccount(accountId);
     });
     this.syncing.set(accountId, run);
     return run;
@@ -1427,7 +1495,7 @@ export class BackendCore {
         for (;;) {
           // quitting: nothing more is claimed (the rest stays queued, durably); offline: they'd only fail (plan 20)
           if (this.draining || this.stopped || !this.connectivity.online) break;
-          const batch = await this.store.ops.claimReady(this.now(), 25);
+          const batch = await this.store.ops.claimReady(this.now(), 25, await this.operationAdmission());
           if (batch.length === 0) break;
           for (const op of batch) this.undispatched.add(op.id);
           const byAccount = new Map<number, OpRow[]>();
@@ -1485,7 +1553,7 @@ export class BackendCore {
   private async scheduleRetry(): Promise<void> {
     // offline: the online event kicks the worker
     if (this.stopped || this.draining || this.options.autoSync === false || !this.connectivity.online) return;
-    const next = await this.store.ops.nextAttemptAt();
+    const next = await this.store.ops.nextAttemptAt(await this.operationAdmission());
     if (next === null || this.stopped) return;
     if (this.workerTimer) clearTimeout(this.workerTimer);
     this.workerTimer = setTimeout(() => void this.runWorker(), Math.max(0, next - this.now()));
@@ -1530,7 +1598,7 @@ export class BackendCore {
     if (sending) this.sendsInFlight.add(op.id);
     let target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
-    let accepted = false, transportStarted = false;
+    let accepted = false, transportStarted = false, remoteDispatched = false;
     let sendAccepted: { warning: string | null } | undefined;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
@@ -1570,6 +1638,7 @@ export class BackendCore {
       if (receipt?.submission === "accepted") throw new ProviderError(L("errors.sentCopy.unavailable"), false, true);
       if (!this.current(life) || hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) { await this.store.ops.release(op.id, this.now()); return; }
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
+        requestRun: { markDispatched: () => { remoteDispatched = true; } },
         submissionAccepted: () => { accepted = true; },
         ...(receipt && { sentCopy: {
           prepare: (raw) => this.accountWrite(life, () => prepareCopyWire(this.store, op.id, raw, () => this.platform.yield(), () => { this.assertCurrent(life); if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true); })),
@@ -1605,6 +1674,10 @@ export class BackendCore {
         let state: OpState | null = null;
         // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
         if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now(), sendAccepted);
+        else if (error instanceof ProviderCooldownError && !remoteDispatched && this.current(life)) {
+          await this.store.ops.release(op.id, this.now());
+          this.cooldownChanged();
+        }
         else if (error instanceof RequestNotDispatchedError && !this.current(life)) await this.parkClosedOp(op);
         else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
           await this.store.ops.release(op.id, this.now());

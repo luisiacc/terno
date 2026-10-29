@@ -46,7 +46,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     const url = new URL(request.url!, "http://fixture.test");
     requests.push(url);
     const json = (value: unknown, status = 200) => { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(value)); };
-    if (url.pathname === "/profile") return json({ historyId: String(historyId) });
+    if (url.pathname === "/profile") return json({ historyId: String(historyId), emailAddress: "me@example.test" });
     if (url.pathname === "/labels") return json({ labels: [{ id: "Label_project", name: "Project", type: "user" }] });
     if (url.pathname === "/messages") {
       if (!url.searchParams.has("pageToken")) snapshot = [...messages.keys()];
@@ -93,6 +93,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   let backend = await open();
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  await (await backend.provider(account.id))!.verify();
+  requests.length = 0;
   cleanup.push(async () => {
     try { await backend.stop(); }
     finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }

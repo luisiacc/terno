@@ -5,7 +5,7 @@
  * certificate) are never one: they read structured codes, never messages.
  */
 
-import type { Localized } from "@terno/i18n";
+import { L, type Localized } from "@terno/i18n";
 import { ProviderError, type HttpRequestContext } from "./types";
 
 /** The host rejected dispatch before calling its transport; no request could have left. */
@@ -77,7 +77,7 @@ export function failedBeforeRequest(error: unknown): boolean {
 export class ProviderCooldownError extends RequestNotDispatchedError {
   declare readonly cooldown: Readonly<{ service: HttpRequestContext["endpoint"]; revision: string; kind: string }>;
   constructor(service: HttpRequestContext["endpoint"], revision: string, kind: string) {
-    super("Provider request paused locally");
+    super(L(kind === "binding" ? "errors.gmail.bindingPaused" : "errors.gmail.paused"));
     this.name = "ProviderCooldownError";
     Object.defineProperty(this, "cooldown", { value: Object.freeze({ service, revision, kind }) });
   }

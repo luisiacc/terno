@@ -1339,6 +1339,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.couldNotVerifyAccount": "No se pudo verificar {email}: {detail}",
   "errors.alreadyConnected": "{email} ya está conectada.",
   "errors.alreadyConnectedImap": "{email} ya está conectada por IMAP.",
+  "errors.gmail.paused": "Gmail está en pausa. Inténtalo más tarde.",
+  "errors.gmail.bindingPaused": "Verificación en pausa. Reconecta Gmail.",
   "errors.gmailClientIdMissing": "Añade tu Google OAuth client ID en Ajustes → Cuentas.",
   "errors.gmailReconnectInBrowser": "En el navegador, Gmail se reconecta con la ventana de Google.",
   "errors.googleConnectNeedsDesktop": "Conectar con Google necesita la app de escritorio.",

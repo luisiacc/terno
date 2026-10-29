@@ -6,7 +6,7 @@ import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
-import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun } from "./types";
 
 export * from "./gmail-api";
 
@@ -172,18 +172,24 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   }
 
   /** One promise owns both the exchange and its durable result for every waiting operation. */
-  function refresh(): Promise<string> {
+  const refreshRuns = new Set<RequestRun>();
+  let refreshIssued = false;
+  function refresh(run?: RequestRun): Promise<string> {
+    if (run) { refreshRuns.add(run); if (refreshIssued) run.markDispatched(); }
     refreshing ??= (async () => {
       try {
         assertOpen();
         if (!candidate) {
+          const generation = ctx.google?.generation();
+          ctx.google?.tokenUnavailable();
+          ctx.google?.check({ endpoint: "oauth-token", purpose: "refresh" });
           const refreshToken = await ctx.getSecret("refreshToken");
           assertOpen();
           if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
           const clientId = (await ctx.store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
           const clientSecret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
           assertOpen();
-          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId: clientId ?? "", clientSecret, refreshToken, signal: lifetime.signal });
+          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId: clientId ?? "", clientSecret, refreshToken, signal: lifetime.signal, google: ctx.google, generation, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
           assertOpen();
           candidate = { expected: refreshToken, exchange, uncertain: false };
         }
@@ -193,6 +199,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         // A delayed commit consumes token life. The next demand uses the now-durable credential.
         if (pending.exchange.expiresAt <= Date.now()) throw new ProviderError(L("errors.gmail.refreshFailed", { status: 200 }), true);
         access = pending.exchange;
+        ctx.google?.accessAvailable();
         return access.accessToken;
       } catch (error) {
         assertOpen();
@@ -203,6 +210,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         }
         throw persistenceFailure();
       } finally {
+        refreshRuns.clear(); refreshIssued = false;
         refreshing = null;
       }
     })();
@@ -212,9 +220,9 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   const provider = createGmailApiProvider(ctx, {
     endpoints: options.endpoints,
     tokens: {
-      get: async () => {
+      get: async (run) => {
         assertOpen();
-        return access && access.refreshAt > Date.now() ? access.accessToken : refresh();
+        return access && access.refreshAt > Date.now() ? access.accessToken : refresh(run);
       },
       invalidate: (token) => {
         if (access?.accessToken === token) access = null;

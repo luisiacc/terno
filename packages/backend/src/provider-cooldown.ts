@@ -446,6 +446,7 @@ export class ProviderCooldown {
   }
   /** After a committed bind: publish the new binding only after the same serialized local read. */
   refreshAfterBind(): Promise<"confirmed" | "pending-terminal" | "unconfirmed"> { return this.recoverStorage(); }
+  boundAccountIds(): readonly number[] { return this.ledger.bindings.map((binding) => binding.id); }
   async bindingFor(input: CooldownStamp): Promise<string | null> {
     const stamp = { ...input };
     const binding = this.ledger.bindings.find((b) => b.id === stamp.id && b.createdAt === stamp.createdAt);

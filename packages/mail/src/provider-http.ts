@@ -15,15 +15,14 @@ export async function requestHttp(
   const onHeaders = descriptor.onHeaders;
   try {
     const response = await ticket.dispatch(transport);
+    const evidence = !response.ok ? captureHttpResponseEvidence(response, ticket.request, wallNow()) : undefined;
+    onHeaders?.(response.status, evidence);
     if (response.status === 429) {
-      const evidence = captureHttpResponseEvidence(response, ticket.request, wallNow());
       if (!evidence) throw new Error("Missing HTTP response evidence");
       const durable = ticket.headers429({ received: evidence.received, minimum: resolveRetryMinimum(evidence) });
-      onHeaders?.(response.status);
       await durable;
     } else {
       ticket.headers(response.status);
-      onHeaders?.(response.status);
     }
     return response;
   } finally {
