@@ -147,3 +147,29 @@ it("Codex R35: 50,000 messages just written join one twin group in linear time, 
   expect(Math.min(...runs.map((r) => r.worst))).toBeLessThan(16);
   expect(Math.min(...runs.map((r) => r.total))).toBeLessThan(100);
 });
+
+it("Codex R36: an initial import of 500,000 identical envelopes joins its group a step at a time, never a frame", async () => {
+  const run = async (older: boolean) => {
+    const group = older ? Array.from({ length: 250_000 }, (_, i) => 2 * i + 2) : [1, 2, 3];
+    const groups = new Map([["k", group]]);
+    const keys = Array.from({ length: older ? 250_000 : 500_000 }, () => "k");
+    const ids = older ? Array.from({ length: 250_000 }, (_, i) => 2 * i + 1) : Array.from({ length: 500_000 }, (_, i) => i + 10);
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    await joinGroups(groups, keys, ids);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(group).toHaveLength(older ? 500_000 : 500_003);
+    expect(group.every((id, i) => i === 0 || id > group[i - 1]!)).toBe(true);
+    return worst;
+  };
+  for (const older of [false, true]) {
+    await run(older);
+    expect(Math.min(await run(older), await run(older), await run(older))).toBeLessThan(16);
+  }
+});

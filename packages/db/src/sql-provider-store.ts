@@ -148,44 +148,78 @@ class SqlImapLocations implements ImapLocationStore {
     }
     if (!isFolder(this.db, this.accountId, mailbox)) return;
     // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
-    // looked for a page of the thread at a time, from where the last page ended (Codex R34: per slice, a long
-    // conversation's removed part was read again each time)
-    // a few milliseconds a turn across threads (Codex R35: 50,000 short ones never filled a page to yield on), the
-    // rows that go deleted in bounded batches
+    // decided where it's deleted (Codex R36: a message made eligible meanwhile, "Not spam", kept its row's place):
+    // - a short thread (its message count from the thread row) in a batch's own transaction, the check inside the
+    //   delete, batches of at most RESET_SLICE messages in all;
+    // - a long one a page at a time from where the last page ended (Codex R34), deleted only if nothing was written
+    //   since its scan began (total_changes: one writer, this connection), else scanned again, at last checked inside
+    //   the delete itself;
+    // a few milliseconds a turn across threads (Codex R35)
     let since = performance.now();
     const breathe = async () => {
       if (performance.now() - since < 4) return;
       await new Promise((resolve) => setTimeout(resolve, 0));
       since = performance.now();
     };
-    const going: number[] = [];
+    const stillThere = `EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
+                               WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`;
+    const conditional = (ids: readonly number[]) =>
+      this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(ids.length)}) AND NOT ${stillThere}`, mailbox, ...ids, mailbox));
+    const changes = () => this.db.get<{ c: number }>("SELECT total_changes() AS c")!.c;
+    let batch: number[] = [];
+    let batchMessages = 0;
     const flush = () => {
-      if (going.length) this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(going.length)})`, mailbox, ...going));
-      going.length = 0;
+      if (batch.length) conditional(batch);
+      batch = [];
+      batchMessages = 0;
     };
-    for (const thread of threads) {
-      let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
-      let here = false;
-      for (;;) {
-        const page = this.db.all<{ id: number; date: number; here: number }>(
-          `SELECT o.id, o.date, (o.is_trash = 0 AND o.is_spam = 0 AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = o.id AND l.mailbox = ?)) AS here
-             FROM messages o INDEXED BY messages_thread WHERE o.thread_id = ? AND (o.date, o.id) > (?, ?) ORDER BY o.date, o.id LIMIT ?`,
-          mailbox,
-          thread,
-          after.date,
-          after.id,
-          RESET_SLICE,
-        );
-        if (page.some((r) => r.here === 1)) {
-          here = true;
-          break;
-        }
-        if (page.length < RESET_SLICE) break;
-        after = { date: page.at(-1)!.date, id: page.at(-1)!.id };
-        await new Promise((resolve) => setTimeout(resolve, 0));
+    const sizes = new Map<number, number>();
+    const all = [...threads];
+    for (let i = 0; i < all.length; i += 500) {
+      const chunk = all.slice(i, i + 500);
+      for (const r of this.db.all<{ id: number; n: number }>(`SELECT id, message_count AS n FROM threads WHERE id IN (${placeholders(chunk.length)})`, ...chunk)) sizes.set(r.id, r.n);
+      await breathe();
+    }
+    for (const thread of all) {
+      const n = sizes.get(thread) ?? 0;
+      if (n <= RESET_SLICE) {
+        if (batchMessages + n > RESET_SLICE) flush();
+        batch.push(thread);
+        batchMessages += n;
+        await breathe();
+        continue;
       }
-      if (!here) going.push(thread);
-      if (going.length >= 250) flush();
+      let decided = false;
+      for (let attempt = 0; attempt < 3 && !decided; attempt++) {
+        const stamp = changes();
+        let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
+        let here = false;
+        for (;;) {
+          const page = this.db.all<{ id: number; date: number; here: number }>(
+            `SELECT o.id, o.date, (o.is_trash = 0 AND o.is_spam = 0 AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = o.id AND l.mailbox = ?)) AS here
+               FROM messages o INDEXED BY messages_thread WHERE o.thread_id = ? AND (o.date, o.id) > (?, ?) ORDER BY o.date, o.id LIMIT ?`,
+            mailbox,
+            thread,
+            after.date,
+            after.id,
+            RESET_SLICE,
+          );
+          if (page.some((r) => r.here === 1)) {
+            here = true;
+            break;
+          }
+          if (page.length < RESET_SLICE) break;
+          after = { date: page.at(-1)!.date, id: page.at(-1)!.id };
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        if (here) decided = true;
+        else if (changes() === stamp) {
+          // nothing written since the scan began: still none there, deleted in this same turn
+          this.db.tx(() => this.db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, mailbox));
+          decided = true;
+        }
+      }
+      if (!decided) conditional([thread]);
       await breathe();
     }
     flush();

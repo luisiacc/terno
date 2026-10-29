@@ -193,15 +193,32 @@ export async function joinGroups(groups: ReadonlyMap<string, number[]>, keys: re
     if (i % 1000 === 999) await breathe();
   }
   for (const [group, add] of adding) {
-    const known = new Set(group);
-    const fresh = [...new Set(add)].filter((id) => !known.has(id)).sort((x, y) => x - y);
-    if (fresh.length && (group.length === 0 || fresh[0]! > group.at(-1)!)) for (const id of fresh) group.push(id);
-    else if (fresh.length) {
-      const merged = [...group, ...fresh].sort((x, y) => x - y);
-      group.length = 0;
-      for (const id of merged) group.push(id);
+    // written in order, so ascending (sorted once otherwise); then appended or merged a thousand at a time, an id
+    // already there (or twice in what's added) skipped (Codex R36: a group of 500,000 was 40 ms at once)
+    let ascending = true;
+    for (let i = 1; i < add.length && ascending; i++) ascending = add[i]! > add[i - 1]!;
+    if (!ascending) add.sort((x, y) => x - y);
+    if (group.length === 0 || add[0]! > group.at(-1)!) {
+      for (let i = 0; i < add.length; i++) {
+        if (i === 0 || add[i] !== add[i - 1]) group.push(add[i]!);
+        if (i % 1000 === 999) await breathe();
+      }
+      continue;
     }
-    await breathe();
+    // some older than the group's newest: a merge of the two, then the group rewritten, both in steps
+    const merged: number[] = [];
+    let i = 0;
+    let j = 0;
+    while (i < group.length || j < add.length) {
+      const next = j >= add.length || (i < group.length && group[i]! <= add[j]!) ? group[i++]! : add[j++]!;
+      if (merged.at(-1) !== next) merged.push(next);
+      if ((i + j) % 1000 === 0) await breathe();
+    }
+    group.length = 0;
+    for (let k = 0; k < merged.length; k++) {
+      group.push(merged[k]!);
+      if (k % 1000 === 999) await breathe();
+    }
   }
 }
 
