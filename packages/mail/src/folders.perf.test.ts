@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, gatherPlaces, planSteps, planTellApart } from "./imap";
+import { customFolders, gatherPlaces, planSteps, planTellApart, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -91,4 +91,31 @@ it("Codex R31: 150,000 held-back copies are planned a step at a time: 99% of ste
   expect(p99).toBeLessThan(2);
   expect(Math.min(...runs.map((t) => t.at(-1)!))).toBeLessThan(16);
   expect(planTellApart(list, places, present).placed).toHaveLength(150_000);
+});
+
+it("Codex R33: 50,000 copies just written are looked up again without holding the loop a frame", async () => {
+  const keys = Array.from({ length: 50_000 }, (_, i) => `nomid:key#A:1:${i}`);
+  const rows = new Map(keys.map((k, i) => [k, { id: i + 1 }]));
+  // a synchronous store behind a resolved promise (as SQLite's is): no turn of its own
+  const lookup = async (key: string) => {
+    let spin = 0;
+    for (let j = 0; j < 3000; j++) spin += j;
+    return spin >= 0 ? rows.get(key) : undefined;
+  };
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const ids = await storedIds(keys, lookup);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(ids).toHaveLength(50_000);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
 });

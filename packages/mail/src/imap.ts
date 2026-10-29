@@ -159,6 +159,18 @@ function breather(budgetMs = 4): () => Promise<void> {
   };
 }
 
+/** Plan 65 (Codex R33): the stored ids of messages just written, by key, looked up a few milliseconds a turn */
+export async function storedIds(keys: readonly string[], lookup: (key: string) => Promise<{ id: number } | null | undefined>): Promise<number[]> {
+  const breathe = breather();
+  const ids: number[] = [];
+  for (const key of keys) {
+    const row = await lookup(key);
+    if (row) ids.push(row.id);
+    await breathe();
+  }
+  return ids;
+}
+
 /**
  * Plan 65 (Codex R32): the held-back messages' candidates and every place of theirs, by mailbox, read 500 at a time and
  * gathered a few milliseconds a turn (150,000 of them were 50 ms at once before the planner began).
@@ -774,10 +786,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
       if (fresh.length) await sink.ingest(fresh, { live });
 
-      for (const m of fresh) {
-        const row = await store.messageByProviderId(m.providerMsgId!);
-        if (row) touched.add(row.id);
-      }
+      for (const id of await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key))) touched.add(id);
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
@@ -832,7 +841,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
     // at a time re-read a long conversation each time)
     const leaving = new Map<string, number[]>();
-    let writes = 0;
+    const breathe = breather();
     for (const { id, a, moved } of plan.placed) {
       // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
       await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
@@ -845,15 +854,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
       }
       touched.add(id);
-      if (++writes % 500 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      await breathe();
     }
     const copies = plan.copies;
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
     if (copies.length) await sink.ingest(copies.map((a) => a.incoming), { live: list.some((a) => a.live) });
-    for (const a of copies) {
-      const row = await store.messageByProviderId(a.incoming.providerMsgId!);
-      if (row) touched.add(row.id);
-    }
+    for (const id of await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key))) touched.add(id);
   }
 
 
