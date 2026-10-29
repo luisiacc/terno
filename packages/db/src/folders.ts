@@ -118,8 +118,8 @@ export function listFolders(db: Db): Folder[] {
 /**
  * An account's list now; nothing is written when it's the same. Memberships never wait on the list (Codex R1):
  * Gmail's follow the labels, and a folder no longer listed keeps its rows unseen (every read goes through the
- * list). Only a newly listed IMAP folder is looked at: the threads located in it, and any rows a past listing
- * left, are rewritten.
+ * list). A newly listed IMAP folder gets a rebuild job instead of a rebuild here (Codex R5: one transaction over a
+ * big folder held the backend): `rebuildFolders` runs it a slice at a time, resumable.
  */
 export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
   return db.tx(() => {
@@ -131,21 +131,62 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
     folders.forEach((f, position) =>
       db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, ?, ?)", accountId, f.key, JSON.stringify(f.path), f.selectable ? 1 : 0, position),
     );
-    const touched = new Set<number>();
+    // a job for a folder no longer listed has nothing to do
+    db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key NOT IN (SELECT key FROM folders WHERE account_id = ?)", accountId, accountId);
     if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "imap") {
       for (const f of folders) {
         if (known.has(f.key)) continue;
-        for (const r of db.all<{ thread_id: number }>(
-          `SELECT m.thread_id FROM message_locations l INDEXED BY message_locations_uid JOIN messages m ON m.id = l.message_id WHERE l.account_id = ? AND l.mailbox = ?
-           UNION SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ?`,
-          accountId,
-          f.key,
-          accountId,
-          f.key,
-        )) touched.add(r.thread_id);
+        // only where there's something to rebuild: its mailbox has locations, or rows a past listing left
+        const any =
+          db.get("SELECT 1 FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT 1", accountId, f.key) ??
+          db.get("SELECT 1 FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT 1", accountId, f.key);
+        if (any) db.run("INSERT OR REPLACE INTO folder_rebuilds (account_id, key, phase, after_uidvalidity, after_uid) VALUES (?, ?, 0, 0, 0)", accountId, f.key);
       }
-      refreshFolders(db, touched);
     }
-    return { changed: true, touched: [...touched] };
+    return { changed: true, touched: [] };
+  });
+}
+
+/**
+ * One slice of a pending rebuild (Codex R5): first the folder's old rows go (`limit` at a time), then its locations
+ * are walked in UID order and their threads refolded (`limit` at a time). Each slice is its own transaction, its
+ * progress saved with it, so a quit resumes where it was. Location writes meanwhile keep membership as ever.
+ */
+export function rebuildFolders(db: Db, limit: number): { more: boolean; touched: number[] } {
+  return db.tx(() => {
+    const job = db.get<{ account_id: number; key: string; phase: number; after_uidvalidity: number; after_uid: number }>("SELECT account_id, key, phase, after_uidvalidity, after_uid FROM folder_rebuilds LIMIT 1");
+    if (!job) return { more: false, touched: [] };
+    const done = () => db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key = ?", job.account_id, job.key);
+    const left = () => db.get("SELECT 1 FROM folder_rebuilds LIMIT 1") !== undefined;
+    if (!isFolder(db, job.account_id, job.key)) {
+      done();
+      return { more: left(), touched: [] };
+    }
+    if (job.phase === 0) {
+      const gone = db.all<{ thread_id: number }>(
+        "DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT ?) RETURNING thread_id",
+        job.key,
+        job.account_id,
+        job.key,
+        limit,
+      );
+      if (gone.length < limit) db.run("UPDATE folder_rebuilds SET phase = 1 WHERE account_id = ? AND key = ?", job.account_id, job.key);
+      return { more: true, touched: gone.map((r) => r.thread_id) };
+    }
+    const rows = db.all<{ message_id: number; uidvalidity: number; uid: number }>(
+      `SELECT message_id, uidvalidity, uid FROM message_locations INDEXED BY message_locations_uid
+       WHERE account_id = ? AND mailbox = ? AND (uidvalidity, uid) > (?, ?) ORDER BY uidvalidity, uid LIMIT ?`,
+      job.account_id,
+      job.key,
+      job.after_uidvalidity,
+      job.after_uid,
+      limit,
+    );
+    const threads = threadsOfMessages(db, rows.map((r) => r.message_id));
+    refreshFolders(db, threads);
+    const last = rows.at(-1);
+    if (rows.length < limit) done();
+    else db.run("UPDATE folder_rebuilds SET after_uidvalidity = ?, after_uid = ? WHERE account_id = ? AND key = ?", last!.uidvalidity, last!.uid, job.account_id, job.key);
+    return { more: left(), touched: threads };
   });
 }

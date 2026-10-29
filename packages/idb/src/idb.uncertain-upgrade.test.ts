@@ -33,7 +33,7 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
 
 /** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 65) */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source, ...["op_control", "op_target", "op_error", "folders", "thread_folders"].map((name) => ({
+  return [...source, ...["op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   }))].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }

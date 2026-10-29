@@ -47,6 +47,15 @@ CREATE TABLE folder_unread (
   n INTEGER NOT NULL,
   PRIMARY KEY (account_id, folder)
 ) WITHOUT ROWID;
+-- a newly listed IMAP folder's memberships, rebuilt a slice at a time (its old rows, then its locations by UID), resumable
+CREATE TABLE folder_rebuilds (
+  account_id INTEGER NOT NULL,
+  key TEXT NOT NULL,
+  phase INTEGER NOT NULL DEFAULT 0,
+  after_uidvalidity INTEGER NOT NULL DEFAULT 0,
+  after_uid INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, key)
+) WITHOUT ROWID;
 CREATE TRIGGER thread_folders_unread_ai AFTER INSERT ON thread_folders WHEN NEW.unread = 1 BEGIN
   INSERT INTO folder_unread (account_id, folder, n) VALUES (NEW.account_id, NEW.folder, 1) ON CONFLICT (account_id, folder) DO UPDATE SET n = n + 1;
 END;

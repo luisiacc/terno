@@ -401,3 +401,17 @@ test.describe("List layout: accessibility and look", { tag: "@design" }, () => {
     });
   }
 });
+
+test("plan 65 (Codex R5): writing in one folder, choosing another of the same account shows that list; the draft is kept", async ({ app: page, server }) => {
+  const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
+  await page.getByTestId(`nav-account-${acme}`).click();
+  await page.getByTestId(`nav-own-${acme}-Label_21`).click();
+  await focusList(page);
+  await page.keyboard.press("c");
+  await expect(listPage(page)).toHaveAttribute("data-page", "compose");
+  await page.getByTestId("compose-to").fill("ana@example.com");
+  await page.getByTestId(`nav-own-${acme}-Label_23`).click();
+  await expect(listPage(page)).toHaveCount(0);
+  await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /"Label_23"/);
+  await expect(page.getByTestId("drafts-strip")).toBeVisible();
+});

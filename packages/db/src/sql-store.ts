@@ -1,4 +1,4 @@
-import { listFolders, replaceFolders } from "./folders";
+import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
@@ -747,6 +747,7 @@ export class SqlMailStore implements MailStore {
   readonly folders: MailStore["folders"] = {
     list: async () => listFolders(this.db),
     replace: async (accountId, folders) => replaceFolders(this.db, accountId, folders),
+    rebuild: async (limit) => rebuildFolders(this.db, limit),
   };
 
   readonly categories: MailStore["categories"] = {

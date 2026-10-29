@@ -341,6 +341,8 @@ export class BackendCore {
     if (this.stopped) return;
     // plan 17: old mail's facts, and threads requeued before a quit, in slices
     this.facts.wake();
+    // plan 65: a folder rebuild a quit interrupted goes on where it was
+    void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
     for (const m of await this.store.categories.unfinishedMoves()) {
       this.finishMove(m.batchId).catch((error: unknown) => {
@@ -840,6 +842,27 @@ export class BackendCore {
    * one (the changed event, sidebar counts) runs there, and the next slice
    * only in the turn after, never back to back with it.
    */
+  /** plan 65 (Codex R5): pending folder rebuilds, a slice per turn; one runner at a time, a failure waits for the next start or list change */
+  private folderRebuild: Promise<void> | null = null;
+  rebuildFolders(): Promise<void> {
+    this.folderRebuild ??= (async () => {
+      try {
+        for (;;) {
+          if (this.stopped || !this.store.isOpen) return;
+          const r = await this.store.folders.rebuild(500);
+          if (r.touched.length) this.notifyChanged(r.touched);
+          if (!r.more) return;
+          await this.yieldTurn();
+        }
+      } catch (error) {
+        this.log("warn", "a folder rebuild stopped; it goes on at the next start", error instanceof Error ? error.message : error);
+      } finally {
+        this.folderRebuild = null;
+      }
+    })();
+    return this.folderRebuild;
+  }
+
   async yieldTurn(): Promise<void> {
     await this.platform.yield();
     await this.platform.yield();
@@ -1151,6 +1174,7 @@ export class BackendCore {
           if (!r.changed) return;
           this.server.emit("folders", await this.store.folders.list());
           this.notifyChanged(r.touched);
+          void this.rebuildFolders();
         },
       };
       const before = await this.store.accounts.get(accountId);

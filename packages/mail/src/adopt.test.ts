@@ -27,3 +27,11 @@ it("a candidate the folder already holds is passed over; a dropped one is never 
   expect(await index.take(e, async (id) => id !== 1)).toBe(3);
   expect(await index.take(e, async () => true)).toBeNull();
 });
+
+it("Codex R5: one bucket of 50,000 identical envelopes is consumed in linear time", async () => {
+  const e = { subject: "Same", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: null };
+  const index = new AdoptIndex(Array.from({ length: 50_000 }, (_, i) => ({ id: i + 1, ...e })));
+  const started = performance.now();
+  for (let i = 0; i < 50_000; i++) expect(await index.take(e, async () => true)).toBe(i + 1);
+  expect(performance.now() - started).toBeLessThan(500);
+});

@@ -16,7 +16,7 @@ import { countScope } from "./categorize-bulk";
 import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
-import { listFolders, replaceFolders } from "./folders";
+import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { SqlProviderStore } from "./sql-provider-store";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
@@ -137,6 +137,25 @@ describe("navigation", () => {
     stalls.sort((a, b) => a - b);
     stats.push({ name: `reset an IMAP folder of ${messagesInBig} messages: longest stall (best of 3)`, budgetMs: 16, p50: stalls[0]!, p95: stalls[0]!, max: stalls[2]!, n: 3 } as never);
     expect(stalls[0]!, "reset: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    // Codex R5: relisting a populated IMAP folder costs a job, and its rebuild goes in slices of 500 rows
+    db.run("UPDATE accounts SET kind = 'imap' WHERE id = ?", big.account_id);
+    located();
+    const withBig = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    replaceFolders(db, big.account_id, withBig.filter((f) => f.key !== "Big"));
+    const relist = performance.now();
+    replaceFolders(db, big.account_id, withBig);
+    const relistMs = performance.now() - relist;
+    const slices: number[] = [];
+    for (let more = true; more; ) {
+      const t0 = performance.now();
+      more = rebuildFolders(db, 500).more;
+      slices.push(performance.now() - t0);
+    }
+    slices.sort((a, b) => a - b);
+    stats.push({ name: `relist an IMAP folder of ${messagesInBig} messages: the list ${relistMs.toFixed(2)} ms, ${slices.length} rebuild slices, the longest`, budgetMs: 16, p50: slices[Math.floor(slices.length / 2)]!, p95: slices.at(-1)!, max: slices.at(-1)!, n: slices.length } as never);
+    expect(relistMs, "relisting").toBeLessThanOrEqual(5 * BUDGET_MULTIPLIER);
+    expect(slices.at(-1)!, "the longest rebuild slice").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Big'")!.c).toBeGreaterThan(0);
   });
 
   it("computes sidebar counts", () => {

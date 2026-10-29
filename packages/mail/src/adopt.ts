@@ -16,15 +16,16 @@ const keyOf = (e: Omit<Envelope, "id">) => `${e.rfcMessageId ?? ""}\u0000${e.sub
  * every candidate per message.
  */
 export class AdoptIndex {
-  private readonly byKey = new Map<string, number[]>();
+  /** each envelope's candidates and how many were taken (a head offset: never a shift of the rest, Codex R5) */
+  private readonly byKey = new Map<string, { ids: number[]; head: number }>();
   readonly ids = new Set<number>();
 
   constructor(rows: readonly Envelope[]) {
     for (const r of rows) {
       const key = keyOf(r);
-      const list = this.byKey.get(key);
-      if (list) list.push(r.id);
-      else this.byKey.set(key, [r.id]);
+      const bucket = this.byKey.get(key);
+      if (bucket) bucket.ids.push(r.id);
+      else this.byKey.set(key, { ids: [r.id], head: 0 });
       this.ids.add(r.id);
     }
   }
@@ -35,9 +36,9 @@ export class AdoptIndex {
 
   /** The first candidate with this envelope that `usable` accepts (not already in the folder), taken out of the index. */
   async take(e: Omit<Envelope, "id">, usable: (id: number) => Promise<boolean>): Promise<number | null> {
-    const list = this.byKey.get(keyOf(e));
-    while (list?.length) {
-      const id = list.shift()!;
+    const bucket = this.byKey.get(keyOf(e));
+    while (bucket && bucket.head < bucket.ids.length) {
+      const id = bucket.ids[bucket.head++]!;
       if (!this.ids.delete(id)) continue;
       if (await usable(id)) return id;
     }

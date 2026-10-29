@@ -979,6 +979,56 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Contrato"]);
   });
 
+  it("Codex R5: a reset that failed part-way still recognises two ID-less twins older than the window on the next pass", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    const twin = raw({ subject: "Gemelo sin id", date: old }).replace(/^Message-ID: .*\r\n/m, "");
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    expect(before).toHaveLength(2);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.resetUidValidity("Work");
+    const original = ImapFlow.prototype.search;
+    const failing = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && (this.mailbox as { path: string }).path === "Work") return Promise.reject(Object.assign(new Error("Search refused"), { responseStatus: "NO" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      failing.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
+  });
+
+  it("Codex R5: an ID-less message moved to a folder that syncs first keeps its identity, its thread and its category", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const m = ctl.addMessage("Z", { raw: raw({ subject: "Sin id movido" }).replace(/^Message-ID: .*\r\n/m, "") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")!;
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before.thread_id] });
+    ctl.moveMessages("Z", [m.uid], "A");
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
+    expect(await folderOf(client, account.id, "A")).toEqual(["Sin id movido"]);
+    expect(await folderOf(client, account.id, "Z")).toEqual([]);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

@@ -27,6 +27,8 @@ interface Cursor {
   pass?: number;
   /** plan 65 (Codex R4): messages a failed pass left without a location; the next complete pass reconciles them */
   orphans?: number[];
+  /** plan 65 (Codex R5): per mailbox, the messages a UIDVALIDITY reset unlocated, kept until that mailbox syncs, so a retry can still recognise them */
+  resetPending?: Record<string, number[]>;
 }
 
 /** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
@@ -331,6 +333,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           touched.add(id);
           resetOrphans.add(id);
         }
+        // a reset an earlier pass started and couldn't finish: its messages are still to be recognised (Codex R5)
+        for (const id of cursor.resetPending?.[path] ?? []) {
+          touched.add(id);
+          resetOrphans.add(id);
+        }
+        cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
+        cursor.resetPending[path] = [...resetOrphans].slice(0, 200_000);
         state = undefined;
       }
 
@@ -482,35 +491,52 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
       if (fresh.length) await sink.ingest(fresh, { live });
 
-      // 2) flags and expunges for what we already had
-      if (state) {
-        const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
-        const known = await locations.inMailbox(path, uidvalidity);
-        const byUid = new Map(known.map((k) => [k.uid, k]));
-        for (const k of known) {
-          if (!serverUids.has(k.uid)) {
-            await locations.remove(k.message_id, path);
-            touched.add(k.message_id);
-          }
-        }
-        const stillThere = known.filter((k) => serverUids.has(k.uid)).map((k) => k.uid);
-        for (let i = 0; i < stillThere.length; i += 1000) {
-          for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
-            const k = byUid.get(msg.uid);
-            if (!k) continue;
-            const flags = JSON.stringify([...(msg.flags ?? new Set<string>())]);
-            if (flags !== k.flags) {
-              await locations.setFlags(k.message_id, path, flags);
-              touched.add(k.message_id);
-            }
-          }
-        }
-      }
       for (const m of fresh) {
         const row = await store.messageByProviderId(m.providerMsgId!);
         if (row) touched.add(row.id);
       }
       cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext), messages: mb.exists, ...(mb.highestModseq !== undefined && { modseq: String(mb.highestModseq) }) };
+      if (cursor.resetPending) delete cursor.resetPending[path];
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
+   * Plan 65 (Codex R5): what the server expunged, and flags it changed, for mail we already have: run for every
+   * mailbox before any new mail is identified, so a message moved between folders (the destination synced first)
+   * finds its old location gone and keeps its identity, its thread and categories, never a second copy.
+   */
+  async function sweepMailbox(c: ImapFlow, path: string, cursor: Cursor, touched: Set<number>) {
+    const state = cursor.mailboxes[path];
+    if (!state) return;
+    const lock = await c.getMailboxLock(path);
+    try {
+      const mb = c.mailbox;
+      // a reset is the identification step's: it has nothing of ours to sweep
+      if (!mb || Number(mb.uidValidity) !== state.uidvalidity) return;
+      const uidvalidity = state.uidvalidity;
+      const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
+      const known = await locations.inMailbox(path, uidvalidity);
+      const byUid = new Map(known.map((k) => [k.uid, k]));
+      for (const k of known) {
+        if (!serverUids.has(k.uid)) {
+          await locations.remove(k.message_id, path);
+          touched.add(k.message_id);
+        }
+      }
+      const stillThere = known.filter((k) => serverUids.has(k.uid)).map((k) => k.uid);
+      for (let i = 0; i < stillThere.length; i += 1000) {
+        for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
+          const k = byUid.get(msg.uid);
+          if (!k) continue;
+          const flags = JSON.stringify([...(msg.flags ?? new Set<string>())]);
+          if (flags !== k.flags) {
+            await locations.setFlags(k.message_id, path, flags);
+            touched.add(k.message_id);
+          }
+        }
+      }
     } finally {
       lock.release();
     }
@@ -641,7 +667,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const r = await discoverRoles(c, list);
         // plan 65 (Codex R3): mailboxes by path in a map with no prototype, so a folder named "__proto__" is a path like any other
         const loaded = await ctx.loadCursor<Cursor>();
-        const cursor: Cursor = { ...loaded, mailboxes: Object.assign(Object.create(null) as Cursor["mailboxes"], loaded?.mailboxes) };
+        const cursor: Cursor = {
+          ...loaded,
+          mailboxes: Object.assign(Object.create(null) as Cursor["mailboxes"], loaded?.mailboxes),
+          ...(loaded?.resetPending && { resetPending: Object.assign(Object.create(null) as Record<string, number[]>, loaded.resetPending) }),
+        };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
         const folders = customFolders(list, r);
@@ -649,11 +679,41 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         await sink.setFolders?.(folders);
         // Gmail-style servers keep archived mail only in "All Mail"
         const boxes = new Set([r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p)));
+        // a folder that couldn't sync this pass may be a vanished one's new name: their locations wait (Codex R2)
+        let incomplete = false;
+        // a folder the server won't open (permissions, gone since the LIST) waits for the next pass; the rest syncs
+        const tolerate = (error: unknown) => {
+          const e = toProviderError(error);
+          if (e.retryable || e instanceof ProviderAuthError) throw e;
+          incomplete = true;
+        };
+        // the custom folders to read this pass: new ones, and known ones STATUS says changed
+        const custom: string[] = [];
+        for (const f of folders) {
+          if (!f.selectable || boxes.has(f.key)) continue;
+          try {
+            if (cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
+          } catch (error) {
+            tolerate(error);
+          }
+        }
+        // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
+        for (const path of boxes) {
+          if (sink.signal.aborted) return;
+          await sweepMailbox(c, path, cursor, touched);
+        }
+        for (const path of custom) {
+          if (sink.signal.aborted) return;
+          try {
+            await sweepMailbox(c, path, cursor, touched);
+          } catch (error) {
+            tolerate(error);
+          }
+        }
         for (const path of boxes) {
           if (sink.signal.aborted) return;
           await syncMailbox(c, path, cursor, sink, touched);
         }
-        const custom = folders.filter((f) => f.selectable && !boxes.has(f.key)).map((f) => f.key);
         // folders gone since the last pass (deleted, or renamed: the new path is among the custom ones); their
         // messages may be found again under it, so their locations stay until every folder has synced (Codex R1)
         const listed = new Set(list.map((m) => m.path));
@@ -661,19 +721,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const vanishedIds = new Set<number>();
         for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
         const adopt = new AdoptIndex(vanishedIds.size ? await locations.envelopes([...vanishedIds]) : []);
-        // a folder that couldn't sync this pass may be a vanished one's new name: their locations wait (Codex R2)
-        let incomplete = false;
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            const first = cursor.mailboxes[path] === undefined;
-            if (!first && (await unchanged(c, path, cursor))) continue;
-            await syncMailbox(c, path, cursor, sink, touched, first ? { reidentify: true, adopt } : {});
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt } : {});
           } catch (error) {
-            // a folder the server won't open (permissions, gone since the LIST) waits for the next pass; the rest syncs
-            const e = toProviderError(error);
-            if (e.retryable || e instanceof ProviderAuthError) throw e;
-            incomplete = true;
+            tolerate(error);
           }
         }
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile

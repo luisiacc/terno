@@ -26,6 +26,14 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   const ids = async (store: MailStore, accountId: number, folder: string, o: { filter?: "unread"; keepIds?: number[]; limit?: number } = {}) =>
     (await store.threads.list({ view: "all", accountId, folder, limit: o.limit ?? 50, filter: o.filter, keepIds: o.keepIds, now: NOW })).items.map((t) => t.id);
   const unread = async (store: MailStore) => (await store.threads.counts(NOW)).folderUnread ?? {};
+  /** runs pending rebuilds to the end, two rows a slice (what the backend does with yields between) */
+  const drain = async (store: MailStore) => {
+    const touched = new Set<number>();
+    for (let r = await store.folders.rebuild(2); ; r = await store.folders.rebuild(2)) {
+      for (const t of r.touched) touched.add(t);
+      if (!r.more) return [...touched];
+    }
+  };
 
   describe(`folders (plan 65): ${name}`, () => {
     it("Gmail: a user label is membership at once, listed or not: listing it later rewrites nothing; system labels never are", async () => {
@@ -104,13 +112,15 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Work")).toEqual([]);
     });
 
-    it("IMAP: listing a mailbox that already has locations brings its threads in; unlisting takes them out", async () => {
+    it("IMAP: listing a mailbox that already has locations brings its threads in (a sliced rebuild); unlisting takes them out", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);
       await ingest(store, [msg({ accountId: m!, providerMsgId: "i1", locations: [loc("Old", 1)] })]);
       const t = await threadOf(store, "i1");
       expect(await ids(store, m!, "Old")).toEqual([]);
-      expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [t] });
+      // Codex R5: the list changes at once; the memberships come with the rebuild, a slice at a time
+      expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [] });
+      expect(await drain(store)).toEqual([t]);
       expect(await ids(store, m!, "Old")).toEqual([t]);
       // unlisted: nothing rewritten (Codex R1), and it reads as nothing
       expect(await store.folders.replace(m!, [])).toEqual({ changed: true, touched: [] });
@@ -118,8 +128,24 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await unread(store)).toEqual({});
       // listed again after its mail moved out: the rows it left are rewritten, not shown
       await store.providerStore(m!).locations.remove((await store.debug.snapshot()).messages[0]!.id, "Old");
-      expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [t] });
+      expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [] });
+      expect(await drain(store)).toEqual([t]);
       expect(await ids(store, m!, "Old")).toEqual([]);
+    });
+
+    it("Codex R5: a rebuild goes a slice at a time and survives a reopen mid-way", async () => {
+      let store = await fresh();
+      const [, m] = await withAccounts(store);
+      await ingest(store, Array.from({ length: 7 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, locations: [loc("Big", i + 1)] })));
+      await store.folders.replace(m!, [{ key: "Big", path: ["Big"], selectable: true }]);
+      // a slice, then a quit
+      expect((await store.folders.rebuild(2)).more).toBe(true);
+      expect((await store.folders.rebuild(2)).more).toBe(true);
+      store = await harness.reopen(store);
+      open.push(store);
+      await drain(store);
+      expect(await ids(store, m!, "Big")).toHaveLength(7);
+      expect(await store.folders.rebuild(2)).toEqual({ more: false, touched: [] });
     });
 
     it("pages walk a folder by date with the cursor, filtered or not; a kept thread stays only while it's in the folder", async () => {

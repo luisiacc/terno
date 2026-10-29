@@ -357,8 +357,10 @@ export interface MailStore {
   /** plan 65: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */
   folders: {
     list(): Promise<Folder[]>;
-    /** an account's list now (a sync pass); `changed`: false when it's the same; `touched`: threads whose membership a newly listed folder changed */
+    /** an account's list now (a sync pass); `changed`: false when it's the same; a newly listed IMAP folder whose mailbox already has locations gets a rebuild job */
     replace(accountId: number, folders: readonly ProviderFolder[]): Promise<{ changed: boolean; touched: number[] }>;
+    /** one slice (up to `limit` rows) of a pending rebuild, durable and resumable (Codex R5); `more`: a job remains */
+    rebuild(limit: number): Promise<{ more: boolean; touched: number[] }>;
   };
 
   categories: {

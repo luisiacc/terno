@@ -192,7 +192,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.reviewCategoryId !== prev.reviewCategoryId)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reviewCategoryId !== prev.reviewCategoryId)) useSearchOpen.setState({ open: false });
 });
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */

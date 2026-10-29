@@ -80,22 +80,48 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
   const known = new Set(before.map((r) => r.key as string));
   for (const r of before) folders.deleteRow(r);
   next.forEach((f, position) => folders.put({ account_id: accountId, key: f.key, path_json: JSON.stringify(f.path), selectable: f.selectable ? 1 : 0, position }));
-  const touched = new Set<number>();
+  // a job for a folder no longer listed has nothing to do; a newly listed IMAP folder with something to rebuild gets one (Codex R5)
+  const jobs = T(c, "folder_rebuilds");
+  const now = new Set(next.map((f) => f.key));
+  for (const j of jobs.by("fk_account_id", accountId)) if (!now.has(j.key as string)) jobs.deleteRow(j);
   if (T(c, "accounts").get(accountId)?.kind === "imap") {
-    const locations = T(c, "message_locations");
-    const messages = T(c, "messages");
-    const memberships = T(c, "thread_folders");
     for (const f of next) {
       if (known.has(f.key)) continue;
-      for (const l of locations.by("mailbox", accountId, f.key)) {
-        const m = messages.get(l.message_id);
-        if (m) touched.add(m.thread_id as number);
-      }
-      for (const r of memberships.by("folder", accountId, f.key)) touched.add(r.thread_id as number);
+      if (T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
     }
-    refreshFolders(c, touched);
   }
-  return { changed: true, touched: [...touched] };
+  return { changed: true, touched: [] };
+}
+
+/** One slice of a pending rebuild (the SQL adapter's rebuildFolders): old rows first, then locations by UID. */
+export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched: number[] } {
+  const jobs = T(c, "folder_rebuilds");
+  const job = jobs.all().next().value as R | undefined;
+  if (!job) return { more: false, touched: [] };
+  const left = () => jobs.size > 0;
+  if (!isFolder(c, job.account_id, job.key)) {
+    jobs.deleteRow(job);
+    return { more: left(), touched: [] };
+  }
+  const memberships = T(c, "thread_folders");
+  if (job.phase === 0) {
+    const gone = memberships.by("folder", job.account_id, job.key).slice(0, limit);
+    for (const r of gone) memberships.deleteRow(r);
+    if (gone.length < limit) jobs.update(job, { phase: 1 });
+    return { more: true, touched: gone.map((r) => r.thread_id as number) };
+  }
+  const after = (l: R) => l.uidvalidity > job.after_uidvalidity || (l.uidvalidity === job.after_uidvalidity && l.uid > job.after_uid);
+  const rows = T(c, "message_locations")
+    .by("mailbox", job.account_id, job.key)
+    .filter(after)
+    .sort((x, y) => x.uidvalidity - y.uidvalidity || x.uid - y.uid)
+    .slice(0, limit);
+  const threads = threadsOfMessages(c, rows.map((r) => r.message_id as number));
+  refreshFolders(c, threads);
+  const last = rows.at(-1);
+  if (rows.length < limit) jobs.deleteRow(job);
+  else jobs.update(job, { after_uidvalidity: last!.uidvalidity, after_uid: last!.uid });
+  return { more: left(), touched: threads };
 }
 
 /** Does a thread pass the folder's view and the list's filter (Waiting: inside its window)? */

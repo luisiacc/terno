@@ -164,6 +164,14 @@ describe("what the Codex code review found", () => {
     expect(getApp().selectedId).toBe(3);
   });
 
+  it("plan 65 (Codex R5): another folder of the same account under a page is another list", () => {
+    setApp({ view: "all", accountId: 2, folder: "Label_1" });
+    setApp({ selectedId: 2, readerOpen: true });
+    expect(currentPage()).toBe("thread");
+    setApp({ folder: "Label_2" });
+    expect(currentPage()).toBe("list");
+  });
+
   it("a search under a page (the palette's, a sender's): the list shows with its results", () => {
     setApp({ selectedId: 2, readerOpen: true });
     setApp({ query: "factura" });

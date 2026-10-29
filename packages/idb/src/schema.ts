@@ -50,6 +50,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "categories", early: true, key: ["id"], autoId: true },
   // plan 65: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
   { name: "folders", early: true, key: ["account_id", "key"], indexes: fk("account_id") },
+  { name: "folder_rebuilds", key: ["account_id", "key"], indexes: fk("account_id") },
   { name: "thread_folders", early: true, key: ["thread_id", "folder"], indexes: { ...fk("thread_id"), folder: ["account_id", "folder"], unread: { columns: ["account_id", "folder"], where: (r) => r.unread === 1 } } },
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
   { name: "filters", early: true, key: ["id"], autoId: true },
@@ -104,6 +105,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("attachment_links", "op_id", "ops"),
   c("attachments", "message_id", "messages"),
   c("folders", "account_id", "accounts"),
+  c("folder_rebuilds", "account_id", "accounts"),
   c("thread_folders", "thread_id", "threads"),
   c("thread_categories", "thread_id", "threads"),
   c("thread_categories", "category_id", "categories"),
@@ -254,7 +256,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
           scan(messages.openCursor(), (cursor) => track(cursor.update({ ...cursor.value, attachment_pending: 1 })));
         }
       }
-      if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders"]) db.createObjectStore(name);
+      if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
       if (event.oldVersion < 8) {
         open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
         open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);

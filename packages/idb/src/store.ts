@@ -1,4 +1,4 @@
-import { listFolders, refreshFolders, replaceFolders, threadsWithUserLabels } from "./folders";
+import { listFolders, rebuildFolders, refreshFolders, replaceFolders, threadsWithUserLabels } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -1293,6 +1293,7 @@ export class IdbMailStore implements MailStore {
   readonly folders: MailStore["folders"] = {
     list: () => this.early(() => listFolders(this.c)),
     replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
+    rebuild: (limit) => this.command(() => rebuildFolders(this.c, limit)),
   };
 
   readonly categories: MailStore["categories"] = {
