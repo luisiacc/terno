@@ -148,6 +148,23 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Big")).toHaveLength(6);
     });
 
+    it("Codex R15: the account's messages with no location, a window of ids at a time", async () => {
+      const store = await fresh();
+      const [g, m] = await withAccounts(store);
+      const r = await ingest(store, Array.from({ length: 6 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, locations: [loc("A", i + 1)] })));
+      await ingest(store, [msg({ accountId: g!, providerMsgId: "other" })]);
+      const locations = store.providerStore(m!).locations;
+      await locations.remove(r.inserted[1]!, "A");
+      await locations.remove(r.inserted[4]!, "A");
+      const found: number[] = [];
+      for (let after = 0, more = true; more; after += 2) {
+        const w = await locations.unlocated(after, 2);
+        found.push(...w.ids);
+        more = w.more;
+      }
+      expect(found).toEqual([r.inserted[1]!, r.inserted[4]!]);
+    });
+
     it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

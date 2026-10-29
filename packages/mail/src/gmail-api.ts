@@ -61,8 +61,12 @@ interface Cursor {
 
 /** Plan 65: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
 export const LABELS_EVERY_MS = 15 * 60_000;
-/** /labels read bounded: Gmail's 10,000 labels of at most 225 characters, with room for the JSON around them */
-const LABELS_BYTES = 4 * 1024 * 1024;
+/**
+ * /labels read bounded: Gmail's 10,000 labels (and a few system ones) of at most 225 characters, each up to six
+ * bytes as JSON (a \uXXXX escape; UTF-8 is at most three a character), with room for its id and the rest
+ * (Codex R15: 7,000 CJK names were over the 4 MiB this was)
+ */
+export const LABELS_BYTES = (FOLDERS_PER_ACCOUNT_MAX + 100) * (FOLDER_NAME_MAX * 6 + 512);
 
 interface GmailLabel {
   id: string;

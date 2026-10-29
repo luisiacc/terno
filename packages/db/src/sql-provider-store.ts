@@ -244,6 +244,13 @@ class SqlImapLocations implements ImapLocationStore {
     }
   }
 
+  async unlocated(afterId: number, span: number) {
+    const ids = this.db
+      .all<{ id: number }>("SELECT id FROM messages m WHERE id > ? AND id <= ? AND account_id = ? AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id) ORDER BY id", afterId, afterId + span, this.accountId)
+      .map((r) => r.id);
+    return { ids, more: (this.db.get<{ top: number | null }>("SELECT max(id) AS top FROM messages")!.top ?? 0) > afterId + span };
+  }
+
   async envelopes(messageIds: readonly number[]) {
     const out: { id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }[] = [];
     for (let i = 0; i < messageIds.length; i += 500) {

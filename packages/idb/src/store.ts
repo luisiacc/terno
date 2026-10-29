@@ -1,4 +1,4 @@
-import { listFolders, rebuildFolders, refreshFolders, replaceFolders, threadsWithUserLabels } from "./folders";
+import { addMessageLabels, listFolders, messagesWithUserLabels, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -283,16 +283,16 @@ export class IdbMailStore implements MailStore {
         },
       );
       if (foldersPending) {
-        // a command per slice of time, small batches inside it, a yield between (Codex R3, R9: a thread with many
-        // labels is many memberships, so the work, not the thread count, bounds a slice)
+        // a command per slice of time, small batches of messages inside it, a yield between (Codex R3, R9, R15: a
+        // thread with many labels, or many messages, is many memberships, so the work bounds a slice, not threads)
         void (async () => {
-          const threads = await store.command(() => threadsWithUserLabels(store.c));
-          for (let i = 0; i < threads.length && store.open; ) {
+          const labelled = await store.command(() => messagesWithUserLabels(store.c));
+          for (let i = 0; i < labelled.length && store.open; ) {
             i = await store.command(() => {
               const started = performance.now();
               let at = i;
-              while (at < threads.length && (at === i || performance.now() - started < BACKFILL_MS)) {
-                refreshFolders(store.c, threads.slice(at, at + BACKFILL_SLICE));
+              while (at < labelled.length && (at === i || performance.now() - started < BACKFILL_MS)) {
+                addMessageLabels(store.c, labelled.slice(at, at + BACKFILL_SLICE));
                 at += BACKFILL_SLICE;
               }
               return at;

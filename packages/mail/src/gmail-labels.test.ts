@@ -7,7 +7,7 @@ import type { ProviderFolder } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncomingPipeline } from "./incoming";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
-import { createGmailApiProvider, labelFolders, LABELS_EVERY_MS, toBase64url } from "./gmail-api";
+import { createGmailApiProvider, labelFolders, LABELS_BYTES, LABELS_EVERY_MS, toBase64url } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
 
 const MARKER = "PrivateClientName-7f3a";
@@ -140,8 +140,24 @@ describe("bounds and privacy", () => {
     }
   });
 
+  it("Codex R15: Gmail's whole catalog of names in any script is read: 10,000 of 225 CJK characters, raw or escaped", async () => {
+    const name = (i: number) => `${i}`.padEnd(FOLDER_NAME_MAX, "界");
+    const raw = `{"labels":[${Array.from({ length: 10_000 }, (_, i) => JSON.stringify({ id: `Label_${i}`, name: name(i), type: "user", labelListVisibility: "labelShow", messageListVisibility: "show" })).join(",")}]}`;
+    const escaped = raw.replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    expect(new TextEncoder().encode(escaped).length).toBeGreaterThan(4 * 1024 * 1024);
+    for (const body of [raw, escaped]) {
+      const t = setup({ labels: () => null, labelsBody: () => body });
+      try {
+        await t.p.folders!(t.sink);
+        expect(t.folders.at(-1)).toHaveLength(10_000);
+        expect(t.folders.at(-1)!.find((f) => f.key === "Label_7")!.path).toEqual([name(7)]);
+      } finally { await t.close(); }
+    }
+  });
+
   it("an oversized answer is refused without reading it whole", async () => {
-    const t = setup({ labels: () => null, labelsBody: () => `{"labels":[${Array.from({ length: 30_000 }, (_, i) => JSON.stringify({ id: `Label_${i}`, name: `${MARKER}${"y".repeat(150)}`, type: "user" })).join(",")}]}` });
+    expect(LABELS_BYTES).toBeLessThan(32 * 1024 * 1024);
+    const t = setup({ labels: () => null, labelsBody: () => `{"labels":[${Array.from({ length: 30_000 }, (_, i) => JSON.stringify({ id: `Label_${i}`, name: `${MARKER}${"y".repeat(700)}`, type: "user" })).join(",")}]}` });
     try {
       const error = await t.p.folders!(t.sink).then(() => null, (e: unknown) => e as Error);
       expect(error).toBeInstanceOf(Error);

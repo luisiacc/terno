@@ -33,7 +33,25 @@ interface Cursor {
   unlocated?: number[];
   /** plan 65 (Codex R9): orphans are waiting for a pass that reads every folder (no STATUS skip), the only kind that may delete them */
   fullCheck?: boolean;
+  /**
+   * plan 65 (Codex R15): a journal above was cut at its limit: the next pass that reads every folder looks for every
+   * message with no location (a window of ids at a time), so none is left behind with neither a place nor a record
+   */
+  overflow?: boolean;
 }
+
+/** Plan 65: how many ids each journal in the cursor keeps (the cursor stays bounded; past them, `overflow`). */
+export const IMAP_JOURNAL_LIMITS = { unlocated: 200_000, resetPending: 200_000, orphans: 100_000 };
+
+/** The newest `max` of `ids`, marking the cursor when any had to go. */
+function bounded(cursor: Cursor, ids: readonly number[], max: number, keep: "newest" | "oldest" = "newest"): number[] {
+  if (ids.length <= max) return [...ids];
+  cursor.overflow = true;
+  return keep === "newest" ? ids.slice(-max) : ids.slice(0, max);
+}
+
+/** Plan 65 (Codex R15): message ids looked at a window at a time for ones with no location */
+const UNLOCATED_SPAN = 5000;
 
 /** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
 const LISTED_MAX = 2 * FOLDERS_PER_ACCOUNT_MAX;
@@ -328,7 +346,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   async function journal(cursor: Cursor, ids: Iterable<number>) {
     const next = new Set([...(cursor.unlocated ?? []), ...ids]);
     if (next.size === (cursor.unlocated?.length ?? 0)) return;
-    cursor.unlocated = [...next].slice(-200_000);
+    cursor.unlocated = bounded(cursor, [...next], IMAP_JOURNAL_LIMITS.unlocated);
     await ctx.saveCursor(cursor);
   }
 
@@ -342,8 +360,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const ids = new Set<number>(cursor.resetPending?.[path] ?? []);
     for (const l of await locations.inMailbox(path, olduidvalidity)) ids.add(l.message_id);
     cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
-    cursor.resetPending[path] = [...ids].slice(0, 200_000);
-    cursor.unlocated = [...new Set([...(cursor.unlocated ?? []), ...ids])].slice(-200_000);
+    cursor.resetPending[path] = bounded(cursor, [...ids], IMAP_JOURNAL_LIMITS.resetPending, "oldest");
+    cursor.unlocated = bounded(cursor, [...new Set([...(cursor.unlocated ?? []), ...ids])], IMAP_JOURNAL_LIMITS.unlocated);
     await ctx.saveCursor(cursor);
     for (const id of await locations.resetMailbox(path)) ids.add(id);
     for (const id of ids) touched.add(id);
@@ -795,14 +813,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const full = !incomplete && skipped === 0;
         for (const id of cursor.unlocated ?? []) touched.add(id);
         if (full) for (const id of cursor.orphans ?? []) touched.add(id);
+        // a journal that was cut: every message with no location, a window at a time (Codex R15)
+        const overflowed = full && cursor.overflow === true;
+        for (let after = 0, more = overflowed; more && !sink.signal.aborted; after += UNLOCATED_SPAN) {
+          const w = await locations.unlocated(after, UNLOCATED_SPAN);
+          for (const id of w.ids) touched.add(id);
+          more = w.more;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        if (sink.signal.aborted) return;
         const kept = await reconcile(touched, sink, !full);
         if (full) {
           delete cursor.orphans;
           delete cursor.fullCheck;
+          if (overflowed) delete cursor.overflow;
         } else if (kept.length) {
-          cursor.orphans = [...new Set([...(cursor.orphans ?? []), ...kept])].slice(-100_000);
+          cursor.orphans = bounded(cursor, [...new Set([...(cursor.orphans ?? []), ...kept])], IMAP_JOURNAL_LIMITS.orphans);
           cursor.fullCheck = true;
         }
+        // a cut journal waits for a pass that reads every folder
+        if (!full && cursor.overflow) cursor.fullCheck = true;
         // reconciled, or kept above as orphans: the journal is done with
         delete cursor.unlocated;
         await ctx.saveCursor(cursor);

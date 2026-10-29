@@ -191,6 +191,20 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
+  unlocated(afterId: number, span: number) {
+    return this.read(() => {
+      const messages = T(this.c, "messages");
+      const locations = T(this.c, "message_locations");
+      const ids: number[] = [];
+      // a window of ids, never the account's every message (they're keys: a get each)
+      for (let id = afterId + 1; id <= afterId + span; id++) {
+        const m = messages.get(id);
+        if (m && m.account_id === this.accountId && locations.count("fk_message_id", id) === 0) ids.push(id);
+      }
+      return { ids, more: messages.highestKey() > afterId + span };
+    });
+  }
+
   envelopes(messageIds: readonly number[]) {
     return this.read(() => {
       const messages = T(this.c, "messages");

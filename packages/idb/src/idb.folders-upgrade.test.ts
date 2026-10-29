@@ -7,24 +7,26 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, expect, it, vi } from "vitest";
+import { machineBusy } from "../../db/src/test/timing";
 
 // the backfill can be made to fail once (what a close mid-way or a storage failure leaves behind)
-const fail = vi.hoisted(() => ({ next: false, batches: [] as number[] }));
+const fail = vi.hoisted(() => ({ next: false, batches: [] as number[], batchMs: [] as number[] }));
 vi.mock("./folders", async (original) => {
   const real = await original<typeof import("./folders")>();
   return {
     ...real,
-    refreshFolders: (c: Parameters<typeof real.refreshFolders>[0], ids: Parameters<typeof real.refreshFolders>[1]) => {
-      const list = [...ids];
-      fail.batches.push(list.length);
-      return real.refreshFolders(c, list);
+    addMessageLabels: (c: Parameters<typeof real.addMessageLabels>[0], ids: Parameters<typeof real.addMessageLabels>[1]) => {
+      const started = performance.now();
+      real.addMessageLabels(c, ids);
+      fail.batches.push(ids.length);
+      fail.batchMs.push(performance.now() - started);
     },
-    threadsWithUserLabels: (...args: Parameters<typeof real.threadsWithUserLabels>) => {
+    messagesWithUserLabels: (...args: Parameters<typeof real.messagesWithUserLabels>) => {
       if (fail.next) {
         fail.next = false;
         throw new Error("synthetic backfill failure");
       }
-      return real.threadsWithUserLabels(...args);
+      return real.messagesWithUserLabels(...args);
     },
   };
 });
@@ -111,8 +113,39 @@ it("Codex R3, R9: a big mailbox's backfill goes in small batches, a command per 
   opened.push(reopened);
   await reopened.whenLoaded();
   await expect.poll(() => meta(factory, name, "foldersPending")).toBe(false);
-  // batches of 50 threads (Codex R9: a thread with many labels is many memberships), as many commands as time takes
+  // batches of 50 messages (Codex R9, R15: a thread with many labels or messages is many memberships), as many commands as time takes
   expect(fail.batches.length).toBeGreaterThanOrEqual(50);
   expect(Math.max(...fail.batches)).toBeLessThanOrEqual(50);
   expect((await reopened.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 500 })).items).toHaveLength(500);
 }, 120_000);
+
+it("Codex R15: one conversation of 50,000 messages with 20 labels each is many small batches, never one", async () => {
+  const factory = new IDBFactory();
+  const name = crypto.randomUUID();
+  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  const [g] = await withAccounts(store, 1);
+  const labels = Array.from({ length: 20 }, (_, i) => `Label_${i}`);
+  await store.folders.replace(g!, labels.map((key) => ({ key, path: [key], selectable: true })));
+  // one thread: every message a reply in the same Gmail thread
+  for (let i = 0; i < 50_000; i += 5000) await ingest(store, Array.from({ length: 5000 }, (_, j) => msg({ accountId: g!, providerMsgId: `m${i + j}`, providerThreadId: "one", gmailLabels: labels })));
+  const threads = new Set((await store.debug.snapshot()).messages.map((m) => m.threadId));
+  expect(threads.size).toBe(1);
+  await store.close();
+  const raw = await request(factory.open(databaseName(name)));
+  const tx = raw.transaction(["thread_folders", "meta"], "readwrite");
+  tx.objectStore("thread_folders").clear();
+  tx.objectStore("meta").put(23, "logicalSchema");
+  await done(tx);
+  raw.close();
+  fail.batches.length = 0;
+  fail.batchMs.length = 0;
+  const reopened = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  opened.push(reopened);
+  await reopened.whenLoaded();
+  await expect.poll(() => meta(factory, name, "foldersPending"), { timeout: 120_000 }).toBe(false);
+  expect(Math.max(...fail.batches)).toBeLessThanOrEqual(50);
+  // each batch a small part of a frame (the slice of time around them is 8 ms); on a busy machine the OS may hold one
+  if (!machineBusy()) expect(fail.batchMs.sort((a, b) => a - b).at(-1)!).toBeLessThan(8);
+  for (const key of labels) expect((await reopened.threads.list({ view: "all", accountId: g!, folder: key, limit: 10 })).items).toHaveLength(1);
+}, 300_000);
+

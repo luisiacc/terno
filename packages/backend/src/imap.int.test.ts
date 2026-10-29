@@ -1359,6 +1359,35 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Z'")).toBe(1);
   });
 
+  it("Codex R15: journals cut at their limit leave nothing behind: the next full pass finds every message with no place", async () => {
+    const { IMAP_JOURNAL_LIMITS } = await import("@terno/mail");
+    const limits = { ...IMAP_JOURNAL_LIMITS };
+    Object.assign(IMAP_JOURNAL_LIMITS, { unlocated: 2, resetPending: 2, orphans: 2 });
+    try {
+      const { imap, backend, addAccount } = await setup();
+      const ctl = imap.server.control;
+      ctl.createMailbox("A");
+      ctl.createMailbox("Z");
+      ctl.addMessage("A", { raw: raw({ subject: "Quieto en A" }) });
+      const gone = Array.from({ length: 5 }, (_, i) => ctl.addMessage("Z", { raw: raw({ subject: `Borrado ${i}` }) }));
+      const kept = ctl.addMessage("Z", { raw: raw({ subject: "Queda en Z" }) });
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      expect(count(backend, "SELECT 1 FROM messages")).toBe(7);
+      // five expunged while A is quiet (STATUS skips it: not a pass that may delete), more than any journal keeps
+      ctl.expungeMessages("Z", gone.map((m) => m.uid));
+      await backend.syncAccount(account.id);
+      // then a pass that reads every folder, as after a restart
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+      expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(0);
+      expect(kept.uid).toBeGreaterThan(0);
+    } finally {
+      Object.assign(IMAP_JOURNAL_LIMITS, limits);
+    }
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

@@ -971,6 +971,7 @@ export class BackendCore {
         inMailbox: (...args) => read(() => locations.inMailbox(...args)),
         resetCandidate: (...args) => read(() => locations.resetCandidate(...args)),
         envelopes: (...args) => read(() => locations.envelopes(...args)),
+        unlocated: (...args) => read(() => locations.unlocated(...args)),
       },
     };
   }

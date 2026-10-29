@@ -46,10 +46,31 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
 }
 
 /** Threads with a Gmail user label (an upgraded mailbox's memberships, written once). */
-export function threadsWithUserLabels(c: Ctx): number[] {
-  const out = new Set<number>();
-  for (const m of T(c, "messages").all()) if (typeof m.gmail_labels === "string" && m.gmail_labels.includes("Label_")) out.add(m.thread_id as number);
-  return [...out];
+/** The upgrade's work (schema 24): the messages that carry a user label, by id (Codex R15: by message, as SQLite's). */
+export function messagesWithUserLabels(c: Ctx): number[] {
+  const out: number[] = [];
+  for (const m of T(c, "messages").all()) if (typeof m.gmail_labels === "string" && m.gmail_labels.includes("Label_")) out.push(m.id as number);
+  return out;
+}
+
+/**
+ * The upgrade's batch: these messages' user labels as their threads' memberships, beside any already there (a label
+ * is a membership if any message carries it). A batch of messages, whatever their threads: one conversation of
+ * 50,000 is many batches, never one (Codex R15).
+ */
+export function addMessageLabels(c: Ctx, messageIds: readonly number[]): void {
+  const messages = T(c, "messages");
+  const threads = T(c, "threads");
+  const memberships = T(c, "thread_folders");
+  for (const id of messageIds) {
+    const m = messages.get(id);
+    if (!m || m.is_trash || m.is_spam) continue;
+    const t = threads.get(m.thread_id);
+    if (!t) continue;
+    for (const label of userLabels(m)) {
+      if (!memberships.has(t.id, label)) memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: label, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
+    }
+  }
 }
 
 /** The threads of these messages, for a refresh after their locations changed. */

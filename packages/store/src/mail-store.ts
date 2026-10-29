@@ -222,6 +222,11 @@ export interface ImapLocationStore {
   inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
   /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
   resetMailbox(mailbox: string): Promise<number[]>;
+  /**
+   * plan 65 (Codex R15): the account's messages with no location, ids in (afterId, afterId + span], ascending; `more`
+   * while messages above the window exist. A cut journal's messages are found again this way, a window at a time.
+   */
+  unlocated(afterId: number, span: number): Promise<{ ids: number[]; more: boolean }>;
   /** plan 65: these messages' envelopes (a renamed folder's copies are recognised by them) */
   envelopes(messageIds: readonly number[]): Promise<{ id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }[]>;
   /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox`; `rfcMessageId`: one with that Message-ID instead (plan 65: a renamed folder's twin) */
