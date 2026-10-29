@@ -1,6 +1,6 @@
 import { L } from "@terno/i18n";
 import nodemailer from "nodemailer";
-import { buildRaw, envelopeOf } from "./compose";
+import { buildRaw, checkSmtpWire, envelopeOf } from "./compose";
 import { isNetworkError } from "./net-errors";
 import { ProviderAuthError, ProviderError, type SendPayload } from "./types";
 
@@ -48,11 +48,12 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
 
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
 export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void }): Promise<{ raw: Buffer; rejected: string[]; recipientOutcomeUnknown?: true }> {
-  let raw = await buildRaw(payload);
+  let raw = await buildRaw(payload, { smtp: true });
   if (hooks?.prepare) {
     const prepared = await hooks.prepare(raw);
     raw = Buffer.from(prepared.buffer, prepared.byteOffset, prepared.byteLength);
   }
+  await checkSmtpWire(raw);
   let accepted = false;
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.

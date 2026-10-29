@@ -5,13 +5,14 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry, parseRaw, type SendPayload } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import { buildRaw } from "../../mail/src/compose";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   const results = await Promise.allSettled(cleanups.splice(0).reverse().map((close) => close()));
   const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
   if (errors.length) throw new AggregateError(errors, "SMTP isolation fixture cleanup failed");
@@ -191,12 +192,20 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     const t = await setup();
     const account = await t.add();
     const { opId } = await t.send("lf-wire", account.id, "Exact lf-wire send.\n.Dot line");
+    let captured: Buffer | undefined;
+    const seal = t.backend.store.sendCopies.sealWire.bind(t.backend.store.sendCopies);
+    vi.spyOn(t.backend.store.sendCopies, "sealWire").mockImplementation(async (id) => {
+      await seal(id);
+      captured = Buffer.from(await readCopyWire(t.backend.store, id, async () => {}, () => {}));
+      expect((await t.backend.store.sendCopies.get(id))?.size).toBe(captured.length);
+    });
     await t.backend.runWorker();
     expect((await t.ops()).find((op) => op.id === opId)).toMatchObject({ state: "succeeded", attempts: 1 });
     expect(t.received).toHaveLength(1);
     const [copy] = t.imap.control.listMessages("Sent", { raw: true });
     expect(t.received[0]!.raw.toString()).toContain("Exact lf-wire send.\r\n.Dot line");
     expect(copy?.raw).toEqual(t.received[0]!.raw);
+    expect(captured).toEqual(t.received[0]!.raw);
   });
 
   async function legacyCapture(t: Awaited<ReturnType<typeof setup>>, opId: string) {
