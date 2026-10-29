@@ -3,7 +3,6 @@ import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
-import { comparePaths } from "./paths";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
@@ -87,12 +86,12 @@ function readLabels(value: unknown): GmailLabel[] {
   });
 }
 
-/** The user's own labels as folders: user labels shown in the label list, nested by "/", in name order. */
+/** The user's own labels as folders: user labels shown in the label list, nested by "/". */
 export function labelFolders(labels: readonly GmailLabel[]): ProviderFolder[] {
   return labels
     .filter((l) => l.type === "user" && l.id.startsWith("Label_") && l.labelListVisibility !== "labelHide" && l.name.trim() !== "")
     .map((l) => ({ key: l.id, path: l.name.split("/").map((p) => p.trim().slice(0, FOLDER_NAME_MAX)).filter((p) => p !== ""), selectable: true }))
-    .sort((a, b) => comparePaths(a.path, b.path))
+    // in Gmail's order: the sidebar draws them by name, a step at a time (Codex R17: a sort here was 50 ms on the loop)
     .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 

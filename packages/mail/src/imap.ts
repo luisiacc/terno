@@ -6,7 +6,6 @@ import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
-import { comparePaths } from "./paths";
 import { AdoptIndex } from "./adopt";
 import { sendViaSmtp } from "./smtp";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
@@ -76,7 +75,9 @@ type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
 export function customFolders(list: readonly ListedMailbox[], roles: Partial<Record<Role, string>>): ProviderFolder[] {
   // paths compare exactly (a server may hold "Sent" and "sent"); only INBOX is case-insensitive (RFC 3501, Codex R2)
   const rolePaths = new Set(Object.values(roles) as string[]);
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || m.path.toUpperCase() === "INBOX" || Boolean(m.specialUse);
+  // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
+  const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse);
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
@@ -84,7 +85,7 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const candidates = bounded.filter((m) => !isRole(m) && !unusable(m) && m.path.length <= 1000);
   const names = (m: ListedMailbox) => {
     const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
-    if (parts.length > 1 && parts[0]!.toUpperCase() === "INBOX") parts.shift();
+    if (parts.length > 1 && isInbox(parts[0]!)) parts.shift();
     // whole segments (a path is at most 1,000 characters): a shortened one could merge two hierarchies (Codex R9)
     return parts;
   };
@@ -97,7 +98,8 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   return candidates
     .filter((m) => !groupOnly(m) || ancestors.has(m.path))
     .map((m) => ({ key: m.path, path: names(m), selectable: !groupOnly(m) }))
-    .sort((a, b) => comparePaths(a.path, b.path))
+    // in the server's order: the sidebar draws them by name, a step at a time (Codex R17: a sort here of 10,000 long
+    // names was 50 ms on the backend's loop, every pass)
     .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 

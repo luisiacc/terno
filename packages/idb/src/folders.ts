@@ -58,19 +58,23 @@ export function messagesWithUserLabels(c: Ctx): number[] {
  * is a membership if any message carries it). A batch of messages, whatever their threads: one conversation of
  * 50,000 is many batches, never one (Codex R15).
  */
-export function addMessageLabels(c: Ctx, messageIds: readonly number[]): void {
+export function addMessageLabels(c: Ctx, messageIds: readonly number[]): number[] {
   const messages = T(c, "messages");
   const threads = T(c, "threads");
   const memberships = T(c, "thread_folders");
+  const touched = new Set<number>();
   for (const id of messageIds) {
     const m = messages.get(id);
     if (!m || m.is_trash || m.is_spam) continue;
     const t = threads.get(m.thread_id);
     if (!t) continue;
     for (const label of userLabels(m)) {
-      if (!memberships.has(t.id, label)) memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: label, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
+      if (memberships.has(t.id, label)) continue;
+      memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: label, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
+      touched.add(t.id as number);
     }
   }
+  return [...touched];
 }
 
 /** The threads of these messages, for a refresh after their locations changed. */

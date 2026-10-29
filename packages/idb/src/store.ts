@@ -200,6 +200,8 @@ export class IdbMailStore implements MailStore {
   private queue: Promise<unknown> = Promise.resolve();
   /** the late tables (messages and their satellites) are in memory */
   private loaded: Promise<void> = Promise.resolve();
+  /** plan 65: a mailbox from before schema 24, its Gmail memberships still to add (the labelled messages, how far) */
+  private backfill: { ids: number[] | null; at: number } | null = null;
   private inflight: Promise<unknown> | null = null;
   private open = true;
   private unusable = false;
@@ -282,26 +284,9 @@ export class IdbMailStore implements MailStore {
           throw error;
         },
       );
-      if (foldersPending) {
-        // a command per slice of time, small batches of messages inside it, a yield between (Codex R3, R9, R15: a
-        // thread with many labels, or many messages, is many memberships, so the work bounds a slice, not threads)
-        void (async () => {
-          const labelled = await store.command(() => messagesWithUserLabels(store.c));
-          for (let i = 0; i < labelled.length && store.open; ) {
-            i = await store.command(() => {
-              const started = performance.now();
-              let at = i;
-              while (at < labelled.length && (at === i || performance.now() - started < BACKFILL_MS)) {
-                addMessageLabels(store.c, labelled.slice(at, at + BACKFILL_SLICE));
-                at += BACKFILL_SLICE;
-              }
-              return at;
-            });
-            await o.platform.yield();
-          }
-          if (store.open) await writeMeta(idb, { foldersPending: false });
-        })().catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
-      }
+      // the upgrade's backfill goes through folders.rebuild (the backend's runner: a slice a turn, what it touched
+      // published), a batch of messages at a time once no folder job is left (Codex R17)
+      if (foldersPending) store.backfill = { ids: null, at: 0 };
       return store;
     } catch (error) {
       idb.close();
@@ -1302,7 +1287,24 @@ export class IdbMailStore implements MailStore {
   readonly folders: MailStore["folders"] = {
     list: () => this.early(() => listFolders(this.c)),
     replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
-    rebuild: (limit) => this.command(() => rebuildFolders(this.c, limit)),
+    rebuild: async (limit) => {
+      const r = await this.command(() => {
+        const own = rebuildFolders(this.c, limit);
+        const fill = this.backfill;
+        if (own.more || !fill) return own;
+        // a batch of the labelled messages (by message, never a thread whole: Codex R15), their labels added
+        fill.ids ??= messagesWithUserLabels(this.c);
+        const batch = fill.ids.slice(fill.at, fill.at + Math.max(1, Math.floor(limit / 5)));
+        fill.at += batch.length;
+        return { more: fill.at < fill.ids.length, touched: [...own.touched, ...addMessageLabels(this.c, batch)] };
+      });
+      // done: the mark comes off only now, so a close before resumes the next time it opens
+      if (this.backfill?.ids && this.backfill.at >= this.backfill.ids.length) {
+        this.backfill = null;
+        await writeMeta(this.idb, { foldersPending: false });
+      }
+      return r;
+    },
   };
 
   readonly categories: MailStore["categories"] = {
@@ -1731,8 +1733,6 @@ export class IdbMailStore implements MailStore {
 }
 
 /** plan 65: an upgrade's folder backfill: threads per batch, and the time a command keeps taking batches */
-const BACKFILL_SLICE = 50;
-const BACKFILL_MS = 8;
 
 const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
 

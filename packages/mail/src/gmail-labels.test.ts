@@ -50,7 +50,7 @@ function setup(o: { labels: () => unknown; messageLabels?: string[]; labelsBody?
 afterEach(() => vi.useRealTimers());
 
 describe("labelFolders", () => {
-  it("lists user labels shown in the label list, nested by '/', in name order; system and hidden ones never", () => {
+  it("lists user labels shown in the label list, nested by '/', in Gmail's order (the sidebar draws by name); system and hidden ones never", () => {
     expect(
       labelFolders([
         { id: "INBOX", name: "INBOX", type: "system" },
@@ -61,9 +61,9 @@ describe("labelFolders", () => {
         { id: "Label_4", name: "Facturas", type: "user", labelListVisibility: "labelShowIfUnread" },
       ]),
     ).toEqual([
-      { key: "Label_4", path: ["Facturas"], selectable: true },
-      { key: "Label_1", path: ["Work"], selectable: true },
       { key: "Label_3", path: ["Work", "Clients"], selectable: true },
+      { key: "Label_1", path: ["Work"], selectable: true },
+      { key: "Label_4", path: ["Facturas"], selectable: true },
     ]);
   });
 
