@@ -183,3 +183,38 @@ Codex made 12 points; they change the design as follows.
     - IMAP `LIST` results are capped the same way.
     - Folder names never appear in errors or logs; a malformed catalog fails with a fixed message.
     - Tests check oversized and malformed catalogs, and a synthetic privacy marker in folder names never shows up in errors or diagnostics.
+
+## What changed while building it
+
+- **Gmail's label list is read outside `sync()`.** A new optional provider step, `folders(sink)`, runs after a pass that worked:
+  - It reads `/labels` when it was never read this launch, after 15 quiet minutes, or when the pass met a user label it didn't have.
+  - The catalog lives in memory, so it costs one read per account per launch.
+  - The sync's own requests and its history checkpoint are exactly as before, so the Gmail suites that pin request traces and checkpoints stay as they were.
+  - A provider failure in this step waits for the next pass; a sign-in to redo (`ProviderAuthError`) and a store failure don't.
+- **`sink.setFolders` is optional on `SyncSink`.** The backend's sink always has it; bare test sinks don't need it.
+- **SQLite membership is folded in `recomputeThreads`.** It reads a thread's user labels with its messages (`instr(gmail_labels, 'Label_')`, so other labels are never parsed), reads the locations of accounts that list folders and the existing memberships in one batch read each, and writes only the differences.
+  - Location writes refresh set at a time.
+  - Ingest throughput (paired against the same reference commit, same load): 0.895× vs 0.915× for plan 64; CPU 0.819× vs 0.825× (under 1%), with real membership work in this dataset.
+  - The ingest gate already fails on `main` (≈0.91×, the storage work before this plan).
+- **IndexedDB caches each folder's members by id and by date** (`ScopeIndex`), dropped when a membership changes or a membership's date moves. Pages binary-search their cursor; select all seeks.
+- **Measured at 29.5k threads (SQLite) and 28.4k threads (IndexedDB):**
+  - A folder of 8.9k threads pages in 0.38 ms p95 (SQLite) and at most 0.24 ms (IndexedDB).
+  - Sparse, empty, deep and unread-filtered pages are all under 0.5 ms.
+  - A select-all page of 2,000 ids takes 0.86 ms; a folder's count takes 2.1 ms (SQLite) and 0.96 ms (IndexedDB).
+  - Sidebar counts are unchanged at the median (3.03 ms vs 3.04 ms).
+- **UI:** opening and closing an account renders only that account's rows (`AccountEntry` is memoized, and where you are is passed only to the account you're in). The UI-perf gate checks frames, long frames and render counts.
+- **Demo data:** folders are placed from a hash after generation, so the dataset's random stream and every other value stay as they were (the legacy fingerprint test drops only the new fields).
+- **i18n:** the contract's folder rules use catalog messages (`errors.folder.*`, English and Spanish).
+
+## Code review
+
+**Round 1.** Codex found nine problems; each is fixed with a test that fails without the fix:
+1. **A rename dropped cached mail older than the sync window.** The new path searched only inside the window, then the old path's locations went, so older messages became orphans. Now a folder seen for the first time is read whole once: mail already stored gains its location, and mail it doesn't know is fetched only inside the window. Tests: an IMAP rename after the window shrinks, and an old message copied into a new folder.
+2. **A rename duplicated mail without a Message-ID.** The fingerprint matcher saw the old location still live and made a second copy. Now messages located in folders that vanished this pass can be re-attached; the vanished folders' locations go only after every folder has synced. Test: message ids, thread ids and categories survive a rename.
+3. **The web store's backfill wasn't durable.** Schema 24 was recorded before the backfill ran. Now `foldersPending` goes in with the upgrade and comes off only when the memberships are saved; a failure (or a close) resumes on the next open. Test: a forced failure, then a reopen.
+4. **Unlisting or hiding a populated label rebuilt its memberships synchronously** (≈364 ms at 50k threads). Now changing the list never rewrites Gmail memberships, and unlisting rewrites nothing at all. Every read goes through the list (an unlisted folder reads as empty), and only a newly listed IMAP folder's own threads are rewritten. Gate: unlisting and relisting a folder of 8.9k threads takes 0.03 ms.
+5. **The IMAP listing was quadratic** (10k parents over 10k folders ≈ 2 s). The LIST is bounded first, and parents are found through one set of ancestors. Test: that case in under 500 ms; a parent always before its children.
+6. **Kept threads in a filtered folder walked the whole folder** (9–11 ms). They're now looked up by key and tested for membership. Gate: 500 kept threads in 4.5 ms p95.
+7. **A folder list's DOM was unbounded.** An open account mounts 250 of its own folders, and a quiet "N more folders" row reveals 250 more at a time (`sidebar.moreOwnFolders`, in English and Spanish). Test: 2,000 folders.
+8. **Nesting relied on the listed order**, so "A", "AA", "A/Z" put Z under AA. The sidebar now builds a tree with each level in name order, and both providers sort one path level at a time. Tests: unit for the rows and for IMAP.
+9. **A folder's quick filter was dropped after a reload for long paths** (stored keys were capped at 64 characters). The cap is now 1,100. Test: a round trip with a long IMAP path.

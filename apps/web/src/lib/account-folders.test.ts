@@ -128,14 +128,19 @@ describe("an account's own folders (plan 65)", () => {
   it("rows nest by path in listed order; a parent that isn't listed is drawn once, not a place to go", () => {
     const folders = [f(2, "Label_1", ["Work"]), f(2, "Label_3", ["Work", "Clients"]), f(2, "Label_9", ["Travel", "2026"]), f(2, "Label_10", ["Travel", "2027"]), f(3, "X", ["Other"]), f(2, "Lists", ["Lists"], false), f(2, "Lists/News", ["Lists", "News"])];
     expect(folderRows(folders, 2)).toEqual([
-      { key: "Label_1", name: "Work", depth: 0, selectable: true },
-      { key: "Label_3", name: "Clients", depth: 1, selectable: true },
+      { key: "Lists", name: "Lists", depth: 0, selectable: false },
+      { key: "Lists/News", name: "News", depth: 1, selectable: true },
       { key: null, name: "Travel", depth: 0, selectable: false },
       { key: "Label_9", name: "2026", depth: 1, selectable: true },
       { key: "Label_10", name: "2027", depth: 1, selectable: true },
-      { key: "Lists", name: "Lists", depth: 0, selectable: false },
-      { key: "Lists/News", name: "News", depth: 1, selectable: true },
+      { key: "Label_1", name: "Work", depth: 0, selectable: true },
+      { key: "Label_3", name: "Clients", depth: 1, selectable: true },
     ]);
+  });
+
+  it("a folder sits under its own parent whatever order they come in (Codex R1: A, AA, A/Z)", () => {
+    const rows = folderRows([f(2, "A", ["A"]), f(2, "AA", ["AA"]), f(2, "A/Z", ["A", "Z"])], 2);
+    expect(rows.map((r) => [r.name, r.depth])).toEqual([["A", 0], ["Z", 1], ["AA", 0]]);
   });
 
   it("going to a folder: its account's, alone (no category, no review), its view all; anywhere else leaves it", () => {

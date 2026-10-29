@@ -33,6 +33,17 @@ describe("customFolders", () => {
     ]);
   });
 
+  it("Codex R1: 10,000 groups over 10,000 folders are sorted out in linear time, a parent always before its children", () => {
+    const list = Array.from({ length: 10_000 }, (_, i) => [box(`G${i}`, { flags: ["\\Noselect"] }), box(`G${i}/F`)]).flat();
+    const started = performance.now();
+    const out = customFolders(list, {});
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(out).toHaveLength(FOLDERS_PER_ACCOUNT_MAX);
+    expect(out.slice(0, 2)).toEqual([{ key: "G0", path: ["G0"], selectable: false }, { key: "G0/F", path: ["G0", "F"], selectable: true }]);
+    // "A", "AA", "A/Z": the child stays with its parent
+    expect(customFolders([box("AA"), box("A/Z"), box("A")], {}).map((f) => f.key)).toEqual(["A", "A/Z", "AA"]);
+  });
+
   it("is bounded: names, path length and count", () => {
     const long = "x".repeat(FOLDER_NAME_MAX + 50);
     expect(customFolders([box(long)], {})[0]!.path[0]).toHaveLength(FOLDER_NAME_MAX);

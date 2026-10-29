@@ -16,6 +16,7 @@ import { countScope } from "./categorize-bulk";
 import { addThreadsToCategory } from "./repos";
 import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
+import { listFolders, replaceFolders } from "./folders";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
 import { BUDGET_MULTIPLIER, measure, report, type Stat } from "./test/perf";
@@ -98,6 +99,13 @@ describe("navigation", () => {
     gate("list a folder that's empty", 5, () => listThreads(db, { view: "all", accountId: big.account_id, folder: "Label_nothing", limit: 100 }));
     gate("select all in a folder: a scope page (2,000 ids)", 5, () => scopeThreadIds(db, { ...folder, after: 0, limit: 2000 }));
     gate("select all in a folder: its count", 5, () => countScopeThreads(db, { ...folder, limit: 100_001 }));
+    // Codex R1: a filtered folder keeps the open and checked threads by key, never by walking the folder
+    const kept = db.all<{ thread_id: number }>("SELECT thread_id FROM thread_folders WHERE account_id = ? AND folder = 'Label_everything' ORDER BY thread_id LIMIT 500", big.account_id).map((r) => r.thread_id);
+    gate("list a folder, unread only, keeping 500 threads", 5, () => listThreads(db, { ...folder, filter: "unread", keepIds: kept, limit: 100 }));
+    // Codex R1: unlisting a populated label and listing it back rewrite no membership
+    const listed = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    gate(`unlist and relist a folder of ${big.c} threads`, 5, (i) => replaceFolders(db, big.account_id, i % 2 ? listed : listed.filter((f) => f.key !== "Label_everything")), 20);
+    replaceFolders(db, big.account_id, listed);
   });
 
   it("computes sidebar counts", () => {

@@ -1,6 +1,6 @@
 import type { AttachmentRef } from "../attachments";
 import type { MailNotice } from "../attention";
-import { LANGUAGE_SETTINGS, type LanguageSetting } from "@terno/i18n";
+import { LANGUAGE_SETTINGS, t, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
 import {
@@ -463,9 +463,9 @@ const folderKey = z.string().min(1).max(1000);
 /** A folder is an account's, alone: no category or review with it, its view "all" (no trash, no spam) */
 const folderScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string }>(p: T, ctx: z.RefinementCtx) => {
   if (p.folder === undefined) return;
-  if (p.accountId === undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: "a folder needs its account" });
-  if (p.categoryId !== undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: "a folder has no category" });
-  if (p.view !== undefined && p.view !== "all") ctx.addIssue({ code: "custom", path: ["view"], message: "a folder's view is all" });
+  if (p.accountId === undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: t("errors.folder.needsAccount") });
+  if (p.categoryId !== undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: t("errors.folder.noCategory") });
+  if (p.view !== undefined && p.view !== "all") ctx.addIssue({ code: "custom", path: ["view"], message: t("errors.folder.allView") });
 };
 
 /** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `filter`: the list's quick filter (`unreadOnly`: plan 12's name for "unread", still accepted). */

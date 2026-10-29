@@ -264,9 +264,11 @@ export class IdbMailStore implements MailStore {
         await persist(idb, commit, "strict", o.platform);
         db.confirm();
       }
-      const upgradedFrom = meta.logicalSchema;
+      // plan 65 (SQL v24): a mailbox from before gets its Gmail memberships once, after its messages load; the mark
+      // goes in with the upgrade and comes off only when they're saved, so a close or a failure meanwhile resumes (Codex R1)
+      const foldersPending = (typeof meta.logicalSchema === "number" && meta.logicalSchema < 24) || meta.foldersPending === true;
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
-      else if (meta.logicalSchema !== LOGICAL_SCHEMA) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA });
+      else if (meta.logicalSchema !== LOGICAL_SCHEMA || foldersPending) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, ...(foldersPending && { foldersPending: true }) });
       const store = new IdbMailStore(idb, db, o);
       Object.assign(store.openTimings, timings);
       // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
@@ -280,8 +282,12 @@ export class IdbMailStore implements MailStore {
           throw error;
         },
       );
-      // plan 65 (SQL v24): a mailbox from before has its Gmail labels already; their memberships are written once, after the messages load
-      if (typeof upgradedFrom === "number" && upgradedFrom < 24) void store.command(() => refreshFolders(store.c, threadsWithUserLabels(store.c))).catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
+      if (foldersPending) {
+        void store
+          .command(() => refreshFolders(store.c, threadsWithUserLabels(store.c)))
+          .then(() => (store.open ? writeMeta(idb, { foldersPending: false }) : undefined))
+          .catch((error: unknown) => store.log("error", "could not index folders", error instanceof Error ? error.message : error));
+      }
       return store;
     } catch (error) {
       idb.close();

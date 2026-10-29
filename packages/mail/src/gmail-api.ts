@@ -3,6 +3,7 @@ import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
+import { comparePaths } from "./paths";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
@@ -87,7 +88,7 @@ export function labelFolders(labels: readonly GmailLabel[]): ProviderFolder[] {
   return labels
     .filter((l) => l.type === "user" && l.id.startsWith("Label_") && l.labelListVisibility !== "labelHide" && l.name.trim() !== "")
     .map((l) => ({ key: l.id, path: l.name.split("/").map((p) => p.trim().slice(0, FOLDER_NAME_MAX)).filter((p) => p !== ""), selectable: true }))
-    .sort((a, b) => a.path.join("\u0000").localeCompare(b.path.join("\u0000")))
+    .sort((a, b) => comparePaths(a.path, b.path))
     .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 

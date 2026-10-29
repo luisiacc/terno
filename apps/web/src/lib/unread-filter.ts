@@ -51,7 +51,8 @@ export function isUnreadOnly(m: Mailbox & { listFilters: ListFilters }): boolean
   return activeFilter(m) === "unread";
 }
 
-const goodKey = (k: unknown): k is string => typeof k === "string" && k.length > 0 && k.length <= 64;
+/** a mailbox key: short, or a folder's (plan 65, Codex R1: an IMAP path is up to 1,000 characters) */
+const goodKey = (k: unknown): k is string => typeof k === "string" && k.length > 0 && k.length <= 1100;
 
 /** What was stored: [key, filter] pairs, else nothing on (storage may be unavailable or hold anything). */
 export function parseStored(raw: string | null): Map<string, ListFilter> {

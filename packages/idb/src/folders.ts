@@ -68,29 +68,33 @@ export function listFolders(c: Ctx): Folder[] {
     .map((r) => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1 }));
 }
 
-/** An account's list now; nothing written when it's the same (see the SQL adapter's replaceFolders). */
+/**
+ * An account's list now; nothing written when it's the same (the SQL adapter's replaceFolders): memberships never
+ * wait on the list; only a newly listed IMAP folder's located threads, and rows a past listing left, are rewritten.
+ */
 export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
   const folders = T(c, "folders");
   const before = folders.by("fk_account_id", accountId).sort((x, y) => x.position - y.position);
   const same = before.length === next.length && before.every((r, i) => r.key === next[i]!.key && r.path_json === JSON.stringify(next[i]!.path) && (r.selectable === 1) === next[i]!.selectable);
   if (same) return { changed: false, touched: [] };
   const known = new Set(before.map((r) => r.key as string));
-  const now = new Set(next.map((f) => f.key));
   for (const r of before) folders.deleteRow(r);
   next.forEach((f, position) => folders.put({ account_id: accountId, key: f.key, path_json: JSON.stringify(f.path), selectable: f.selectable ? 1 : 0, position }));
   const touched = new Set<number>();
-  const locations = T(c, "message_locations");
-  const messages = T(c, "messages");
-  for (const key of now) {
-    if (known.has(key)) continue;
-    for (const l of locations.by("mailbox", accountId, key)) {
-      const m = messages.get(l.message_id);
-      if (m) touched.add(m.thread_id as number);
+  if (T(c, "accounts").get(accountId)?.kind === "imap") {
+    const locations = T(c, "message_locations");
+    const messages = T(c, "messages");
+    const memberships = T(c, "thread_folders");
+    for (const f of next) {
+      if (known.has(f.key)) continue;
+      for (const l of locations.by("mailbox", accountId, f.key)) {
+        const m = messages.get(l.message_id);
+        if (m) touched.add(m.thread_id as number);
+      }
+      for (const r of memberships.by("folder", accountId, f.key)) touched.add(r.thread_id as number);
     }
+    refreshFolders(c, touched);
   }
-  const memberships = T(c, "thread_folders");
-  for (const key of known) if (!now.has(key)) for (const r of memberships.by("folder", accountId, key)) touched.add(r.thread_id as number);
-  refreshFolders(c, touched);
   return { changed: true, touched: [...touched] };
 }
 
@@ -109,7 +113,8 @@ function keeps(p: ScopeParams): (t: R | undefined) => t is R {
  */
 export function folderPage(c: Ctx, p: ListParams): Page {
   const threads = T(c, "threads");
-  const order = c.scopes.folderByDate(c, p.accountId!, p.folder!);
+  // a folder reads through the account's list: one it no longer lists holds nothing (its rows wait unseen)
+  const order = T(c, "folders").has(p.accountId, p.folder) ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
   const pass = keeps(p);
   const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   let lo = 0;
@@ -131,14 +136,14 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   if (!listFilterOf(p) || !p.keepIds?.length) return page;
   const inView = keeps({ ...p, filter: undefined, unreadOnly: false });
   const memberships = T(c, "thread_folders");
-  const kept = [...new Set(p.keepIds)].filter((id) => memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
+  const kept = [...new Set(p.keepIds)].filter((id) => order.length > 0 && memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
   return keepInPage(page, kept.map((t) => toSummary(c, t)));
 }
 
 /** A folder's thread ids above `after`, ascending: its cached members from a seek, walked until the page is full. */
 export function folderScopeIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
   const threads = T(c, "threads");
-  const ids = c.scopes.folder(c, p.accountId!, p.folder!);
+  const ids = T(c, "folders").has(p.accountId, p.folder) ? c.scopes.folder(c, p.accountId!, p.folder!) : [];
   const pass = keeps(p);
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) if (pass(threads.get(ids[i]!))) out.push(ids[i]!);

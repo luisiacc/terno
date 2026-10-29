@@ -6,6 +6,7 @@ import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
+import { comparePaths } from "./paths";
 import { sendViaSmtp } from "./smtp";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -25,6 +26,9 @@ interface Cursor {
   pass?: number;
 }
 
+/** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
+const LISTED_MAX = 2 * FOLDERS_PER_ACCOUNT_MAX;
+
 /** Plan 65: without HIGHESTMODSEQ, flag changes don't show in STATUS: a quiet folder is checked on every fourth pass. */
 const CHECK_EVERY = 4;
 
@@ -40,17 +44,24 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const isRole = (m: ListedMailbox) => rolePaths.has(m.path.toUpperCase()) || m.path.toUpperCase() === "INBOX" || Boolean(m.specialUse);
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
-  const candidates = list.filter((m) => !isRole(m) && !unusable(m) && m.path.length <= 1000);
+  // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
+  const bounded = list.length > LISTED_MAX ? list.slice(0, LISTED_MAX) : list;
+  const candidates = bounded.filter((m) => !isRole(m) && !unusable(m) && m.path.length <= 1000);
   const names = (m: ListedMailbox) => {
     const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
     if (parts.length > 1 && parts[0]!.toUpperCase() === "INBOX") parts.shift();
     return parts.map((p) => p.slice(0, FOLDER_NAME_MAX));
   };
-  // a group with nothing under it says nothing
-  const out = candidates.filter((m) => !groupOnly(m) || (m.delimiter !== undefined && candidates.some((c) => c !== m && !groupOnly(c) && c.path.startsWith(m.path + m.delimiter))));
-  return out
+  // a group with nothing under it says nothing: the ancestors of every real folder, gathered once (linear, Codex R1)
+  const ancestors = new Set<string>();
+  for (const m of candidates) {
+    if (groupOnly(m) || !m.delimiter) continue;
+    for (let i = m.path.lastIndexOf(m.delimiter); i > 0; i = m.path.lastIndexOf(m.delimiter, i - 1)) ancestors.add(m.path.slice(0, i));
+  }
+  return candidates
+    .filter((m) => !groupOnly(m) || ancestors.has(m.path))
     .map((m) => ({ key: m.path, path: names(m), selectable: !groupOnly(m) }))
-    .sort((a, b) => a.path.join("\u0000").localeCompare(b.path.join("\u0000")))
+    .sort((a, b) => comparePaths(a.path, b.path))
     .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 
@@ -293,7 +304,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     if (orphans.length) await sink.removeMessages(orphans);
   }
 
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>) {
+  /**
+   * `reidentify` (plan 65, Codex R1): a folder seen for the first time is read whole once, so mail already stored
+   * (older than the window too) gains its location; mail it doesn't know is fetched only inside the window.
+   * `adopt`: messages located in folders that vanished this pass (a rename): one of them is the same message here,
+   * even without a Message-ID, never a second copy.
+   */
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: ReadonlySet<number> } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -313,12 +330,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
       // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
       const live = state !== undefined;
+      const reidentify = reset || opts.reidentify === true;
+      const adopt = new Set(opts.adopt ?? []);
       // 1) messages we haven't seen
       // After a UIDVALIDITY reset every message must be re-identified, including ones older
       // than the sync window that we already have (otherwise they'd be dropped as orphans).
       const found = state
         ? ((await c.search({ uid: `${state.uidnext}:*` }, { uid: true })) || []).filter((u) => u >= state!.uidnext)
-        : reset
+        : reidentify
           ? (await c.search({ all: true }, { uid: true })) || []
           : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
       const fresh: IncomingMessage[] = [];
@@ -356,17 +375,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // live location (it moved, or its mailbox was reset). Otherwise two distinct messages
             // with identical envelopes must stay separate.
             const live = await locations.count(existing.id);
-            if (live > 0) {
+            // a message of a folder that vanished this pass is this one, moved (a rename): re-attached, not copied
+            if (live > 0 && !adopt.has(existing.id)) {
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
               existing = await store.messageByProviderId(key);
             }
           }
-          if (!existing && resetOrphans.size && !messageKey(env?.messageId)) {
+          if (!existing && (resetOrphans.size || adopt.size) && !messageKey(env?.messageId)) {
             // After a reset, recognise previously-located ID-less mail stored under an older key
             // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
             // must match, and a row already re-attached in this mailbox can't be claimed twice.
             const candidate = await locations.resetCandidate({
-              candidates: [...resetOrphans],
+              candidates: [...resetOrphans, ...adopt],
               subject: env?.subject ?? "",
               fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(),
               date: new Date(env?.date ?? m.internalDate ?? 0).getTime(),
@@ -375,6 +395,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             });
             if (candidate) {
               resetOrphans.delete(candidate.id);
+              adopt.delete(candidate.id);
               await upsertLocation(candidate.id, path, uidvalidity, m.uid, flags);
               touched.add(candidate.id);
               continue;
@@ -387,6 +408,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               await upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
               touched.add(existing.id);
               resetOrphans.delete(existing.id);
+              adopt.delete(existing.id);
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
@@ -395,7 +417,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           if (claimed.has(key) && claimed.get(key) !== m.uid) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
           claimed.set(key, m.uid);
-          if (reset && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
+          if (reidentify && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
           const role = roleOf(path);
           // the raw address fields, read by our parser (plan 34); the server's envelope where one is missing
           const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
@@ -604,21 +626,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           await syncMailbox(c, path, cursor, sink, touched);
         }
         const custom = folders.filter((f) => f.selectable && !boxes.has(f.key)).map((f) => f.key);
+        // folders gone since the last pass (deleted, or renamed: the new path is among the custom ones); their
+        // messages may be found again under it, so their locations stay until every folder has synced (Codex R1)
+        const listed = new Set(list.map((m) => m.path));
+        const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
+        const adopt = new Set<number>();
+        for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) adopt.add(l.message_id);
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            if (await unchanged(c, path, cursor)) continue;
-            await syncMailbox(c, path, cursor, sink, touched);
+            const first = cursor.mailboxes[path] === undefined;
+            if (!first && (await unchanged(c, path, cursor))) continue;
+            await syncMailbox(c, path, cursor, sink, touched, first ? { reidentify: true, adopt } : {});
           } catch (error) {
             // a folder the server won't open (permissions, gone since the LIST) waits for the next pass; the rest syncs
             const e = toProviderError(error);
             if (e.retryable || e instanceof ProviderAuthError) throw e;
           }
         }
-        // a folder that's gone (deleted, renamed: its new path synced above) takes its locations; what was only there goes in reconcile
-        const kept = new Set([...boxes, ...custom]);
-        for (const path of Object.keys(cursor.mailboxes)) {
-          if (kept.has(path) || list.some((m) => m.path === path)) continue;
+        // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
+        for (const path of vanished) {
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }

@@ -116,9 +116,10 @@ export function listFolders(db: Db): Folder[] {
 }
 
 /**
- * An account's list now. Nothing is written when it's the same. A newly listed IMAP folder whose mailbox
- * already has locations (rare: a role it no longer holds) brings those threads in; one no longer listed has its
- * threads rewritten (an IMAP folder's memberships go; a Gmail label's follow the labels, listed or not).
+ * An account's list now; nothing is written when it's the same. Memberships never wait on the list (Codex R1):
+ * Gmail's follow the labels, and a folder no longer listed keeps its rows unseen (every read goes through the
+ * list). Only a newly listed IMAP folder is looked at: the threads located in it, and any rows a past listing
+ * left, are rewritten.
  */
 export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
   return db.tx(() => {
@@ -126,21 +127,25 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
     const same = before.length === folders.length && before.every((r, i) => r.key === folders[i]!.key && r.path_json === JSON.stringify(folders[i]!.path) && (r.selectable === 1) === folders[i]!.selectable);
     if (same) return { changed: false, touched: [] };
     const known = new Set(before.map((r) => r.key));
-    const now = new Set(folders.map((f) => f.key));
     db.run("DELETE FROM folders WHERE account_id = ?", accountId);
     folders.forEach((f, position) =>
       db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, ?, ?)", accountId, f.key, JSON.stringify(f.path), f.selectable ? 1 : 0, position),
     );
-    const added = [...now].filter((k) => !known.has(k));
-    const removed = [...known].filter((k) => !now.has(k));
     const touched = new Set<number>();
-    for (const key of added) {
-      for (const r of db.all<{ thread_id: number }>("SELECT DISTINCT m.thread_id FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE l.account_id = ? AND l.mailbox = ?", accountId, key)) touched.add(r.thread_id);
+    if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "imap") {
+      for (const f of folders) {
+        if (known.has(f.key)) continue;
+        for (const r of db.all<{ thread_id: number }>(
+          `SELECT m.thread_id FROM message_locations l INDEXED BY message_locations_uid JOIN messages m ON m.id = l.message_id WHERE l.account_id = ? AND l.mailbox = ?
+           UNION SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ?`,
+          accountId,
+          f.key,
+          accountId,
+          f.key,
+        )) touched.add(r.thread_id);
+      }
+      refreshFolders(db, touched);
     }
-    for (const key of removed) {
-      for (const r of db.all<{ thread_id: number }>("SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ?", accountId, key)) touched.add(r.thread_id);
-    }
-    refreshFolders(db, touched);
     return { changed: true, touched: [...touched] };
   });
 }

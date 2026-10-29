@@ -82,22 +82,34 @@ export interface FolderRow {
 }
 
 /**
- * An account's folders as sidebar rows, nested by path in their listed order: a parent that isn't listed is
- * drawn once (not a place to go), so every folder sits under its own.
+ * An account's folders as sidebar rows: a tree by path, each level in name order, so a folder always sits under
+ * its own parent whatever order they were listed in (Codex R1: "A", "AA", "A/Z"). A parent that isn't listed is
+ * drawn once (not a place to go).
  */
 export function folderRows(folders: readonly Folder[], accountId: number): FolderRow[] {
-  const mine = folders.filter((f) => f.accountId === accountId && f.path.length > 0);
-  const listed = new Map(mine.map((f) => [f.path.join("\u0000"), f]));
-  const rows: FolderRow[] = [];
-  const drawn = new Set<string>();
-  for (const f of mine) {
-    for (let depth = 0; depth < f.path.length; depth++) {
-      const at = f.path.slice(0, depth + 1).join("\u0000");
-      if (drawn.has(at)) continue;
-      drawn.add(at);
-      const own = listed.get(at);
-      rows.push({ key: own?.key ?? null, name: f.path[depth]!, depth, selectable: own?.selectable ?? false });
-    }
+  interface Node {
+    name: string;
+    own?: Folder;
+    children: Map<string, Node>;
   }
+  const root: Node = { name: "", children: new Map() };
+  for (const f of folders) {
+    if (f.accountId !== accountId || f.path.length === 0) continue;
+    let node = root;
+    for (const name of f.path) {
+      let next = node.children.get(name);
+      if (!next) node.children.set(name, (next = { name, children: new Map() }));
+      node = next;
+    }
+    node.own = f;
+  }
+  const rows: FolderRow[] = [];
+  const walk = (node: Node, depth: number) => {
+    for (const child of [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      rows.push({ key: child.own?.key ?? null, name: child.name, depth, selectable: child.own?.selectable ?? false });
+      walk(child, depth + 1);
+    }
+  };
+  walk(root, 0);
   return rows;
 }

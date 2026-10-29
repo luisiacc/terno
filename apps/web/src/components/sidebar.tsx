@@ -336,6 +336,9 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
   );
 }
 
+/** An open account's own folders mounted at once, and revealed per "more" (plan 65, Codex R1: a catalog may hold 10,000). */
+const FOLDER_BATCH = 250;
+
 /** How long a closing account keeps its rows for the slide (past `slow`; transitionend never comes without motion). */
 const CLOSING_MS = 400;
 
@@ -368,6 +371,10 @@ function AccountFolders({
   countTone: "muted" | "unread";
 }) {
   const groupRef = useRef<HTMLDivElement>(null);
+  const [batches, setBatches] = useState(1);
+  // the folder you're in is always among the rows (a deep one shows the batches before it)
+  const at = activeFolder === null ? -1 : rows.findIndex((r) => r.key === activeFolder);
+  const shown = Math.max(batches * FOLDER_BATCH, at + 1);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {
@@ -410,7 +417,7 @@ function AccountFolders({
         {/* plan 65: its own folders, under its standard ones, nested by path */}
         {mounted && standard && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
         {mounted &&
-          rows.map((r) =>
+          rows.slice(0, shown).map((r) =>
             r.selectable && r.key !== null ? (
               <NavItem
                 key={r.key}
@@ -433,6 +440,19 @@ function AccountFolders({
               </div>
             ),
           )}
+        {mounted && rows.length > shown && (
+          <button
+            type="button"
+            data-testid={`nav-own-more-${account.id}`}
+            onClick={() => setBatches((b) => b + 1)}
+            className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM, INSET[0])}
+          >
+            <span className="flex size-4 items-center justify-center">
+              <ChevronDown className="size-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{t("sidebar.moreOwnFolders", { count: rows.length - shown })}</span>
+          </button>
+        )}
       </div>
     </div>
   );

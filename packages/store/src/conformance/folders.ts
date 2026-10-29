@@ -28,17 +28,20 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   const unread = async (store: MailStore) => (await store.threads.counts(NOW)).folderUnread ?? {};
 
   describe(`folders (plan 65): ${name}`, () => {
-    it("Gmail: a user label is a folder at once, listed or not; a listed one is counted; system labels never are", async () => {
+    it("Gmail: a user label is membership at once, listed or not: listing it later rewrites nothing; system labels never are", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);
       await ingest(store, [msg({ accountId: g!, providerMsgId: "g1", gmailLabels: ["INBOX", "UNREAD", "Label_1", "CATEGORY_UPDATES"] })]);
       const t = await threadOf(store, "g1");
+      // not listed yet: a folder reads through the list, so nothing, and no count
+      expect(await ids(store, g!, "Label_1")).toEqual([]);
+      expect(await unread(store)).toEqual({});
+      // listed: there at once, with nothing rewritten (Codex R1: the list never rebuilds Gmail memberships)
+      expect(await store.folders.replace(g!, [{ key: "Label_1", path: ["Clientes"], selectable: true }, { key: "INBOX", path: ["x"], selectable: true }, { key: "CATEGORY_UPDATES", path: ["y"], selectable: true }])).toEqual({ changed: true, touched: [] });
       expect(await ids(store, g!, "Label_1")).toEqual([t]);
       expect(await ids(store, g!, "INBOX")).toEqual([]);
       expect(await ids(store, g!, "CATEGORY_UPDATES")).toEqual([]);
-      // not listed yet: no count
-      expect(await unread(store)).toEqual({});
-      expect(await store.folders.replace(g!, [{ key: "Label_1", path: ["Clientes"], selectable: true }])).toMatchObject({ changed: true });
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["Clientes"], selectable: true }]);
       expect(await unread(store)).toEqual({ [folderRef(g!, "Label_1")]: 1 });
       expect(await store.folders.list()).toEqual([{ accountId: g, key: "Label_1", path: ["Clientes"], selectable: true }]);
       // the same list again writes nothing
@@ -48,6 +51,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
     it("Gmail: labels that change alone (flags the same) move the thread between folders", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["A"], selectable: true }, { key: "Label_2", path: ["B"], selectable: true }]);
       const r = await ingest(store, [msg({ accountId: g!, providerMsgId: "g1", gmailLabels: ["INBOX", "Label_1"] })]);
       const t = await threadOf(store, "g1");
       await store.sync.updateFlags(g!, [{ messageId: r.inserted[0]!, flags: { inInbox: true }, gmailLabels: ["INBOX", "Label_2"] }]);
@@ -108,13 +112,20 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Old")).toEqual([]);
       expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [t] });
       expect(await ids(store, m!, "Old")).toEqual([t]);
-      expect(await store.folders.replace(m!, [])).toEqual({ changed: true, touched: [t] });
+      // unlisted: nothing rewritten (Codex R1), and it reads as nothing
+      expect(await store.folders.replace(m!, [])).toEqual({ changed: true, touched: [] });
+      expect(await ids(store, m!, "Old")).toEqual([]);
+      expect(await unread(store)).toEqual({});
+      // listed again after its mail moved out: the rows it left are rewritten, not shown
+      await store.providerStore(m!).locations.remove((await store.debug.snapshot()).messages[0]!.id, "Old");
+      expect(await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }])).toEqual({ changed: true, touched: [t] });
       expect(await ids(store, m!, "Old")).toEqual([]);
     });
 
     it("pages walk a folder by date with the cursor, filtered or not; a kept thread stays only while it's in the folder", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["A"], selectable: true }]);
       await ingest(store, Array.from({ length: 7 }, (_, i) => msg({ accountId: g!, providerMsgId: `g${i}`, date: 1_800_000_000_000 + i * 1000, isRead: i % 2 === 0, gmailLabels: i === 3 ? ["INBOX"] : ["Label_1"] })));
       const all = await ids(store, g!, "Label_1");
       expect(all).toHaveLength(6);
@@ -134,14 +145,16 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, g!, "Label_1", { filter: "unread", keepIds: [read] })).not.toContain(read);
     });
 
-    it("selection scopes: a folder's thread ids in key order and its count", async () => {
+    it("selection scopes: a folder's thread ids in key order and its count; an unlisted one has none", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["A"], selectable: true }]);
       await ingest(store, Array.from({ length: 5 }, (_, i) => msg({ accountId: g!, providerMsgId: `g${i}`, gmailLabels: i < 3 ? ["Label_1"] : ["Label_2"] })));
       const members = [...(await ids(store, g!, "Label_1"))].sort((a, b) => a - b);
       expect(await store.threads.scopeIds({ view: "all", accountId: g!, folder: "Label_1", limit: 10 })).toEqual(members);
       expect(await store.threads.scopeIds({ view: "all", accountId: g!, folder: "Label_1", after: members[0], limit: 10 })).toEqual(members.slice(1));
       expect(await store.threads.scopeCount({ view: "all", accountId: g!, folder: "Label_1", limit: 100 })).toBe(3);
+      expect(await store.threads.scopeIds({ view: "all", accountId: g!, folder: "Label_2", limit: 10 })).toEqual([]);
     });
 
     it("the store's seed and a seed through commands write the dataset's folders and memberships alike", async () => {

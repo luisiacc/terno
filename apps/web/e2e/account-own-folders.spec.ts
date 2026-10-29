@@ -21,9 +21,9 @@ test.describe("an account's own folders", { tag: "@design" }, () => {
     const acme = accountOf(server, "Acme Studio");
     await page.getByTestId(`nav-account-${acme}`).click();
     const group = page.locator(`#account-folders-${acme}`);
-    // standard ones, a hairline, then its own, in that order
+    // standard ones, a hairline, then its own, by name (Equipo, Proyectos › Rediseño web)
     const order = await group.locator("[data-testid^=nav-folder-], [role=separator], [data-testid^=nav-own-]").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid") ?? "separator"));
-    expect(order).toEqual([...["inbox", "sent", "archive", "spam", "trash"].map((v) => `nav-folder-${acme}-${v}`), "separator", `nav-own-${acme}-Label_21`, `nav-own-${acme}-Label_22`, `nav-own-${acme}-Label_23`]);
+    expect(order).toEqual([...["inbox", "sent", "archive", "spam", "trash"].map((v) => `nav-folder-${acme}-${v}`), "separator", `nav-own-${acme}-Label_23`, `nav-own-${acme}-Label_21`, `nav-own-${acme}-Label_22`]);
     // nested: Rediseño web sits one step further in than Proyectos
     const indent = async (key: string) => own(page, acme, key).evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
     expect(await indent("Label_22")).toBeGreaterThan(await indent("Label_21"));
@@ -83,9 +83,9 @@ test.describe("an account's own folders", { tag: "@design" }, () => {
     await page.getByTestId(`nav-account-${acme}`).click();
     await page.getByTestId(`nav-folder-${acme}-trash`).focus();
     await page.keyboard.press("Tab");
-    await expect(own(page, acme, "Label_21")).toBeFocused();
+    await expect(own(page, acme, "Label_23")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_21", ""]);
+    await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
   });
 
   for (const mode of ["light", "dark"] as const) {
@@ -101,6 +101,21 @@ test.describe("an account's own folders", { tag: "@design" }, () => {
       expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
     });
   }
+});
+
+test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 at a time", async ({ app: page, server }) => {
+  const acme = accountOf(server, "Acme Studio");
+  const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
+  await server.backend.store.folders.replace(acme, many);
+  server.backend.server.emit("folders", await server.backend.store.folders.list());
+  await page.getByTestId(`nav-account-${acme}`).click();
+  const rows = page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`);
+  await expect(rows).toHaveCount(250);
+  const more = page.getByTestId(`nav-own-more-${acme}`);
+  await expect(more).toHaveText("1,750 more folders");
+  await more.click();
+  await expect(rows).toHaveCount(500);
+  await expect(more).toHaveText("1,500 more folders");
 });
 
 test("with one account, its row opens onto its own folders alone (its standard ones are the top ones)", async ({ app: page, server }) => {

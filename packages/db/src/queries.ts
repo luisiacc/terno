@@ -149,11 +149,17 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   }
   let from = threads;
   let order = "t.last_date DESC, t.id DESC";
-  if (p.folder !== undefined) {
+  // the kept threads of a filtered folder: looked up by key, each tested for the folder (never a walk of it, Codex R1)
+  const folderPage = p.folder !== undefined && only === undefined;
+  // a folder reads through the account's list: one it no longer lists holds nothing (its rows wait unseen)
+  if (folderPage) {
     from = `thread_folders tf INDEXED BY thread_folders_date CROSS JOIN ${threads} ON t.id = tf.thread_id`;
-    where.unshift("tf.account_id = ? AND tf.folder = ?");
-    params.unshift(p.accountId!, p.folder);
+    where.unshift("tf.account_id = ? AND tf.folder = ? AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
+    params.unshift(p.accountId!, p.folder!, p.accountId!, p.folder!);
     order = "tf.last_date DESC, tf.thread_id DESC";
+  } else if (p.folder !== undefined) {
+    where.push("EXISTS (SELECT 1 FROM thread_folders tf WHERE tf.thread_id = t.id AND tf.folder = ?) AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
+    params.push(p.folder, p.accountId!, p.folder);
   }
   if (p.categoryId !== undefined) {
     from = `thread_categories tc JOIN ${threads} ON t.id = tc.thread_id`;
@@ -165,7 +171,7 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
     params.push(p.accountId);
   }
   if (p.cursor) {
-    where.push(p.folder !== undefined ? "(tf.last_date, tf.thread_id) < (?, ?)" : "(t.last_date, t.id) < (?, ?)");
+    where.push(folderPage ? "(tf.last_date, tf.thread_id) < (?, ?)" : "(t.last_date, t.id) < (?, ?)");
     params.push(p.cursor.lastDate, p.cursor.id);
   }
   if (only !== undefined) {
@@ -196,8 +202,8 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
   if (p.folder !== undefined) {
     // plan 65: a folder's memberships by (account, folder, thread), outer like a category's
     from = paged ? "thread_folders tf INDEXED BY thread_folders_id CROSS JOIN threads t ON t.id = tf.thread_id" : "thread_folders tf JOIN threads t ON t.id = tf.thread_id";
-    where.unshift("tf.account_id = ? AND tf.folder = ?");
-    params.unshift(p.accountId!, p.folder);
+    where.unshift("tf.account_id = ? AND tf.folder = ? AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
+    params.unshift(p.accountId!, p.folder, p.accountId!, p.folder);
   }
   if (p.categoryId !== undefined) {
     // CROSS JOIN keeps the memberships outer (SQLite never reorders it)

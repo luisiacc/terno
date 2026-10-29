@@ -844,6 +844,48 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM messages")).toBe(0);
   });
 
+  it("Codex R1: a rename keeps mail older than the sync window, and mail without a Message-ID, with its thread and categories", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const twoYears = new Date(Date.now() - 2 * 365 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    ctl.addMessage("Work", { raw: raw({ subject: "Contrato viejo", date: twoYears }), internaldate: twoYears });
+    // no Message-ID: identified by its envelope
+    ctl.addMessage("Work", { raw: raw({ subject: "Sin identificador" }).replace(/^Message-ID: .*\r\n/m, "") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number; subject: string }>("SELECT id, thread_id, subject FROM messages ORDER BY subject");
+    expect(before.map((m) => m.subject)).toEqual(["Contrato viejo", "Sin identificador"]);
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: before.map((m) => m.thread_id) });
+    // the window shrinks: the old contract is now older than it
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.renameMailbox("Work", "Proyectos");
+    await backend.syncAccount(account.id);
+    const after = sqlDb(backend.store).all<{ id: number; thread_id: number; subject: string }>("SELECT id, thread_id, subject FROM messages ORDER BY subject");
+    expect(after).toEqual(before);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato viejo", "Sin identificador"]);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+  });
+
+  it("a folder seen for the first time is read whole: mail already stored, older than the window, gains its location", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    const m = ctl.addMessage("INBOX", { raw: raw({ subject: "Factura 2025", date: old }), internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.createMailbox("Facturas");
+    ctl.copyMessages("INBOX", [m.uid], "Facturas");
+    await backend.syncAccount(account.id);
+    expect(await folderOf(client, account.id, "Facturas")).toEqual(["Factura 2025"]);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+  });
+
   it("a folder STATUS says is unchanged isn't opened again; a flag change in it is seen (CONDSTORE)", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
