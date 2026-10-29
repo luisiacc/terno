@@ -1168,6 +1168,13 @@ export class BackendCore {
           observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
           this.assertCurrent(life);
           await provider.sync(sink);
+          // plan 65: the account's own folders (Gmail's labels), only when they may have changed; a failure waits for the next pass
+          try {
+            await provider.folders?.(sink);
+          } catch (error) {
+            // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError) throw error;
+          }
         } finally { arrivals.end(); }
         if (!this.current(life)) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });

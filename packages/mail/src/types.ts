@@ -164,6 +164,11 @@ export interface MailProvider {
   flagSnapshots?: true;
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
+  /**
+   * Plan 65: after a pass that worked, the account's own folders when the provider keeps them apart from its
+   * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.
+   */
+  folders?(sink: SyncSink): Promise<void>;
   /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */
   execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
   /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */

@@ -1,7 +1,8 @@
 import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
-import type { IncomingMessage } from "@terno/store";
+import type { IncomingMessage, ProviderFolder } from "@terno/store";
+import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX } from "@terno/core";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
@@ -55,6 +56,41 @@ interface GmailMessage {
 
 interface Cursor {
   historyId: string;
+  /** plan 65: when /labels was last read, and every label id it had (hidden ones too: known, never listed) */
+  labels?: { at: number; known: string[] };
+}
+
+/** Plan 65: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
+export const LABELS_EVERY_MS = 15 * 60_000;
+/** /labels read bounded: Gmail's 10,000 labels of at most 225 characters, with room for the JSON around them */
+const LABELS_BYTES = 4 * 1024 * 1024;
+
+interface GmailLabel {
+  id: string;
+  name: string;
+  type?: string;
+  labelListVisibility?: string;
+}
+
+/** A /labels answer, field by field; anything else is a malformed answer (a fixed message: names never in errors). */
+function readLabels(value: unknown): GmailLabel[] {
+  if (!isRecord(value)) throw invalidResponse();
+  if (value.labels === undefined) return [];
+  if (!Array.isArray(value.labels) || value.labels.length > FOLDERS_PER_ACCOUNT_MAX + 100) throw invalidResponse();
+  return value.labels.map((l: unknown) => {
+    if (!isRecord(l) || !nonempty(l.id) || l.id.length > 1000 || typeof l.name !== "string" || l.name.length > 4 * FOLDER_NAME_MAX) throw invalidResponse();
+    if ((l.type !== undefined && typeof l.type !== "string") || (l.labelListVisibility !== undefined && typeof l.labelListVisibility !== "string")) throw invalidResponse();
+    return { id: l.id, name: l.name, type: l.type as string | undefined, labelListVisibility: l.labelListVisibility as string | undefined };
+  });
+}
+
+/** The user's own labels as folders: user labels shown in the label list, nested by "/", in name order. */
+export function labelFolders(labels: readonly GmailLabel[]): ProviderFolder[] {
+  return labels
+    .filter((l) => l.type === "user" && l.id.startsWith("Label_") && l.labelListVisibility !== "labelHide" && l.name.trim() !== "")
+    .map((l) => ({ key: l.id, path: l.name.split("/").map((p) => p.trim().slice(0, FOLDER_NAME_MAX)).filter((p) => p !== ""), selectable: true }))
+    .sort((a, b) => a.path.join("\u0000").localeCompare(b.path.join("\u0000")))
+    .slice(0, FOLDERS_PER_ACCOUNT_MAX);
 }
 
 interface MessageRef { id: string }
@@ -454,6 +490,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       try {
         if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal) as T;
         if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
+        if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
         if (responseMode === "incoming" && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
@@ -691,7 +728,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     });
     if (updates.length) await sink.updateFlags(updates);
     if (gone.length) await sink.removeMessages(gone);
-    await ctx.saveCursor({ historyId: baseline } satisfies Cursor);
+    await ctx.saveCursor({ historyId: baseline, ...(catalog && { labels: { at: catalog.at, known: [...catalog.known] } }) } satisfies Cursor);
   }
 
   async function incremental(sink: SyncSink, cursor: Cursor) {
@@ -746,8 +783,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (id !== undefined) removals.push(id);
     }
     if (removals.length) await sink.removeMessages(removals);
-    await ctx.saveCursor({ historyId: latest } satisfies Cursor);
+    await ctx.saveCursor({ historyId: latest, ...(catalog && { labels: { at: catalog.at, known: [...catalog.known] } }) } satisfies Cursor);
   }
+
+  /** plan 65: what /labels said last (kept in the cursor), so a quiet pass asks nothing; a label met that it lacks */
+  let catalog: { at: number; known: Set<string> } | null = null;
+  let unknownLabel = false;
 
   async function captureAttachments(sink: SyncSink) {
     if (sink.signal.aborted) return;
@@ -769,9 +810,19 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       return collectGooglePhotos((url, sig) => api(url, { signal: sig, httpContext: url === ep.userinfo ? { endpoint: "google-userinfo", purpose: "photos" } : url.startsWith(`${PEOPLE_API}/`) ? { endpoint: "google-people", purpose: "photos" } : { endpoint: "unknown", purpose: "unknown" } }), ep.userinfo, want, signal);
     },
 
-    async sync(sink) {
-      const malformed = await reconcileFlags(sink);
+    async sync(outer) {
       const cursor = await ctx.loadCursor<Cursor>();
+      catalog ??= isRecord(cursor) && isRecord(cursor.labels) && typeof cursor.labels.at === "number" && Array.isArray(cursor.labels.known) ? { at: cursor.labels.at, known: new Set(cursor.labels.known.filter(nonempty)) } : null;
+      // plan 65: the user labels this pass meets; one /labels didn't have (made since) asks for it after the pass
+      const meet = (labels: readonly string[] | null | undefined) => {
+        for (const l of labels ?? []) if (l.startsWith("Label_") && !catalog?.known.has(l)) unknownLabel = true;
+      };
+      const sink: SyncSink = {
+        ...outer,
+        ingest: (messages, o) => (messages.forEach((m) => meet(m.gmailLabels)), outer.ingest(messages, o)),
+        updateFlags: (updates) => (updates.forEach((u) => meet(u.gmailLabels)), outer.updateFlags(updates)),
+      };
+      const malformed = await reconcileFlags(sink);
       if (!isRecord(cursor) || !historyId(cursor.historyId)) {
         await fullSync(sink);
       } else {
@@ -785,6 +836,17 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       await captureAttachments(sink);
       if (malformed) throw malformed;
+    },
+
+    async folders(sink) {
+      // never read, stale (history doesn't report label changes), or a label met that it didn't have
+      if (catalog && !unknownLabel && Date.now() - catalog.at < LABELS_EVERY_MS) return;
+      const labels = readLabels(await api<unknown>("/labels"));
+      catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
+      unknownLabel = false;
+      await sink.setFolders?.(labelFolders(labels));
+      const cursor = await ctx.loadCursor<Cursor>();
+      if (isRecord(cursor) && historyId(cursor.historyId)) await ctx.saveCursor({ ...cursor, labels: { at: catalog.at, known: [...catalog.known] } } satisfies Cursor);
     },
 
     async execute(op: ProviderOp) {
