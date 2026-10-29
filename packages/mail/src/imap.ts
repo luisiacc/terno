@@ -34,6 +34,13 @@ interface Cursor {
 /** Plan 65: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
 const LISTED_MAX = 2 * FOLDERS_PER_ACCOUNT_MAX;
 
+/** Plan 65: a mailbox as STATUS compares it (its message count, its mod-sequence where the server has one). */
+interface Snapshot {
+  messages: number;
+  modseq?: string;
+}
+const snapshotOf = (mb: { exists: number; highestModseq?: bigint }): Snapshot => ({ messages: mb.exists, ...(mb.highestModseq !== undefined && { modseq: String(mb.highestModseq) }) });
+
 /** Plan 65: without HIGHESTMODSEQ, flag changes don't show in STATUS: a quiet folder is checked on every fourth pass. */
 const CHECK_EVERY = 4;
 
@@ -318,28 +325,32 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * `adopt`: messages located in folders that vanished this pass (a rename): one of them is the same message here,
    * even without a Message-ID, never a second copy.
    */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: AdoptIndex } = {}) {
+  /**
+   * `checkpoint` (Codex R6): for a mailbox we already had, what its sweep saw (message count, mod-sequence): the
+   * cursor never acknowledges changes that came after the sweep read the flags; null (a sweep that failed, or none)
+   * checkpoints nothing, so the next pass looks again.
+   */
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: AdoptIndex; checkpoint?: Snapshot | null } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
       if (!mb) return;
       const uidvalidity = Number(mb.uidValidity);
       let state = cursor.mailboxes[path];
+      const hadState = state !== undefined;
       const reset = Boolean(state && state.uidvalidity !== uidvalidity);
       const resetOrphans = new Set<number>();
       if (state && state.uidvalidity !== uidvalidity) {
-        // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now
-        for (const id of await locations.resetMailbox(path)) {
-          touched.add(id);
-          resetOrphans.add(id);
-        }
-        // a reset an earlier pass started and couldn't finish: its messages are still to be recognised (Codex R5)
-        for (const id of cursor.resetPending?.[path] ?? []) {
-          touched.add(id);
-          resetOrphans.add(id);
-        }
+        // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now. Its messages are written
+        // down first, durably (with any an earlier pass couldn't finish recognising), and only then unlocated, so a
+        // disconnect from here on still finds them on the next try (Codex R5, R6)
+        for (const id of cursor.resetPending?.[path] ?? []) resetOrphans.add(id);
+        for (const l of await locations.inMailbox(path, state.uidvalidity)) resetOrphans.add(l.message_id);
         cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
         cursor.resetPending[path] = [...resetOrphans].slice(0, 200_000);
+        await ctx.saveCursor(cursor);
+        for (const id of await locations.resetMailbox(path)) resetOrphans.add(id);
+        for (const id of resetOrphans) touched.add(id);
         state = undefined;
       }
 
@@ -495,7 +506,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const row = await store.messageByProviderId(m.providerMsgId!);
         if (row) touched.add(row.id);
       }
-      cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext), messages: mb.exists, ...(mb.highestModseq !== undefined && { modseq: String(mb.highestModseq) }) };
+      // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
+      const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
+      cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext), ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
     } finally {
       lock.release();
@@ -507,15 +520,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * mailbox before any new mail is identified, so a message moved between folders (the destination synced first)
    * finds its old location gone and keeps its identity, its thread and categories, never a second copy.
    */
-  async function sweepMailbox(c: ImapFlow, path: string, cursor: Cursor, touched: Set<number>) {
+  async function sweepMailbox(c: ImapFlow, path: string, cursor: Cursor, touched: Set<number>): Promise<Snapshot | null> {
     const state = cursor.mailboxes[path];
-    if (!state) return;
+    if (!state) return null;
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
       // a reset is the identification step's: it has nothing of ours to sweep
-      if (!mb || Number(mb.uidValidity) !== state.uidvalidity) return;
+      if (!mb || Number(mb.uidValidity) !== state.uidvalidity) return null;
       const uidvalidity = state.uidvalidity;
+      // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
+      const seen = snapshotOf(mb);
       const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
       const known = await locations.inMailbox(path, uidvalidity);
       const byUid = new Map(known.map((k) => [k.uid, k]));
@@ -537,6 +552,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
         }
       }
+      return seen;
     } finally {
       lock.release();
     }
@@ -698,21 +714,23 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
         }
         // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
+        const swept = new Map<string, Snapshot | null>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await sweepMailbox(c, path, cursor, touched);
+          swept.set(path, await sweepMailbox(c, path, cursor, touched));
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await sweepMailbox(c, path, cursor, touched);
+            swept.set(path, await sweepMailbox(c, path, cursor, touched));
           } catch (error) {
+            swept.set(path, null);
             tolerate(error);
           }
         }
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched);
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null });
         }
         // folders gone since the last pass (deleted, or renamed: the new path is among the custom ones); their
         // messages may be found again under it, so their locations stay until every folder has synced (Codex R1)
@@ -724,7 +742,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt } : {});
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt } : { checkpoint: swept.get(path) ?? null });
           } catch (error) {
             tolerate(error);
           }

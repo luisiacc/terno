@@ -1029,6 +1029,62 @@ describe("an account's own folders (plan 65)", () => {
     expect(await folderOf(client, account.id, "Z")).toEqual([]);
   });
 
+  it("Codex R6: a disconnect right after a reset still recognises the folder's ID-less twins on the next sync", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Work");
+    const twin = raw({ subject: "Gemelo sin id", date: old }).replace(/^Message-ID: .*\r\n/m, "");
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    ctl.addMessage("Work", { raw: twin, internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    ctl.resetUidValidity("Work");
+    // the connection drops as the reset's search goes out, on the retry too: the pass fails whole, nothing saved at its end
+    const original = ImapFlow.prototype.search;
+    const dropping = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (this.mailbox && (this.mailbox as { path: string }).path === "Work") return Promise.reject(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      dropping.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
+  });
+
+  it("Codex R6: a sweep that fails acknowledges nothing: a flag change it missed is read on a later pass", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("Work");
+    const m = ctl.addMessage("Work", { raw: raw({ subject: "Leído fuera" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.setFlags("Work", [m.uid], ["\\Seen"], "add");
+    // the sweep's whole-mailbox search fails; the identification's (new UIDs) works
+    const original = ImapFlow.prototype.search;
+    const failing = vi.spyOn(ImapFlow.prototype, "search").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const query = args[0] as { all?: boolean };
+      if (query?.all && this.mailbox && (this.mailbox as { path: string }).path === "Work") return Promise.reject(Object.assign(new Error("Search refused"), { responseStatus: "NO" }));
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      failing.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).get<{ is_read: number }>("SELECT is_read FROM messages")!.is_read).toBe(1);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

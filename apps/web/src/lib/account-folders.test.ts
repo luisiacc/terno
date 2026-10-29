@@ -127,7 +127,7 @@ describe("an account's own folders (plan 65)", () => {
 
   it("rows nest by path in listed order; a parent that isn't listed is drawn once, not a place to go", () => {
     const folders = [f(2, "Label_1", ["Work"]), f(2, "Label_3", ["Work", "Clients"]), f(2, "Label_9", ["Travel", "2026"]), f(2, "Label_10", ["Travel", "2027"]), f(3, "X", ["Other"]), f(2, "Lists", ["Lists"], false), f(2, "Lists/News", ["Lists", "News"])];
-    expect(folderRows(folders, 2)).toEqual([
+    expect(folderRows(folders, 2).map(({ id: _id, ...r }) => r)).toEqual([
       { key: "Lists", name: "Lists", depth: 0, selectable: false },
       { key: "Lists/News", name: "News", depth: 1, selectable: true },
       { key: null, name: "Travel", depth: 0, selectable: false },
@@ -136,6 +136,12 @@ describe("an account's own folders (plan 65)", () => {
       { key: "Label_1", name: "Work", depth: 0, selectable: true },
       { key: "Label_3", name: "Clients", depth: 1, selectable: true },
     ]);
+  });
+
+  it("Codex R6: every row has its own identity, also parents drawn twice under different ones (A/X/Y, B/X/Z)", () => {
+    const rows = folderRows([f(2, "Label_1", ["A", "X", "Y"]), f(2, "Label_2", ["B", "X", "Z"])], 2);
+    expect(rows.filter((r) => r.name === "X")).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
   });
 
   it("Codex R4: two folders whose shortened names match are both rows, both places to go", () => {

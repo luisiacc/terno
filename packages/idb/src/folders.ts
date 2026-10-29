@@ -110,19 +110,33 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
     if (gone.length < limit) jobs.update(job, { phase: 1 });
     return { more: true, touched: gone.map((r) => r.thread_id as number) };
   }
-  const after = (l: R) => l.uidvalidity > job.after_uidvalidity || (l.uidvalidity === job.after_uidvalidity && l.uid > job.after_uid);
-  const rows = T(c, "message_locations")
-    .by("mailbox", job.account_id, job.key)
-    .filter(after)
-    .sort((x, y) => x.uidvalidity - y.uidvalidity || x.uid - y.uid)
-    .slice(0, limit);
+  // the folder's locations in UID order, sorted once for the job (Codex R6: never per slice); each slice seeks into it
+  const at = `${job.account_id}\u0000${job.key}`;
+  let cached = rebuildOrders.get(c);
+  if (!cached) rebuildOrders.set(c, (cached = new Map()));
+  let order = cached.get(at);
+  if (!order) cached.set(at, (order = T(c, "message_locations").by("mailbox", job.account_id, job.key).map((l) => ({ id: l.message_id as number, uidvalidity: l.uidvalidity as number, uid: l.uid as number })).sort((x, y) => x.uidvalidity - y.uidvalidity || x.uid - y.uid)));
+  let lo = 0;
+  let hi = order.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const l = order[mid]!;
+    if (l.uidvalidity < job.after_uidvalidity || (l.uidvalidity === job.after_uidvalidity && l.uid <= job.after_uid)) lo = mid + 1;
+    else hi = mid;
+  }
+  const rows = order.slice(lo, lo + limit).map((l) => ({ message_id: l.id, uidvalidity: l.uidvalidity, uid: l.uid }));
   const threads = threadsOfMessages(c, rows.map((r) => r.message_id as number));
   refreshFolders(c, threads);
   const last = rows.at(-1);
-  if (rows.length < limit) jobs.deleteRow(job);
-  else jobs.update(job, { after_uidvalidity: last!.uidvalidity, after_uid: last!.uid });
+  if (rows.length < limit) {
+    jobs.deleteRow(job);
+    cached.delete(at);
+  } else jobs.update(job, { after_uidvalidity: last!.uidvalidity, after_uid: last!.uid });
   return { more: left(), touched: threads };
 }
+
+/** A job's locations in UID order, per store: built on its first slice (after a reload, again once) */
+const rebuildOrders = new WeakMap<Ctx, Map<string, { id: number; uidvalidity: number; uid: number }[]>>();
 
 /** Does a thread pass the folder's view and the list's filter (Waiting: inside its window)? */
 function keeps(p: ScopeParams): (t: R | undefined) => t is R {

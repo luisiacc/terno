@@ -199,6 +199,28 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
   expect(scopeMs.reduce((a, b) => a + b, 0), "select all: every page").toBeLessThanOrEqual(25 * MULT);
 }, 900_000);
 
+it("relisting a populated IMAP folder (plan 65, Codex R6): every rebuild slice within a frame, the folder's order sorted once", async () => {
+  const snap = await store.debug.snapshot();
+  const account = (await store.accounts.list()).find((a) => a.kind === "imap")!.id;
+  const mine = snap.messages.filter((m) => m.accountId === account);
+  // the folder's locations, written straight into the in-memory tables (setting them up isn't what's measured)
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown } } } }).c;
+  c.db.tx(() => mine.forEach((m, i) => c.db.table("message_locations").put({ message_id: m.id, account_id: account, mailbox: "Big", uidvalidity: 1, uid: i + 1, flags: "[]" })));
+  const listed = (await store.folders.list()).filter((f) => f.accountId === account).map(({ key, path, selectable }) => ({ key, path, selectable }));
+  await store.folders.replace(account, listed.filter((f) => f.key !== "Big"));
+  await store.folders.replace(account, [...listed.filter((f) => f.key !== "Big"), { key: "Big", path: ["Big"], selectable: true }]);
+  const slices: Sample[] = [];
+  for (let more = true; more; ) {
+    const s = await sampleAsync(() => store.folders.rebuild(500));
+    slices.push(s);
+    more = s.result.more;
+  }
+  const ms = settle(slices).ms.sort((a, b) => a - b);
+  console.log(`rebuild of ${mine.length} locations: ${slices.length} slices, max ${ms.at(-1)!.toFixed(2)} ms, total ${ms.reduce((a, b) => a + b, 0).toFixed(1)} ms`);
+  expect(ms.at(-1)!, "a rebuild slice").toBeLessThanOrEqual(FRAME * MULT);
+  expect((await store.threads.list({ view: "all", accountId: account, folder: "Big", limit: 10, now: NOW })).items.length).toBeGreaterThan(0);
+}, 900_000);
+
 it("the unread filter pages from its own order: a cold build, every page, and 5,000 reads at once each within a frame", async () => {
   const all = (await store.debug.snapshot()).threads;
   const unread = all.filter((t) => t.unreadCount > 0);

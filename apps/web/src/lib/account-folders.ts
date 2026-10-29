@@ -73,6 +73,8 @@ export function folderName(s: { folders: readonly Folder[]; accountId: number | 
 }
 
 export interface FolderRow {
+  /** the row's identity: its full path from the top (and its key): unique, stable as the list changes */
+  id: string;
   /** null: a parent only drawn to group the folders under it (Gmail's "A/B" with no "A") */
   key: string | null;
   name: string;
@@ -109,12 +111,13 @@ export function folderRows(folders: readonly Folder[], accountId: number): Folde
     node.own = f;
   }
   const rows: FolderRow[] = [];
-  const walk = (node: Node, depth: number) => {
-    for (const child of [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-      rows.push({ key: child.own?.key ?? null, name: child.name, depth, selectable: child.own?.selectable ?? false });
-      walk(child, depth + 1);
+  const walk = (node: Node, depth: number, at: string) => {
+    for (const [childId, child] of [...node.children.entries()].sort(([, a], [, b]) => a.name.localeCompare(b.name))) {
+      const id = `${at}\u0000${childId}`;
+      rows.push({ id, key: child.own?.key ?? null, name: child.name, depth, selectable: child.own?.selectable ?? false });
+      walk(child, depth + 1, id);
     }
   };
-  walk(root, 0);
+  walk(root, 0, "");
   return rows;
 }

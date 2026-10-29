@@ -435,10 +435,11 @@ function AccountFolders({
         {mounted &&
           rows.slice(0, shown).map((r) =>
             r.selectable && r.key !== null ? (
-              <OwnFolderRow key={r.key} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
+              <OwnFolderRow key={r.id} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
             ) : (
               // a parent that only groups what's under it: not a place to go
-              <div key={`group:${r.key ?? ""}:${r.depth}:${r.name}`} data-testid="nav-own-group" className={cn("type-nav flex h-(--nav-h) items-center gap-2.5 px-2 text-muted-foreground", INSET[r.depth] ?? INSET.at(-1))}>
+              // keyed by its full path (Codex R6: "A/X/Y" and "B/X/Z" both draw an "X")
+              <div key={r.id} data-testid="nav-own-group" className={cn("type-nav flex h-(--nav-h) items-center gap-2.5 px-2 text-muted-foreground", INSET[r.depth] ?? INSET.at(-1))}>
                 <span className="flex size-4 items-center justify-center text-sidebar-glyph">
                   <FolderIcon className="size-4" />
                 </span>
