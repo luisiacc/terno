@@ -9,6 +9,7 @@ export interface CooldownRow {
   owner: string;
   service: CooldownService;
   revision: string;
+  phaseRevision?: string;
   minimum: string | null;
   wall: string | null;
   replay: string;
@@ -62,14 +63,14 @@ export function decodeCooldown(encoded: string | null): CooldownLedger {
   if (BigInt(v.revision) > 99_999_999_999_999_999_935n) return bad();
   const seen = new Set<string>();
   for (const r of v.rows) {
-    if (!record(r) || !keys(r, "owner,service,revision,minimum,wall,replay,sample,position,hold,repair") || !(r.owner === "installation" || mailboxKeyValid(r.owner)) || !COOLDOWN_SERVICES.includes(r.service as CooldownService) || !decimal(r.revision) || (r.minimum !== null && !minimum(r.minimum)) || (r.wall !== null && !minimum(r.wall)) || !decimal(r.replay) || BigInt(r.replay) > 17_280_000_000_360_000n || !integer(r.sample) || r.sample < 1600 || r.sample > 360000 || !integer(r.position) || r.position < 0 || r.position > 6 || ![null, "clock", "clock-evidence", "range", "calendar", "leap-second"].includes(r.hold as CooldownHold | null) || (r.repair !== null && (!decimal(r.repair) || BigInt(r.repair) >= BigInt(r.revision)))) return bad();
+    if (!record(r) || !keys(r, "owner,service,revision,phaseRevision,minimum,wall,replay,sample,position,hold,repair") || !(r.owner === "installation" || mailboxKeyValid(r.owner)) || !COOLDOWN_SERVICES.includes(r.service as CooldownService) || !decimal(r.revision) || !decimal(r.phaseRevision) || BigInt(r.phaseRevision) > BigInt(r.revision) || (r.minimum !== null && !minimum(r.minimum)) || (r.wall !== null && !minimum(r.wall)) || !decimal(r.replay) || BigInt(r.replay) > 17_280_000_000_360_000n || !integer(r.sample) || r.sample < 1600 || r.sample > 360000 || !integer(r.position) || r.position < 0 || r.position > 6 || ![null, "clock", "clock-evidence", "range", "calendar", "leap-second"].includes(r.hold as CooldownHold | null) || (r.repair !== null && (!decimal(r.repair) || BigInt(r.repair) >= BigInt(r.revision)))) return bad();
     const key = `${r.owner}/${r.service}`;
     if (seen.has(key) || BigInt(r.revision) > BigInt(v.revision)) return bad();
     seen.add(key);
   }
   const ids = new Set<number>();
   for (const b of v.bindings) {
-    if (!record(b) || !keys(b, "id,createdAt,emailDigest,mailboxKey") || !integer(b.id) || b.id < 1 || !integer(b.createdAt) || !mailboxKeyValid(b.emailDigest) || !mailboxKeyValid(b.mailboxKey) || ids.has(b.id)) return bad();
+    if (!record(b) || !keys(b, "id,createdAt,emailDigest,mailboxKey") || !integer(b.id) || b.id < 1 || !integer(b.createdAt) || !mailboxKeyValid(b.emailDigest) || !mailboxKeyValid(b.mailboxKey) || b.emailDigest !== b.mailboxKey || ids.has(b.id)) return bad();
     ids.add(b.id);
   }
   return v as unknown as CooldownLedger;
@@ -92,8 +93,16 @@ export async function mailboxDigest(email: string, hashBytes: (bytes: Uint8Array
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function phaseOf(row: CooldownRow): string {
+  if (!decimal(row.phaseRevision) || BigInt(row.phaseRevision) > BigInt(row.revision)) return bad();
+  return row.phaseRevision;
+}
 export function mergeCooldownRows(old: CooldownRow | undefined, candidate: CooldownRow): CooldownRow {
-  if (!old) return { ...candidate };
+  const candidatePhase = phaseOf(candidate);
+  if (!old) return { ...candidate, phaseRevision: candidatePhase };
+  const oldPhase = phaseOf(old);
+  if (oldPhase === candidatePhase && (old.sample !== candidate.sample || old.position !== candidate.position)) return bad();
+  const phase = BigInt(oldPhase) > BigInt(candidatePhase) ? old : candidate;
   const newer = BigInt(old.revision) > BigInt(candidate.revision) ? old : candidate;
   const max = (a: string | null, b: string | null) => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
   let hold = newer.hold;
@@ -101,19 +110,18 @@ export function mergeCooldownRows(old: CooldownRow | undefined, candidate: Coold
   else if (candidate.hold && candidate.hold !== "clock") hold = candidate.hold;
   else if (old.hold === "clock" && candidate.hold === null && !(candidate.repair === old.revision && BigInt(candidate.revision) > BigInt(old.revision))) hold = "clock";
   else if (candidate.hold === "clock" && old.hold === null && !(old.repair === candidate.revision && BigInt(old.revision) > BigInt(candidate.revision))) hold = "clock";
-  return { ...newer, minimum: max(old.minimum, candidate.minimum), replay: max(old.replay, candidate.replay)!, hold, repair: hold ? null : newer.repair };
+  return { ...newer, phaseRevision: phaseOf(phase), sample: phase.sample, position: phase.position, minimum: max(old.minimum, candidate.minimum), replay: max(old.replay, candidate.replay)!, hold, repair: hold ? null : newer.repair };
 }
 
 /** Called inside the adapter's existing synchronous transaction. */
 export function bindCooldown(encoded: string | null, stamp: CooldownStamp, emailDigest: string, mailboxKey: string): string {
-  if (!mailboxKeyValid(mailboxKey) || !mailboxKeyValid(emailDigest)) return bad();
+  if (!mailboxKeyValid(mailboxKey) || !mailboxKeyValid(emailDigest) || mailboxKey !== emailDigest) return bad();
   const ledger = decodeCooldown(encoded);
   ledger.bindings = ledger.bindings.filter((b) => b.id !== stamp.id);
   ledger.bindings.push({ id: stamp.id, createdAt: stamp.createdAt, emailDigest, mailboxKey });
   for (const installation of ledger.rows.filter((r) => r.owner === "installation")) {
     const old = ledger.rows.find((r) => r.owner === mailboxKey && r.service === installation.service);
     const inherited = mergeCooldownRows(old, { ...installation, owner: mailboxKey, repair: null });
-    inherited.position = Math.max(old?.position ?? 0, installation.position);
     ledger.rows = ledger.rows.filter((r) => r.owner !== mailboxKey || r.service !== installation.service);
     ledger.rows.push(inherited);
   }

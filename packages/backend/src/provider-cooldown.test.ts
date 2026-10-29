@@ -38,7 +38,7 @@ async function observe(g: ProviderCooldown, e = none, owner = A, d = gmail) {
   return cleanups.watch("policy/observation", result);
 }
 function seeded(row: Partial<CooldownRow> = {}) {
-  return encodeCooldown({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: A, service: "gmail-api", revision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null, ...row }] });
+  return encodeCooldown({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: A, service: "gmail-api", revision: "1", phaseRevision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null, ...row }] });
 }
 
 describe("latent cooldown policy", () => {
@@ -359,5 +359,227 @@ describe("latent cooldown fixture ownership", () => {
     expect(independent).toBe(2);
     expect(dependent).toBe(0);
     expect(removed).toBe(0);
+  });
+});
+
+function reviewNoHttp() {
+  const actual = globalThis.fetch;
+  let calls = 0;
+  cleanups.independent("review/fetch-restore", async () => { globalThis.fetch = actual; });
+  globalThis.fetch = async () => { calls++; throw new Error("Unexpected HTTP in local recovery"); };
+  return () => calls;
+}
+
+async function reviewRollback(firstElapsed: number, wall: number, elapsed: number, minimum: string, atMs: number) {
+  const f = fixture(); f.time(1000, firstElapsed);
+  const g = await f.open(), policy = g.requestsFor(A);
+  const first = policy.reserve(gmail), late = policy.reserve(gmail);
+  let transports = 0;
+  await first.dispatch(async () => { transports++; return new Response(null, { status: 429 }); });
+  await late.dispatch(async () => { transports++; return new Response(null, { status: 429 }); });
+  expect(await cleanups.watch("review/R1/first", first.headers429(none))).toBe("committed"); first.release();
+  expect(await g.drain(5000)).toBe("drained");
+  f.time(wall, elapsed);
+  expect(await cleanups.watch("review/R1/late", late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: wall } }))).toBe("committed"); late.release();
+  expect(await g.drain(5000)).toBe("drained");
+  const row = decodeCooldown(f.encoded()).rows[0]!;
+  expect({ minimum: row.minimum, replay: row.replay, sample: row.sample, position: row.position }).toEqual({ minimum, replay: "5000", sample: 5000, position: 2 });
+  expect(f.samples()).toBe(2); expect(transports).toBe(2);
+  expect(row.hold).toBe("clock");
+  expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  expect(g.nextWakeDelay()).toBe(null);
+  await g.close();
+  const reopened = await f.open();
+  expect(reopened.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  f.time(7000, 6011); f.fire();
+  expect(reopened.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  expect(reopened.nextWakeDelay()).toBe(null);
+  const revision = reopened.revisionFor(A, "gmail-api")!;
+  f.time(8000, 7000);
+  expect(reopened.checkClock(A, "gmail-api", revision)).toEqual({ kind: "at", atMs });
+  expect(await reopened.drain(5000)).toBe("drained");
+  const repaired = f.encoded();
+  expect(decodeCooldown(repaired).rows[0]?.minimum).toBe(minimum);
+  expect(decodeCooldown(repaired).rows[0]?.repair).toBe(revision);
+  f.time(9000, 8000);
+  expect(reopened.checkClock(A, "gmail-api", revision)).toEqual({ kind: "at", atMs });
+  expect(f.encoded()).toBe(repaired);
+  f.time(13000, 11999);
+  expect(reopened.state(A, "gmail-api")).toEqual({ kind: "at", atMs });
+  f.time(13000, 12000);
+  expect(reopened.state(A, "gmail-api")).toEqual({ kind: "ready" });
+  expect(f.samples()).toBe(2); expect(f.timers.size).toBe(0);
+}
+
+function reviewBoundLedger() {
+  const key = "580852f44dc8a5bc68cbd0130926bedcbfb143d6ca60f3f40fdf6ff7b4dd820f";
+  return encodeCooldown({ version: 1, revision: "1", overflow: false, bindings: [{ id: 1, createdAt: 1, emailDigest: key, mailboxKey: key }], rows: [] });
+}
+
+describe("cooldown review unit", () => {
+  it("R1 elapsed rollback requires persisted repair", async () => { await reviewRollback(10, 1001, 9, "6001", 6001); });
+  it("R1 wall rollback requires persisted repair", async () => { await reviewRollback(10, 999, 11, "5999", 5999); });
+  it("R1 fractional rollback retains raw checkpoint", async () => { await reviewRollback(10.75, 1001, 10.5, "6001", 6001); });
+
+  it("R1 forward clocks meet both exact bounds", async () => {
+    const f = fixture(); f.time(1000, 10.75);
+    const g = await f.open(), policy = g.requestsFor(A), first = policy.reserve(gmail), late = policy.reserve(gmail);
+    await first.dispatch(async () => new Response(null, { status: 429 }));
+    await late.dispatch(async () => new Response(null, { status: 429 }));
+    expect(await first.headers429(none)).toBe("committed"); first.release(); await g.drain(5000);
+    f.time(1001, 11);
+    expect(await late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1001 } })).toBe("committed"); late.release(); await g.drain(5000);
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "6001", replay: "5000", sample: 5000, position: 2, hold: null });
+    const stored = f.encoded(), revision = g.revisionFor(A, "gmail-api")!;
+    f.time(6000, 5010); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 6001 });
+    expect(g.checkClock(A, "gmail-api", revision)).toEqual({ kind: "at", atMs: 6001 });
+    f.time(6001, 5010); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 6001 });
+    f.time(6001, 5011); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" });
+    expect(f.encoded()).toBe(stored); expect(f.samples()).toBe(2);
+  });
+
+  it("R1 unresolved hold is never clock repair", async () => {
+    const f = fixture(), g = await f.open(), policy = g.requestsFor(A), first = policy.reserve(gmail), late = policy.reserve(gmail);
+    await first.dispatch(async () => new Response(null, { status: 429 }));
+    await late.dispatch(async () => new Response(null, { status: 429 }));
+    expect(await first.headers429({ ...none, minimum: { kind: "hold", reason: "calendar" } })).toBe("committed"); first.release(); await g.drain(5000);
+    f.time(1001, 9);
+    expect(await late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1001 } })).toBe("committed"); late.release(); await g.drain(5000);
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "6001", replay: "5000", sample: 5000, position: 2, hold: "calendar" });
+    const stored = f.encoded(); f.time(8000, 7000);
+    expect(g.checkClock(A, "gmail-api", g.revisionFor(A, "gmail-api")!)).toEqual({ kind: "hold", reason: "calendar" });
+    expect(f.encoded()).toBe(stored); expect(g.nextWakeDelay()).toBe(null); expect(f.samples()).toBe(2);
+  });
+
+  it("R1 admitted HTTP rollback cannot reopen", async () => {
+    const f = fixture(), g = await f.open(), policy = g.requestsFor(A), held = latch<Response>();
+    cleanups.release(() => held.resolve(new Response(null, { status: 429 })));
+    let wall = 1000, calls = 0;
+    expect((await requestHttp(policy, gmail, async () => { calls++; return new Response(null, { status: 429 }); }, () => wall)).status).toBe(429);
+    f.time(3000, 2010); wall = 3000;
+    const late = cleanups.watch("review/R1/requestHttp", requestHttp(policy, gmail, () => { calls++; return held.promise; }, () => wall));
+    expect(calls).toBe(2);
+    f.time(2999, 2009); wall = 2999; held.resolve(new Response(null, { status: 429 }));
+    expect((await late).status).toBe(429); await g.drain(5000);
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "7999", replay: "5000", sample: 5000, position: 2 });
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+    expect(g.nextWakeDelay()).toBe(null);
+    await expect(requestHttp(policy, gmail, async () => { calls++; return new Response(); }, () => wall)).rejects.toBeInstanceOf(ProviderCooldownError);
+    expect(calls).toBe(2); expect(f.samples()).toBe(2);
+  });
+
+  it("R2 empty recovery wakes one reopening", async () => {
+    const http = reviewNoHttp(), f = fixture(); let reads = 0;
+    const g = await f.open({ read: async () => { if (++reads === 1) throw new Error("Synthetic initial load failure"); return f.port.read(); }, update: f.port.update });
+    await turns(); expect((await g.admission(() => undefined)).blockAllGoogle).toBe(true);
+    const wakes = f.wakes();
+    expect(await g.recoverStorage()).toBe("confirmed"); await turns();
+    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(false);
+    expect(reads).toBe(2); expect(f.writes()).toBe(0); expect(f.samples()).toBe(0); expect(http()).toBe(0);
+    expect(f.wakes() - wakes).toBe(1); expect(f.timers.size).toBe(0); expect(g.nextWakeDelay()).toBe(null);
+  });
+
+  it("R2 healthy empty recovery stays quiet", async () => {
+    const http = reviewNoHttp(), f = fixture(); let reads = 0;
+    const g = await f.open({ read: async () => { reads++; return f.port.read(); }, update: f.port.update });
+    await turns(); const wakes = f.wakes();
+    expect(await g.recoverStorage()).toBe("confirmed"); await turns();
+    expect((await g.admission(() => undefined)).blockAllGoogle).toBe(false);
+    expect(f.wakes() - wakes).toBe(0); expect(reads).toBe(2); expect(http()).toBe(0);
+    expect(f.writes()).toBe(0); expect(f.samples()).toBe(0); expect(f.timers.size).toBe(0);
+  });
+
+  it("R2 read only binding change wakes once", async () => {
+    const http = reviewNoHttp(), f = fixture(); let image: string | null = null;
+    const g = await f.open({ read: async () => image, update: f.port.update });
+    const stamp = { id: 1, email: "synthetic1@example.test", createdAt: 1, kind: "gmail" };
+    expect((await g.admission((id) => id === 1 ? stamp : undefined)).verifiedAccountIds).toEqual([]);
+    await turns(); const wakes = f.wakes(); image = reviewBoundLedger();
+    expect(await g.refreshAfterBind()).toBe("confirmed"); await turns();
+    expect((await g.admission((id) => id === 1 ? stamp : undefined)).verifiedAccountIds).toEqual([1]);
+    expect(f.wakes() - wakes).toBe(1); expect(http()).toBe(0); expect(f.samples()).toBe(0); expect(f.writes()).toBe(0);
+  });
+
+  it("R2 identical bound recovery stays quiet", async () => {
+    const http = reviewNoHttp(), f = fixture(reviewBoundLedger()), g = await f.open();
+    await turns(); const wakes = f.wakes();
+    expect(await g.refreshAfterBind()).toBe("confirmed"); await turns();
+    const stamp = { id: 1, email: "synthetic1@example.test", createdAt: 1, kind: "gmail" };
+    expect((await g.admission((id) => id === 1 ? stamp : undefined)).verifiedAccountIds).toEqual([1]);
+    expect(f.wakes() - wakes).toBe(0); expect(http()).toBe(0); expect(f.samples()).toBe(0); expect(f.writes()).toBe(0);
+  });
+
+  it("R3 later legitimate dispatch resets phase", async () => {
+    const f = fixture(), g = await f.open(), policy = g.requestsFor(A), held = policy.reserve(gmail);
+    await observe(g); await g.drain(5000); f.time(3000, 2010);
+    expect((await held.dispatch(async () => new Response(null, { status: 200 }))).status).toBe(200);
+    held.headers(200); held.release(); await g.drain(5000);
+    expect(f.samples()).toBe(1);
+    expect(decodeCooldown(f.encoded()).rows[0]?.position).toBe(0);
+    await observe(g, { ...none, received: { source: "date-now", kind: "wall", wallMs: 3000 } });
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "5000", sample: 2000, position: 1 });
+    expect(f.samples()).toBe(2);
+  });
+
+  it("R3 callback cannot reset a newer phase", async () => {
+    const f = fixture(), g = await f.open(), policy = g.requestsFor(A), success = policy.reserve(gmail), later = policy.reserve(gmail);
+    await later.dispatch(async () => new Response(null, { status: 429 }));
+    let observation: Promise<"committed" | "unconfirmed"> | undefined;
+    expect((await success.dispatch(() => {
+      observation = cleanups.watch("review/R3/reentrant-observation", later.headers429(none)); later.release();
+      f.time(3000, 2010);
+      return Promise.resolve(new Response(null, { status: 200 }));
+    })).status).toBe(200);
+    success.headers(200); success.release(); expect(await observation).toBe("committed"); await g.drain(5000);
+    expect(decodeCooldown(f.encoded()).rows[0]?.position).toBe(1);
+    f.time(3000, 2010);
+    await observe(g, { ...none, received: { source: "date-now", kind: "wall", wallMs: 3000 } });
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "8000", sample: 5000, position: 2 });
+    expect(f.samples()).toBe(2);
+  });
+
+  it("F4 successful close refuses late recovery", async () => {
+    const f = fixture(), completion = latch<void>(); let reads = 0;
+    const g = await f.open({ read: async () => { reads++; return f.port.read(); }, update: f.port.update });
+    cleanups.release(() => completion.resolve());
+    const late = cleanups.watch("review/F4/late-bind", completion.promise.then(() => g.refreshAfterBind()));
+    await g.close(); const before = { reads, timers: f.timerStarts(), writes: f.writes() };
+    completion.resolve(); const callback = await late, direct = await g.recoverStorage(); await turns();
+    expect(reads - before.reads).toBe(0);
+    expect(f.timerStarts() - before.timers).toBe(0); expect(f.writes() - before.writes).toBe(0);
+    expect(callback).toBe("unconfirmed"); expect(direct).toBe("unconfirmed");
+    expect(g.resources().writer).toBe(false); expect(f.samples()).toBe(0); expect(f.timers.size).toBe(0);
+  });
+
+  it("F4 open recovery still joins its action", async () => {
+    const f = fixture(); let reads = 0;
+    const g = await f.open({ read: async () => { reads++; return f.port.read(); }, update: f.port.update });
+    expect(await g.recoverStorage()).toBe("confirmed"); await turns();
+    expect(reads).toBe(2); expect(g.resources().writer).toBe(false);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" }); expect(f.timers.size).toBe(0);
+  });
+
+  it("F4 closing joins an already held writer", async () => {
+    const f = fixture(), held = heldWriter(); let reads = 0, completed = 0;
+    const g = await f.open({ read: async () => { reads++; return f.port.read(); }, update: async (fn) => { await held.promise; return f.port.update(fn); } });
+    const response = cleanups.watch("review/F4/held-observation", observe(g)); await turns();
+    const stop = cleanups.watch("review/F4/close", g.close().then(() => { completed++; }));
+    await turns(); const timers = f.timerStarts();
+    expect(completed).toBe(0); expect(g.resources().writer).toBe(true);
+    expect(await g.recoverStorage()).toBe("pending-terminal"); expect(await g.refreshAfterBind()).toBe("pending-terminal");
+    expect(reads).toBe(1); expect(f.timerStarts()).toBe(timers);
+    held.resolve(); expect(await response).toBe("committed"); await stop;
+    expect(completed).toBe(1); expect(g.resources().writer).toBe(false); expect(f.samples()).toBe(1);
+  });
+
+  it("F4 failed close retains explicit recovery", async () => {
+    const f = fixture(); let fail = true;
+    const g = await f.open({ read: f.port.read, update: (fn) => fail ? Promise.reject(new Error("Synthetic precommit refusal")) : f.port.update(fn) });
+    expect(await observe(g)).toBe("unconfirmed"); await g.drain(5000);
+    await expect(g.close()).rejects.toThrow("Private cooldown persistence remains unconfirmed");
+    fail = false; expect(await g.recoverStorage()).toBe("confirmed");
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "closed" });
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "3000", sample: 2000, position: 1 });
+    expect(f.samples()).toBe(1); await g.close();
   });
 });

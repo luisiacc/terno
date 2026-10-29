@@ -294,7 +294,7 @@ async function sendOp(store: MailStore, accountId: number) {
 }
 const emptyAdmission = { blockedAccountIds: [] as number[], verifiedAccountIds: [] as number[], blockUnverifiedGoogle: false, blockAllGoogle: false };
 function rowLedger() {
-  return JSON.stringify({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: mailboxA, service: "gmail-api", revision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null }] });
+  return JSON.stringify({ version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: mailboxA, service: "gmail-api", revision: "1", phaseRevision: "1", minimum: "121000", wall: "1000", replay: "120000", sample: 2000, position: 1, hold: null, repair: null }] });
 }
 for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
   describe(`private cooldown store ${mode}`, () => {
@@ -505,6 +505,286 @@ for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
       terminal?.release(); release();
       expect(await ack).toBe("committed"); await stop; expect(closed).toBe(true);
       const reopened = await f.reopen(); expect(JSON.parse((await reopened.providerCooldown.read())!).rows[0].minimum).toBe("121000");
+    });
+  });
+}
+
+type ReviewLedger = import("@terno/store").CooldownLedger;
+type ReviewEvidence = import("@terno/mail/portable").Observation429;
+
+function reviewLatch<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+function reviewEvidence(wall: number, atMs?: number): ReviewEvidence {
+  return { received: { source: "date-now", kind: "wall", wallMs: wall }, minimum: atMs === undefined ? { kind: "none", reason: "not-visible" } : { kind: "at", basis: "delay", atMs } };
+}
+
+async function reviewLedger(store: MailStore): Promise<ReviewLedger> {
+  const encoded = await store.providerCooldown.read();
+  if (encoded === null) throw new Error("Missing review ledger fixture");
+  return JSON.parse(encoded);
+}
+
+async function reviewPhase(mode: StoreMode, outcome: "normal" | "before" | "after" = "normal") {
+  const f = await storeFixture(mode), actual = f.store.providerCooldown;
+  const a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+  expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+  const held = reviewLatch<void>(), reached = reviewLatch<void>();
+  cleanup.release(() => held.resolve());
+  let wall = 1000, elapsed = 10, samples = 0, updates = 0, reads = 0, transports = 0;
+  let fail = outcome === "before";
+  const gate = await ProviderCooldown.open({
+    read: () => { reads++; return actual.read(); },
+    update: async (fn) => {
+      const ordinal = ++updates;
+      if (ordinal === 2) {
+        reached.resolve(); await held.promise;
+        if (fail) throw new Error("Synthetic second phase precommit failure");
+      }
+      const result = await actual.update(fn);
+      if (ordinal === 2 && outcome === "after") throw new Error("Synthetic second phase postcommit failure");
+      return result;
+    },
+  }, { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } });
+  let stopping: Promise<void> | undefined;
+  const stop = () => stopping ??= (async () => {
+    fail = false; held.resolve();
+    await gate.drain(5000);
+    expect(await gate.recoverStorage()).toBe("confirmed");
+    await gate.close();
+  })();
+  cleanup.gate(`review/F1/${mode}/${outcome}`, { close: stop, resources: () => gate.resources() });
+  const policy = await gate.requestsForAccount(stamp, () => true);
+  const reserve = () => policy.reserve(gmail);
+  const dispatch = async (ticket: ReturnType<typeof reserve>, status = 429) => {
+    return ticket.dispatch(async () => { transports++; return new Response(null, { status }); });
+  };
+  const issue = async (atMs?: number) => {
+    const ticket = reserve(); await dispatch(ticket);
+    const ack = cleanup.watch(`review/F1/${mode}/observation`, ticket.headers429(reviewEvidence(wall, atMs)));
+    ticket.release(); return ack;
+  };
+  return {
+    store: f.store, actual, gate, policy, stamp, held, reached, stop, reserve, dispatch, issue,
+    time: (nextWall: number, nextElapsed: number) => { wall = nextWall; elapsed = nextElapsed; },
+    samples: () => samples, reads: () => reads, updates: () => updates, transports: () => transports,
+    reopen: async () => { await stop(); return f.reopen(); },
+  };
+}
+
+for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
+  describe(`cooldown review real store ${mode}`, () => {
+    it("F1 two binds retain second accepted phase", async () => {
+      const f = await reviewPhase(mode);
+      expect(await f.issue()).toBe("committed"); await f.gate.drain(5000);
+      f.time(3000, 2010);
+      const second = cleanup.watch(`review/F1/${mode}/second`, f.issue());
+      await f.reached.promise;
+      expect(f.gate.resources().writer).toBe(true); expect(f.samples()).toBe(2);
+      expect(await f.gate.refreshAfterBind()).toBe("pending-terminal");
+      expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+      expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+      const old = (await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)!;
+      expect({ minimum: old.minimum, sample: old.sample, position: old.position }).toEqual({ minimum: "3000", sample: 2000, position: 1 });
+      f.held.resolve(); expect(await second).toBe("committed"); await f.gate.drain(5000);
+      const stored = (await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)!;
+      expect({ minimum: stored.minimum, replay: stored.replay, sample: stored.sample, position: stored.position }).toEqual({ minimum: "8000", replay: "5000", sample: 5000, position: 2 });
+      f.time(8000, 7010); expect(await f.issue()).toBe("committed");
+      expect(f.samples()).toBe(3); expect(f.transports()).toBe(3);
+      const reopened = await f.reopen();
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "23000", sample: 15000, position: 3 });
+    });
+
+    it("F1 no bind preserves the same phase timeline", async () => {
+      const f = await reviewPhase(mode);
+      expect(await f.issue()).toBe("committed"); await f.gate.drain(5000); f.time(3000, 2010);
+      const second = cleanup.watch(`review/F1/${mode}/no-bind`, f.issue());
+      await f.reached.promise; f.held.resolve(); expect(await second).toBe("committed"); await f.gate.drain(5000);
+      expect((await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "8000", sample: 5000, position: 2 });
+      f.time(8000, 7010); expect(await f.issue()).toBe("committed");
+      const reopened = await f.reopen();
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "23000", sample: 15000, position: 3 });
+      expect(f.samples()).toBe(3); expect(f.transports()).toBe(3);
+    });
+
+    it("F1 later healthy reset outranks pending phase", async () => {
+      const f = await reviewPhase(mode);
+      expect(await f.issue()).toBe("committed"); await f.gate.drain(5000); f.time(3000, 2010);
+      const second = cleanup.watch(`review/F1/${mode}/reset-pending`, f.issue());
+      await f.reached.promise;
+      f.time(8000, 7010); const success = f.reserve();
+      expect((await f.dispatch(success, 200)).status).toBe(200); success.headers(200); success.release();
+      f.held.resolve(); expect(await second).toBe("committed"); await f.gate.drain(5000);
+      expect((await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)?.position).toBe(0);
+      expect(await f.issue()).toBe("committed");
+      const reopened = await f.reopen();
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "10000", sample: 2000, position: 1 });
+      expect(f.samples()).toBe(3); expect(f.transports()).toBe(4);
+    });
+
+    it("F1 metadata is not precommit phase confirmation", async () => {
+      const f = await reviewPhase(mode, "before"), first = f.reserve(), late = f.reserve();
+      await f.dispatch(first); await f.dispatch(late);
+      expect(await first.headers429(reviewEvidence(1000, 121000))).toBe("committed"); first.release(); await f.gate.drain(5000);
+      const ack = cleanup.watch(`review/F1/${mode}/precommit-ack`, late.headers429(reviewEvidence(1000, 121000))); late.release();
+      await f.reached.promise; expect(await f.actual.bind(f.stamp, verifiedMailbox)).toBe(true);
+      f.held.resolve(); const result = await ack; await f.gate.drain(5000);
+      expect(f.samples()).toBe(2); expect(f.reads()).toBe(2);
+      expect(result).toBe("unconfirmed");
+      expect(f.gate.resources()).toMatchObject({ tickets: 1, pendingScopes: 1, writer: false });
+      expect(f.gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "storage" });
+      expect((await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "121000", replay: "120000", sample: 2000, position: 1 });
+      const reopened = await f.reopen();
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "121000", sample: 5000, position: 2 });
+      expect(f.samples()).toBe(2); expect(f.transports()).toBe(2);
+    });
+
+    it("F1 real commit before throw confirms exact phase", async () => {
+      const f = await reviewPhase(mode, "after");
+      expect(await f.issue()).toBe("committed"); await f.gate.drain(5000); f.time(3000, 2010);
+      const second = cleanup.watch(`review/F1/${mode}/postcommit-ack`, f.issue());
+      await f.reached.promise; f.held.resolve(); expect(await second).toBe("committed"); await f.gate.drain(5000);
+      expect(f.reads()).toBe(2); expect(f.samples()).toBe(2);
+      expect(f.gate.resources()).toMatchObject({ tickets: 0, pendingScopes: 0, writer: false });
+      const reopened = await f.reopen();
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "8000", sample: 5000, position: 2 });
+      expect(f.samples()).toBe(2);
+    });
+
+    it("F1 old installation phase cannot undo reset", async () => {
+      const f = await storeFixture(mode), actual = f.store.providerCooldown;
+      const a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+      const seed: ReviewLedger = { version: 1, revision: "1", overflow: false, bindings: [], rows: [{ owner: "installation", service: "gmail-api", revision: "1", phaseRevision: "1", minimum: "3000", wall: "1000", replay: "2000", sample: 2000, position: 1, hold: null, repair: null }] };
+      await actual.update(() => ({ encoded: JSON.stringify(seed), result: undefined }));
+      expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+      let wall = 1000, elapsed = 10, samples = 0;
+      const clock = { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } };
+      const gate = await ProviderCooldown.open(actual, clock);
+      cleanup.gate(`review/F1/${mode}/installation-reset-before`, gate);
+      wall = 3000; elapsed = 2010;
+      const policy = await gate.requestsForAccount(stamp, () => true), success = policy.reserve(gmail);
+      await success.dispatch(async () => new Response(null, { status: 200 })); success.headers(200); success.release(); await gate.drain(5000);
+      expect((await reviewLedger(f.store)).rows.find((r) => r.owner === verifiedMailbox)?.position).toBe(0);
+      await gate.close(); expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+      const rebound = await reviewLedger(f.store);
+      expect(rebound.rows.find((r) => r.owner === "installation")?.position).toBe(1);
+      expect(rebound.rows.find((r) => r.owner === verifiedMailbox)?.position).toBe(0);
+      const reopened = await f.reopen(), after = await ProviderCooldown.open(reopened.providerCooldown, clock);
+      cleanup.gate(`review/F1/${mode}/installation-reset-after`, after);
+      wall = 5000; elapsed = 4010;
+      const nextPolicy = await after.requestsForAccount(stamp, () => true), next = nextPolicy.reserve(gmail);
+      await next.dispatch(async () => new Response(null, { status: 429 }));
+      expect(await next.headers429(reviewEvidence(5000))).toBe("committed"); next.release(); await after.drain(5000);
+      expect((await reviewLedger(reopened)).rows.find((r) => r.owner === verifiedMailbox)).toMatchObject({ minimum: "7000", sample: 2000, position: 1 });
+      expect(samples).toBe(1);
+    });
+
+    it("F1 binding still fences old clock repair", async () => {
+      const f = await storeFixture(mode), actual = f.store.providerCooldown;
+      const a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+      expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+      let wall = 1000, elapsed = 10, samples = 0;
+      const gate = await ProviderCooldown.open(actual, { wallNow: () => wall, elapsedNow: () => elapsed, random: () => { samples++; return 0.5; } });
+      cleanup.gate(`review/F1/${mode}/clock-fence`, gate);
+      const policy = await gate.requestsForAccount(stamp, () => true), ticket = policy.reserve(gmail);
+      await ticket.dispatch(async () => new Response(null, { status: 429 }));
+      expect(await ticket.headers429(reviewEvidence(1000))).toBe("committed"); ticket.release(); await gate.drain(5000);
+      wall = 999; elapsed = 11;
+      expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "clock" }); await gate.drain(5000);
+      const obsolete = gate.revisionFor(verifiedMailbox, "gmail-api")!;
+      expect(await actual.bind(stamp, verifiedMailbox)).toBe(true);
+      expect(await gate.refreshAfterBind()).toBe("confirmed");
+      const stored = await actual.read(); wall = 2000; elapsed = 30;
+      expect(gate.checkClock(verifiedMailbox, "gmail-api", obsolete)).toEqual({ kind: "hold", reason: "clock" });
+      expect(await actual.read()).toBe(stored);
+      const current = gate.revisionFor(verifiedMailbox, "gmail-api")!;
+      expect(current).not.toBe(obsolete);
+      expect(gate.checkClock(verifiedMailbox, "gmail-api", current)).toEqual({ kind: "at", atMs: 3000 }); await gate.drain(5000);
+      wall = 4000; elapsed = 2030;
+      expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "ready" }); expect(samples).toBe(1);
+    });
+
+    it("F1 legacy phase ambiguity holds after reopen", async () => {
+      const f = await storeFixture(mode), legacy = JSON.parse(rowLedger());
+      delete legacy.rows[0]!.phaseRevision;
+      const encoded = JSON.stringify(legacy);
+      await f.store.settings.set("provider-cooldown:v1", encoded);
+      const reopened = await f.reopen(); let samples = 0, calls = 0;
+      const gate = await ProviderCooldown.open(reopened.providerCooldown, { wallNow, elapsedNow, random: () => { samples++; return 0.5; } });
+      cleanup.gate(`review/F1/${mode}/legacy-closed`, gate);
+      expect(gate.state(mailboxA, "gmail-api")).toEqual({ kind: "hold", reason: "storage" });
+      expect(await responseOrRefusal(requestHttp(gate.requestsFor(mailboxA), gmail, async () => { calls++; return new Response(); }, wallNow))).toBeInstanceOf(ProviderCooldownError);
+      expect(await gate.recoverStorage()).toBe("unconfirmed");
+      expect(await reopened.settings.get("provider-cooldown:v1", null)).toBe(encoded);
+      expect(samples).toBe(0); expect(calls).toBe(0);
+    });
+
+    it("F2 impossible pair fails closed after reopen", async () => {
+      const f = await storeFixture(mode), a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+      expect(await f.store.providerCooldown.bind(stamp, verifiedMailbox)).toBe(true);
+      const g = await ProviderCooldown.open(f.store.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/initial`, g);
+      const p = await g.requestsForAccount(stamp, () => true), ticket = p.reserve(gmail);
+      await ticket.dispatch(async () => new Response(null, { status: 429 }));
+      expect(await ticket.headers429(reviewEvidence(1000))).toBe("committed"); ticket.release(); await g.drain(5000); await g.close();
+      const ledger = await reviewLedger(f.store);
+      expect(ledger.bindings[0]).toMatchObject({ emailDigest: verifiedMailbox, mailboxKey: verifiedMailbox });
+      expect(ledger.rows.find((r) => r.owner === verifiedMailbox)?.minimum).toBe("3000");
+      ledger.bindings[0]!.mailboxKey = mailboxB;
+      await f.store.settings.set("provider-cooldown:v1", JSON.stringify(ledger));
+      const reopened = await f.reopen();
+      const gate = await ProviderCooldown.open(reopened.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/corrupt`, gate);
+      let calls = 0;
+      const result = await responseOrRefusal((async () => {
+        const policy = await gate.requestsForAccount(stamp, () => true);
+        return requestHttp(policy, gmail, async () => { calls++; return new Response(null, { status: 200 }); }, wallNow);
+      })());
+      expect(calls).toBe(0);
+      expect(result).toBeInstanceOf(ProviderCooldownError);
+      expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "hold", reason: "storage" });
+      const admission = await gate.admission((id) => id === a.id ? { ...stamp, kind: "gmail" } : undefined);
+      expect(admission.blockAllGoogle).toBe(true); expect(admission.verifiedAccountIds).toEqual([]);
+      await expect(reopened.providerCooldown.read()).rejects.toThrow();
+    });
+
+    it("F2 intact pair retains its own pause", async () => {
+      const f = await storeFixture(mode), a = await account(f.store, 1), stamp = (await f.store.accounts.stamp(a.id))!;
+      expect(await f.store.providerCooldown.bind(stamp, verifiedMailbox)).toBe(true);
+      const g = await ProviderCooldown.open(f.store.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/valid-before`, g);
+      const p = await g.requestsForAccount(stamp, () => true), ticket = p.reserve(gmail);
+      await ticket.dispatch(async () => new Response(null, { status: 429 }));
+      expect(await ticket.headers429(reviewEvidence(1000))).toBe("committed"); ticket.release(); await g.drain(5000); await g.close();
+      const reopened = await f.reopen(), gate = await ProviderCooldown.open(reopened.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/valid-after`, gate);
+      const policy = await gate.requestsForAccount(stamp, () => true); let calls = 0;
+      const result = await responseOrRefusal(requestHttp(policy, gmail, async () => { calls++; return new Response(); }, wallNow));
+      expect(result).toBeInstanceOf(ProviderCooldownError); expect(calls).toBe(0);
+      expect(gate.state(verifiedMailbox, "gmail-api")).toEqual({ kind: "at", atMs: 3000 });
+      const admission = await gate.admission((id) => id === a.id ? { ...stamp, kind: "gmail" } : undefined);
+      expect(admission.blockAllGoogle).toBe(false); expect(admission.verifiedAccountIds).toEqual([a.id]); expect(admission.blockedAccountIds).toEqual([a.id]);
+    });
+
+    it("F2 other verified scope and service remain live", async () => {
+      const other = "77a8ca914405d79cd4e7477264c80077fad349a3d2fb9a5a24111e17d65b164b";
+      const f = await storeFixture(mode), a = await account(f.store, 1), b = await account(f.store, 2);
+      const sa = (await f.store.accounts.stamp(a.id))!, sb = (await f.store.accounts.stamp(b.id))!;
+      expect(await f.store.providerCooldown.bind(sa, verifiedMailbox)).toBe(true); expect(await f.store.providerCooldown.bind(sb, other)).toBe(true);
+      const g = await ProviderCooldown.open(f.store.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/other-before`, g);
+      const aPolicy = await g.requestsForAccount(sa, () => true);
+      await responseOrRefusal(requestHttp(aPolicy, gmail, async () => new Response(null, { status: 429 }), wallNow)); await g.drain(5000); await g.close();
+      const reopened = await f.reopen(), gate = await ProviderCooldown.open(reopened.providerCooldown, { wallNow, elapsedNow, random: () => 0.5 });
+      cleanup.gate(`review/F2/${mode}/other-after`, gate);
+      const first = await gate.requestsForAccount(sa, () => true), second = await gate.requestsForAccount(sb, () => true), paths: string[] = [];
+      expect((await requestHttp(second, gmail, async () => { paths.push("other"); return new Response(); }, wallNow)).status).toBe(200);
+      expect((await requestHttp(first, userinfo, async () => { paths.push("userinfo"); return new Response(); }, wallNow)).status).toBe(200);
+      expect(await responseOrRefusal(requestHttp(first, gmail, async () => { paths.push("blocked"); return new Response(); }, wallNow))).toBeInstanceOf(ProviderCooldownError);
+      expect(paths).toEqual(["other", "userinfo"]);
     });
   });
 }

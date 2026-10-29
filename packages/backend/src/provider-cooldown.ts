@@ -31,7 +31,7 @@ const elapsedValid = (n: number) => Number.isFinite(n) && n >= 0 && n <= Number.
 const keyOf = (owner: string, service: CooldownService) => `${owner}/${service}`;
 const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
 const larger = (a: string | null, b: string | null) => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
-const dominates = (actual: CooldownRow | undefined, wanted: CooldownRow) => !!actual && BigInt(actual.revision) >= BigInt(wanted.revision) && larger(actual.minimum, wanted.minimum) === actual.minimum && BigInt(actual.replay) >= BigInt(wanted.replay) && (!wanted.hold || actual.hold === wanted.hold || (actual.hold !== null && actual.hold !== "clock"));
+const dominates = (actual: CooldownRow | undefined, wanted: CooldownRow) => !!actual && BigInt(actual.revision) >= BigInt(wanted.revision) && actual.phaseRevision !== undefined && wanted.phaseRevision !== undefined && BigInt(actual.phaseRevision) >= BigInt(wanted.phaseRevision) && (BigInt(actual.phaseRevision) > BigInt(wanted.phaseRevision) || (actual.sample === wanted.sample && actual.position === wanted.position)) && larger(actual.minimum, wanted.minimum) === actual.minimum && BigInt(actual.replay) >= BigInt(wanted.replay) && (!wanted.hold || actual.hold === wanted.hold || (actual.hold !== null && actual.hold !== "clock"));
 
 export class ProviderCooldown {
   private ledger: CooldownLedger = decodeCooldown(null);
@@ -168,6 +168,7 @@ export class ProviderCooldown {
             if (r.released) throw new ProviderCooldownError(service, r.revision, "closed");
             r.started = true;
             check(d);
+            r.revision = this.row(owner, service)?.revision ?? "0";
             let response: Promise<Response>;
             try { response = transport(); }
             catch (error) {
@@ -194,7 +195,8 @@ export class ProviderCooldown {
             r.observed = true;
             const row = this.row(owner, service);
             if (status >= 200 && status < 300 && row && row.revision === r.revision && this.state(owner, service).kind === "ready" && row.position !== 0) {
-              const reset = { ...row, position: 0, revision: this.revision() };
+              const revision = this.revision();
+              const reset = { ...row, position: 0, revision, phaseRevision: revision };
               this.put(reset);
               this.finish(r);
               this.enqueue(reset);
@@ -213,6 +215,7 @@ export class ProviderCooldown {
   }
   private observe(owner: string, service: CooldownService, e: Observation429, reservation: Reservation): Promise<"committed" | "unconfirmed"> {
     const previous = this.row(owner, service);
+    const checkpoint = this.anchors.get(keyOf(owner, service));
     const position = Math.min(previous?.position ?? 0, RETRY_DELAYS_MS.length - 1);
     const sample = retryJitter(RETRY_DELAYS_MS[position]!, this.clock.random());
     const elapsed = this.clock.elapsedNow();
@@ -229,8 +232,10 @@ export class ProviderCooldown {
       else known = larger(known, floor.toString());
       if (known !== null) replay = replay > BigInt(known) - BigInt(wall) ? replay : BigInt(known) - BigInt(wall);
       if (!elapsedValid(elapsed) && (hold === null || hold === "clock")) hold = "clock";
+      if ((hold === null || hold === "clock") && checkpoint && (wall < checkpoint.lastWall || elapsed < checkpoint.lastElapsed)) hold = "clock";
     }
-    const row: CooldownRow = { owner, service, revision: this.revision(), minimum: known, wall: epoch(wall) ? String(wall) : null, replay: (replay < 0n ? 0n : replay).toString(), sample, position: Math.min(position + 1, 6), hold, repair: hold ? null : previous?.repair ?? null };
+    const revision = this.revision();
+    const row: CooldownRow = { owner, service, revision, phaseRevision: revision, minimum: known, wall: epoch(wall) ? String(wall) : null, replay: (replay < 0n ? 0n : replay).toString(), sample, position: Math.min(position + 1, 6), hold, repair: hold ? null : previous?.repair ?? null };
     reservation.row = row;
     this.put(row);
     this.anchor(row, wall, elapsed);
@@ -382,16 +387,27 @@ export class ProviderCooldown {
   revisionFor(owner: string, service: CooldownService): string | null { return this.row(owner, service)?.revision ?? null; }
   async recoverStorage(): Promise<"confirmed" | "pending-terminal" | "unconfirmed"> {
     if (this.physical) return "pending-terminal";
+    if (this.closing && this.pending.size === 0 && !this.overflowRequested) return "unconfirmed";
     this.own(async (withinBudget) => {
       const persisted = decodeCooldown(await this.persistence.read());
+      let reconciled = false;
       for (const row of persisted.rows) {
         const local = this.row(row.owner, row.service);
         const merged = mergeCooldownRows(local, row);
+        if (!local || local.revision !== merged.revision || local.minimum !== merged.minimum || local.wall !== merged.wall || local.replay !== merged.replay || local.sample !== merged.sample || local.position !== merged.position || local.hold !== merged.hold || local.repair !== merged.repair) reconciled = true;
         this.put(merged);
         if (!local || local.revision !== merged.revision || local.minimum !== merged.minimum || local.replay !== merged.replay) this.anchor(merged);
       }
+      const bindings = new Map<number, CooldownLedger["bindings"][number]>();
+      for (const binding of this.ledger.bindings) bindings.set(binding.id, binding);
+      if (bindings.size !== persisted.bindings.length || persisted.bindings.some((binding) => {
+        const old = bindings.get(binding.id);
+        return !old || old.createdAt !== binding.createdAt || old.emailDigest !== binding.emailDigest || old.mailboxKey !== binding.mailboxKey;
+      })) reconciled = true;
+      const overflow = this.ledger.overflow;
       this.ledger.bindings = persisted.bindings;
       this.ledger.overflow ||= persisted.overflow;
+      reconciled ||= overflow !== this.ledger.overflow;
       if (!withinBudget()) { this.storageFault = true; return; }
       if (this.ledger.overflow && !persisted.overflow) {
         if (!await this.commit([], () => false)) return;
@@ -408,7 +424,11 @@ export class ProviderCooldown {
       const batch = [...this.pending.values()];
       this.pending.clear();
       if (batch.length) await this.commit(batch, () => false);
-      else this.storageFault = false;
+      else {
+        const recovered = this.storageFault;
+        this.storageFault = false;
+        if (recovered || reconciled) this.changed();
+      }
     });
     return await this.drain(5000) === "pending-terminal" ? "pending-terminal" : this.storageFault ? "unconfirmed" : "confirmed";
   }
