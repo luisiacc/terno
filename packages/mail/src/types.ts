@@ -241,3 +241,29 @@ export interface ProviderRegistry {
   /** Cold proof is optional: custom registries without it must refuse omitted renewal credentials. */
   beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
 }
+
+export interface RequestRun { markDispatched(): void }
+export interface RequestDescriptor {
+  readonly request: HttpRequestContext;
+  readonly run?: RequestRun;
+  /** Host-owned synchronous status capture; no I/O, throw or await. */
+  readonly onHeaders?: (status: number) => void;
+}
+export interface Observation429 {
+  readonly received: HttpReceipt;
+  readonly minimum: import("./retry-after-deadline").RetryMinimum;
+}
+export interface RequestTicket {
+  readonly request: HttpRequestContext;
+  dispatch(transport: () => Promise<Response>): Promise<Response>;
+  headers429(observation: Observation429): Promise<"committed" | "unconfirmed">;
+  headers(status: number): void;
+  release(): void;
+}
+export interface ProviderRequests {
+  check(descriptor: RequestDescriptor): void;
+  reserve(descriptor: RequestDescriptor): RequestTicket;
+  accessAvailable(): void;
+  tokenUnavailable(): void;
+  close(): void;
+}

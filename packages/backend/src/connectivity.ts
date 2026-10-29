@@ -293,9 +293,13 @@ export class Connectivity {
   }
 
   private jitter(ms: number): number {
-    return Math.round(ms * (0.8 + this.random() * 0.4));
+    return retryJitter(ms, this.random());
   }
 }
 
 const RANK: Record<NetReason, number> = { other: 0, focus: 1, user: 2, online: 3, network: 4, wake: 5, offline: 6 };
 const rank = (r: NetReason) => RANK[r];
+
+export function retryJitter(ms: number, random: number): number {
+  return Math.round(ms * (0.8 + random * 0.4));
+}

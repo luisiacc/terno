@@ -1,3 +1,4 @@
+import { copyOpAdmission, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -1245,10 +1246,19 @@ function locationBlockers(c: Ctx): (o: R) => boolean {
   return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && oldestOn(mine.message_id as number) < o.seq);
 }
 
-export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
+function admittedOps(c: Ctx, input?: OpAdmission): (o: R) => boolean {
+  const a = copyOpAdmission(input);
+  const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds);
+  return (o) => {
+    if (T(c, "accounts").get(o.account_id)?.kind !== "gmail") return true;
+    return !a.blockAllGoogle && !blocked.has(o.account_id as number) && (!a.blockUnverifiedGoogle || verified.has(o.account_id as number));
+  };
+}
+export function claimReadyOps(c: Ctx, now: number, limit: number, admission?: OpAdmission): OpRow[] {
   const ops = T(c, "ops");
+  const admitted = admission && admittedOps(c, admission);
   return c.db.tx(() => {
-    const ready = ops.by("state", "queued").filter((o) => o.next_attempt_at <= now).sort((x, y) => x.seq - y.seq);
+    const ready = ops.by("state", "queued").filter((o) => o.next_attempt_at <= now && (!admitted || admitted(o))).sort((x, y) => x.seq - y.seq);
     // claiming moves queued → running: both count as blockers, so the map stays right for the pass
     const blocked = locationBlockers(c);
     const out: OpRow[] = [];
@@ -1263,11 +1273,12 @@ export function claimReadyOps(c: Ctx, now: number, limit: number): OpRow[] {
 }
 
 /** When the next op can be claimed (see the SQL store's nextOpAttemptAt): blocked and parked ones aren't due. */
-export function nextOpAttemptAt(c: Ctx): number | null {
+export function nextOpAttemptAt(c: Ctx, admission?: OpAdmission): number | null {
+  const admitted = admission && admittedOps(c, admission);
   const blocked = locationBlockers(c);
   let t: number | null = null;
   for (const o of T(c, "ops").by("state", "queued")) {
-    if (o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
+    if ((admitted && !admitted(o)) || o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
     t = o.next_attempt_at;
   }
   return t;
@@ -1660,4 +1671,9 @@ export function threadDoc(c: Ctx, t: R): SearchThreadDoc {
     waitingSince: t.waiting_since ?? null,
     categoryIds: categoryIdsOf(c, t.id),
   };
+}
+
+export function deferOp(c: Ctx, id: string, now: number, refundClaim: boolean): void {
+  const ops = T(c, "ops"), op = ops.get(id);
+  if (op?.state === "running") ops.update(op, { state: "queued", attempts: Math.max(op.attempts - (refundClaim ? 1 : 0), 0), updated_at: now });
 }

@@ -1,3 +1,4 @@
+import { copyOpAdmission, type OpAdmission } from "@terno/store";
 import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
@@ -408,14 +409,22 @@ const NOT_BLOCKED = `NOT EXISTS (
            WHERE mine.op_id = ops.id AND mine.grp = 'location'
              AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))`;
 
-export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number): OpRow[] {
+const ADMITTED = `NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = ops.account_id AND a.kind = 'gmail' AND
+  (? OR a.id IN (SELECT value FROM json_each(?)) OR (? AND a.id NOT IN (SELECT value FROM json_each(?)))))`;
+function admissionParams(admission?: OpAdmission): Param[] {
+  const a = copyOpAdmission(admission);
+  return [a.blockAllGoogle ? 1 : 0, JSON.stringify(a.blockedAccountIds), a.blockUnverifiedGoogle ? 1 : 0, JSON.stringify(a.verifiedAccountIds)];
+}
+
+export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number, admission?: OpAdmission): OpRow[] {
   return db.tx(() => {
     const rows = db.all<OpRow>(
       `SELECT * FROM ops WHERE state = 'queued' AND next_attempt_at <= ?${accountId ? " AND account_id = ?" : ""}
-         AND ${NOT_BLOCKED}
+         AND ${NOT_BLOCKED}${admission ? ` AND ${ADMITTED}` : ""}
        ORDER BY seq LIMIT ?`,
       now,
       ...(accountId ? [accountId] : []),
+      ...(admission ? admissionParams(admission) : []),
       limit,
     );
     for (const r of rows) {
@@ -499,8 +508,8 @@ export function pruneOpTargets(db: Db, messageIds: readonly number[]): void {
  * network and isn't blocked behind an older op on its messages (a blocked one becomes claimable
  * when its blocker settles, in the same worker pass; counting it would spin a zero-delay timer).
  */
-export function nextOpAttemptAt(db: Db): number | null {
-  return db.get<{ t: number | null }>(`SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ? AND ${NOT_BLOCKED}`, AWAITING_NETWORK)?.t ?? null;
+export function nextOpAttemptAt(db: Db, admission?: OpAdmission): number | null {
+  return db.get<{ t: number | null }>(`SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ? AND ${NOT_BLOCKED}${admission ? ` AND ${ADMITTED}` : ""}`, AWAITING_NETWORK, ...(admission ? admissionParams(admission) : []))?.t ?? null;
 }
 
 /**
@@ -815,4 +824,8 @@ export function deleteDraft(db: Db, id: number, generation?: string): void {
   if (generation === undefined) { db.run("DELETE FROM drafts WHERE id = ?", id); return; }
   const removed = db.run("DELETE FROM drafts WHERE id = ? AND generation = ?", id, generation);
   if (!removed.changes && db.get("SELECT 1 FROM drafts WHERE id = ?", id)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
+}
+
+export function deferOp(db: Db, id: string, now: number, refundClaim: boolean): void {
+  db.run("UPDATE ops SET state = 'queued', attempts = max(attempts - ?, 0), updated_at = ? WHERE id = ? AND state = 'running'", refundClaim ? 1 : 0, now, id);
 }

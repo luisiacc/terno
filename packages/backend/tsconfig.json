@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
   "include": ["src"],
-  "exclude": ["src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts"]
+  "exclude": ["src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts"]
 }

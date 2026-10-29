@@ -1,3 +1,4 @@
+import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
@@ -81,6 +82,7 @@ import {
   restoreMessages,
   awaitAuthOp,
   releaseOp,
+  deferOp,
   changeOwner,
   claimFilterApplications,
   claimOwner,
@@ -183,6 +185,13 @@ export interface IdbMailStoreOptions {
  * revision, otherwise an exact scan; never an incomplete page.
  */
 export class IdbMailStore implements MailStore {
+  private cooldownActions = 0;
+  private cooldownAction<V>(fn: () => Promise<V>): Promise<V> {
+    if (this.cooldownActions >= COOLDOWN_TICKETS) return Promise.reject(new Error("Private cooldown action capacity"));
+    this.cooldownActions++;
+    return Promise.resolve().then(fn).catch(() => { throw new Error("Private cooldown action failed"); }).finally(() => { this.cooldownActions--; });
+  }
+
   readonly capabilities: StoreCapabilities;
   readonly instant: InstantSearch | null;
   private readonly c: Ctx;
@@ -989,7 +998,10 @@ export class IdbMailStore implements MailStore {
   }
 
   readonly ops: MailStore["ops"] = {
-    claimReady: (now, limit) => this.command(() => claimReadyOps(this.c, now, limit), { early: true }),
+    claimReady: async (now, limit, admission) => {
+      const snapshot = admission && copyOpAdmission(admission);
+      return this.command(() => claimReadyOps(this.c, now, limit, snapshot), { early: true });
+    },
     get: (id) => this.early(() => getOp(this.c, id)),
     complete: (id, result, now) =>
       this.preparedFlagOutcome(id, () => {
@@ -1033,7 +1045,14 @@ export class IdbMailStore implements MailStore {
     resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
     resumeNetwork: (accountId, now) => this.command(() => resumeNetworkOps(this.c, accountId, now), { early: true }),
     recover: (now) => this.recoverFlagOperations(now),
-    nextAttemptAt: () => this.read(() => nextOpAttemptAt(this.c)),
+    nextAttemptAt: async (admission) => {
+      const snapshot = admission && copyOpAdmission(admission);
+      return this.read(() => nextOpAttemptAt(this.c, snapshot));
+    },
+    defer: (id, now, o) => {
+      const refund = o.refundClaim;
+      return this.command(() => deferOp(this.c, id, now, refund), { early: true });
+    },
     recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
     resolveUnknown: (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => {
@@ -1469,6 +1488,36 @@ export class IdbMailStore implements MailStore {
       }),
   };
 
+  readonly providerCooldown: MailStore["providerCooldown"] = {
+    read: () => this.cooldownAction(() => this.early(() => { const encoded = getSetting<string | null>(this.c, PROVIDER_COOLDOWN_KEY, null); decodeCooldown(encoded); return encoded; })),
+    update: (fn) => this.cooldownAction(() => this.command(() => {
+      const current = getSetting<string | null>(this.c, PROVIDER_COOLDOWN_KEY, null);
+      decodeCooldown(current);
+      const next = fn(current);
+      if (!next || typeof next !== "object" || "then" in next) throw new Error("Cooldown callback must be synchronous");
+      if (next.result !== null && (typeof next.result === "object" || typeof next.result === "function") && "then" in next.result) throw new Error("Cooldown result must be synchronous");
+      encodeCooldown(decodeCooldown(next.encoded));
+      setSetting(this.c, PROVIDER_COOLDOWN_KEY, next.encoded);
+      return next.result;
+    }, { early: true })),
+    bind: (input, mailboxKey) => {
+      const captured = { ...input };
+      return this.cooldownAction(async () => {
+        const stamp = captured;
+        if (!mailboxKeyValid(mailboxKey)) throw new Error("Invalid private mailbox key");
+        const digest = await mailboxDigest(stamp.email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
+        if (digest !== mailboxKey) return false;
+        return this.command(() => {
+          const account = T(this.c, "accounts").get(stamp.id);
+          if (!account || account.kind !== "gmail" || account.email !== stamp.email || account.created_at !== stamp.createdAt) return false;
+          const next = bindCooldown(getSetting<string | null>(this.c, PROVIDER_COOLDOWN_KEY, null), stamp, digest, mailboxKey);
+          setSetting(this.c, PROVIDER_COOLDOWN_KEY, next);
+          return decodeCooldown(next).bindings.some((b) => b.id === stamp.id && b.createdAt === stamp.createdAt && b.mailboxKey === mailboxKey && b.emailDigest === digest);
+        }, { early: true });
+      });
+    },
+  };
+
   readonly settings: MailStore["settings"] = {
     get: <V,>(key: string, fallback: V) => this.early(() => getSetting(this.c, key, fallback)),
     set: (key, value) => this.command(() => setSetting(this.c, key, value)),
@@ -1529,6 +1578,10 @@ export class IdbMailStore implements MailStore {
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
     if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
+    if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
+      const read = s.setting.bind(s);
+      s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);
+    }
     return s;
   }
 

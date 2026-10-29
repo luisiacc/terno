@@ -6,7 +6,7 @@
  */
 
 import type { Localized } from "@terno/i18n";
-import { ProviderError } from "./types";
+import { ProviderError, type HttpRequestContext } from "./types";
 
 /** The host rejected dispatch before calling its transport; no request could have left. */
 export class RequestNotDispatchedError extends ProviderError {
@@ -71,4 +71,14 @@ const BEFORE_REQUEST = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EAI_F
 export function failedBeforeRequest(error: unknown): boolean {
   for (const e of chain(error)) if (typeof e.code === "string" && BEFORE_REQUEST.has(e.code)) return true;
   return false;
+}
+
+/** Internal local refusal; the stage2 host supplies the localized paused projection. */
+export class ProviderCooldownError extends RequestNotDispatchedError {
+  declare readonly cooldown: Readonly<{ service: HttpRequestContext["endpoint"]; revision: string; kind: string }>;
+  constructor(service: HttpRequestContext["endpoint"], revision: string, kind: string) {
+    super("Provider request paused locally");
+    this.name = "ProviderCooldownError";
+    Object.defineProperty(this, "cooldown", { value: Object.freeze({ service, revision, kind }) });
+  }
 }

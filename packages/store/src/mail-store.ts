@@ -1,3 +1,4 @@
+import type { ProviderCooldownStore, OpAdmission } from "./provider-cooldown";
 import type { AutocompleteSource } from "./autocomplete-source";
 import type {
   AccountPatch,
@@ -291,7 +292,7 @@ export interface MailStore {
   };
 
   ops: {
-    claimReady(now: number, limit: number): Promise<OpRow[]>;
+    claimReady(now: number, limit: number, admission?: OpAdmission): Promise<OpRow[]>;
     get(id: string): Promise<OpRow | null>;
     /** success, including adopting the provider's ids for a sent message */
     complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
@@ -308,7 +309,8 @@ export interface MailStore {
     resumeNetwork(accountId: number | null, now: number): Promise<string[]>;
     recover(now: number): Promise<{ requeued: number; unknown: number }>;
     /** when the next op can actually be claimed (one blocked behind an older op on its messages isn't due) */
-    nextAttemptAt(): Promise<number | null>;
+    nextAttemptAt(admission?: OpAdmission): Promise<number | null>;
+    defer(id: string, now: number, o: { refundClaim: boolean }): Promise<void>;
     recent(limit: number): Promise<OpRow[]>;
     resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] } & FlagReconciliation>;
   };
@@ -454,6 +456,9 @@ export interface MailStore {
     /** the newest message of an account with that Message-ID (any case, with or without <>), for an import */
     findMessage(accountId: number, rfcMessageId: string): Promise<{ id: number; threadId: number } | null>;
   };
+
+  /** Private fixed-key cooldown ledger; never included in ProviderStore or preferences. */
+  providerCooldown: ProviderCooldownStore;
 
   settings: {
     get<T>(key: string, fallback: T): Promise<T>;

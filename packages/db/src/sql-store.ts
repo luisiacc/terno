@@ -1,3 +1,4 @@
+import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
@@ -75,6 +76,7 @@ import {
   addThreadsToCategory,
   awaitAuthOp,
   releaseOp,
+  deferOp,
   claimFilterApplications,
   claimReadyOps,
   completeOp,
@@ -175,6 +177,13 @@ export interface SqlMailStoreOptions {
  * ops, op completion, sends) are here, calling the same functions.
  */
 export class SqlMailStore implements MailStore {
+  private cooldownActions = 0;
+  private cooldownAction<V>(fn: () => Promise<V>): Promise<V> {
+    if (this.cooldownActions >= COOLDOWN_TICKETS) return Promise.reject(new Error("Private cooldown action capacity"));
+    this.cooldownActions++;
+    return Promise.resolve().then(fn).catch(() => { throw new Error("Private cooldown action failed"); }).finally(() => { this.cooldownActions--; });
+  }
+
   readonly capabilities: StoreCapabilities;
   private readonly fts: Fts5SearchEngine;
   private readonly checkpointer: CheckpointWorker | null;
@@ -496,7 +505,7 @@ export class SqlMailStore implements MailStore {
   }
 
   readonly ops: MailStore["ops"] = {
-    claimReady: async (now, limit) => claimReadyOps(this.db, now, limit),
+    claimReady: async (now, limit, admission) => claimReadyOps(this.db, now, limit, undefined, admission && copyOpAdmission(admission)),
     get: async (id) => getOp(this.db, id),
     complete: async (id, result, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
@@ -540,7 +549,8 @@ export class SqlMailStore implements MailStore {
     resumeAuth: async (accountId, now) => this.db.tx(() => resumeAuthOps(this.db, accountId, now)),
     resumeNetwork: async (accountId, now) => this.db.tx(() => resumeNetworkOps(this.db, accountId, now)),
     recover: async (now) => this.recoverFlagOperations(now),
-    nextAttemptAt: async () => nextOpAttemptAt(this.db),
+    nextAttemptAt: async (admission) => nextOpAttemptAt(this.db, admission && copyOpAdmission(admission)),
+    defer: async (id, now, o) => deferOp(this.db, id, now, o.refundClaim),
     recent: async (limit) => listRecentOps(this.db, limit),
     resolveUnknown: async (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
@@ -869,6 +879,37 @@ export class SqlMailStore implements MailStore {
     findMessage: async (accountId, rfc) => findMessageByRef(this.db, accountId, rfc),
   };
 
+  readonly providerCooldown: MailStore["providerCooldown"] = {
+    read: () => this.cooldownAction(async () => { const encoded = getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null); decodeCooldown(encoded); return encoded; }),
+    update: (fn) => this.cooldownAction(async () => this.db.tx(() => {
+      const current = getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null);
+      decodeCooldown(current);
+      const next = fn(current);
+      if (!next || typeof next !== "object" || "then" in next) throw new Error("Cooldown callback must be synchronous");
+      if (next.result !== null && (typeof next.result === "object" || typeof next.result === "function") && "then" in next.result) throw new Error("Cooldown result must be synchronous");
+      encodeCooldown(decodeCooldown(next.encoded));
+      setSetting(this.db, PROVIDER_COOLDOWN_KEY, next.encoded);
+      return next.result;
+    })),
+    bind: (input, mailboxKey) => {
+      const captured = { ...input };
+      return this.cooldownAction(async () => {
+        const stamp = captured;
+        if (!mailboxKeyValid(mailboxKey)) throw new Error("Invalid private mailbox key");
+        const digest = await mailboxDigest(stamp.email, (bytes) => crypto.subtle.digest("SHA-256", bytes));
+        if (digest !== mailboxKey) return false;
+        return this.db.tx(() => {
+          const account = accountStamp(this.db, stamp.id);
+          const kind = this.db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", stamp.id)?.kind;
+          if (!account || kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
+          const next = bindCooldown(getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null), stamp, digest, mailboxKey);
+          setSetting(this.db, PROVIDER_COOLDOWN_KEY, next);
+          return decodeCooldown(next).bindings.some((b) => b.id === stamp.id && b.createdAt === stamp.createdAt && b.mailboxKey === mailboxKey && b.emailDigest === digest);
+        });
+      });
+    },
+  };
+
   readonly settings: MailStore["settings"] = {
     get: async <T>(key: string, fallback: T) => getSetting(this.db, key, fallback),
     set: async (key, value) => setSetting(this.db, key, value),
@@ -916,6 +957,10 @@ export class SqlMailStore implements MailStore {
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
     if (!s) this.providerStores.set(accountId, (s = new SqlProviderStore(this.db, accountId)));
+    if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
+      const read = s.setting.bind(s);
+      s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);
+    }
     return s;
   }
 
