@@ -7,7 +7,8 @@ import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
-import { countThreadScope, progressReporter, resolveThreadScope, UndoJournal } from "./scope";
+import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
+import { SimilarFilters } from "./similar";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
@@ -89,26 +90,65 @@ export function createHandlers(b: Backend): Handlers {
    * per account) per slice. Explicit renderer picks are a learning signal;
    * scope sweeps and agents are not.
    */
-  const actOn = async (threadIds: readonly number[], action: ThreadAction, signal: ReturnType<typeof Backend.learningSignal> | null, progress?: (done: number) => void, alwaysSliced = false) => {
+  const actOn = async (
+    threadIds: readonly number[],
+    action: ThreadAction,
+    signal: ReturnType<typeof Backend.learningSignal> | null,
+    progress?: (done: number) => void,
+    alwaysSliced = false,
+    o: { narrow?: (chunk: number[]) => Promise<number[]>; partialUndo?: boolean } = {},
+  ) => {
     const changed = new Set<number>();
     const before: MessageState[] = [];
     let done = 0;
-    const run = async (chunk: number[]) => {
-      const r = await store.threads.act({ threadIds: chunk, action, signal: signal ?? null, now: b.now() });
+    const run = async (slice: number[]) => {
+      // a sweep re-reads what it may still touch, in the same turn as the act (plan 63: a star added meanwhile wins)
+      const chunk = o.narrow ? await o.narrow(slice) : slice;
+      const r = chunk.length ? await store.threads.act({ threadIds: chunk, action, signal: signal ?? null, now: b.now() }) : { threadIds: [], before: [], opIds: [], flagReconcileAccounts: [] };
       for (const t of r.threadIds) changed.add(t);
       for (const m of r.before) before.push(m);
       b.opsQueued(r.opIds);
       b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
-      progress?.((done += chunk.length));
+      progress?.((done += slice.length));
     };
-    // a handful in one go; more in time-budgeted slices (an action recomputes every thread it touches and writes their ops)
-    if (threadIds.length <= ONE_GO && !alwaysSliced) await run([...threadIds]);
-    else await b.runBudgeted([...threadIds], run);
+    try {
+      // a handful in one go; more in time-budgeted slices (an action recomputes every thread it touches and writes their ops)
+      if (threadIds.length <= ONE_GO && !alwaysSliced) await run([...threadIds]);
+      else await b.runBudgeted([...threadIds], run);
+    } catch (error) {
+      // the slices that committed stay undoable: the error carries their undo
+      if (!o.partialUndo || before.length === 0) throw error;
+      const undoId = undoJournal.remember(before);
+      if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
+      throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId }, { expected: false, cause: error });
+    }
     // what an undo puts back: these messages, exactly as they were
     return { threads: [...changed], undoId: before.length ? undoJournal.remember(before) : null };
   };
   const undoJournal = new UndoJournal();
+  /** Puts these messages back as they were: one store command (transaction, ops per account) per slice, like the action. */
+  const restore = async (before: MessageState[], jobId: string | undefined) => {
+    const progress = progressReporter(b, jobId, before.length);
+    const restored = new Set<number>();
+    let done = 0;
+    progress(0);
+    await b.runBudgeted(
+      before,
+      async (chunk) => {
+        const r = await store.threads.restore({ messages: chunk, now: b.now() });
+        for (const t of r.threadIds) restored.add(t);
+        b.opsQueued(r.opIds);
+        b.reconcileFlags(r.flagReconcileAccounts);
+        b.notifyChanged(r.threadIds);
+        progress((done += chunk.length));
+      },
+      // a message costs less than a thread: a bigger first probe
+      { initial: 16 },
+    );
+    return restored;
+  };
+  const similarFilters = new SimilarFilters(store, () => b.now());
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
 
   return {
@@ -200,27 +240,54 @@ export function createHandlers(b: Backend): Handlers {
     "threads.undo": async ({ undoId, jobId }) => {
       const before = undoJournal.take(undoId);
       if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
-      const progress = progressReporter(b, jobId, before.length);
-      const restored = new Set<number>();
-      let done = 0;
-      progress(0);
-      // like the action: one store command (transaction, ops per account) per slice
-      await b.runBudgeted(
-        before,
-        async (chunk) => {
-          const r = await store.threads.restore({ messages: chunk, now: b.now() });
-          for (const t of r.threadIds) restored.add(t);
-          b.opsQueued(r.opIds);
-          b.reconcileFlags(r.flagReconcileAccounts);
-          b.notifyChanged(r.threadIds);
-          progress((done += chunk.length));
-        },
-        // a message costs less than a thread: a bigger first probe
-        { initial: 16 },
-      );
-      return { restored: restored.size };
+      return { restored: (await restore(before, jobId)).size };
     },
 
+    "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
+    "similar.apply": async ({ threadIds, scope, action, jobId, filterName }) => {
+      const targets = new Set(threadIds);
+      const { ids, skipped } = await store.similar.resolve(scope, action, threadIds);
+      if (ids.length > SCOPE_CAP) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+      const progress = progressReporter(b, jobId, ids.length);
+      progress(0);
+      let late = 0;
+      // a sweep, never a learning signal; what was starred or replied meanwhile stays (the targets don't)
+      const narrow = async (chunk: number[]) => {
+        const kept = new Set(await store.similar.kept(chunk.filter((id) => !targets.has(id))));
+        late += kept.size;
+        return chunk.filter((id) => !kept.has(id));
+      };
+      const r = await actOn(ids, action, null, progress, true, { narrow, partialUndo: true });
+      progress(ids.length);
+      let filter: { id: number; filterUndo: number | null } | null = null;
+      let filterFailed = false;
+      if (action === "spam") {
+        try {
+          const f = await similarFilters.ensure(scope, action, filterName);
+          filter = { id: f.filter.id, filterUndo: f.filterUndo };
+        } catch (error) {
+          // the mail moved and stays undoable: the result says the filter is missing
+          filterFailed = true;
+          b.log("warn", "similar filter failed", error instanceof Error ? error.message : error);
+        }
+      }
+      return { affected: r.threads.length, skipped: Math.min(skipped + late, COUNT_CAP), undoId: r.undoId, filter, filterFailed };
+    },
+    "similar.always": ({ scope, action, filterName }) => similarFilters.ensure(scope, action, filterName),
+    "similar.undo": async ({ undoId, filterUndo, jobId }) => {
+      // the filter first: no new mail is caught while the threads come back
+      if (filterUndo !== null) await similarFilters.undo(filterUndo);
+      if (undoId === null) return { restored: 0 };
+      const before = undoJournal.take(undoId);
+      if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
+      try {
+        return { restored: (await restore(before, jobId)).size };
+      } catch (error) {
+        // restoring is idempotent: a retry repeats all of it
+        undoJournal.putBack(undoId, before);
+        throw error;
+      }
+    },
     "categories.create": async ({ name, color }) => {
       const c = await store.categories.create(name, color);
       b.server.emit("categories", await store.categories.list());

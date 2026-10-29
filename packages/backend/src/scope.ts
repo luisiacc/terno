@@ -101,6 +101,12 @@ export class UndoJournal {
     return id;
   }
 
+  /** An undo that failed partway goes back under its id: restoring is idempotent, so a retry repeats all of it. */
+  putBack(id: number, before: MessageState[]): void {
+    this.entries.set(id, before);
+    while (this.entries.size > 16) this.entries.delete(this.entries.keys().next().value as number);
+  }
+
   /** One-shot: an undo is taken out of the journal as it starts. */
   take(id: number): MessageState[] | null {
     const e = this.entries.get(id) ?? null;
