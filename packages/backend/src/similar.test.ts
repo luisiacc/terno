@@ -210,4 +210,22 @@ describe("similar.apply", () => {
     await client.call("threads.undo", { undoId: acted.undoId! });
     expect(inInbox(db, starred)).toEqual(Array(12).fill(1));
   });
+
+  it("threads unstarred between pages move and stop counting as skipped; those still starred are all counted", async () => {
+    // 2,001 starred threads read in the first page, unstarred before their second message is read; 5 more stay starred
+    const { backend, db, client, acct } = await setup({ similarPage: 2006 });
+    const from = { name: "Uber", email: "receipts@uber.com" };
+    await ingest(backend.store, Array.from({ length: 2001 }, (_, i) => msg({ accountId: acct, providerThreadId: `x${i}`, from, isStarred: true, date: NOW - 3_000_000 + i })));
+    await ingest(backend.store, Array.from({ length: 5 }, (_, i) => msg({ accountId: acct, providerThreadId: `s${i}`, from, isStarred: true, date: NOW - 900_000 + i })));
+    await ingest(backend.store, Array.from({ length: 2001 }, (_, i) => msg({ accountId: acct, providerThreadId: `x${i}`, from, date: NOW - 800_000 + i })));
+    const unstarred = db.all<{ id: number }>("SELECT id FROM threads WHERE provider_thread_id LIKE 'x%'").map((r) => r.id);
+    const resolvePage = backend.store.similar.resolvePage.bind(backend.store.similar);
+    backend.store.similar.resolvePage = async (scope, action, targets, cursor, limit) => {
+      // between the first page and the second
+      if (cursor !== null) db.run(`UPDATE threads SET is_starred = 0 WHERE id IN (${unstarred.join(",")})`);
+      return resolvePage(scope, action, targets, cursor, limit);
+    };
+    const r = await client.call("similar.apply", { threadIds: [], scope: sender, action: "archive" });
+    expect(r).toMatchObject({ affected: 2001, skipped: 5 });
+  });
 });

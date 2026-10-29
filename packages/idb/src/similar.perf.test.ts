@@ -78,6 +78,6 @@ it("one sender sent everything: offers (dominant, nothing in place) and a sweep'
     cursor = s.result.next;
   }
   expect(pages.length).toBeGreaterThan(15);
-  const late = [...pages.slice(-5)].sort((a, b) => a - b);
+  const late = pages.slice(-5).sort((a, b) => a - b);
   expect(late[2]!, `late pages ${pages.slice(-5).map((ms) => ms.toFixed(2)).join(", ")}`).toBeLessThanOrEqual(FRAME * MULT);
 });

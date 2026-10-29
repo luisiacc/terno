@@ -263,21 +263,23 @@ export function createHandlers(b: Backend): Handlers {
       // resolved once, in pages of the scope's messages with a turn between them, refused as soon as it passes the cap;
       // one sweep resolves at a time (a store keeps a few walks between pages: sweeps never crowd out each other's)
       const { ids, skipped } = await resolving(async () => {
+        const cap = b.options.similarCap ?? SCOPE_CAP;
         const found = new Set<number>();
-        // the valued threads left out: counted up to what is ever said (the rest needn't be held)
+        // the valued threads left out, and only those (one found later, unstarred meanwhile, leaves it): bounded like the scope
         const left = new Set<number>();
         for (let cursor: number | null = null; ; ) {
           const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
-          for (const id of page.ids) found.add(id);
-          for (const id of page.kept) if (left.size <= 2 * COUNT_CAP) left.add(id);
-          if (found.size > (b.options.similarCap ?? SCOPE_CAP)) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+          for (const id of page.ids) {
+            found.add(id);
+            left.delete(id);
+          }
+          for (const id of page.kept) if (!found.has(id) && left.size <= cap + COUNT_CAP) left.add(id);
+          if (found.size > cap) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
           if (page.next === null) break;
           cursor = page.next;
           await b.yieldTurn();
         }
-        let skipped = 0;
-        for (const id of left) if (!found.has(id)) skipped++;
-        return { ids: [...found], skipped };
+        return { ids: [...found], skipped: left.size };
       });
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
