@@ -134,3 +134,6 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
 
 **Round 2.** Codex found one more problem (an earlier attempt hit "model at capacity" and was rerun):
 4. **Creating a category with the sidebar's "+" kept the account filter,** so the new category opened scoped to the account while its row wasn't selected. The sidebar's "+" now opens it for all accounts; the tab bar's "+" keeps the account, like the tabs. Tests: unit and e2e.
+
+**Round 3.** Codex found one more problem (the first attempt hit "model at capacity" again and was rerun):
+5. **A background account update could pull focus back to the sidebar.** The last focused account was remembered after focus left on purpose. Focus that leaves is now forgotten once the next frame shows the row is still in the page, and recovery runs only when rows actually went away (an account removed, or two accounts down to one). Test: e2e, with the account's IDs unchanged and an account update.

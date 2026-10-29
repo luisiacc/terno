@@ -218,6 +218,17 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await expect(row(page, ids[0]!)).toBeFocused();
   });
 
+  test("an account update after focus left the sidebar never pulls focus back (Codex R3)", async ({ app: page, server }) => {
+    const [a] = await accountIds(page);
+    await row(page, a!).focus();
+    // focus leaves on purpose (what a click on something that takes no focus does)
+    await row(page, a!).evaluate((el) => (el as HTMLElement).blur());
+    await expect(row(page, a!)).not.toBeFocused();
+    await server.backend.server.invoke("accounts.update", { id: a!, displayName: "Renamed" }, ctx);
+    await expect(row(page, a!)).toContainText("Renamed");
+    await expect(row(page, a!)).not.toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`axe with an account open, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

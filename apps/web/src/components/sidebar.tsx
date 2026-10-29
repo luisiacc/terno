@@ -400,12 +400,23 @@ export function Sidebar() {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-account-id]")?.dataset.accountId;
     focusedAccount.current = id ? Number(id) : null;
   };
+  // focus that leaves on purpose (a click elsewhere, Tab away) is forgotten; a row removed under it isn't: by the
+  // next frame the removal's own recovery has run, and a row still in the page is one that was left (Codex R3)
+  const forgetFocus = (e: React.FocusEvent) => {
+    const left = e.target as HTMLElement;
+    requestAnimationFrame(() => {
+      if (left.isConnected && !accountsRef.current?.contains(document.activeElement)) focusedAccount.current = null;
+    });
+  };
   const lastAccounts = useRef(accounts);
   useLayoutEffect(() => {
     const before = lastAccounts.current;
     lastAccounts.current = accounts;
     const gone = focusedAccount.current;
     if (gone === null || (document.activeElement && document.activeElement !== document.body)) return;
+    // only when rows went away: an account removed, or the folders of the one that stays (two to one)
+    const removed = before.some((b) => !accounts.some((a) => a.id === b.id));
+    if (!removed) return;
     // still here, its folders gone with the other accounts (two to one): its row
     if (accounts.some((a) => a.id === gone)) return accountsRef.current?.querySelector<HTMLElement>(`[data-testid="nav-account-${gone}"]`)?.focus({ preventScroll: true });
     focusedAccount.current = null;
@@ -512,7 +523,7 @@ export function Sidebar() {
           {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
 
           <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
-          <div ref={accountsRef} onFocus={rememberFocus}>
+          <div ref={accountsRef} onFocus={rememberFocus} onBlur={forgetFocus}>
             {accounts.map((a) => {
               // with one account its folders would be the top ones: it lists none, and its row just scopes to it
               const open = accounts.length > 1 && openAccount === a.id;
