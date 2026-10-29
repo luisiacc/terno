@@ -716,7 +716,9 @@ test("a hovered row next to the selected one: a hairline between their fills, th
       return { top: r.top, height: r.height, paintTop: r.top + parseFloat(s.borderTopWidth), paintBottom: r.bottom - parseFloat(s.borderBottomWidth), clip: s.backgroundClip, bg: s.backgroundColor, navH: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--nav-h")) * parseFloat(getComputedStyle(document.documentElement).fontSize) };
     });
   const [a, b] = [await fill(selected), await fill(hovered)];
-  expect(b.bg).toBe(a.bg); // both filled: the case the seam is for
+  // both filled, the case the seam is for; hover a step softer than selected (plan 63)
+  expect([a.bg, b.bg]).not.toContain("rgba(0, 0, 0, 0)");
+  expect(b.bg).not.toBe(a.bg);
   expect(a.clip).toBe("padding-box");
   expect(b.paintTop - a.paintBottom).toBeGreaterThanOrEqual(1);
   // the spacing stays: rows still touch, at the design's height
