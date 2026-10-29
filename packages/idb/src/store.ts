@@ -1308,7 +1308,7 @@ export class IdbMailStore implements MailStore {
   readonly similar: MailStore["similar"] = {
     // the message indexes (late tables) must be in
     offers: (threadIds, action) => this.read(() => similarOffers(this.c, threadIds, action)),
-    resolvePage: (scope, action, targets, before, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, before, limit)),
+    resolvePage: (scope, action, targets, cursor, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, cursor, limit)),
     kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
   };
 

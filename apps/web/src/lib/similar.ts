@@ -8,7 +8,7 @@ import { setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { leaveList, trackJob, undoAction } from "~/lib/actions";
 
-export { visibleOffers } from "./similar-offers";
+export { shownCount, visibleOffers } from "./similar-offers";
 
 /** What a scope is called, in chips, menus and results. */
 export function scopeLabel(scope: SimilarScope, senderName: string | null): string {

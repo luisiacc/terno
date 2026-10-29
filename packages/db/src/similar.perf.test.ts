@@ -60,6 +60,19 @@ it("one sender sent everything: offers stay within a frame (dominant, rare subje
   const rare = { kind: "subject", email: "bot@notify.example", subject: "nothing has this subject" } as const;
   await gate("resolve page, rare subject", 8, () => store.similar.resolvePage(rare, "spam", [], null, 2000));
   await gate("resolve page, dominant sender", 8, () => store.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], null, 2000));
+  // every page of the whole sweep, the last ones too: each seeks its cursor, none rereads what came before
+  const pages: number[] = [];
+  for (let cursor: number | null = null; ; ) {
+    const started = performance.now();
+    const p = await store.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], cursor, 2000);
+    pages.push(performance.now() - started);
+    if (p.next === null) break;
+    cursor = p.next;
+  }
+  meta.sweepPages = pages.length;
+  expect(pages.length).toBeGreaterThan(15);
+  const late = pages.slice(-5);
+  expect(Math.max(...late), `late pages ${late.map((ms) => ms.toFixed(2)).join(", ")}`).toBeLessThanOrEqual(8 * BUDGET_MULTIPLIER);
   store.db.run("UPDATE threads SET in_inbox = 0");
   await gate("offers dominant, nothing in the inbox", 16, () => store.similar.offers([busiest.threadId], "archive"));
 });

@@ -18,8 +18,12 @@ describe("similar chips (plan 63)", () => {
     expect(visibleOffers("trash", [offer("sender", 0), offer("subject", 0)])).toEqual([]);
     // the subject stays even when it holds all of the sender's mail: it is the narrower choice
     expect(visibleOffers("archive", [offer("sender", 4), offer("subject", 4)]).map((o) => o.scope.kind)).toEqual(["sender", "subject"]);
-    // capped counts are only equal when both are capped
     expect(visibleOffers("archive", [offer("sender", 1000, true), offer("domain", 1000, false)]).map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
+  });
+
+  it("a scope read in part is kept even at 0, and never hidden as the sender's equal", () => {
+    expect(visibleOffers("archive", [offer("sender", 0, true), offer("domain", 0, true)]).map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
+    expect(visibleOffers("archive", [offer("sender", 40, true), offer("domain", 40, true)]).map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
   });
 
   it("spam: every scope, even with nothing now (each catches future mail)", () => {

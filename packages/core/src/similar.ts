@@ -27,7 +27,7 @@ export interface SimilarOffer {
   skipped: number;
 }
 
-/** One page of a sweep's scope: threads to act on, valued ones left out, and where the next page starts (null: done). */
+/** One page of a sweep's scope: threads to act on, valued ones left out, and the store's cursor for the next page (null: done). */
 export interface SimilarPage {
   ids: number[];
   /** starred or replied threads (not targets) the sweep leaves */

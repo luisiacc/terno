@@ -106,7 +106,7 @@ describe("similar.apply", () => {
     const { backend, db, client, thread } = await setup();
     const ids: number[] = [];
     for (let i = 0; i < 60; i++) ids.push(await thread());
-    const late = ids[0]!; // oldest: the last slice
+    const late = ids[ids.length - 1]!; // newest: the last slice (a sweep walks oldest first)
     const act = backend.store.threads.act.bind(backend.store.threads);
     let first = true;
     backend.store.threads.act = async (c) => {

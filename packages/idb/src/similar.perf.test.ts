@@ -69,4 +69,15 @@ it("one sender sent everything: offers (dominant, nothing in place) and a sweep'
   expect(rare, `rare subject page: ${rare.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
   const page = await timed(() => dominant.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], null, 2000));
   expect(page, `dominant page: ${page.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  // every page of the whole sweep: a later one reads on from the last (no reread of the bucket), the last ones as quick as the first
+  const pages: number[] = [];
+  for (let cursor: number | null = null; ; ) {
+    const s = await sampleAsync(() => dominant.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], cursor, 2000));
+    pages.push(s.cpu);
+    if (s.result.next === null) break;
+    cursor = s.result.next;
+  }
+  expect(pages.length).toBeGreaterThan(15);
+  const late = [...pages.slice(-5)].sort((a, b) => a - b);
+  expect(late[2]!, `late pages ${pages.slice(-5).map((ms) => ms.toFixed(2)).join(", ")}`).toBeLessThanOrEqual(FRAME * MULT);
 });

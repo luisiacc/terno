@@ -2,7 +2,7 @@ import type { SimilarAction, SimilarOffer, SimilarOffers } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useEffect } from "react";
 import { said } from "~/lib/actions";
-import { applySimilar, scopeLabel, visibleOffers } from "~/lib/similar";
+import { applySimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { dismissSnack, snack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
 import { setApp } from "~/state/app";
 import { Chip, snackbarControls, Strip } from "./category-snackbar";
@@ -80,7 +80,7 @@ function SimilarSnackbar({ id, action, count, offers, undo }: Shown & { id: stri
             testId={`similar-${o.scope.kind}`}
             label={scopeLabel(o.scope, offers.senderName)}
             title={o.scope.kind === "subject" ? o.scope.subject : undefined}
-            count={action === "spam" && o.count === 0 ? undefined : o}
+            count={shownCount(o)}
             onClick={() => run(o)}
           />
         ))}

@@ -167,3 +167,11 @@ The first round (`ff2417a0..3121638c`) found five issues. Each is fixed with a t
    - **Tests:** conformance pages that stop after `limit` messages, and perf gates at 50k for one sender that sent every message (dominant, rare subject, nothing in place), in both stores.
 4. **Resolve read everything before checking the cap.** The store now has `resolvePage`, newest messages first, in pages of 2,000 messages. The handler yields between pages and refuses as soon as the scope passes the cap. Test: `similar.test.ts`, which refuses after three pages of four and moves nothing.
 5. **Equal counts hid the subject chip.** Only domain and list hide when they hold no more than the sender. The subject is the narrower choice, and Always makes it a filter of its own.
+
+Round 2 (`3121638c..`) found three more issues, each fixed with a test that fails without the fix:
+
+1. **IndexedDB pages still read the whole index bucket** and sorted it. The in-memory index keeps no id order: an update re-adds a row at the end of its bucket. So a sweep now walks the index live (`keysBy`), and the cursor is a token for that walk, kept between pages (8 at most). A lost token starts the walk over; the backend's sets keep each thread once. Test: `packages/idb/src/similar.test.ts` counts index entries walked across pages, 10 now against 40 before.
+2. **SQLite's `(? IS NULL OR m.id < ?)` hid the cursor from the index.** Later pages reread everything before them. Pages now go in message order, with `m.id > ?` only on later pages. Test: `packages/db/src/similar.test.ts` asserts the query plan is `(from_email=? AND rowid>?)` with no temp B-tree. Both perf gates time every page of a full sweep at 50k, the last ones included.
+3. **A capped zero isn't proof that nothing is left.**
+   - A scope read in part stays offered even at 0, shown without a count.
+   - Domain and list hide as the sender's equal only when neither count is partial.

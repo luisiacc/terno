@@ -51,7 +51,7 @@ import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
 import { applyScope, formatCount } from "./category-snackbar";
-import { actSimilar, scopeLabel, visibleOffers } from "~/lib/similar";
+import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { client } from "~/rpc/connection";
 import { listScroller } from "./thread-list";
 
@@ -285,7 +285,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
         shown.map((o, i) => (
           <ContextMenuItem key={o.scope.kind} ref={i === 0 ? first : undefined} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
             <span className="min-w-0 flex-1 truncate">{scopeLabel(o.scope, offers.senderName)}</span>
-            <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{formatCount(o)}</ContextMenuShortcut>
+            <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{shownCount(o) ? formatCount(o) : ""}</ContextMenuShortcut>
           </ContextMenuItem>
         ))
       )}

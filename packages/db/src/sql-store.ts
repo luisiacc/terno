@@ -775,7 +775,7 @@ export class SqlMailStore implements MailStore {
 
   readonly similar: MailStore["similar"] = {
     offers: async (threadIds, action) => similarOffers(this.db, threadIds, action),
-    resolvePage: async (scope, action, targets, before, limit) => resolveSimilarPage(this.db, scope, action, targets, before, limit),
+    resolvePage: async (scope, action, targets, cursor, limit) => resolveSimilarPage(this.db, scope, action, targets, cursor, limit),
     kept: async (threadIds) => keptThreads(this.db, threadIds),
   };
 

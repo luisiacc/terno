@@ -1285,7 +1285,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await resolveAll(store, { kind: "subject", email: "receipts@uber.com", subject: "your RECEIPT" }, "archive", [])).ids).toEqual([a]);
         expect((await resolveAll(store, { kind: "domain", domain: "uber.com" }, "archive", [])).ids).toEqual(sorted([a, b, other, padded]));
         // a page examines `limit` messages whatever they hold: a rare subject or nothing left in place never walks the whole sender
-        const rare = await store.similar.resolvePage({ kind: "subject", email: "receipts@uber.com", subject: "Your trip" }, "archive", [], null, 2);
+        const rare = await store.similar.resolvePage({ kind: "subject", email: "receipts@uber.com", subject: "Nothing has this" }, "archive", [], null, 2);
         expect(rare).toEqual({ ids: [], kept: [], next: expect.any(Number) });
         const done = await store.similar.resolvePage({ kind: "sender", email: "receipts@uber.com" }, "trash", [], null, 1);
         expect(done.next).toEqual(expect.any(Number));

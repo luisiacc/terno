@@ -9,40 +9,66 @@ function inPlace(t: R | undefined, action: SimilarAction): t is R {
 }
 /** Mail the user values: never swept along (an explicit target still is acted on). */
 const kept = (t: R) => t.is_starred === 1 || t.has_sent === 1;
-/** An offer reads at most this many of the scope's newest messages (as SQLite's). */
+/** An offer reads at most this many of the scope's messages (as SQLite's). */
 export const OFFER_SCAN = 2000;
 
-/** The scope's index bucket: message ids, newest first, below `before`, at most `limit` (one pass and a numeric sort; no row is read). */
-function newest(c: Ctx, scope: SimilarScope, before: number | null, limit: number): Float64Array {
+/**
+ * A sweep's walks of the index, kept between its pages under a token (the
+ * cursor): a page reads on from where the last stopped, never rereads the
+ * bucket. The index's order isn't the ids' (an update re-adds a row at the
+ * end), so the walk itself is the cursor. A token gone (a few sweeps at
+ * once) starts the walk over: the backend's sets keep each thread once.
+ */
+const walks = new WeakMap<object, Map<number, Iterator<unknown>>>();
+const WALKS_KEPT = 8;
+let tokens = 0;
+
+function walkOf(c: Ctx, scope: SimilarScope, cursor: number | null): Iterator<unknown> {
+  const messages = T(c, "messages");
+  const kept = walks.get(messages);
+  const going = cursor === null ? undefined : kept?.get(cursor);
+  if (going) {
+    kept!.delete(cursor!);
+    return going;
+  }
   const [index, value] =
     scope.kind === "domain" ? ["domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
     : scope.kind === "list" ? ["list", normalizeText(scope.listId.trim())]
     : ["from", normalizeText(scope.email.trim())];
-  const bucket = T(c, "messages").bucket(index, value);
-  if (!bucket) return new Float64Array(0);
-  const ids = new Float64Array(bucket.size);
-  let n = 0;
-  for (const k of bucket) if (before === null || (k as number) < before) ids[n++] = k as number;
-  return ids.subarray(0, n).sort().reverse().subarray(0, limit);
+  return messages.keysBy(index, value);
 }
 
-/** One page, folded into threads: those to act on and the valued ones left out (every row past the index is checked, never skipped by the walk). */
-function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, before: number | null, limit: number): SimilarPage {
+function keepWalk(c: Ctx, walk: Iterator<unknown>): number {
+  const messages = T(c, "messages");
+  let kept = walks.get(messages);
+  if (!kept) walks.set(messages, (kept = new Map()));
+  const token = ++tokens;
+  kept.set(token, walk);
+  while (kept.size > WALKS_KEPT) kept.delete(kept.keys().next().value as number);
+  return token;
+}
+
+/** One page, folded into threads: at most `limit` index entries, each checked (subject, own addresses, place, value), never skipped by the walk. */
+function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, cursor: number | null, limit: number, keep = true): SimilarPage {
   const messages = T(c, "messages");
   const threads = T(c, "threads");
   const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
-  const keys = newest(c, scope, before, limit);
+  const walk = walkOf(c, scope, cursor);
   const ids = new Set<number>();
   const left = new Set<number>();
-  for (const key of keys) {
-    const m = messages.get(key);
+  let read = 0;
+  for (; read < limit; read++) {
+    const step = walk.next();
+    if (step.done) return { ids: [...ids], kept: [...left], next: null };
+    const m = messages.get(step.value as number);
     if (!m || m.is_sent || own.emails.has(m.from_email) || (subject !== null && m.subject_norm !== subject)) continue;
     const t = threads.get(m.thread_id);
     if (!inPlace(t, action)) continue;
     if (kept(t) && !targets.has(t.id)) left.add(t.id);
     else ids.add(t.id);
   }
-  return { ids: [...ids], kept: [...left], next: keys.length === limit ? keys[keys.length - 1]! : null };
+  // an offer only needs to know there is more: it keeps no walk (a sweep's would be crowded out)
+  return { ids: [...ids], kept: [...left], next: keep ? keepWalk(c, walk) : 0 };
 }
 
 const placedOf = (c: Ctx, ids: readonly number[], action: SimilarAction) => {
@@ -51,9 +77,9 @@ const placedOf = (c: Ctx, ids: readonly number[], action: SimilarAction) => {
 };
 
 /** One page of what a sweep acts on (the first also holds the targets still in place). */
-export function resolveSimilarPage(c: Ctx, scope: SimilarScope, action: SimilarAction, targets: readonly number[], before: number | null, limit: number): SimilarPage {
-  const p = page(c, scope, action, ownAddresses(c), new Set(targets), before, limit);
-  return before === null ? { ...p, ids: [...new Set([...placedOf(c, targets, action), ...p.ids])] } : p;
+export function resolveSimilarPage(c: Ctx, scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): SimilarPage {
+  const p = page(c, scope, action, ownAddresses(c), new Set(targets), cursor, limit);
+  return cursor === null ? { ...p, ids: [...new Set([...placedOf(c, targets, action), ...p.ids])] } : p;
 }
 
 export function keptThreads(c: Ctx, threadIds: readonly number[]): number[] {
@@ -88,7 +114,7 @@ export function similarOffers(c: Ctx, threadIds: readonly number[], action: Simi
   return {
     senderName: scopes[0]?.kind === "sender" ? roots[0]!.from_name || roots[0]!.from_email : null,
     offers: scopes.map((scope) => {
-      const p = page(c, scope, action, own, explicit, null, OFFER_SCAN);
+      const p = page(c, scope, action, own, explicit, null, OFFER_SCAN, false);
       const n = new Set([...placed, ...p.ids]).size;
       return { scope, count: Math.min(n, COUNT_CAP), capped: p.next !== null || n > COUNT_CAP, skipped: Math.min(p.kept.length, COUNT_CAP) };
     }),

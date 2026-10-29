@@ -251,13 +251,13 @@ export function createHandlers(b: Backend): Handlers {
       // resolved once, in pages of the scope's messages with a turn between them; refused as soon as it passes the cap
       const found = new Set<number>();
       const left = new Set<number>();
-      for (let before: number | null = null; ; ) {
-        const page = await store.similar.resolvePage(scope, action, threadIds, before, b.options.similarPage ?? SIMILAR_PAGE);
+      for (let cursor: number | null = null; ; ) {
+        const page = await store.similar.resolvePage(scope, action, threadIds, cursor, b.options.similarPage ?? SIMILAR_PAGE);
         for (const id of page.ids) found.add(id);
         for (const id of page.kept) left.add(id);
         if (found.size > (b.options.similarCap ?? SCOPE_CAP)) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
         if (page.next === null) break;
-        before = page.next;
+        cursor = page.next;
         await b.yieldTurn();
       }
       const ids = [...found];
