@@ -235,6 +235,7 @@ export class ScopeIndex {
         }
         // an order being built from rows that just changed starts over
         this.folderBuilds.delete(key);
+        this.folderBuilds.delete(`u:${key}`);
         const unread = this.folderUnread.get(key);
         const was = prev?.unread ? { date: prev.last_date as number, id: prev.thread_id as number } : null;
         const is = row?.unread ? { date: row.last_date as number, id: row.thread_id as number } : null;
@@ -323,18 +324,23 @@ export class ScopeIndex {
       };
       setTimeout(go, 0);
     }
-    // (a read gives it a millisecond: a small folder's order is done at once, a big one's goes on in the background)
-    return this.advance(at, steps, 1) ? this.folderDates.get(at)!.order : null;
+    // (a read gives a small folder a millisecond, done at once; a big one's goes on in the background alone, the read
+    // selecting its page)
+    return this.advance(at, steps, readBudget(c, "folder", accountId, key)) ? this.folderDates.get(at)!.order : null;
   }
 
   /** a build's steps for a few milliseconds; true once its order is kept */
   private advance(at: string, steps: Generator<void, Dated[], void>, budgetMs: number): boolean {
+    return this.advanceInto(this.folderDates, at, at, steps, budgetMs);
+  }
+
+  private advanceInto(into: Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>, build: string, at: string, steps: Generator<void, Dated[], void>, budgetMs: number): boolean {
     const until = performance.now() + budgetMs;
     for (;;) {
       const r = steps.next();
       if (r.done) {
-        this.folderBuilds.delete(at);
-        this.folderDates.set(at, { order: r.value, changes: [] });
+        this.folderBuilds.delete(build);
+        into.set(at, { order: r.value, changes: [] });
         return true;
       }
       if (performance.now() >= until) return false;
@@ -342,31 +348,27 @@ export class ScopeIndex {
   }
 
   /** plan 65 (Codex R12): a folder's unread member thread ids, newest first: sorted once, then kept as they change */
-  folderUnreadByDate(c: Ctx, accountId: number, key: string): readonly Dated[] {
+  folderUnreadByDate(c: Ctx, accountId: number, key: string): readonly Dated[] | null {
     const at = `${accountId}:${key}`;
-    let cached = this.folderUnread.get(at);
-    if (!cached) {
-      const memberships = T(c, "thread_folders");
-      const order: Dated[] = [];
-      for (const k of memberships.keysBy("unread", accountId, key)) {
-        const r = memberships.rows.get(k)!;
-        order.push({ date: r.last_date as number, id: r.thread_id as number });
-      }
-      order.sort(newestFirst);
-      this.folderUnread.set(at, (cached = { order, changes: [] }));
+    const cached = this.folderUnread.get(at);
+    if (cached) {
+      applyDated(cached);
+      return cached.order;
     }
-    for (const { was, is } of cached.changes) {
-      if (was) {
-        const i = datedPlace(cached.order, was);
-        if (cached.order[i]?.id === was.id) cached.order.splice(i, 1);
-      }
-      if (is) {
-        const i = datedPlace(cached.order, is);
-        if (cached.order[i]?.id !== is.id) cached.order.splice(i, 0, is);
-      }
+    // built like the folder's own order, a step at a time (Codex R49: sorted whole on the first Unread page)
+    const build = `u:${at}`;
+    let steps = this.folderBuilds.get(build);
+    if (!steps) {
+      steps = datedSteps(c, accountId, key, "unread");
+      this.folderBuilds.set(build, steps);
+      const mine = steps;
+      const go = () => {
+        if (this.folderBuilds.get(build) !== mine) return;
+        if (!this.advanceInto(this.folderUnread, build, at, mine, 4)) setTimeout(go, 0);
+      };
+      setTimeout(go, 0);
     }
-    cached.changes.length = 0;
-    return cached.order;
+    return this.advanceInto(this.folderUnread, build, at, steps, readBudget(c, "unread", accountId, key)) ? this.folderUnread.get(at)!.order : null;
   }
 
   /** a category's member thread ids, ascending */
@@ -378,6 +380,11 @@ export class ScopeIndex {
     }
     return ids;
   }
+}
+
+/** what a read gives a folder's order build: a millisecond for a small one, nothing for a big one (its page is selected) */
+function readBudget(c: Ctx, index: "folder" | "unread", accountId: number, key: string): number {
+  return (T(c, "thread_folders").bucket(index, accountId, key)?.size ?? 0) > 20_000 ? 0 : 1;
 }
 
 /** a kept order's changes placed by binary search */
@@ -396,10 +403,10 @@ function applyDated(cached: { order: Dated[]; changes: { was: Dated | null; is: 
 }
 
 /** a folder's members newest first, a step at a time: read out, then merge-sorted, a pause every few thousand */
-function* datedSteps(c: Ctx, accountId: number, key: string): Generator<void, Dated[], void> {
+function* datedSteps(c: Ctx, accountId: number, key: string, index: "folder" | "unread" = "folder"): Generator<void, Dated[], void> {
   const memberships = T(c, "thread_folders");
   let items: Dated[] = [];
-  for (const k of memberships.keysBy("folder", accountId, key)) {
+  for (const k of memberships.keysBy(index, accountId, key)) {
     const r = memberships.rows.get(k)!;
     items.push({ date: r.last_date as number, id: r.thread_id as number });
     if (items.length % 5000 === 0) yield;

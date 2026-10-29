@@ -274,6 +274,53 @@ export async function partitionKnown<K extends { uid: number }>(known: readonly 
   return { byUid, gone, stillThere };
 }
 
+/**
+ * Messages that may have lost places: their flags from the places left, and the ones with none (orphans: a local
+ * optimistic send with no server copy yet is kept) removed unless `keepOrphans`. A chunk of 500 at a time, its flag
+ * updates sent with it and the loop given a turn between chunks (plan 65, Codex R49: 50,000 at once, 64 ms, every
+ * update in one batch).
+ */
+export async function reconcileMessages(
+  messageIds: Iterable<number>,
+  deps: {
+    of(ids: number[]): Promise<readonly { message_id: number; mailbox: string; flags: string }[]>;
+    providerIds(ids: number[]): Promise<ReadonlyMap<number, string | null>>;
+    state(locs: { mailbox: string; flags: string }[]): FlagUpdate["flags"];
+    updateFlags(updates: FlagUpdate[]): Promise<void>;
+    removeMessages(ids: number[]): Promise<void>;
+  },
+  keepOrphans = false,
+): Promise<number[]> {
+  const ids = [...messageIds];
+  if (ids.length === 0) return [];
+  const orphans: number[] = [];
+  const breathe = breather();
+  for (let i = 0; i < ids.length; i += 500) {
+    const updates: FlagUpdate[] = [];
+    const chunk = ids.slice(i, i + 500);
+    const rows = await deps.of(chunk);
+    const byMessage = new Map<number, { mailbox: string; flags: string }[]>();
+    for (const r of rows) {
+      const list = byMessage.get(r.message_id);
+      if (list) list.push(r);
+      else byMessage.set(r.message_id, [r]);
+    }
+    const providerIds = await deps.providerIds(chunk);
+    for (const id of chunk) {
+      const locs = byMessage.get(id);
+      if (!locs) {
+        if (providerIds.has(id) && !providerIds.get(id)?.startsWith("local:")) orphans.push(id);
+        continue;
+      }
+      updates.push({ messageId: id, flags: deps.state(locs) });
+    }
+    if (updates.length) await deps.updateFlags(updates);
+    await breathe();
+  }
+  if (orphans.length && !keepOrphans) await deps.removeMessages(orphans);
+  return orphans;
+}
+
 /** Plan 65 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
 export async function addAll(target: Set<number>, ids: Iterable<number>): Promise<void> {
   const breathe = breather();
@@ -629,29 +676,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** `keepOrphans` (plan 65, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
   async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false): Promise<number[]> {
-    if (messageIds.size === 0) return [];
-    const ids = [...messageIds];
-    const updates: FlagUpdate[] = [];
-    const orphans: number[] = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      const rows = await locations.of(chunk);
-      const byMessage = new Map<number, { mailbox: string; flags: string }[]>();
-      for (const r of rows) byMessage.set(r.message_id, [...(byMessage.get(r.message_id) ?? []), r]);
-      const providerIds = await store.providerIds(chunk);
-      for (const id of chunk) {
-        const locs = byMessage.get(id);
-        // a local optimistic send (no server copy yet) has no locations: keep it
-        if (!locs) {
-          if (providerIds.has(id) && !providerIds.get(id)?.startsWith("local:")) orphans.push(id);
-          continue;
-        }
-        updates.push({ messageId: id, flags: stateFromLocations(locs) });
-      }
-    }
-    if (updates.length) await sink.updateFlags(updates);
-    if (orphans.length && !keepOrphans) await sink.removeMessages(orphans);
-    return orphans;
+    return reconcileMessages(messageIds, { of: (ids) => locations.of(ids), providerIds: (ids) => store.providerIds(ids), state: stateFromLocations, updateFlags: (u) => sink.updateFlags(u), removeMessages: (ids) => sink.removeMessages(ids) }, keepOrphans);
   }
 
   /** Plan 65 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */

@@ -240,10 +240,12 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   const listed = T(c, "folders").has(p.accountId, p.folder);
   // the "Unread" filter walks the folder's unread memberships alone, by date (Codex R11: an all-read folder walked
   // whole), kept sorted across pages (Codex R12: never re-sorted per page)
-  const unread = listed && listFilterOf(p) === "unread" ? c.scopes.folderUnreadByDate(c, p.accountId!, p.folder!) : null;
-  const byDate = listed && !unread ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
-  // a big folder's order still being built: this page selected from its members, newest first (Codex R48)
-  if (byDate === null) return selectFolderPage(c, p);
+  const unreadOnly = listed && listFilterOf(p) === "unread";
+  const unread = unreadOnly ? c.scopes.folderUnreadByDate(c, p.accountId!, p.folder!) : null;
+  const byDate = listed && !unreadOnly ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
+  // a big folder's order (or its Unread one) still being built: this page selected from its members, newest first
+  // (Codex R48, R49)
+  if (byDate === null || (unreadOnly && unread === null)) return selectFolderPage(c, p, unreadOnly ? "unread" : "folder");
   const size = unread ? unread.length : byDate.length;
   const idAt = unread ? (i: number) => unread[i]!.id : (i: number) => byDate[i]!.id;
   const pass = keeps(p);
@@ -275,7 +277,7 @@ export function folderPage(c: Ctx, p: ListParams): Page {
 }
 
 /** A folder's page while its order is built: one walk of its members keeping the newest `limit + 1` that pass. */
-function selectFolderPage(c: Ctx, p: ListParams): Page {
+function selectFolderPage(c: Ctx, p: ListParams, index: "folder" | "unread"): Page {
   const threads = T(c, "threads");
   const memberships = T(c, "thread_folders");
   const pass = keeps(p);
@@ -284,7 +286,7 @@ function selectFolderPage(c: Ctx, p: ListParams): Page {
   const newer = (a: R, b: R) => b.last_date - a.last_date || b.id - a.id;
   const top: R[] = [];
   const cursorDate = p.cursor ? p.cursor.lastDate : Number.POSITIVE_INFINITY;
-  for (const k of memberships.keysBy("folder", p.accountId, p.folder)) {
+  for (const k of memberships.keysBy(index, p.accountId, p.folder)) {
     const m = memberships.rows.get(k)!;
     // the membership's own date (the thread's) rules most out before the thread is looked up
     const d = m.last_date as number;

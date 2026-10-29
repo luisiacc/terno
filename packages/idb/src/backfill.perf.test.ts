@@ -135,3 +135,57 @@ it("Codex R48: a folder of 150,000 threads opened cold, and read again after an 
   expect(arrival).toBeLessThan(2 * MULT);
   await store.close();
 });
+
+it("Codex R49: Unread in a folder of 150,000 unread threads, cold and after many changes, within a frame", { timeout: 1_200_000 }, async () => {
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown; get(...k: unknown[]): Record<string, unknown> | undefined } } } }).c;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
+  for (let i = 1; i <= 150_000; i++) {
+    const date = 1_700_000_000_000 + ((i * 7919) % 150_000) * 1000;
+    c.db.table("threads").load({ id: i, account_id: account, last_date: date, unread_count: 1, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+    c.db.table("thread_folders").load({ thread_id: i, account_id: account, folder: "Label_big", last_date: date, unread: 1 });
+  }
+  const page = { view: "all" as const, accountId: account, folder: "Label_big", filter: "unread" as const, limit: 100 };
+  const t0 = performance.now();
+  expect((await store.threads.list(page)).items).toHaveLength(100);
+  const cold = performance.now() - t0;
+  // let the order be built, then 100 read: more than the kept order places by search, so it's built again
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  c.db.tx(() => {
+    for (let i = 1; i <= 100; i++) {
+      c.db.table("threads").put({ ...c.db.table("threads").get(i)!, unread_count: 0 });
+      c.db.table("thread_folders").put({ ...c.db.table("thread_folders").get(i, "Label_big")!, unread: 0 });
+    }
+  });
+  const a0 = performance.now();
+  expect((await store.threads.list(page)).items).toHaveLength(100);
+  const after = performance.now() - a0;
+  console.log(`Unread in a folder of 150,000: cold ${cold.toFixed(1)} ms, after 100 changes ${after.toFixed(1)} ms`);
+  expect(cold).toBeLessThan(16 * MULT);
+  expect(after).toBeLessThan(16 * MULT);
+  await store.close();
+});
+
+it("Codex R49: a Message-ID twin lookup among 150,000 sharing it, cold and after a write, within a frame", { timeout: 1_200_000 }, async () => {
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  for (let i = 1; i <= 150_000; i++) c.db.table("messages").load({ id: i, account_id: account, thread_id: i, provider_msg_id: `m${i}`, rfc_message_id: "<reused@x>", from_email: "a@x", subject: `S${i}`, date: 1, size: 1, is_trash: 0, is_spam: 0 });
+  const locations = store.providerStore(account).locations;
+  const e = { subject: "S77", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: "<reused@x>" };
+  const t0 = performance.now();
+  expect(await locations.twins(e, 0, 500)).toEqual([77]);
+  const cold = performance.now() - t0;
+  c.db.tx(() => c.db.table("threads").put({ id: 150_001, account_id: account, last_date: 1, unread_count: 0, message_count: 1 }));
+  c.db.tx(() => c.db.table("messages").put({ id: 150_001, account_id: account, thread_id: 150_001, provider_msg_id: "m150001", rfc_message_id: "<reused@x>", from_email: "a@x", subject: "S77", date: 1, size: 1, is_trash: 0, is_spam: 0 }));
+  const w0 = performance.now();
+  expect(await locations.twins(e, 0, 500)).toEqual([77, 150_001]);
+  const written = performance.now() - w0;
+  console.log(`Message-ID twins among 150,000: cold ${cold.toFixed(1)} ms, after a write ${written.toFixed(1)} ms`);
+  expect(cold).toBeLessThan(16 * MULT);
+  expect(written).toBeLessThan(16 * MULT);
+  await store.close();
+});

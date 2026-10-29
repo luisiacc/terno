@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, partitionKnown, planSteps, planTellApart, readTwins, storedIds } from "./imap";
+import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, partitionKnown, planSteps, planTellApart, readTwins, reconcileMessages, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -280,6 +280,37 @@ it("Codex R46: a sweep's 500,000 stored locations split against the server's wit
     expect(r.stillThere).toHaveLength(250_000);
     expect(r.byUid.size).toBe(500_000);
     return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
+});
+
+it("Codex R49: reconciling 50,000 messages (a renamed folder's) never holds the loop a frame", async () => {
+  const ids = Array.from({ length: 50_000 }, (_, i) => i + 1);
+  // synchronous stores behind resolved promises (as SQLite's are), a chunk of 500 costing what its reads do
+  const spin = (n: number) => {
+    let x = 0;
+    for (let j = 0; j < n; j++) x += j;
+    return x >= 0;
+  };
+  const deps = {
+    of: async (chunk: number[]) => (spin(300_000) ? chunk.map((id) => ({ message_id: id, mailbox: "A", flags: "[]" })) : []),
+    providerIds: async (chunk: number[]) => new Map(chunk.map((id) => [id, `k${id}`] as const)),
+    state: () => ({ isRead: false }) as never,
+    updateFlags: async () => void spin(200_000),
+    removeMessages: async () => {},
+  };
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    await reconcileMessages(ids, deps);
+    clearInterval(tick);
+    return Math.max(worst, performance.now() - last);
   };
   await stall();
   expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);

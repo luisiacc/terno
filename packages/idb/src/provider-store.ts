@@ -319,19 +319,21 @@ class IdbImapLocations implements ImapLocationStore {
       const bucket = rfc ? messages.bucket("rfc", this.accountId, rfc) : messages.bucket("twins", this.accountId, e.fromEmail, e.date, e.size, e.subject);
       if (!bucket) return [];
       const revision = twinRevision(this.c.db, twinBucketKey(this.accountId, rfc, envelope));
-      let cached = twinOrders.get(bucket);
-      if (!cached || cached.revision !== revision) {
-        const byEnvelope = new Map<string, number[]>();
+      // the asked envelope's ids only, found by comparing fields (never a string built per message: Codex R49), kept
+      // per envelope while the bucket's revision holds
+      let byEnvelope = twinOrders.get(bucket);
+      if (!byEnvelope || byEnvelope.revision !== revision) twinOrders.set(bucket, (byEnvelope = { revision, byEnvelope: new Map() }));
+      let found = byEnvelope.byEnvelope.get(envelope);
+      if (!found) {
+        found = [];
         for (const k of bucket) {
           const m = messages.rows.get(k)!;
-          const at = `${m.from_email}\u0000${m.date}\u0000${m.size}\u0000${m.subject}`;
-          const ids = byEnvelope.get(at) ?? [];
-          ids.push(m.id as number);
-          byEnvelope.set(at, ids);
+          if (m.date === e.date && m.size === e.size && m.from_email === e.fromEmail && m.subject === e.subject) found.push(m.id as number);
         }
-        for (const ids of byEnvelope.values()) ids.sort((x, y) => x - y);
-        twinOrders.set(bucket, (cached = { revision, byEnvelope }));
+        found.sort((x, y) => x - y);
+        byEnvelope.byEnvelope.set(envelope, found);
       }
+      const cached = byEnvelope;
       const ids = cached.byEnvelope.get(envelope) ?? [];
       let lo = 0;
       let hi = ids.length;
