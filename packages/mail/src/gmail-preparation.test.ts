@@ -32,6 +32,7 @@ it.each(["token failure", "raw failure", "401 retry", "reset", "caller"] as cons
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: ids.map((id) => ({ id })) });
       const id = url.pathname.split("/").at(-1)!;
       downloads.push(id);
@@ -81,7 +82,7 @@ it.each(["token failure", "raw failure", "401 retry", "reset", "caller"] as cons
     if (action === "reset") {
       await provider.sync(sink);
       expect(downloads).toEqual(["later"]);
-      expect(checkpoints).toEqual([{ historyId: "10" }]);
+      expect(checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
     }
   } finally {
     bad.release(); token.release(); caller.abort();
@@ -101,6 +102,7 @@ it("lets an already-dispatched read settle while canceling later preparation", a
     fetch: async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: ["bad", "active", "queued"].map((id) => ({ id })) });
       const id = url.pathname.split("/").at(-1)!;
       downloads.push(id);

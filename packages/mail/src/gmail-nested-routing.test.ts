@@ -32,6 +32,7 @@ async function collect(bytes: Uint8Array, processor: IncomingProcessor) {
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       return new Response(bytes);
     },
@@ -76,7 +77,7 @@ it.each(["digest", "explicit", "comment"] as const)("captures supported nested %
     expect(result.writes.flat()).toHaveLength(1);
     expect(result.writes[0]![0]!.bodyText).toContain("Exact nested body");
     expect(result.writes[0]![0]!.bodyState).toBe("full");
-    expect(result.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(result.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
   } finally { await processor.close(); await processor.whenIdle(); }
 });
 

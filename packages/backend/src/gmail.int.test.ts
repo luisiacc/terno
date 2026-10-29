@@ -45,11 +45,12 @@ class FakeGoogle {
   challenges = new Map<string, string>(); // code → code_challenge
   refreshCalls = 0;
   validTokens = new Set<string>();
-  calls: { method: string; path: string; body: unknown }[] = [];
+  calls: { method: string; path: string; query: URLSearchParams; body: unknown }[] = [];
   rateLimitNext = 0;
   quotaReasonNext: string | null = null;
   failMinimalOnce = false;
-  historyExpired = false;
+  expiredBefore: number | null = null;
+  expireHistory() { this.expiredBefore = ++this.historyId; }
   listSnapshot: string[] | null = null;
   disappearOnRaw = new Set<string>();
   failRawOnce: { id: string; status: number } | null = null;
@@ -141,7 +142,7 @@ class FakeGoogle {
     }
     if (!this.validTokens.has(token)) return json(401, { error: { code: 401 } });
     if (url.pathname === "/userinfo") return json(200, { name: "Luis Cordero", sub: `sub-${this.email}`, email: this.email, email_verified: true });
-    this.calls.push({ method: req.method!, path: url.pathname, body: body ? JSON.parse(body) : null });
+    this.calls.push({ method: req.method!, path: url.pathname, query: new URLSearchParams(url.searchParams), body: body ? JSON.parse(body) : null });
     if (this.rateLimitNext > 0) {
       this.rateLimitNext--;
       return json(429, { error: { code: 429, message: "rate limited" } });
@@ -205,7 +206,7 @@ class FakeGoogle {
       return json(200, { id, threadId: b.threadId ?? id });
     }
     if (path === "/history") {
-      if (this.historyExpired || (this.expireHistoryPage !== null && url.searchParams.get("pageToken") === this.expireHistoryPage)) return json(404, { error: { code: 404, message: "history expired" } });
+      if ((this.expiredBefore !== null && Number(url.searchParams.get("startHistoryId")) < this.expiredBefore) || (this.expireHistoryPage !== null && url.searchParams.get("pageToken") === this.expireHistoryPage)) return json(404, { error: { code: 404, message: "history expired" } });
       const start = Number(url.searchParams.get("startHistoryId"));
       const entries = this.history.filter((h) => h.id > start);
       const offset = Number(url.searchParams.get("pageToken") ?? 0);
@@ -467,7 +468,7 @@ describe("Gmail sync", () => {
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.replyTo).toEqual([{ name: "Support, Team", email: "tickets@example.com" }, { name: "Other", email: "other@example.com" }]);
   });
 
-  it("initial enumeration tolerates a message deleted before raw download and retains its initial watermark", async () => {
+  it("initial enumeration tolerates a vanished raw message and catches up from its original watermark", async () => {
     const { google, backend, client, account } = await freshMailbox();
     for (let i = 0; i < 9; i++) google.add({ id: `race-${i}`, threadId: `race-${i}`, labelIds: ["INBOX"], raw: rawMail({ subject: `Race ${i}`, id: `race-${i}@example.com` }) }, false);
     google.listSnapshot = [...google.messages.keys()];
@@ -476,7 +477,8 @@ describe("Gmail sync", () => {
     await backend.syncAccount(account.id);
     expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
     expect((await client.call("threads.list", { view: "inbox" })).items.map((t) => t.subject).sort()).toEqual(Array.from({ length: 8 }, (_, i) => `Race ${i + 1}`));
-    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual({ historyId: watermark });
+    expect(google.calls.filter((c) => c.path === "/gmail/history").map((c) => c.query.get("startHistoryId"))).toEqual([watermark]);
+    expect((await backend.store.accounts.config<{ cursor: { historyId: string } }>(account.id))?.config.cursor).toEqual({ historyId: String(google.historyId) });
     google.listSnapshot = null;
     google.add({ id: "later", threadId: "later", labelIds: ["INBOX"], raw: rawMail({ subject: "After enumeration", id: "later@example.com" }) });
     await backend.syncAccount(account.id);
@@ -574,7 +576,7 @@ describe("Gmail sync", () => {
 
   it("a resync after history expiry also refreshes labels and deletions of cached mail", async () => {
     const { google, backend, client, account } = await connected();
-    google.historyExpired = true;
+    google.expireHistory();
     google.messages.get("g1")!.labelIds = ["INBOX"]; // read elsewhere during the gap
     google.messages.get("g3")!.labelIds = []; // archived elsewhere
     google.messages.delete("g2"); // deleted elsewhere
@@ -587,7 +589,7 @@ describe("Gmail sync", () => {
   it("expiry recovery also checks cached mail older than the window, and retries on transient errors", async () => {
     const { google, backend, account } = await connected();
     sqlDb(backend.store).run("UPDATE messages SET date = ? WHERE provider_msg_id = 'g5'", Date.now() - 2000 * 86_400_000); // ancient cached mail
-    google.historyExpired = true;
+    google.expireHistory();
     google.messages.delete("g5");
     google.failMinimalOnce = true;
     await backend.syncAccount(account.id); // a transient 503 must not advance the cursor
@@ -600,7 +602,7 @@ describe("Gmail sync", () => {
 
   it("falls back to a full resync when history has expired, without duplicates", async () => {
     const { google, backend, account } = await connected();
-    google.historyExpired = true;
+    google.expireHistory();
     google.add({ id: "g7", threadId: "t9", labelIds: ["INBOX"], raw: rawMail({ subject: "Nuevo tras expirar", id: "g@x" }) }, false);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM messages")).toEqual({ c: 6 });

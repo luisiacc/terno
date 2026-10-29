@@ -40,7 +40,7 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
         heldHistory = undefined;
         if (held) { held.captured.release(); await held.response.promise; }
         if (historyRefusal) return Response.json({ error: { message: "Synthetic refusal" } }, { status: historyRefusal });
-        return Response.json({ historyId: String(history), history: emptyHistory ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
+        return Response.json({ historyId: String(history), history: emptyHistory || url.searchParams.get("startHistoryId") === String(history) ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
       }
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       if (url.pathname.endsWith("/batchModify")) {

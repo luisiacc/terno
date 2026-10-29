@@ -29,7 +29,7 @@ function wireResponse(value: unknown): Response {
   } }, { highWaterMark: 0 }));
 }
 
-function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown>; onIngest?: () => void } = {}) {
+function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond?: (url: URL) => unknown | Promise<unknown>; onIngest?: () => void; token?: () => Promise<string>; signal?: AbortSignal } = {}) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   let cursor: unknown = options.cursor ?? null;
@@ -75,9 +75,9 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
     updateFlags: async (updates) => { flags.push(...updates); },
     removeMessages: async (ids) => { removed.push(...ids); },
     setBody: async () => {}, setSyncState: async () => {}, pendingMessageIds: async () => new Set(),
-    signal: new AbortController().signal, windowStart: 0,
+    signal: options.signal ?? new AbortController().signal, windowStart: 0,
   };
-  const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "token", invalidate() {} }, buildRaw: async () => new Uint8Array([1]) });
+  const provider = createGmailApiProvider(ctx, { tokens: { get: options.token ?? (async () => "token"), invalidate() {} }, buildRaw: async () => new Uint8Array([1]) });
   close.push(async () => { await provider.close(); await processor.close(); incoming.close(); });
   return { provider, sync: () => provider.sync(sink), checkpoints, ingested, flags, removed, requests, methods };
 }
@@ -144,12 +144,12 @@ describe("Gmail successful response validation", () => {
 
   it("allows absent optional arrays and labels, retaining an exact checkpoint beyond Number precision", async () => {
     const box = mailbox({ cached: true, respond: (url) => {
-      if (url.pathname.endsWith("/profile")) return { historyId: "90071992547409931234" };
+      if (url.pathname.endsWith("/profile") || url.pathname.endsWith("/history")) return { historyId: "90071992547409931234" };
       if (url.pathname.endsWith("/messages")) return {};
       if (url.searchParams.get("format") === "minimal") return { id: "m1" };
     } });
     await box.sync();
-    expect(box.checkpoints).toEqual([{ historyId: "90071992547409931234" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "90071992547409931234" }, { historyId: "90071992547409931234" }]);
     expect(box.flags[0]).toMatchObject({ gmailLabels: [], flags: { inInbox: false, isRead: true } });
     const delta = mailbox({ cursor: box.checkpoints[0], respond: (url) => url.pathname.endsWith("/history") ? { historyId: "90071992547409931235" } : undefined });
     await delta.sync();
@@ -175,7 +175,7 @@ describe("Gmail successful response validation", () => {
     const box = mailbox({ respond: (url) => url.searchParams.get("format") === "raw" ? { ...message, raw: source, internalDate: "0", sizeEstimate: 1 } : undefined });
     await box.sync();
     expect(box.ingested[0]).toMatchObject({ providerMsgId: "m1", date: 0, size: 1 });
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
   });
 
   it("rejects a decreasing history checkpoint without Number precision loss", async () => {
@@ -205,7 +205,7 @@ describe("Gmail successful response validation", () => {
     const box = mailbox({ cursor });
     await box.sync();
     expect(box.requests[0]?.pathname.endsWith("/profile")).toBe(true);
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
   });
 
   it.each(["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"])("accepts sparse %s references and extra provider fields", async (kind) => {
@@ -228,7 +228,7 @@ describe("Gmail successful response validation", () => {
     broken = false;
     await box.sync();
     expect(box.ingested.map((m) => m.providerMsgId)).toEqual(["m1", "m2"]);
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
   });
 
   it.each(["raw", "minimal"] as const)("stops queued %s downloads and settles existing workers before rejecting a malformed batch", async (format) => {
@@ -282,7 +282,7 @@ describe("Gmail successful response validation", () => {
     } finally {
       clearTimeout(timer);
     }
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
   });
 
   it("retains an oversized message's bounded headers and unavailable state while a neighbor is captured", async () => {
@@ -297,7 +297,7 @@ describe("Gmail successful response validation", () => {
     expect(box.ingested.find((m) => m.providerMsgId === "large")).toMatchObject({ subject: "Oversized", from: { email: "sender@example.com" }, bodyState: "partial", captureUnavailable: "size", bodyText: null, bodyHtml: null });
     expect(box.ingested.find((m) => m.providerMsgId === "large")?.attachments).toBeUndefined();
     expect(box.ingested.find((m) => m.providerMsgId === "m1")?.bodyText).toContain("Original body");
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
   });
 
   it("refuses invalid trailing padding even when oversized raw capture decodes only headers", async () => {
@@ -310,4 +310,44 @@ describe("Gmail successful response validation", () => {
     expect(box.ingested).toEqual([]);
     expect(box.flags).toEqual([]);
   });
+});
+
+it("cancels catch-up token preparation without a later history dispatch or terminal checkpoint", async () => {
+  const abort = new AbortController();
+  let entered!: () => void, release!: (token: string) => void;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  const token = new Promise<string>((resolve) => { release = resolve; });
+  const box = mailbox({ signal: abort.signal, token: async () => {
+    if (box.checkpoints.length) { entered(); return token; }
+    return "token";
+  } });
+  const sync = box.sync();
+  try {
+    await waiting; abort.abort(new Error("Synthetic cancellation"));
+    await expect(sync).rejects.toBe(abort.signal.reason);
+    expect(box.requests.some((u) => u.pathname.endsWith("/history"))).toBe(false);
+    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+  } finally { release("token"); await sync.catch(() => {}); }
+});
+
+it("cancels a pending catch-up history body without advancing beyond its baseline", async () => {
+  const abort = new AbortController();
+  let entered!: () => void, finish!: () => void;
+  let canceled = false;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  const box = mailbox({ signal: abort.signal, respond: (url) => {
+    if (url.pathname.endsWith("/history")) {
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { finish = () => controller.close(); },
+        pull() { entered(); }, cancel() { canceled = true; },
+      }, { highWaterMark: 0 }));
+    }
+  } });
+  const sync = box.sync();
+  try {
+    await waiting; const before = box.requests.length; abort.abort(new Error("Synthetic cancellation"));
+    await expect(sync).rejects.toMatchObject({ retryable: true });
+    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(box.requests).toHaveLength(before);
+  } finally { if (!canceled) finish(); await sync.catch(() => {}); }
 });

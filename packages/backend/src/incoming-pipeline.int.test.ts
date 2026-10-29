@@ -28,6 +28,7 @@ it("shares prefix/promotion ownership across accounts through actual worker and 
     const url = new URL(String(input));
     const account = new Headers(init?.headers).get("authorization")!.slice(7);
     if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+    if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
     if (url.pathname.endsWith("/messages")) return Response.json({ messages: Array.from({ length: 3 }, (_, index) => ({ id: `mail-${index}` })) });
     const id = url.pathname.split("/").at(-1)!;
     if (url.searchParams.get("format") !== "raw") return Response.json({ id, labelIds: ["INBOX"] });
@@ -72,5 +73,8 @@ it("shares prefix/promotion ownership across accounts through actual worker and 
   expect(snapshot.messages).toHaveLength(6);
   expect(snapshot.messages.map((message) => message.bodyText)).toEqual(Array(6).fill(`${text}\n`));
   expect(writes).toBe(6);
-  for (const account of accounts) expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
+  for (const account of accounts) {
+    expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
+    expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
+  }
 });

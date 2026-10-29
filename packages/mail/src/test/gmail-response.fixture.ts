@@ -101,6 +101,8 @@ export class GmailResponseFixture {
   private readonly ownPool: boolean;
   readonly pool: GmailFixturePool;
   readonly readers: ReaderRecord[] = [];
+  readonly checkpoints: unknown[] = [];
+  readonly historyStarts: string[] = [];
   private readonly undos: (() => void)[] = [];
   private readonly passSignals = new Set<AbortSignal>();
   readonly counts = {
@@ -144,10 +146,11 @@ export class GmailResponseFixture {
       account: { id: options.accountId ?? 1 }, config: {}, incoming, incomingProcessor: this.pool.processor,
       store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
       loadCursor: async () => null,
-      saveCursor: async () => { this.counts.checkpoints++; },
+      saveCursor: async (cursor: unknown) => { this.counts.checkpoints++; this.checkpoints.push(cursor); },
       fetch: async (input: string | URL | Request) => {
         const url = new URL(input instanceof Request ? input.url : String(input));
         if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+        if (url.pathname.endsWith("/history")) { this.historyStarts.push(url.searchParams.get("startHistoryId")!); return Response.json({ historyId: "10" }); }
         if (url.pathname.endsWith("/messages")) return Response.json({ messages: ids.map((id) => ({ id })) });
         const id = url.pathname.split("/").at(-1)!;
         if (!ids.includes(id) || url.searchParams.get("format") !== "raw") throw new Error("Unexpected Gmail fixture resource");

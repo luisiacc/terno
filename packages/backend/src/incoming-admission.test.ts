@@ -20,6 +20,7 @@ it("shares six incoming raw reads across accounts and drains all mail without ex
     const url = new URL(String(input));
     const account = new Headers(init?.headers).get("authorization")!.slice(7);
     if (url.pathname.endsWith("/profile")) return json({ historyId: "10" });
+    if (url.pathname.endsWith("/history")) return json({ historyId: "10" });
     if (url.pathname.endsWith("/messages")) return json({ messages: Array.from({ length: 8 }, (_, i) => ({ id: `mail-${i}` })) });
     const id = url.pathname.split("/").at(-1)!;
     if (url.searchParams.get("format") === "raw") {
@@ -51,4 +52,5 @@ it("shares six incoming raw reads across accounts and drains all mail without ex
   expect(started).toBe(16);
   expect((await backend.store.debug.snapshot()).messages).toHaveLength(16);
   expect(ingest.mock.calls.map(([messages]) => messages.length).sort()).toEqual([8, 8]);
+  for (const account of accounts) expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
 });

@@ -23,6 +23,7 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: ids.map((id) => ({ id })) });
       downloads++;
       await gate;
@@ -52,7 +53,7 @@ it("flushes completed message bytes before retaining the whole count batch", asy
     expect(t.batches.flatMap((batch) => batch.map((m) => m.providerMsgId)).sort()).toEqual(Array.from({ length: 20 }, (_, i) => `m${i}`).sort());
     for (const batch of t.batches) expect(batch.reduce((n, m) => n + (m.bodyText?.length ?? 0) * 2 + (m.bodyHtml?.length ?? 0) * 2, 0)).toBeLessThanOrEqual(4 * 1024 * 1024);
     expect(t.maxSink).toBe(1);
-    expect(t.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
   } finally { await t.close(); }
 });
 
@@ -100,7 +101,7 @@ it("a blocked durable flush applies backpressure and prevents checkpoint promoti
     expect(t.checkpoints).toEqual([]);
     release(); await work;
     expect(t.batches.flat()).toHaveLength(20);
-    expect(t.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
   } finally { release(); await work.catch(() => {}); await t.close(); }
 });
 

@@ -76,7 +76,9 @@ it("admits a valid promoted Gmail body through the actual worker and sink", asyn
     expect(fixture.pool.jobs[0]).toMatchObject({ id: "valid", bytes: fixture.wireBytes("valid"), settled: true, succeeded: true });
     expect(fixture.pool.active).toBe(0);
     expect(fixture.counts.ingested).toBe(1);
-    expect(fixture.counts.checkpoints).toBe(1);
+    expect(fixture.counts.checkpoints).toBe(2);
+    expect(fixture.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(fixture.historyStarts).toEqual(["10"]);
     expect(fixture.lastBodyText).toBe(`${text}\n`);
     expect(fixture.timingReport().stall).toBeLessThanOrEqual(15 * BUDGET_MULTIPLIER);
   } catch (error) { failure = { error }; }

@@ -33,6 +33,7 @@ function setup(fail = false) {
       fetch: async (input: string | URL) => {
         const url = new URL(String(input));
         if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
         if (url.pathname.endsWith("/messages")) return Response.json({ messages: Array.from({ length: 50 }, (_, index) => ({ id: `m${index}` })) });
         downloads++;
         const id = url.pathname.split("/").at(-1)!;
@@ -60,7 +61,7 @@ it("charges completed metadata across accounts and makes progress before count b
     expect(t.firstWrite).toBeLessThan(100);
     expect(t.batches.flat()).toHaveLength(100);
     expect(t.held).toBe(0);
-    expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(t.checkpoints).toEqual(Array.from({ length: 4 }, () => ({ historyId: "10" })));
   } finally { t.pipeline.close(); }
 });
 

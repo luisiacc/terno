@@ -20,6 +20,7 @@ function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSign
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       return rawResponse();
     },
@@ -83,7 +84,7 @@ it.each(["complete", "reset", "caller", "timeout"] as const)("stops the network 
     if (action === "caller") t.abort.abort();
     finish();
     const error = await work;
-    if (action === "complete") { expect(error).toBeUndefined(); expect(t.writes).toHaveLength(1); expect(t.checkpoints).toEqual([{ historyId: "10" }]); }
+    if (action === "complete") { expect(error).toBeUndefined(); expect(t.writes).toHaveLength(1); expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]); }
     else {
       expect(error).toBeDefined(); expect(t.writes).toEqual([]); expect(t.checkpoints).toEqual([]);
       if (action === "caller") expect(error).toBe(t.abort.signal.reason);

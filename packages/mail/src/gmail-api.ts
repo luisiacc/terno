@@ -105,7 +105,9 @@ interface HistoryEntry {
 }
 interface HistoryPage { history?: HistoryEntry[]; historyId: string; nextPageToken?: string }
 
-class ExpiredHistory extends Error {}
+class ExpiredHistory extends ProviderError {
+  constructor() { super(L("errors.gmail.requestFailed", { status: 404 }), true); }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -691,8 +693,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return malformed;
   }
 
-  async function fullSync(sink: SyncSink, previousHistory?: string) {
-    const baseline = readBaseline(await api<unknown>("/profile"));
+  async function syncRead(path: string, sink: SyncSink): Promise<unknown> {
+    sink.signal.throwIfAborted();
+    const value = await api<unknown>(path, { signal: sink.signal, preparationSignal: sink.signal });
+    sink.signal.throwIfAborted();
+    return value;
+  }
+
+  async function checkpoint(sink: SyncSink, value: string) {
+    sink.signal.throwIfAborted();
+    await ctx.saveCursor({ historyId: value } satisfies Cursor);
+    sink.signal.throwIfAborted();
+  }
+
+  async function fullSync(sink: SyncSink, previousHistory?: string): Promise<Cursor> {
+    const baseline = readBaseline(await syncRead("/profile", sink));
     if (previousHistory && earlierHistory(baseline, previousHistory)) throw invalidResponse();
     const after = Math.floor(sink.windowStart / 1000);
     const freshlyIngested = new Set<string>();
@@ -701,17 +716,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     do {
       const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
       if (pageToken) q.set("pageToken", pageToken);
-      const page = readList(await api<unknown>(`/messages?${q}`));
+      const page = readList(await syncRead(`/messages?${q}`, sink));
       pageToken = continuation(page.nextPageToken, pages);
       const pageIds = (page.messages ?? []).map((m) => m.id);
       const ids: string[] = [];
-      for (const id of pageIds) if (!(await store.messageByProviderId(id))) ids.push(id);
+      for (const id of pageIds) {
+        sink.signal.throwIfAborted();
+        if (!(await store.messageByProviderId(id))) ids.push(id);
+      }
       for (let i = 0; i < ids.length; i += 50) {
-        if (sink.signal.aborted) return;
+        sink.signal.throwIfAborted();
         const batch = ids.slice(i, i + 50);
         await fetchFull(batch, sink, (id) => freshlyIngested.add(id));
       }
     } while (pageToken);
+    sink.signal.throwIfAborted();
     // A resync (history expired) must also refresh what we already had: labels may have
     // changed and messages may have been deleted during the gap.
     const cached = await store.syncedMessages();
@@ -721,16 +740,19 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const gone: number[] = [];
     await download(cached.filter((m) => !freshlyIngested.has(m.providerMsgId)), async (m) => {
       try {
-        const full = readMessage(await api<unknown>(`/messages/${m.providerMsgId}?format=minimal`), m.providerMsgId);
+        const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
         updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
         else throw e;
       }
     });
+    sink.signal.throwIfAborted();
     if (updates.length) await sink.updateFlags(updates);
+    sink.signal.throwIfAborted();
     if (gone.length) await sink.removeMessages(gone);
-    await ctx.saveCursor({ historyId: baseline } satisfies Cursor);
+    await checkpoint(sink, baseline);
+    return { historyId: baseline };
   }
 
   async function incremental(sink: SyncSink, cursor: Cursor) {
@@ -744,7 +766,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
-      const page = readHistory(await api<unknown>(`/history?${q}`).catch((error: unknown) => {
+      const page = readHistory(await syncRead(`/history?${q}`, sink).catch((error: unknown) => {
         if (error instanceof GmailApiError && error.status === 404) throw new ExpiredHistory();
         throw error;
       }));
@@ -758,7 +780,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       latest = page.historyId;
     } while (pageToken);
 
-    const known = async (id: string) => (await store.messageByProviderId(id))?.id;
+    const known = async (id: string) => {
+      sink.signal.throwIfAborted();
+      return (await store.messageByProviderId(id))?.id;
+    };
     const toFetch: string[] = [];
     for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
@@ -771,21 +796,24 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const local = await known(gid);
       if (!local) continue;
       try {
-        const m = readMessage(await api<unknown>(`/messages/${gid}?format=minimal`), gid);
+        const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
         updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) deleted.add(gid);
         else throw e;
       }
     }
+    sink.signal.throwIfAborted();
     if (updates.length) await sink.updateFlags(updates);
+    sink.signal.throwIfAborted();
     const removals: number[] = [];
     for (const gid of deleted) {
       const id = await known(gid);
       if (id !== undefined) removals.push(id);
     }
+    sink.signal.throwIfAborted();
     if (removals.length) await sink.removeMessages(removals);
-    await ctx.saveCursor({ historyId: latest } satisfies Cursor);
+    await checkpoint(sink, latest);
   }
 
   /** plan 68: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
@@ -822,20 +850,28 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         ingest: (messages, o) => (messages.forEach((m) => meet(m.gmailLabels)), outer.ingest(messages, o)),
         updateFlags: (updates) => (updates.forEach((u) => meet(u.gmailLabels)), outer.updateFlags(updates)),
       };
+      sink.signal.throwIfAborted();
       const malformed = await reconcileFlags(sink);
+      sink.signal.throwIfAborted();
       const cursor = await ctx.loadCursor<Cursor>();
+      sink.signal.throwIfAborted();
+      let reconciled: Cursor | undefined;
       if (!isRecord(cursor) || !historyId(cursor.historyId)) {
-        await fullSync(sink);
+        reconciled = await fullSync(sink);
       } else {
         try {
           await incremental(sink, cursor);
         } catch (e) {
           // History records expire (~1 week): Google answers 404 and a full resync is required.
-          if (e instanceof ExpiredHistory) await fullSync(sink, cursor.historyId);
+          if (e instanceof ExpiredHistory) reconciled = await fullSync(sink, cursor.historyId);
           else throw e;
         }
       }
+      // Catch-up is outside the reset catch: another expiry fails this call and waits for a later reset.
+      if (reconciled) await incremental(sink, reconciled);
+      sink.signal.throwIfAborted();
       await captureAttachments(sink);
+      sink.signal.throwIfAborted();
       if (malformed) throw malformed;
     },
 

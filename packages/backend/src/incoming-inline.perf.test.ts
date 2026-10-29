@@ -29,6 +29,7 @@ it.each([
     create(ctx) { return createGmailApiProvider({ ...ctx, fetch: async (input) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
       return response;
     } }, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() }); },
@@ -49,5 +50,6 @@ it.each([
     expect(snapshot.messages).toHaveLength(1);
     expect(snapshot.messages[0]?.bodyText).toContain(_shape === "addresses" || _shape === "dense" ? "Exact body" : "synthetic");
     expect((await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor).toEqual({ historyId: "10" });
+    expect((await backend.store.accounts.get(account.id))?.syncState.status).toBe("idle");
   } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
 });

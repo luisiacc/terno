@@ -20,6 +20,7 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "mail" }] });
       downloads++; return Response.json({ id: "mail", threadId: "thread", raw });
     },
@@ -51,7 +52,7 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
     if (action === "reset") {
       await provider.sync(sink);
       expect(downloads).toBe(1);
-      expect(checkpoints).toEqual([{ historyId: "10" }]);
+      expect(checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
     }
   } finally {
     vi.useRealTimers(); sinkAbort.abort(); release(); incoming.close(); spy.mockRestore();
@@ -70,6 +71,7 @@ it("does not dispatch queued siblings after a systemic raw failure", async () =>
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
+      if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: ["bad", "later-1", "later-2"].map((id) => ({ id })) });
       const id = url.pathname.split("/").at(-1)!;
       downloads.push(id);
