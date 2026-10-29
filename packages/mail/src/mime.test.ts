@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+import PostalMime from "postal-mime";
 import { describe, expect, it } from "vitest";
 import { parseRaw, parseRawHeaders } from "./mime";
 
@@ -103,12 +105,115 @@ describe("parseRaw: MIME tree compatibility (W10)", () => {
     expect(await parseRaw(envelope(body))).toMatchObject({ ...identity, text: "Outer body", html: null, attachments: [{ filename: "forward.eml", mime: "message/rfc822", size: bytes.length, contentId: null, bytes }] });
   });
 
-  // PostalMime4.1.3 loses the outer selector; no public option repairs assembly (Plan33 W10 blocker).
-  it.fails("BLOCKED: chooses only the inner representation when an outer alternative contains related alternatives", async () => {
+  it("chooses only the inner representation when an outer alternative contains related alternatives", async () => {
     const inner = wireMultipart("alternative", "i", [wirePart("text/plain", "Chosen plain"), wirePart("text/html", "<p>Chosen HTML</p>")]);
     const source = envelope(wireMultipart("alternative", "o", [wirePart("text/plain", "Outer fallback"), wireMultipart("related", "r", [inner])]));
     const message = await parseRaw(source);
     expect({ text: message.text, html: message.html }).toEqual({ text: "Chosen plain", html: "<p>Chosen HTML</p>" });
+  });
+});
+
+describe("parseRaw: nested alternative selection (W10 patch)", () => {
+  const plain = (text: string) => wirePart("text/plain", text);
+  const html = (text: string) => wirePart("text/html", text);
+  const chosen = wireMultipart("alternative", "i", [plain("Chosen plain"), html("<p>Chosen HTML</p>")]);
+
+  it.each([
+    ["direct nested alternatives", wireMultipart("alternative", "o", [plain("Outer fallback"), chosen]), "Chosen plain", "<p>Chosen HTML</p>"],
+    ["missing inner plain retains outer plain", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("alternative", "i", [html("<p>Chosen HTML</p>")])]), "Outer fallback", "<p>Chosen HTML</p>"],
+    ["missing inner HTML retains outer HTML", wireMultipart("alternative", "o", [html("<p>Outer fallback</p>"), wireMultipart("alternative", "i", [plain("Chosen plain")])]), "Chosen plain", "<p>Outer fallback</p>"],
+    ["sequential parts within selected mixed branch", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("mixed", "m", [plain("Start"), chosen, plain("End")])]), "Start\nChosen plain\nEnd", "<div>Start</div>\n<p>Chosen HTML</p>\n<div>End</div>"],
+    ["sequential siblings outside alternatives", wireMultipart("mixed", "m", [wireMultipart("alternative", "o", [plain("Outer fallback"), chosen]), plain("Middle"), wireMultipart("alternative", "s", [plain("Sibling plain"), html("<p>Sibling HTML</p>")])]), "Chosen plain\nMiddle\nSibling plain", "<p>Chosen HTML</p>\n<div>Middle</div>\n<p>Sibling HTML</p>"],
+    ["explicit empty plain preserves visible HTML fallback", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("alternative", "i", [plain(""), html('<span hidden>Hidden</span><p>Useful HTML</p>')])]), "Useful HTML", '<span hidden>Hidden</span><p>Useful HTML</p>'],
+    ["explicit empty HTML remains absent publicly", wireMultipart("alternative", "o", [html("<p>Outer fallback</p>"), wireMultipart("alternative", "i", [plain("Useful plain"), html("")])]), "Useful plain", null],
+    ["mixed HTML then plain converts each entry", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("mixed", "m", [html("<p>First</p>"), plain("Last")])]), "\nFirst\n\nLast", "<p>First</p>\n<div>Last</div>"],
+    ["mixed plain then HTML converts each entry", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("mixed", "m", [plain("First"), html("<p>Last</p>")])]), "First\n\nLast\n", "<div>First</div>\n<p>Last</p>"],
+    ["empty sequential entry retains separators", wireMultipart("alternative", "o", [plain("Outer fallback"), wireMultipart("mixed", "m", [plain("Start"), plain(""), plain("End")])]), "Start\n\nEnd", null],
+    ["last same-type alternative wins", wireMultipart("alternative", "o", [plain("First fallback"), html("<p>HTML</p>"), plain("Last plain")]), "Last plain", "<p>HTML</p>"],
+  ] as const)("%s", async (_name, body, text, expectedHtml) => {
+    expect(await parseRaw(envelope(body))).toMatchObject({ ...identity, text, html: expectedHtml, attachments: [] });
+  });
+
+  it("retains fallback for an unsupported branch and exact attachments from every branch", async () => {
+    const attachment = wirePart("application/octet-stream", "AP+A", ["Content-Disposition: attachment; filename=part.bin", "Content-Transfer-Encoding: base64"]);
+    const source = envelope(wireMultipart("alternative", "o", [wireMultipart("mixed", "m", [plain("Outer fallback"), attachment]), wireMultipart("related", "r", [attachment])]));
+    const message = await parseRaw(source);
+    expect(message).toMatchObject({ ...identity, text: "Outer fallback", html: null });
+    expect(message.attachments).toEqual(Array.from({ length: 2 }, () => ({ filename: "part.bin", mime: "application/octet-stream", size: 3, contentId: null, bytes: new Uint8Array([0, 255, 128]) })));
+  });
+
+  it("preserves the related root, CID resources and sequential attachments in both package entries", async () => {
+    const image = (cid: string, data: string) => wirePart("image/png", data, [`Content-ID: <${cid}>`, `Content-Disposition: inline; filename=${cid}.png`, "Content-Transfer-Encoding: base64"]);
+    const root = ["Content-ID: <root>", wireMultipart("alternative", "i", [plain("Chosen plain"), html('<p>Chosen HTML<img src="cid:before"></p>')])].join("\r\n");
+    const related = wirePart('multipart/related; boundary="r"; start="<root>"', ["--r", image("before", "AP+A"), "--r", root, "--r", image("after", "AQID"), "--r--"].join("\r\n"));
+    const source = envelope(wireMultipart("alternative", "o", [plain("Outer fallback"), related]));
+    const message = await parseRaw(source);
+    expect(message).toMatchObject({ ...identity, text: "Chosen plain", html: '<p>Chosen HTML<img src="cid:before"></p>' });
+    expect(message.attachments).toEqual([
+      { filename: "before.png", mime: "image/png", size: 3, contentId: "before", bytes: new Uint8Array([0, 255, 128]) },
+      { filename: "after.png", mime: "image/png", size: 3, contentId: "after", bytes: new Uint8Array([1, 2, 3]) },
+    ]);
+    const commonjs: { default: typeof PostalMime } = createRequire(import.meta.url)("postal-mime");
+    for (const parser of [PostalMime, commonjs.default]) {
+      const parsed = await parser.parse(source);
+      expect({ text: parsed.text, html: parsed.html }).toEqual({ text: message.text, html: message.html });
+      expect(parsed.attachments.map((part) => ({ cid: part.contentId, bytes: [...new Uint8Array(typeof part.content === "string" ? new TextEncoder().encode(part.content) : part.content)] }))).toEqual([{ cid: "<before>", bytes: [0, 255, 128] }, { cid: "<after>", bytes: [1, 2, 3] }]);
+    }
+  });
+
+  const commonjs: { default: typeof PostalMime } = createRequire(import.meta.url)("postal-mime");
+  it.each([PostalMime, commonjs.default])("keeps explicit empty representations and RFC822 groups in %s", async (parser) => {
+    for (const [parts, omitted, retained] of [
+      [[plain("Outer fallback"), wireMultipart("alternative", "i", [plain(""), html("<p>Useful</p>")])], "text", { html: "<p>Useful</p>" }],
+      [[html("<p>Outer fallback</p>"), wireMultipart("alternative", "i", [plain("Useful"), html("")])], "html", { text: "Useful" }],
+    ] as const) {
+      const parsed = await parser.parse(envelope(wireMultipart("alternative", "o", [...parts])));
+      expect(Object.hasOwn(parsed, omitted)).toBe(false);
+      expect(parsed).toMatchObject(retained);
+    }
+    const forwarded = ["From: Inner <inner@test.com>", "Subject: Forwarded", wireMultipart("mixed", "f", [plain("Forwarded body"), wirePart("application/octet-stream", "AP+A", ["Content-Transfer-Encoding: base64", "Content-Disposition: attachment; filename=inner.bin"])])].join("\r\n");
+    const forwardPart = wirePart("message/rfc822", Buffer.from(forwarded).toString("base64"), ["Content-Transfer-Encoding: base64"]);
+    for (const [parts, expected] of [
+      [[forwardPart, chosen], "Chosen plain"],
+      [[chosen, forwardPart], "\n-------------------------------\nFrom:    Inner <inner@test.com>\nSubject: Forwarded\n-------------------------------\n\nForwarded body"],
+    ] as const) {
+      const parsed = await parser.parse(envelope(wireMultipart("alternative", "o", [...parts])));
+      expect(parsed.text).toBe(expected);
+      expect(parsed.html).toBe("<p>Chosen HTML</p>");
+      expect(parsed.attachments.map((part) => ({ filename: part.filename, bytes: [...new Uint8Array(typeof part.content === "string" ? new TextEncoder().encode(part.content) : part.content)] }))).toEqual([{ filename: "inner.bin", bytes: [0, 255, 128] }]);
+    }
+    const limited = await parseRaw(envelope(wireMultipart("alternative", "o", [forwardPart, chosen])), { limits: { maxRfc822NestingDepth: 0 } });
+    expect(limited).toMatchObject({ ...identity, text: "Chosen plain", html: "<p>Chosen HTML</p>" });
+    expect(limited.attachments).toEqual([{ filename: "attachment", mime: "message/rfc822", size: Buffer.byteLength(forwarded), contentId: null, bytes: new TextEncoder().encode(forwarded) }]);
+  });
+
+  it("enforces limits inside discarded branches with bounded selected controls", async () => {
+    const baseline = envelope(wireMultipart("alternative", "o", [chosen]));
+    for (const limits of [{ maxPartCount: 8 }, { maxNestingDepth: 3 }, { maxHeadersSize: 4096 }, { maxForwardedAddresses: 1 }]) {
+      expect(await parseRaw(baseline, { limits })).toMatchObject({ text: "Chosen plain", html: "<p>Chosen HTML</p>" });
+    }
+    const source = (branch: string) => envelope(wireMultipart("alternative", "o", [branch, chosen]));
+    const forward = (body: string) => wirePart("message/rfc822", body);
+    await expect(parseRaw(source(forward(wireMultipart("mixed", "f", Array.from({ length: 10 }, () => plain("x"))))), { limits: { maxPartCount: 8 } })).rejects.toMatchObject({ code: "EMAXPARTCOUNT" });
+    let deep = plain("x");
+    for (let i = 0; i < 6; i++) deep = wireMultipart("mixed", `d${i}`, [deep]);
+    await expect(parseRaw(source(forward(deep)), { limits: { maxNestingDepth: 3 } })).rejects.toMatchObject({ code: "EMAXNESTINGDEPTH" });
+    await expect(parseRaw(source(forward(`X-Pad: ${"x".repeat(5000)}\r\n\r\nx`)), { limits: { maxHeadersSize: 4096 } })).rejects.toMatchObject({ code: "EMAXHEADERSIZE" });
+    await expect(parseRaw(source(forward("From: one@test.com\r\nTo: two@test.com\r\n\r\nForwarded")), { limits: { maxForwardedAddresses: 1 } })).rejects.toMatchObject({ code: "EMAXFORWARDEDADDRESSES" });
+  });
+
+  it("preserves deep sequential groups and wide independent alternatives without duplicating fallbacks", async () => {
+    let deep = chosen;
+    const expected = ["Chosen plain"];
+    for (let i = 0; i < 32; i++) {
+      deep = wireMultipart("alternative", `a${i}`, [plain("Unused fallback"), wireMultipart("mixed", `m${i}`, [deep, plain(`Tail${i}`)])]);
+      expected.push(`Tail${i}`);
+    }
+    expect((await parseRaw(envelope(deep))).text).toBe(expected.join("\n"));
+    const wide = wireMultipart("mixed", "w", Array.from({ length: 64 }, (_, i) => wireMultipart("alternative", `a${i}`, [plain("Unused fallback"), wireMultipart("alternative", `b${i}`, [plain(`Plain${i}`), html(`<p>HTML${i}</p>`)])])));
+    const message = await parseRaw(envelope(wide));
+    expect(message.text).toBe(Array.from({ length: 64 }, (_, i) => `Plain${i}`).join("\n"));
+    expect(message.html).toBe(Array.from({ length: 64 }, (_, i) => `<p>HTML${i}</p>`).join("\n"));
   });
 });
 

@@ -185,6 +185,7 @@ catalogs:
 
 patchedDependencies:
   '@base-ui/react@1.9.0': 57cd3032dc5edaa9f538a057c350e3655ed26a7566c65223bc4b3393384e82c2
+  postal-mime@4.1.3: dab800d037d60d183c87c22fc5fc576b696de0f56cb5192135ad2324c82eb9ff
 
 importers:
 
@@ -595,7 +596,7 @@ importers:
         version: 8.0.1
       postal-mime:
         specifier: ^4.1.3
-        version: 4.1.3
+        version: 4.1.3(patch_hash=dab800d037d60d183c87c22fc5fc576b696de0f56cb5192135ad2324c82eb9ff)
     devDependencies:
       '@types/css-tree':
         specifier: 3.2.0
@@ -7772,7 +7773,7 @@ snapshots:
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
-  postal-mime@4.1.3: {}
+  postal-mime@4.1.3(patch_hash=dab800d037d60d183c87c22fc5fc576b696de0f56cb5192135ad2324c82eb9ff): {}
 
   postcss-selector-parser@7.1.7:
     dependencies:
