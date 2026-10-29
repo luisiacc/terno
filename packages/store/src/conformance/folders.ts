@@ -182,6 +182,9 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       // paged: above an id, at most a limit
       expect(await locations.twins(envelope, 0, 1)).toEqual([r.inserted[0]!]);
       expect(await locations.twins(envelope, r.inserted[0]!, 50)).toEqual([r.inserted[1]!]);
+      // Codex R26: with a Message-ID, those carrying it
+      const withId = (await store.debug.snapshot()).messages.find((x) => x.id === r.inserted[2]!)!.rfcMessageId;
+      expect(await locations.twins({ ...envelope, rfcMessageId: withId }, 0, 50)).toEqual([r.inserted[2]!]);
     });
 
     it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {

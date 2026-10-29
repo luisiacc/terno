@@ -1493,6 +1493,41 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", stays)).toEqual([{ mailbox: "Z" }]);
   });
 
+  it("Codex R26: of two messages sharing a Message-ID and envelope, the one moved after the sweep keeps its identity", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Gemelos tardíos con Message-ID", id: "late-shared@x" });
+    ctl.addMessage("Z", { raw: twin });
+    const second = ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(2);
+    const moved = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", second.uid)!.id;
+    const stays = before.find((m) => m.id !== moved)!.id;
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages("Z", [second.uid], "A");
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(locks).toBeGreaterThanOrEqual(2);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Gemelos tardíos con Message-ID' ORDER BY id")).toEqual(before);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", stays)).toEqual([{ mailbox: "Z" }]);
+  });
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;

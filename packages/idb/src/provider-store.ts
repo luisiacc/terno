@@ -194,7 +194,17 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
-  twins(e: { subject: string; fromEmail: string; date: number; size: number }, afterId: number, limit: number) {
+  twins(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, afterId: number, limit: number) {
+    // with a Message-ID: the messages that carry it (a handful), by envelope
+    if (e.rfcMessageId)
+      return this.read(() =>
+        T(this.c, "messages")
+          .by("rfc", this.accountId, e.rfcMessageId)
+          .filter((m) => m.from_email === e.fromEmail && m.date === e.date && m.size === e.size && m.subject === e.subject && (m.id as number) > afterId)
+          .map((m) => m.id as number)
+          .sort((x, y) => x - y)
+          .slice(0, limit),
+      );
     // the bucket holds exactly the envelope's ID-less messages (Codex R20: never a sender's or a date's every one),
     // sorted once and kept while it's unchanged, each page a seek into it (Codex R21: never a scan and a sort a page)
     return this.read(() => {

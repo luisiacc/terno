@@ -63,6 +63,8 @@ interface Ambiguous {
   live: boolean;
   /** its folder's UIDNEXT when read: acknowledged once it's told apart */
   uidnext: number;
+  /** a Message-ID's: as a copy, this stored message gains the place (the same message in one more folder) */
+  attachTo: number | null;
 }
 
 /**
@@ -430,8 +432,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
        * Every stored ID-less message with this envelope, under any key, oldest first: read once a pass (paged, never
        * cut: Codex R20), one list shared by every message held back with it, so telling them apart stays linear.
        */
-      const twinGroup = async (e: { subject: string; fromEmail: string; date: number; size: number }, include: number | null): Promise<number[]> => {
-        const at = `${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
+      const twinGroup = async (e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, include: number | null): Promise<number[]> => {
+        const at = `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
         let group = twinsOf.get(at);
         if (!group) {
           group = [];
@@ -485,6 +487,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const flags = [...(m.flags ?? new Set<string>())];
           /** an ID-less message whose stored twins are still placed: a copy, or one of them moved since its sweep */
           let ambiguousOf: number[] | null = null;
+          /** a Message-ID held back: as a copy, the same message (this one) in one more folder (Codex R26) */
+          let attachTo: number | null = null;
           const env = m.envelope;
           // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
           const atLocation = await locations.at(path, uidvalidity, m.uid);
@@ -564,7 +568,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               continue;
             }
           }
-          if (existing) {
+          // a Message-ID with twins (the same envelope stored more than once), the plain-key one still placed elsewhere:
+          // a copy of it here, or one of the others moved here after its folder's sweep; told apart once every folder
+          // is read, like ID-less twins (Codex R26)
+          if (existing && messageKey(env?.messageId) && ambiguousOf === null && (await locations.get(existing.id, path)) === null && (await locations.count(existing.id)) > 0) {
+            const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, existing.id);
+            if (group.length > 1) {
+              ambiguousOf = group;
+              attachTo = existing.id;
+            }
+          }
+          if (existing && attachTo === null) {
             // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
             const sameMailbox = await locations.get(existing.id, path);
             if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
@@ -627,7 +641,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
-          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
+          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext), attachTo });
           else if (!old) fresh.push(incoming);
         }
       }
@@ -707,6 +721,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           leaving.set(l.mailbox, ids);
         }
         touched.add(id);
+      } else if (a.attachTo !== null) {
+        await upsertLocation(a.attachTo, a.path, a.uidvalidity, a.uid, a.flags);
+        touched.add(a.attachTo);
       } else if (!a.old) copies.push(a.incoming);
     }
     for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);

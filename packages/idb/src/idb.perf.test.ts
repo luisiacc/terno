@@ -184,6 +184,11 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
     console.log(`folder ${label}: ${r.ms.toFixed(2)} ms`);
     expect(r.ms, `folder ${label}`).toBeLessThanOrEqual(FRAME * MULT);
   }
+  // Codex R26: "Waiting" in a folder older than its window stops at once
+  const expired = await warm(() => store.threads.list({ ...folder, filter: "waiting", limit: 100, now: NOW + 400 * 86_400_000 }));
+  console.log(`folder waiting, all of it older than the window: ${expired.ms.toFixed(2)} ms`);
+  expect(expired.result.items).toHaveLength(0);
+  expect(expired.ms, "folder waiting, all of it older than the window").toBeLessThanOrEqual(0.25 * MULT);
   // Codex R11: "Unread" in a folder where everything is read walks only its (no) unread memberships, never the folder
   const tables = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { rows: Map<unknown, Record<string, unknown>>; put(row: Record<string, unknown>): unknown } } } }).c.db;
   const memberships = [...tables.table("thread_folders").rows.values()].filter((r) => r.account_id === account);

@@ -103,6 +103,8 @@ describe("navigation", () => {
     db.run("CREATE TEMP TABLE unread_before AS SELECT id, unread_count FROM threads WHERE account_id = ?", big.account_id);
     db.run("UPDATE threads SET unread_count = 0 WHERE account_id = ?", big.account_id);
     db.run("UPDATE thread_folders SET unread = 0 WHERE account_id = ?", big.account_id);
+    // Codex R26: "Waiting" in a folder older than its window walks none of it
+    gate("list a folder, waiting, all of it older than the window", 1, () => listThreads(db, { ...folder, filter: "waiting", now: NOW + 400 * 86_400_000, limit: 100 }));
     gate("list a folder, unread only, when all of it is read", 1, () => listThreads(db, { ...folder, filter: "unread", limit: 100 }));
     db.run("UPDATE threads SET unread_count = (SELECT unread_count FROM unread_before b WHERE b.id = threads.id) WHERE account_id = ?", big.account_id);
     db.run("UPDATE thread_folders SET unread = (SELECT unread_count > 0 FROM threads WHERE id = thread_id) WHERE account_id = ?", big.account_id);

@@ -242,8 +242,11 @@ export function folderPage(c: Ctx, p: ListParams): Page {
     else lo = mid + 1;
   }
   const rows: R[] = [];
+  // newest first: "Waiting" stops at its window's start (Codex R26: an expired folder walked whole)
+  const floor = listFilterOf(p) === "waiting" ? waitingCutoff(p.now!) : -Infinity;
   for (let i = lo; i < size && rows.length <= p.limit; i++) {
     const t = threads.get(idAt(i));
+    if (t && t.last_date < floor) break;
     if (pass(t)) rows.push(t);
   }
   const hasMore = rows.length > p.limit;

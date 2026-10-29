@@ -157,6 +157,11 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
     const unread = filter === "unread";
     from = `thread_folders tf INDEXED BY ${unread ? "thread_folders_unread_date" : "thread_folders_date"} CROSS JOIN ${threads} ON t.id = tf.thread_id`;
     if (unread) where.unshift("tf.unread = 1");
+    // "Waiting" ends at its window's start, the date index's range (Codex R26: an expired folder walked whole)
+    if (filter === "waiting") {
+      where.unshift("tf.last_date >= ?");
+      params.unshift(waitingSql(p.now).params[0]!);
+    }
     where.unshift("tf.account_id = ? AND tf.folder = ? AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
     params.unshift(p.accountId!, p.folder!, p.accountId!, p.folder!);
     order = "tf.last_date DESC, tf.thread_id DESC";
