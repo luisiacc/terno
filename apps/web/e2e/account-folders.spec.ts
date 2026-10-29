@@ -83,6 +83,18 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await expect(selected(page)).toHaveCount(1);
   });
 
+  test("a category made with the sidebar's + opens for all accounts, even from inside one (Codex R2)", async ({ app: page }) => {
+    const [a] = await accountIds(page);
+    await row(page, a!).click();
+    await child(page, a!, "sent").click();
+    await page.getByText("Categories").first().hover();
+    await page.getByTestId("new-category").click();
+    await page.getByTestId("new-category-input").fill("Recibos 64");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await listFor(page))[1]).toBeNull();
+    await expect(page.locator("#app-sidebar [aria-current=page]")).toContainText("Recibos 64");
+  });
+
   test("shortcuts keep the scope for the folders an account lists; Starred goes to all accounts", async ({ app: page }) => {
     const [a] = await accountIds(page);
     await row(page, a!).click();

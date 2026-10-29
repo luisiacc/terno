@@ -58,15 +58,16 @@ function navigatePatch(s: AppState): Partial<AppState> {
 /**
  * A new category from its name (the sidebar's +, the tabs' +): the next
  * color, then its list. False when nothing was created (empty, or refused:
- * the reason is in the snack).
+ * the reason is in the snack). `allAccounts`: the sidebar's, whose
+ * categories are cross-account (plan 64); the tabs' keeps the account you're in.
  */
-export async function createCategory(name: string): Promise<boolean> {
+export async function createCategory(name: string, o: { allAccounts?: boolean } = {}): Promise<boolean> {
   const trimmed = name.trim();
   if (!trimmed) return false;
   try {
     const color = CATEGORY_COLORS[getApp().categories.length % CATEGORY_COLORS.length]!;
     const c = await client.call("categories.create", { name: trimmed, color });
-    navigate({ categoryId: c.id });
+    navigate(o.allAccounts ? { categoryId: c.id, accountId: null } : { categoryId: c.id });
     return true;
   } catch (e) {
     snack.error(String(e));

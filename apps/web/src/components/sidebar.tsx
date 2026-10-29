@@ -418,7 +418,7 @@ export function Sidebar() {
   // the same creation as the List layout's tab "+" (lib/tabs)
   const createCategory = async (name: string) => {
     setCreating(false);
-    await createNamedCategory(name);
+    await createNamedCategory(name, { allAccounts: true });
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 64)

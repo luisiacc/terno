@@ -111,6 +111,17 @@ describe("opening a tab", () => {
     expect(await createCategory("A")).toBe(false);
     expect(getApp().categoryId).toBeNull();
   });
+
+  it("plan 64 (Codex R2): the sidebar's + opens it for all accounts; the tabs' + keeps the account you're in", async () => {
+    setApp({ categories: [] as never });
+    fake.handlers["categories.create"] = async () => ({ id: 9, name: "Recibos" });
+    at({ view: "sent", accountId: 2 });
+    expect(await createCategory("Recibos", { allAccounts: true })).toBe(true);
+    expect([getApp().categoryId, getApp().accountId]).toEqual([9, null]);
+    at({ view: "inbox", accountId: 2 });
+    expect(await createCategory("Recibos")).toBe(true);
+    expect([getApp().categoryId, getApp().accountId]).toEqual([9, 2]);
+  });
 });
 
 describe("what fits on the row", () => {
