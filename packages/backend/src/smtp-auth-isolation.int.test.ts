@@ -2,12 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { createRegistry, parseRaw } from "@terno/mail";
+import { createRegistry, parseRaw, type SendPayload } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { readCopyWire } from "./sent-copy";
+import { prepareCopyWire, readCopyWire } from "./sent-copy";
+import { buildRaw } from "../../mail/src/compose";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -196,6 +197,62 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     const [copy] = t.imap.control.listMessages("Sent", { raw: true });
     expect(t.received[0]!.raw.toString()).toContain("Exact lf-wire send.\r\n.Dot line");
     expect(copy?.raw).toEqual(t.received[0]!.raw);
+  });
+
+  async function legacyCapture(t: Awaited<ReturnType<typeof setup>>, opId: string) {
+    const payload = JSON.parse((await t.backend.store.ops.get(opId))!.payload_json) as SendPayload;
+    const built = await buildRaw(payload);
+    // Model the old composer image, without changing the immutable store implementation.
+    const legacy = Buffer.from(built.toString().replace("Legacy body.\r\n", "Legacy body.\n"));
+    expect(legacy.toString()).toContain("Legacy body.\n.Dot line");
+    await prepareCopyWire(t.backend.store, opId, legacy, async () => {}, () => {});
+    return legacy;
+  }
+
+  it("an old sealed LF pending capture is refused before SMTP and remains immutable across restart", async () => {
+    const t = await setup(); const account = await t.add();
+    const { opId } = await t.send("legacy-pending", account.id, "Legacy body.\r\n.Dot line");
+    const legacy = await legacyCapture(t, opId);
+    await t.reopen();
+    await t.backend.runWorker();
+    expect((await t.ops()).find((op) => op.id === opId)).toMatchObject({ state: "failed", attempts: 1 });
+    expect(t.auths).toHaveLength(1); // Account verification only; no submit AUTH or DATA.
+    expect(t.received).toHaveLength(0);
+    expect(t.imap.control.listMessages("Sent")).toHaveLength(0);
+    expect(Buffer.from(await readCopyWire(t.backend.store, opId, async () => {}, () => {}))).toEqual(legacy);
+    await t.reopen(); await t.backend.runWorker();
+    expect(t.received).toHaveLength(0);
+    expect(Buffer.from(await readCopyWire(t.backend.store, opId, async () => {}, () => {}))).toEqual(legacy);
+  });
+
+  it.each(["missing", "exact LF", "CRLF collision"] as const)("accepted legacy LF repair preserves its historical bytes: %s", async (existing) => {
+    const t = await setup(); const account = await t.add();
+    const { opId } = await t.send("legacy-accepted", account.id, "Legacy body.\r\n.Dot line");
+    await t.backend.store.ops.claimReady(Date.now(), 1);
+    const legacy = await legacyCapture(t, opId);
+    // Synthetic historical accepted receipt, not a claim that SMTP accepted LF unchanged.
+    await t.backend.store.sendCopies.accepted(opId, null);
+    await t.backend.store.sendCopies.record(opId, "unknown", { mailbox: "Sent" });
+    await t.backend.store.ops.markUnknown(opId, "Synthetic historical acceptance", Date.now());
+    if (existing !== "missing") t.imap.control.addMessage("Sent", { raw: existing === "exact LF" ? legacy : Buffer.from(legacy.toString().replace("Legacy body.\n", "Legacy body.\r\n")) });
+    await t.reopen();
+    expect(Buffer.from(await readCopyWire(t.backend.store, opId, async () => {}, () => {}))).toEqual(legacy);
+    await expect(t.backend.store.ops.resolveUnknown(opId, "retry", Date.now())).rejects.toThrow();
+    const appends = t.imapCommands.filter((c) => c === "APPEND").length;
+    if (existing !== "missing") {
+      // ImapKit FETCH normalizes even its stored LF image; exact-byte reconciliation must refuse it.
+      await expect(t.client.call("ops.repairSentCopy", { opId })).rejects.toThrow();
+      expect(await t.backend.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "unknown" });
+      expect(Buffer.from(await readCopyWire(t.backend.store, opId, async () => {}, () => {}))).toEqual(legacy);
+    } else {
+      await t.client.call("ops.repairSentCopy", { opId });
+      expect(await t.backend.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "saved" });
+      expect(t.imap.control.listMessages("Sent", { raw: true })[0]?.raw).toEqual(legacy);
+    }
+    expect(t.imapCommands.filter((c) => c === "APPEND")).toHaveLength(appends + (existing === "missing" ? 1 : 0));
+    expect(t.imap.control.listMessages("Sent")).toHaveLength(1);
+    await t.reopen(); await t.backend.runWorker();
+    expect(t.auths).toHaveLength(1); expect(t.received).toHaveLength(0);
   });
 
   it("535 parks only sends while IDLE, body reads, flags and foreground receiving work across SQL reopen", async () => {

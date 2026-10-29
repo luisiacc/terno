@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { MAX_ATTACHMENT_BYTES, MAX_MIME_BYTES } from "@terno/core";
-import { buildRaw } from "./compose";
+import { buildRaw, checkSmtpWire } from "./compose";
 import { buildRawPortable } from "./compose-portable";
 import { parseRaw } from "./mime";
 import type { SendPayload } from "./types";
@@ -22,7 +22,7 @@ async function measured(work: () => Promise<Uint8Array> | Uint8Array) {
   finally { active = false; clearImmediate(scheduled); }
 }
 
-for (const [name, build] of [["Node SMTP", (p: SendPayload) => buildRaw(p)], ["Node Gmail MIME", (p: SendPayload) => buildRaw(p, { keepBcc: true })], ["portable Gmail MIME", buildRawPortable]] as const) {
+for (const [name, build] of [["Node SMTP", async (p: SendPayload) => { const raw = await buildRaw(p, { smtp: true }); await checkSmtpWire(raw); return raw; }], ["Node Gmail MIME", (p: SendPayload) => buildRaw(p, { keepBcc: true })], ["portable Gmail MIME", buildRawPortable]] as const) {
   it(`${name}: complete allowed attachment preparation yields, bounds slices and preserves exact bytes`, async () => {
     const bytes = Buffer.alloc(MAX_ATTACHMENT_BYTES);
     for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
@@ -77,4 +77,15 @@ it("small portable Gmail sends keep the fast string body and throughput", async 
   process.stderr.write(`[small portable sends] ${posts} sends in ${elapsed.toFixed(2)} ms\n`);
   expect(posts).toBe(100);
   expect(elapsed).toBeLessThanOrEqual(500);
+});
+
+it("SMTP validator yields over maximum canonical captured bytes and newline-dense preparation", async () => {
+  const raw = Buffer.alloc(MAX_MIME_BYTES, 65);
+  for (let i = 998; i + 1 < raw.length; i += 1000) { raw[i] = 13; raw[i + 1] = 10; }
+  raw[raw.length - 2] = 13; raw[raw.length - 1] = 10;
+  const scan = await measured(async () => { await checkSmtpWire(raw); return raw; });
+  expect(scan.turns).toBeGreaterThan(100); expect(scan.maxCpu).toBeLessThanOrEqual(15);
+  const dense = await measured(async () => { const wire = await buildRaw({ ...base, text: "x\n".repeat(8000) }, { smtp: true }); await checkSmtpWire(wire); return wire; });
+  expect(dense.maxCpu).toBeLessThanOrEqual(15);
+  expect(Buffer.from(dense.raw).toString()).not.toMatch(/(?<!\r)\n|\r(?!\n)/);
 });
