@@ -234,6 +234,9 @@ export interface OpPark {
 }
 
 export interface OpRow {
+  sent_copy?: import("@terno/core").SentCopyState;
+  send_partial?: boolean;
+  send_recipient_unknown?: boolean;
   id: string;
   seq: number;
   account_id: number;

@@ -16,3 +16,5 @@ export * from "./localized";
 
 export * from "./attachments";
 export * from "./similar";
+
+export * from "./send-copy";

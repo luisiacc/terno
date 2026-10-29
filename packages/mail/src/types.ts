@@ -29,6 +29,8 @@ export interface ProviderOp {
   kind: string;
   target: { messageIds?: number[] };
   payload: unknown;
+  submissionAccepted?(): void;
+  sentCopy?: import("./sent-copy").SentCopyHooks;
 }
 
 export type HttpRequestContext =
@@ -171,6 +173,8 @@ export interface MailProvider {
   folders?(sink: SyncSink): Promise<void>;
   /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */
   execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
+  /** Deliberate copy-only recovery. Never submits a message to SMTP. */
+  repairSentCopy?(input: { raw: Uint8Array; messageId: string; mailbox: string | null }, hooks: import("./sent-copy").SentCopyHooks): Promise<void>;
   /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */
   watch?(onChange: () => void): () => void;
   /**

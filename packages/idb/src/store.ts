@@ -1,3 +1,5 @@
+import { idbSendCopies } from "./send-copies";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, copyUnavailable } from "@terno/store";
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
@@ -415,6 +417,9 @@ export class IdbMailStore implements MailStore {
     chunks.evict([...chunks.rows.keys()]);
     // No pending undo remains here; cold-delete keys need not outlive their committed unit.
     chunks.absent.clear();
+    const wire = this.db.table("send_copy_bytes");
+    wire.evict([...wire.rows.keys()]);
+    wire.absent.clear();
     const bodies = this.db.table<R>("message_bodies");
     let { count, bytes } = this.bodyCache();
     if (count <= BODY_CACHE && bytes <= BODY_CACHE_BYTES) return;
@@ -1015,15 +1020,18 @@ export class IdbMailStore implements MailStore {
       const snapshot = admission && copyOpAdmission(admission);
       return this.command(() => claimReadyOps(this.c, now, limit, snapshot), { early: true });
     },
-    get: (id) => this.early(() => getOp(this.c, id)),
+    get: (id) => this.early(() => this.copyOp(getOp(this.c, id))),
     complete: (id, result, now) =>
       this.preparedFlagOutcome(id, () => {
         const op = getOp(this.c, id);
+        if (op?.kind === "send" && op.state !== "running") return { touched: [], deltas: [] };
         completeOp(this.c, id, now);
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
+        const receipt = idbSendCopies(this.db).get(id);
+        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
         if (result?.warning) ops.update(ops.get(id)!, { last_error: result.warning });
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
@@ -1052,7 +1060,11 @@ export class IdbMailStore implements MailStore {
         }
         return state;
       }),
-    markUnknown: (id, error, now) => this.preparedFlagOutcome(id, () => markOpUnknown(this.c, id, error, now)),
+    markUnknown: (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => {
+      const receipt = idbSendCopies(this.db).get(id);
+      if (getOp(this.c, id)?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
+      markOpUnknown(this.c, id, error, now);
+    }),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
     release: (id, now) => this.command(() => releaseOp(this.c, id, now), { early: true }),
     resumeAuth: (accountId, now) => this.command(() => resumeAuthOps(this.c, accountId, now), { early: true }),
@@ -1066,7 +1078,7 @@ export class IdbMailStore implements MailStore {
       const refund = o.refundClaim;
       return this.command(() => deferOp(this.c, id, now, refund), { early: true });
     },
-    recent: (limit) => this.early(() => listRecentOps(this.c, limit)),
+    recent: (limit) => this.early(() => listRecentOps(this.c, limit).map((op) => this.copyOp(op)!)),
     resolveUnknown: (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => {
         const flagBefore = flagEpochs(idbFlags(this.c));
@@ -1077,9 +1089,12 @@ export class IdbMailStore implements MailStore {
           if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) throw new RpcError("STALE", L("errors.opResolved"));
           completeOp(this.c, id, now);
           if (op.kind === "send") idbAssets(this.db).unlink("op", id);
+          const receipt = idbSendCopies(this.db).get(id);
+          if (receipt?.submission === "accepted") T(this.c, "ops").update(T(this.c, "ops").get(id)!, { last_error: copyWarningText(receipt) });
           return { touched: [] };
         }
         if (resolution === "retry") {
+          if (idbSendCopies(this.db).get(id)?.submission === "accepted") throw copyUnavailable();
           if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) {
             const ids = rearmFlagEffects(idbFlags(this.c), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
@@ -1133,6 +1148,28 @@ export class IdbMailStore implements MailStore {
     info: async (accountId, id) => this.read(() => assetRef(assetRow(idbAssets(this.db), accountId, id))),
     read: async (accountId, id, index) => this.exclusive(async () => { assetRow(idbAssets(this.db), accountId, id); if (!Number.isSafeInteger(index) || index < 0) throw assetError(); const key = `${id}:${index}`; await readLazy(this.idb, this.db.table("attachment_bytes"), [key]); return idbAssets(this.db).chunk(key) ?? null; }),
     discard: async (accountId, id) => this.command(() => { const db = idbAssets(this.db); assetRow(db, accountId, id, false); if (db.pinned(id)) throw assetError(); db.remove(id); }),
+  };
+
+  private copyOp(op: import("@terno/store").OpRow | null): import("@terno/store").OpRow | null {
+    if (!op || op.kind !== "send") return op;
+    const receipt = idbSendCopies(this.db).get(op.id);
+    const flags = sendWarningFlags(receipt?.warning ?? op.last_error);
+    if (!receipt && !flags.partial && !flags.unknown) return op;
+    return { ...op, ...(receipt && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
+  }
+
+  readonly sendCopies: MailStore["sendCopies"] = {
+    get: (id) => this.early(() => idbSendCopies(this.db).get(id)),
+    list: (accountId) => this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === accountId).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
+    resetWireSlice: async (id) => this.command(() => resetCopyWireSlice(idbSendCopies(this.db), id)),
+    startWire: async (id, size) => this.command(() => startCopyWire(idbSendCopies(this.db), id, size)),
+    appendWire: async (id, index, data) => this.command(() => appendCopyWire(idbSendCopies(this.db), id, index, data)),
+    sealWire: async (id) => this.command(() => sealCopyWire(idbSendCopies(this.db), id)),
+    readWire: async (id, index) => this.exclusive(async () => { const key = `${id}:${index}`; const tx = this.idb.transaction("send_copy_bytes", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Sent-copy read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("send_copy_bytes").get(key); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),
+    accepted: async (id, warning) => this.command(() => acceptCopySubmission(idbSendCopies(this.db), id, warning)),
+    record: async (id, copy, identity) => this.command(() => { recordCopy(idbSendCopies(this.db), id, copy, identity); const op = T(this.c, "ops").get(id); if (op?.state === "succeeded") T(this.c, "ops").update(op, { last_error: copyWarningText(idbSendCopies(this.db).get(id)!) }); }),
+    forgetSlice: async (id) => this.command(() => forgetCopySlice(idbSendCopies(this.db), id)),
+    pruneSavedSlice: async (id) => this.command(() => pruneSavedCopySlice(idbSendCopies(this.db), id)),
   };
 
   readonly compose: MailStore["compose"] = {
@@ -1203,6 +1240,7 @@ export class IdbMailStore implements MailStore {
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        if (account.kind === "imap" && (cfg.config as { appendToSent?: boolean }).appendToSent) reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
@@ -1467,8 +1505,9 @@ export class IdbMailStore implements MailStore {
         return { account, claimed };
       }),
     update: (id, patch) => this.command(() => updateAccount(this.c, id, patch)),
-    remove: (id) =>
-      this.command(() => {
+    remove: async (id) => {
+      for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId)) await this.o.platform.yield();
+      return this.command(() => {
         T(this.c, "accounts").delete(id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again
         startRescan(this.db);
@@ -1476,7 +1515,8 @@ export class IdbMailStore implements MailStore {
         // a Map skips entries deleted while iterating
         for (const s of secrets.all()) if (String(s.name).startsWith(`account:${id}:`)) secrets.deleteRow(s);
         this.providerStores.delete(id);
-      }),
+      });
+    },
     setSyncState: (id, patch) =>
       this.command(() => {
         const accounts = T(this.c, "accounts");

@@ -12,3 +12,5 @@ export * from "./gmail-web";
 export * from "./google-photos";
 export * from "./incoming";
 export * from "./provider-http";
+
+export { sentCopyWarning } from "./sent-copy";

@@ -1,3 +1,4 @@
+import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
 import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
@@ -1416,6 +1417,7 @@ export class BackendCore {
 
   /** Processes ready ops until none remain; ops of one account run in sequence order. */
   async runWorker(): Promise<number> {
+    await this.ready;
     if (this.workerRunning) return 0;
     this.workerRunning = true;
     let processed = 0;
@@ -1529,6 +1531,7 @@ export class BackendCore {
     let target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
     let accepted = false, transportStarted = false;
+    let sendAccepted: { warning: string | null } | undefined;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
       if (operationFlagFields(op.kind).length) {
@@ -1563,13 +1566,28 @@ export class BackendCore {
       // No await between the final admission check and provider dispatch.
       this.undispatched.delete(op.id);
       transportStarted = true;
-      const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload });
+      const receipt = sending ? await this.store.sendCopies.get(op.id) : null;
+      if (receipt?.submission === "accepted") throw new ProviderError(L("errors.sentCopy.unavailable"), false, true);
+      if (!this.current(life) || hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) { await this.store.ops.release(op.id, this.now()); return; }
+      const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
+        submissionAccepted: () => { accepted = true; },
+        ...(receipt && { sentCopy: {
+          prepare: (raw) => this.accountWrite(life, () => prepareCopyWire(this.store, op.id, raw, () => this.platform.yield(), () => { this.assertCurrent(life); if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true); })),
+          accepted: (warning) => { sendAccepted = { warning: warning ? encodeText(warning) : null }; return this.accountWrite(life, () => this.store.sendCopies.accepted(op.id, sendAccepted!.warning)); },
+          record: (copy, identity) => this.accountWrite(life, () => this.store.sendCopies.record(op.id, copy, identity)),
+        } }),
+      });
       accepted = true;
       const { warning, ...result } = execution || {};
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       // a warning in Terno's words stays a catalog message (see opInfo)
-      const done = await this.store.ops.complete(op.id, warning === undefined ? result : { ...result, warning: encodeText(warning) }, this.now());
+      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now());
+      if (sending && receipt) {
+        try {
+          if ((await this.store.sendCopies.get(op.id))?.copy === "saved") while (!this.stopped && await this.store.sendCopies.pruneSavedSlice(op.id)) await this.platform.yield();
+        } catch { /* Saved wire remains charged for deliberate cleanup; submission is complete. */ }
+      }
       this.categorizer.apply(done.deltas);
       if (done.touched.length) this.notifyChanged(done.touched);
     } catch (caught) {
@@ -1586,7 +1604,7 @@ export class BackendCore {
       recovery.record = async () => {
         let state: OpState | null = null;
         // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
-        if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now());
+        if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now(), sendAccepted);
         else if (error instanceof RequestNotDispatchedError && !this.current(life)) await this.parkClosedOp(op);
         else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
           await this.store.ops.release(op.id, this.now());
@@ -1642,6 +1660,64 @@ export class BackendCore {
     this.server.emit("op", this.opInfo(op));
   }
 
+  private readonly copyActions = new Set<string>();
+
+  async repairSentCopy(id: string): Promise<import("@terno/core").SentCopyState> {
+    if (this.copyActions.size >= 2 || this.copyActions.has(id) || this.sendsInFlight.has(id) || this.stopped || this.draining) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+    this.copyActions.add(id);
+    try {
+      const row = await this.store.sendCopies.get(id);
+      if (!row || row.retiring || row.submission !== "accepted" || row.copy === "saved") throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+      const life = this.lifetime(row.accountId);
+      return await this.accountWrite(life, async () => {
+        this.sendsInFlight.add(id);
+        try {
+          const provider = await this.provider(row.accountId);
+          this.assertCurrent(life);
+          if (!provider?.repairSentCopy || this.stopped || this.draining) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+          const op = await this.store.ops.get(id);
+          if (!op) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+          const { messageId } = JSON.parse(op.payload_json) as SendPayload;
+          const raw = await readCopyWire(this.store, id, () => this.platform.yield(), () => this.assertCurrent(life));
+          this.assertCurrent(life);
+          await provider.repairSentCopy({ raw, messageId, mailbox: row.mailbox }, {
+            prepare: async () => raw,
+            accepted: async () => { throw new Error("Copy repair cannot submit SMTP"); },
+            record: (copy, identity) => { this.assertCurrent(life); return this.store.sendCopies.record(id, copy, identity); },
+          });
+          this.assertCurrent(life);
+          const after = await this.store.sendCopies.get(id);
+          if (after?.copy === "saved") {
+            if (op.state === "unknown") await this.store.ops.resolveUnknown(id, "markSent", this.now());
+            try { while (!this.stopped && await this.store.sendCopies.pruneSavedSlice(id)) await this.platform.yield(); } catch { /* The saved copy is already durable. */ }
+          }
+          if (!after) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+          return after.copy;
+        } finally {
+          if (this.sendsInFlight.delete(id) && this.sendsInFlight.size === 0) for (const settle of this.sendsSettled.splice(0)) settle();
+        }
+      });
+    } finally { this.copyActions.delete(id); }
+  }
+
+  async forgetSentCopy(id: string): Promise<void> {
+    if (this.copyActions.size >= 2 || this.copyActions.has(id) || this.sendsInFlight.has(id) || this.stopped || this.draining) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+    this.copyActions.add(id);
+    try {
+      const row = await this.store.sendCopies.get(id);
+      const op = await this.store.ops.get(id);
+      if (!row || !op || !["succeeded", "failed"].includes(op.state)) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+      const life = this.lifetime(row.accountId);
+      await this.accountWrite(life, async () => {
+        while (true) {
+          this.assertCurrent(life);
+          if (!await this.store.sendCopies.forgetSlice(id)) break;
+          await this.platform.yield();
+        }
+      });
+    } finally { this.copyActions.delete(id); }
+  }
+
   opInfo(op: OpRow): OpInfo {
     const payload: unknown = JSON.parse(op.payload_json);
     const subject = payload && typeof payload === "object" && "subject" in payload && typeof payload.subject === "string" ? payload.subject : "";
@@ -1650,6 +1726,8 @@ export class BackendCore {
     const lastError = { lastError: stored?.message ?? null, ...(stored?.i18n ? { lastErrorI18n: stored.i18n } : {}) };
     return {
       id: op.id,
+      ...(op.sent_copy && { sentCopy: op.sent_copy }),
+      ...(op.kind === "send" && { partialRecipients: op.send_partial ?? false, recipientOutcomeUnknown: op.send_recipient_unknown ?? false }),
       accountId: op.account_id,
       kind: op.kind,
       state: op.state,

@@ -16,7 +16,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 24;
+export const LOGICAL_SCHEMA = 25;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -61,6 +61,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dismissed_suggestions", early: true, key: ["key"] },
   { name: "draft_counter", early: true, key: ["id"] },
   { name: "drafts", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("thread_id") } },
+  { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
+  { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "settings", early: true, key: ["key"] },
   // plan 17: the addresses you send from (own) and have written to (written)
   { name: "correspondents", early: true, key: ["email"], indexes: { own: ["own"] } },
@@ -112,6 +114,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("filter_applications", "filter_id", "filters"),
   c("filter_applications", "message_id", "messages"),
   c("ops", "account_id", "accounts"),
+  c("send_copies", "opId", "ops"),
+  c("send_copies", "accountId", "accounts"),
   c("op_targets", "op_id", "ops"),
   c("drafts", "account_id", "accounts"),
   { table: "drafts", column: "thread_id", parent: "threads", onDelete: "setNull" },
@@ -256,6 +260,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
           scan(messages.openCursor(), (cursor) => track(cursor.update({ ...cursor.value, attachment_pending: 1 })));
         }
       }
+      if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
       if (event.oldVersion < 8) {
         open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);

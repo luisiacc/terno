@@ -47,8 +47,13 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
 }
 
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
-export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Promise<{ raw: Buffer; rejected: string[] }> {
-  const raw = await buildRaw(payload);
+export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void }): Promise<{ raw: Buffer; rejected: string[]; recipientOutcomeUnknown?: true }> {
+  let raw = await buildRaw(payload);
+  if (hooks?.prepare) {
+    const prepared = await hooks.prepare(raw);
+    raw = Buffer.from(prepared.buffer, prepared.byteOffset, prepared.byteLength);
+  }
+  let accepted = false;
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.
   let dataStarted = false;
@@ -74,13 +79,16 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload): Pro
   });
   try {
     const info = (await transport.sendMail({ envelope: envelopeOf(payload), raw })) as { rejected?: (string | { address: string })[] };
+    accepted = true;
+    hooks?.accepted?.();
     const rejected = (info.rejected ?? []).map((r) => (typeof r === "string" ? r : r.address));
     // nodemailer resolves when at least one recipient was accepted; report the rest
     return { raw, rejected };
   } catch (error) {
+    if (accepted) return { raw, rejected: [], recipientOutcomeUnknown: true };
     throw classifySmtpError(error, dataStarted);
   } finally {
-    transport.close();
+    try { transport.close(); } catch { /* Closing a transport cannot undo acceptance. */ }
   }
 }
 

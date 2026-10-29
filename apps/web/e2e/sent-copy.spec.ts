@@ -1,0 +1,41 @@
+import { mkdirSync } from "node:fs";
+import AxeBuilder from "@axe-core/playwright";
+import { bytesBase64 } from "@terno/core";
+import { expect, test } from "./fixtures";
+
+for (const scheme of ["light", "dark"] as const) test(`Sent recovery remains discoverable after reload (${scheme})`, async ({ app: page, server }) => {
+  const ctx = { clientId: "sent-copy-ui", origin: "dev" as const };
+  const store = server.backend.store;
+  const account = (await store.accounts.list()).find((a) => a.kind === "imap")!;
+  const config = (await store.accounts.config<Record<string, unknown>>(account.id))!;
+  await store.accounts.setProviderConfig(account.id, { ...config, appendToSent: true });
+  const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.test" }], cc: [], bcc: [], subject: "Synthetic UI receipt", bodyText: "Synthetic", recordReply: false, now: Date.now() });
+  expect((await store.ops.claimReady(Date.now(), 100)).some((op) => op.id === queued.opId)).toBe(true);
+  // The protocol suite supplies real SMTP/APPEND evidence; this fixture exercises its durable renderer projection.
+  await store.sendCopies.startWire(queued.opId, 1);
+  await store.sendCopies.appendWire(queued.opId, 0, bytesBase64(new Uint8Array([65])));
+  await store.sendCopies.sealWire(queued.opId);
+  await store.sendCopies.accepted(queued.opId, null);
+  await store.sendCopies.record(queued.opId, "rejected", { mailbox: "Sent" });
+  await store.ops.complete(queued.opId, { warning: "Synthetic copy warning" }, Date.now());
+  await server.backend.server.invoke("settings.update", { theme: scheme }, ctx);
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-accounts").click();
+  const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`);
+  await editor.getByTestId("account-toggle").click();
+  const recovery = editor.getByTestId("sent-copy-recovery");
+  await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(1);
+  await expect(recovery).toContainText("Copy missing");
+  await expect(recovery.getByRole("button", { name: "Check and repair" })).toBeEnabled();
+  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  await recovery.scrollIntoViewIfNeeded();
+  mkdirSync("/tmp/w01-screenshots", { recursive: true });
+  await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/w01-screenshots/sent-copy-${scheme}.png` });
+  await recovery.getByRole("button", { name: "Clear recovery data" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(0);
+  expect((await store.ops.get(queued.opId))?.state).toBe("succeeded");
+  expect(await store.sendCopies.get(queued.opId)).toBeNull();
+});

@@ -1,3 +1,5 @@
+import { sqlSendCopies } from "./send-copies";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, copyUnavailable } from "@terno/store";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -508,15 +510,18 @@ export class SqlMailStore implements MailStore {
 
   readonly ops: MailStore["ops"] = {
     claimReady: async (now, limit, admission) => claimReadyOps(this.db, now, limit, undefined, admission && copyOpAdmission(admission)),
-    get: async (id) => getOp(this.db, id),
+    get: async (id) => this.copyOp(getOp(this.db, id)),
     complete: async (id, result, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const op = getOp(this.db, id);
+        if (op?.kind === "send" && op.state !== "running") return { touched: [], deltas: [] };
         completeOp(this.db, id, now);
         const touched: number[] = [];
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
+        const receipt = sqlSendCopies(this.db).get(id);
+        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, result.sendAccepted.warning);
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         if (op.kind === "send" && result && localId) {
@@ -545,7 +550,11 @@ export class SqlMailStore implements MailStore {
         }
         return state;
       })),
-    markUnknown: async (id, error, now) => this.preparedFlagOutcome(id, () => this.db.tx(() => markOpUnknown(this.db, id, error, now))),
+    markUnknown: async (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => this.db.tx(() => {
+      const receipt = sqlSendCopies(this.db).get(id);
+      if (getOp(this.db, id)?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
+      markOpUnknown(this.db, id, error, now);
+    })),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
     release: async (id, now) => releaseOp(this.db, id, now),
     resumeAuth: async (accountId, now) => this.db.tx(() => resumeAuthOps(this.db, accountId, now)),
@@ -553,7 +562,7 @@ export class SqlMailStore implements MailStore {
     recover: async (now) => this.recoverFlagOperations(now),
     nextAttemptAt: async (admission) => nextOpAttemptAt(this.db, admission && copyOpAdmission(admission)),
     defer: async (id, now, o) => deferOp(this.db, id, now, o.refundClaim),
-    recent: async (limit) => listRecentOps(this.db, limit),
+    recent: async (limit) => listRecentOps(this.db, limit).map((op) => this.copyOp(op)!),
     resolveUnknown: async (id, resolution, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -563,9 +572,12 @@ export class SqlMailStore implements MailStore {
           if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) throw new RpcError("STALE", L("errors.opResolved"));
           completeOp(this.db, id, now);
           if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
+          const receipt = sqlSendCopies(this.db).get(id);
+          if (receipt?.submission === "accepted") this.db.run("UPDATE ops SET last_error=? WHERE id=?", copyWarningText(receipt), id);
           return { touched: [] };
         }
         if (resolution === "retry") {
+          if (sqlSendCopies(this.db).get(id)?.submission === "accepted") throw copyUnavailable();
           if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) {
             const ids = rearmFlagEffects(sqlFlags(this.db), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
@@ -617,6 +629,28 @@ export class SqlMailStore implements MailStore {
     info: async (accountId, id) => assetRef(assetRow(sqlAssets(this.db), accountId, id)),
     read: async (accountId, id, index) => Promise.resolve().then(() => { assetRow(sqlAssets(this.db), accountId, id); if (!Number.isSafeInteger(index) || index < 0) throw assetError(); return sqlAssets(this.db).chunk(`${id}:${index}`) ?? null; }),
     discard: async (accountId, id) => this.db.tx(() => { const db = sqlAssets(this.db); assetRow(db, accountId, id, false); if (db.pinned(id)) throw assetError(); db.remove(id); }),
+  };
+
+  private copyOp(op: import("@terno/store").OpRow | null): import("@terno/store").OpRow | null {
+    if (!op || op.kind !== "send") return op;
+    const receipt = sqlSendCopies(this.db).get(op.id);
+    const flags = sendWarningFlags(receipt?.warning ?? op.last_error);
+    if (!receipt && !flags.partial && !flags.unknown) return op;
+    return { ...op, ...(receipt && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
+  }
+
+  readonly sendCopies: MailStore["sendCopies"] = {
+    get: (id) => Promise.resolve(sqlSendCopies(this.db).get(id)),
+    list: (accountId) => Promise.resolve(sqlSendCopies(this.db).all().filter((r) => r.accountId === accountId).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
+    resetWireSlice: async (id) => this.db.tx(() => resetCopyWireSlice(sqlSendCopies(this.db), id)),
+    startWire: async (id, size) => this.db.tx(() => startCopyWire(sqlSendCopies(this.db), id, size)),
+    appendWire: async (id, index, data) => this.db.tx(() => appendCopyWire(sqlSendCopies(this.db), id, index, data)),
+    sealWire: async (id) => this.db.tx(() => sealCopyWire(sqlSendCopies(this.db), id)),
+    readWire: async (id, index) => sqlSendCopies(this.db).chunk(id, index),
+    accepted: async (id, warning) => this.db.tx(() => acceptCopySubmission(sqlSendCopies(this.db), id, warning)),
+    record: async (id, copy, identity) => this.db.tx(() => { recordCopy(sqlSendCopies(this.db), id, copy, identity); this.db.run("UPDATE ops SET last_error=? WHERE id=? AND state='succeeded'", copyWarningText(sqlSendCopies(this.db).get(id)!), id); }),
+    forgetSlice: async (id) => this.db.tx(() => forgetCopySlice(sqlSendCopies(this.db), id)),
+    pruneSavedSlice: async (id) => this.db.tx(() => pruneSavedCopySlice(sqlSendCopies(this.db), id)),
   };
 
   readonly compose: MailStore["compose"] = {
@@ -693,6 +727,7 @@ export class SqlMailStore implements MailStore {
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        if (account.kind === "imap" && (cfg.config as { appendToSent?: boolean }).appendToSent) reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);
         if (p.draftId) deleteDraft(this.db, p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
@@ -852,14 +887,16 @@ export class SqlMailStore implements MailStore {
         return { account, claimed };
       }),
     update: async (id, patch) => updateAccount(this.db, id, patch),
-    remove: async (id) =>
-      this.db.tx(() => {
+    remove: async (id) => {
+      for (const row of sqlSendCopies(this.db).all().filter((r) => r.accountId === id)) while (await this.sendCopies.forgetSlice(row.opId)) await this.yieldTo();
+      return this.db.tx(() => {
         removeAccount(this.db, id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again
         startRescan(this.db);
         this.db.run("DELETE FROM secrets WHERE name LIKE ?", `account:${id}:%`);
         this.providerStores.delete(id);
-      }),
+      });
+    },
     setSyncState: async (id, patch) => setAccountSyncState(this.db, id, patch),
     setProviderConfig: async (id, config) => setAccountProviderConfig(this.db, id, config),
     setCursor: async (id, cursor) => setAccountCursor(this.db, id, cursor),

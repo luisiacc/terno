@@ -776,6 +776,9 @@ export function createHandlers(b: Backend): Handlers {
       return b.agents.rotate();
     },
 
+    "ops.sentCopies": ({ accountId }) => store.sendCopies.list(accountId),
+    "ops.repairSentCopy": async ({ opId }) => { return { copy: await b.repairSentCopy(opId) }; },
+    "ops.forgetSentCopy": async ({ opId }) => { await b.forgetSentCopy(opId); return { ok: true as const }; },
     "ops.list": async () => (await store.ops.recent(100)).map((op) => b.opInfo(op)),
     "ops.resolveUnknown": async ({ opId, resolution }) => {
       const r = await store.ops.resolveUnknown(opId, resolution, b.now());

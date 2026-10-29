@@ -17,7 +17,7 @@ export function idbAssets(db: MemDb): AssetDb {
       for (const key of chunks.keysBy("fk_asset_id", id)) { chunks.delete(key); if (++count === limit) break; }
       return chunks.count("fk_asset_id", id) > 0;
     },
-    used: (id) => assetAccounting(db).used(id),
+    used: (id) => assetAccounting(db).used(id) + db.table("send_copies").by("fk_accountId", id).reduce((n, r) => n + Number(r.reserved), 0),
     beginOrphanGrace: (id, now) => assetAccounting(db).beginGrace(id, now),
     orphans: (id, before) => assetAccounting(db).aged(id, before),
     pinned: (id) => links.count("fk_asset_id", id) > 0,

@@ -1,3 +1,4 @@
+import { SentCopies } from "./sent-copies";
 import { localized } from "~/lib/i18n";
 import type { Account, AccountPatch, CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
@@ -182,6 +183,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow label={t("account.connection")} hint={status(account)}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
+      {account.kind === "imap" && <SentCopies key={account.id} accountId={account.id} />}
       <SettingsRow label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>

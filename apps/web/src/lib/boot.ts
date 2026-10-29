@@ -1,3 +1,4 @@
+import { sendWarningTitle } from "./send-warning";
 import { reconcileAccounts } from "~/lib/account-folders";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
@@ -104,7 +105,7 @@ export async function boot(): Promise<void> {
         if (account) announceParkedSend(account);
       }
       if (op.kind === "send" && op.state === "succeeded") {
-        if (op.lastError) snack.warning(t("actions.send.partial"), { description: localized(op.lastError, op.lastErrorI18n), duration: 12_000, background: true });
+        if (op.lastError) snack.warning(t(sendWarningTitle(op)), { description: localized(op.lastError, op.lastErrorI18n), duration: 12_000, background: true });
         else snack.success(t("actions.send.sent"), { background: true });
       }
       if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: localized(op.summary, op.summaryI18n) }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });

@@ -1,3 +1,4 @@
+import { sentCopyWarning, type SentCopyHooks } from "./sent-copy";
 import { FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
@@ -1209,22 +1210,68 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return fallbackName;
   }
 
-  async function send(payload: SendPayload): Promise<{ providerMsgId: string; warning?: Localized }> {
+  async function appendCopy(raw: Uint8Array, hooks?: SentCopyHooks, mailbox?: string): Promise<import("@terno/core").SentCopyState> {
+    let issued = false;
+    try {
+      const c = await connection();
+      const sent = mailbox ?? await ensureMailbox(c, "sent", "Sent");
+      await hooks?.record("unknown", { mailbox: sent });
+      issued = true;
+      const result = await c.append(sent, Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength), ["\\Seen"]);
+      if (!result) throw new Error("APPEND outcome missing");
+      await hooks?.record("saved", { mailbox: sent, ...(result.uidValidity && { uidValidity: String(result.uidValidity) }), ...(result.uid && { uid: result.uid }) });
+      return "saved";
+    } catch (error) {
+      const status = (error as { responseStatus?: string })?.responseStatus;
+      const copy = !issued || status === "NO" || status === "BAD" ? "rejected" : "unknown";
+      // The SMTP latch already owns this outcome, even when local receipt storage fails.
+      try { await hooks?.record(copy); } catch { /* The prior durable state remains conservative. */ }
+      return copy;
+    }
+  }
+
+  async function send(payload: SendPayload, op: ProviderOp): Promise<{ providerMsgId: string; warning?: Localized }> {
     const password = await ctx.getSecret("password");
     if (!password) throw new ProviderAuthError(L("errors.imap.noPassword"));
-    // its own connection, made for this send: a network change never touches it (an outcome after DATA stays ambiguous)
-    const { raw, rejected } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload);
+    const { raw, rejected, recipientOutcomeUnknown } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload, { prepare: op.sentCopy?.prepare, accepted: op.submissionAccepted });
+    const warning = recipientOutcomeUnknown ? L("errors.smtp.recipientOutcomeUnknown") : rejected.length ? L("errors.smtp.notDeliveredTo", { recipients: rejected.join(", ") }) : undefined;
     if (config.appendToSent) {
-      // Best effort: the message is already sent; a failed APPEND must not resend it.
       try {
-        const c = await connection();
-        const sent = await ensureMailbox(c, "sent", "Sent");
-        await c.append(sent, raw, ["\\Seen"]);
+        await op.sentCopy?.accepted(warning);
       } catch {
-        /* next sync still shows the local copy */
+        return { providerMsgId: messageKey(payload.messageId)!, warning: sentCopyWarning("unknown", warning) };
       }
+      const copy = await appendCopy(raw, op.sentCopy);
+      return { providerMsgId: messageKey(payload.messageId)!, warning: sentCopyWarning(copy, warning) };
     }
-    return { providerMsgId: messageKey(payload.messageId)!, warning: rejected.length ? L("errors.smtp.notDeliveredTo", { recipients: rejected.join(", ") }) : undefined };
+    return { providerMsgId: messageKey(payload.messageId)!, warning };
+  }
+
+  async function repairSentCopy(input: { raw: Uint8Array; messageId: string; mailbox: string | null }, hooks: SentCopyHooks): Promise<void> {
+    try {
+    const c = await connection();
+    const mailbox = input.mailbox ?? await ensureMailbox(c, "sent", "Sent");
+    const lock = await c.getMailboxLock(mailbox);
+    try {
+      const matches = await c.search({ header: { "message-id": `<${input.messageId}>` } }, { uid: true });
+      if (!matches || matches.length > 1) throw new ProviderError(L("errors.sentCopy.unavailable"), false);
+      if (matches.length === 1) {
+        const uid = matches[0]!;
+        const message = await c.fetchOne(uid, { size: true }, { uid: true });
+        if (!message || message.size !== input.raw.byteLength) throw new ProviderError(L("errors.sentCopy.unavailable"), false);
+        const source = await c.fetchOne(uid, { source: { start: 0, maxLength: input.raw.byteLength + 1 } }, { uid: true });
+        if (!source || !source.source?.equals(Buffer.from(input.raw.buffer, input.raw.byteOffset, input.raw.byteLength))) throw new ProviderError(L("errors.sentCopy.unavailable"), false);
+        await hooks.record("saved", { mailbox, uidValidity: String(c.mailbox && c.mailbox.uidValidity), uid });
+        return;
+      }
+    } finally {
+      lock.release();
+    }
+    await appendCopy(input.raw, hooks, mailbox);
+    } catch (error) {
+      try { await hooks.record("unknown"); } catch { /* A failed read or write never authorizes APPEND. */ }
+      throw error;
+    }
   }
 
   return {
@@ -1392,8 +1439,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       });
     },
 
+    repairSentCopy,
+
     async execute(op: ProviderOp) {
-      if (op.kind === "send") return send(op.payload as SendPayload);
+      if (op.kind === "send") return send(op.payload as SendPayload, op);
       const ids = op.target.messageIds ?? [];
       if (ids.length === 0) return;
       await withConnection(async (c) => {

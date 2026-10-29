@@ -951,6 +951,21 @@ CREATE INDEX flag_effect_parked_current ON flag_op_effects(message_id,field,coal
 ALTER TABLE drafts ADD COLUMN show_source_context INTEGER NOT NULL DEFAULT 0 CHECK (show_source_context IN (0, 1));
 ` },
   { version: 24, name: "an account's own folders (plan 68)", sql: FOLDERS_V24 },
+  { version: 25, name: "durable Sent-copy recovery", sql: `
+CREATE TABLE send_copies (
+  opId TEXT PRIMARY KEY REFERENCES ops(id) ON DELETE CASCADE,
+  accountId INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  submission TEXT NOT NULL, copy TEXT NOT NULL, createdAt INTEGER NOT NULL,
+  reserved INTEGER NOT NULL, size INTEGER NOT NULL, chunks INTEGER NOT NULL,
+  ready INTEGER NOT NULL, mailbox TEXT, uidValidity TEXT, uid INTEGER,
+  warning TEXT, retiring INTEGER NOT NULL
+);
+CREATE INDEX send_copies_account ON send_copies(accountId);
+CREATE TABLE send_copy_bytes (
+  opId TEXT NOT NULL REFERENCES send_copies(opId) ON DELETE CASCADE,
+  position INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(opId,position)
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

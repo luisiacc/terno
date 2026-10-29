@@ -290,6 +290,9 @@ export interface AddThreadsResult {
 }
 
 export interface OpInfo {
+  sentCopy?: import("../send-copy").SentCopyState;
+  partialRecipients?: boolean;
+  recipientOutcomeUnknown?: boolean;
   id: string;
   accountId: number;
   kind: string;
@@ -810,6 +813,9 @@ export const contract = {
   /** A new token in the token file; agents connected now are cut off and must read it again. */
   "agents.rotateToken": m<{ disconnected: number; tokenSince: number }>()(empty),
 
+  "ops.sentCopies": m<import("../send-copy").SentCopyInfo[]>()(z.object({ accountId: id })),
+  "ops.repairSentCopy": m<{ copy: import("../send-copy").SentCopyState }>()(z.object({ opId: z.string().uuid() }), { timeoutMs: 120_000 }),
+  "ops.forgetSentCopy": m<{ ok: true }>()(z.object({ opId: z.string().uuid() })),
   "ops.list": m<OpInfo[]>()(empty),
   "ops.resolveUnknown": m<{ ok: true }>()(
     z.object({ opId: z.string().uuid(), resolution: z.enum(["markSent", "retry", "discard"]) }),

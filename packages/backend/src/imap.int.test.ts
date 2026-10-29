@@ -2425,6 +2425,100 @@ describe("IMAP identity and safety (review fixes)", () => {
 });
 
 describe("sending through SMTP", () => {
+  it.each(["rejected", "lost acknowledgement", "lost before application"] as const)("durably repairs a %s Sent APPEND without a second SMTP submission", async (fault) => {
+    const t = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
+    const account = await t.addAccount(t.imap.port);
+    const rule = t.imap.server.script.add(fault === "rejected"
+      ? { on: "command", command: "APPEND", times: 1, send: "$TAG NO [OVERQUOTA] Synthetic quota\r\n" }
+      : fault === "lost acknowledgement" ? { on: "response", command: "APPEND", untagged: false, times: 1, drop: true, close: "reset" }
+      : { on: "command", command: "APPEND", times: 1, drop: true, close: "reset" });
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "One submission", bodyText: "Original immutable bytes" });
+    await t.backend.runWorker();
+    expect(rule!.hits).toBe(1);
+    expect(t.smtp.received).toHaveLength(1);
+    const before = await t.backend.store.sendCopies.get(opId);
+    expect(before).toMatchObject({ submission: "accepted", copy: fault === "rejected" ? "rejected" : "unknown", ready: true, mailbox: "Sent" });
+    expect((await t.client.call("ops.list", {})).find((o) => o.id === opId)).toMatchObject({ state: "succeeded", partialRecipients: true, lastErrorI18n: { key: fault === "rejected" ? "errors.sentCopy.partialMissing" : "errors.sentCopy.partialUnknown", params: { recipients: "nadie@example.com" } } });
+    const firstCopies = t.imap.server.control.listMessages("Sent", { raw: true }) as { uid: number; raw: Buffer }[];
+    expect(firstCopies).toHaveLength(fault === "lost acknowledgement" ? 1 : 0);
+    if (fault === "lost acknowledgement") expect(firstCopies[0]!.raw.toString()).toBe(t.smtp.received[0]!.raw);
+    await t.stop();
+    const reopened = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false });
+    cleanups.push(() => reopened.stop());
+    const [c, server] = createMemoryTransportPair(); reopened.connect(server, { clientId: "repair", origin: "renderer" }); const rpc = new RpcClient(c);
+    expect(await reopened.store.sendCopies.get(opId)).toEqual(before);
+    await rpc.call("ops.repairSentCopy", { opId });
+    const after = await reopened.store.sendCopies.get(opId);
+    expect(after).toMatchObject({ submission: "accepted", copy: "saved", mailbox: "Sent", uid: expect.any(Number), uidValidity: expect.any(String), chunks: 0 });
+    const copies = t.imap.server.control.listMessages("Sent", { raw: true }) as { uid: number; raw: Buffer }[];
+    expect(copies).toHaveLength(1);
+    expect(copies[0]!.raw.toString()).toBe(t.smtp.received[0]!.raw);
+    if (fault === "lost acknowledgement") expect(copies[0]!.uid).toBe(firstCopies[0]!.uid);
+    expect(t.smtp.received).toHaveLength(1);
+    expect((await rpc.call("ops.list", {})).find((o) => o.id === opId)).toMatchObject({ state: "succeeded", lastErrorI18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "nadie@example.com" } } });
+    await expect(rpc.call("ops.repairSentCopy", { opId })).rejects.toThrow();
+    await reopened.runWorker();
+    expect(t.smtp.received).toHaveLength(1);
+  });
+
+  it("a failed acceptance write falls back to atomic completion, without SMTP replay or an invented Sent copy", async () => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    const failure = vi.spyOn(t.backend.store.sendCopies, "accepted").mockRejectedValueOnce(new Error("Synthetic write refused"));
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Once", bodyText: "Synthetic" });
+    await t.backend.runWorker(); failure.mockRestore();
+    expect(t.smtp.received).toHaveLength(1);
+    expect(t.imap.server.control.listMessages("Sent")).toHaveLength(0);
+    expect(await t.backend.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "pending", ready: true });
+    await t.client.call("ops.repairSentCopy", { opId });
+    expect(t.imap.server.control.listMessages("Sent")).toHaveLength(1);
+    expect(t.smtp.received).toHaveLength(1);
+  });
+
+  it("wire cleanup failure cannot change a completed SMTP submission to unknown", async () => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    const failure = vi.spyOn(t.backend.store.sendCopies, "pruneSavedSlice").mockRejectedValueOnce(new Error("Synthetic cleanup refused"));
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Once", bodyText: "Synthetic" });
+    await t.backend.runWorker(); failure.mockRestore();
+    expect((await t.backend.store.ops.get(opId))?.state).toBe("succeeded");
+    expect(await t.backend.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "saved" });
+    expect(t.smtp.received).toHaveLength(1);
+    expect(t.imap.server.control.listMessages("Sent")).toHaveLength(1);
+    await t.backend.runWorker(); expect(t.smtp.received).toHaveLength(1);
+  });
+
+  it("failed acceptance and completion writes retain acceptance in failure recording", async () => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    const accept = vi.spyOn(t.backend.store.sendCopies, "accepted").mockRejectedValueOnce(new Error("Synthetic acceptance write refused"));
+    const complete = vi.spyOn(t.backend.store.ops, "complete").mockRejectedValueOnce(new Error("Synthetic completion write refused"));
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Once", bodyText: "Synthetic" });
+    await t.backend.runWorker(); accept.mockRestore(); complete.mockRestore();
+    expect(t.smtp.received).toHaveLength(1); expect(t.imap.server.control.listMessages("Sent")).toHaveLength(0);
+    await t.stop();
+    const reopened = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false }); cleanups.push(() => reopened.stop());
+    await reopened.ready;
+    expect(await reopened.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "pending" });
+    await expect(reopened.store.ops.resolveUnknown(opId, "retry", Date.now())).rejects.toThrow();
+    await reopened.repairSentCopy(opId);
+    expect(t.imap.server.control.listMessages("Sent")).toHaveLength(1); expect(t.smtp.received).toHaveLength(1);
+  });
+
+  it.each(["search refused", "duplicate identity", "different bytes"] as const)("failed reconciliation becomes unknown: %s", async (fault) => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    t.imap.server.script.add({ on: "command", command: "APPEND", times: 1, send: "$TAG NO [OVERQUOTA] Synthetic quota\r\n" });
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Once", bodyText: "Synthetic" }); await t.backend.runWorker();
+    if (fault === "search refused") t.imap.server.script.add({ on: "command", command: "UID SEARCH", times: 1, send: "$TAG NO [UNAVAILABLE] Synthetic search failure\r\n" });
+    else {
+      t.imap.server.control.addMessage("Sent", { raw: fault === "different bytes" ? t.smtp.received[0]!.raw.replace("Synthetic", "Different") : t.smtp.received[0]!.raw });
+      if (fault === "duplicate identity") t.imap.server.control.addMessage("Sent", { raw: t.smtp.received[0]!.raw });
+    }
+    const copies = t.imap.server.control.listMessages("Sent").length;
+    await expect(t.client.call("ops.repairSentCopy", { opId })).rejects.toThrow();
+    expect(t.smtp.received).toHaveLength(1); expect(t.imap.server.control.listMessages("Sent")).toHaveLength(copies);
+    await t.stop();
+    const reopened = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false }); cleanups.push(() => reopened.stop()); await reopened.ready;
+    expect(await reopened.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "unknown" });
+  });
+
   it("partial delivery succeeds but records which recipients were rejected", async () => {
     const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
     const account = await addAccount(imap.port);

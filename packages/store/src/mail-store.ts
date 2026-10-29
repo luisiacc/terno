@@ -317,10 +317,10 @@ export interface MailStore {
     claimReady(now: number, limit: number, admission?: OpAdmission): Promise<OpRow[]>;
     get(id: string): Promise<OpRow | null>;
     /** success, including adopting the provider's ids for a sent message */
-    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
+    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: { warning: string | null } } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
     /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
     fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
-    markUnknown(id: string, error: string, now: number): Promise<void>;
+    markUnknown(id: string, error: string, now: number, sendAccepted?: { warning: string | null }): Promise<void>;
     /** the provider needs the user to sign in again: back to the queue without spending the attempt, until resumeAuth */
     awaitAuth(id: string, error: string, now: number): Promise<void>;
     /** claimed but never started (the app is quitting): back to the queue as it was, ready now, the attempt given back */
@@ -335,6 +335,20 @@ export interface MailStore {
     defer(id: string, now: number, o: { refundClaim: boolean }): Promise<void>;
     recent(limit: number): Promise<OpRow[]>;
     resolveUnknown(id: string, resolution: "markSent" | "retry" | "discard", now: number): Promise<{ touched: number[] } & FlagReconciliation>;
+  };
+
+  sendCopies: {
+    get(id: string): Promise<import("./send-copies").SendCopyRow | null>;
+    list(accountId: number): Promise<import("@terno/core").SentCopyInfo[]>;
+    resetWireSlice(id: string): Promise<boolean>;
+    startWire(id: string, size: number): Promise<void>;
+    appendWire(id: string, index: number, data: string): Promise<void>;
+    sealWire(id: string): Promise<void>;
+    readWire(id: string, index: number): Promise<string | null>;
+    accepted(id: string, warning: string | null): Promise<void>;
+    record(id: string, copy: import("@terno/core").SentCopyState, identity?: { mailbox: string; uidValidity?: string; uid?: number }): Promise<void>;
+    forgetSlice(id: string): Promise<boolean>;
+    pruneSavedSlice(id: string): Promise<boolean>;
   };
 
   attachments: {

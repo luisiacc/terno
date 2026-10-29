@@ -11,3 +11,5 @@ export * from "./autocomplete-source";
 export * from "./attachments";
 export * from "./attachment-repo";
 export * from "./provider-cooldown";
+
+export * from "./send-copies";
