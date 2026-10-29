@@ -1469,6 +1469,99 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
   });
 
+  it("Codex R19: an ID-less twin appended to the same folder is a copy; the first keeps its own UID", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    const twin = raw({ subject: "Gemelo añadido" }).replace(/^Message-ID: .*\r\n/m, "");
+    const first = ctl.addMessage("A", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
+    const second = ctl.addMessage("A", { raw: twin });
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    expect(sqlDb(backend.store).get<{ uid: number }>("SELECT uid FROM message_locations WHERE message_id = ?", id)!.uid).toBe(first.uid);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A' AND uid = ?", second.uid)).toBe(1);
+  });
+
+  it("Codex R19: an old ID-less message moved after its folder's sweep into a folder seen for the first time keeps its identity", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const old = new Date(Date.now() - 400 * 86_400_000);
+    await client.call("settings.update", { syncWindowDays: 3650 });
+    ctl.createMailbox("Z");
+    const lone = ctl.addMessage("Z", { raw: raw({ subject: "Viejo sin Message-ID", date: old }).replace(/^Message-ID: .*\r\n/m, ""), internaldate: old });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages");
+    expect(before).toHaveLength(1);
+    await client.call("settings.update", { syncWindowDays: 30 });
+    // Z has news (so it's swept); A is new (read whole); the move comes as A is read, after every sweep
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    ctl.createMailbox("A");
+    const original = ImapFlow.prototype.getMailboxLock;
+    let moved = false;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && !moved) {
+        moved = true;
+        ctl.moveMessages("Z", [lone.uid], "A");
+      }
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(moved).toBe(true);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Viejo sin Message-ID'")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", before[0]!.id)).toBe(1);
+  });
+
+  it("Codex R19: of two stored ID-less twins, the one under a suffixed key moved late keeps its identity", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("X");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Gemelos repartidos" }).replace(/^Message-ID: .*\r\n/m, "");
+    const inX = ctl.addMessage("X", { raw: twin });
+    const inZ = ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(2);
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+    // the twin stored under a suffixed key, and where it is
+    const suffixed = sqlDb(backend.store).get<{ mailbox: string }>("SELECT l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
+    const source = suffixed.mailbox;
+    const uid = source === "X" ? inX.uid : inZ.uid;
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage(source, { raw: raw({ subject: "Nuevo en el origen" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages(source, [uid], "A");
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(locks).toBeGreaterThanOrEqual(2);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Gemelos repartidos' ORDER BY id")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.subject = 'Gemelos repartidos' AND l.mailbox = 'A'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(new Set(before.map((m) => m.thread_id)).size);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

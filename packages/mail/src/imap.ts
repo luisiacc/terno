@@ -51,8 +51,11 @@ function bounded(cursor: Cursor, ids: readonly number[], max: number, keep: "new
 
 /** Plan 65 (Codex R18): an ID-less message held back until every folder is read (a copy, or its twin moved here) */
 interface Ambiguous {
-  storedId: number;
+  /** the stored ID-less messages with its envelope, oldest first */
+  candidates: number[];
   incoming: IncomingMessage;
+  /** older than the window in a folder read whole: a copy of it isn't fetched */
+  old: boolean;
   path: string;
   uidvalidity: number;
   uid: number;
@@ -434,8 +437,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           const flags = [...(m.flags ?? new Set<string>())];
-          /** an ID-less message whose stored twin is still placed elsewhere: a copy, or that one moved since its sweep */
-          let ambiguousOf: number | null = null;
+          /** an ID-less message whose stored twins are still placed: a copy, or one of them moved since its sweep */
+          let ambiguousOf: number[] | null = null;
           const env = m.envelope;
           // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
           const atLocation = await locations.at(path, uidvalidity, m.uid);
@@ -473,8 +476,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 touched.add(twin);
                 continue;
               }
-              // a copy, or the stored one moved here after its folder's sweep: told apart once every folder is read (Codex R18)
-              ambiguousOf = existing.id;
+              // a copy, or a stored twin (under any key: Codex R19) moved here after its folder's sweep: told apart once
+              // every folder is read (Codex R18)
+              const e = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
+              ambiguousOf = [...new Set([existing.id, ...(await locations.twins(e, 50))])].sort((x, y) => x - y);
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
               existing = await store.messageByProviderId(key);
             }
@@ -518,7 +523,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           if (claimed.has(key) && claimed.get(key) !== m.uid) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
           claimed.set(key, m.uid);
-          if (reidentify && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart) continue; // only re-identify old mail
+          // only re-identify old mail; one held back is told apart first (Codex R19: a twin moved here keeps its identity)
+          const old = reidentify && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart;
+          if (old && ambiguousOf === null) continue;
           const role = roleOf(path);
           // the raw address fields, read by our parser (plan 34); the server's envelope where one is missing
           const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
@@ -553,8 +560,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
-          if (ambiguousOf !== null && opts.ambiguous) opts.ambiguous.push({ storedId: ambiguousOf, incoming, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
-          else fresh.push(incoming);
+          if (ambiguousOf !== null && opts.ambiguous) opts.ambiguous.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
+          else if (!old) fresh.push(incoming);
         }
       }
       if (fresh.length) await sink.ingest(fresh, { live });
@@ -584,16 +591,19 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    */
   async function tellApart(c: ImapFlow, list: readonly Ambiguous[], listed: ReadonlySet<string>, sink: SyncSink, touched: Set<number>) {
     if (!list.length) return;
-    const elsewhere = new Map<number, Loc[]>();
+    // every candidate's places but the one being told apart (another UID in the same folder counts: Codex R19)
+    const places = new Map<number, Loc[]>();
     const byMailbox = new Map<string, { uidvalidity: number; uids: Set<number> }>();
     for (const a of list) {
-      if (elsewhere.has(a.storedId)) continue;
-      const locs = (await locations.of([a.storedId])).filter((l) => l.mailbox !== a.path);
-      elsewhere.set(a.storedId, locs);
-      for (const l of locs) {
-        const box = byMailbox.get(l.mailbox) ?? { uidvalidity: l.uidvalidity, uids: new Set<number>() };
-        box.uids.add(l.uid);
-        byMailbox.set(l.mailbox, box);
+      for (const id of a.candidates) {
+        if (places.has(id)) continue;
+        const locs = await locations.of([id]);
+        places.set(id, locs);
+        for (const l of locs) {
+          const box = byMailbox.get(l.mailbox) ?? { uidvalidity: l.uidvalidity, uids: new Set<number>() };
+          box.uids.add(l.uid);
+          byMailbox.set(l.mailbox, box);
+        }
       }
     }
     const present = new Set<string>();
@@ -612,13 +622,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const copies: IncomingMessage[] = [];
     const moved = new Set<number>();
     for (const a of list) {
-      const locs = elsewhere.get(a.storedId) ?? [];
-      if (!moved.has(a.storedId) && locs.every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))) {
-        moved.add(a.storedId);
-        for (const l of locs) await locations.remove(a.storedId, l.mailbox);
-        await upsertLocation(a.storedId, a.path, a.uidvalidity, a.uid, a.flags);
-        touched.add(a.storedId);
-      } else copies.push(a.incoming);
+      // the oldest twin with no place left on the server is the one that moved here
+      const here = (l: Loc) => l.mailbox === a.path && l.uid === a.uid && l.uidvalidity === a.uidvalidity;
+      const gone = a.candidates.find((id) => !moved.has(id) && (places.get(id) ?? []).every((l) => here(l) || !present.has(`${l.mailbox}\u0000${l.uid}`)));
+      if (gone !== undefined) {
+        moved.add(gone);
+        for (const l of places.get(gone) ?? []) if (!here(l)) await locations.remove(gone, l.mailbox);
+        await upsertLocation(gone, a.path, a.uidvalidity, a.uid, a.flags);
+        touched.add(gone);
+      } else if (!a.old) copies.push(a.incoming);
     }
     if (copies.length) await sink.ingest(copies, { live: list.some((a) => a.live) });
     for (const m of copies) {
@@ -626,6 +638,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (row) touched.add(row.id);
     }
   }
+
 
   /**
    * Plan 65 (Codex R5): what the server expunged, and flags it changed, for mail we already have: run for every

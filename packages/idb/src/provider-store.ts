@@ -191,6 +191,17 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
+  twins(e: { subject: string; fromEmail: string; date: number; size: number }, limit: number) {
+    return this.read(() =>
+      T(this.c, "messages")
+        .by("from", e.fromEmail)
+        .filter((m) => m.account_id === this.accountId && !m.rfc_message_id && m.subject === e.subject && m.date === e.date && m.size === e.size)
+        .map((m) => m.id as number)
+        .sort((x, y) => x - y)
+        .slice(0, limit),
+    );
+  }
+
   unlocated(afterId: number, span: number) {
     return this.read(() => {
       const messages = T(this.c, "messages");

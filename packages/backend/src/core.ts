@@ -972,6 +972,7 @@ export class BackendCore {
         resetCandidate: (...args) => read(() => locations.resetCandidate(...args)),
         envelopes: (...args) => read(() => locations.envelopes(...args)),
         unlocated: (...args) => read(() => locations.unlocated(...args)),
+        twins: (...args) => read(() => locations.twins(...args)),
       },
     };
   }

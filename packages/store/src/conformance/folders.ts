@@ -165,6 +165,20 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(found).toEqual([r.inserted[1]!, r.inserted[4]!]);
     });
 
+    it("Codex R19: an envelope's ID-less twins, under any key, oldest first; never one with a Message-ID or another account's", async () => {
+      const store = await fresh();
+      const [, m, other] = await withAccounts(store, 3);
+      const e = { subject: "Gemelo", from: { name: "", email: "ana@example.test" }, date: 1_800_000_000_000, size: 321, rfcMessageId: null };
+      const r = await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "nomid:x", ...e }),
+        msg({ accountId: m!, providerMsgId: "nomid:x#Z:1:7", ...e }),
+        msg({ accountId: m!, providerMsgId: "with-id", ...e, rfcMessageId: "<a@b>" }),
+        msg({ accountId: m!, providerMsgId: "other-size", ...e, size: 322 }),
+        msg({ accountId: other!, providerMsgId: "nomid:x", ...e }),
+      ]);
+      expect(await store.providerStore(m!).locations.twins({ subject: "Gemelo", fromEmail: "ana@example.test", date: e.date, size: 321 }, 50)).toEqual([r.inserted[0]!, r.inserted[1]!]);
+    });
+
     it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

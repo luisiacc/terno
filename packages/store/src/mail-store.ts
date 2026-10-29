@@ -227,6 +227,8 @@ export interface ImapLocationStore {
    * while messages above the window exist. A cut journal's messages are found again this way, a window at a time.
    */
   unlocated(afterId: number, span: number): Promise<{ ids: number[]; more: boolean }>;
+  /** plan 65 (Codex R19): the account's ID-less messages with this envelope (under any key), oldest first, at most `limit` */
+  twins(e: { subject: string; fromEmail: string; date: number; size: number }, limit: number): Promise<number[]>;
   /** plan 65: these messages' envelopes (a renamed folder's copies are recognised by them) */
   envelopes(messageIds: readonly number[]): Promise<{ id: number; subject: string; fromEmail: string; date: number; size: number; rfcMessageId: string | null }[]>;
   /** after a reset: an ID-less message among `candidates` with this exact envelope, not yet re-located in `mailbox`; `rfcMessageId`: one with that Message-ID instead (plan 65: a renamed folder's twin) */
