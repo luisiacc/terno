@@ -1,6 +1,6 @@
 import { BUILTIN_THEMES, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { contrast, parseColor } from "./color";
+import { composite, contrast, oklchToRgb, parseColor } from "./color";
 import { builtinTheme, glassAlpha, resolveCustomTheme, THEMES, themesFor } from "./registry";
 
 describe("theme registry", () => {
@@ -104,5 +104,26 @@ describe("custom themes", () => {
     expect(t.tokens["chart-1"]).toBe(t.tokens.primary);
     expect(t.tokens["cat-rose"]).toBe("oklch(0.7 0.2 0)");
     expect(contrast(t.tokens["cat-rose-ink"], { ...parseColor(t.tokens["cat-rose"]), alpha: 0.15 }, t.tokens.background)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("plan 63: a hovered sidebar row", () => {
+  // a fill as painted over the sidebar, and how far it sits from the bare sidebar
+  const away = (fill: string, sidebar: string) => {
+    const under = { ...oklchToRgb(parseColor(sidebar)), alpha: 1 };
+    const c = composite(oklchToRgb(parseColor(fill)), under);
+    return Math.hypot(c.r - under.r, c.g - under.g, c.b - under.b);
+  };
+
+  it.each(THEMES.map((t) => [t.id, t] as const))("%s: is filled, and a step lighter than the selected row", (_, t) => {
+    const hover = away(t.tokens["sidebar-hover"], t.tokens.sidebar);
+    const selected = away(t.tokens["sidebar-accent"], t.tokens.sidebar);
+    expect(hover).toBeGreaterThan(0);
+    expect(hover / selected).toBeCloseTo(0.6, 1);
+  });
+
+  it("follows a custom theme's own selected fill", () => {
+    const t = resolveCustomTheme({ id: "custom-x", name: "X", mode: "light", extends: "terno-light", tokens: { "sidebar-accent": "oklch(0.9 0.02 250)" } })!;
+    expect(t.tokens["sidebar-hover"]).toBe("oklch(0.9 0.02 250 / 0.6)");
   });
 });

@@ -104,7 +104,7 @@ function NavItem({
         "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
         ROW_SEAM,
         reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
-        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground",
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
         "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
         "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
@@ -270,7 +270,7 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
           setHeld([]);
           toggleMore();
         }}
-        className={cn("group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", ROW_SEAM)}
+        className={cn("group/more type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM)}
       >
         <span className="flex size-4 items-center justify-center">
           <ChevronDown className={cn("size-3.5 transition-transform duration-base ease-motion", !open && "-rotate-90")} />
@@ -385,7 +385,7 @@ export function Sidebar() {
                   data-testid={`nav-review-${c.id}`}
                   data-active={reviewCategoryId === c.id || undefined}
                   onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
-                  className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
+                  className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
                 >
                   <Sparkles className="size-3 text-sidebar-glyph" />
                   <span className="flex-1">{t("sidebar.review")}</span>
@@ -440,7 +440,7 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => setApp({ dialog: "addAccount" })}
-            className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
           >
             <Plus className="size-4" /> {t("sidebar.addAccount")}
           </button>

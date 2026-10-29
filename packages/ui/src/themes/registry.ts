@@ -148,6 +148,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("mail-ink", () => "0.24 0.01 265");
   def("mail-link", () => "0.5 0.18 265");
   def("sidebar-translucent", () => withAlpha(o("sidebar"), light ? 0.72 : 0.62));
+  // plan 63: the selected fill at 60% of its opacity, so it stays translucent over vibrancy like the fill it echoes
+  def("sidebar-hover", () => withAlpha(o("sidebar-accent"), Math.round(o("sidebar-accent").alpha * 0.6 * 1000) / 1000));
   // plan 07
   def("hairline", () => withAlpha(o("foreground"), light ? 0.09 : 0.08));
   def("highlight", () => (light ? "1 0 0 / 16%" : "1 0 0 / 6%"));
@@ -170,9 +172,11 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("destructive-ink", () => stepUntil(o("destructive"), inkSurfaces, 4.5, bg, o("foreground"), light));
   def("success-ink", () => stepUntil(o("success"), inkSurfaces, 4.5, bg, o("foreground"), light));
   // plan 15: unread counts and "N unread" as text, on every surface they're drawn on
-  def("unread-ink", () => stepUntil(o("unread"), ["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), 4.5, bg, o("foreground"), light));
+  // plan 63: a hovered row's translucent fill, as painted over the sidebar
+  const hovered = formatOklch(rgbToOklch(composite(oklchToRgb(o("sidebar-hover")), { ...oklchToRgb(o("sidebar")), alpha: 1 })));
+  def("unread-ink", () => stepUntil(o("unread"), [...["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), hovered], 4.5, bg, o("foreground"), light));
   def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
-  def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 3, bg, o("muted-foreground"), light));
+  def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent")), hovered], 3, bg, o("muted-foreground"), light));
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   // badges and avatars: the reader and menus, and (plan 15) rows hovered, selected and checked, drafts and panes
   // (translucent surfaces as painted: over the background)

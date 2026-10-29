@@ -83,6 +83,8 @@ export const THEME_TOKENS = [
   "shadow-color",
   "ink-anchor",
   "sidebar-translucent",
+  // plan 63: a sidebar row under the pointer, a step softer than the selected one
+  "sidebar-hover",
   // HTML mail
   "mail-paper",
   "mail-ink",

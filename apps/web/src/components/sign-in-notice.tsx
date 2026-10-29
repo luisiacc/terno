@@ -93,7 +93,7 @@ function Notice({ accounts }: { accounts: Account[] }) {
               <button
                 type="button"
                 data-testid="sign-in-open"
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 pr-1 pl-1.5 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 pr-1 pl-1.5 text-left outline-none hover:bg-sidebar-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               />
             }
           >

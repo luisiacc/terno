@@ -54,6 +54,9 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   // plan 15: "N unread" and unread counts as text; avatars and badges on rows hovered, selected and checked, on drafts and panes
   ...text("unread-ink", ["background", "pane", "sidebar", "sidebar-accent"]),
   ...text("sidebar-primary-ink", ["sidebar", "sidebar-accent"]),
+  // plan 63: a hovered sidebar row's text, counts and glyph, its translucent fill painted over the sidebar
+  ...(["sidebar-foreground", "sidebar-accent-foreground", "muted-foreground", "unread-ink"] as const).map((fg): ContrastPair => ({ fg, bg: "sidebar-hover", min: 4.5, overToken: "sidebar" })),
+  { fg: "sidebar-glyph", bg: "sidebar-hover", min: 3, overToken: "sidebar" },
   ...CAT_NAMES.flatMap((c) => (["pane", "tint", "row-hover", "row-selected", "accent"] as const).map((over): ContrastPair => ({ fg: `cat-${c}-ink`, bg: `cat-${c}`, tint: true, min: 4.5, overToken: over }))),
   // plan 34: an invalid recipient chip's mark (its dotted underline and alert glyph) on the chip's fill
   ...ui("destructive", ["muted"]),
