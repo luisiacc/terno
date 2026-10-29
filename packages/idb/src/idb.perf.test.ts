@@ -195,8 +195,28 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
   const allRead = await warm(() => store.threads.list({ ...folder, filter: "unread", limit: 100, now: NOW }));
   console.log(`folder unread only, all of it read: ${allRead.ms.toFixed(2)} ms`);
   expect(allRead.ms, "folder unread only, all of it read").toBeLessThanOrEqual(0.25 * MULT);
+  // Codex R12: and where all of it is unread, every page after the first reads the kept order (never a sort per page);
+  // (the account's threads as they are now, all read: put back first, then the unread ones as they were)
+  const accountThreads = [...tables.table("threads").rows.values()].filter((t) => t.account_id === account);
+  tables.tx(() => {
+    memberships.forEach((r) => tables.table("thread_folders").put({ ...r, unread: 1 }));
+    accountThreads.forEach((t) => tables.table("threads").put({ ...t, unread_count: 1 }));
+  });
+  const dense: Sample[] = [];
+  let denseSeen = 0;
+  for (let at = await store.threads.list({ ...folder, filter: "unread", limit: 100, now: NOW }); at.nextCursor; ) {
+    const s = await sampleAsync(() => store.threads.list({ ...folder, filter: "unread", limit: 100, cursor: at.nextCursor!, now: NOW }));
+    dense.push(s);
+    denseSeen += s.result.items.length;
+    at = s.result;
+  }
+  const denseMs = settle(dense).ms.sort((a, b) => a - b);
+  console.log(`folder unread only, all of it unread: ${dense.length + 1} pages, worst after the first ${denseMs.at(-1)!.toFixed(2)} ms`);
+  expect(denseSeen + 100).toBe(seen);
+  expect(denseMs.at(-1)!, "folder unread only, all of it unread: a page").toBeLessThanOrEqual(0.5 * MULT);
   tables.tx(() => {
     memberships.forEach((r) => tables.table("thread_folders").put(r));
+    accountThreads.forEach((t) => tables.table("threads").put(t));
     unreadThreads.forEach((t) => tables.table("threads").put(t));
   });
   // select all walks the folder's cached members: every page a seek

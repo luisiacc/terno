@@ -148,6 +148,47 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Big")).toHaveLength(6);
     });
 
+    it("Codex R12: the Unread filter's order stays exact as threads are read, unread, added, and read by the hundred", async () => {
+      const store = await fresh();
+      const [g] = await withAccounts(store);
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["A"], selectable: true }]);
+      const r = await ingest(store, Array.from({ length: 80 }, (_, i) => msg({ accountId: g!, providerMsgId: `g${i}`, date: 1_800_000_000_000 + (i % 40) * 1000, gmailLabels: ["Label_1"] })));
+      const exact = async () => (await store.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 500, now: NOW })).items.filter((t) => t.unread).map((t) => t.id);
+      const paged = async () => {
+        const out: number[] = [];
+        for (let page = await store.threads.list({ view: "all", accountId: g!, folder: "Label_1", filter: "unread", limit: 7, now: NOW }); ; ) {
+          out.push(...page.items.map((t) => t.id));
+          if (!page.nextCursor) return out;
+          page = await store.threads.list({ view: "all", accountId: g!, folder: "Label_1", filter: "unread", limit: 7, cursor: page.nextCursor, now: NOW });
+        }
+      };
+      expect(await paged()).toEqual(await exact());
+      const threads = [...new Set(await Promise.all(r.inserted.map(async (_, i) => threadOf(store, `g${i}`))))];
+      // a few at a time: placed in the kept order
+      await store.threads.act({ threadIds: [threads[3]!, threads[50]!], action: "markRead", signal: null, now: NOW });
+      expect(await paged()).toEqual(await exact());
+      await store.threads.act({ threadIds: [threads[3]!], action: "markUnread", signal: null, now: NOW });
+      await ingest(store, [msg({ accountId: g!, providerMsgId: "newest", date: 1_800_000_100_000, gmailLabels: ["Label_1"] })]);
+      expect(await paged()).toEqual(await exact());
+      // many at once: built again
+      await store.threads.act({ threadIds: threads.slice(0, 70), action: "markRead", signal: null, now: NOW });
+      expect(await paged()).toEqual(await exact());
+      expect((await exact()).length).toBe(11);
+    });
+
+    it("Codex R12: a location removed mid-rebuild, after its slice was read ahead, brings no membership back", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const r = await ingest(store, Array.from({ length: 5 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, locations: [loc("Big", i + 1)] })));
+      await store.folders.replace(m!, [{ key: "Big", path: ["Big"], selectable: true }]);
+      // into its second phase, its first two locations done
+      for (let i = 0; i < 2; i++) await store.folders.rebuild(2);
+      await store.providerStore(m!).locations.remove(r.inserted[4]!, "Big");
+      await drain(store);
+      expect(await ids(store, m!, "Big")).toHaveLength(4);
+      expect(await unread(store)).toEqual({ [folderRef(m!, "Big")]: 4 });
+    });
+
     it("Codex R5: a rebuild goes a slice at a time and survives a reopen mid-way", async () => {
       let store = await fresh();
       const [, m] = await withAccounts(store);

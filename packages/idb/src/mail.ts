@@ -206,6 +206,8 @@ export class ScopeIndex {
   /** plan 65: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
   private readonly folderIds = new Map<string, number[]>();
   private readonly folderDates = new Map<string, number[]>();
+  /** plan 65 (Codex R12): a folder's unread members newest first, kept across reads; a few changes placed by search */
+  private readonly folderUnread = new Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>();
   /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
   private readonly filtered = new Map<ListFilter, number[]>();
   private readonly crossed: Record<ListFilter, Set<number>> = { unread: new Set(), people: new Set(), waiting: new Set(), attachments: new Set(), starred: new Set() };
@@ -219,6 +221,14 @@ export class ScopeIndex {
         const key = `${(row ?? prev)!.account_id}:${(row ?? prev)!.folder}`;
         if (!row || !prev) this.folderIds.delete(key);
         if (!row || !prev || row.last_date !== prev.last_date) this.folderDates.delete(key);
+        const unread = this.folderUnread.get(key);
+        const was = prev?.unread ? { date: prev.last_date as number, id: prev.thread_id as number } : null;
+        const is = row?.unread ? { date: row.last_date as number, id: row.thread_id as number } : null;
+        if (unread && (was?.date !== is?.date || was?.id !== is?.id)) {
+          // many at once (a folder marked read) is a rebuild on the next read, not a splice each
+          if (unread.changes.length >= 64) this.folderUnread.delete(key);
+          else unread.changes.push({ was, is });
+        }
       } else if (table === "thread_categories") {
         const was = prev?.category_id as number | undefined;
         const is = row?.category_id as number | undefined;
@@ -292,6 +302,34 @@ export class ScopeIndex {
     return ids;
   }
 
+  /** plan 65 (Codex R12): a folder's unread member thread ids, newest first: sorted once, then kept as they change */
+  folderUnreadByDate(c: Ctx, accountId: number, key: string): readonly Dated[] {
+    const at = `${accountId}:${key}`;
+    let cached = this.folderUnread.get(at);
+    if (!cached) {
+      const memberships = T(c, "thread_folders");
+      const order: Dated[] = [];
+      for (const k of memberships.keysBy("unread", accountId, key)) {
+        const r = memberships.rows.get(k)!;
+        order.push({ date: r.last_date as number, id: r.thread_id as number });
+      }
+      order.sort(newestFirst);
+      this.folderUnread.set(at, (cached = { order, changes: [] }));
+    }
+    for (const { was, is } of cached.changes) {
+      if (was) {
+        const i = datedPlace(cached.order, was);
+        if (cached.order[i]?.id === was.id) cached.order.splice(i, 1);
+      }
+      if (is) {
+        const i = datedPlace(cached.order, is);
+        if (cached.order[i]?.id !== is.id) cached.order.splice(i, 0, is);
+      }
+    }
+    cached.changes.length = 0;
+    return cached.order;
+  }
+
   /** a category's member thread ids, ascending */
   category(c: Ctx, categoryId: number): readonly number[] {
     let ids = this.members.get(categoryId);
@@ -301,6 +339,25 @@ export class ScopeIndex {
     }
     return ids;
   }
+}
+
+/** a thread's place in a folder's order: its last date, then its id */
+export interface Dated {
+  date: number;
+  id: number;
+}
+const newestFirst = (x: Dated, y: Dated) => y.date - x.date || y.id - x.id;
+
+/** where `d` is, or goes, in a newest-first order */
+function datedPlace(order: readonly Dated[], d: Dated): number {
+  let lo = 0;
+  let hi = order.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (newestFirst(order[mid]!, d) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** the first position in an ascending list holding a value greater than `after` */

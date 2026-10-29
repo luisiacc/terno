@@ -370,12 +370,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const hadState = state !== undefined;
       const reset = Boolean(state && state.uidvalidity !== uidvalidity);
       const resetOrphans = new Set<number>();
+      const recover = opts.recover ?? new AdoptIndex();
       if (state && state.uidvalidity !== uidvalidity) {
-        // (the sweep normally did this already; here it's whatever is still pending)
+        // (the sweep normally did this already; here it's whatever is still pending, or a reset since the sweep)
         for (const id of await resetLocations(cursor, path, state.uidvalidity, touched)) resetOrphans.add(id);
+        // candidates like any other, so a twin of theirs found here keeps its identity (Codex R12)
+        await recover.add(resetOrphans, (ids) => locations.envelopes(ids));
         state = undefined;
       }
-      const recover = opts.recover ?? new AdoptIndex([]);
       const takeAny = (e: Omit<import("./adopt").Envelope, "id">) => recover.take(e, notHere);
 
       // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
@@ -766,7 +768,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
         // pass kept, resets still pending; shared by every mailbox, so each message is claimed once (Codex R10, R11)
         const pending = new Set([...vanishedIds, ...(cursor.unlocated ?? []), ...(cursor.orphans ?? []), ...Object.values(cursor.resetPending ?? {}).flat()]);
-        const recover = new AdoptIndex(pending.size ? await locations.envelopes([...pending]) : []);
+        const recover = new AdoptIndex();
+        await recover.add(pending, (ids) => locations.envelopes(ids));
         for (const path of boxes) {
           if (sink.signal.aborted) return;
           await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, recover });

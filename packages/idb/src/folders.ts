@@ -143,8 +143,11 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   // this folder's rows only (its old ones went in phase 0), from the batch's messages: no thread refolded (Codex R11)
   const messages = T(c, "messages");
   const threadRows = T(c, "threads");
+  const locations = T(c, "message_locations");
   const threads: number[] = [];
   for (const r of rows) {
+    // the order was read ahead: a location gone since then brings nothing back (Codex R12)
+    if (!locations.has(r.message_id, job.key)) continue;
     const m = messages.get(r.message_id);
     if (!m || m.is_trash || m.is_spam || memberships.has(m.thread_id, job.key)) continue;
     const t = threadRows.get(m.thread_id);
@@ -181,20 +184,24 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   const threads = T(c, "threads");
   // a folder reads through the account's list: one it no longer lists holds nothing (its rows wait unseen)
   const listed = T(c, "folders").has(p.accountId, p.folder);
-  // the "Unread" filter walks the folder's unread memberships alone, by date (Codex R11: an all-read folder walked whole)
-  const order = !listed ? [] : listFilterOf(p) === "unread" ? unreadByDate(c, p.accountId!, p.folder!) : c.scopes.folderByDate(c, p.accountId!, p.folder!);
+  // the "Unread" filter walks the folder's unread memberships alone, by date (Codex R11: an all-read folder walked
+  // whole), kept sorted across pages (Codex R12: never re-sorted per page)
+  const unread = listed && listFilterOf(p) === "unread" ? c.scopes.folderUnreadByDate(c, p.accountId!, p.folder!) : null;
+  const byDate = listed && !unread ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
+  const size = unread ? unread.length : byDate.length;
+  const idAt = unread ? (i: number) => unread[i]!.id : (i: number) => byDate[i]!;
   const pass = keeps(p);
   const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   let lo = 0;
-  let hi = order.length;
+  let hi = size;
   while (p.cursor && lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (before(threads.get(order[mid]!)!)) hi = mid;
+    if (before(threads.get(idAt(mid))!)) hi = mid;
     else lo = mid + 1;
   }
   const rows: R[] = [];
-  for (let i = lo; i < order.length && rows.length <= p.limit; i++) {
-    const t = threads.get(order[i]!);
+  for (let i = lo; i < size && rows.length <= p.limit; i++) {
+    const t = threads.get(idAt(i));
     if (pass(t)) rows.push(t);
   }
   const hasMore = rows.length > p.limit;
@@ -206,14 +213,6 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   const memberships = T(c, "thread_folders");
   const kept = [...new Set(p.keepIds)].filter((id) => listed && memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
   return keepInPage(page, kept.map((t) => toSummary(c, t)));
-}
-
-/** A folder's unread members, newest first: its unread bucket, sorted (as many as are unread, never the folder). */
-function unreadByDate(c: Ctx, accountId: number, folder: string): number[] {
-  const memberships = T(c, "thread_folders");
-  const rows: R[] = [];
-  for (const k of memberships.keysBy("unread", accountId, folder)) rows.push(memberships.rows.get(k)!);
-  return rows.sort((x, y) => y.last_date - x.last_date || y.thread_id - x.thread_id).map((r) => r.thread_id as number);
 }
 
 /** A folder's thread ids above `after`, ascending: its cached members from a seek, walked until the page is full. */
