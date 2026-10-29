@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, planSteps, planTellApart, readTwins, storedIds } from "./imap";
+import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, partitionKnown, planSteps, planTellApart, readTwins, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -246,4 +246,41 @@ it("Codex R44: a big expunge's 500,000 ids journaled onto 200,000 without holdin
   await stall();
   expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
   expect(await journalUnion([1, 2], [2, 1])).toBeNull();
+});
+
+it("Codex R46: 10,000 IMAP folders nested twenty levels deep under shared groups within a frame (most of it the 210,000 names drawn)", () => {
+  type Listed = Parameters<typeof customFolders>[0][number];
+  const levels = Array.from({ length: 20 }, (_, i) => `Nivel ${String(i).padStart(2, "0")} de la jerarquía común`);
+  const parents = levels.join("/");
+  // the twenty shared levels are groups (\Noselect), each kept: something real is under it
+  const groups = levels.map((_, i) => ({ path: levels.slice(0, i + 1).join("/"), name: levels[i]!, delimiter: "/", flags: new Set(["\\Noselect"]), listed: true, subscribed: true }) as unknown as Listed);
+  const leaves = Array.from({ length: 9_980 }, (_, i) => ({ path: `${parents}/Hoja ${i}`, name: `Hoja ${i}`, delimiter: "/", flags: new Set<string>(), listed: true, subscribed: true }) as unknown as Listed);
+  const list = [...groups, ...leaves];
+  const out = customFolders(list, {});
+  expect(out).toHaveLength(10_000);
+  expect(out.filter((f) => !f.selectable)).toHaveLength(20);
+  expect(best(() => customFolders(list, {}))).toBeLessThan(16);
+});
+
+it("Codex R46: a sweep's 500,000 stored locations split against the server's without holding the loop a frame", async () => {
+  const known = Array.from({ length: 500_000 }, (_, i) => ({ uid: i + 1, message_id: i + 1, flags: "[]" }));
+  const server = new Set(Array.from({ length: 250_000 }, (_, i) => 2 * i + 1));
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const r = await partitionKnown(known, server);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(r.gone).toHaveLength(250_000);
+    expect(r.stillThere).toHaveLength(250_000);
+    expect(r.byUid.size).toBe(500_000);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
 });

@@ -255,6 +255,25 @@ export async function journalUnion(journaled: readonly number[], ids: Iterable<n
   return next.size === before && before === journaled.length ? null : [...next];
 }
 
+/**
+ * Plan 65 (Codex R46): a sweep's stored locations split against the server's UIDs, a few thousand at a time: by UID,
+ * the ones gone, and the UIDs still there
+ */
+export async function partitionKnown<K extends { uid: number }>(known: readonly K[], serverUids: ReadonlySet<number>): Promise<{ byUid: Map<number, K>; gone: K[]; stillThere: number[] }> {
+  const breathe = breather();
+  const byUid = new Map<number, K>();
+  const gone: K[] = [];
+  const stillThere: number[] = [];
+  for (let i = 0; i < known.length; i++) {
+    const k = known[i]!;
+    byUid.set(k.uid, k);
+    if (serverUids.has(k.uid)) stillThere.push(k.uid);
+    else gone.push(k);
+    if (i % 5000 === 4999) await breathe();
+  }
+  return { byUid, gone, stillThere };
+}
+
 /** Plan 65 (Codex R42): these ids into a set, a few thousand at a time with the loop given turns */
 export async function addAll(target: Set<number>, ids: Iterable<number>): Promise<void> {
   const breathe = breather();
@@ -366,10 +385,25 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
     return parts;
   };
   // a group with nothing under it says nothing: the ancestors of every real folder, gathered once (linear, Codex R1)
+  // Only groups need it (none: no walk at all), and only prefixes as long as a group's are looked up; deepest first,
+  // stopping at one already there, its own ancestors having come with it; a sibling of the last folder seen is
+  // recognised by its prefix, never its parent built and hashed again (Codex R46: 10,000 paths sharing twenty
+  // levels rebuilt every shared prefix, 153 ms)
   const ancestors = new Set<string>();
-  for (const m of candidates) {
+  const groups = new Set(candidates.filter(groupOnly).map((m) => m.path));
+  const groupLengths = new Set([...groups].map((p) => p.length));
+  let lastParent = "";
+  for (const m of groups.size ? candidates : []) {
     if (groupOnly(m) || !m.delimiter) continue;
-    for (let i = m.path.lastIndexOf(m.delimiter); i > 0; i = m.path.lastIndexOf(m.delimiter, i - 1)) ancestors.add(m.path.slice(0, i));
+    const parent = m.path.lastIndexOf(m.delimiter);
+    if (parent > 0 && parent === lastParent.length && m.path[parent] === m.delimiter && m.path.startsWith(lastParent)) continue;
+    for (let i = parent; i > 0; i = m.path.lastIndexOf(m.delimiter, i - 1)) {
+      if (!groupLengths.has(i)) continue;
+      const ancestor = m.path.slice(0, i);
+      if (ancestors.has(ancestor)) break;
+      if (groups.has(ancestor)) ancestors.add(ancestor);
+    }
+    lastParent = parent > 0 ? m.path.slice(0, parent) : "";
   }
   return candidates
     .filter((m) => !groupOnly(m) || ancestors.has(m.path))
@@ -1008,10 +1042,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidvalidity = state.uidvalidity;
       // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
       const seen = snapshotOf(mb);
-      const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
+      // gathered and split a few thousand at a time (Codex R46: 500,000 mapped and filtered at once, 46 to 71 ms)
+      const serverUids = new Set<number>();
+      await addAll(serverUids, (await c.search({ all: true }, { uid: true })) || []);
       const known = await readMailbox(locations, path, uidvalidity);
-      const byUid = new Map(known.map((k) => [k.uid, k]));
-      const gone = known.filter((k) => !serverUids.has(k.uid));
+      const { byUid, gone, stillThere } = await partitionKnown(known, serverUids);
       if (gone.length) {
         // written down first, durably: a moved message is recognised under its new folder, an expunged one
         // reconciled, even if the connection drops before this pass ends (Codex R8)
@@ -1020,7 +1055,6 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // in slices, each thread's membership looked at once (Codex R11: one at a time was quadratic in a long conversation)
       await locations.removeMany(gone.map((k) => k.message_id), path);
       await addAll(touched, gone.map((k) => k.message_id));
-      const stillThere = known.filter((k) => serverUids.has(k.uid)).map((k) => k.uid);
       for (let i = 0; i < stillThere.length; i += 1000) {
         for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
           const k = byUid.get(msg.uid);
