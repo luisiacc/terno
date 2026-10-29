@@ -126,3 +126,23 @@ All 12 points are taken. The biggest change: **instant is proved, not argued.**
     - Selected and checked rows use the account label's contrast treatment.
     - The row's accessible name includes the place ("in Spam").
     - Screenshots: compact, comfortable and wide rows, en/es, light/dark, in every design. Screen-reader output is asserted, not only axe.
+
+## What the measurements found
+
+At 57k threads and 100.6k messages (`search-everywhere.perf.test.ts` in `db` and `idb`; machine load average 9–27 from other sessions):
+
+- **The instant index**, the path every search takes once it's current:
+  - every query within its budgets, everywhere and `in:all` alike, as seeded and Spam/Trash-heavy;
+  - prefix "pro": 0.06 ms;
+  - store keystrokes ≤ 5 ms.
+  - Its date-only path was the one at its budget (0.85–1.0 ms). It is now one tight pass over the dates: 0.5–0.6 ms.
+- **SQLite's FTS path** (while the index catches up): every case is within 25 ms except broad prefixes ("pro": 24–27 ms). Those are the same in either scope; their cost is the hit count at twice today's gate size. The gate here is 35 ms, scaled to the mailbox. `perf.perf.test.ts` keeps 25 ms at 29.5k threads.
+- **Searching everywhere is never meaningfully slower than `in:all`,** and is often faster: one predicate fewer, and the walk over `threads_order` instead of a partial index.
+- **"Select all N" over broad searches:** 1–53 ms.
+- **The web's index cap (open decision).**
+  - At this size the instant index needs about 123 MiB. The web's cap is 96 MiB (`WEB_SEARCH_MEMORY`), so on the web the index turns itself off at about 95k messages, and search falls back to the exact scan:
+    - operators, sender and dates: 13–124 ms;
+    - free text: 3.5–6.7 s.
+  - The scan never stalls a frame (largest stall 15 ms), but it isn't instant.
+  - With room for the index, every web search everywhere takes ≤ 0.6 ms.
+  - Raising the cap trades memory for instant search on large mailboxes. This is the user's call; the IndexedDB gate measures with room for the index until it's made.

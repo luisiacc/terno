@@ -51,7 +51,8 @@ const SCOPES = [
 ] as const;
 
 beforeAll(async () => {
-  // MEASURE: the web's 96 MiB cap turns the index off at this size (97 MiB); measured here with room for it
+  // the web's 96 MiB cap (WEB_SEARCH_MEMORY) turns the index off at this size: it needs ~123 MiB at 100k messages.
+  // Measured here with room for it; the cap itself is the user's call (plan 64, "The web's index cap")
   store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: { memory: { steadyBytes: 160 * 1024 * 1024, peakBytes: 192 * 1024 * 1024 } } });
   const seeded = await store.dev.seed(generateDataset({ threads: 57_000, accounts: 8, seed: 64, now: NOW, bodyScale: 2 }), { now: NOW });
   expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
