@@ -23,8 +23,9 @@ const AI_MIN_CONFIDENCE = 0.7;
  * Optional second opinion for threads the engine left undecided with
  * 0.5 ≤ p < 0.97. Off unless the user turns it on; runs only through the
  * configured provider (Backend.ai(), so the network policy and local mode
- * apply), outside ingestion slices, at most 20 calls a minute, once per
- * thread. It can only turn "nothing" into a suggestion: never auto-apply.
+ * apply), outside ingestion slices, at most 20 calls a minute. Successful
+ * responses run once per thread; failed tasks may be enqueued again.
+ * It can only turn "nothing" into a suggestion: never auto-apply.
  */
 export class AiAssist {
   private readonly queue: number[] = [];
@@ -154,9 +155,11 @@ export class AiAssist {
       });
       if (wrote) this.host.notifyChanged([threadId], false);
     } catch (error) {
+      // Leave failed work eligible for a later enqueue, without scheduling retries.
+      this.seen.delete(threadId);
       // an AiError is the provider's verdict (expected); anything else is ours
       captureError(error, { code: "ai.assist_failed", fields: { aiKind: error instanceof AiError ? error.kind : "other" } });
-      this.host.log("warn", "categorization assist failed", error instanceof Error ? error.message : error);
+      this.host.log("warn", "categorization assist failed", { aiKind: error instanceof AiError ? error.kind : "other" });
     }
     return "done";
   }

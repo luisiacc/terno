@@ -157,15 +157,22 @@ export class AiService {
     try {
       const ai = await this.current();
       const store = this.b.store;
-      return await ai.generateFilter(
+      const signal = AbortSignal.any([controller.signal, this.b.abort.signal]);
+      const generated = await ai.generateFilter(
         prompt,
         {
           now: this.b.now(),
           categories: (await store.categories.list()).map((c) => ({ id: c.id, name: c.name })),
           accounts: (await store.accounts.list()).map((a) => ({ id: a.id, email: a.email, displayName: a.displayName })),
         },
-        AbortSignal.any([controller.signal, this.b.abort.signal]),
+        signal,
       );
+      const categories = new Set((await store.categories.list()).map((c) => c.id));
+      if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+      if (generated.rule.actions.some((a) => a.type === "addCategory" && !categories.has(a.categoryId))) {
+        throw new AiError(L("errors.categoryGone"), "invalid_output");
+      }
+      return generated;
     } catch (error) {
       throw toRpcError(error);
     } finally {

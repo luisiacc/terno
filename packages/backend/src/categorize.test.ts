@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import dc from "node:diagnostics_channel";
 import { encodeFeatures, extractFeatures } from "@terno/core";
+import { createAi, type ModelTransport } from "@terno/ai";
 import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Backend, plaintextCipher } from "./backend";
+import { Backend, plaintextCipher, type BackendOptions } from "./backend";
 
 const NOW = Date.UTC(2026, 9, 22, 12);
 const DAY = 86_400_000;
@@ -17,16 +18,16 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function open(dir: string, now: () => number = () => NOW) {
-  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now, autoSync: false });
+function open(dir: string, now: () => number = () => NOW, options: Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now, autoSync: false, ...options });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   return { backend, client: new RpcClient(c) };
 }
 
-function setup(options: { seed?: boolean } = {}) {
+function setup(options: { seed?: boolean } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-cat-"));
-  const { backend, client } = open(dir);
+  const { backend, client } = open(dir, () => NOW, options);
   let stopped = false;
   cleanups.push(async () => {
     if (!stopped) await backend.stop().catch(() => {});
@@ -259,8 +260,8 @@ describe("categorizer: auto-apply at ingestion", () => {
   });
 
   /** A mailbox where the user filed 6 receipt senders into Facturas (examples 120 days old) next to uncategorized personal mail and promotions. */
-  async function trained(options: { examplesAt?: number } = {}) {
-    const { backend, client } = setup();
+  async function trained(options: { examplesAt?: number } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+    const { backend, client } = setup(options);
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const old: IncomingMessage[] = [];
@@ -447,6 +448,62 @@ describe("categorizer: auto-apply at ingestion", () => {
     await backend.aiAssist.drain();
     expect(decision(thread)?.kind).toBe("suggest");
     expect(JSON.parse(decision(thread)!.explain_json)[0]).toEqual({ k: "reason.aiLocal", p: { category: "Facturas" } });
+    expect(inCategory(thread)).toBeNull();
+  });
+
+  it.each(["label", "id"] as const)("releases a failed classification %s for a later enqueue after exhausting repairs", async (invalid) => {
+    const sentinel = "synthetic-private-model-id";
+    let valid = false;
+    let calls = 0;
+    const logs: unknown[] = [];
+    const transport: ModelTransport = {
+      async complete(req) {
+        calls++;
+        const input = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+        return { stop: "end", text: JSON.stringify({ results: [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : "Facturas", confidence: 0.95 }] }) };
+      },
+    };
+    const { backend, acct, cat, arrive, decision, inCategory } = await trained({
+      aiFactory: (config) => createAi({ ...config, capabilities: { output: "json_schema", contextTokens: null, embeddings: false, probedAt: null } }, { transport }),
+      log: (...args) => logs.push(args),
+    });
+    const draft = await uncertainMail(backend, acct, cat);
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const { thread } = await arrive(draft);
+    await backend.aiAssist.drain();
+    expect(calls).toBe(2); // initial response and the failed repair
+    expect(decision(thread)).toBeUndefined();
+    expect(inCategory(thread)).toBeNull();
+    expect(await backend.store.categorize.aiCandidate(thread)).toBe(true);
+    expect(backend.aiAssist.pending).toBe(0);
+    expect.soft(JSON.stringify(logs)).not.toContain(sentinel);
+    valid = true;
+    await backend.aiAssist.enqueue([thread]);
+    await backend.aiAssist.drain();
+    expect(calls).toBe(3);
+    expect(decision(thread)?.kind).toBe("suggest");
+    expect(inCategory(thread)).toBeNull();
+    expect(sqlDb(backend.store).get("SELECT count(*) AS n FROM cls_decisions WHERE thread_id = ?", thread)).toEqual({ n: 1 });
+  });
+
+  it.each([{ label: null, confidence: 0.95 }, { label: "Facturas", confidence: 0.2 }])("keeps a valid non-decision $label/$confidence once per thread", async (result) => {
+    let calls = 0;
+    const transport: ModelTransport = {
+      async complete(req) {
+        calls++;
+        const input = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+        return { stop: "end", text: JSON.stringify({ results: [{ id: input[0]!.id, ...result }] }) };
+      },
+    };
+    const { backend, acct, cat, arrive, decision, inCategory } = await trained({ aiFactory: (config) => createAi(config, { transport }) });
+    const draft = await uncertainMail(backend, acct, cat);
+    setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
+    const { thread } = await arrive(draft);
+    await backend.aiAssist.drain();
+    await backend.aiAssist.enqueue([thread]);
+    await backend.aiAssist.drain();
+    expect(calls).toBe(1);
+    expect(decision(thread)).toBeUndefined();
     expect(inCategory(thread)).toBeNull();
   });
 
