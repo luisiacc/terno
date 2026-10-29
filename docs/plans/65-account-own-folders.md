@@ -413,3 +413,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 39.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **Reading a large twin group held the loop** (500 a page, but no turn between pages: 120 ms for 500,000). `readTwins` gives the loop a turn every 4 ms between pages. Gate: 500,000 stored twins read, longest stall under a frame (106 ms without the turns).
+
+**Round 40.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **What a reset or a vanished folder reads first held the loop:** every stored location of the mailbox in one SQLite query. `readMailbox` reads them 2,000 UIDs a page (`ImapLocationStore.inMailboxPage`, by `message_locations_uid`) with a turn between pages, for resets, sweeps, vanished folders and their journal; a store in memory (IndexedDB) leaves the paging out, its whole read being quick. Gate (`mailbox-read.perf.test.ts`, load-aware): a mailbox of 100,000 locations read, longest stall 4 ms (30 read whole).

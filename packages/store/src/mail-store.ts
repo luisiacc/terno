@@ -220,6 +220,11 @@ export interface ImapLocationStore {
   get(messageId: number, mailbox: string): Promise<{ uid: number; uidvalidity: number; flags: string } | null>;
   count(messageId: number): Promise<number>;
   inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
+  /**
+   * plan 65 (Codex R40): the same, UIDs above `afterUid` ascending, at most `limit`: a store whose reads hold the
+   * loop (SQLite's) pages a big mailbox; one in memory may leave it out (its whole read is quick)
+   */
+  inMailboxPage?(mailbox: string, uidvalidity: number, afterUid: number, limit: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
   /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
   resetMailbox(mailbox: string): Promise<number[]>;
   /**

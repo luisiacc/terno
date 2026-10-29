@@ -222,6 +222,27 @@ export async function joinGroups(groups: ReadonlyMap<string, number[]>, keys: re
   }
 }
 
+/**
+ * Plan 65 (Codex R40): a mailbox's stored locations, 2,000 UIDs a page where the store pages (its reads hold the loop),
+ * a turn between pages every few milliseconds; whole where it doesn't (in memory)
+ */
+export async function readMailbox<L extends { uid: number }>(
+  locations: { inMailbox(mailbox: string, uidvalidity: number): Promise<L[]>; inMailboxPage?(mailbox: string, uidvalidity: number, afterUid: number, limit: number): Promise<L[]> },
+  mailbox: string,
+  uidvalidity: number,
+): Promise<L[]> {
+  if (!locations.inMailboxPage) return locations.inMailbox(mailbox, uidvalidity);
+  const breathe = breather();
+  const all: L[] = [];
+  for (let after = 0; ; ) {
+    const page = await locations.inMailboxPage(mailbox, uidvalidity, after, 2000);
+    for (const l of page) all.push(l);
+    if (page.length < 2000) return all;
+    after = page.at(-1)!.uid;
+    await breathe();
+  }
+}
+
 /** Plan 65 (Codex R20, R39): every stored twin of an envelope, 500 a page, the loop given a turn every few milliseconds */
 export async function readTwins(page: (after: number) => Promise<readonly number[]>): Promise<number[]> {
   const breathe = breather();
@@ -593,7 +614,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    */
   async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
     const ids = new Set<number>(cursor.resetPending?.[path] ?? []);
-    for (const l of await locations.inMailbox(path, olduidvalidity)) ids.add(l.message_id);
+    for (const l of await readMailbox(locations, path, olduidvalidity)) ids.add(l.message_id);
     cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
     cursor.resetPending[path] = bounded(cursor, [...ids], IMAP_JOURNAL_LIMITS.resetPending, "oldest");
     cursor.unlocated = bounded(cursor, [...new Set([...(cursor.unlocated ?? []), ...ids])], IMAP_JOURNAL_LIMITS.unlocated);
@@ -960,7 +981,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
       const seen = snapshotOf(mb);
       const serverUids = new Set((await c.search({ all: true }, { uid: true })) || []);
-      const known = await locations.inMailbox(path, uidvalidity);
+      const known = await readMailbox(locations, path, uidvalidity);
       const byUid = new Map(known.map((k) => [k.uid, k]));
       const gone = known.filter((k) => !serverUids.has(k.uid));
       if (gone.length) {
@@ -1170,7 +1191,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const listed = new Set(list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent")).map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
-        for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
+        for (const path of vanished) for (const l of await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
         // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
         for (const id of cursor.unlocated ?? []) touched.add(id);
         // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
@@ -1222,7 +1243,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
         for (const path of incomplete ? [] : vanished) {
           // written down before they go (Codex R9): a crash right after still reconciles them
-          await journal(cursor, (await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
+          await journal(cursor, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
           for (const id of await locations.resetMailbox(path)) touched.add(id);
           delete cursor.mailboxes[path];
         }

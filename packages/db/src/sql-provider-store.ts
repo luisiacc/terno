@@ -280,6 +280,17 @@ class SqlImapLocations implements ImapLocationStore {
     return this.db.get<{ c: number }>("SELECT count(*) AS c FROM message_locations WHERE message_id = ?", messageId)!.c;
   }
 
+  async inMailboxPage(mailbox: string, uidvalidity: number, afterUid: number, limit: number) {
+    return this.db.all<{ message_id: number; uid: number; flags: string }>(
+      "SELECT message_id, uid, flags FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? AND uidvalidity = ? AND uid > ? ORDER BY uid LIMIT ?",
+      this.accountId,
+      mailbox,
+      uidvalidity,
+      afterUid,
+      limit,
+    );
+  }
+
   async inMailbox(mailbox: string, uidvalidity: number) {
     return this.db.all<{ message_id: number; uid: number; flags: string }>(
       "SELECT message_id, uid, flags FROM message_locations WHERE account_id = ? AND mailbox = ? AND uidvalidity = ?",

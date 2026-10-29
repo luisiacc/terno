@@ -969,6 +969,7 @@ export class BackendCore {
         get: (...args) => read(() => locations.get(...args)),
         count: (...args) => read(() => locations.count(...args)),
         inMailbox: (...args) => read(() => locations.inMailbox(...args)),
+        ...(locations.inMailboxPage && { inMailboxPage: (...args: Parameters<NonNullable<typeof locations.inMailboxPage>>) => read(() => locations.inMailboxPage!(...args)) }),
         resetCandidate: (...args) => read(() => locations.resetCandidate(...args)),
         envelopes: (...args) => read(() => locations.envelopes(...args)),
         unlocated: (...args) => read(() => locations.unlocated(...args)),
