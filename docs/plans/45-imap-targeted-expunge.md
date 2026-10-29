@@ -1,5 +1,23 @@
 # Plan 45: prevent collateral IMAP expunge
 
+## W06: stop replay after uncertain mutation (T05/A33)
+
+Request: “IMAP reconnect retry wraps entire operation closures. Test lost acknowledgement after MOVE/COPY, including library fallback without MOVE/UIDPLUS and multiple source folders. A successful operation must correspond to actual final mailbox state, rather than merely the last request succeeding.”
+
+Investigation: at local base `24784f02`, `withConnection` repeats the entire callback once, then the backend can queue further retryable failures. Installed ImapFlow 2.8.0 implements MOVE without MOVE capability as COPY → STORE Deleted → EXPUNGE; Plan45 already refuses that path without effective UIDPLUS. `moveLocations` only records mappings after the whole library call returns. A lost acknowledgement or failure after COPY can therefore replay a copy, or report success after a repeated MOVE of now-absent UIDs. Plan68 already owns folder/epoch reconciliation; Sent APPEND recovery has its separate receipt boundary.
+
+Short spec: retain connect/read/lock/epoch retries before a move/copy/delete is attempted. Once such a stage is entered, never automatically replay that operation after a retryable failure, including failure selecting a later source or writing local results. Use the existing nonretryable ambiguous ProviderError outcome so the backend records unknown and does not queue another attempt; tell the user to inspect provider state. Preserve definitive Plan45 refusals and idempotent flag operations. This is conservative uncertainty, not remote rollback or atomicity. No backend/schema, folder-sync or SMTP changes.
+
+Tests: real Backend + installed ImapFlow + ImapKit response rules that drop/reset tagged acknowledgements only after handlers applied real mutations. Assert source/destination UIDVALIDITY and UID, exact raw bytes/counts, unrelated Deleted preservation, local body/location and public operation/retry state. Cover native MOVE, UIDPLUS fallback COPY/STORE/EXPUNGE loss, copy-only without MOVE/UIDPLUS, later-source SELECT failure, plus safe SELECT/read retry and existing unsupported/read-only controls. Capture behavioral RED before production. Run the changed IMAP file and direct network/helper callers, mail/backend typechecks and scoped package lint. No UI or hot-loop change; no app build, full suite or unrelated perf gate.
+
+### W06 revisions after the Codex review
+
+One native read-only gpt-6.1-sol/high plan critique completed exit 0. Accept all five refinements: operation-local marker immediately before MOVE/COPY/delete, retained across sources/helper calls; classify disconnected false results as unknown while preserving live tagged-NO delete refusals; guard both connection attempts; add delete-only ACK loss and local-write failure tests; assert bounded commands/no worker replay and durable unknown after reopen. Paired en/es uncertainty guidance is necessary because “refused” would be untrue after lost acknowledgement.
+
+Observed RED (`/tmp/terno-w06/red-complete.log`, actual exit 1): 10 failing regression cases and one passing pre-mutation SELECT retry control. Native MOVE replays and reports succeeded, fallback COPY/STORE creates duplicate bytes, copy-only without UIDPLUS duplicates, All Mail delete loss is incorrectly refused, local-write loss and later-source SELECT replay. An earlier config import failure and initial multi-source fixture that excluded Junk from the All view are setup errors, not behavioral evidence; the corrected fixture uses a custom Projects source. No production changes preceded this capture.
+
+W06 GREEN: the same ten RED cases now pass, along with the safe SELECT control, existing Plan45 refusal/UIDPLUS/native/read-only controls and Sent-copy/SMTP cases. `/tmp/terno-w06/scoped-green.log`: five affected/direct-caller files, 165/165 tests, exit 0 (IMAP, network integration/unit, IMAP folder and network-error helper). The additional read-only lost FETCH ACK control passes 1/1 (`read-control.log`); it qualifies existing safe behavior. Unknown survives worker reruns, network reset and a temporary-profile reopen; ordinary sync recovers the actual source/destination identities using existing Plan68 logic. Mail, backend (both projects) and i18n types plus package-scoped oxlint and diff check pass. The first GREEN attempt exposed a test-only nonexistent `ops.list()` method; replacing it with the real RPC fixed that assertion. No UI, production app build or full-release gates were run.
+
 ## Request (verbatim)
 
 > I want you to go through every item to fix here in this report. For each item that needs fixing you already have, in that report, what needs to be done but for each item you need to:

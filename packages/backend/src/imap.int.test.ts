@@ -683,6 +683,245 @@ describe("IMAP provider against ImapKit", () => {
     expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact reconnect body\n");
   });
 
+  it.each([
+    { fault: "MOVE ACK on reconnect", native: true, command: "UID MOVE", gone: true, wire: ["UID MOVE"] },
+    { fault: "native MOVE ACK", native: true, command: "UID MOVE", gone: true, wire: ["UID MOVE"] },
+    { fault: "fallback COPY ACK", native: false, command: "UID COPY", gone: false, wire: ["UID COPY"] },
+    { fault: "fallback STORE ACK", native: false, command: "UID STORE", gone: false, wire: ["UID COPY", "UID STORE"] },
+    { fault: "fallback EXPUNGE ACK", native: false, command: "UID EXPUNGE", gone: true, wire: ["UID COPY", "UID STORE", "UID EXPUNGE"] },
+  ])("does not replay after losing $fault following real application", async ({ fault, native, command, gone, wire }) => {
+    const { imap, backend, client, addAccount, stop, dir } = await setup({ imap: { plugins: ["IDLE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE", ...(native ? ["MOVE"] : [])] } });
+    const ctl = imap.server.control;
+    const bytes = raw({ subject: "Uncertain move", body: "Exact uncertain move bytes" });
+    const otherBytes = raw({ subject: "Unrelated deleted", body: "Preserve unrelated bytes" });
+    const source = ctl.addMessage("INBOX", { raw: bytes });
+    const other = ctl.addMessage("INBOX", { raw: otherBytes });
+    const destBefore = ctl.getMailbox("Archive");
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Uncertain move")!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    expect(before).toEqual([expect.objectContaining({ mailbox: "INBOX", uid: source.uid, uidvalidity: source.uidvalidity })]);
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    const commands: string[] = [];
+    imap.server.script.add({ on: "command", run: true, when: (context) => {
+      if (/^UID (MOVE|COPY|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        if (commands.length >= 32) throw new Error("Unexpected unbounded mutations");
+        commands.push(context.command!);
+      }
+      return false;
+    } });
+    if (fault === "MOVE ACK on reconnect") {
+      (await backend.provider(account.id))!.reset!();
+      imap.server.script.add({ on: "command", command: "SELECT", times: 1, drop: true, close: "reset" });
+    }
+    const lost = imap.server.script.add({ on: "response", command, untagged: false, times: 1, drop: true, close: "reset" });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect(lost!.hits).toBe(1);
+    const remote = () => ({
+      sourceEpoch: ctl.getMailbox("INBOX").uidvalidity,
+      destinationEpoch: ctl.getMailbox("Archive").uidvalidity,
+      source: ctl.listMessages("INBOX", { raw: true }).map((m) => ({ uid: m.uid, bytes: m.raw?.toString(), size: m.raw?.length, flags: m.flags })),
+      destination: ctl.listMessages("Archive", { raw: true }).map((m) => ({ uid: m.uid, bytes: m.raw?.toString(), size: m.raw?.length })),
+    });
+    const actual = remote();
+    expect.soft(commands).toEqual(wire);
+    expect.soft(actual.sourceEpoch).toBe(source.uidvalidity);
+    expect.soft(actual.destinationEpoch).toBe(destBefore.uidvalidity);
+    expect.soft(actual.destination).toEqual([{ uid: destBefore.uidnext, bytes, size: Buffer.byteLength(bytes) }]);
+    expect.soft(actual.source.map((m) => m.uid)).toEqual(gone ? [other.uid] : [source.uid, other.uid]);
+    if (!gone) expect.soft(actual.source.find((m) => m.uid === source.uid)).toMatchObject({ bytes, size: Buffer.byteLength(bytes), flags: command === "UID STORE" ? expect.arrayContaining(["\\Deleted"]) : expect.not.arrayContaining(["\\Deleted"]) });
+    expect.soft(actual.source.find((m) => m.uid === other.uid)).toMatchObject({ bytes: otherBytes, size: Buffer.byteLength(otherBytes), flags: expect.arrayContaining(["\\Deleted"]) });
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ kind: "archive", state: "unknown", attempts: 1, lastErrorI18n: { key: "errors.imap.changeUnknown" } })]);
+    expect.soft(await locations.of([message.id])).toEqual(before);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact uncertain move bytes\n");
+    await backend.runWorker();
+    backend.networkChanged(true, "network");
+    await backend.runWorker();
+    expect.soft(remote()).toEqual(actual);
+    expect.soft(commands).toEqual(wire);
+    expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: "unknown", attempts: 1 });
+    await backend.syncAccount(account.id);
+    const synced = await locations.of([message.id]);
+    expect(synced).toContainEqual(expect.objectContaining({ mailbox: "Archive", uid: destBefore.uidnext, uidvalidity: destBefore.uidvalidity }));
+    expect(synced.some((l) => l.mailbox === "INBOX")).toBe(!gone);
+    expect((await client.call("threads.get", { threadId: thread.id })).messages[0]?.bodyText).toBe("Exact uncertain move bytes\n");
+    if (fault === "native MOVE ACK") {
+      await stop();
+      const reopened = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false });
+      cleanups.push(() => reopened.stop());
+      await reopened.runWorker();
+      const [c, server] = createMemoryTransportPair();
+      reopened.connect(server, { clientId: "reopen-uncertain", origin: "renderer" });
+      const rpc = new RpcClient(c);
+      expect(await rpc.call("ops.list", {})).toEqual([expect.objectContaining({ state: "unknown", attempts: 1 })]);
+      expect(remote()).toEqual(actual);
+      expect(commands).toEqual(wire);
+    }
+  });
+
+  it("does not duplicate a copy-only All Mail action after a lost COPY ACK without MOVE or UIDPLUS", async () => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "SPECIAL-USE", "ENABLE", "CONDSTORE"],
+      storage: { INBOX: {}, "": { separator: "/", folders: { All: { "special-use": "\\All" }, Sent: { "special-use": "\\Sent" } } } },
+    } });
+    const ctl = imap.server.control;
+    const bytes = raw({ subject: "Copy once", body: "Exact copy bytes" });
+    const source = ctl.addMessage("All", { raw: bytes });
+    const inbox = ctl.getMailbox("INBOX");
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "archive" })).items.find((t) => t.subject === "Copy once")!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    expect(before).toEqual([expect.objectContaining({ mailbox: "All", uid: source.uid, uidvalidity: source.uidvalidity })]);
+    const lost = imap.server.script.add({ on: "response", command: "UID COPY", untagged: false, times: 1, drop: true, close: "reset" });
+    await client.call("threads.act", { threadIds: [thread.id], action: "moveToInbox" });
+    await backend.runWorker();
+    expect(lost!.hits).toBe(1);
+    const check = async () => {
+      expect.soft(ctl.getMailbox("All").uidvalidity).toBe(source.uidvalidity);
+      expect.soft(ctl.getMailbox("INBOX").uidvalidity).toBe(inbox.uidvalidity);
+      expect.soft(ctl.listMessages("All", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual([[source.uid, bytes, Buffer.byteLength(bytes)]]);
+      expect.soft(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual([[inbox.uidnext, bytes, Buffer.byteLength(bytes)]]);
+      expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ state: "unknown", attempts: 1 })]);
+      expect.soft(await locations.of([message.id])).toEqual(before);
+    };
+    await check();
+    await backend.runWorker();
+    await check();
+  });
+
+  it.each(["UID STORE", "UID EXPUNGE"])("reports unknown when All Mail deletion loses %s acknowledgement", async (command) => {
+    const { imap, backend, client, addAccount } = await setup({ imap: {
+      plugins: ["IDLE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"],
+      storage: { INBOX: {}, "": { separator: "/", folders: { All: { "special-use": "\\All" }, Sent: { "special-use": "\\Sent" } } } },
+    } });
+    const ctl = imap.server.control;
+    const bytes = raw({ subject: "Delete once", body: "Exact delete bytes" });
+    const target = ctl.addMessage("INBOX", { raw: bytes });
+    const all = ctl.addMessage("All", { raw: bytes });
+    const unrelatedBytes = raw({ subject: "Unrelated", body: "Unrelated delete bytes" });
+    const other = ctl.addMessage("INBOX", { raw: unrelatedBytes });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Delete once")!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
+    const lost = imap.server.script.add({ on: "response", command, untagged: false, times: 1, drop: true, close: "reset" });
+    await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+    await backend.runWorker();
+    expect(lost!.hits).toBe(1);
+    const check = async () => {
+      expect.soft(ctl.getMailbox("INBOX").uidvalidity).toBe(target.uidvalidity);
+      expect.soft(ctl.getMailbox("All").uidvalidity).toBe(all.uidvalidity);
+      expect.soft(ctl.listMessages("All", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual([[all.uid, bytes, Buffer.byteLength(bytes)]]);
+      const remaining = ctl.listMessages("INBOX", { raw: true });
+      expect.soft(remaining.map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual(command === "UID STORE" ? [[target.uid, bytes, Buffer.byteLength(bytes)], [other.uid, unrelatedBytes, Buffer.byteLength(unrelatedBytes)]] : [[other.uid, unrelatedBytes, Buffer.byteLength(unrelatedBytes)]]);
+      expect.soft(remaining.every((m) => m.flags.includes("\\Deleted"))).toBe(true);
+      expect.soft(await locations.of([message.id])).toEqual(before);
+      expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: "unknown", attempts: 1, lastErrorI18n: { key: "errors.imap.changeUnknown" } });
+    };
+    await check();
+    await backend.runWorker();
+    await check();
+  });
+
+  it("does not replay an acknowledged move when recording local locations fails", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const bytes = raw({ subject: "Record once", body: "Exact recorded bytes" });
+    const source = ctl.addMessage("INBOX", { raw: bytes });
+    const dest = ctl.getMailbox("Archive");
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const thread = (await client.call("threads.list", { view: "inbox" })).items[0]!;
+    const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of([message.id]);
+    const proto = Object.getPrototypeOf(locations) as { upsert(...args: unknown[]): Promise<void> };
+    const fail = vi.spyOn(proto, "upsert").mockRejectedValueOnce(new Error("Synthetic local location failure"));
+    try {
+      await client.call("threads.act", { threadIds: [thread.id], action: "archive" });
+      await backend.runWorker();
+    } finally { fail.mockRestore(); }
+    expect.soft(await client.call("ops.list", {})).toEqual([expect.objectContaining({ state: "unknown", attempts: 1 })]);
+    expect.soft(await locations.of([message.id])).toEqual(before);
+    expect(ctl.getMailbox("INBOX").uidvalidity).toBe(source.uidvalidity);
+    expect(ctl.getMailbox("Archive").uidvalidity).toBe(dest.uidvalidity);
+    expect(ctl.listMessages("INBOX")).toHaveLength(0);
+    expect(ctl.listMessages("Archive", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual([[dest.uidnext, bytes, Buffer.byteLength(bytes)]]);
+    await backend.runWorker();
+    expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: "unknown", attempts: 1 });
+  });
+
+  it("retries a lost read-only FETCH acknowledgement without changing remote bytes", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const bytes = raw({ subject: "Safe read retry", body: "Exact safe read bytes" });
+    const source = ctl.addMessage("INBOX", { raw: bytes });
+    const account = await addAccount(imap.port);
+    const lost = imap.server.script.add({ on: "response", command: "UID FETCH", untagged: false, times: 1, drop: true, close: "reset" });
+    await backend.syncAccount(account.id);
+    expect(lost!.hits).toBe(1);
+    expect(ctl.getMailbox("INBOX").uidvalidity).toBe(source.uidvalidity);
+    expect(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual([[source.uid, bytes, Buffer.byteLength(bytes)]]);
+    const [thread] = (await client.call("threads.list", { view: "inbox" })).items;
+    const message = (await client.call("threads.get", { threadId: thread!.id })).messages[0]!;
+    expect(message.bodyText).toBe("Exact safe read bytes\n");
+    expect(await backend.store.providerStore(account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "INBOX", uid: source.uid, uidvalidity: source.uidvalidity })]);
+    expect(await client.call("ops.list", {})).toEqual([]);
+  });
+
+  it.each([false, true])("retries a pre-mutation SELECT failure but never a later-source failure (earlier progress %s)", async (progress) => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    const boxes = progress ? ["Archive", "Projects"] : ["Archive"];
+    if (progress) ctl.createMailbox("Projects");
+    const seeded = boxes.map((box, i) => {
+      const bytes = raw({ subject: `Source ${i}`, body: `Exact source ${i}` });
+      return { box, bytes, ...ctl.addMessage(box, { raw: bytes }) };
+    });
+    const inbox = ctl.getMailbox("INBOX");
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const ids = seeded.map(({ bytes }) => sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = ?", /Subject: (.*)\r/.exec(bytes)![1]!)!.id);
+    const locations = backend.store.providerStore(account.id).locations!;
+    const before = await locations.of(ids);
+    expect(before).toHaveLength(boxes.length);
+    const order = [...new Set(before.map((l) => l.mailbox))];
+    const selected: string[] = [];
+    imap.server.script.add({ on: "command", command: "SELECT", run: true, when: (c) => {
+      selected.push(c.data);
+      return false;
+    } });
+    const failedBox = order[progress ? 1 : 0]!;
+    const lost = imap.server.script.add({ on: "command", command: "SELECT", match: new RegExp(failedBox), times: 1, drop: true, close: "reset" });
+    // Separate threads still form one provider operation with multiple source folders.
+    const threads = (await client.call("threads.list", { view: "all" })).items.filter((t) => t.subject.startsWith("Source "));
+    expect(threads).toHaveLength(boxes.length);
+    await client.call("threads.act", { threadIds: threads.map((t) => t.id), action: "moveToInbox" });
+    await backend.runWorker();
+    expect(lost!.hits).toBe(1);
+    const expected = seeded.filter((s) => !progress || s.box === order[0]);
+    expect.soft(ctl.getMailbox("INBOX").uidvalidity).toBe(inbox.uidvalidity);
+    expect.soft(ctl.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString(), m.raw?.length])).toEqual(expected.map((s, i) => [inbox.uidnext + i, s.bytes, Buffer.byteLength(s.bytes)]));
+    for (const s of seeded) {
+      expect.soft(ctl.getMailbox(s.box).uidvalidity).toBe(s.uidvalidity);
+      expect.soft(ctl.listMessages(s.box, { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual(expected.includes(s) ? [] : [[s.uid, s.bytes]]);
+    }
+    expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: progress ? "unknown" : "succeeded", attempts: 1 });
+    expect.soft(selected.filter((line) => line.includes(failedBox))).toHaveLength(progress ? 1 : 2);
+    await backend.runWorker();
+    expect.soft((await client.call("ops.list", {}))[0]).toMatchObject({ state: progress ? "unknown" : "succeeded", attempts: 1 });
+  });
+
   it("archives on the server with MOVE and keeps the message (now in Archive) after resync", async () => {
     const { imap, backend, client, addAccount } = await setup();
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "Archívame" }) });

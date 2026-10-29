@@ -635,12 +635,31 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return attempt.promise;
   }
 
-  /** Runs fn on a live connection; a transient failure gets one retry on a fresh session. */
-  async function withConnection<T>(fn: (c: ImapFlow) => Promise<T>): Promise<T> {
+  /** Retry only while no non-idempotent message mutation could have reached the server. */
+  async function withConnection<T>(fn: (c: ImapFlow, beforeMutation: () => void) => Promise<T>): Promise<T> {
+    const run = async (session: ImapFlow): Promise<T> => {
+      let mutated = false;
+      try {
+        return await fn(session, () => {
+          if (!session.usable) throw ProviderError.network(L("errors.network.changed"));
+          mutated = true;
+        });
+      } catch (error) {
+        const e = toProviderError(error);
+        // ImapFlow can return false after losing an ACK. Keep the boundary across sources and
+        // local writes too: even a later SELECT failure must not repeat an earlier COPY.
+        if (mutated && (e.retryable || !session.usable)) {
+          if (client === session) client = null;
+          session.close();
+          throw new ProviderError(L("errors.imap.changeUnknown"), false, true);
+        }
+        throw e;
+      }
+    };
     let c: ImapFlow | null = null;
     try {
       c = await connection();
-      return await fn(c);
+      return await run(c);
     } catch (error) {
       const e = toProviderError(error);
       if (!e.retryable) throw e;
@@ -651,7 +670,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         c.close();
       }
       try {
-        return await fn(await connection());
+        return await run(await connection());
       } catch (again) {
         throw toProviderError(again);
       }
@@ -1170,7 +1189,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return c.capabilities.has(capability) || c.enabled.has("IMAP4REV2") || (c.capabilities.has("IMAP4rev2") && !c.capabilities.has("IMAP4rev1"));
   }
 
-  async function moveLocations(c: ImapFlow, locs: Loc[], destination: string | (() => Promise<string>), mode: "move" | "copy" = "move") {
+  async function moveLocations(c: ImapFlow, locs: Loc[], destination: string | (() => Promise<string>), beforeMutation: () => void, mode: "move" | "copy" = "move") {
     if (!locs.some((l) => typeof destination !== "string" || l.mailbox !== destination)) return;
     if (mode === "move" && !targetedCapability(c, "MOVE") && !targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
     const target = typeof destination === "string" ? destination : await destination();
@@ -1187,6 +1206,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         assertValidity(c, mailbox, items);
         if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
+        beforeMutation();
         const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
         // the new places first, then the old ones go together (sliced, each thread looked at once: Codex R54, one
@@ -1445,7 +1465,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       if (op.kind === "send") return send(op.payload as SendPayload, op);
       const ids = op.target.messageIds ?? [];
       if (ids.length === 0) return;
-      await withConnection(async (c) => {
+      await withConnection(async (c, beforeMutation) => {
         const r = await discoverRoles(c);
         const locs: Loc[] = await locations.of(ids);
         const inRole = (role: Role) => locs.filter((l) => l.mailbox === r[role]);
@@ -1485,13 +1505,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           case "archive": {
             const inbox = inRole("inbox");
             if (!inbox.length) return;
-            if (r.archive || !r.all) return void (await moveLocations(c, inbox, r.archive ?? (() => ensureMailbox(c, "archive", "Archive"))));
+            if (r.archive || !r.all) return void (await moveLocations(c, inbox, r.archive ?? (() => ensureMailbox(c, "archive", "Archive")), beforeMutation));
             if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
             try {
               assertValidity(c, r.inbox!, inbox);
               if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
+              beforeMutation();
               const deleted = await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
               if (!deleted) throw new ProviderError(L("errors.imap.changeRefused"), false);
               await locations.removeMany(inbox.map((l) => l.message_id), r.inbox!);
@@ -1501,16 +1522,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             return;
           }
           case "trash":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), r.trash ?? (() => ensureMailbox(c, "trash", "Trash"))));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), r.trash ?? (() => ensureMailbox(c, "trash", "Trash")), beforeMutation));
           case "spam":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), r.junk ?? (() => ensureMailbox(c, "junk", "Junk"))));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), r.junk ?? (() => ensureMailbox(c, "junk", "Junk")), beforeMutation));
           case "notSpam":
-            return void (await moveLocations(c, inRole("junk"), r.inbox!));
+            return void (await moveLocations(c, inRole("junk"), r.inbox!, beforeMutation));
           case "moveToInbox": {
             const away = locs.filter((l) => l.mailbox !== r.inbox && l.mailbox !== r.sent);
             const all = away.filter((l) => l.mailbox === r.all);
-            await moveLocations(c, away.filter((l) => l.mailbox !== r.all), r.inbox!);
-            if (all.length) await moveLocations(c, all, r.inbox!, "copy");
+            await moveLocations(c, away.filter((l) => l.mailbox !== r.all), r.inbox!, beforeMutation);
+            if (all.length) await moveLocations(c, all, r.inbox!, beforeMutation, "copy");
             return;
           }
           default:
