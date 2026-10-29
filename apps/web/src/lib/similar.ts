@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { RpcError } from "@terno/core/rpc";
 import { captureUi } from "~/lib/diag";
 import { client } from "~/rpc/connection";
-import { registerUndo, runUndo, snack, type Undo } from "~/lib/snack";
+import { dismissSnack, registerUndo, runUndo, snack, type Undo } from "~/lib/snack";
 import { setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
 import { leaveList, trackJob, undoAction } from "~/lib/actions";
@@ -34,6 +34,8 @@ interface SimilarUndo {
   undoId: number | null;
   filterUndo: number | null;
   n: number;
+  /** the sweep is back (a retry after the original's undo failed goes straight to that) */
+  swept?: boolean;
 }
 
 /**
@@ -41,10 +43,13 @@ interface SimilarUndo {
  * the action it followed, so one Undo restores everything the user did.
  */
 async function undoSimilar(u: SimilarUndo, original: Undo | undefined): Promise<void> {
-  const progress = u.n > 200 ? trackJob(t("actions.undoing", { count: u.n })) : null;
+  const progress = !u.swept && u.n > 200 ? trackJob(t("actions.undoing", { count: u.n })) : null;
   try {
-    const { restored } = await client.call("similar.undo", { undoId: u.undoId, filterUndo: u.filterUndo, jobId: progress?.jobId });
-    if (progress) snack.success(t("actions.undone", { count: restored }), { id: progress.snackId, duration: 4000 });
+    if (!u.swept && (u.undoId !== null || u.filterUndo !== null)) {
+      const { restored } = await client.call("similar.undo", { undoId: u.undoId, filterUndo: u.filterUndo, jobId: progress?.jobId });
+      if (progress) snack.success(t("actions.undone", { count: restored }), { id: progress.snackId, duration: 4000 });
+    }
+    u.swept = true;
     if (original?.state === "ready") await runUndo(original);
   } finally {
     progress?.stop();
@@ -69,13 +74,17 @@ function always(scope: SimilarScope, action: SimilarAction): void {
 export async function applySimilar(action: SimilarAction, threadIds: readonly number[], scope: SimilarScope, o: { senderName: string | null; original?: Undo }): Promise<void> {
   const label = scopeLabel(scope, o.senderName);
   const progress = trackJob(t(`similar.doing.${action}`));
-  let taken: SimilarUndo | null = null;
-  const undo = registerUndo(() => (taken ? undoSimilar(taken, o.original) : o.original?.state === "ready" ? runUndo(o.original) : undefined));
+  // z before the answer: the undo waits for what the sweep did, then takes it back (as act's does)
+  let settle!: (u: SimilarUndo) => void;
+  const outcome = new Promise<SimilarUndo>((r) => (settle = r));
+  const undo = registerUndo(() => outcome.then((u) => undoSimilar(u, o.original)));
   try {
     const r = await client.call("similar.apply", { threadIds: [...threadIds], scope, action, jobId: progress.jobId, filterName: action === "spam" ? filterNameOf(scope, action) : undefined });
-    taken = { undoId: r.undoId, filterUndo: r.filter?.filterUndo ?? null, n: r.affected };
+    settle({ undoId: r.undoId, filterUndo: r.filter?.filterUndo ?? null, n: r.affected });
+    // undone meanwhile: its own snacks say so
+    if (undo.state !== "ready") return void dismissSnack(progress.snackId);
     const notes = [r.skipped > 0 ? t("similar.skipped", { count: r.skipped }) : null, action === "spam" ? t(r.filterFailed ? "similar.filterFailed" : "similar.future") : null].filter((n): n is string => n !== null);
-    const undoable = undo.state === "ready" && (r.undoId !== null || r.filter?.filterUndo != null || o.original?.state === "ready");
+    const undoable = r.undoId !== null || r.filter?.filterUndo != null || o.original?.state === "ready";
     snack[r.filterFailed ? "warning" : "success"](t(`similar.done.${action}`, { count: r.affected, scope: label }), {
       id: progress.snackId,
       duration: 10_000,
@@ -86,7 +95,7 @@ export async function applySimilar(action: SimilarAction, threadIds: readonly nu
   } catch (error) {
     // the slices that committed come back with an undo
     const undoId = error instanceof RpcError ? (error.details as { undoId?: number } | undefined)?.undoId ?? null : null;
-    taken = { undoId, filterUndo: null, n: 0 };
+    settle({ undoId, filterUndo: null, n: 0 });
     captureUi(error, { code: "action.failed", fields: { action, count: threadIds.length } });
     snack.error(t("similar.failed", { error: errorText(error) }), { id: progress.snackId, action: undoId !== null || o.original?.state === "ready" ? undoAction(undo, t("similar.undoName")) : undefined });
   } finally {

@@ -22,6 +22,7 @@ import type {
   Reason,
   SimilarAction,
   SimilarOffers,
+  SimilarPage,
   SimilarScope,
   ThreadAction,
   ThreadDetail,
@@ -385,8 +386,12 @@ export interface MailStore {
   similar: {
     /** what the threads' root inbound messages share (≤ 200 read), with eligible counts; targets still in place count too */
     offers(threadIds: readonly number[], action: SimilarAction): Promise<SimilarOffers>;
-    /** every thread to act on, newest first: eligible ones (still in place, not starred or replied) plus the targets still in place; the others it leaves out are counted */
-    resolve(scope: SimilarScope, action: SimilarAction, targets: readonly number[]): Promise<{ ids: number[]; skipped: number }>;
+    /**
+     * One page of what a sweep acts on, newest messages first, examining at most `limit` of the
+     * scope's messages after `before` (a message id; null: from the newest, and the targets still
+     * in place join). Ids are threads in place, not starred or replied unless targeted.
+     */
+    resolvePage(scope: SimilarScope, action: SimilarAction, targets: readonly number[], before: number | null, limit: number): Promise<SimilarPage>;
     /** which of these threads the user values now (starred, or with a message they sent): a sweep re-reads it per slice */
     kept(threadIds: readonly number[]): Promise<number[]>;
   };

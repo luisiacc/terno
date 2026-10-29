@@ -73,6 +73,10 @@ export interface BackendCoreOptions {
   syncIntervalMs?: number;
   /** target duration of one ingestion/filter slice before yielding to interactive RPCs */
   sliceBudgetMs?: number;
+  /** tests: the most threads a similar sweep takes on (plan 63; else the scope cap) */
+  similarCap?: number;
+  /** tests: the messages a similar sweep reads per page while resolving (plan 63) */
+  similarPage?: number;
   /** DNS for the network policy; without it (browsers) only literal loopback hosts count as local and nothing is pinned */
   lookup?: LookupAll;
   /** the host's kind and capabilities, reported to the renderer (default: everything, as on desktop) */

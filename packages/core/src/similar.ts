@@ -20,11 +20,19 @@ export type SimilarScope =
 
 export interface SimilarOffer {
   scope: SimilarScope;
-  /** eligible threads (not yet in the place, not starred, not replied), explicit targets included; capped at COUNT_CAP */
+  /** eligible threads (not yet in the place, not starred, not replied), explicit targets included; capped: at least this many (a big scope is read only in part) */
   count: number;
   capped: boolean;
   /** starred or replied threads the scope leaves out */
   skipped: number;
+}
+
+/** One page of a sweep's scope: threads to act on, valued ones left out, and where the next page starts (null: done). */
+export interface SimilarPage {
+  ids: number[];
+  /** starred or replied threads (not targets) the sweep leaves */
+  kept: number[];
+  next: number | null;
 }
 
 export interface SimilarOffers {

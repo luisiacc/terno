@@ -18,6 +18,9 @@ const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUU
 
 let store: IdbMailStore;
 let busiest: { email: string; threadId: number };
+/** a second mailbox where one sender sent every received message */
+let dominant: IdbMailStore;
+let dominantThread: number;
 beforeAll(async () => {
   const data = generateDataset({ threads: 28_400, accounts: 8, seed: 42, now: NOW, bodyScale: 2 });
   store = await IdbMailStore.open({ name: `similar-perf-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
@@ -28,8 +31,16 @@ beforeAll(async () => {
   const email = [...counts].sort((a, b) => b[1] - a[1])[0]![0];
   const page = await store.threads.searchText({ query: `from:${email}`, limit: 1, now: NOW });
   busiest = { email, threadId: page.items[0]!.id };
+  const bot = { name: "Bot", email: "bot@notify.example" };
+  const all = { ...data, messages: data.messages.map((m) => (m.isSent ? m : { ...m, from: bot, listId: "all.notify.example" })) };
+  dominant = await IdbMailStore.open({ name: `similar-perf-dominant-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
+  await dominant.dev.seed(all, { now: NOW });
+  dominantThread = (await dominant.threads.searchText({ query: `from:${bot.email}`, limit: 1, now: NOW })).items[0]!.id;
 }, 900_000);
-afterAll(async () => store?.close());
+afterAll(async () => {
+  await store?.close();
+  await dominant?.close();
+});
 
 /** the median of a few warm runs: wall clock, the busy machine's holds excused as in idb.perf */
 async function timed(fn: () => Promise<unknown>): Promise<number> {
@@ -40,11 +51,22 @@ async function timed(fn: () => Promise<unknown>): Promise<number> {
   return [...ms].sort((a, b) => a - b)[Math.floor(ms.length / 2)]!;
 }
 
-it("offers for the busiest sender within a frame, for every action; a whole scope resolves within one too", async () => {
+it("offers for the busiest sender within a frame, for every action; a sweep's page within one too", async () => {
   for (const action of ["archive", "trash", "spam"] as const) {
     const ms = await timed(() => store.similar.offers([busiest.threadId], action));
     expect(ms, `offers ${action}: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
   }
-  const ms = await timed(() => store.similar.resolve({ kind: "sender", email: busiest.email }, "spam", []));
-  expect(ms, `resolve: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  const ms = await timed(() => store.similar.resolvePage({ kind: "sender", email: busiest.email }, "spam", [], null, 2000));
+  expect(ms, `resolve page: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+});
+
+it("one sender sent everything: offers (dominant, nothing in place) and a sweep's pages (rare subject, dominant) within a frame", async () => {
+  for (const action of ["archive", "spam"] as const) {
+    const ms = await timed(() => dominant.similar.offers([dominantThread], action));
+    expect(ms, `dominant offers ${action}: ${ms.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  }
+  const rare = await timed(() => dominant.similar.resolvePage({ kind: "subject", email: "bot@notify.example", subject: "nothing has this subject" }, "spam", [], null, 2000));
+  expect(rare, `rare subject page: ${rare.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  const page = await timed(() => dominant.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], null, 2000));
+  expect(page, `dominant page: ${page.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
 });

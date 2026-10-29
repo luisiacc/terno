@@ -12,10 +12,12 @@ const offer = (kind: "sender" | "subject" | "domain" | "list", count: number, ca
 };
 
 describe("similar chips (plan 63)", () => {
-  it("archive and delete: only scopes with more to do, a wider one only when it holds more than the sender", () => {
+  it("archive and delete: only scopes with more to do, a domain or list only when it holds more than the sender", () => {
     const offers = [offer("sender", 5), offer("subject", 2), offer("domain", 5), offer("list", 9)];
     expect(visibleOffers("archive", offers).map((o) => o.scope.kind)).toEqual(["sender", "subject", "list"]);
     expect(visibleOffers("trash", [offer("sender", 0), offer("subject", 0)])).toEqual([]);
+    // the subject stays even when it holds all of the sender's mail: it is the narrower choice
+    expect(visibleOffers("archive", [offer("sender", 4), offer("subject", 4)]).map((o) => o.scope.kind)).toEqual(["sender", "subject"]);
     // capped counts are only equal when both are capped
     expect(visibleOffers("archive", [offer("sender", 1000, true), offer("domain", 1000, false)]).map((o) => o.scope.kind)).toEqual(["sender", "domain"]);
   });

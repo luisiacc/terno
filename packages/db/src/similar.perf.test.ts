@@ -1,7 +1,7 @@
 /**
  * Plan 63: what the "… similar" snackbar and submenu read, at ~50k messages:
- * the offers for the busiest sender (and its domain), counted with early
- * stops, a scope with nothing left in place, and the resolve of a whole scope.
+ * the offers for the busiest sender, then for one sender that sent all of it
+ * (dominant, a rare subject, nothing in place), and a sweep's resolve pages.
  */
 import { generateDataset } from "@terno/mock-data";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -51,8 +51,15 @@ it("offers for the busiest sender (all four scopes, capped counts) within a fram
   }
 });
 
-it("a scope with nothing left in place, and a whole scope resolved for the sweep", async () => {
-  await gate("resolve sender (spam)", 30, () => store.similar.resolve({ kind: "sender", email: busiest.email }, "spam", []));
+it("one sender sent everything: offers stay within a frame (dominant, rare subject, nothing in place), a sweep's pages within a slice", async () => {
+  // every received message from one sender and one domain: each scope is the whole mailbox
+  store.db.run("UPDATE messages SET from_email = 'bot@notify.example', from_domain = 'notify.example', list_id = 'all.notify.example' WHERE is_sent = 0");
+  meta.dominantMessages = store.db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE from_email = 'bot@notify.example'")!.c;
+  expect(meta.dominantMessages as number).toBeGreaterThan(40_000);
+  for (const action of ["archive", "spam"] as const) await gate(`offers dominant ${action}`, 16, () => store.similar.offers([busiest.threadId], action));
+  const rare = { kind: "subject", email: "bot@notify.example", subject: "nothing has this subject" } as const;
+  await gate("resolve page, rare subject", 8, () => store.similar.resolvePage(rare, "spam", [], null, 2000));
+  await gate("resolve page, dominant sender", 8, () => store.similar.resolvePage({ kind: "sender", email: "bot@notify.example" }, "spam", [], null, 2000));
   store.db.run("UPDATE threads SET in_inbox = 0");
-  await gate("offers, nothing in the inbox", 16, () => store.similar.offers([busiest.threadId], "archive"));
+  await gate("offers dominant, nothing in the inbox", 16, () => store.similar.offers([busiest.threadId], "archive"));
 });

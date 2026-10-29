@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateRule } from "./rules/evaluate";
+import type { FilterRule } from "./rules/schema";
 import { sameRule, similarLearnedKey, similarRule, similarScopes } from "./similar";
 
 const root = (o: Partial<{ sender: string; subject: string; domain: string | null; list: string | null }> = {}) => ({ sender: "receipts@uber.com", subject: "Your receipt", domain: "uber.com", list: null, ...o });
@@ -39,7 +40,7 @@ describe("similar scopes (plan 63)", () => {
     expect(similarLearnedKey({ kind: "sender", email: "Receipts@Uber.com" }, "spam")).toBe("sender:receipts@uber.com:spam");
     expect(similarLearnedKey({ kind: "subject", email: "a@b.c", subject: "x" }, "spam")).toBeNull();
     const a = similarRule({ kind: "subject", email: "a@b.c", subject: "Hello" }, "archive");
-    const b = { ...a, conditions: [...a.conditions].reverse().map((c) => ({ ...c, value: typeof c.value === "string" ? c.value.toUpperCase() : c.value })) };
+    const b: FilterRule = { ...a, conditions: [...a.conditions].reverse().map((c) => (c.field === "from" || c.field === "subject" ? { ...c, value: c.value.toUpperCase() } : c)) };
     expect(sameRule(a, b)).toBe(true);
     expect(sameRule(a, similarRule({ kind: "subject", email: "a@b.c", subject: "Hello" }, "trash"))).toBe(false);
   });

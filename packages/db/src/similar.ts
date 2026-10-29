@@ -1,4 +1,4 @@
-import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarScope } from "@terno/core";
+import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
 import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import type { Db, Param } from "./sqlite";
 
@@ -10,55 +10,53 @@ const PLACE: Record<SimilarAction, string> = {
 };
 /** Mail the user values: never swept along (an explicit target still is acted on). */
 const KEPT = "(t.is_starred = 1 OR t.has_sent = 1)";
+/** An offer reads at most this many of the scope's newest messages: a dominant sender costs the same as any other. */
+export const OFFER_SCAN = 2000;
 
 /**
- * The scope's (message, thread) pairs: received mail, not from the user's own
- * addresses, whose thread is still in place. One indexed probe per scope.
+ * One page of the scope's received mail (not from the user's own addresses),
+ * newest message first, with each thread's place and value. Every predicate
+ * past the index is computed, not filtered, so a page examines exactly
+ * `limit` index entries: a rare subject or an all-archived scope can't turn
+ * it into a walk of the whole sender.
  */
-function matchSql(scope: SimilarScope, action: SimilarAction, own: OwnAddresses): { sql: string; params: Param[] } {
-  const by = (index: string, predicate: string, values: Param[]) => ({
-    sql: `FROM messages m INDEXED BY ${index} JOIN threads t ON t.id = m.thread_id
-          WHERE ${predicate} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AND ${PLACE[action]}`,
-    params: [...values, JSON.stringify([...own.emails])],
-  });
-  switch (scope.kind) {
-    case "sender":
-      return by("messages_from", "m.from_email = ?", [normalizeText(scope.email.trim())]);
-    case "subject":
-      // exactly what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding)
-      return by("messages_from", "m.from_email = ? AND m.subject_norm = ?", [normalizeText(scope.email.trim()), normalizeText(scope.subject)]);
-    case "domain":
-      return by("messages_domain", "m.from_domain = ?", [normalizeText(scope.domain.trim().replace(/^@/, ""))]);
-    case "list":
-      return by("messages_list", "m.list_id = ?", [normalizeText(scope.listId.trim())]);
+function page(db: Db, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, before: number | null, limit: number) {
+  const [index, column, value] =
+    scope.kind === "domain" ? ["messages_domain", "m.from_domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
+    : scope.kind === "list" ? ["messages_list", "m.list_id", normalizeText(scope.listId.trim())]
+    : ["messages_from", "m.from_email", normalizeText(scope.email.trim())];
+  // exactly what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding)
+  const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
+  const params: Param[] = [subject, subject, JSON.stringify([...own.emails]), value, before, before, limit];
+  return db.all<{ id: number; thread_id: number; match: number; placed: number; kept: number }>(
+    `SELECT m.id, m.thread_id, (? IS NULL OR m.subject_norm = ?) AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AS match,
+            ${PLACE[action]} AS placed, ${KEPT} AS kept
+     FROM messages m INDEXED BY ${index} JOIN threads t ON t.id = m.thread_id
+     WHERE ${column} = ? AND (? IS NULL OR m.id < ?)
+     ORDER BY m.id DESC LIMIT ?`,
+    ...params,
+  );
+}
+
+/** Folds a page into thread ids: those to act on (in place; not valued unless targeted) and the valued ones left out. */
+function fold(rows: ReturnType<typeof page>, targets: ReadonlySet<number>, limit: number): SimilarPage {
+  const ids = new Set<number>();
+  const kept = new Set<number>();
+  for (const r of rows) {
+    if (!r.match || !r.placed) continue;
+    if (r.kept && !targets.has(r.thread_id)) kept.add(r.thread_id);
+    else ids.add(r.thread_id);
   }
+  return { ids: [...ids], kept: [...kept], next: rows.length === limit ? rows[rows.length - 1]!.id : null };
 }
 
-/** Distinct threads matching, stopping at `cap` (no ordering: a count). */
-function countWhere(db: Db, m: { sql: string; params: Param[] }, extra: string, extraParams: Param[], cap: number): number {
-  return db.get<{ c: number }>(`SELECT count(*) AS c FROM (SELECT DISTINCT m.thread_id ${m.sql} AND ${extra} LIMIT ?)`, ...m.params, ...extraParams, cap)!.c;
-}
+const inPlace = (db: Db, ids: readonly number[], action: SimilarAction) =>
+  db.all<{ id: number }>(`SELECT t.id FROM json_each(?) j JOIN threads t ON t.id = j.value WHERE ${PLACE[action]}`, JSON.stringify([...new Set(ids)])).map((r) => r.id);
 
-/**
- * Every thread to act on, newest first: the eligible ones (in place, not
- * starred or replied) plus the targets still in place; the starred or
- * replied ones that aren't targets are left out and counted.
- */
-export function resolveSimilar(db: Db, scope: SimilarScope, action: SimilarAction, targets: readonly number[], own = ownAddresses(db)): { ids: number[]; skipped: number } {
-  const m = matchSql(scope, action, own);
-  const t = JSON.stringify([...new Set(targets)]);
-  const ids = db
-    .all<{ id: number }>(
-      `SELECT t.id FROM threads t
-       WHERE t.id IN (SELECT m.thread_id ${m.sql} AND (NOT ${KEPT} OR t.id IN (SELECT value FROM json_each(?))))
-          OR (t.id IN (SELECT value FROM json_each(?)) AND ${PLACE[action]})
-       ORDER BY t.last_date DESC, t.id DESC`,
-      ...m.params,
-      t,
-      t,
-    )
-    .map((r) => r.id);
-  return { ids, skipped: countWhere(db, m, `${KEPT} AND t.id NOT IN (SELECT value FROM json_each(?))`, [t], COUNT_CAP + 1) };
+/** One page of what a sweep acts on (the first also holds the targets still in place). */
+export function resolveSimilarPage(db: Db, scope: SimilarScope, action: SimilarAction, targets: readonly number[], before: number | null, limit: number): SimilarPage {
+  const p = fold(page(db, scope, action, ownAddresses(db), before, limit), new Set(targets), limit);
+  return before === null ? { ...p, ids: [...new Set([...inPlace(db, targets, action), ...p.ids])] } : p;
 }
 
 /** Which of these threads the user values now. */
@@ -79,7 +77,11 @@ function rootFacts(db: Db, threadIds: readonly number[], own: OwnAddresses) {
 /** More targets than this and nothing is offered (each one is checked, never a sample). */
 export const OFFER_TARGETS_MAX = 200;
 
-/** Plan 63's offers: what every target shares, each with how many threads it would move now (capped counts). */
+/**
+ * Plan 63's offers: what every target shares, each with how many threads it
+ * would move now. A count is exact when the scope's newest OFFER_SCAN
+ * messages hold all of it, else at least that many (capped).
+ */
 export function similarOffers(db: Db, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
   const own = ownAddresses(db);
   const targets = [...new Set(threadIds)];
@@ -93,17 +95,15 @@ export function similarOffers(db: Db, threadIds: readonly number[], action: Simi
       list: r.list_id ? normalizeText(r.list_id.trim()) : null,
     })),
   );
-  const t = JSON.stringify(targets);
-  const inPlace = db.get<{ c: number }>(`SELECT count(*) AS c FROM json_each(?) j JOIN threads t ON t.id = j.value WHERE ${PLACE[action]}`, t)!.c;
+  // every target matches every shared scope: those in place count once
+  const placed = inPlace(db, targets, action);
+  const explicit = new Set(targets);
   return {
     senderName: scopes[0]?.kind === "sender" ? roots[0]!.from_name || roots[0]!.from_email : null,
     offers: scopes.map((scope) => {
-      const m = matchSql(scope, action, own);
-      // every target matches every shared scope: those in place count once, plus the eligible others
-      const others = countWhere(db, m, `NOT ${KEPT} AND t.id NOT IN (SELECT value FROM json_each(?))`, [t], COUNT_CAP + 1);
-      const n = inPlace + others;
-      const skipped = countWhere(db, m, `${KEPT} AND t.id NOT IN (SELECT value FROM json_each(?))`, [t], COUNT_CAP + 1);
-      return { scope, count: Math.min(n, COUNT_CAP), capped: n > COUNT_CAP, skipped: Math.min(skipped, COUNT_CAP) };
+      const p = fold(page(db, scope, action, own, null, OFFER_SCAN), explicit, OFFER_SCAN);
+      const n = new Set([...placed, ...p.ids]).size;
+      return { scope, count: Math.min(n, COUNT_CAP), capped: p.next !== null || n > COUNT_CAP, skipped: Math.min(p.kept.length, COUNT_CAP) };
     }),
   };
 }

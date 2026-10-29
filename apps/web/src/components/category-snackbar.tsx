@@ -25,7 +25,8 @@ export const snackbarControls: { current: Controls | null } = { current: null };
 type Slot = "sender" | "domain" | "list" | "topic";
 type Count = { count: number; capped: boolean } | null;
 
-export const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(1000)}+` : formatNumber(c.count));
+/** "1,000+" at the cap; a scope read only in part (plan 63) says "at least" the same way */
+export const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(c.count)}+` : formatNumber(c.count));
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function titleOf(filed: Filed, name: string): string {

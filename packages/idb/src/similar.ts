@@ -1,5 +1,5 @@
-import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarScope } from "@terno/core";
-import { ownAddresses, rootRefs, sortByRecency, type OwnAddresses } from "./categorize";
+import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
+import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import { T, type Ctx, type R } from "./mail";
 
 /** Where a thread must still be for the action to move it. */
@@ -9,48 +9,51 @@ function inPlace(t: R | undefined, action: SimilarAction): t is R {
 }
 /** Mail the user values: never swept along (an explicit target still is acted on). */
 const kept = (t: R) => t.is_starred === 1 || t.has_sent === 1;
+/** An offer reads at most this many of the scope's newest messages (as SQLite's). */
+export const OFFER_SCAN = 2000;
 
-/**
- * The scope's threads in place, one at a time, from the message index: received
- * mail, not from the user's own addresses (a walk a count can stop early).
- */
-function* matching(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses): Generator<R> {
-  const messages = T(c, "messages");
-  const threads = T(c, "threads");
+/** The scope's index bucket: message ids, newest first, below `before`, at most `limit` (one pass and a numeric sort; no row is read). */
+function newest(c: Ctx, scope: SimilarScope, before: number | null, limit: number): Float64Array {
   const [index, value] =
     scope.kind === "domain" ? ["domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
     : scope.kind === "list" ? ["list", normalizeText(scope.listId.trim())]
     : ["from", normalizeText(scope.email.trim())];
-  const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
-  const seen = new Set<number>();
-  for (const key of messages.keysBy(index, value)) {
-    const m = messages.get(key);
-    if (!m || m.is_sent || own.emails.has(m.from_email) || seen.has(m.thread_id)) continue;
-    if (subject !== null && m.subject_norm !== subject) continue;
-    seen.add(m.thread_id);
-    const t = threads.get(m.thread_id);
-    if (inPlace(t, action)) yield t;
-  }
-}
-
-function countUntil(rows: Iterable<R>, keep: (t: R) => boolean, cap: number): number {
+  const bucket = T(c, "messages").bucket(index, value);
+  if (!bucket) return new Float64Array(0);
+  const ids = new Float64Array(bucket.size);
   let n = 0;
-  for (const t of rows) if (keep(t) && ++n >= cap) break;
-  return n;
+  for (const k of bucket) if (before === null || (k as number) < before) ids[n++] = k as number;
+  return ids.subarray(0, n).sort().reverse().subarray(0, limit);
 }
 
-/** Every thread to act on, newest first, and how many valued ones (not targets) it leaves out. */
-export function resolveSimilar(c: Ctx, scope: SimilarScope, action: SimilarAction, targets: readonly number[], own = ownAddresses(c)): { ids: number[]; skipped: number } {
-  const explicit = new Set(targets);
-  const ids = new Set<number>();
-  let skipped = 0;
-  for (const t of matching(c, scope, action, own)) {
-    if (explicit.has(t.id) || !kept(t)) ids.add(t.id);
-    else skipped++;
-  }
+/** One page, folded into threads: those to act on and the valued ones left out (every row past the index is checked, never skipped by the walk). */
+function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, before: number | null, limit: number): SimilarPage {
+  const messages = T(c, "messages");
   const threads = T(c, "threads");
-  for (const id of explicit) if (inPlace(threads.get(id), action)) ids.add(id);
-  return { ids: sortByRecency(c, [...ids]), skipped: Math.min(skipped, COUNT_CAP + 1) };
+  const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
+  const keys = newest(c, scope, before, limit);
+  const ids = new Set<number>();
+  const left = new Set<number>();
+  for (const key of keys) {
+    const m = messages.get(key);
+    if (!m || m.is_sent || own.emails.has(m.from_email) || (subject !== null && m.subject_norm !== subject)) continue;
+    const t = threads.get(m.thread_id);
+    if (!inPlace(t, action)) continue;
+    if (kept(t) && !targets.has(t.id)) left.add(t.id);
+    else ids.add(t.id);
+  }
+  return { ids: [...ids], kept: [...left], next: keys.length === limit ? keys[keys.length - 1]! : null };
+}
+
+const placedOf = (c: Ctx, ids: readonly number[], action: SimilarAction) => {
+  const threads = T(c, "threads");
+  return [...new Set(ids)].filter((id) => inPlace(threads.get(id), action));
+};
+
+/** One page of what a sweep acts on (the first also holds the targets still in place). */
+export function resolveSimilarPage(c: Ctx, scope: SimilarScope, action: SimilarAction, targets: readonly number[], before: number | null, limit: number): SimilarPage {
+  const p = page(c, scope, action, ownAddresses(c), new Set(targets), before, limit);
+  return before === null ? { ...p, ids: [...new Set([...placedOf(c, targets, action), ...p.ids])] } : p;
 }
 
 export function keptThreads(c: Ctx, threadIds: readonly number[]): number[] {
@@ -64,7 +67,7 @@ export function keptThreads(c: Ctx, threadIds: readonly number[]): number[] {
 /** More targets than this and nothing is offered (each one is checked, never a sample). */
 export const OFFER_TARGETS_MAX = 200;
 
-/** Plan 63's offers: what every target shares, each with how many threads it would move now (capped counts). */
+/** Plan 63's offers: what every target shares, each with how many threads it would move now (at least that many when capped). */
 export function similarOffers(c: Ctx, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
   const own = ownAddresses(c);
   const targets = [...new Set(threadIds)];
@@ -81,15 +84,13 @@ export function similarOffers(c: Ctx, threadIds: readonly number[], action: Simi
     })),
   );
   const explicit = new Set(targets);
-  const threads = T(c, "threads");
-  const placed = targets.filter((id) => inPlace(threads.get(id), action)).length;
+  const placed = placedOf(c, targets, action);
   return {
     senderName: scopes[0]?.kind === "sender" ? roots[0]!.from_name || roots[0]!.from_email : null,
     offers: scopes.map((scope) => {
-      // every target matches every shared scope: those in place count once, plus the eligible others
-      const n = placed + countUntil(matching(c, scope, action, own), (t) => !explicit.has(t.id) && !kept(t), COUNT_CAP + 1);
-      const skipped = countUntil(matching(c, scope, action, own), (t) => !explicit.has(t.id) && kept(t), COUNT_CAP + 1);
-      return { scope, count: Math.min(n, COUNT_CAP), capped: n > COUNT_CAP, skipped: Math.min(skipped, COUNT_CAP) };
+      const p = page(c, scope, action, own, explicit, null, OFFER_SCAN);
+      const n = new Set([...placed, ...p.ids]).size;
+      return { scope, count: Math.min(n, COUNT_CAP), capped: p.next !== null || n > COUNT_CAP, skipped: Math.min(p.kept.length, COUNT_CAP) };
     }),
   };
 }

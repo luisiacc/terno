@@ -1,4 +1,4 @@
-import { evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type ThreadAction } from "@terno/core";
+import { evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
@@ -1244,6 +1244,20 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         return { store, acct: acct!, thread };
       }
       const sorted = (ids: number[]) => [...ids].sort((a, b) => a - b);
+      /** the whole scope, as a sweep walks it: pages of two messages (a page boundary inside a thread too) */
+      const resolveAll = async (store: MailStore, scope: SimilarScope, action: SimilarAction, targets: number[], limit = 2) => {
+        const ids = new Set<number>();
+        const kept = new Set<number>();
+        let pages = 0;
+        for (let before: number | null = null; ; pages++) {
+          const p = await store.similar.resolvePage(scope, action, targets, before, limit);
+          p.ids.forEach((id) => ids.add(id));
+          p.kept.forEach((id) => kept.add(id));
+          if (p.next === null) break;
+          before = p.next;
+        }
+        return { ids: sorted([...ids]), skipped: [...kept].filter((id) => !ids.has(id)).length, pages };
+      };
 
       it("scopes match received mail exactly, newest first; starred and replied threads are skipped unless targeted", async () => {
         const { store, acct, thread } = await setup();
@@ -1260,15 +1274,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await ingest(store, [msg({ accountId: acct, from: { name: "Me", email: "me0@example.com" }, to: [{ name: "Uber", email: "receipts@uber.com" }], isSent: true, inInbox: false })]);
         void spam;
 
-        const sender = await store.similar.resolve({ kind: "sender", email: "Receipts@Uber.com" }, "archive", []);
-        expect(sender).toEqual({ ids: [padded, b, a], skipped: 2 });
+        const sender = await resolveAll(store, { kind: "sender", email: "Receipts@Uber.com" }, "archive", []);
+        expect(sender).toMatchObject({ ids: sorted([padded, b, a]), skipped: 2 });
+        expect(sender.pages).toBeGreaterThan(2);
         // trash and spam reach the archive too, never what is already in spam or trash
-        expect(sorted((await store.similar.resolve({ kind: "sender", email: "receipts@uber.com" }, "spam", [])).ids)).toEqual(sorted([a, b, archived, padded]));
+        expect((await resolveAll(store, { kind: "sender", email: "receipts@uber.com" }, "spam", [])).ids).toEqual(sorted([a, b, archived, padded]));
         // a targeted starred thread is acted on; it no longer counts as skipped
-        expect(await store.similar.resolve({ kind: "sender", email: "receipts@uber.com" }, "archive", [starred])).toEqual({ ids: [padded, starred, b, a].sort((x, y) => y - x), skipped: 1 });
+        expect(await resolveAll(store, { kind: "sender", email: "receipts@uber.com" }, "archive", [starred], 100)).toEqual({ ids: sorted([padded, starred, b, a]), skipped: 1, pages: 0 });
         // the same sender and exactly this subject (padding is a different subject)
-        expect((await store.similar.resolve({ kind: "subject", email: "receipts@uber.com", subject: "your RECEIPT" }, "archive", [])).ids).toEqual([a]);
-        expect(sorted((await store.similar.resolve({ kind: "domain", domain: "uber.com" }, "archive", [])).ids)).toEqual(sorted([a, b, other, padded]));
+        expect((await resolveAll(store, { kind: "subject", email: "receipts@uber.com", subject: "your RECEIPT" }, "archive", [])).ids).toEqual([a]);
+        expect((await resolveAll(store, { kind: "domain", domain: "uber.com" }, "archive", [])).ids).toEqual(sorted([a, b, other, padded]));
+        // a page examines `limit` messages whatever they hold: a rare subject or nothing left in place never walks the whole sender
+        const rare = await store.similar.resolvePage({ kind: "subject", email: "receipts@uber.com", subject: "Your trip" }, "archive", [], null, 2);
+        expect(rare).toEqual({ ids: [], kept: [], next: expect.any(Number) });
+        const done = await store.similar.resolvePage({ kind: "sender", email: "receipts@uber.com" }, "trash", [], null, 1);
+        expect(done.next).toEqual(expect.any(Number));
         expect(await store.similar.kept([a, starred, replied, other])).toEqual(expect.arrayContaining([starred, replied]));
         expect(sorted(await store.similar.kept([a, starred, replied]))).toEqual(sorted([starred, replied]));
       });
@@ -1312,7 +1332,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await ingest(store, many);
         const brew = await threadOf(store, many[0]!.providerMsgId!);
         expect((await store.similar.offers([brew], "archive")).offers[0]).toMatchObject({ count: 1000, capped: true });
-        expect((await store.similar.resolve({ kind: "sender", email: "crew@brew.com" }, "archive", [])).ids).toHaveLength(1003);
+        expect((await resolveAll(store, { kind: "sender", email: "crew@brew.com" }, "archive", [], 500)).ids).toHaveLength(1003);
       });
     });
 

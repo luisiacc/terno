@@ -17,6 +17,8 @@ const FIRST_BUILD_WAIT_MS = 250;
 
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
+/** Messages a similar sweep reads per page while resolving its scope (plan 63). */
+const SIMILAR_PAGE = 2000;
 
 const ADDED_BY = { picker: "user", dnd: "user", suggestion: "suggestion", snackbar: "bulk" } as const;
 
@@ -246,8 +248,20 @@ export function createHandlers(b: Backend): Handlers {
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
     "similar.apply": async ({ threadIds, scope, action, jobId, filterName }) => {
       const targets = new Set(threadIds);
-      const { ids, skipped } = await store.similar.resolve(scope, action, threadIds);
-      if (ids.length > SCOPE_CAP) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+      // resolved once, in pages of the scope's messages with a turn between them; refused as soon as it passes the cap
+      const found = new Set<number>();
+      const left = new Set<number>();
+      for (let before: number | null = null; ; ) {
+        const page = await store.similar.resolvePage(scope, action, threadIds, before, b.options.similarPage ?? SIMILAR_PAGE);
+        for (const id of page.ids) found.add(id);
+        for (const id of page.kept) left.add(id);
+        if (found.size > (b.options.similarCap ?? SCOPE_CAP)) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+        if (page.next === null) break;
+        before = page.next;
+        await b.yieldTurn();
+      }
+      const ids = [...found];
+      const skipped = [...left].filter((id) => !found.has(id)).length;
       const progress = progressReporter(b, jobId, ids.length);
       progress(0);
       let late = 0;

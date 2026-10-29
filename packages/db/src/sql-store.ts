@@ -65,7 +65,7 @@ import {
   vetoesFor,
   type ClassifyResult,
 } from "./categorize";
-import { keptThreads, resolveSimilar, similarOffers } from "./similar";
+import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
@@ -775,7 +775,7 @@ export class SqlMailStore implements MailStore {
 
   readonly similar: MailStore["similar"] = {
     offers: async (threadIds, action) => similarOffers(this.db, threadIds, action),
-    resolve: async (scope, action, targets) => resolveSimilar(this.db, scope, action, targets),
+    resolvePage: async (scope, action, targets, before, limit) => resolveSimilarPage(this.db, scope, action, targets, before, limit),
     kept: async (threadIds) => keptThreads(this.db, threadIds),
   };
 

@@ -154,3 +154,16 @@ The read-only critique made 12 points. Eleven are taken. One is kept as designed
     - An identical *enabled* filter is reused. An identical *disabled* one is enabled, and Undo disables it again.
     - Undo deletes a filter only if this apply created it and it is unchanged (same name, rule and enabled state). An edited filter is left alone.
 12. **The menu reuses `act()`'s view-aware optimistic transition** (cursor advance, page close, rows staying in All Mail, Sent, Starred and searches) and reloads on failure.
+
+## What the Codex code review changed
+
+The first round (`ff2417a0..3121638c`) found five issues. Each is fixed with a test that fails without the fix:
+
+1. **z pressed before the sweep answered lost the Undo.** The Undo now waits for the sweep's outcome, then takes back the sweep, the filter and the original action, as `act()`'s Undo already did. Test: `apps/web/src/lib/similar.test.ts`, z while the RPC is pending.
+2. **The two-step Undo couldn't be retried.** After the sweep is restored, a failure in the original action's undo made the retry call the spent journal entry. The Undo now remembers that the sweep is back, so a retry goes straight to the original action. Test in the same file.
+3. **Count caps didn't bound the work.** A dominant sender, a rare subject or a scope with nothing in place could walk a whole index bucket.
+   - **What a read costs now:** at most `OFFER_SCAN` (2,000) of the scope's newest messages per offer. Every check past the index (subject, own addresses, place, value) is computed rather than filtered, so it can't make the index walk longer.
+   - **A scope bigger than that** shows its count as "N+".
+   - **Tests:** conformance pages that stop after `limit` messages, and perf gates at 50k for one sender that sent every message (dominant, rare subject, nothing in place), in both stores.
+4. **Resolve read everything before checking the cap.** The store now has `resolvePage`, newest messages first, in pages of 2,000 messages. The handler yields between pages and refuses as soon as the scope passes the cap. Test: `similar.test.ts`, which refuses after three pages of four and moves nothing.
+5. **Equal counts hid the subject chip.** Only domain and list hide when they hold no more than the sender. The subject is the narrower choice, and Always makes it a filter of its own.

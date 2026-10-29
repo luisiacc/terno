@@ -20,10 +20,10 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function setup() {
+async function setup(o: { similarCap?: number; similarPage?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-similar-"));
   // a tiny slice budget: a few dozen threads already take several slices
-  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, sliceBudgetMs: 1 });
+  const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, sliceBudgetMs: 1, ...o });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: `renderer-${Math.random()}`, origin: "renderer" });
   cleanups.push(async () => {
@@ -151,5 +151,21 @@ describe("similar.apply", () => {
     await expect(client.call("similar.undo", { undoId, filterUndo: null })).rejects.toThrow();
     await client.call("similar.undo", { undoId, filterUndo: null });
     expect(inInbox(db, ids)).toEqual(Array(60).fill(1));
+  });
+
+  it("resolves in pages and refuses a scope past the cap as soon as it passes it, before reading the rest or moving anything", async () => {
+    const { backend, db, client, thread } = await setup({ similarCap: 10, similarPage: 4 });
+    const ids: number[] = [];
+    for (let i = 0; i < 30; i++) ids.push(await thread());
+    const pages: (number | null)[] = [];
+    const resolvePage = backend.store.similar.resolvePage.bind(backend.store.similar);
+    backend.store.similar.resolvePage = (scope, action, targets, before, limit) => {
+      pages.push(before);
+      return resolvePage(scope, action, targets, before, limit);
+    };
+    await expect(client.call("similar.apply", { threadIds: [], scope: sender, action: "archive" })).rejects.toThrow();
+    // 11 threads need three pages of four messages: never the last five
+    expect(pages).toHaveLength(3);
+    expect(inInbox(db, ids)).toEqual(Array(30).fill(1));
   });
 });
