@@ -1288,16 +1288,18 @@ export class IdbMailStore implements MailStore {
     list: () => this.early(() => listFolders(this.c)),
     replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
     rebuild: async (limit) => {
-      const r = await this.command(() => {
+      const { r, next } = await this.command(() => {
         const own = rebuildFolders(this.c, limit);
         const fill = this.backfill;
-        if (own.more || !fill) return own;
+        if (own.more || !fill) return { r: own, next: null };
         // a batch of the labelled messages (by message, never a thread whole: Codex R15), their labels added
         fill.ids ??= messagesWithUserLabels(this.c);
         const batch = fill.ids.slice(fill.at, fill.at + Math.max(1, Math.floor(limit / 5)));
-        fill.at += batch.length;
-        return { more: fill.at < fill.ids.length, touched: [...own.touched, ...addMessageLabels(this.c, batch)] };
+        const next = fill.at + batch.length;
+        return { r: { more: next < fill.ids.length, touched: [...own.touched, ...addMessageLabels(this.c, batch)] }, next };
       });
+      // the position moves once the batch is saved: one rolled back is done again (Codex R18)
+      if (next !== null && this.backfill) this.backfill.at = next;
       // done: the mark comes off only now, so a close before resumes the next time it opens
       if (this.backfill?.ids && this.backfill.at >= this.backfill.ids.length) {
         this.backfill = null;

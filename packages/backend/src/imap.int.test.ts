@@ -1433,6 +1433,42 @@ describe("an account's own folders (plan 65)", () => {
     }
   });
 
+  it("Codex R18: an ID-less message moved after its folder's sweep, before its destination is read, keeps its identity", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const lone = ctl.addMessage("Z", { raw: raw({ subject: "Solo, sin Message-ID" }).replace(/^Message-ID: .*\r\n/m, "") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(1);
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before[0]!.thread_id] });
+    // both folders have news (so both are swept, then read); the move comes on A's second lock: after every sweep
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages("Z", [lone.uid], "A");
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(locks).toBeGreaterThanOrEqual(2);
+    await backend.syncAccount(account.id);
+    const after = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Solo, sin Message-ID'");
+    expect(after).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, before[0]!.thread_id)).toBe(1);
+    expect(await folderOf(client, account.id, "A")).toEqual(expect.arrayContaining(["Solo, sin Message-ID"]));
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

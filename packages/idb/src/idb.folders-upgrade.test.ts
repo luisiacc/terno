@@ -169,3 +169,48 @@ it("Codex R15: one conversation of 50,000 messages with 20 labels each is many s
   for (const key of labels) expect((await reopened.threads.list({ view: "all", accountId: g!, folder: key, limit: 10 })).items).toHaveLength(1);
 }, 300_000);
 
+
+it("Codex R18: a batch whose write is rolled back is done again: every membership is there, after a reopen too", async () => {
+  const factory = new IDBFactory();
+  const name = crypto.randomUUID();
+  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  const [g] = await withAccounts(store, 1);
+  await store.folders.replace(g!, [{ key: "Label_1", path: ["Clientes"], selectable: true }]);
+  await ingest(store, Array.from({ length: 3 }, (_, i) => msg({ accountId: g!, providerMsgId: `m${i}`, gmailLabels: ["Label_1"] })));
+  await store.close();
+  const raw = await request(factory.open(databaseName(name)));
+  const tx = raw.transaction(["thread_folders", "meta"], "readwrite");
+  tx.objectStore("thread_folders").clear();
+  tx.objectStore("meta").put(23, "logicalSchema");
+  await done(tx);
+  raw.close();
+  const reopened = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  await reopened.whenLoaded();
+  // a message a slice (limit 5); the second slice's membership write fails, so its transaction is rolled back
+  const { IDBObjectStore } = await import("fake-indexeddb");
+  const original = IDBObjectStore.prototype.put;
+  let membershipWrites = 0;
+  const put = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: InstanceType<typeof IDBObjectStore>, ...args: Parameters<typeof original>) {
+    if (this.name === "thread_folders" && ++membershipWrites === 2) throw new Error("synthetic write failure");
+    return original.apply(this, args);
+  });
+  let failed = 0;
+  try {
+    for (let more = true; more; ) {
+      try {
+        more = (await reopened.folders.rebuild(5)).more;
+      } catch {
+        failed++;
+      }
+    }
+  } finally {
+    put.mockRestore();
+  }
+  expect(failed).toBe(1);
+  expect((await reopened.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 10 })).items).toHaveLength(3);
+  await reopened.close();
+  const again = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  opened.push(again);
+  await again.whenLoaded();
+  expect((await again.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 10 })).items).toHaveLength(3);
+});

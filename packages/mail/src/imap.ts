@@ -49,6 +49,19 @@ function bounded(cursor: Cursor, ids: readonly number[], max: number, keep: "new
   return keep === "newest" ? ids.slice(-max) : ids.slice(0, max);
 }
 
+/** Plan 65 (Codex R18): an ID-less message held back until every folder is read (a copy, or its twin moved here) */
+interface Ambiguous {
+  storedId: number;
+  incoming: IncomingMessage;
+  path: string;
+  uidvalidity: number;
+  uid: number;
+  flags: string[];
+  live: boolean;
+  /** its folder's UIDNEXT when read: acknowledged once it's told apart */
+  uidnext: number;
+}
+
 /** Plan 65 (Codex R15): message ids looked at a window at a time for ones with no location */
 const UNLOCATED_SPAN = 5000;
 
@@ -380,7 +393,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * cursor never acknowledges changes that came after the sweep read the flags; null (a sweep that failed, or none)
    * checkpoints nothing, so the next pass looks again.
    */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; recover?: AdoptIndex; checkpoint?: Snapshot | null } = {}) {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; recover?: AdoptIndex; checkpoint?: Snapshot | null; ambiguous?: Ambiguous[] } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -421,6 +434,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           const flags = [...(m.flags ?? new Set<string>())];
+          /** an ID-less message whose stored twin is still placed elsewhere: a copy, or that one moved since its sweep */
+          let ambiguousOf: number | null = null;
           const env = m.envelope;
           // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
           const atLocation = await locations.at(path, uidvalidity, m.uid);
@@ -458,6 +473,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 touched.add(twin);
                 continue;
               }
+              // a copy, or the stored one moved here after its folder's sweep: told apart once every folder is read (Codex R18)
+              ambiguousOf = existing.id;
               key = `${key}#${path}:${uidvalidity}:${m.uid}`;
               existing = await store.messageByProviderId(key);
             }
@@ -505,7 +522,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const role = roleOf(path);
           // the raw address fields, read by our parser (plan 34); the server's envelope where one is missing
           const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
-          fresh.push({
+          const incoming: IncomingMessage = {
             accountId,
             providerMsgId: key,
             providerThreadId: null,
@@ -535,7 +552,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             hasAttachments: hasAttachmentPart(m.bodyStructure),
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
-          });
+          };
+          if (ambiguousOf !== null && opts.ambiguous) opts.ambiguous.push({ storedId: ambiguousOf, incoming, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext) });
+          else fresh.push(incoming);
         }
       }
       if (fresh.length) await sink.ingest(fresh, { live });
@@ -546,10 +565,65 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       }
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
-      cursor.mailboxes[path] = { uidvalidity, uidnext: Number(mb.uidNext), ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
+      // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
+      const waiting = (opts.ambiguous ?? []).filter((a) => a.path === path).map((a) => a.uid);
+      const uidnext = waiting.length ? Math.min(Number(mb.uidNext), ...waiting) : Number(mb.uidNext);
+      cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
     } finally {
       lock.release();
+    }
+  }
+
+  /**
+   * Plan 65 (Codex R18): ID-less messages set aside because their stored twin was still placed elsewhere, told apart
+   * now that every folder is read: where the twin's places are all gone from the server (one lock and one search per
+   * mailbox), it moved here after its folder's sweep, so it keeps its identity, thread and categories; otherwise it's
+   * a copy. A mailbox no longer listed holds nothing (a rename's old name); one that can't be read fails the pass, and
+   * what was held back is read again next time (nothing merged, or copied, on a guess).
+   */
+  async function tellApart(c: ImapFlow, list: readonly Ambiguous[], listed: ReadonlySet<string>, sink: SyncSink, touched: Set<number>) {
+    if (!list.length) return;
+    const elsewhere = new Map<number, Loc[]>();
+    const byMailbox = new Map<string, { uidvalidity: number; uids: Set<number> }>();
+    for (const a of list) {
+      if (elsewhere.has(a.storedId)) continue;
+      const locs = (await locations.of([a.storedId])).filter((l) => l.mailbox !== a.path);
+      elsewhere.set(a.storedId, locs);
+      for (const l of locs) {
+        const box = byMailbox.get(l.mailbox) ?? { uidvalidity: l.uidvalidity, uids: new Set<number>() };
+        box.uids.add(l.uid);
+        byMailbox.set(l.mailbox, box);
+      }
+    }
+    const present = new Set<string>();
+    for (const [mailbox, box] of byMailbox) {
+      if (sink.signal.aborted) return;
+      if (!listed.has(mailbox)) continue;
+      const all = [...box.uids];
+      const lock = await c.getMailboxLock(mailbox);
+      try {
+        if (Number(c.mailbox && c.mailbox.uidValidity) !== box.uidvalidity) continue;
+        for (let i = 0; i < all.length; i += 500) for (const uid of (await c.search({ uid: all.slice(i, i + 500).join(",") }, { uid: true })) || []) present.add(`${mailbox}\u0000${uid}`);
+      } finally {
+        lock.release();
+      }
+    }
+    const copies: IncomingMessage[] = [];
+    const moved = new Set<number>();
+    for (const a of list) {
+      const locs = elsewhere.get(a.storedId) ?? [];
+      if (!moved.has(a.storedId) && locs.every((l) => !present.has(`${l.mailbox}\u0000${l.uid}`))) {
+        moved.add(a.storedId);
+        for (const l of locs) await locations.remove(a.storedId, l.mailbox);
+        await upsertLocation(a.storedId, a.path, a.uidvalidity, a.uid, a.flags);
+        touched.add(a.storedId);
+      } else copies.push(a.incoming);
+    }
+    if (copies.length) await sink.ingest(copies, { live: list.some((a) => a.live) });
+    for (const m of copies) {
+      const row = await store.messageByProviderId(m.providerMsgId!);
+      if (row) touched.add(row.id);
     }
   }
 
@@ -801,17 +875,25 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const id of lost) pending.add(id);
         const recover = new AdoptIndex();
         await recover.add(pending, (ids) => locations.envelopes(ids));
+        const ambiguous: Ambiguous[] = [];
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, recover });
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, recover, ambiguous });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, recover } : { checkpoint: swept.get(path) ?? null, recover });
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, recover, ambiguous } : { checkpoint: swept.get(path) ?? null, recover, ambiguous });
           } catch (error) {
             tolerate(error);
           }
+        }
+        await tellApart(c, ambiguous, new Set([...boxes, ...list.map((m) => m.path)]), sink, touched);
+        if (sink.signal.aborted) return;
+        // told apart: their folders acknowledged up to what the server had when read
+        for (const a of ambiguous) {
+          const state = cursor.mailboxes[a.path];
+          if (state) state.uidnext = Math.max(state.uidnext, a.uidnext);
         }
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
         for (const path of incomplete ? [] : vanished) {
