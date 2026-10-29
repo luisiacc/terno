@@ -176,7 +176,12 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
         msg({ accountId: m!, providerMsgId: "other-size", ...e, size: 322 }),
         msg({ accountId: other!, providerMsgId: "nomid:x", ...e }),
       ]);
-      expect(await store.providerStore(m!).locations.twins({ subject: "Gemelo", fromEmail: "ana@example.test", date: e.date, size: 321 }, 50)).toEqual([r.inserted[0]!, r.inserted[1]!]);
+      const locations = store.providerStore(m!).locations;
+      const envelope = { subject: "Gemelo", fromEmail: "ana@example.test", date: e.date, size: 321 };
+      expect(await locations.twins(envelope, 0, 50)).toEqual([r.inserted[0]!, r.inserted[1]!]);
+      // paged: above an id, at most a limit
+      expect(await locations.twins(envelope, 0, 1)).toEqual([r.inserted[0]!]);
+      expect(await locations.twins(envelope, r.inserted[0]!, 50)).toEqual([r.inserted[1]!]);
     });
 
     it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {

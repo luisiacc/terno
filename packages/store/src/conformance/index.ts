@@ -7,3 +7,4 @@ export * from "./replica";
 export * from "./engine";
 export * from "./autocomplete";
 export * from "./perf";
+export * from "./twins-perf";

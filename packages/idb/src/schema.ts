@@ -37,7 +37,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   {
     name: "messages",
     key: ["id"],
-    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"], pending_bodies: { columns: ["account_id"], where: (r) => r.attachment_pending === 1 || (r.body_state !== "full" && r.attachments_captured !== 2) } },
+    indexes: { ...fk("thread_id"), ...fk("account_id"), provider: ["account_id", "provider_msg_id"], rfc: ["account_id", "rfc_message_id"], from: ["from_email"], domain: ["from_domain"], list: ["list_id"], body_state: ["body_state"], attachment_pending: ["account_id", "attachment_pending"], twins: { columns: ["account_id", "from_email", "date", "size", "subject"], where: (r) => !r.rfc_message_id }, pending_bodies: { columns: ["account_id"], where: (r) => r.attachment_pending === 1 || (r.body_state !== "full" && r.attachments_captured !== 2) } },
   },
   { name: "message_bodies", key: ["message_id"], lazy: true },
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },

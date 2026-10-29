@@ -244,15 +244,16 @@ class SqlImapLocations implements ImapLocationStore {
     }
   }
 
-  async twins(e: { subject: string; fromEmail: string; date: number; size: number }, limit: number) {
+  async twins(e: { subject: string; fromEmail: string; date: number; size: number }, afterId: number, limit: number) {
     return this.db
       .all<{ id: number }>(
-        "SELECT id FROM messages INDEXED BY messages_date WHERE date = ? AND account_id = ? AND rfc_message_id IS NULL AND subject = ? AND from_email = ? AND size = ? ORDER BY id LIMIT ?",
-        e.date,
+        "SELECT id FROM messages INDEXED BY messages_twins WHERE account_id = ? AND from_email = ? AND date = ? AND size = ? AND subject = ? AND rfc_message_id IS NULL AND id > ? ORDER BY id LIMIT ?",
         this.accountId,
-        e.subject,
         e.fromEmail,
+        e.date,
         e.size,
+        e.subject,
+        afterId,
         limit,
       )
       .map((r) => r.id);

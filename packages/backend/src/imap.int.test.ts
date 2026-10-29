@@ -1562,6 +1562,87 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(new Set(before.map((m) => m.thread_id)).size);
   });
 
+  for (const window of ["inside", "outside"] as const) {
+    it(`Codex R20: the plain-key twin deleted, the other moved late (${window} the window) keeps its identity`, async () => {
+      const { ImapFlow } = await import("imapflow");
+      const { imap, backend, client, addAccount } = await setup();
+      const ctl = imap.server.control;
+      const old = new Date(Date.now() - 400 * 86_400_000);
+      if (window === "outside") await client.call("settings.update", { syncWindowDays: 3650 });
+      ctl.createMailbox("X");
+      ctl.createMailbox("Z");
+      const twin = raw({ subject: "Superviviente", ...(window === "outside" && { date: old }) }).replace(/^Message-ID: .*\r\n/m, "");
+      const opts = window === "outside" ? { raw: twin, internaldate: old } : { raw: twin };
+      const inX = ctl.addMessage("X", opts);
+      const inZ = ctl.addMessage("Z", opts);
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      const plain = sqlDb(backend.store).get<{ id: number; mailbox: string }>("SELECT m.id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
+      const survivor = sqlDb(backend.store).get<{ id: number; thread_id: number; mailbox: string }>("SELECT m.id, m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
+      const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+      await client.call("categories.addThreads", { categoryId: category.id, threadIds: [survivor.thread_id] });
+      // the plain-key one goes, in a pass that completes
+      ctl.expungeMessages(plain.mailbox, [plain.mailbox === "X" ? inX.uid : inZ.uid]);
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual([survivor.id]);
+      // then the other moves, after its folder's sweep, into a folder seen for the first time
+      if (window === "outside") await client.call("settings.update", { syncWindowDays: 30 });
+      ctl.addMessage(survivor.mailbox, { raw: raw({ subject: "Nuevo en el origen" }) });
+      ctl.createMailbox("A");
+      const original = ImapFlow.prototype.getMailboxLock;
+      let moved = false;
+      const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+        if (String(args[0]) === "A" && !moved) {
+          moved = true;
+          ctl.moveMessages(survivor.mailbox, [survivor.mailbox === "X" ? inX.uid : inZ.uid], "A");
+        }
+        return original.apply(this, args);
+      });
+      try {
+        await backend.syncAccount(account.id);
+      } finally {
+        late.mockRestore();
+      }
+      expect(moved).toBe(true);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente'")).toEqual([{ id: survivor.id, thread_id: survivor.thread_id }]);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", survivor.id)).toBe(1);
+      expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, survivor.thread_id)).toBe(1);
+    });
+  }
+
+  it("Codex R20: of 55 stored ID-less twins, the last moved late keeps its identity (no candidate cut at 50)", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Muchos gemelos" }).replace(/^Message-ID: .*\r\n/m, "");
+    const all = Array.from({ length: 55 }, () => ctl.addMessage("Z", { raw: twin }));
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(55);
+    const last = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", all.at(-1)!.uid)!.id;
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages("Z", [all.at(-1)!.uid], "A");
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Muchos gemelos' ORDER BY id")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", last)).toBe(1);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
