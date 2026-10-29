@@ -1,4 +1,4 @@
-import { addMessageLabels, listFolders, rebuildFolders, replaceFolders } from "./folders";
+import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -1311,8 +1311,9 @@ export class IdbMailStore implements MailStore {
         }
         return { more: !fill.done, touched: [...own.touched, ...addMessageLabels(this.c, fill.pending)] };
       });
-      // saved: the batch is done with
+      // saved: the batch, and the folder walk's slice, are done with
       if (this.backfill) this.backfill.pending = null;
+      confirmRebuilt(this.c);
       // done: the mark comes off only now, so a close before resumes the next time it opens (a batch rolled back is
       // scanned again then: Codex R18)
       if (this.backfill?.done) {

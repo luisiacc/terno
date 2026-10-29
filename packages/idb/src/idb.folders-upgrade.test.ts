@@ -218,3 +218,34 @@ it("Codex R18: a batch whose write is rolled back is done again: every membershi
   await again.whenLoaded();
   expect((await again.threads.list({ view: "all", accountId: g!, folder: "Label_1", limit: 10 })).items).toHaveLength(3);
 });
+
+it("Codex R48: a rebuild slice whose write is rolled back is walked again: every location's membership is there", async () => {
+  const factory = new IDBFactory();
+  const name = crypto.randomUUID();
+  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  opened.push(store);
+  const [, m] = await withAccounts(store, 2);
+  await ingest(store, Array.from({ length: 3 }, (_, i) => msg({ accountId: m!, providerMsgId: `l${i}`, providerThreadId: `t${i}`, locations: [{ mailbox: "Old", uidvalidity: 1, uid: i + 1, flags: [] }] })));
+  await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }]);
+  const { IDBObjectStore } = await import("fake-indexeddb");
+  const original = IDBObjectStore.prototype.put;
+  let writes = 0;
+  const put = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: InstanceType<typeof IDBObjectStore>, ...args: Parameters<typeof original>) {
+    if (this.name === "thread_folders" && ++writes === 2) throw new Error("synthetic write failure");
+    return original.apply(this, args);
+  });
+  let failed = 0;
+  try {
+    for (let more = true; more; ) {
+      try {
+        more = (await store.folders.rebuild(1)).more;
+      } catch {
+        failed++;
+      }
+    }
+  } finally {
+    put.mockRestore();
+  }
+  expect(failed).toBe(1);
+  expect((await store.threads.list({ view: "all", accountId: m!, folder: "Old", limit: 10 })).items).toHaveLength(3);
+});

@@ -205,7 +205,13 @@ export class ScopeIndex {
   private readonly members = new Map<number, number[]>();
   /** plan 65: a folder's members ("account:key"), ascending (scopes), and newest first (pages): kept until they change */
   private readonly folderIds = new Map<string, number[]>();
-  private readonly folderDates = new Map<string, number[]>();
+  /**
+   * a folder's members newest first, kept across reads, a few changes placed by search (Codex R48: an arrival used to
+   * throw the order away); built a few milliseconds a turn, in the background once a read asked for it, so no read
+   * sorts a big folder whole (until then a read selects its page from the members)
+   */
+  private readonly folderDates = new Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>();
+  private readonly folderBuilds = new Map<string, Generator<void, Dated[], void>>();
   /** plan 65 (Codex R12): a folder's unread members newest first, kept across reads; a few changes placed by search */
   private readonly folderUnread = new Map<string, { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }>();
   /** per quick filter, the matching ids ascending (a filtered "select all N" and its count): kept by the threads that cross */
@@ -220,7 +226,15 @@ export class ScopeIndex {
       } else if (table === "thread_folders") {
         const key = `${(row ?? prev)!.account_id}:${(row ?? prev)!.folder}`;
         if (!row || !prev) this.folderIds.delete(key);
-        if (!row || !prev || row.last_date !== prev.last_date) this.folderDates.delete(key);
+        const dates = this.folderDates.get(key);
+        const dw = prev ? { date: prev.last_date as number, id: prev.thread_id as number } : null;
+        const di = row ? { date: row.last_date as number, id: row.thread_id as number } : null;
+        if (dates && (dw?.date !== di?.date || dw?.id !== di?.id)) {
+          if (dates.changes.length >= 64) this.folderDates.delete(key);
+          else dates.changes.push({ was: dw, is: di });
+        }
+        // an order being built from rows that just changed starts over
+        this.folderBuilds.delete(key);
         const unread = this.folderUnread.get(key);
         const was = prev?.unread ? { date: prev.last_date as number, id: prev.thread_id as number } : null;
         const is = row?.unread ? { date: row.last_date as number, id: row.thread_id as number } : null;
@@ -290,16 +304,41 @@ export class ScopeIndex {
   }
 
   /** plan 65: a folder's member thread ids, newest first (last date, then id: the list's order) */
-  folderByDate(c: Ctx, accountId: number, key: string): readonly number[] {
+  folderByDate(c: Ctx, accountId: number, key: string): readonly Dated[] | null {
     const at = `${accountId}:${key}`;
-    let ids = this.folderDates.get(at);
-    if (!ids) {
-      const rows = T(c, "thread_folders").by("folder", accountId, key);
-      rows.sort((x, y) => y.last_date - x.last_date || y.thread_id - x.thread_id);
-      ids = rows.map((m) => m.thread_id as number);
-      this.folderDates.set(at, ids);
+    const cached = this.folderDates.get(at);
+    if (cached) {
+      applyDated(cached);
+      return cached.order;
     }
-    return ids;
+    // built a step at a time: what fits in this read, the rest in the background
+    let steps = this.folderBuilds.get(at);
+    if (!steps) {
+      steps = datedSteps(c, accountId, key);
+      this.folderBuilds.set(at, steps);
+      const mine = steps;
+      const go = () => {
+        if (this.folderBuilds.get(at) !== mine) return;
+        if (!this.advance(at, mine, 4)) setTimeout(go, 0);
+      };
+      setTimeout(go, 0);
+    }
+    // (a read gives it a millisecond: a small folder's order is done at once, a big one's goes on in the background)
+    return this.advance(at, steps, 1) ? this.folderDates.get(at)!.order : null;
+  }
+
+  /** a build's steps for a few milliseconds; true once its order is kept */
+  private advance(at: string, steps: Generator<void, Dated[], void>, budgetMs: number): boolean {
+    const until = performance.now() + budgetMs;
+    for (;;) {
+      const r = steps.next();
+      if (r.done) {
+        this.folderBuilds.delete(at);
+        this.folderDates.set(at, { order: r.value, changes: [] });
+        return true;
+      }
+      if (performance.now() >= until) return false;
+    }
   }
 
   /** plan 65 (Codex R12): a folder's unread member thread ids, newest first: sorted once, then kept as they change */
@@ -339,6 +378,51 @@ export class ScopeIndex {
     }
     return ids;
   }
+}
+
+/** a kept order's changes placed by binary search */
+function applyDated(cached: { order: Dated[]; changes: { was: Dated | null; is: Dated | null }[] }): void {
+  for (const { was, is } of cached.changes) {
+    if (was) {
+      const i = datedPlace(cached.order, was);
+      if (cached.order[i]?.id === was.id) cached.order.splice(i, 1);
+    }
+    if (is) {
+      const i = datedPlace(cached.order, is);
+      if (cached.order[i]?.id !== is.id) cached.order.splice(i, 0, is);
+    }
+  }
+  cached.changes.length = 0;
+}
+
+/** a folder's members newest first, a step at a time: read out, then merge-sorted, a pause every few thousand */
+function* datedSteps(c: Ctx, accountId: number, key: string): Generator<void, Dated[], void> {
+  const memberships = T(c, "thread_folders");
+  let items: Dated[] = [];
+  for (const k of memberships.keysBy("folder", accountId, key)) {
+    const r = memberships.rows.get(k)!;
+    items.push({ date: r.last_date as number, id: r.thread_id as number });
+    if (items.length % 5000 === 0) yield;
+  }
+  let to: Dated[] = Array.from({ length: items.length });
+  let compared = 0;
+  for (let width = 1; width < items.length; width *= 2) {
+    for (let lo = 0; lo < items.length; lo += 2 * width) {
+      const mid = Math.min(lo + width, items.length);
+      const hi = Math.min(lo + 2 * width, items.length);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      while (i < mid && j < hi) {
+        to[k++] = newestFirst(items[j]!, items[i]!) < 0 ? items[j++]! : items[i++]!;
+        if (++compared % 2000 === 0) yield;
+      }
+      while (i < mid) to[k++] = items[i++]!;
+      while (j < hi) to[k++] = items[j++]!;
+    }
+    [items, to] = [to, items];
+  }
+  return items;
 }
 
 /** a thread's place in a folder's order: its last date, then its id */

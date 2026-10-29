@@ -67,3 +67,71 @@ it("Codex R47: relisting one IMAP folder of 500,000 cached locations: every rebu
   expect(slices.at(-1)!).toBeLessThan(16 * MULT);
   await store.close();
 });
+
+it("Codex R48: expunging a 500,000-message conversation: the longest stall within a frame", { timeout: 1_200_000 }, async () => {
+  const { stallLessGc, watchGc, watchLoop } = await import("../../db/src/test/timing");
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  await store.folders.replace(account, [{ key: "Big", path: ["Big"], selectable: true }]);
+  c.db.table("threads").load({ id: 1, account_id: account, last_date: 1, unread_count: 0, message_count: 500_000 });
+  c.db.table("thread_folders").load({ thread_id: 1, account_id: account, folder: "Big", last_date: 1, unread: 0 });
+  const ids: number[] = [];
+  for (let i = 1; i <= 500_000; i++) {
+    c.db.table("messages").load({ id: i, account_id: account, thread_id: 1, provider_msg_id: `m${i}`, date: i, is_trash: 0, is_spam: 0 });
+    c.db.table("message_locations").load({ message_id: i, account_id: account, mailbox: "Big", uidvalidity: 1, uid: i, flags: "[]" });
+    ids.push(i);
+  }
+  const loop = watchLoop(16);
+  const gc = watchGc();
+  const t0 = performance.now();
+  await store.providerStore(account).locations.removeMany(ids, "Big");
+  const total = performance.now() - t0;
+  const worst = stallLessGc(loop.stop(), await gc.stop());
+  console.log(`expunge 500,000 (IndexedDB): ${total.toFixed(0)} ms, longest stall ${worst.toFixed(1)} ms`);
+  expect((await store.threads.list({ view: "all", accountId: account, folder: "Big", limit: 10 })).items).toHaveLength(0);
+  expect(worst).toBeLessThan(16 * MULT);
+  await store.close();
+});
+
+it("Codex R48: a folder of 150,000 threads opened cold, and read again after an arrival, within a frame", { timeout: 1_200_000 }, async () => {
+  const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
+  await store.whenLoaded();
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
+  for (let i = 1; i <= 150_000; i++) {
+    // dates in no order: nothing kept sorted to start from
+    const date = 1_700_000_000_000 + ((i * 7919) % 150_000) * 1000;
+    c.db.table("threads").load({ id: i, account_id: account, last_date: date, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+    c.db.table("thread_folders").load({ thread_id: i, account_id: account, folder: "Label_big", last_date: date, unread: 0 });
+  }
+  const page = { view: "all" as const, accountId: account, folder: "Label_big", limit: 100 };
+  const t0 = performance.now();
+  const first = await store.threads.list(page);
+  const cold = performance.now() - t0;
+  expect(first.items).toHaveLength(100);
+  // pages while the order is built, then once it's kept
+  const reads: number[] = [];
+  let cursor = first.nextCursor;
+  for (let i = 0; i < 30 && cursor; i++) {
+    const r0 = performance.now();
+    const next = await store.threads.list({ ...page, cursor });
+    reads.push(performance.now() - r0);
+    cursor = next.nextCursor;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  // an arrival: one more member, newest
+  c.db.table("threads").load({ id: 150_001, account_id: account, last_date: 1_900_000_000_000, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });
+  c.db.tx(() => c.db.table("thread_folders").put({ thread_id: 150_001, account_id: account, folder: "Label_big", last_date: 1_900_000_000_000, unread: 0 }));
+  const a0 = performance.now();
+  const after = await store.threads.list(page);
+  const arrival = performance.now() - a0;
+  console.log(`folder of 150,000: cold first page ${cold.toFixed(1)} ms, pages while built ${Math.max(...reads).toFixed(1)} ms, after an arrival ${arrival.toFixed(2)} ms`);
+  expect(after.items[0]!.id).toBe(150_001);
+  expect(cold).toBeLessThan(16 * MULT);
+  expect(Math.max(...reads)).toBeLessThan(16 * MULT);
+  expect(arrival).toBeLessThan(2 * MULT);
+  await store.close();
+});

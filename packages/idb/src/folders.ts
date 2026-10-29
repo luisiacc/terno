@@ -176,21 +176,26 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   let cached = rebuildOrders.get(c);
   if (!cached) rebuildOrders.set(c, (cached = new Map()));
   let walk = cached.get(at);
-  if (!walk) cached.set(at, (walk = T(c, "message_locations").keysBy("mailbox", job.account_id, job.key)));
+  if (!walk) cached.set(at, (walk = { keys: T(c, "message_locations").keysBy("mailbox", job.account_id, job.key), pending: null, done: false }));
+  // a slice not yet saved (its command rolled back) is walked again first (Codex R48); `confirmRebuilt` lets it go
+  if (!walk.pending) {
+    walk.pending = [];
+    while (walk.pending.length < limit) {
+      const next = walk.keys.next();
+      if (next.done) {
+        walk.done = true;
+        break;
+      }
+      walk.pending.push(next.value);
+    }
+  }
   const locations = T(c, "message_locations");
   const messages = T(c, "messages");
   const threadRows = T(c, "threads");
   const threads: number[] = [];
-  let read = 0;
-  let done = false;
-  while (read < limit) {
-    const next = walk.next();
-    if (next.done) {
-      done = true;
-      break;
-    }
-    read++;
-    const l = locations.rows.get(next.value);
+  const done = walk.done;
+  for (const key of walk.pending) {
+    const l = locations.rows.get(key);
     // this folder's rows only (its old ones went in phase 0), from its messages: no thread refolded (Codex R11)
     if (!l) continue;
     const m = messages.get(l.message_id);
@@ -208,7 +213,12 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
 }
 
 /** A job's walk of its folder's locations, per store: started on its first slice (after a reload, again from the start) */
-const rebuildOrders = new WeakMap<Ctx, Map<string, Iterator<Key>>>();
+const rebuildOrders = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; pending: Key[] | null; done: boolean }>>();
+
+/** The last rebuild slice is saved: its walk goes on from there (Codex R48: a rolled-back one is walked again). */
+export function confirmRebuilt(c: Ctx): void {
+  for (const walk of rebuildOrders.get(c)?.values() ?? []) walk.pending = null;
+}
 
 /** Does a thread pass the folder's view and the list's filter (Waiting: inside its window)? */
 function keeps(p: ScopeParams): (t: R | undefined) => t is R {
@@ -232,8 +242,10 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   // whole), kept sorted across pages (Codex R12: never re-sorted per page)
   const unread = listed && listFilterOf(p) === "unread" ? c.scopes.folderUnreadByDate(c, p.accountId!, p.folder!) : null;
   const byDate = listed && !unread ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
+  // a big folder's order still being built: this page selected from its members, newest first (Codex R48)
+  if (byDate === null) return selectFolderPage(c, p);
   const size = unread ? unread.length : byDate.length;
-  const idAt = unread ? (i: number) => unread[i]!.id : (i: number) => byDate[i]!;
+  const idAt = unread ? (i: number) => unread[i]!.id : (i: number) => byDate[i]!.id;
   const pass = keeps(p);
   const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   let lo = 0;
@@ -259,6 +271,44 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   const inView = keeps({ ...p, filter: undefined, unreadOnly: false });
   const memberships = T(c, "thread_folders");
   const kept = [...new Set(p.keepIds)].filter((id) => listed && memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
+  return keepInPage(page, kept.map((t) => toSummary(c, t)));
+}
+
+/** A folder's page while its order is built: one walk of its members keeping the newest `limit + 1` that pass. */
+function selectFolderPage(c: Ctx, p: ListParams): Page {
+  const threads = T(c, "threads");
+  const memberships = T(c, "thread_folders");
+  const pass = keeps(p);
+  const floor = listFilterOf(p) === "waiting" ? waitingCutoff(p.now!) : Number.NEGATIVE_INFINITY;
+  const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
+  const newer = (a: R, b: R) => b.last_date - a.last_date || b.id - a.id;
+  const top: R[] = [];
+  const cursorDate = p.cursor ? p.cursor.lastDate : Number.POSITIVE_INFINITY;
+  for (const k of memberships.keysBy("folder", p.accountId, p.folder)) {
+    const m = memberships.rows.get(k)!;
+    // the membership's own date (the thread's) rules most out before the thread is looked up
+    const d = m.last_date as number;
+    if (d < floor || d > cursorDate || (top.length > p.limit && d < top[p.limit]!.last_date)) continue;
+    const t = threads.get(m.thread_id);
+    if (!t || !before(t) || !pass(t)) continue;
+    if (top.length > p.limit && newer(t, top[p.limit]!) >= 0) continue;
+    let lo = 0;
+    let hi = top.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (newer(top[mid]!, t) < 0) lo = mid + 1;
+      else hi = mid;
+    }
+    top.splice(lo, 0, t);
+    if (top.length > p.limit + 1) top.pop();
+  }
+  const hasMore = top.length > p.limit;
+  const items: ThreadSummary[] = (hasMore ? top.slice(0, p.limit) : top).map((t) => toSummary(c, t));
+  const last = items[items.length - 1];
+  const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
+  if (!listFilterOf(p) || !p.keepIds?.length) return page;
+  const inView = keeps({ ...p, filter: undefined, unreadOnly: false });
+  const kept = [...new Set(p.keepIds)].filter((id) => memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
   return keepInPage(page, kept.map((t) => toSummary(c, t)));
 }
 

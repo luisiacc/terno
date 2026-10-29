@@ -5,6 +5,35 @@ import { isFolder } from "./folders";
 type Command = <V>(fn: () => V) => Promise<V>;
 
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
+/**
+ * per database, the threads an expunge is deciding: true once a write could have put one of their messages back in a
+ * folder (a location written for one of them; one changing spam, trash or thread) since the decision began (Codex R48)
+ */
+const expungeWatches = new WeakMap<object, Map<number, { mailbox: string; marked: boolean }>>();
+function expungeWatch(c: { db: { onRow(fn: (table: string, row: Record<string, unknown> | undefined, prev: Record<string, unknown> | undefined) => void): void } }): Map<number, { mailbox: string; marked: boolean }> {
+  let watch = expungeWatches.get(c.db);
+  if (!watch) {
+    const map = new Map<number, { mailbox: string; marked: boolean }>();
+    expungeWatches.set(c.db, (watch = map));
+    const mark = (thread: unknown, mailbox?: unknown) => {
+      const w = map.get(thread as number);
+      if (w && (mailbox === undefined || w.mailbox === mailbox)) w.marked = true;
+    };
+    c.db.onRow((table, row, prev) => {
+      if (map.size === 0) return;
+      if (table === "messages") {
+        // a message put in the thread, or out of trash or spam, or moved between threads
+        if (row && (!prev || row.is_spam !== prev.is_spam || row.is_trash !== prev.is_trash || row.thread_id !== prev.thread_id)) mark(row.thread_id);
+        if (row && prev && row.thread_id !== prev.thread_id) mark(prev.thread_id);
+      } else if (table === "message_locations" && row) {
+        // a location written in that mailbox for one of its messages
+        mark(T(c as never, "messages").get(row.message_id as number)?.thread_id, row.mailbox);
+      }
+    });
+  }
+  return watch;
+}
+
 /** each twins bucket's ids by envelope, ascending, as of its revision (a page seeks into it) */
 const twinOrders = new WeakMap<ReadonlySet<unknown>, { revision: string; byEnvelope: Map<string, number[]> }>();
 /**
@@ -176,11 +205,17 @@ class IdbImapLocations implements ImapLocationStore {
         }
       });
     }
-    // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
-    // a few thousand of them looked at a command (Codex R34: per slice, a long conversation was walked again each time)
+    // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there.
+    // Each thread's messages are walked 2,000 a read with a turn between reads (Codex R48: copied whole and rescanned
+    // in the deleting command, 75 ms at once); a thread being decided is watched (any write that could put one of its
+    // messages back here marks it), so the delete needs no second walk: unmarked, its row goes in a batch of 500.
+    const watch = expungeWatch(this.c);
     let since = performance.now();
-    // the rows that go, 500 a command (never a transaction each), each looked at again as it goes: a location written
-    // meanwhile keeps it
+    const turn = async () => {
+      if (performance.now() - since < 4) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      since = performance.now();
+    };
     const going: number[] = [];
     const flush = async () => {
       const batch = going.splice(0);
@@ -188,31 +223,41 @@ class IdbImapLocations implements ImapLocationStore {
       await this.command(() => {
         if (!isFolder(this.c, this.accountId, mailbox)) return;
         const memberships = T(this.c, "thread_folders");
-        const messages = T(this.c, "messages");
         for (const thread of batch) {
+          // marked while it was decided: it keeps its row (shown a while longer, never a whole thread walked here)
+          if (watch.get(thread)?.marked !== false) continue;
           const row = memberships.get(thread, mailbox);
-          if (row && !messages.by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
+          if (row) memberships.deleteRow(row);
         }
       });
+      for (const thread of batch) watch.delete(thread);
     };
     for (const thread of threads) {
-      // a few milliseconds a turn across threads (Codex R35: many short ones never yielded)
-      if (performance.now() - since >= 4) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        since = performance.now();
-      }
-      const keys = await this.read(() => [...T(this.c, "messages").keysBy("fk_thread_id", thread)]);
+      await turn();
+      watch.set(thread, { mailbox, marked: false });
+      const keys = T(this.c, "messages").keysBy("fk_thread_id", thread);
       let here = false;
-      for (let i = 0; i < keys.length && !here; i += 2000) {
+      for (let ended = false; !ended && !here; ) {
         here = await this.read(() => {
           const messages = T(this.c, "messages");
-          return keys.slice(i, i + 2000).some((k) => {
-            const o = messages.rows.get(k);
-            return !!o && !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox);
-          });
+          for (let n = 0; n < 2000; n++) {
+            const next = keys.next();
+            if (next.done) {
+              ended = true;
+              return false;
+            }
+            const o = messages.rows.get(next.value);
+            if (o && !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox)) return true;
+          }
+          return false;
         });
+        if (!ended && !here) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          since = performance.now();
+        }
       }
-      if (!here) going.push(thread);
+      if (here) watch.delete(thread);
+      else going.push(thread);
       if (going.length >= 500) await flush();
     }
     await flush();
