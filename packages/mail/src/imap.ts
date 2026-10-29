@@ -1180,6 +1180,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
         for (const id of lost) pending.add(id);
+        // a candidate is one with no place left: one the journal names that's placed in a folder still here (a pass
+        // that stopped had placed it) isn't, whatever folder is read first (Codex R38); a vanished folder's are
+        const vanishedPaths = new Set(vanished);
+        const ask = [...pending];
+        const breathe = breather();
+        for (let i = 0; i < ask.length; i += 500) {
+          for (const l of await locations.of(ask.slice(i, i + 500))) if (!vanishedPaths.has(l.mailbox)) pending.delete(l.message_id);
+          await breathe();
+        }
         const recover = new AdoptIndex();
         await recover.add(pending, (ids) => locations.envelopes(ids));
         const ambiguous: Ambiguous[] = [];
