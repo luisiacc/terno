@@ -152,12 +152,26 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
  * are walked in UID order and their threads refolded (`limit` at a time). Each slice is its own transaction, its
  * progress saved with it, so a quit resumes where it was. Location writes meanwhile keep membership as ever.
  */
+/**
+ * The upgrade's slice (schema 24): the memberships of a mailbox from before, a few threads at a time (a thread may
+ * carry many labels), added beside any a sync wrote meanwhile (those are already right).
+ */
+function backfill(db: Db, limit: number, left: () => boolean): { more: boolean; touched: number[] } {
+  const fill = db.get<{ after_thread_id: number }>("SELECT after_thread_id FROM folder_backfill LIMIT 1");
+  if (!fill) return { more: false, touched: [] };
+  const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE id > ? ORDER BY id LIMIT ?", fill.after_thread_id, Math.max(1, Math.floor(limit / 10))).map((r) => r.id);
+  const touched = ids.length ? [...new Set(db.all<{ thread_id: number }>(`${MEMBERSHIP} RETURNING thread_id`, JSON.stringify(ids)).map((r) => r.thread_id))] : [];
+  if (ids.length < Math.max(1, Math.floor(limit / 10))) db.run("DELETE FROM folder_backfill");
+  else db.run("UPDATE folder_backfill SET after_thread_id = ?", ids.at(-1)!);
+  return { more: left(), touched };
+}
+
 export function rebuildFolders(db: Db, limit: number): { more: boolean; touched: number[] } {
   return db.tx(() => {
     const job = db.get<{ account_id: number; key: string; phase: number; after_uidvalidity: number; after_uid: number }>("SELECT account_id, key, phase, after_uidvalidity, after_uid FROM folder_rebuilds LIMIT 1");
-    if (!job) return { more: false, touched: [] };
+    const left = () => db.get("SELECT 1 FROM folder_rebuilds UNION ALL SELECT 1 FROM folder_backfill LIMIT 1") !== undefined;
+    if (!job) return backfill(db, limit, left);
     const done = () => db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key = ?", job.account_id, job.key);
-    const left = () => db.get("SELECT 1 FROM folder_rebuilds LIMIT 1") !== undefined;
     if (!isFolder(db, job.account_id, job.key)) {
       done();
       return { more: left(), touched: [] };

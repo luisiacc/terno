@@ -70,10 +70,10 @@ END;
 CREATE TRIGGER thread_folders_unread_down AFTER UPDATE OF unread ON thread_folders WHEN OLD.unread = 1 AND NEW.unread = 0 BEGIN
   UPDATE folder_unread SET n = n - 1 WHERE account_id = OLD.account_id AND folder = OLD.folder;
 END;
-INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
-  SELECT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
-  FROM messages m JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
-  WHERE m.gmail_labels IS NOT NULL AND m.is_trash = 0 AND m.is_spam = 0 AND j.value LIKE 'Label\\_%' ESCAPE '\\';
+-- a mailbox from before has its Gmail labels as memberships after the upgrade, a slice of threads at a time
+-- (folders.ts rebuildFolders; Codex R13: a million rows in the migration's one transaction stalled the open)
+CREATE TABLE folder_backfill (after_thread_id INTEGER NOT NULL);
+INSERT INTO folder_backfill (after_thread_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM messages WHERE gmail_labels IS NOT NULL);
 `;
 
 const SCHEMA_V1 = /* sql */ `

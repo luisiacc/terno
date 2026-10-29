@@ -6,6 +6,7 @@ import { generateDataset } from "@terno/mock-data";
 import { movePending, movePhase, restoreMoveSlice, trainMoveSlice, undoMoveBegin, undoMoveSlice } from "./categorize";
 import { getThread } from "./queries";
 import { ingestMessages } from "./ingest";
+import { rebuildFolders } from "./folders";
 import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { openDatabase } from "./index";
 import { nodeSqliteDriver } from "./node-driver";
@@ -556,7 +557,7 @@ describe("migration v23: durable draft source context", () => {
 });
 
 describe("migration v24: an account's own folders (plan 65)", () => {
-  it("adds the folder tables, and a Gmail mailbox from before is in its labels at once (not trash, not spam, user labels only)", () => {
+  it("adds the folder tables, and a Gmail mailbox from before is in its labels after the upgrade's slices (not trash, not spam, user labels only)", () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-mig24-"));
     dirs.push(dir);
     const db = new Db(nodeSqliteDriver, join(dir, "v23.db"));
@@ -571,7 +572,23 @@ describe("migration v24: an account's own folders (plan 65)", () => {
     add(2, 2, JSON.stringify(["Label_2"]), 1);
     add(3, 3, "not json");
     expect(migrate(db)).toEqual({ from: 23, to: SCHEMA_VERSION });
+    // Codex R13: nothing written in the migration; a thread a slice (limit 5) until done, durable between slices
+    expect(db.all("SELECT * FROM thread_folders")).toEqual([]);
+    expect(rebuildFolders(db, 5)).toEqual({ more: true, touched: [1] });
+    expect(db.all("SELECT after_thread_id FROM folder_backfill")).toEqual([{ after_thread_id: 1 }]);
+    for (let r = rebuildFolders(db, 5); r.more; r = rebuildFolders(db, 5));
+    expect(db.all("SELECT * FROM folder_backfill")).toEqual([]);
+    expect(rebuildFolders(db, 5)).toEqual({ more: false, touched: [] });
     expect(db.all("SELECT thread_id, account_id, folder, last_date, unread FROM thread_folders ORDER BY thread_id")).toEqual([{ thread_id: 1, account_id: 1, folder: "Label_1", last_date: 50, unread: 1 }]);
     expect(db.all("SELECT * FROM folders")).toEqual([]);
+  });
+
+  it("Codex R13: a mailbox without Gmail labels has no backfill to run", () => {
+    const db = new Db(nodeSqliteDriver, ":memory:");
+    dbs.push(db);
+    for (const m of MIGRATIONS.filter((m) => m.version <= 23)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 23");
+    migrate(db);
+    expect(db.all("SELECT * FROM folder_backfill")).toEqual([]);
   });
 });

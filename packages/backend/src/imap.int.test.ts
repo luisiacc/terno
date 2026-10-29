@@ -1336,6 +1336,29 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(3);
   });
 
+  it("Codex R13: the first of two ID-less twins moved out of a folder that's then reset: each keeps its own identity", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Gemelo primero movido" }).replace(/^Message-ID: .*\r\n/m, "");
+    const first = ctl.addMessage("Z", { raw: twin });
+    ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(before).toHaveLength(2);
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+    ctl.moveMessages("Z", [first.uid], "A");
+    ctl.resetUidValidity("Z");
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Z'")).toBe(1);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

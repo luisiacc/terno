@@ -73,3 +73,35 @@ it("Codex R12: a candidate added later, older than ones still waiting, is taken 
   expect(await index.take(e, async () => true)).toBe(7);
   expect(await index.take(e, async () => true)).toBe(9);
 });
+
+it("Codex R13: 25,000 candidates added later, older than 25,000 waiting in the same bucket, merge in linear time", async () => {
+  const e = { subject: "Same", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: null };
+  const index = new AdoptIndex(Array.from({ length: 25_000 }, (_, i) => ({ id: 2 * i + 2, ...e })));
+  expect(await index.take(e, async () => true)).toBe(2);
+  let last = performance.now();
+  let worst = 0;
+  const tick = setInterval(() => {
+    const now = performance.now();
+    worst = Math.max(worst, now - last);
+    last = now;
+  }, 1);
+  const started = performance.now();
+  await index.add(Array.from({ length: 25_000 }, (_, i) => 2 * i + 1), async (ids) => ids.map((id) => ({ id, ...e })));
+  const total = performance.now() - started;
+  clearInterval(tick);
+  expect(total).toBeLessThan(200);
+  expect(worst).toBeLessThan(10);
+  // oldest first: the late ones in their places among those still waiting
+  for (const id of [1, 3, 4, 5, 6]) expect(await index.take(e, async () => true)).toBe(id);
+  expect(index.size).toBe(49_994);
+});
+
+it("Codex R13: a candidate taken or found by its own key is never one again, even if a reset lists it later", async () => {
+  const e = { subject: "S", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: null };
+  const index = new AdoptIndex([{ id: 1, ...e }, { id: 2, ...e }]);
+  expect(await index.take(e, async () => true)).toBe(1);
+  index.drop(2);
+  await index.add([1, 2, 3], async (ids) => ids.map((id) => ({ id, ...e })));
+  expect(await index.take(e, async () => true)).toBe(3);
+  expect(await index.take(e, async () => true)).toBeNull();
+});

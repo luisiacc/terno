@@ -855,6 +855,8 @@ export class BackendCore {
           const r = await this.store.folders.rebuild(REBUILD_SLICE);
           if (r.touched.length) this.notifyChanged(r.touched);
           if (!r.more) return;
+          // a bulk writer: the WAL checkpoint catches up between slices (Codex R13: a long backfill grew it)
+          await this.store.settle?.();
           await this.yieldTurn();
         }
       } catch (error) {
