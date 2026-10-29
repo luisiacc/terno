@@ -82,8 +82,8 @@ describe("when /labels is read", () => {
       await t.p.folders!(t.sink);
       expect(t.labelReads()).toBe(1);
       expect(t.folders).toEqual([[{ key: "Label_1", path: ["Work"], selectable: true }]]);
-      // kept in the cursor beside the history checkpoint
-      expect(t.cursor).toMatchObject({ historyId: "10", labels: { known: ["Label_1"] } });
+      // the history checkpoint is the sync's alone
+      expect(t.cursor).toEqual({ historyId: "10" });
       await t.p.sync(t.sink);
       await t.p.folders!(t.sink);
       expect(t.labelReads()).toBe(1);

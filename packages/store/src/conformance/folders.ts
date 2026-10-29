@@ -1,7 +1,8 @@
 import { folderRef } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
-import { ingest, msg, threadOf, withAccounts } from "./fixtures";
+import { generateDataset } from "@terno/mock-data";
+import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -141,6 +142,24 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await store.threads.scopeIds({ view: "all", accountId: g!, folder: "Label_1", limit: 10 })).toEqual(members);
       expect(await store.threads.scopeIds({ view: "all", accountId: g!, folder: "Label_1", after: members[0], limit: 10 })).toEqual(members.slice(1));
       expect(await store.threads.scopeCount({ view: "all", accountId: g!, folder: "Label_1", limit: 100 })).toBe(3);
+    });
+
+    it("the store's seed and a seed through commands write the dataset's folders and memberships alike", async () => {
+      const data = generateDataset({ threads: 600, seed: 9, now: NOW });
+      const shape = async (s: MailStore) => {
+        const folders = await s.folders.list();
+        const members: Record<string, string[]> = {};
+        for (const f of folders) if (f.selectable) members[folderRef(f.accountId, f.key)] = (await s.threads.list({ view: "all", accountId: f.accountId, folder: f.key, limit: 500, now: NOW })).items.map((t) => t.subject).sort();
+        return { folders: folders.map((f) => [f.accountId, f.key, f.path, f.selectable]), members, unread: (await s.threads.counts(NOW)).folderUnread };
+      };
+      const a = await fresh();
+      await a.dev.seed(data, { now: NOW });
+      const b = await fresh();
+      await seedThroughCommands(b, data, NOW);
+      const seeded = await shape(a);
+      expect(seeded).toEqual(await shape(b));
+      expect(seeded.folders.some((f) => f[3] === false)).toBe(true);
+      expect(Object.values(seeded.members).filter((l) => l.length > 0).length).toBeGreaterThan(3);
     });
 
     it("an account's removal takes its folders; folders survive a reopen", async () => {

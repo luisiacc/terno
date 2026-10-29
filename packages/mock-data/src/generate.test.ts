@@ -32,7 +32,8 @@ describe("mock dataset", () => {
     ] as const) {
       const data = generateDataset(options);
       // plan 17's bulk flag is derived from what the generator already chose (no draw from the PRNG)
-      const legacy = { ...data, messages: data.messages.map(({ tags: _t, family: _f, bulk: _b, ...m }) => m) };
+      // plan 65's folders are placed after, from a hash (no draw from the PRNG either)
+      const legacy = { ...data, accounts: data.accounts.map(({ folders: _x, ...a }) => a), messages: data.messages.map(({ tags: _t, family: _f, bulk: _b, gmailLabels: _g, locations: _l, ...m }) => m) };
       expect(fnv(JSON.stringify(legacy))).toBe(expected);
     }
   });

@@ -288,8 +288,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
           return new TextEncoder().encode("synthetic raw");
         },
       }),
-      // The test drives real Gmail execution; no mailbox enumeration is needed.
+      // The test drives real Gmail execution; no mailbox enumeration is needed (nor plan 65's label list).
       async sync() {},
+      async folders() {},
     });
     t.registry.connectGmail = async (o) => ({ email: o.loginHint!, name: "Synthetic", sub: "synthetic-subject", emailVerified: true, refreshToken: "synthetic-refresh", grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] });
     await t.client.call("settings.update", { gmailClientId: "synthetic-client" });

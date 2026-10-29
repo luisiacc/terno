@@ -1668,6 +1668,8 @@ export class IdbMailStore implements MailStore {
       this.seeding = true;
       try {
         const accountIds = await this.command(() => dataset.accounts.map((a) => createAccount(this.c, { kind: a.kind, email: a.email, displayName: a.displayName, color: a.color }, now).id));
+        // plan 65: listed before the mail, so IMAP locations in them are membership as they're written
+        await this.command(() => dataset.accounts.forEach((a, i) => a.folders && replaceFolders(this.c, accountIds[i]!, a.folders.map(({ key, path, selectable }) => ({ key, path, selectable })))));
         const categories = await this.command(() => dataset.categories.map((cat) => ({ ...cat, id: createCategory(this.c, cat.name, cat.color).id })));
         const threadTags = new Map<number, Set<string>>();
         for (let i = 0; i < dataset.messages.length; i += 1000) {

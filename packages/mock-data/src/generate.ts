@@ -39,6 +39,9 @@ export interface MockMessage {
   tags: ThreadTag[];
   /** set on adversarial threads */
   family?: AdversarialFamily;
+  /** plan 65: Gmail: its user labels (folder keys); IMAP: its locations in the account's own folders */
+  gmailLabels?: string[];
+  locations?: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }[];
 }
 
 export type ThreadTag = "newsletter" | "receipt" | "shipping" | "bank" | "dev" | "travel" | "calendar" | "work" | "client" | "personal" | "spam" | "promo" | "phish";
@@ -51,6 +54,8 @@ export interface MockAccount {
   ownerName: string;
   /** relative share of threads (skewed on purpose) */
   weight: number;
+  /** plan 65: the account's own folders (Gmail labels, IMAP folders); keys are what its messages carry */
+  folders?: { key: string; path: string[]; selectable: boolean; tags: ThreadTag[] }[];
 }
 
 export interface MockCategory {
@@ -85,11 +90,29 @@ export interface MockDataset {
   messages: MockMessage[];
 }
 
+/** plan 65: each account's own folders, and which threads (by tag) a share of them hold */
+const PERSONAL_LABELS: MockAccount["folders"] = [
+  { key: "Label_11", path: ["Familia"], selectable: true, tags: ["personal"] },
+  { key: "Label_12", path: ["Recibos"], selectable: true, tags: ["receipt", "bank"] },
+  { key: "Label_13", path: ["Recibos", "Impuestos 2026"], selectable: true, tags: ["bank"] },
+];
+const ACME_LABELS: MockAccount["folders"] = [
+  { key: "Label_21", path: ["Proyectos"], selectable: true, tags: ["work"] },
+  { key: "Label_22", path: ["Proyectos", "Rediseño web"], selectable: true, tags: ["client"] },
+  { key: "Label_23", path: ["Equipo"], selectable: true, tags: ["calendar"] },
+];
+const FREELANCE_FOLDERS: MockAccount["folders"] = [
+  { key: "Clientes antiguos", path: ["Clientes antiguos"], selectable: true, tags: ["client"] },
+  { key: "Facturación", path: ["Facturación"], selectable: false, tags: [] },
+  { key: "Facturación/2026", path: ["Facturación", "2026"], selectable: true, tags: ["receipt"] },
+];
+const ICLOUD_FOLDERS: MockAccount["folders"] = [{ key: "Viajes guardados", path: ["Viajes guardados"], selectable: true, tags: ["travel"] }];
+
 const ALL_ACCOUNTS: MockAccount[] = [
-  { kind: "gmail", email: "luis.cordero@gmail.com", displayName: "Personal", color: "indigo", ownerName: "Luis Cordero", weight: 0.32 },
-  { kind: "gmail", email: "luis@acme.studio", displayName: "Acme Studio", color: "emerald", ownerName: "Luis Carlos Cordero", weight: 0.3 },
-  { kind: "imap", email: "hola@luiscordero.dev", displayName: "Freelance", color: "amber", ownerName: "Luis Cordero", weight: 0.14 },
-  { kind: "imap", email: "lccordero@icloud.com", displayName: "iCloud", color: "cyan", ownerName: "Luis Cordero", weight: 0.08 },
+  { kind: "gmail", email: "luis.cordero@gmail.com", displayName: "Personal", color: "indigo", ownerName: "Luis Cordero", weight: 0.32, folders: PERSONAL_LABELS },
+  { kind: "gmail", email: "luis@acme.studio", displayName: "Acme Studio", color: "emerald", ownerName: "Luis Carlos Cordero", weight: 0.3, folders: ACME_LABELS },
+  { kind: "imap", email: "hola@luiscordero.dev", displayName: "Freelance", color: "amber", ownerName: "Luis Cordero", weight: 0.14, folders: FREELANCE_FOLDERS },
+  { kind: "imap", email: "lccordero@icloud.com", displayName: "iCloud", color: "cyan", ownerName: "Luis Cordero", weight: 0.08, folders: ICLOUD_FOLDERS },
   { kind: "gmail", email: "luis@orbitalabs.dev", displayName: "Orbita Labs", color: "violet", ownerName: "Luis Cordero", weight: 0.07 },
   { kind: "imap", email: "l.cordero@universidad.edu.mx", displayName: "Universidad", color: "rose", ownerName: "Luis Cordero Peña", weight: 0.04 },
   { kind: "imap", email: "luiscp@hotmail.com", displayName: "Hotmail (viejo)", color: "slate", ownerName: "Luis C.", weight: 0.03 },
@@ -426,6 +449,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
       }
     }
   }
+  placeInFolders(accounts, messages);
   return { accounts, categories: MOCK_CATEGORIES, messages };
 }
 
@@ -455,4 +479,26 @@ function familyDraft(m: FamilyMessage, me: Address, date: number, inInbox: boole
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+/** FNV-1a: a stable share of threads, without touching the dataset's random stream (every other value stays as it was). */
+function hash(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+
+/**
+ * Plan 65: a third of the threads whose tags a folder takes are in it, whole: Gmail labels on every message,
+ * IMAP locations in the folder (beside wherever else the message is).
+ */
+function placeInFolders(accounts: readonly MockAccount[], messages: MockMessage[]): void {
+  messages.forEach((m, i) => {
+    const folders = accounts[m.accountIndex]?.folders ?? [];
+    const thread = m.rfcMessageId.split(".")[0]!;
+    const keys = folders.filter((f) => f.selectable && f.tags.some((t) => m.tags.includes(t)) && hash(`${thread}:${f.key}`) % 3 === 0).map((f) => f.key);
+    if (!keys.length) return;
+    if (accounts[m.accountIndex]!.kind === "gmail") m.gmailLabels = keys;
+    else m.locations = keys.map((mailbox) => ({ mailbox, uidvalidity: 1, uid: i + 1, flags: m.isRead ? ["\\Seen"] : [] }));
+  });
 }

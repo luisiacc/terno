@@ -56,8 +56,6 @@ interface GmailMessage {
 
 interface Cursor {
   historyId: string;
-  /** plan 65: when /labels was last read, and every label id it had (hidden ones too: known, never listed) */
-  labels?: { at: number; known: string[] };
 }
 
 /** Plan 65: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
@@ -728,7 +726,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     });
     if (updates.length) await sink.updateFlags(updates);
     if (gone.length) await sink.removeMessages(gone);
-    await ctx.saveCursor({ historyId: baseline, ...(catalog && { labels: { at: catalog.at, known: [...catalog.known] } }) } satisfies Cursor);
+    await ctx.saveCursor({ historyId: baseline } satisfies Cursor);
   }
 
   async function incremental(sink: SyncSink, cursor: Cursor) {
@@ -783,10 +781,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (id !== undefined) removals.push(id);
     }
     if (removals.length) await sink.removeMessages(removals);
-    await ctx.saveCursor({ historyId: latest, ...(catalog && { labels: { at: catalog.at, known: [...catalog.known] } }) } satisfies Cursor);
+    await ctx.saveCursor({ historyId: latest } satisfies Cursor);
   }
 
-  /** plan 65: what /labels said last (kept in the cursor), so a quiet pass asks nothing; a label met that it lacks */
+  /** plan 65: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
   let catalog: { at: number; known: Set<string> } | null = null;
   let unknownLabel = false;
 
@@ -811,8 +809,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     async sync(outer) {
-      const cursor = await ctx.loadCursor<Cursor>();
-      catalog ??= isRecord(cursor) && isRecord(cursor.labels) && typeof cursor.labels.at === "number" && Array.isArray(cursor.labels.known) ? { at: cursor.labels.at, known: new Set(cursor.labels.known.filter(nonempty)) } : null;
       // plan 65: the user labels this pass meets; one /labels didn't have (made since) asks for it after the pass
       const meet = (labels: readonly string[] | null | undefined) => {
         for (const l of labels ?? []) if (l.startsWith("Label_") && !catalog?.known.has(l)) unknownLabel = true;
@@ -823,6 +819,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         updateFlags: (updates) => (updates.forEach((u) => meet(u.gmailLabels)), outer.updateFlags(updates)),
       };
       const malformed = await reconcileFlags(sink);
+      const cursor = await ctx.loadCursor<Cursor>();
       if (!isRecord(cursor) || !historyId(cursor.historyId)) {
         await fullSync(sink);
       } else {
@@ -845,8 +842,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
       unknownLabel = false;
       await sink.setFolders?.(labelFolders(labels));
-      const cursor = await ctx.loadCursor<Cursor>();
-      if (isRecord(cursor) && historyId(cursor.historyId)) await ctx.saveCursor({ ...cursor, labels: { at: catalog.at, known: [...catalog.known] } } satisfies Cursor);
     },
 
     async execute(op: ProviderOp) {

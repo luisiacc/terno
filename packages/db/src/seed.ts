@@ -1,5 +1,6 @@
 import type { MockDataset } from "@terno/mock-data";
 import { ingestMessages } from "./ingest";
+import { replaceFolders } from "./folders";
 import { addThreadsToCategory, createAccount, createCategory, recordUserActions } from "./repos";
 import { placeholders, type Db } from "./sqlite";
 
@@ -27,6 +28,8 @@ export function seedDataset(db: Db, data: MockDataset, options: SeedOptions = {}
   const accountIds = data.accounts.map(
     (a) => createAccount(db, { kind: a.kind, email: a.email, displayName: a.displayName, color: a.color }, now).id,
   );
+  // plan 65: listed before the mail, so IMAP locations in them are membership as they're written
+  data.accounts.forEach((a, i) => a.folders && replaceFolders(db, accountIds[i]!, a.folders.map(({ key, path, selectable }) => ({ key, path, selectable }))));
   const categories = data.categories.map((c) => ({ ...c, id: createCategory(db, c.name, c.color).id }));
 
   const threadTags = new Map<number, Set<string>>();
