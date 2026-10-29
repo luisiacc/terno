@@ -536,10 +536,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           // a renamed folder's ID-less copy: by its envelope, from the index (Codex R4: never a scan per message)
           const envelope = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
-          // ID-less mail that lost its place (moved, renamed, reset, under an older key scheme): by its envelope;
-          // a row already re-attached in this mailbox can't be claimed twice
-          if (!existing && recover.size && !messageKey(env?.messageId)) {
-            const found = await takeAny({ ...envelope, rfcMessageId: null });
+          // mail that lost its place (moved, renamed, reset, under an older key scheme) with no row under the plain key:
+          // by its envelope (and Message-ID: Codex R28, a Message-ID twin whose plain-key one was deleted); a row
+          // already re-attached in this mailbox can't be claimed twice
+          if (!existing && recover.size) {
+            const found = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
             if (found !== null) {
               resetOrphans.delete(found);
               await upsertLocation(found, path, uidvalidity, m.uid, flags);
@@ -549,8 +550,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           // no row under the plain key (it was deleted), yet twins under other keys: a copy, or one of them moved here
           // late; told apart like the rest, before the window decides anything (Codex R20)
-          if (!existing && ambiguousOf === null && !messageKey(env?.messageId)) {
-            const group = await twinGroup(envelope, null);
+          if (!existing && ambiguousOf === null) {
+            const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, null);
             if (group.length) {
               ambiguousOf = group;
               // a copy held back gets a key of its own place: two of them, in two folders, are never one (Codex R21)
@@ -719,6 +720,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const id = free.ids[free.next];
       if (id !== undefined) {
         free.next++;
+        // its place here is given: no copy after it takes it (Codex R28)
+        attached.add(`${id}\u0000${a.path}`);
         // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
         await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
         for (const l of places.get(id)!) {

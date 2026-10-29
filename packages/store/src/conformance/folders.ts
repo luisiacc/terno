@@ -187,6 +187,28 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await locations.twins({ ...envelope, rfcMessageId: withId }, 0, 50)).toEqual([r.inserted[2]!]);
     });
 
+    it("Codex R28: twins stay exact through changes that keep a bucket's size (one out, another in)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const base = { from: { name: "", email: "ana@example.test" }, date: 1_800_000_000_000, size: 100, rfcMessageId: "<churn@x>" };
+      const r = await ingest(store, [msg({ accountId: m!, providerMsgId: "a", subject: "A", ...base }), msg({ accountId: m!, providerMsgId: "b", subject: "B", ...base })]);
+      const locations = store.providerStore(m!).locations;
+      const rfc = (await store.debug.snapshot()).messages.find((x) => x.id === r.inserted[0])!.rfcMessageId;
+      const b = { subject: "B", fromEmail: "ana@example.test", date: base.date, size: base.size, rfcMessageId: rfc };
+      expect(await locations.twins(b, 0, 50)).toEqual([r.inserted[1]!]);
+      await store.sync.remove([r.inserted[0]!]);
+      const added = await ingest(store, [msg({ accountId: m!, providerMsgId: "b2", subject: "B", ...base })]);
+      expect(await locations.twins(b, 0, 50)).toEqual([r.inserted[1]!, added.inserted[0]!]);
+      // and ID-less ones
+      const idless = { ...base, rfcMessageId: null };
+      const n = await ingest(store, [msg({ accountId: m!, providerMsgId: "n1", subject: "N", ...idless }), msg({ accountId: m!, providerMsgId: "n2", subject: "N", ...idless })]);
+      const e = { subject: "N", fromEmail: "ana@example.test", date: base.date, size: base.size };
+      expect(await locations.twins(e, 0, 50)).toEqual(n.inserted);
+      await store.sync.remove([n.inserted[0]!]);
+      const n3 = await ingest(store, [msg({ accountId: m!, providerMsgId: "n3", subject: "N", ...idless })]);
+      expect(await locations.twins(e, 0, 50)).toEqual([n.inserted[1]!, n3.inserted[0]!]);
+    });
+
     it("Codex R14: a list in another order is no change; a rename changes that folder alone; a new one, and one gone", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

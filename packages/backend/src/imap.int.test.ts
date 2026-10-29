@@ -1592,6 +1592,79 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", plain.id)).toEqual([{ mailbox: P }]);
   });
 
+  it("Codex R28: a Message-ID twin moved late and another copy arriving beside it: each keeps its own UID", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Movido y copiado", id: "moved-and-copied@x" });
+    ctl.addMessage("Z", { raw: twin });
+    ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((m) => m.id);
+    const plain = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) {
+        ctl.moveMessages("Z", [plain.uid], "A");
+        ctl.addMessage("A", { raw: twin });
+      }
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      late.mockRestore();
+    }
+    expect(locks).toBeGreaterThanOrEqual(2);
+    await backend.syncAccount(account.id);
+    const inA = (ctl as unknown as { listMessages(path: string, o: { raw: boolean }): { uid: number; raw: Buffer }[] }).listMessages("A", { raw: true }).filter((x) => x.raw.toString().includes("Movido y copiado")).map((x) => x.uid).sort((a, b) => a - b);
+    expect(inA).toHaveLength(2);
+    expect(sqlDb(backend.store).all<{ uid: number }>("SELECT uid FROM message_locations WHERE mailbox = 'A' AND message_id IN (SELECT id FROM messages WHERE subject = 'Movido y copiado') ORDER BY uid").map((l) => l.uid)).toEqual(inA);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Movido y copiado' ORDER BY id").map((m) => m.id).slice(0, 2)).toEqual(before);
+  });
+
+  for (const how of ["moved between passes", "moved into a new folder, older than the window"] as const) {
+    it(`Codex R28: with its plain-key twin deleted, a Message-ID twin ${how} keeps its identity`, async () => {
+      const { imap, backend, client, addAccount } = await setup();
+      const ctl = imap.server.control;
+      const old = new Date(Date.now() - 400 * 86_400_000);
+      const outside = how !== "moved between passes";
+      if (outside) await client.call("settings.update", { syncWindowDays: 3650 });
+      ctl.createMailbox("Z");
+      if (!outside) ctl.createMailbox("A");
+      const twin = raw({ subject: "Superviviente con Message-ID", id: "survivor@x", ...(outside && { date: old }) });
+      const opts = outside ? { raw: twin, internaldate: old } : { raw: twin };
+      ctl.addMessage("Z", opts);
+      ctl.addMessage("Z", opts);
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      const plain = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
+      const survivor = sqlDb(backend.store).get<{ id: number; thread_id: number; uid: number }>("SELECT m.id, m.thread_id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
+      const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+      await client.call("categories.addThreads", { categoryId: category.id, threadIds: [survivor.thread_id] });
+      ctl.expungeMessages("Z", [plain.uid]);
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual([survivor.id]);
+      if (outside) {
+        await client.call("settings.update", { syncWindowDays: 30 });
+        ctl.createMailbox("A");
+      }
+      ctl.moveMessages("Z", [survivor.uid], "A");
+      await backend.syncAccount(account.id);
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente con Message-ID'")).toEqual([{ id: survivor.id, thread_id: survivor.thread_id }]);
+      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", survivor.id)).toEqual([{ mailbox: "A" }]);
+      expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, survivor.thread_id)).toBe(1);
+    });
+  }
+
   it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
