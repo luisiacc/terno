@@ -465,7 +465,7 @@ export class ProviderCooldown {
       if (!a || a.kind !== "gmail" || a.createdAt !== b.createdAt || await mailboxDigest(a.email, (bytes) => crypto.subtle.digest("SHA-256", bytes)) !== b.emailDigest) continue;
       verified.push(a.id);
       const needsToken = dependent.has(`${b.mailboxKey}/${a.id}/${a.createdAt}`);
-      if (this.state(b.mailboxKey, "gmail-api").kind !== "ready" || (needsToken && this.state(b.mailboxKey, "oauth-token").kind !== "ready")) blocked.push(a.id);
+      if (this.state(b.mailboxKey, "gmail-api").kind !== "ready" || (needsToken && (this.state(b.mailboxKey, "oauth-token").kind !== "ready" || this.state("installation", "oauth-token").kind !== "ready"))) blocked.push(a.id);
     }
     try {
       const preproofDependency = [...this.dependencies.values()].some((d) => d.owner === "installation" && d.id === null);

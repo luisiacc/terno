@@ -25,6 +25,7 @@ export async function savedGoogleRequests(input: {
   let owner = await gate.bindingFor(stamp);
   let scope = owner ? await gate.requestsForAccount(stamp, input.live) : gate.requestsFor("installation", input.live);
   const installation = gate.requestsFor("installation", input.live);
+  const policies = new Set([scope, installation]);
   let paused = false, closed = false;
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
@@ -40,7 +41,7 @@ export async function savedGoogleRequests(input: {
     generation: input.credentials,
     get paused() { return paused; },
     check,
-    close() { closed = true; scope.close(); installation.close(); },
+    close() { closed = true; for (const policy of policies) policy.close(); },
     tokenUnavailable: () => scope.tokenUnavailable(),
     accessAvailable: () => scope.accessAvailable(),
     request(descriptor, resource, init) {
@@ -59,8 +60,9 @@ export async function savedGoogleRequests(input: {
       return net.fetchGoogle(policy, descriptor)(resource, init);
     },
     prove(read) {
-      check(mail);
+      if (!alive() || paused) throw refuse();
       if (owner) return Promise.resolve();
+      check(mail);
       if (proving) return proving;
       const epoch = input.credentials();
       const active = () => alive() && input.credentials() === epoch;
@@ -78,9 +80,13 @@ export async function savedGoogleRequests(input: {
           if (await gate.refreshAfterBind() !== "confirmed" || !active()) throw refuse();
           const bound = await gate.bindingFor(stamp);
           if (bound !== key || !active()) throw refuse();
-          scope.close();
+          const replacement = await gate.requestsForAccount(stamp, input.live);
+          if (!active()) { replacement.close(); throw refuse(); }
+          policies.add(replacement);
+          // Old tickets still own their native responses; switching does not retire them.
+          scope.accessAvailable();
+          scope = replacement;
           owner = key;
-          scope = await gate.requestsForAccount(stamp, input.live);
           input.changed();
         } catch (error) {
           pause();

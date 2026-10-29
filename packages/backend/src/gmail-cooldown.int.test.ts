@@ -1,3 +1,4 @@
+import { ProviderCooldown } from "./provider-cooldown";
 import { exchangeGmailRefresh } from "../../mail/src/gmail-refresh";
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -193,6 +194,110 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
     await expect((await h.backend.provider(h.account.id))!.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
     expect(h.requests).toEqual(["/token"]);
     write.resolve();
+  });
+
+
+  it("R1 does not cache a pre-dispatch OAuth denial after admission becomes ready", async () => {
+    const h = await setup(kind); h.answer(healthyProfile);
+    const provider = (await h.backend.provider(h.account.id))!;
+    const google = h.contexts.get(h.account.id)!.google!;
+    const check = google.check;
+    let denied = true;
+    vi.spyOn(google, "check").mockImplementation((request) => {
+      if (denied && request.endpoint === "oauth-token") throw new ProviderCooldownError("oauth-token", "1", "timed");
+      check(request);
+    });
+    await expect(provider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
+    expect(h.requests).toEqual([]);
+    denied = false;
+    await provider.verify();
+    expect(h.requests).toEqual(["/token", "/gmail/profile"]);
+  });
+
+  it("R1 installation OAuth pause blocks a token-dependent bound account without claim/refund loops", async () => {
+    const h = await setup(kind); h.answer(healthyProfile);
+    await (await h.backend.provider(h.account.id))!.verify();
+    const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "indigo", now: 2 })).account;
+    await h.backend.provider(second.id);
+    h.answer((req, res) => {
+      if (req.url !== "/installation-quota") return healthyProfile(req, res);
+      res.writeHead(429, { "content-type": "application/json", "retry-after": "120" }).end("{}"); return true;
+    });
+    const quota = await h.contexts.get(second.id)!.google!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/installation-quota`); await quota.text();
+    await h.backend.dropAccount(h.account.id); await h.backend.signedIn(h.account.id);
+    await expect((await h.backend.provider(h.account.id))!.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
+    const [local, remote] = createMemoryTransportPair();
+    h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => rpc.close());
+    const { opId } = await rpc.call("compose.send", { accountId: h.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Synthetic", bodyText: "Synthetic" });
+    const claim = h.backend.store.ops.claimReady;
+    let claims = 0;
+    vi.spyOn(h.backend.store.ops, "claimReady").mockImplementation(async (...args) => {
+      if (++claims > 2) throw new Error("Synthetic claim-loop bound");
+      return claim(...args);
+    });
+    expect(await h.backend.runWorker().catch((error: unknown) => error)).toBe(0);
+    expect(claims).toBe(1);
+    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "queued", attempts: 0 });
+    expect(h.requests).toEqual(["/token", "/gmail/profile", "/installation-quota"]);
+  });
+
+  it("R1 binding preserves a previously issued installation request's late429", async () => {
+    const h = await setup(kind);
+    const entered = latch(); let held: ServerResponse | undefined;
+    cleanup.push(async () => { if (held && !held.writableEnded) held.end("{}"); });
+    h.answer((req, res) => {
+      if (req.url !== "/late-token") return healthyProfile(req, res);
+      held = res; entered.resolve(); return true;
+    });
+    const provider = (await h.backend.provider(h.account.id))!;
+    const google = h.contexts.get(h.account.id)!.google!;
+    const late = google.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/late-token`).catch((error: unknown) => error);
+    await entered.promise;
+    await provider.verify();
+    held!.writeHead(429, { "content-type": "application/json", "retry-after": "120" }).end("{}");
+    const response = await late;
+    expect(response).toBeInstanceOf(Response);
+    expect((response as Response).status).toBe(429); await (response as Response).text();
+    await expect(google.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, `${h.origin}/token`)).rejects.toBeInstanceOf(ProviderCooldownError);
+    expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ owner: "installation", service: "oauth-token" })]));
+  });
+
+  it("R1 public photos still reach a ready service during a Gmail-only cooldown", async () => {
+    const original = globalThis.fetch;
+    let userinfo = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url !== "https://openidconnect.googleapis.com/v1/userinfo") return original(input, init);
+      userinfo++;
+      return Promise.resolve(new Response(JSON.stringify({ picture: "https://lh3.googleusercontent.com/synthetic=s64" }), { headers: { "content-type": "application/json" } }));
+    });
+    const h = await setup(kind); h.answer(healthyProfile);
+    const provider = (await h.backend.provider(h.account.id))!; await provider.verify();
+    h.answer(undefined);
+    await expect(provider.verify()).rejects.toMatchObject({ status: 429 });
+    expect(await provider.photos!({ connections: false, otherContacts: false })).toMatchObject({ own: "https://lh3.googleusercontent.com/synthetic=s128" });
+    expect(userinfo).toBe(1);
+    expect(h.requests).toEqual(["/token", "/gmail/profile", "/gmail/profile"]);
+  });
+
+  it("R1 rejects stale proof publication across bound-policy preparation", async () => {
+    const h = await setup(kind); h.answer(healthyProfile);
+    const entered = latch(), publish = latch();
+    cleanup.push(async () => publish.resolve());
+    const original = ProviderCooldown.prototype.requestsForAccount;
+    vi.spyOn(ProviderCooldown.prototype, "requestsForAccount").mockImplementationOnce(async function (this: ProviderCooldown, ...args) {
+      const replacement = await original.call(this, ...args);
+      entered.resolve(); await publish.promise; return replacement;
+    });
+    const provider = (await h.backend.provider(h.account.id))!;
+    const result = provider.verify().catch((error: unknown) => error);
+    await entered.promise;
+    await h.backend.signedIn(h.account.id);
+    publish.resolve();
+    expect(await result).toBeInstanceOf(ProviderCooldownError);
+    await expect(provider.verify()).rejects.toBeInstanceOf(ProviderCooldownError);
+    expect(h.requests).toEqual(["/token", "/gmail/profile"]);
   });
 
 });

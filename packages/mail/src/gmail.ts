@@ -176,7 +176,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   let refreshIssued = false;
   function refresh(run?: RequestRun): Promise<string> {
     if (run) { refreshRuns.add(run); if (refreshIssued) run.markDispatched(); }
-    refreshing ??= (async () => {
+    refreshing ??= Promise.resolve().then(async () => {
       try {
         assertOpen();
         if (!candidate) {
@@ -213,7 +213,7 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         refreshRuns.clear(); refreshIssued = false;
         refreshing = null;
       }
-    })();
+    });
     return refreshing;
   }
 

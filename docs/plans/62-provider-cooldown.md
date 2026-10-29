@@ -508,3 +508,25 @@ Targeted initial run:499/499 across17 module/direct-caller files, including the 
 Dev-only UI command: `E2E_PORT=54340 pnpm --filter @terno/web exec playwright test -c playwright.cooldown.config.ts`:4/4 English/Spanish × light/dark, zero axe violations; screenshots personally inspected in all four combinations. Inspection found overlong Spanish copy widening Settings; the new overflow assertion failed2/2 before shortening en/es copy, then all4 passed. The paused account has neither offline pill nor auth-required reconnect controls. Screenshot artifacts are under `test-results/provider-cooldown/`. No application production build or full suite was run.
 
 Actual plan critique:1 round. Required Standards+Spec code review remains pending; at most two rounds are allowed. Remaining W05 boundaries: foreground reserves/fairness, rolling/project quota policy,403/503 cooldown policy, explicit consent/renewal/onboarding paths, recovery UI/actions, worker ownership transfer and desktop physical retirement. This slice does not close W05 or the linked worklist rows.
+
+### Code review R1 and regression fixes
+
+Actual native `codex exec -s read-only -C <this worktree> -m gpt-6.1-sol -c model_reasoning_effort="high"` Standards+Spec review of372652ea..a71f4140 returned five findings (threeP1, twoP2). All five received public saved-Gmail regressions on SQLite and IndexedDB. The ten new cases failed before production fixes: reused rejected refresh promise, bounded claim-loop counter reached3, late native429 became AbortError, public photos returned null without dispatch, and stale proof incorrectly resolved successfully. No manufactured RED or changed205 prefix.
+
+1. Refresh fallible preparation now starts after the shared promise is assigned, so a synchronous local OAuth denial cannot cache a rejected promise forever.
+2. Token-dependent bound accounts include the installation OAuth constraint in admission; claim and nearest-due continue to share the same snapshot.
+3. Binding retains the previous policy's outstanding tickets until the account lifetime closes; old token responses still capture/persist their native429. Only new requests switch scope. The retained policy set is bounded by the single binding transition.
+4. Already bound proof does not check the unrelated Gmail service, so public provider.photos can use ready userinfo/People services during Gmail cooldown.
+5. Prepare the replacement bound policy first, recheck the exact generation/lifetime, then publish scope/owner synchronously. A stale unused replacement is closed, and failed readiness latches before releasing the starter.
+
+R1 fixes: `r1-red.log`10/10 failed at the intended public outcomes; focused GREEN342/342; final targeted511/511 across17 files; scoped control/dispatch perf4/4; mail/backend typechecks, four changed TS strict lint, and whitespace passed. The prior four English/Spanish light/dark dev UI/axe cases remain applicable (no renderer/copy changes in these fixes). Second and final code review pending; noR3 will run.
+
+Exact final targeted command:
+
+```sh
+pnpm exec vitest run --project unit packages/backend/src/gmail-cooldown.int.test.ts packages/backend/src/google-transport.test.ts packages/backend/src/net-policy.test.ts packages/backend/src/provider-cooldown.test.ts packages/backend/src/provider-cooldown-store.int.test.ts packages/mail/src/provider-http.test.ts packages/backend/src/gmail.int.test.ts packages/backend/src/gmail-rotation.int.test.ts packages/backend/src/gmail-catchup.int.test.ts packages/backend/src/gmail-http-evidence.int.test.ts packages/mail/src/gmail-http-evidence.test.ts packages/mail/src/gmail-refresh.test.ts packages/mail/src/gmail-transport.test.ts packages/mail/src/gmail-net.test.ts packages/mail/src/gmail-admission.test.ts packages/mail/src/gmail-token-lifecycle.test.ts packages/mail/src/gmail-ops.test.ts
+pnpm exec vitest run --project perf packages/mail/src/gmail-control.perf.test.ts
+E2E_PORT=54340 pnpm --filter @terno/web exec playwright test -c playwright.cooldown.config.ts
+```
+
+Typechecks were `pnpm --filter @terno/<package> typecheck` for mail, backend, store, db, idb, i18n and web. Strict lint was `pnpm exec oxlint --deny-warnings` with only the26-file series' TypeScript paths; no full lint/test/perf/e2e/web or production build. Logs/review text: `/tmp/terno-w05-d0e87d77/`.
