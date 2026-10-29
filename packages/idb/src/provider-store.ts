@@ -1,6 +1,6 @@
 import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
-import { isFolder, refreshFolders, threadsOfMessages } from "./folders";
+import { isFolder } from "./folders";
 
 type Command = <V>(fn: () => V) => Promise<V>;
 
@@ -89,9 +89,23 @@ class IdbImapLocations implements ImapLocationStore {
     return T(this.c, "message_locations");
   }
 
-  /** plan 65: a location in a listed folder decides membership: rewritten in the same unit */
-  private located(messageIds: readonly number[], mailbox: string) {
-    if (messageIds.length && isFolder(this.c, this.accountId, mailbox)) refreshFolders(this.c, threadsOfMessages(this.c, messageIds));
+  /** plan 65: a location in a listed folder decides membership, in the same unit and incrementally (the SQL adapter's, Codex R10) */
+  private located(messageIds: readonly number[], mailbox: string, added: boolean) {
+    if (!messageIds.length || !isFolder(this.c, this.accountId, mailbox)) return;
+    const messages = T(this.c, "messages");
+    const threads = T(this.c, "threads");
+    const memberships = T(this.c, "thread_folders");
+    for (const id of messageIds) {
+      const m = messages.get(id);
+      if (!m) continue;
+      if (added) {
+        const t = threads.get(m.thread_id);
+        if (t && !m.is_trash && !m.is_spam && !memberships.has(t.id, mailbox)) memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: mailbox, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
+      } else {
+        const row = memberships.get(m.thread_id, mailbox);
+        if (row && !messages.by("fk_thread_id", m.thread_id).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
+      }
+    }
   }
 
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
@@ -99,14 +113,14 @@ class IdbImapLocations implements ImapLocationStore {
       // a known location (new flags, a new UID) moves no membership
       const known = this.t.has(messageId, mailbox);
       this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
-      if (!known) this.located([messageId], mailbox);
+      if (!known) this.located([messageId], mailbox, true);
     });
   }
 
   remove(messageId: number, mailbox: string) {
     return this.command(() => {
       this.t.delete(messageId, mailbox);
-      this.located([messageId], mailbox);
+      this.located([messageId], mailbox, false);
     });
   }
 

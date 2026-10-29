@@ -277,3 +277,9 @@ Codex made 12 points; they change the design as follows.
 6. **Shortened parent names could merge two IMAP hierarchies.** IMAP names are now whole: a path is at most 1,000 characters, and Gmail's own limit stays 225. Test: unit, two 226-character parents with children.
 
 The existing deletion test now shows the full-pass rule: a deleted folder's message goes on the pass after (the first pass skipped a quiet folder).
+
+**Round 10.** Codex found four more problems; each is fixed with a test that fails without the fix:
+1. **A message moved out of a folder that was then deleted, all between syncs, lost its identity:** the destination never saw the vanished folder's index. The index is now built before any identification and given to every destination (role mailboxes and known folders too). Test: an ID-less message moved Z→A, Z deleted, keeps its message, thread and category.
+2. **A full-pass retry forgot twin candidates** a partial pass had kept as orphans (the journal was cleared). Kept orphans now feed the recovery index along with the journal. Test: identical ID-less twins moved into a folder STATUS had just skipped keep both identities.
+3. **Location recovery refolded the whole thread per location** (quadratic in a long conversation). Location writes now change membership incrementally in both stores: a new location adds its thread's row, and one that goes takes it only if no other message of the thread is still there. Gate: 5,000 locations of one conversation back one by one in 403 ms in all.
+4. **A focused folder renamed past the 250 rows shown dropped focus.** The folder with the keyboard's focus is now drawn like the active one. Test: e2e, 300 folders.

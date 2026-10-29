@@ -156,6 +156,18 @@ describe("navigation", () => {
     expect(relistMs, "relisting").toBeLessThanOrEqual(5 * BUDGET_MULTIPLIER);
     expect(slices.at(-1)!, "the longest rebuild slice").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Big'")!.c).toBeGreaterThan(0);
+    // Codex R10: a long conversation's locations coming back one by one (a rename, a reset) keep membership
+    // incrementally, never refolding the whole thread per location
+    const convo = db.all<{ id: number }>("SELECT id FROM messages WHERE account_id = ? ORDER BY id LIMIT 5000", big.account_id).map((r) => r.id);
+    const thread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", convo[0]!)!.thread_id;
+    db.run(`UPDATE messages SET thread_id = ? WHERE id IN (${convo.join(",")})`, thread);
+    db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Convo', '[\"Convo\"]', 1, 101)", big.account_id);
+    const t0 = performance.now();
+    for (const [i, id] of convo.entries()) await locations.upsert(id, "Convo", 1, i + 1, []);
+    const recoverMs = performance.now() - t0;
+    stats.push({ name: `a 5,000-message conversation's locations back one by one: ${recoverMs.toFixed(0)} ms in all`, budgetMs: 1000, p50: recoverMs / 5000, p95: recoverMs / 5000, max: recoverMs, n: 5000 } as never);
+    expect(recoverMs, "5,000 locations of one conversation").toBeLessThanOrEqual(1000 * BUDGET_MULTIPLIER);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(1);
   });
 
   it("computes sidebar counts", () => {

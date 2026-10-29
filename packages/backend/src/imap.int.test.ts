@@ -1229,6 +1229,57 @@ describe("an account's own folders (plan 65)", () => {
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((r) => r.subject)).toEqual(["En B", "Queda en A"]);
   });
 
+  it("Codex R10: an ID-less message moved out of a folder that's then deleted, all between syncs, keeps its identity", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const m = ctl.addMessage("Z", { raw: raw({ subject: "Movido y borrado" }).replace(/^Message-ID: .*\r\n/m, "") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")!;
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before.thread_id] });
+    ctl.moveMessages("Z", [m.uid], "A");
+    ctl.deleteMailbox("Z");
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
+    expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
+  });
+
+  it("Codex R10: two identical ID-less messages moved into a folder STATUS had just skipped keep both identities", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const twin = raw({ subject: "Gemelos entre STATUS" }).replace(/^Message-ID: .*\r\n/m, "");
+    const a = ctl.addMessage("Z", { raw: twin });
+    const b = ctl.addMessage("Z", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
+    const original = ImapFlow.prototype.status;
+    let moved = false;
+    const status = vi.spyOn(ImapFlow.prototype, "status").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const r = await original.apply(this, args);
+      if (String(args[0]) === "A" && !moved) {
+        moved = true;
+        ctl.moveMessages("Z", [a.uid, b.uid], "A");
+      }
+      return r;
+    });
+    try {
+      await backend.syncAccount(account.id);
+    } finally {
+      status.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(2);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

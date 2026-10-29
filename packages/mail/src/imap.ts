@@ -760,24 +760,27 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             tolerate(error);
           }
         }
-        // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
-        for (const id of cursor.unlocated ?? []) touched.add(id);
-        const moved = new AdoptIndex(cursor.unlocated?.length ? await locations.envelopes(cursor.unlocated) : []);
-        for (const path of boxes) {
-          if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, moved });
-        }
         // folders gone since the last pass (deleted, or renamed: the new path is among the custom ones); their
-        // messages may be found again under it, so their locations stay until every folder has synced (Codex R1)
+        // messages may be found again under it, or anywhere they were moved before the folder went (Codex R10: every
+        // destination, role mailboxes too, gets the index), so their locations stay until every folder has synced (Codex R1)
         const listed = new Set(list.map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
         for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
         const adopt = new AdoptIndex(vanishedIds.size ? await locations.envelopes([...vanishedIds]) : []);
+        // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
+        for (const id of cursor.unlocated ?? []) touched.add(id);
+        // and orphans a partial pass kept: a full pass recognises them too, never only the journal (Codex R10)
+        const pending = [...new Set([...(cursor.unlocated ?? []), ...(cursor.orphans ?? [])])];
+        const moved = new AdoptIndex(pending.length ? await locations.envelopes(pending) : []);
+        for (const path of boxes) {
+          if (sink.signal.aborted) return;
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, moved, adopt });
+        }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt, moved } : { checkpoint: swept.get(path) ?? null, moved });
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt, moved } : { checkpoint: swept.get(path) ?? null, moved, adopt });
           } catch (error) {
             tolerate(error);
           }

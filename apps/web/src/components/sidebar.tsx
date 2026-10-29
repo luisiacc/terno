@@ -391,9 +391,20 @@ function AccountFolders({
   const cap = batches * FOLDER_BATCH;
   // the folder you're in is always among the rows: past the batches shown, it's drawn after them alone, never with
   // every row before it (Codex R7: a rename that sorts it last could otherwise mount the whole catalog)
-  const at = activeFolder === null ? -1 : rows.findIndex((r) => r.key === activeFolder);
-  const visible = at >= cap ? [...rows.slice(0, cap), rows[at]!] : rows.slice(0, cap);
+  // and the one with the keyboard's focus (Codex R10: a rename that sorts it past the batches never drops focus)
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const kept = new Set([activeFolder, focusedKey].filter((k): k is string => k !== null));
+  const beyond = rows.slice(cap).filter((r) => r.key !== null && kept.has(r.key));
+  const visible = [...rows.slice(0, cap), ...beyond];
   const hidden = rows.length - visible.length;
+  const ownPrefix = `nav-own-${account.id}-`;
+  const trackFocus = (e: React.FocusEvent) => {
+    const id = (e.target as HTMLElement).dataset.testid;
+    setFocusedKey(id?.startsWith(ownPrefix) ? id.slice(ownPrefix.length) : null);
+  };
+  const dropFocus = (e: React.FocusEvent) => {
+    if (!groupRef.current?.contains(e.relatedTarget as Node | null)) setFocusedKey(null);
+  };
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {
@@ -412,6 +423,8 @@ function AccountFolders({
       aria-label={t("sidebar.accountFolders", { account: account.displayName })}
       data-shown={open || undefined}
       inert={!open}
+      onFocus={trackFocus}
+      onBlur={dropFocus}
       className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
     >
       <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">

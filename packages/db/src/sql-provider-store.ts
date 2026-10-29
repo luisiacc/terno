@@ -1,4 +1,4 @@
-import { isFolder, refreshFolders, threadsOfMessages } from "./folders";
+import { isFolder } from "./folders";
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting } from "./repos";
 import { sqlFlags } from "./flag-intents";
@@ -78,9 +78,33 @@ class SqlImapLocations implements ImapLocationStore {
     private readonly accountId: number,
   ) {}
 
-  /** plan 65: a location in a listed folder decides membership: rewritten in the same transaction */
-  private located(messageIds: readonly number[], mailbox: string) {
-    if (messageIds.length && isFolder(this.db, this.accountId, mailbox)) refreshFolders(this.db, threadsOfMessages(this.db, messageIds));
+  /**
+   * plan 65: a location in a listed folder decides membership, kept in the same transaction and incrementally
+   * (Codex R10: refolding the whole thread per location was quadratic in a long conversation): a new location adds
+   * its thread's row; one that goes takes it only when no other message of the thread is still there.
+   */
+  private located(messageIds: readonly number[], mailbox: string, added: boolean) {
+    if (!messageIds.length || !isFolder(this.db, this.accountId, mailbox)) return;
+    for (const id of messageIds) {
+      if (added) {
+        this.db.run(
+          `INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
+           SELECT t.id, t.account_id, ?, t.last_date, t.unread_count > 0 FROM messages m JOIN threads t ON t.id = m.thread_id
+           WHERE m.id = ? AND m.is_trash = 0 AND m.is_spam = 0`,
+          mailbox,
+          id,
+        );
+      } else {
+        this.db.run(
+          `DELETE FROM thread_folders WHERE folder = ? AND thread_id = (SELECT thread_id FROM messages WHERE id = ?)
+             AND NOT EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
+                             WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`,
+          mailbox,
+          id,
+          mailbox,
+        );
+      }
+    }
   }
 
   async upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
@@ -88,7 +112,7 @@ class SqlImapLocations implements ImapLocationStore {
       // a known location (new flags, a new UID) moves no membership
       const known = this.db.get("SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox) !== undefined;
       this.write(messageId, mailbox, uidvalidity, uid, flags);
-      if (!known) this.located([messageId], mailbox);
+      if (!known) this.located([messageId], mailbox, true);
     });
   }
 
@@ -108,7 +132,7 @@ class SqlImapLocations implements ImapLocationStore {
   async remove(messageId: number, mailbox: string) {
     this.db.tx(() => {
       this.db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
-      this.located([messageId], mailbox);
+      this.located([messageId], mailbox, false);
     });
   }
 
