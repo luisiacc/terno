@@ -468,3 +468,6 @@ Also: the IndexedDB folder gates' cold reads (rounds 48, 49) are load-aware now 
 2. **Resets in many folders piled up the cursor's journal:** each folder's pending reset ids were bounded alone (20 folders with the same 200,000 copies: 4 million ids, 27 MB written with each reset). `resetRoom` bounds every folder's together by the cursor's limit; past it, `overflow`, and the scan for messages with no place finds the rest (rounds 15, 16). Tests: twenty such folders stay within the limit; the cursor at its largest, every journal full, written and read back within a frame.
 
 Also: the round 50 twin gate is load-aware now (it measured 35 ms of wall time at a load of 11, 16 of CPU).
+
+**Round 53.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **A deleted folder's orphans were removed in one transaction** (50,000 messages with no other place, their threads recomputed: 1.8 s without a turn). Reconciliation removes them 100 at a time with the loop given a turn between batches. Gate (`reconcile.perf.test.ts`, the real SQLite store, load-aware): 50,000 orphans reconciled, the longest stall within the worker's budget, two frames (23 to 28 ms, a batch's commit now and then; 1,856 before).

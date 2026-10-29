@@ -328,7 +328,14 @@ export async function reconcileMessages(
     if (updates.length) await deps.updateFlags(updates);
     await breathe();
   }
-  if (orphans.length && !keepOrphans) await deps.removeMessages(orphans);
+  // the orphans removed 100 at a time with a turn between (Codex R53: a folder of 50,000 deleted in one transaction,
+  // its threads recomputed, 1.8 s)
+  if (!keepOrphans) {
+    for (let i = 0; i < orphans.length; i += 100) {
+      await deps.removeMessages(orphans.slice(i, i + 100));
+      await breathe();
+    }
+  }
   return orphans;
 }
 
