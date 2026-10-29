@@ -384,3 +384,7 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 31.** Codex found one medium problem and reported nothing else; it's fixed with a gate:
 1. **Planning what held-back messages are still ran in one go** (150,000 copies: about 80 ms). `planSteps` yields every thousand messages or candidates, and the backend drives it 4 ms a turn before the sliced writes. Gate: 150,000 copies, 99% of steps under 2 ms and none over a frame (a step now and then is a collection, or the given-places set growing past a power of two).
+
+**Round 32.** Codex found two medium problems; each is fixed with a test or gate that fails without the fix:
+1. **Getting ready to tell held-back messages apart still held the loop** (their candidates, places and mailboxes: about 50 ms for 150,000, a resolved await giving no turn). `gatherPlaces` reads 500 places at a time and gives the loop a turn every 4 ms of work. Gate: 150,000 held-back messages sharing 150,000 twins, longest stall under a frame (39 ms without the turns).
+2. **The IndexedDB twin cache's revisions kept a key for every message ever changed.** Only buckets looked up are followed now, at most 10,000; past that all are let go at once with a new generation in every revision, so no kept order is ever taken as current. Test: 2,000 messages in and out leave one bucket followed (2,000 before), 12,000 lookups at most 10,000, and a bucket changed after being let go reads exact.

@@ -6,25 +6,42 @@ type Command = <V>(fn: () => V) => Promise<V>;
 
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
 /** each twins bucket's ids by envelope, ascending, as of its revision (a page seeks into it) */
-const twinOrders = new WeakMap<ReadonlySet<unknown>, { revision: number; byEnvelope: Map<string, number[]> }>();
-/** per database, each twins bucket's revision: a row in it written, put in or taken out moves it on */
-const twinRevisions = new WeakMap<object, Map<string, number>>();
+const twinOrders = new WeakMap<ReadonlySet<unknown>, { revision: string; byEnvelope: Map<string, number[]> }>();
+/**
+ * per database, the revision of each twins bucket looked up: a row in it written, put in or taken out moves it on.
+ * Only buckets looked up are followed, and at most TWIN_WATCHED of them (Codex R32: every changed message's key was
+ * kept for good); past that they're all let go at once, a new generation, so no kept order is ever taken as current.
+ */
+const twinRevisions = new WeakMap<object, { watched: Map<string, number>; generation: number }>();
+const TWIN_WATCHED = 10_000;
+/** tests: how many buckets a database follows */
+export function twinBucketsWatched(db: object): number {
+  return twinRevisions.get(db)?.watched.size ?? 0;
+}
 const twinBucketKey = (accountId: unknown, rfc: unknown, envelope: string) => (rfc ? `id\u0000${accountId}\u0000${rfc}` : `nomid\u0000${accountId}\u0000${envelope}`);
-function twinRevision(db: { onRow(fn: (table: string, row: Record<string, unknown> | undefined, prev: Record<string, unknown> | undefined) => void): void }, key: string): number {
+function twinRevision(db: { onRow(fn: (table: string, row: Record<string, unknown> | undefined, prev: Record<string, unknown> | undefined) => void): void }, key: string): string {
   let revisions = twinRevisions.get(db);
   if (!revisions) {
-    const map = new Map<string, number>();
-    twinRevisions.set(db, (revisions = map));
+    const state = { watched: new Map<string, number>(), generation: 0 };
+    twinRevisions.set(db, (revisions = state));
     db.onRow((table, row, prev) => {
-      if (table !== "messages") return;
+      if (table !== "messages" || state.watched.size === 0) return;
       for (const r of [row, prev]) {
         if (!r) continue;
         const key = twinBucketKey(r.account_id, r.rfc_message_id || null, `${r.from_email}\u0000${r.date}\u0000${r.size}\u0000${r.subject}`);
-        map.set(key, (map.get(key) ?? 0) + 1);
+        const at = state.watched.get(key);
+        if (at !== undefined) state.watched.set(key, at + 1);
       }
     });
   }
-  return revisions.get(key) ?? 0;
+  if (!revisions.watched.has(key)) {
+    if (revisions.watched.size >= TWIN_WATCHED) {
+      revisions.watched.clear();
+      revisions.generation++;
+    }
+    revisions.watched.set(key, 0);
+  }
+  return `${revisions.generation}:${revisions.watched.get(key)}`;
 }
 
 export class IdbProviderStore implements ProviderStore {

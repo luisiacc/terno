@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { customFolders, distinctCandidates, planSteps, planTellApart } from "./imap";
+import { customFolders, gatherPlaces, planSteps, planTellApart } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -32,11 +32,27 @@ it("IMAP: 10,000 long folders in under 8 ms", () => {
   expect(best(() => customFolders(list, {}))).toBeLessThan(8);
 });
 
-it("Codex R21: 5,000 held-back messages sharing 5,000 twins: their candidates gathered once, in under 10 ms", () => {
-  const shared = Array.from({ length: 5000 }, (_, i) => i + 1);
-  const list = Array.from({ length: 5000 }, () => ({ candidates: shared }));
-  expect(distinctCandidates(list)).toHaveLength(5000);
-  expect(best(() => distinctCandidates(list))).toBeLessThan(10);
+it("Codex R21, R32: 150,000 held-back messages sharing 150,000 twins: their places gathered once, the loop never held a frame", async () => {
+  const shared = Array.from({ length: 150_000 }, (_, i) => i + 1);
+  const list = Array.from({ length: 150_000 }, () => ({ candidates: shared }));
+  const of = async (ids: number[]) => ids.map((id) => ({ message_id: id, mailbox: "Z", uid: id, uidvalidity: 1 }));
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const r = await gatherPlaces(list, of);
+    clearInterval(tick);
+    worst = Math.max(worst, performance.now() - last);
+    expect(r.places.size).toBe(150_000);
+    expect(r.byMailbox.get("Z")!.uids.size).toBe(150_000);
+    return worst;
+  };
+  await stall();
+  expect(Math.min(await stall(), await stall(), await stall())).toBeLessThan(16);
 });
 
 it("Codex R30: 5,000 copies of a Message-ID with 5,000 placed twins are planned in linear time, under 20 ms", () => {

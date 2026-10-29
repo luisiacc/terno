@@ -69,16 +69,6 @@ interface Ambiguous {
   idCopy: boolean;
 }
 
-/**
- * Plan 65 (Codex R21): every candidate of the held-back messages, once: each envelope's list is shared by every
- * message held back with it, so each list is visited once (never copied per message: 5,000 by 5,000 was 25 million).
- */
-export function distinctCandidates(list: readonly { candidates: readonly number[] }[]): number[] {
-  const lists = new Set(list.map((a) => a.candidates));
-  const ids = new Set<number>();
-  for (const group of lists) for (const id of group) ids.add(id);
-  return [...ids];
-}
 
 /**
  * Plan 65 (Codex R18–R30): what each held-back message is, in one linear pass. Per envelope, its twins with no place
@@ -157,6 +147,51 @@ export function* planSteps<A extends HeldShape>(list: readonly A[], places: Read
     } else if (!a.old) copies.push(a);
   }
   return { placed, copies };
+}
+
+/** the event loop given a turn once a few milliseconds of work have gone by (a resolved await never gives one) */
+function breather(budgetMs = 4): () => Promise<void> {
+  let since = performance.now();
+  return async () => {
+    if (performance.now() - since < budgetMs) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    since = performance.now();
+  };
+}
+
+/**
+ * Plan 65 (Codex R32): the held-back messages' candidates and every place of theirs, by mailbox, read 500 at a time and
+ * gathered a few milliseconds a turn (150,000 of them were 50 ms at once before the planner began).
+ */
+export async function gatherPlaces<L extends { message_id: number; mailbox: string; uid: number; uidvalidity: number }>(
+  list: readonly { candidates: readonly number[] }[],
+  of: (ids: number[]) => Promise<readonly L[]>,
+): Promise<{ places: Map<number, L[]>; byMailbox: Map<string, { uidvalidity: number; uids: Set<number> }> }> {
+  const breathe = breather();
+  const places = new Map<number, L[]>();
+  const ids: number[] = [];
+  const lists = new Set<readonly number[]>();
+  for (const a of list) {
+    if (lists.has(a.candidates)) continue;
+    lists.add(a.candidates);
+    for (const id of a.candidates) {
+      if (places.has(id)) continue;
+      places.set(id, []);
+      ids.push(id);
+      if (ids.length % 1000 === 0) await breathe();
+    }
+  }
+  const byMailbox = new Map<string, { uidvalidity: number; uids: Set<number> }>();
+  for (let i = 0; i < ids.length; i += 500) {
+    for (const l of await of(ids.slice(i, i + 500))) {
+      places.get(l.message_id)!.push(l);
+      const box = byMailbox.get(l.mailbox) ?? { uidvalidity: l.uidvalidity, uids: new Set<number>() };
+      box.uids.add(l.uid);
+      byMailbox.set(l.mailbox, box);
+    }
+    await breathe();
+  }
+  return { places, byMailbox };
 }
 
 /** Plan 65 (Codex R23, R24): a folder's UIDNEXT, kept below its first held-back message (a loop: any number of them) */
@@ -765,19 +800,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    */
   async function tellApart(c: ImapFlow, list: readonly Ambiguous[], listed: ReadonlySet<string>, sink: SyncSink, touched: Set<number>) {
     if (!list.length) return;
-    // every candidate's places, read 500 at a time (another UID in the same folder counts: Codex R19)
-    const places = new Map<number, Loc[]>();
-    const ids = distinctCandidates(list);
-    for (const id of ids) places.set(id, []);
-    for (let i = 0; i < ids.length; i += 500) for (const l of await locations.of(ids.slice(i, i + 500))) places.get(l.message_id)!.push(l);
-    const byMailbox = new Map<string, { uidvalidity: number; uids: Set<number> }>();
-    for (const locs of places.values()) {
-      for (const l of locs) {
-        const box = byMailbox.get(l.mailbox) ?? { uidvalidity: l.uidvalidity, uids: new Set<number>() };
-        box.uids.add(l.uid);
-        byMailbox.set(l.mailbox, box);
-      }
-    }
+    // every candidate's places (another UID in the same folder counts: Codex R19), gathered a slice at a time
+    const { places, byMailbox } = await gatherPlaces(list, (ids) => locations.of(ids));
     const present = new Set<string>();
     for (const [mailbox, box] of byMailbox) {
       if (sink.signal.aborted) return;
