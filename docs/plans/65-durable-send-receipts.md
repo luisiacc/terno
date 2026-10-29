@@ -34,6 +34,14 @@ Targeted typechecks and owned lint passed before the final review changes; final
 
 Final Round 1 qualification: 314 targeted unit/integration cases across 13 files passed; all eight touched packages typechecked; strict owned-file lint and whitespace passed. The final dev-server e2e passed both light/dark cases, including axe and keyboard Clear. No full release gates were run. Round 2 is the final permitted source review.
 
+## Final code review round 2 and handoff
+
+The second and final actual read-only Sol/high review completed on `b56a338f` against `829b388b` (`/tmp/w01-code-r2.txt`). Verdict: Standards REQUEST CHANGES; Spec REQUEST CHANGES; one shared P2, no reported P0/P1. No third round was started.
+
+Root backlog (not fixed under the worker's explicit “after round2 fix only high-severity correctness/data-loss” rule): a proven accepted/saved receipt whose `ops.complete` failed leaves an unknown operation. `repairSentCopy` rejects saved receipts, `forgetSentCopy` rejects unknown operations, but settings offers Clear. Provide a reachable deliberate completion/cleanup path for that proven state while retaining the SMTP replay fence. The wire remains local and charged; repeated failures can eventually exhaust admission quota. This is a remaining medium-severity usability/resource finding, not a claimed clean review or completed T07 recipient ledger.
+
+Final source checks: 314 targeted tests across 13 files passed (`/tmp/w01-unit-final.log`); typechecks passed for core/store/db/idb/mail/i18n/backend/web (`/tmp/w01-types-final.log`); strict owned-file lint exited 0 (`/tmp/w01-lint-final.log`); dev-only recovery e2e passed 2/2 with axe and keyboard Clear (`/tmp/w01-e2e-final.log`). Final light/dark screenshots in `/tmp/w01-screenshots/` were both inspected. Navigation perf's initial category-list timing failure and passing scoped recheck remain separately recorded (`/tmp/w01-perf.log`, `/tmp/w01-perf-recheck.log`). No checks are represented as full release gates. Root alone owns landing, branch removal and the provider-reliability worklist update.
+
 # Plan65 r3 DRAFT — durable successful SMTP recipient receipts
 
 External source candidate for ROOT read BEFORE sole Sol/high critique. ROOT C1 disposition selects lazy native receipt storage and honest validation, admits A1 and narrow connected UI as plan candidates, and requires confidential cursors/current warning scope. No production/API/schema/perf approval, allocation, runtime seal or critic launch. Prior r1/r2 remain byte-exact. Whole T07 remains OPEN.
