@@ -34,6 +34,14 @@ it("a mailbox of 100,000 locations read for a reset: the longest stall within a 
     const worst = Math.min(await read(), await read(), await read());
     console.log(`read a mailbox of 100,000: longest stall ${worst.toFixed(1)} ms`);
     expect(worst).toBeLessThan(16 * MULT);
+    // Codex R41: and the reset itself, its ids taken as each slice deletes them
+    const loop = watchLoop(16);
+    const gc = watchGc();
+    const gone = await locations.resetMailbox("Big");
+    const reset = stallLessGc(loop.stop(), await gc.stop());
+    console.log(`reset a mailbox of 100,000: longest stall ${reset.toFixed(1)} ms`);
+    expect(new Set(gone).size).toBe(100_000);
+    expect(reset).toBeLessThan(16 * MULT);
   } finally {
     await store.close();
     rmSync(dir, { recursive: true, force: true });

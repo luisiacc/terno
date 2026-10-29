@@ -416,3 +416,6 @@ Also: the stall timings these rounds added to unit tests (the recovery index, th
 
 **Round 40.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
 1. **What a reset or a vanished folder reads first held the loop:** every stored location of the mailbox in one SQLite query. `readMailbox` reads them 2,000 UIDs a page (`ImapLocationStore.inMailboxPage`, by `message_locations_uid`) with a turn between pages, for resets, sweeps, vanished folders and their journal; a store in memory (IndexedDB) leaves the paging out, its whole read being quick. Gate (`mailbox-read.perf.test.ts`, load-aware): a mailbox of 100,000 locations read, longest stall 4 ms (30 read whole).
+
+**Round 41.** Codex found one medium problem and reported nothing else; it's fixed with a gate that fails without the fix:
+1. **`resetMailbox` still read the whole mailbox's ids before its sliced deletes.** It takes them from the deletes (`RETURNING message_id`), a slice at a time. Gate: the reset of a mailbox of 100,000 locations, longest stall 6 ms (27 before).

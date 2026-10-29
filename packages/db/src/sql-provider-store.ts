@@ -307,19 +307,20 @@ class SqlImapLocations implements ImapLocationStore {
    * mail comes back location by location.
    */
   async resetMailbox(mailbox: string) {
-    const ids = this.db
-      .all<{ message_id: number }>("SELECT message_id FROM message_locations WHERE account_id = ? AND mailbox = ?", this.accountId, mailbox)
-      .map((r) => r.message_id);
+    // the ids as each slice deletes them (Codex R41: never the whole mailbox read first)
+    const ids: number[] = [];
     for (;;) {
       const removed = this.db.tx(
         () =>
-          this.db.run(
-            "DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (SELECT message_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT ?)",
-            mailbox,
-            this.accountId,
-            mailbox,
-            RESET_SLICE,
-          ).changes +
+          this.db
+            .all<{ message_id: number }>(
+              "DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (SELECT message_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT ?) RETURNING message_id",
+              mailbox,
+              this.accountId,
+              mailbox,
+              RESET_SLICE,
+            )
+            .map((r) => ids.push(r.message_id)).length +
           this.db.run(
             "DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT ?)",
             mailbox,
