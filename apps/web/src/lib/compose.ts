@@ -13,7 +13,7 @@ import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
 import { prepareInlineFocusMove } from "./compose-focus-move";
 
 /**
@@ -666,9 +666,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
       if (proof && (!lease || focusLease !== lease || !lease.valid || lease.ackRead !== proof || existing.attachments?.length || existing.attachmentOwner)) return;
       if (proof && !noWriter) {
         if (!lease) return;
-        const sealed = beginDraftAckRead(existing);
-        if (sealed.kind !== "proof" || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (sealed.kind === "proof") endDraftAckRead(sealed.proof); else if (sealed.kind === "no-writer") endDraftAckRead(sealed.continuity); return; }
-        proof = sealed.proof; lease.ackRead = sealed.proof;
+        const sealed = sealForwardEmptyOwnerRead(proof);
+        if (!sealed || focusLease !== lease || !lease.valid || lease.ackRead !== proof) { if (sealed) endDraftAckRead(sealed); return; }
+        proof = sealed; lease.ackRead = sealed;
       }
       if (await loadThread(threadId) !== detail || !currentIntent()) return;
       takeFocus = takeFocus && (typeof document === "undefined" || document.activeElement === active);

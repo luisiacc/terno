@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { presentationOwnedRpc } from "../components/draft-presentation-owned-rpc";
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,7 +52,7 @@ async function stop(h: Harness) {
 
 // The held real module import creates a fresh lazy arrival; no fake body source or proof is installed.
 it("continuity: fresh PM arrival after first Forward admission preserves work and focus", async () => {
-  const h = await setup("split", true), waiting = deferred<ThreadDetail>();
+  const h = await setup("split", true, { rpc: presentationOwnedRpc }), waiting = deferred<ThreadDetail>();
   const { openCompose, composeFocusPending } = await import("./compose");
   const { controllerFor } = await import("../components/composer/controller");
   let first: Promise<void> | undefined, second: Promise<void> | undefined, operation: Promise<void> | undefined, off = () => {};

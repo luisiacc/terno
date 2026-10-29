@@ -438,8 +438,13 @@ export function attachBody(key: string, read: BodyReader, options: { canonical?:
   if (actualEditor) c.attached = source;
   if (preserve && pending?.current && prepared?.certificate && source.certificate === prepared.certificate) {
     pending.source = source; pending.version = source.editVersion;
-    pending.body = { phase: "attached", certificate: source.certificate };
-    source.certificate.read = pending;
+    if (pending.phase === "forward" && body?.phase === "raw") {
+      pending.body = undefined;
+      if (source.certificate.read === pending) source.certificate.read = undefined;
+    } else {
+      pending.body = { phase: "attached", certificate: source.certificate };
+      source.certificate.read = pending;
+    }
   }
   const attached = {
     changed() {
@@ -650,7 +655,23 @@ function beginAckRead(expected: LocalDraft, phase: AckRead["phase"], allowNoWrit
 export function beginForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | undefined {
   const read = token as AckRead, current = readDraftAck(read);
   if (!current || read.ui || constructing(read.key) || read.phase !== "strict" || current.attachments?.length || current.attachmentOwner) return;
-  return beginAckRead(current, "forward");
+  return exchangeForwardRead(read, current, "forward");
+}
+/** Seals only the exact empty-owner author read after its fully saved transition. */
+export function sealForwardEmptyOwnerRead(token: DraftAckRead): DraftAckRead | undefined {
+  const read = token as AckRead, current = readDraftAck(read);
+  if (!current || read.ui || constructing(read.key) || read.phase !== "forward" || current.attachments?.length || current.attachmentOwner || current.savedRev !== current.localRev) return;
+  const pristine = current.id === null && current.status === "clean" && current.localRev === 0 && !authored(current);
+  if (current.status !== "saved" && !pristine) return;
+  return exchangeForwardRead(read, current, "strict");
+}
+function exchangeForwardRead(read: AckRead, current: LocalDraft, phase: AckRead["phase"]): DraftAckRead | undefined {
+  const raw = read.body?.phase === "raw" ? read.body : undefined;
+  const next = beginAckRead(current, phase) as AckRead | undefined;
+  if (!next) return;
+  if (raw) next.body = raw;
+  if (readDraftAck(next) !== current) { endDraftAckRead(next); return; }
+  return next;
 }
 export function readDraftAck(token: DraftAckRead): LocalDraft | undefined {
   const read = token as AckRead, w = read.writer, source = sources.get(read.key);
