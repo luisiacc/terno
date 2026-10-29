@@ -182,8 +182,18 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
       job.after_uid,
       limit,
     );
-    const threads = threadsOfMessages(db, rows.map((r) => r.message_id));
-    refreshFolders(db, threads);
+    // this folder's rows only (its old ones went in phase 0): from the batch's messages, never a refold of their
+    // whole threads (Codex R11: a long conversation re-read per slice)
+    const ids = JSON.stringify(rows.map((r) => r.message_id));
+    const threads = db
+      .all<{ thread_id: number }>(
+        `INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
+         SELECT DISTINCT t.id, t.account_id, ?, t.last_date, t.unread_count > 0 FROM messages m JOIN threads t ON t.id = m.thread_id
+         WHERE m.id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 RETURNING thread_id`,
+        job.key,
+        ids,
+      )
+      .map((r) => r.thread_id);
     const last = rows.at(-1);
     if (rows.length < limit) done();
     else db.run("UPDATE folder_rebuilds SET after_uidvalidity = ?, after_uid = ? WHERE account_id = ? AND key = ?", last!.uidvalidity, last!.uid, job.account_id, job.key);

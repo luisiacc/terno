@@ -1280,6 +1280,27 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(2);
   });
 
+  it("Codex R11: a reset in one folder and a move out of it to another, between syncs, keep the moved twin's identity", async () => {
+    const { imap, backend, client, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("B");
+    const twin = raw({ subject: "Gemelo reset y movido" }).replace(/^Message-ID: .*\r\n/m, "");
+    ctl.addMessage("A", { raw: twin });
+    const second = ctl.addMessage("A", { raw: twin });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+    const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+    await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+    ctl.moveMessages("A", [second.uid], "B");
+    ctl.resetUidValidity("A");
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'B'")).toBe(1);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

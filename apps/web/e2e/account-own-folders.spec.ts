@@ -116,6 +116,11 @@ test("Codex R1: an account with 2,000 folders mounts 250 of them; more come 250 
   await more.click();
   await expect(rows).toHaveCount(500);
   await expect(more).toHaveText("1,500 more folders");
+  // Codex R11: by keyboard, the focus goes to the first folder revealed
+  await more.focus();
+  await page.keyboard.press("Enter");
+  await expect(rows).toHaveCount(750);
+  await expect(own(page, acme, "Label_m500")).toBeFocused();
 });
 
 test("Codex R7: the folder you're in, renamed to sort last among 2,000, is drawn alone after the rows shown, never with every row before it", async ({ app: page, server }) => {

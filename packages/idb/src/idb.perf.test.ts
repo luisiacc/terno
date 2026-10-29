@@ -184,6 +184,21 @@ it("an account's own folders (plan 65) page from their members: big, sparse, emp
     console.log(`folder ${label}: ${r.ms.toFixed(2)} ms`);
     expect(r.ms, `folder ${label}`).toBeLessThanOrEqual(FRAME * MULT);
   }
+  // Codex R11: "Unread" in a folder where everything is read walks only its (no) unread memberships, never the folder
+  const tables = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { rows: Map<unknown, Record<string, unknown>>; put(row: Record<string, unknown>): unknown } } } }).c.db;
+  const memberships = [...tables.table("thread_folders").rows.values()].filter((r) => r.account_id === account);
+  const unreadThreads = [...tables.table("threads").rows.values()].filter((t) => t.account_id === account && (t.unread_count as number) > 0);
+  tables.tx(() => {
+    memberships.forEach((r) => tables.table("thread_folders").put({ ...r, unread: 0 }));
+    unreadThreads.forEach((t) => tables.table("threads").put({ ...t, unread_count: 0 }));
+  });
+  const allRead = await warm(() => store.threads.list({ ...folder, filter: "unread", limit: 100, now: NOW }));
+  console.log(`folder unread only, all of it read: ${allRead.ms.toFixed(2)} ms`);
+  expect(allRead.ms, "folder unread only, all of it read").toBeLessThanOrEqual(0.25 * MULT);
+  tables.tx(() => {
+    memberships.forEach((r) => tables.table("thread_folders").put(r));
+    unreadThreads.forEach((t) => tables.table("threads").put(t));
+  });
   // select all walks the folder's cached members: every page a seek
   const scope: Sample[] = [];
   const ids: number[] = [];

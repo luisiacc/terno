@@ -124,6 +124,28 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
+  async removeMany(messageIds: readonly number[], mailbox: string) {
+    for (let i = 0; i < messageIds.length; i += 500) {
+      const chunk = messageIds.slice(i, i + 500);
+      await this.command(() => {
+        const messages = T(this.c, "messages");
+        const threads = new Set<number>();
+        for (const id of chunk) {
+          this.t.delete(id, mailbox);
+          const m = messages.get(id);
+          if (m) threads.add(m.thread_id as number);
+        }
+        if (!isFolder(this.c, this.accountId, mailbox)) return;
+        const memberships = T(this.c, "thread_folders");
+        // a thread's row goes only when none of its messages is still there: once per thread (Codex R11)
+        for (const thread of threads) {
+          const row = memberships.get(thread, mailbox);
+          if (row && !messages.by("fk_thread_id", thread).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
+        }
+      });
+    }
+  }
+
   setFlags(messageId: number, mailbox: string, flags: string) {
     return this.command(() => {
       const r = this.t.get(messageId, mailbox);

@@ -72,6 +72,9 @@ export function folderName(s: { folders: readonly Folder[]; accountId: number | 
   return s.folders.find((f) => f.accountId === s.accountId && f.key === s.folder)?.path.at(-1) ?? null;
 }
 
+/** levels of an account's own folders drawn in the sidebar */
+const DEPTH = 8;
+
 export interface FolderRow {
   /** the row's identity: its full path from the top (and its key): unique, stable as the list changes */
   id: string;
@@ -98,10 +101,12 @@ export function folderRows(folders: readonly Folder[], accountId: number): Folde
   for (const f of folders) {
     if (f.accountId !== accountId || f.path.length === 0) continue;
     let node = root;
-    f.path.forEach((name, i) => {
+    // at most DEPTH levels drawn: deeper names join the last one (Codex R11: 10,000 paths of 100 levels drew a million rows)
+    const path = f.path.length > DEPTH ? [...f.path.slice(0, DEPTH - 1), f.path.slice(DEPTH - 1).join("/")] : f.path;
+    path.forEach((name, i) => {
       // a folder whose shortened name is another folder's (providers cap names at 225 characters) is its own row,
       // never written over the other (Codex R4)
-      const leaf = i === f.path.length - 1;
+      const leaf = i === path.length - 1;
       let id = name;
       while (leaf && node.children.get(id)?.own && node.children.get(id)!.own!.key !== f.key) id = `${id}\u0000${f.key}`;
       let next = node.children.get(id);

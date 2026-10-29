@@ -136,6 +136,30 @@ class SqlImapLocations implements ImapLocationStore {
     });
   }
 
+  async removeMany(messageIds: readonly number[], mailbox: string) {
+    for (let i = 0; i < messageIds.length; i += RESET_SLICE) {
+      const chunk = messageIds.slice(i, i + RESET_SLICE);
+      this.db.tx(() => {
+        const threads = this.db.all<{ thread_id: number }>(`SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk).map((r) => r.thread_id);
+        this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
+        if (!isFolder(this.db, this.accountId, mailbox)) return;
+        // a thread's row goes only when none of its messages is still there: once per thread, not per message
+        for (const thread of threads) {
+          this.db.run(
+            `DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?
+               AND NOT EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
+                               WHERE o.thread_id = ? AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`,
+            thread,
+            mailbox,
+            thread,
+            mailbox,
+          );
+        }
+      });
+      if (i + RESET_SLICE < messageIds.length) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
   async setFlags(messageId: number, mailbox: string, flags: string) {
     this.db.run("UPDATE message_locations SET flags = ? WHERE message_id = ? AND mailbox = ?", flags, messageId, mailbox);
   }

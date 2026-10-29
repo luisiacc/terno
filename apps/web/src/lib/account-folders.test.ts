@@ -144,6 +144,17 @@ describe("an account's own folders (plan 65)", () => {
     expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
   });
 
+  it("Codex R11: at most eight levels drawn (deeper names join the last); 10,000 paths of 100 levels stay cheap", () => {
+    const deep = Array.from({ length: 100 }, (_, i) => `L${i}`);
+    const rows = folderRows([f(2, "Deep", deep)], 2);
+    expect(rows).toHaveLength(8);
+    expect(rows.at(-1)).toMatchObject({ key: "Deep", depth: 7, name: deep.slice(7).join("/") });
+    const many = Array.from({ length: 10_000 }, (_, i) => f(2, `K${i}`, Array.from({ length: 100 }, (_, j) => `S${i}-${j}`)));
+    const started = performance.now();
+    expect(folderRows(many, 2)).toHaveLength(80_000);
+    expect(performance.now() - started).toBeLessThan(1500);
+  });
+
   it("Codex R4: two folders whose shortened names match are both rows, both places to go", () => {
     const name = "x".repeat(225);
     const rows = folderRows([f(2, `${name}a`, [name]), f(2, `${name}b`, [name])], 2);

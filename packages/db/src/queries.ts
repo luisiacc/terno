@@ -153,7 +153,10 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   const folderPage = p.folder !== undefined && only === undefined;
   // a folder reads through the account's list: one it no longer lists holds nothing (its rows wait unseen)
   if (folderPage) {
-    from = `thread_folders tf INDEXED BY thread_folders_date CROSS JOIN ${threads} ON t.id = tf.thread_id`;
+    // the "Unread" filter walks the folder's unread memberships alone (their own date index)
+    const unread = filter === "unread";
+    from = `thread_folders tf INDEXED BY ${unread ? "thread_folders_unread_date" : "thread_folders_date"} CROSS JOIN ${threads} ON t.id = tf.thread_id`;
+    if (unread) where.unshift("tf.unread = 1");
     where.unshift("tf.account_id = ? AND tf.folder = ? AND EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND key = ?)");
     params.unshift(p.accountId!, p.folder!, p.accountId!, p.folder!);
     order = "tf.last_date DESC, tf.thread_id DESC";

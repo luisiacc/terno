@@ -333,17 +333,34 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /**
+   * A UIDVALIDITY reset: every UID stored for the mailbox is meaningless now. Its messages are written down first,
+   * durably (with any an earlier pass couldn't finish recognising: `resetPending`, and the journal), and only then
+   * unlocated, so a disconnect from here on still finds them (Codex R5, R6, R9). The sweep does it before any
+   * identification, so every destination can recognise them (Codex R11).
+   */
+  async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
+    const ids = new Set<number>(cursor.resetPending?.[path] ?? []);
+    for (const l of await locations.inMailbox(path, olduidvalidity)) ids.add(l.message_id);
+    cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
+    cursor.resetPending[path] = [...ids].slice(0, 200_000);
+    cursor.unlocated = [...new Set([...(cursor.unlocated ?? []), ...ids])].slice(-200_000);
+    await ctx.saveCursor(cursor);
+    for (const id of await locations.resetMailbox(path)) ids.add(id);
+    for (const id of ids) touched.add(id);
+    return ids;
+  }
+
+  /**
    * `reidentify` (plan 65, Codex R1): a folder seen for the first time is read whole once, so mail already stored
    * (older than the window too) gains its location; mail it doesn't know is fetched only inside the window.
-   * `adopt`: messages located in folders that vanished this pass (a rename): one of them is the same message here,
-   * even without a Message-ID, never a second copy.
-   */
-  /**
+   * `recover`: every message that lost a location this pass or before (a vanished folder, a sweep, a reset, kept
+   * orphans), by envelope, one index for every mailbox (Codex R11): a copy found anywhere is the same message, even
+   * without a Message-ID, never a second one, and each is claimed once.
    * `checkpoint` (Codex R6): for a mailbox we already had, what its sweep saw (message count, mod-sequence): the
    * cursor never acknowledges changes that came after the sweep read the flags; null (a sweep that failed, or none)
    * checkpoints nothing, so the next pass looks again.
    */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; adopt?: AdoptIndex; moved?: AdoptIndex; checkpoint?: Snapshot | null } = {}) {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; recover?: AdoptIndex; checkpoint?: Snapshot | null } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -354,31 +371,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const reset = Boolean(state && state.uidvalidity !== uidvalidity);
       const resetOrphans = new Set<number>();
       if (state && state.uidvalidity !== uidvalidity) {
-        // UIDVALIDITY changed: every UID we stored for this mailbox is meaningless now. Its messages are written
-        // down first, durably (with any an earlier pass couldn't finish recognising), and only then unlocated, so a
-        // disconnect from here on still finds them on the next try (Codex R5, R6)
-        for (const id of cursor.resetPending?.[path] ?? []) resetOrphans.add(id);
-        for (const l of await locations.inMailbox(path, state.uidvalidity)) resetOrphans.add(l.message_id);
-        cursor.resetPending ??= Object.create(null) as Record<string, number[]>;
-        cursor.resetPending[path] = [...resetOrphans].slice(0, 200_000);
-        // the journal too: reconciliation looks at them even if this pass fails after the mailbox finishes (Codex R9)
-        cursor.unlocated = [...new Set([...(cursor.unlocated ?? []), ...resetOrphans])].slice(-200_000);
-        await ctx.saveCursor(cursor);
-        for (const id of await locations.resetMailbox(path)) resetOrphans.add(id);
-        for (const id of resetOrphans) touched.add(id);
+        // (the sweep normally did this already; here it's whatever is still pending)
+        for (const id of await resetLocations(cursor, path, state.uidvalidity, touched)) resetOrphans.add(id);
         state = undefined;
       }
-      // the reset's messages by envelope, built once and consumed (Codex R7: never the whole set per message), for
-      // ID-less mail and for a Message-ID twin stored under a collision key alike
-      const recovery = new AdoptIndex(resetOrphans.size ? await locations.envelopes([...resetOrphans]) : []);
-      // what a sweep unlocated this pass or a failed one (a move between folders), by envelope too (Codex R8)
-      const moved = opts.moved ?? new AdoptIndex([]);
-      const takeAny = async (e: Omit<import("./adopt").Envelope, "id">) => (await adopt.take(e, notHere)) ?? (await recovery.take(e, notHere)) ?? (await moved.take(e, notHere));
+      const recover = opts.recover ?? new AdoptIndex([]);
+      const takeAny = (e: Omit<import("./adopt").Envelope, "id">) => recover.take(e, notHere);
 
       // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
-      const adopt = opts.adopt ?? new AdoptIndex([]);
       // a candidate is usable here while this folder doesn't already hold it
       const notHere = async (id: number) => (await locations.get(id, path)) === null;
       // 1) messages we haven't seen
@@ -425,7 +427,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // with identical envelopes must stay separate.
             const live = await locations.count(existing.id);
             // a message of a folder that vanished this pass is this one, moved (a rename): re-attached, not copied
-            if (live > 0 && !adopt.ids.has(existing.id)) {
+            if (live > 0 && !recover.ids.has(existing.id)) {
               // its twin, moved or renamed or reset, under a key of its old place: recognised by envelope (Codex R8)
               const twin = await takeAny({ subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0, rfcMessageId: null });
               if (twin !== null) {
@@ -440,23 +442,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           // a renamed folder's ID-less copy: by its envelope, from the index (Codex R4: never a scan per message)
           const envelope = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
-          if (!existing && (adopt.size || moved.size) && !messageKey(env?.messageId)) {
-            const found = (await adopt.take({ ...envelope, rfcMessageId: null }, notHere)) ?? (await moved.take({ ...envelope, rfcMessageId: null }, notHere));
+          // ID-less mail that lost its place (moved, renamed, reset, under an older key scheme): by its envelope;
+          // a row already re-attached in this mailbox can't be claimed twice
+          if (!existing && recover.size && !messageKey(env?.messageId)) {
+            const found = await takeAny({ ...envelope, rfcMessageId: null });
             if (found !== null) {
+              resetOrphans.delete(found);
               await upsertLocation(found, path, uidvalidity, m.uid, flags);
               touched.add(found);
-              continue;
-            }
-          }
-          if (!existing && recovery.size && !messageKey(env?.messageId)) {
-            // After a reset, recognise previously-located ID-less mail stored under an older key
-            // scheme. Only ID-less rows qualify (a row with a Message-ID is found by key), the size
-            // must match, and a row already re-attached in this mailbox can't be claimed twice.
-            const candidate = await recovery.take({ ...envelope, rfcMessageId: null }, notHere);
-            if (candidate !== null) {
-              resetOrphans.delete(candidate);
-              await upsertLocation(candidate, path, uidvalidity, m.uid, flags);
-              touched.add(candidate);
               continue;
             }
           }
@@ -467,15 +460,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               await upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
               touched.add(existing.id);
               resetOrphans.delete(existing.id);
-              adopt.drop(existing.id);
-              recovery.drop(existing.id);
-              moved.drop(existing.id);
+              recover.drop(existing.id);
               continue;
             }
             // …unless a different UID in the same mailbox already holds it: a distinct message
             // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
             // already stored under the old path's key: found by its envelope, re-attached (plan 65, Codex R2)
-            if (adopt.size || recovery.size || moved.size) {
+            if (recover.size) {
               const twin = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
               if (twin !== null) {
                 resetOrphans.delete(twin);
@@ -551,8 +542,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
-      // a reset is the identification step's: it has nothing of ours to sweep
-      if (!mb || Number(mb.uidValidity) !== state.uidvalidity) return null;
+      if (!mb) return null;
+      // a reset: its messages unlocated and written down now, before any mailbox identifies new mail (Codex R11)
+      if (Number(mb.uidValidity) !== state.uidvalidity) {
+        await resetLocations(cursor, path, state.uidvalidity, touched);
+        return null;
+      }
       const uidvalidity = state.uidvalidity;
       // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
       const seen = snapshotOf(mb);
@@ -565,10 +560,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // reconciled, even if the connection drops before this pass ends (Codex R8)
         await journal(cursor, gone.map((k) => k.message_id));
       }
-      for (const k of gone) {
-        await locations.remove(k.message_id, path);
-        touched.add(k.message_id);
-      }
+      // in slices, each thread's membership looked at once (Codex R11: one at a time was quadratic in a long conversation)
+      await locations.removeMany(gone.map((k) => k.message_id), path);
+      for (const k of gone) touched.add(k.message_id);
       const stillThere = known.filter((k) => serverUids.has(k.uid)).map((k) => k.uid);
       for (let i = 0; i < stillThere.length; i += 1000) {
         for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
@@ -767,20 +761,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
         for (const path of vanished) for (const l of await locations.inMailbox(path, cursor.mailboxes[path]!.uidvalidity)) vanishedIds.add(l.message_id);
-        const adopt = new AdoptIndex(vanishedIds.size ? await locations.envelopes([...vanishedIds]) : []);
         // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
         for (const id of cursor.unlocated ?? []) touched.add(id);
-        // and orphans a partial pass kept: a full pass recognises them too, never only the journal (Codex R10)
-        const pending = [...new Set([...(cursor.unlocated ?? []), ...(cursor.orphans ?? [])])];
-        const moved = new AdoptIndex(pending.length ? await locations.envelopes(pending) : []);
+        // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
+        // pass kept, resets still pending; shared by every mailbox, so each message is claimed once (Codex R10, R11)
+        const pending = new Set([...vanishedIds, ...(cursor.unlocated ?? []), ...(cursor.orphans ?? []), ...Object.values(cursor.resetPending ?? {}).flat()]);
+        const recover = new AdoptIndex(pending.size ? await locations.envelopes([...pending]) : []);
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, moved, adopt });
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, recover });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, adopt, moved } : { checkpoint: swept.get(path) ?? null, moved, adopt });
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, recover } : { checkpoint: swept.get(path) ?? null, recover });
           } catch (error) {
             tolerate(error);
           }

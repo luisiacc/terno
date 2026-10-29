@@ -18,6 +18,7 @@ import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { SqlProviderStore } from "./sql-provider-store";
+import { startCheckpointWorker } from "./checkpoint";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
 import { BUDGET_MULTIPLIER, measure, report, type Stat } from "./test/perf";
@@ -84,6 +85,8 @@ describe("navigation", () => {
   });
 
   it("lists an account's own folders (plan 65): big, sparse, deep, filtered, scopes", async () => {
+    // checkpoints off the thread, as on desktop: in-thread ones every thousand pages would be the stalls measured
+    const checkpoints = startCheckpointWorker(db)!;
     // the biggest account's every thread in one folder, beside the dataset's own folders
     const big = db.get<{ account_id: number; c: number }>("SELECT account_id, count(*) c FROM threads WHERE in_trash = 0 AND in_spam = 0 GROUP BY 1 ORDER BY 2 DESC LIMIT 1")!;
     db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Label_everything', '[\"Everything\"]', 1, 99)", big.account_id);
@@ -96,6 +99,14 @@ describe("navigation", () => {
     const deep = db.get<{ last_date: number; thread_id: number }>("SELECT last_date, thread_id FROM thread_folders WHERE account_id = ? AND folder = 'Label_everything' ORDER BY last_date DESC, thread_id DESC LIMIT 1 OFFSET ?", big.account_id, Math.floor(big.c / 2))!;
     gate("list a folder, page at its middle", 5, () => listThreads(db, { ...folder, limit: 100, cursor: { lastDate: deep.last_date, id: deep.thread_id } }));
     gate("list a folder, unread only", 5, () => listThreads(db, { ...folder, filter: "unread", limit: 100 }));
+    // Codex R11: "Unread" in a folder where everything is read walks only the (no) unread rows
+    db.run("CREATE TEMP TABLE unread_before AS SELECT id, unread_count FROM threads WHERE account_id = ?", big.account_id);
+    db.run("UPDATE threads SET unread_count = 0 WHERE account_id = ?", big.account_id);
+    db.run("UPDATE thread_folders SET unread = 0 WHERE account_id = ?", big.account_id);
+    gate("list a folder, unread only, when all of it is read", 1, () => listThreads(db, { ...folder, filter: "unread", limit: 100 }));
+    db.run("UPDATE threads SET unread_count = (SELECT unread_count FROM unread_before b WHERE b.id = threads.id) WHERE account_id = ?", big.account_id);
+    db.run("UPDATE thread_folders SET unread = (SELECT unread_count > 0 FROM threads WHERE id = thread_id) WHERE account_id = ?", big.account_id);
+    db.run("DROP TABLE unread_before");
     gate(`list a sparse folder (${sparse.c} threads)`, 5, () => listThreads(db, { view: "all", accountId: sparse.account_id, folder: sparse.folder, limit: 100 }));
     gate("list a folder that's empty", 5, () => listThreads(db, { view: "all", accountId: big.account_id, folder: "Label_nothing", limit: 100 }));
     gate("select all in a folder: a scope page (2,000 ids)", 5, () => scopeThreadIds(db, { ...folder, after: 0, limit: 2000 }));
@@ -168,6 +179,36 @@ describe("navigation", () => {
     stats.push({ name: `a 5,000-message conversation's locations back one by one: ${recoverMs.toFixed(0)} ms in all`, budgetMs: 1000, p50: recoverMs / 5000, p95: recoverMs / 5000, max: recoverMs, n: 5000 } as never);
     expect(recoverMs, "5,000 locations of one conversation").toBeLessThanOrEqual(1000 * BUDGET_MULTIPLIER);
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(1);
+    // Codex R11: the same conversation relisted (a long one, a slice of locations at a time, never re-read whole)
+    const withConvo = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    replaceFolders(db, big.account_id, withConvo.filter((f) => f.key !== "Convo"));
+    replaceFolders(db, big.account_id, withConvo);
+    const convoSlices: number[] = [];
+    for (let more = true; more; ) {
+      const t0 = performance.now();
+      more = rebuildFolders(db, 250).more;
+      convoSlices.push(performance.now() - t0);
+    }
+    convoSlices.sort((a, b) => a - b);
+    stats.push({ name: `relist a 5,000-message conversation's folder: ${convoSlices.length} slices, the longest`, budgetMs: 4, p50: convoSlices[Math.floor(convoSlices.length / 2)]!, p95: convoSlices.at(-1)!, max: convoSlices.at(-1)!, n: convoSlices.length } as never);
+    expect(convoSlices.at(-1)!, "a conversation's rebuild slice").toBeLessThanOrEqual(4 * BUDGET_MULTIPLIER);
+    // Codex R11: its 5,000 messages expunged at once: in slices, each thread looked at once a slice
+    let lastTick = performance.now();
+    let expungeStall = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      expungeStall = Math.max(expungeStall, now - lastTick);
+      lastTick = now;
+    }, 1);
+    const e0 = performance.now();
+    await locations.removeMany(convo, "Convo");
+    const expungeMs = performance.now() - e0;
+    clearInterval(tick);
+    expungeStall = Math.max(expungeStall, performance.now() - lastTick);
+    stats.push({ name: `expunge a 5,000-message conversation: ${expungeMs.toFixed(0)} ms in all, longest stall`, budgetMs: 16, p50: expungeStall, p95: expungeStall, max: expungeStall, n: 1 } as never);
+    expect(expungeStall, "expunge: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(0);
+    await checkpoints.stop();
   });
 
   it("computes sidebar counts", () => {

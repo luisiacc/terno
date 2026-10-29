@@ -212,6 +212,8 @@ export interface ImapLocation {
 export interface ImapLocationStore {
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
+  /** plan 65 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */
+  removeMany(messageIds: readonly number[], mailbox: string): Promise<void>;
   setFlags(messageId: number, mailbox: string, flags: string): Promise<void>;
   of(messageIds: readonly number[]): Promise<ImapLocation[]>;
   at(mailbox: string, uidvalidity: number, uid: number): Promise<number | null>;

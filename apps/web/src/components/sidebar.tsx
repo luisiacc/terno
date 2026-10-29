@@ -389,6 +389,14 @@ function AccountFolders({
   const groupRef = useRef<HTMLDivElement>(null);
   const [batches, setBatches] = useState(1);
   const cap = batches * FOLDER_BATCH;
+  const revealFrom = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const from = revealFrom.current;
+    revealFrom.current = null;
+    if (from === null) return;
+    const next = rows.slice(from).find((r) => r.selectable && r.key !== null);
+    if (next) groupRef.current?.querySelector<HTMLElement>(`[data-testid="nav-own-${account.id}-${CSS.escape(next.key!)}"]`)?.focus({ preventScroll: false });
+  }, [batches, rows, account.id]);
   // the folder you're in is always among the rows: past the batches shown, it's drawn after them alone, never with
   // every row before it (Codex R7: a rename that sorts it last could otherwise mount the whole catalog)
   // and the one with the keyboard's focus (Codex R10: a rename that sorts it past the batches never drops focus)
@@ -468,7 +476,11 @@ function AccountFolders({
           <button
             type="button"
             data-testid={`nav-own-more-${account.id}`}
-            onClick={() => setBatches((b) => b + 1)}
+            onClick={() => {
+              // the keyboard goes to the first folder revealed (Codex R11), not to the document or past the new rows
+              revealFrom.current = cap;
+              setBatches((b) => b + 1);
+            }}
             className={cn("type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-muted-foreground transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground", ROW_SEAM, INSET[0])}
           >
             <span className="flex size-4 items-center justify-center">
@@ -541,8 +553,12 @@ const AccountEntry = memo(function AccountEntry({
 }) {
   // with one account its standard folders would be the top ones: it lists only its own (plan 65),
   // and with none of those its row just scopes to it
-  const rows = useMemo(() => folderRows(folders, a.id), [folders, a.id]);
-  const discloses = many || rows.length > 0;
+  // built only for an open account (or one still closing): a closed one costs nothing (Codex R11)
+  const [built, setBuilt] = useState(openHere);
+  if (openHere && !built) setBuilt(true);
+  const hasOwn = useMemo(() => folders.some((f) => f.accountId === a.id), [folders, a.id]);
+  const rows = useMemo(() => (built ? folderRows(folders, a.id) : []), [built, folders, a.id]);
+  const discloses = many || hasOwn;
   const open = discloses && openHere;
   // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
   const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);

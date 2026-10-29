@@ -39,6 +39,8 @@ CREATE TABLE thread_folders (
 CREATE INDEX thread_folders_date ON thread_folders(account_id, folder, last_date DESC, thread_id DESC);
 CREATE INDEX thread_folders_id ON thread_folders(account_id, folder, thread_id);
 CREATE INDEX thread_folders_unread ON thread_folders(account_id, folder) WHERE unread = 1;
+-- a folder's unread threads by date: its "Unread" filter walks only them (Codex R11: an all-read folder walked whole)
+CREATE INDEX thread_folders_unread_date ON thread_folders(account_id, folder, last_date DESC, thread_id DESC) WHERE unread = 1;
 -- each folder's unread threads, kept by the memberships' own writes (Codex R4: counting them on every counts
 -- refresh was ~115 ms with 50k unread threads in 20 labels); a cascade from a thread or an account counts too
 CREATE TABLE folder_unread (

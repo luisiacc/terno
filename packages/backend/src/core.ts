@@ -959,6 +959,7 @@ export class BackendCore {
       locations: {
         upsert: (...args) => write(() => locations.upsert(...args)),
         remove: (...args) => write(() => locations.remove(...args)),
+        removeMany: (...args) => write(() => locations.removeMany(...args)),
         setFlags: (...args) => write(() => locations.setFlags(...args)),
         resetMailbox: (...args) => write(() => locations.resetMailbox(...args)),
         of: (...args) => read(() => locations.of(...args)),
