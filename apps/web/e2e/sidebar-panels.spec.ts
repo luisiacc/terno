@@ -106,7 +106,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     await expect(below).toHaveCSS("will-change", "transform");
     // it holds both sections
     await expect(below.locator("[data-testid^=nav-category-]").first()).toBeAttached();
-    await expect(below.getByTestId("nav-account-all")).toBeAttached();
+    await expect(below.locator("[data-testid^=nav-account-]").first()).toBeAttached();
     // and Chromium really promoted it (a hint alone proves nothing): a layer of its own in the layer tree
     const cdp = await page.context().newCDPSession(page);
     const layers = new Promise<{ backendNodeId?: number }[]>((resolve) => cdp.on("LayerTree.layerTreeDidChange", (e) => e.layers && resolve(e.layers)));
@@ -703,9 +703,11 @@ test.describe("Part B: resizable panes", { tag: "@design" }, () => {
 });
 
 test("a hovered row next to the selected one: a hairline between their fills, the rows' pitch unchanged", { tag: "@design" }, async ({ app: page }) => {
-  const rows = page.locator('[data-testid^="nav-account-"]:not([data-testid="nav-account-all"])');
-  const [selected, hovered] = [rows.nth(0), rows.nth(1)];
-  await selected.click();
+  // two neighbors under an open account (plan 64): its Inbox selected, its Sent hovered
+  const account = page.locator('[data-testid^="nav-account-"]').first();
+  await account.click();
+  const id = (await account.getAttribute("data-testid"))!.slice("nav-account-".length);
+  const [selected, hovered] = [page.getByTestId(`nav-folder-${id}-inbox`), page.getByTestId(`nav-folder-${id}-sent`)];
   await expect(selected).toHaveAttribute("data-active", "true");
   await hovered.hover();
   const fill = (l: Locator) =>

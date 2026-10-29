@@ -1,3 +1,4 @@
+import { goToAccount, goToFolder } from "~/lib/account-folders";
 import type { CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -48,18 +49,23 @@ export function CommandPalette() {
       <CommandList label={t("palette.results")}>
         <CommandEmpty>{t("palette.empty")}</CommandEmpty>
         <CommandGroup heading={t("palette.group.goTo")}>
-          <CommandItem onSelect={() => run(() => navigate({ view: "inbox" }))} keywords={english("view.inbox")}><Inbox /> {t("view.inbox")}<CommandShortcut>G I</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => navigate({ view: "starred" }))} keywords={english("view.starred")}><Star /> {t("view.starred")}<CommandShortcut>G S</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => navigate({ view: "sent" }))} keywords={english("view.sent")}><Send /> {t("view.sent")}<CommandShortcut>G T</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => navigate({ view: "archive" }))} keywords={english("view.archive")}><Archive /> {t("view.archive")}<CommandShortcut>G A</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => navigate({ view: "trash" }))} keywords={english("view.trash")}><Trash2 /> {t("view.trash")}</CommandItem>
+          <CommandItem onSelect={() => run(() => goToFolder("inbox"))} keywords={english("view.inbox")}><Inbox /> {t("view.inbox")}<CommandShortcut>G I</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(() => goToFolder("starred"))} keywords={english("view.starred")}><Star /> {t("view.starred")}<CommandShortcut>G S</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(() => goToFolder("sent"))} keywords={english("view.sent")}><Send /> {t("view.sent")}<CommandShortcut>G T</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(() => goToFolder("archive"))} keywords={english("view.archive")}><Archive /> {t("view.archive")}<CommandShortcut>G A</CommandShortcut></CommandItem>
+          <CommandItem onSelect={() => run(() => goToFolder("trash"))} keywords={english("view.trash")}><Trash2 /> {t("view.trash")}</CommandItem>
           {categories.map((c) => (
-            <CommandItem key={c.id} value={`${t("palette.search.category")} ${c.name}`} keywords={english("palette.search.category")} onSelect={() => run(() => navigate({ categoryId: c.id }))}>
+            <CommandItem key={c.id} value={`${t("palette.search.category")} ${c.name}`} keywords={english("palette.search.category")} onSelect={() => run(() => navigate({ categoryId: c.id, accountId: null }))}>
               <CategoryDot color={c.color as CategoryColor} /> {c.name}
             </CommandItem>
           ))}
+          {accounts.length > 1 && (
+            <CommandItem value={`${t("palette.search.account")} ${t("sidebar.allAccounts")}`} keywords={english("palette.search.account")} onSelect={() => run(() => navigate({ view: "inbox", accountId: null }))}>
+              <Layers /> {t("sidebar.allAccounts")}
+            </CommandItem>
+          )}
           {accounts.map((a) => (
-            <CommandItem key={a.id} value={`${t("palette.search.account")} ${a.displayName} ${a.email}`} keywords={english("palette.search.account")} onSelect={() => run(() => navigate({ accountId: a.id, view: "inbox" }))}>
+            <CommandItem key={a.id} value={`${t("palette.search.account")} ${a.displayName} ${a.email}`} keywords={english("palette.search.account")} onSelect={() => run(() => goToAccount(a.id))}>
               <Layers /> {a.displayName} <span className="text-muted-foreground">{a.email}</span>
             </CommandItem>
           ))}

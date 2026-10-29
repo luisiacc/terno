@@ -577,6 +577,7 @@ const en = {
   "signIn.sendWaits": "Your message will go out once you sign in to {email}",
   "sidebar.more": "More",
   "sidebar.less": "Less",
+  "sidebar.accountFolders": "{account} folders",
   "sidebar.moreFolders": "More folders",
   "panes.resizeSidebar": "Resize sidebar",
   "panes.resizeList": "Resize message list",

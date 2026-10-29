@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
-import type { CategoryColor, View } from "@terno/core";
+import type { Account, CategoryColor, View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, ChevronDown, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -14,6 +14,7 @@ import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
+import { ACCOUNT_VIEWS, listedByAccount, toggleAccount, useOpenAccount } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
@@ -73,6 +74,9 @@ function NavItem({
   testId,
   dropTarget,
   reserveEnd,
+  inset,
+  expanded,
+  controls,
 }: {
   active: boolean;
   onClick: () => void;
@@ -86,10 +90,15 @@ function NavItem({
   dropTarget?: number;
   /** room at the end for a control drawn over the row (a review badge; "icon": the sign-in key, plan 25) */
   reserveEnd?: boolean | "icon";
+  /** a folder under its account (plan 64) */
+  inset?: boolean;
+  /** an account: a disclosure of its folders (plan 64) */
+  expanded?: boolean;
+  controls?: string;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
-  if (import.meta.env.VITE_RENDER_PROBE) renderProbe(testId?.startsWith("nav-category-") || testId?.startsWith("nav-account-") ? "NavItem:below" : "NavItem:folder");
+  if (import.meta.env.VITE_RENDER_PROBE) renderProbe(testId?.startsWith("nav-category-") || testId?.startsWith("nav-account-") || testId?.startsWith("nav-folder-") ? "NavItem:below" : "NavItem:folder");
   // only the item under the pointer (and the one it left) re-renders during a drag
   const drop = useDropState(dropTarget);
   return (
@@ -97,12 +106,16 @@ function NavItem({
       type="button"
       data-testid={testId}
       data-active={active || undefined}
+      aria-current={active ? "page" : undefined}
+      aria-expanded={expanded}
+      aria-controls={controls}
       data-drop-target={dropTarget}
       data-drop-state={drop ?? undefined}
       onClick={onClick}
       className={cn(
         "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
         ROW_SEAM,
+        inset && "pl-7",
         reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
         "not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground",
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
@@ -111,7 +124,21 @@ function NavItem({
       )}
     >
       <span className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {expanded === undefined ? (
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      ) : (
+        // the disclosure's mark beside the name: shown while open, and on hover or focus while closed
+        <span className="flex min-w-0 flex-1 items-center gap-1">
+          <span className="truncate">{label}</span>
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground transition-[transform,opacity] duration-fast ease-motion",
+              expanded ? "rotate-90" : "opacity-0 group-hover:opacity-100 group-focus-reveal:opacity-100",
+            )}
+          />
+        </span>
+      )}
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
       {count ? (
         <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground")}>
@@ -174,7 +201,7 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
       data-active={active || undefined}
       aria-label={t("sidebar.reviewBadge", { count: n, name })}
       title={t("sidebar.reviewBadge", { count: n, name })}
-      onClick={() => navigate({ view: "all", reviewCategoryId: id })}
+      onClick={() => navigate({ view: "all", reviewCategoryId: id, accountId: null })}
       className="absolute top-1/2 right-1.5 flex h-5 -translate-y-1/2 items-center gap-0.5 rounded-full bg-(--review-badge-bg) px-1.5 text-2xs font-semibold text-(--review-badge-fg) tabular transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
     >
       <Sparkles className="size-3" />
@@ -211,8 +238,8 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
     const click = (e: MouseEvent) => {
       const type = (e as PointerEvent).pointerType;
       if ((type !== "mouse" && type !== "pen") || useSidebarMore.getState().open) return;
-      const { view: v, categoryId, reviewCategoryId } = getApp();
-      if (categoryId !== null || reviewCategoryId !== null || !MORE_VIEWS.includes(v)) return;
+      const { view: v, accountId, categoryId, reviewCategoryId } = getApp();
+      if (accountId !== null || categoryId !== null || reviewCategoryId !== null || !MORE_VIEWS.includes(v)) return;
       armed = v;
     };
     // the click's dispatch is over (the window hears it last): one that went nowhere (the folder's own row, the + of
@@ -220,7 +247,7 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
     const disarm = () => (armed = null);
     // the click navigated (synchronously, inside its handler): the hold joins that render
     const unsubscribe = useApp.subscribe((s) => {
-      if (armed === null || (s.categoryId === null && s.reviewCategoryId === null && s.view === armed)) return;
+      if (armed === null || (s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && s.view === armed)) return;
       const left = armed;
       armed = null;
       setHeld((h) => (h.includes(left) ? h : [...h, left]));
@@ -302,6 +329,48 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
   );
 }
 
+/**
+ * An open account's own folders under its row (plan 64), on the More group's 0fr→1fr row: what's below slides with
+ * it, and closed it's inert (not focusable, not in the accessibility tree). A focused folder that closes hands focus
+ * to its account's row.
+ */
+function AccountFolders({ account, open, active, unread, countTone }: { account: Account; open: boolean; active: View | null; unread?: number; countTone: "muted" | "unread" }) {
+  const groupRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open && groupRef.current?.contains(document.activeElement)) document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus({ preventScroll: true });
+  }, [open, account.id]);
+  return (
+    <div
+      ref={groupRef}
+      id={`account-folders-${account.id}`}
+      role="group"
+      aria-label={t("sidebar.accountFolders", { account: account.displayName })}
+      data-shown={open || undefined}
+      inert={!open}
+      className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
+    >
+      <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">
+        {ACCOUNT_VIEWS.map((v) => {
+          const Icon = VIEWS.find((f) => f.view === v)!.icon;
+          return (
+            <NavItem
+              key={v}
+              testId={`nav-folder-${account.id}-${v}`}
+              inset
+              active={active === v}
+              onClick={() => navigate({ accountId: account.id, view: v })}
+              icon={<Icon className="size-4" />}
+              label={viewLabel(v)}
+              count={v === "inbox" ? unread || undefined : undefined}
+              countTone={v === "inbox" ? countTone : "muted"}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const view = useApp((s) => s.view);
   const accountId = useApp((s) => s.accountId);
@@ -313,6 +382,26 @@ export function Sidebar() {
   const design = useDesign();
   const inlineReview = design.variants.categoryReview === "inline-badge";
 
+  const openAccount = useOpenAccount((s) => s.id);
+  // a focused account that's removed hands focus to the row now in its place (or Add account), not to the document
+  const accountsRef = useRef<HTMLDivElement>(null);
+  const focusedAccount = useRef<number | null>(null);
+  const rememberFocus = (e: React.FocusEvent) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("[data-account-id]")?.dataset.accountId;
+    focusedAccount.current = id ? Number(id) : null;
+  };
+  const lastAccounts = useRef(accounts);
+  useLayoutEffect(() => {
+    const before = lastAccounts.current;
+    lastAccounts.current = accounts;
+    const gone = focusedAccount.current;
+    if (gone === null || accounts.some((a) => a.id === gone) || (document.activeElement && document.activeElement !== document.body)) return;
+    focusedAccount.current = null;
+    const next = accounts.find((a) => before.findIndex((b) => b.id === a.id) > before.findIndex((b) => b.id === gone));
+    const target = next ? accountsRef.current?.querySelector<HTMLElement>(`[data-testid="nav-account-${next.id}"]`) : accountsRef.current?.nextElementSibling;
+    (target as HTMLElement | null | undefined)?.focus({ preventScroll: true });
+  }, [accounts]);
+
   const [creating, setCreating] = useState(false);
   // the same creation as the List layout's tab "+" (lib/tabs)
   const createCategory = async (name: string) => {
@@ -320,8 +409,8 @@ export function Sidebar() {
     await createNamedCategory(name);
   };
 
-  // the folder you're in: none in a category or its suggestions (both are "all" underneath)
-  const folderView = categoryId === null && reviewCategoryId === null ? view : null;
+  // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 64)
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <Tooltip key={v}>
       <TooltipTrigger
@@ -329,10 +418,10 @@ export function Sidebar() {
           <NavItem
             testId={`nav-${v}`}
             active={folderView === v}
-            onClick={() => navigate({ view: v })}
+            onClick={() => navigate({ view: v, accountId: null })}
             icon={<Icon className="size-4" />}
             label={viewLabel(v)}
-            count={v === "inbox" ? (accountId ? counts.inboxUnreadByAccount[accountId] : counts.inboxUnread) : undefined}
+            count={v === "inbox" ? counts.inboxUnread : undefined}
             countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
           />
         }
@@ -369,8 +458,9 @@ export function Sidebar() {
               <NavItem
                 testId={`nav-category-${c.id}`}
                 dropTarget={c.id}
-                active={categoryId === c.id && reviewCategoryId === null}
-                onClick={() => navigate({ categoryId: c.id })}
+                // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 64)
+                active={categoryId === c.id && reviewCategoryId === null && accountId === null}
+                onClick={() => navigate({ categoryId: c.id, accountId: null })}
                 icon={<CategoryDot color={c.color as CategoryColor} />}
                 label={c.name}
                 count={counts.categoryUnread[c.id] || undefined}
@@ -384,7 +474,7 @@ export function Sidebar() {
                   type="button"
                   data-testid={`nav-review-${c.id}`}
                   data-active={reviewCategoryId === c.id || undefined}
-                  onClick={() => navigate({ view: "all", reviewCategoryId: c.id })}
+                  onClick={() => navigate({ view: "all", reviewCategoryId: c.id, accountId: null })}
                   className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
                 >
                   <Sparkles className="size-3 text-sidebar-glyph" />
@@ -410,33 +500,43 @@ export function Sidebar() {
           {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
 
           <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
-          <NavItem
-            testId="nav-account-all"
-            active={accountId === null}
-            onClick={() => navigate({ accountId: null, view })}
-            icon={<Layers className="size-3.5" />}
-            label={t("sidebar.allAccounts")}
-          />
-          {accounts.map((a) => (
-            <div key={a.id} className="relative">
-              <NavItem
-                testId={`nav-account-${a.id}`}
-                active={accountId === a.id}
-                onClick={() => navigate({ accountId: a.id, view: categoryId ? "inbox" : view })}
-                icon={
-                  <span className="relative">
-                    <CategoryDot color={a.color as CategoryColor} />
-                    {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
-                  </span>
-                }
-                label={a.displayName}
-                count={counts.inboxUnreadByAccount[a.id] || undefined}
-                reserveEnd={a.syncState.authRequired ? "icon" : undefined}
-              />
-              {/* plan 25: a sibling of the row (the row still navigates) */}
-              {a.syncState.authRequired && <SignInMarker account={a} />}
-            </div>
-          ))}
+          <div ref={accountsRef} onFocus={rememberFocus}>
+            {accounts.map((a) => {
+              // with one account its folders would be the top ones: it lists none, and its row just scopes to it
+              const open = accounts.length > 1 && openAccount === a.id;
+              const here = accountId === a.id && reviewCategoryId === null;
+              // the account's folder you're in: a category tab filters its Inbox
+              const child = here && open ? (categoryId !== null ? "inbox" : view) : null;
+              const childActive = child !== null && listedByAccount(child);
+              return (
+                <div key={a.id} data-account-id={a.id}>
+                  {/* the row and its sign-in key together (plan 25), apart from the folders below */}
+                  <div className="relative">
+                    <NavItem
+                      testId={`nav-account-${a.id}`}
+                      // closed over where you are, the account is what's selected
+                      active={here && !childActive}
+                      expanded={accounts.length > 1 ? open : undefined}
+                      controls={accounts.length > 1 ? `account-folders-${a.id}` : undefined}
+                      onClick={() => (accounts.length > 1 ? toggleAccount(a.id) : navigate({ accountId: a.id, view: "inbox" }))}
+                      icon={
+                        <span className="relative">
+                          <CategoryDot color={a.color as CategoryColor} />
+                          {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
+                        </span>
+                      }
+                      label={a.displayName}
+                      // open, the count is its Inbox's
+                      count={open ? undefined : counts.inboxUnreadByAccount[a.id] || undefined}
+                      reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+                    />
+                    {a.syncState.authRequired && <SignInMarker account={a} />}
+                  </div>
+                  {accounts.length > 1 && <AccountFolders account={a} open={open} active={childActive ? child : null} unread={counts.inboxUnreadByAccount[a.id]} countTone={design.surfaces.inboxCount} />}
+                </div>
+              );
+            })}
+          </div>
           <button
             type="button"
             onClick={() => setApp({ dialog: "addAccount" })}

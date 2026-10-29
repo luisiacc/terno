@@ -1,3 +1,4 @@
+import { reconcileAccounts } from "~/lib/account-folders";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import type { DesignId } from "@terno/core";
@@ -30,6 +31,8 @@ export async function boot(): Promise<void> {
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
+    // a remembered open account that's no longer there (plan 64)
+    reconcileAccounts(b.accounts);
     installAppearanceListeners();
     // every stored draft comes back: replies onto their conversations, new ones to the drafts strip
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
@@ -73,6 +76,7 @@ export async function boot(): Promise<void> {
     client.on("counts", (counts) => setApp({ counts }));
     client.on("accounts", (accounts) => {
       setApp({ accounts });
+      reconcileAccounts(accounts);
       // plan 25: an account that works again ends what was said about its sign-in
       accountsChanged(accounts);
     });

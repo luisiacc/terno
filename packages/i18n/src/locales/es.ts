@@ -571,6 +571,7 @@ const es = {
   "signIn.sendWaits": "Tu mensaje saldrá en cuanto inicies sesión en {email}",
   "sidebar.more": "Más",
   "sidebar.less": "Menos",
+  "sidebar.accountFolders": "Carpetas de {account}",
   "sidebar.moreFolders": "Más carpetas",
   "panes.resizeSidebar": "Cambiar el ancho de la barra lateral",
   "panes.resizeList": "Cambiar el ancho de la lista de mensajes",

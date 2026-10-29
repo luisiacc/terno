@@ -1,9 +1,10 @@
+import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
-import { getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
+import { getApp, markSelectionIntent, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
@@ -131,11 +132,11 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
     focusSearch();
   },
   "palette.open": () => setApp({ dialog: getApp().dialog === "palette" ? null : "palette" }),
-  "go.inbox": () => navigate({ view: "inbox" }),
-  "go.starred": () => navigate({ view: "starred" }),
-  "go.sent": () => navigate({ view: "sent" }),
-  "go.archive": () => navigate({ view: "archive" }),
-  "go.trash": () => navigate({ view: "trash" }),
+  "go.inbox": () => goToFolder("inbox"),
+  "go.starred": () => goToFolder("starred"),
+  "go.sent": () => goToFolder("sent"),
+  "go.archive": () => goToFolder("archive"),
+  "go.trash": () => goToFolder("trash"),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
   "settings.open": () => setApp({ dialog: "settings", settingsTab: "general" }),
   "suggestion.accept": () => answerSuggestion(true),
