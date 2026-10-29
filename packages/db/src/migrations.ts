@@ -43,15 +43,16 @@ CREATE INDEX thread_folders_unread ON thread_folders(account_id, folder) WHERE u
 CREATE INDEX thread_folders_unread_date ON thread_folders(account_id, folder, last_date DESC, thread_id DESC) WHERE unread = 1;
 -- each folder's unread threads, kept by the memberships' own writes (Codex R4: counting them on every counts
 -- refresh was ~115 ms with 50k unread threads in 20 labels); a cascade from a thread or an account counts too
+-- (a tally at zero goes: rows are only for folders with unread mail, so churn and removed accounts leave none: Codex R22)
 CREATE TABLE folder_unread (
-  account_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   folder TEXT NOT NULL,
   n INTEGER NOT NULL,
   PRIMARY KEY (account_id, folder)
 ) WITHOUT ROWID;
 -- a newly listed IMAP folder's memberships, rebuilt a slice at a time (its old rows, then its locations by UID), resumable
 CREATE TABLE folder_rebuilds (
-  account_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   key TEXT NOT NULL,
   phase INTEGER NOT NULL DEFAULT 0,
   after_uidvalidity INTEGER NOT NULL DEFAULT 0,
@@ -63,12 +64,14 @@ CREATE TRIGGER thread_folders_unread_ai AFTER INSERT ON thread_folders WHEN NEW.
 END;
 CREATE TRIGGER thread_folders_unread_ad AFTER DELETE ON thread_folders WHEN OLD.unread = 1 BEGIN
   UPDATE folder_unread SET n = n - 1 WHERE account_id = OLD.account_id AND folder = OLD.folder;
+  DELETE FROM folder_unread WHERE account_id = OLD.account_id AND folder = OLD.folder AND n <= 0;
 END;
 CREATE TRIGGER thread_folders_unread_up AFTER UPDATE OF unread ON thread_folders WHEN OLD.unread = 0 AND NEW.unread = 1 BEGIN
   INSERT INTO folder_unread (account_id, folder, n) VALUES (NEW.account_id, NEW.folder, 1) ON CONFLICT (account_id, folder) DO UPDATE SET n = n + 1;
 END;
 CREATE TRIGGER thread_folders_unread_down AFTER UPDATE OF unread ON thread_folders WHEN OLD.unread = 1 AND NEW.unread = 0 BEGIN
   UPDATE folder_unread SET n = n - 1 WHERE account_id = OLD.account_id AND folder = OLD.folder;
+  DELETE FROM folder_unread WHERE account_id = OLD.account_id AND folder = OLD.folder AND n <= 0;
 END;
 -- a mailbox from before has its Gmail labels as memberships after the upgrade, a slice of threads at a time
 -- (folders.ts rebuildFolders; Codex R13: a million rows in the migration's one transaction stalled the open)

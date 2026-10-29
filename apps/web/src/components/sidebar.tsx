@@ -406,13 +406,34 @@ function AccountFolders({
   const visible = [...rows.slice(0, cap), ...beyond];
   const hidden = rows.length - visible.length;
   const ownPrefix = `nav-own-${account.id}-`;
+  // the folder with the keyboard's focus and where it was among the rows: one the server takes away hands focus to
+  // the folder now in its place, or the account's row (Codex R22), never to the document
+  const focusedAt = useRef<{ key: string; index: number } | null>(null);
+  const placesToGo = visible.filter((r) => r.selectable && r.key !== null);
   const trackFocus = (e: React.FocusEvent) => {
     const id = (e.target as HTMLElement).dataset.testid;
-    setFocusedKey(id?.startsWith(ownPrefix) ? id.slice(ownPrefix.length) : null);
+    const key = id?.startsWith(ownPrefix) ? id.slice(ownPrefix.length) : null;
+    setFocusedKey(key);
+    focusedAt.current = key === null ? null : { key, index: placesToGo.findIndex((r) => r.key === key) };
   };
   const dropFocus = (e: React.FocusEvent) => {
-    if (!groupRef.current?.contains(e.relatedTarget as Node | null)) setFocusedKey(null);
+    if (groupRef.current?.contains(e.relatedTarget as Node | null)) return;
+    setFocusedKey(null);
+    // left on purpose (Tab away, a click elsewhere) unless the row itself went: told apart a frame later
+    const left = e.target as HTMLElement;
+    requestAnimationFrame(() => {
+      if (left.isConnected) focusedAt.current = null;
+    });
   };
+  useLayoutEffect(() => {
+    const was = focusedAt.current;
+    if (was === null || placesToGo.some((r) => r.key === was.key)) return;
+    focusedAt.current = null;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const next = placesToGo[Math.min(Math.max(was.index, 0), placesToGo.length - 1)];
+    const target = next ? groupRef.current?.querySelector<HTMLElement>(`[data-testid="${ownPrefix}${CSS.escape(next.key!)}"]`) : document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`);
+    target?.focus({ preventScroll: true });
+  }, [rows]);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {

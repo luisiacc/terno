@@ -1469,6 +1469,51 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
   });
 
+  it("Codex R22: a move told apart that stops before its new place is written, then deleted there, leaves nothing behind", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("A");
+    ctl.createMailbox("Z");
+    const lone = ctl.addMessage("Z", { raw: raw({ subject: "Movido y cortado" }).replace(/^Message-ID: .*\r\n/m, "") });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
+    ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
+    ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
+    const original = ImapFlow.prototype.getMailboxLock;
+    let locks = 0;
+    const late = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (String(args[0]) === "A" && ++locks === 2) ctl.moveMessages("Z", [lone.uid], "A");
+      return original.apply(this, args);
+    });
+    // writing its new place fails once (a crash, a full disk)
+    const proto = Object.getPrototypeOf(backend.store.providerStore(account.id).locations) as { upsert(id: number, mailbox: string, ...rest: unknown[]): Promise<void> };
+    const upsert = proto.upsert;
+    let failed = false;
+    const failing = vi.spyOn(proto, "upsert").mockImplementation(async function (this: unknown, messageId: number, mailbox: string, ...rest: unknown[]) {
+      if (messageId === id && mailbox === "A" && !failed) {
+        failed = true;
+        // and it's deleted where it went, before any retry sees it there
+        const there = (ctl as unknown as { listMessages(path: string, o: { raw: boolean }): { uid: number; raw: Buffer }[] }).listMessages("A", { raw: true }).filter((x) => x.raw.toString().includes("Movido y cortado")).map((x) => x.uid);
+        ctl.expungeMessages("A", there);
+        throw new Error("synthetic write failure");
+      }
+      return upsert.call(this, messageId, mailbox, ...rest);
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      late.mockRestore();
+      failing.mockRestore();
+    }
+    expect(failed).toBe(true);
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages WHERE id = ?", id)).toBe(0);
+  });
+
   it("Codex R19: an ID-less twin appended to the same folder is a copy; the first keeps its own UID", async () => {
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;

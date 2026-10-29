@@ -673,8 +673,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const id = free.ids[free.next];
       if (id !== undefined) {
         free.next++;
-        for (const l of places.get(id)!) if (l.mailbox !== a.path || l.uid !== a.uid) await locations.remove(id, l.mailbox);
+        // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
         await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
+        for (const l of places.get(id)!) if (l.mailbox !== a.path) await locations.remove(id, l.mailbox);
         touched.add(id);
       } else if (!a.old) copies.push(a.incoming);
     }

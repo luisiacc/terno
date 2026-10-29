@@ -21,7 +21,8 @@ it("the tallies always equal the unread memberships", async () => {
   const labels = () => ["INBOX", ...["Label_1", "Label_2", "Label_3"].filter(() => rand() < 0.4)];
   const actions: ThreadAction[] = ["markRead", "markUnread", "trash", "moveToInbox", "spam", "notSpam", "archive"];
   const check = () => {
-    const tallies = db.all<{ account_id: number; folder: string; n: number }>("SELECT account_id, folder, n FROM folder_unread WHERE n != 0 ORDER BY 1, 2");
+    // exactly the folders with unread mail: a tally at zero goes (Codex R22: churn and removed accounts leave none)
+    const tallies = db.all<{ account_id: number; folder: string; n: number }>("SELECT account_id, folder, n FROM folder_unread ORDER BY 1, 2");
     const counted = db.all<{ account_id: number; folder: string; n: number }>("SELECT account_id, folder, count(*) AS n FROM thread_folders WHERE unread = 1 GROUP BY 1, 2 ORDER BY 1, 2");
     expect(tallies).toEqual(counted);
   };
@@ -44,4 +45,22 @@ it("the tallies always equal the unread memberships", async () => {
   await store.accounts.remove(gmail[1]!);
   check();
   db.close();
+});
+
+it("Codex R22: churn through many folders, then an account's removal, leaves no tally behind", async () => {
+  const db = openDatabase(":memory:");
+  const store = new SqlMailStore(db);
+  const [g] = await withAccounts(store, 1);
+  // 200 labels, each unread then read again
+  for (let i = 0; i < 200; i++) {
+    await ingest(store, [msg({ accountId: g!, providerMsgId: `g${i}`, isRead: false, gmailLabels: ["INBOX", `Label_${i}`] })]);
+    const t = (await store.debug.snapshot()).messages.find((m) => m.providerMsgId === `g${i}`)!.threadId;
+    await store.threads.act({ threadIds: [t], action: "markRead", signal: null, now: 0 });
+  }
+  expect(db.get<{ c: number }>("SELECT count(*) AS c FROM folder_unread")!.c).toBe(0);
+  await ingest(store, [msg({ accountId: g!, providerMsgId: "still", isRead: false, gmailLabels: ["Label_x"] })]);
+  expect(db.get<{ c: number }>("SELECT count(*) AS c FROM folder_unread")!.c).toBe(1);
+  db.run("DELETE FROM accounts WHERE id = ?", g!);
+  expect(db.get<{ c: number }>("SELECT count(*) AS c FROM folder_unread")!.c).toBe(0);
+  await store.close();
 });

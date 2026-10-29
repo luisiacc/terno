@@ -78,6 +78,30 @@ test.describe("an account's own folders", { tag: "@design" }, () => {
     await expect(own(page, acme, "Label_23")).toHaveCount(0);
   });
 
+  test("Codex R22: the focused folder taken away on the server hands focus to the one in its place, the last to the account", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    await page.getByTestId(`nav-account-${acme}`).click();
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.selectable);
+    const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
+    const order = await rows.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.testid!));
+    expect(order.length).toBeGreaterThan(1);
+    const keyAt = (i: number) => order[i]!.slice(`nav-own-${acme}-`.length);
+    // keyboard focus on the first of its folders; the server removes it
+    await page.getByTestId(order[0]!).focus();
+    await expect(page.getByTestId(order[0]!)).toBeFocused();
+    const without = async (keys: string[]) => {
+      await server.backend.store.folders.replace(acme, mine.filter((f) => !keys.includes(f.key)).map(({ key, path, selectable }) => ({ key, path, selectable })));
+      server.backend.server.emit("folders", await server.backend.store.folders.list());
+    };
+    await without([keyAt(0)]);
+    await expect(page.getByTestId(order[0]!)).toHaveCount(0);
+    await expect(page.getByTestId(order[1]!)).toBeFocused();
+    // all of them gone: the account's row
+    await without(order.map((_, i) => keyAt(i)));
+    await expect(rows).toHaveCount(0);
+    await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
+  });
+
   test("keyboard: Tab reaches its folders, Enter goes to one", async ({ app: page, server }) => {
     const acme = accountOf(server, "Acme Studio");
     await page.getByTestId(`nav-account-${acme}`).click();
