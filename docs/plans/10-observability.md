@@ -220,3 +220,28 @@ Each with a regression test that fails without the fix.
 7. **Log files respect their byte cap.** Batches are planned as appends that fit, with a rotation before any line that wouldn't; sizes are UTF-8 bytes; a line over 64 KB is dropped and counted.
 8. **Web captures during opening are kept.** Opening merges what the store held with what was captured meanwhile; writes queued before the store was ready go in once it is.
 9. **A record reports its own release.** `release` and `environment` come from the record's build and channel, on desktop and web.
+
+
+## 13. W12 / S51 — provider failure diagnostic privacy (2026-10-29)
+
+Request: “Logs, error objects, crash breadcrumbs and upload URLs are checked for synthetic secret/address/subject markers; sensitive values stay out of diagnostic output.”
+
+Investigation starts from local `24169392` in the isolated W12 worktree. Plan26's structured HTTP response evidence (including Retry-After/Date), resource statuses and malformed-response failures reach the existing Plan10 capture boundary. Its allowlist already omits messages, bodies, headers and nested causes. However, `normalizeError` parses the whole stack, whose header includes the provider's multiline message: message lines resembling frames may become diagnostic frames.
+
+Specification: exercise public capture/log/breadcrumb, record revalidation and the actual reporter transport using synthetic markers only. Expected provider failures remain warnings with no crash record; unexpected/malformed failures retain their diagnostic code, class, status and genuine application frames. Neither raw response evidence, nested causes, message text nor credential-bearing URLs may enter logs, mirrored crumbs, crash records, report payloads or upload URLs. If the multiline-message regression fails, exclude the known error-message header before parsing stack frames; retain V8 and Gecko/WebKit stack support. Add controls for old/forged records dropping the new provider fields. No provider API, recovery, UI, i18n, CSP or remote-image changes.
+
+Validation is limited to affected diagnostics and direct caller tests, core typecheck and scoped lint, plus the existing diagnostic perf file only if the logging hot path changes. No app build or full suites. Record RED/GREEN and one read-only Standards/Spec code review here; at most two review rounds. Root owns the worklist and landing.
+
+### Revisions after the Codex review (plan critique)
+
+One bounded read-only `gpt-6.1-sol` / high critique completed successfully (five points; `/tmp/terno-w12-diag-oFZetX/plan-review.txt`). Keep headerless Gecko frames, exercise actual nonenumerable `ProviderError.httpResponse`, capture upload headers/URL/envelope, and preserve malformed-response retryable/ambiguous warning classification rather than inventing unexpected provider behavior. Unexpected error controls explicitly exercise the existing capture policy.
+
+Scope limitation/backlog for Root: legacy free-form backend dev logging bypasses structured diagnostics (`packages/backend/src/core.ts` RPC stack forwarding and other message forwarding → `apps/backend-dev/src/server.ts` console sink). Those files are expressly outside W12 ownership. This slice qualifies Plan10 diagnostics, not every dev console path or all of S51/T09.
+
+### Implementation and targeted validation
+
+RED: the initial five-case core run had two existing-protection controls pass and three leakage cases fail (V8/Gecko-shaped multiline message frames and the actual upload envelope). The real backend `ProviderError` controls failed for both retryable warnings and permanent-error records: synthetic address/subject values appeared as diagnostic frames. Logs: `/tmp/terno-w12-diag-oFZetX/red.log` and `backend-red.log`.
+
+The correction removes only the matching complete error-message header before stack parsing. It leaves headerless Gecko stacks, genuine application frames, known error codes/statuses and the local provider error untouched. No logging hot path, provider production API, recovery decision, UI or strings changed. Core regression controls also check raw body/header/cause/evidence omission, forged/old record revalidation, mirrored breadcrumbs and every serialized upload item/URL/header.
+
+GREEN: `pnpm --config.verify-deps-before-run=false exec vitest run --project unit packages/core/src/diag/diag.test.ts packages/core/src/diag/provider-privacy.test.ts packages/core/src/diag/sentry.test.ts packages/core/src/diag/sentry-rate.test.ts packages/backend/src/diag.test.ts apps/desktop/src/diag/diag.test.ts apps/web/src/lib/diag-local.test.ts apps/web/src/lib/diag-store.test.ts` passed **99/99 across eight files**, exit 0. The earlier two-file post-fix run passed 12/12. Both `pnpm --config.verify-deps-before-run=false --filter @terno/core typecheck` and `--filter @terno/backend typecheck` passed, exit 0; `pnpm --config.verify-deps-before-run=false exec oxlint --deny-warnings packages/core packages/backend` and scoped `git diff --check` passed, exit 0. Exact outputs are in `/tmp/terno-w12-diag-oFZetX/`. This worktree initially had no dependencies; normal frozen offline installation with scripts disabled completed successfully without tracked dependency/config changes. No app build, full suite, browser, real profile or secret access occurred. Code review pending.

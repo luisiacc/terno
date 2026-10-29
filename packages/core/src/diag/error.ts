@@ -126,7 +126,11 @@ export function normalizeError(error: unknown): NormalizedError {
   const name = errorClass(error);
   // a thrown string or object: no stack, and its text is never kept
   if (!(error instanceof Error)) return { name, frames: [] };
-  const out: NormalizedError = { name, frames: typeof error.stack === "string" ? parseStack(error.stack) : [] };
+  const stack = typeof error.stack === "string" ? error.stack : "";
+  // A multiline provider message can look like frames. Gecko stacks have no header.
+  const header = Error.prototype.toString.call(error);
+  const frames = stack.startsWith(`${header}\n`) ? stack.slice(header.length + 1) : stack === header ? "" : stack;
+  const out: NormalizedError = { name, frames: parseStack(frames) };
   const e = error as { code?: unknown; status?: unknown; statusCode?: unknown };
   if (typeof e.code === "string" && CODE.test(e.code)) out.code = e.code;
   const status = typeof e.status === "number" ? e.status : e.statusCode;

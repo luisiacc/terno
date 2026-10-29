@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installDiag, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
+import { buildReport, installDiag, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createAccount, sqlDb } from "@terno/db";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry } from "@terno/mail";
@@ -72,6 +72,32 @@ describe("backend diagnostics", () => {
     // the address in the message is scrubbed; no frame comes from the message line
     expect(JSON.stringify(entries)).not.toContain("luis@");
     expect(entries[0]!.err!.frames.every((f) => f.file !== "empresa.mx")).toBe(true);
+  });
+
+  it.each([true, false])("provider HTTP evidence and multiline messages stay out of diagnostics (retryable=%s)", async (retryable) => {
+    const markers = ["S51BackendSecret", "s51-backend@example.invalid", "S51BackendSubject", "S51BackendBody", "S51BackendRetryHeader", "S51BackendCause"];
+    const url = `https://provider.invalid/messages?access_token=${markers[0]}`;
+    const error = Object.assign(new ProviderError(`${markers[3]} ${url}\n    at ${markers[2]} (${markers[1]}:1:2)`, retryable, false, false, {
+      source: "http-response",
+      request: { endpoint: "gmail-api", purpose: "mail" },
+      status: 429,
+      quotaScope: "unknown",
+      received: { source: "date-now", kind: "wall", wallMs: Date.now() },
+      retryAfter: { kind: "value", value: markers[4]! },
+      serverDate: { kind: "value", value: markers[1]! },
+    }), { status: 429, cause: new Error(markers[5]) });
+    expect(error.httpResponse!.retryAfter).toEqual({ kind: "value", value: markers[4] });
+    expect(Object.keys(error)).not.toContain("httpResponse");
+    const { backend, accountId } = setup(() => error);
+    await backend.syncAccount(accountId);
+    const failures = entries.filter((e) => e.code === "sync.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ level: retryable ? "warn" : "error", fields: { errorClass: "ProviderError", retryable }, err: { name: "ProviderError", status: 429 } });
+    expect(records).toHaveLength(retryable ? 0 : 1);
+    const output = JSON.stringify({ entries, records, reports: records.map((r) => buildReport(r, { installId: "synthetic-install" })) });
+    for (const marker of markers) expect(output).not.toContain(marker);
+    // Recovery still has the provider's local message; diagnostic filtering must not mutate it.
+    expect(error.message).toContain(markers[3]);
   });
 
   it("a bug in sync is one record with its code; the successful sync left a crumb", async () => {
