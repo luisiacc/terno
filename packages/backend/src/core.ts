@@ -151,6 +151,9 @@ const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | 
  * dedicated worker on SQLite-WASM. Serves any number of transports
  * (renderer, MCP, dev WS, MessagePort).
  */
+/** plan 65: rows a folder rebuild handles per slice */
+const REBUILD_SLICE = 250;
+
 export class BackendCore {
   readonly store: MailStore;
   readonly server: RpcServer;
@@ -842,14 +845,14 @@ export class BackendCore {
    * one (the changed event, sidebar counts) runs there, and the next slice
    * only in the turn after, never back to back with it.
    */
-  /** plan 65 (Codex R5): pending folder rebuilds, a slice per turn; one runner at a time, a failure waits for the next start or list change */
+  /** plan 65 (Codex R5): pending folder rebuilds, a slice per turn (REBUILD_SLICE rows: within a frame in IndexedDB, where a slice is a commit); one runner at a time, a failure waits for the next start or list change */
   private folderRebuild: Promise<void> | null = null;
   rebuildFolders(): Promise<void> {
     this.folderRebuild ??= (async () => {
       try {
         for (;;) {
           if (this.stopped || !this.store.isOpen) return;
-          const r = await this.store.folders.rebuild(500);
+          const r = await this.store.folders.rebuild(REBUILD_SLICE);
           if (r.touched.length) this.notifyChanged(r.touched);
           if (!r.more) return;
           await this.yieldTurn();

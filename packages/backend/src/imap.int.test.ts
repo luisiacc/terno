@@ -1105,6 +1105,62 @@ describe("an account's own folders (plan 65)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
   });
 
+  for (const into of ["an existing folder", "a new folder, the mail older than the window"] as const) {
+    it(`Codex R8: two identical ID-less messages moved into ${into} keep their identities, threads and category`, async () => {
+      const { imap, backend, client, addAccount } = await setup();
+      const ctl = imap.server.control;
+      const old = new Date(Date.now() - 400 * 86_400_000);
+      const fresh = into === "an existing folder";
+      await client.call("settings.update", { syncWindowDays: 3650 });
+      if (fresh) ctl.createMailbox("A");
+      ctl.createMailbox("Z");
+      const twin = raw({ subject: "Gemelo movido", date: old }).replace(/^Message-ID: .*\r\n/m, "");
+      const a = ctl.addMessage("Z", { raw: twin, internaldate: old });
+      const b = ctl.addMessage("Z", { raw: twin, internaldate: old });
+      const account = await addAccount(imap.port);
+      await backend.syncAccount(account.id);
+      const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
+      expect(before).toHaveLength(2);
+      const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
+      await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
+      if (!fresh) {
+        await client.call("settings.update", { syncWindowDays: 30 });
+        ctl.createMailbox("A");
+      }
+      ctl.moveMessages("Z", [a.uid, b.uid], "A");
+      await backend.syncAccount(account.id);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(2);
+      expect(count(backend, "SELECT DISTINCT thread_id FROM thread_categories WHERE category_id = ?", category.id)).toBe(new Set(before.map((m) => m.thread_id)).size);
+    });
+  }
+
+  it("Codex R8: a disconnect between the sweep and identification never leaves a ghost: the expunged message goes on the next sync", async () => {
+    const { ImapFlow } = await import("imapflow");
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    ctl.createMailbox("Work");
+    const x = ctl.addMessage("Work", { raw: raw({ subject: "Borrado" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    ctl.expungeMessages("Work", [x.uid]);
+    ctl.addMessage("Work", { raw: raw({ subject: "Nuevo" }) });
+    // the identification's fetch (envelopes of new mail) drops, the retry too; the sweep before it has run
+    const original = ImapFlow.prototype.fetch;
+    const dropping = vi.spyOn(ImapFlow.prototype, "fetch").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      const query = args[1] as { envelope?: boolean };
+      if (query?.envelope && this.mailbox && (this.mailbox as { path: string }).path === "Work") throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+      return original.apply(this, args);
+    });
+    try {
+      await backend.syncAccount(account.id).catch(() => {});
+    } finally {
+      dropping.mockRestore();
+    }
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Nuevo"]);
+  });
+
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();

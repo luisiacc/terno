@@ -115,7 +115,12 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   }
   const memberships = T(c, "thread_folders");
   if (job.phase === 0) {
-    const gone = memberships.by("folder", job.account_id, job.key).slice(0, limit);
+    // up to `limit` rows, read from the index and no further (Codex R8: never the whole remaining folder per slice)
+    const gone: R[] = [];
+    for (const k of memberships.keysBy("folder", job.account_id, job.key)) {
+      gone.push(memberships.rows.get(k)!);
+      if (gone.length >= limit) break;
+    }
     for (const r of gone) memberships.deleteRow(r);
     if (gone.length < limit) jobs.update(job, { phase: 1 });
     return { more: true, touched: gone.map((r) => r.thread_id as number) };

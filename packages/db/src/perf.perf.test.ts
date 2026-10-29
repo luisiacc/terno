@@ -137,7 +137,7 @@ describe("navigation", () => {
     stalls.sort((a, b) => a - b);
     stats.push({ name: `reset an IMAP folder of ${messagesInBig} messages: longest stall (best of 3)`, budgetMs: 16, p50: stalls[0]!, p95: stalls[0]!, max: stalls[2]!, n: 3 } as never);
     expect(stalls[0]!, "reset: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
-    // Codex R5: relisting a populated IMAP folder costs a job, and its rebuild goes in slices of 500 rows
+    // Codex R5: relisting a populated IMAP folder costs a job, and its rebuild goes in slices of 250 rows (the backend's)
     db.run("UPDATE accounts SET kind = 'imap' WHERE id = ?", big.account_id);
     located();
     const withBig = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
@@ -148,7 +148,7 @@ describe("navigation", () => {
     const slices: number[] = [];
     for (let more = true; more; ) {
       const t0 = performance.now();
-      more = rebuildFolders(db, 500).more;
+      more = rebuildFolders(db, 250).more;
       slices.push(performance.now() - t0);
     }
     slices.sort((a, b) => a - b);

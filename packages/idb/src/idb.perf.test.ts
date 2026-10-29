@@ -206,12 +206,15 @@ it("relisting a populated IMAP folder (plan 65, Codex R6): every rebuild slice w
   // the folder's locations, written straight into the in-memory tables (setting them up isn't what's measured)
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown } } } }).c;
   c.db.tx(() => mine.forEach((m, i) => c.db.table("message_locations").put({ message_id: m.id, account_id: account, mailbox: "Big", uidvalidity: 1, uid: i + 1, flags: "[]" })));
+  // rows a past listing left (Codex R8): the rebuild's first phase has them all to delete, a slice at a time
+  const threadsOf = [...new Set(mine.map((m) => m.threadId))];
+  c.db.tx(() => threadsOf.forEach((t) => c.db.table("thread_folders").put({ thread_id: t, account_id: account, folder: "Big", last_date: 0, unread: 0 })));
   const listed = (await store.folders.list()).filter((f) => f.accountId === account).map(({ key, path, selectable }) => ({ key, path, selectable }));
   await store.folders.replace(account, listed.filter((f) => f.key !== "Big"));
   await store.folders.replace(account, [...listed.filter((f) => f.key !== "Big"), { key: "Big", path: ["Big"], selectable: true }]);
   const slices: Sample[] = [];
   for (let more = true; more; ) {
-    const s = await sampleAsync(() => store.folders.rebuild(500));
+    const s = await sampleAsync(() => store.folders.rebuild(250));
     slices.push(s);
     more = s.result.more;
   }
