@@ -1,12 +1,16 @@
 import "fake-indexeddb/auto";
+import { legacyStores } from "../../../../packages/idb/src/test/legacy-stores";
 import { expect, it } from "vitest";
 import { databaseName, IDB_VERSION, openIdb } from "../../../../packages/idb/src/schema";
 
-it("upgrades a minimal v8 drafts+meta row fixture to physical11 without rewriting work and refuses v8 reopen", async () => {
+it("upgrades a complete v8 store fixture to the current schema without rewriting work and refuses v8 reopen", async () => {
   const name = crypto.randomUUID(), fullName = databaseName(name);
   const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(fullName, 8);
-    req.onupgradeneeded = () => { req.result.createObjectStore("drafts"); req.result.createObjectStore("meta"); };
+    req.onupgradeneeded = () => { for (const name of legacyStores(8)) req.result.createObjectStore(name);
+      req.result.createObjectStore("meta");
+      req.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
+      req.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]); };
     req.onerror = () => reject(req.error); req.onsuccess = () => resolve(req.result);
   });
   const value = { id: 1, generation: "legacy", account_id: 2, thread_id: null, mode: "reply", in_reply_to_message_id: 9, body_text: "exact text", body_html: "<b>exact</b>" };

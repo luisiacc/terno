@@ -10,6 +10,43 @@ import { UncertainWriteError } from "./uncertainty";
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
 
+function delaySnapshot(gate: Promise<void>) {
+  const observation = { delayed: false, delivered: 0 };
+  const transaction = IDBDatabase.prototype.transaction;
+  let delayedTx = false;
+  const txSpy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+    const tx = transaction.call(this, ...args);
+    if (delayedTx || tx.mode !== "readonly" || !tx.objectStoreNames.contains("messages")) return tx;
+    delayedTx = true;
+    txSpy.mockRestore();
+    const add = tx.addEventListener.bind(tx);
+    tx.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      if (type !== "complete") return add(type, listener, options);
+      tx.addEventListener = add;
+      add(type, (event) => { void gate.then(() => {
+        if (typeof listener === "function") listener.call(tx, event); else listener.handleEvent(event);
+      }); }, options);
+    }) as typeof tx.addEventListener;
+    return tx;
+  });
+  const getAll = IDBObjectStore.prototype.getAll;
+  const getSpy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const req = getAll.call(this, ...args);
+    if (this.name !== "messages" || observation.delayed) return req;
+    observation.delayed = true;
+    const add = req.addEventListener.bind(req);
+    req.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      if (type !== "success") return add(type, listener, options);
+      add(type, (event) => { void gate.then(() => {
+        observation.delivered++;
+        if (typeof listener === "function") listener.call(req, event); else listener.handleEvent(event);
+      }); }, options);
+    }) as typeof req.addEventListener;
+    return req;
+  });
+  return { getSpy, observation };
+}
+
 for (const instantSearch of [false, true]) {
   it(`a synchronous enqueue failure aborts before admission and preserves durable flags (instant=${instantSearch})`, async () => {
     const factory = new IDBFactory(), name = crypto.randomUUID();
@@ -158,29 +195,16 @@ for (const instantSearch of [false, true]) {
     await seed.close();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    const getAll = IDBObjectStore.prototype.getAll;
-    let delayed = false;
-    const getSpy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
-      const req = getAll.call(this, ...args);
-      if (this.name !== "messages" || delayed) return req;
-      delayed = true;
-      return new Proxy(req, {
-        get: (target, key) => Reflect.get(target, key, target),
-        set: (target, key, value) => {
-          if (key === "onsuccess") {
-            target.onsuccess = (event) => { void gate.then(() => value.call(target, event)); };
-            return true;
-          }
-          return Reflect.set(target, key, value, target);
-        },
-      });
-    });
+    const { getSpy, observation } = delaySnapshot(gate);
     let store: IdbMailStore | undefined;
     try {
       store = await IdbMailStore.open({ name, factory, instantSearch, platform });
       const provider = store.providerStore(1);
-      const search = store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 }).then(() => null, (e: unknown) => e);
+      let finished = false;
+      const search = store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 }).then(() => { finished = true; return null; }, (e: unknown) => { finished = true; return e; });
       const exclusive = store.debug.snapshot().then(() => null, (e: unknown) => e);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect({ ...observation, finished }).toEqual({ delayed: true, delivered: 0, finished: false });
       const injected = new Error("after enqueue");
       const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
       let target: IDBTransaction | undefined;
@@ -395,27 +419,16 @@ it("restored instant index rechecks admission after delayed loading", async () =
   expect(files.files.size).toBeGreaterThan(0);
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
-  const getAll = IDBObjectStore.prototype.getAll;
-  let delayed = false;
-  const getSpy = vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) {
-    const req = getAll.call(this, ...args);
-    if (this.name !== "messages" || delayed) return req;
-    delayed = true;
-    return new Proxy(req, {
-      get: (target, key) => Reflect.get(target, key, target),
-      set: (target, key, value) => {
-        if (key === "onsuccess") { target.onsuccess = (event) => { void gate.then(() => value.call(target, event)); }; return true; }
-        return Reflect.set(target, key, value, target);
-      },
-    });
-  });
+  const { getSpy, observation } = delaySnapshot(gate);
   try {
     store = await IdbMailStore.open({ name, factory, instantSearch: { settleMs: 0 }, platform: p });
     expect(await store.instant!.settled()).toBe(true);
     expect(store.instant!.at(await store.feed.head())).not.toBeNull();
-    const search = store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 }).then(() => null, (e: unknown) => e);
+    let finished = false;
+  const search = store.threads.search({ search: resolveSearch(parseSearch("example"), "example", {}, { accounts: [], categories: [] }), limit: 10 }).then(() => { finished = true; return null; }, (e: unknown) => { finished = true; return e; });
     await new Promise<void>((r) => setImmediate(r));
-    const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
+    expect({ ...observation, finished }).toEqual({ delayed: true, delivered: 0, finished: false });
+  const transaction = IDBDatabase.prototype.transaction, put = IDBObjectStore.prototype.put;
     let target: IDBTransaction | undefined;
     let markers = 0, bodies = 0, refused = 0, terminal: string | null = null;
     const injected = new Error("after enqueue");

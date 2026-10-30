@@ -402,7 +402,7 @@ function physicalSnapshot(idb: IDBDatabase, names: readonly string[]): Promise<S
   return new Promise((resolve, reject) => {
     let tx: IDBTransaction;
     try { tx = idb.transaction(scope, "readonly"); }
-    catch { reject(new UncertainWriteError("unreadable")); return; }
+    catch (error) { reject(error); return; }
     const tables = new Map<string, Row[]>();
     const parts: Record<OpPartStore, OpPartImage> = {
       op_control: { keys: [], values: [] },

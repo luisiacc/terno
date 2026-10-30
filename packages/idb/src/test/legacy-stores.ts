@@ -32,19 +32,22 @@ const version1 = [
   "search_state",
 ];
 
-export function legacyStores(version: 1 | 2 | 4 | 6 | 7 | 8 | 9 | 10): string[] {
+export function legacyStores(version: 1 | 2 | 4 | 6 | 7 | 8 | 9 | 10 | 12 | 14 | 15): string[] {
   return [
     ...version1,
     ...(version >= 4 ? ["correspondents"] : []),
     ...(version >= 6 ? ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachment_links"] : []),
     ...(version >= 7 ? ["draft_counter"] : []),
     ...(version >= 8 ? ["flag_clocks", "message_flag_intents", "flag_op_effects"] : []),
+    ...(version >= 12 ? ["op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds"] : []),
+    ...(version >= 14 ? ["send_copies", "send_copy_bytes"] : []),
+    ...(version >= 15 ? ["recipient_receipts", "recipient_receipt_parts"] : []),
   ];
 }
 
 const operationParts = ["op_control", "op_target", "op_error"];
 /** Fixture reconstruction only: old schemas contain complete effective wide ops. */
-export function legacyImage<T extends { name: string; keys: IDBValidKey[]; values: unknown[] }>(
+export function legacyImage<T extends { name: string; keys: IDBValidKey[]; values: unknown[]; indexes?: { name: string }[] }>(
   source: T[], version: Parameters<typeof legacyStores>[0],
 ): T[] {
   const ops = source.find((store) => store.name === "ops");
@@ -61,7 +64,9 @@ export function legacyImage<T extends { name: string; keys: IDBValidKey[]; value
     });
   }
   const allowed = new Set(["meta", ...legacyStores(version)]);
-  return source.filter((store) => allowed.has(store.name)).map((store) => store.name !== "ops" ? store : ({
+  return source.filter((store) => allowed.has(store.name)).map((store) => ({
+    ...store, ...(store.indexes && { indexes: store.indexes.filter((index) => store.name !== "messages" || index.name !== "cached_provider") }),
+  })).map((store) => store.name !== "ops" || version >= 12 ? store : ({
     ...store, values: store.values.map((value, i) => ({ ...(value as Record<string, unknown>), ...overlays.get(store.keys[i]!) })),
   }));
 }

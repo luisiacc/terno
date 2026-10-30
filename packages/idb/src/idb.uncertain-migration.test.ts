@@ -18,7 +18,7 @@ async function version1(factory: IDBFactory, name: string) {
     tx.objectStore("cat_batches").put({ id: 5, category_id: 2, source: "dnd", scope_json: JSON.stringify({ kind: "move", from: 1, phase: "done" }), added: 2, created_at: 0, undone_at: null }, 5);
     for (const id of [9, 10]) tx.objectStore("cat_move_rows").put({ batch_id: 5, thread_id: id, added_by: "user", added_at: 10, prev_batch_id: null }, [5, id]);
     tx.objectStore("threads").put({ id: 9 }, 9);
-    for (const id of [41, 42]) tx.objectStore("messages").put({ id, thread_id: 9, attachment_pending: 0 }, id);
+    for (const id of [41, 42]) tx.objectStore("messages").put({ id, account_id: 1, thread_id: 9, attachment_pending: 0 }, id);
     for (const id of [21, 22]) tx.objectStore("drafts").put({ id, account_id: 1, to_json: "[]", cc_json: "[]", subject: "exact", body_text: `retained body ${id}`, in_reply_to_message_id: id === 21 ? 41 : null, updated_at: 5 }, id);
     tx.objectStore("settings").put({ key: "anchor", value_json: "true" }, "anchor");
   };
@@ -114,8 +114,8 @@ it.each(["child success", "cursor exhaustion", "callback throw"] as const)("does
   });
   vi.spyOn(IDBObjectStore.prototype, "openCursor").mockImplementation(function (this: IDBObjectStore, ...args) {
     const r = cursor.call(this, ...args);
-    if (fault === "cursor exhaustion" && this.transaction.mode === "versionchange" && this.name === "messages") {
-      observe(this.transaction); r.addEventListener("success", (event) => { if (r.result === null) { hits++; event.stopImmediatePropagation(); } });
+    if (fault === "cursor exhaustion" && this.transaction.mode === "versionchange" && this.name === "messages" && !hits) {
+      observe(this.transaction); r.addEventListener("success", (event) => { if (r.result === null && !hits) { hits++; event.stopImmediatePropagation(); } });
     }
     return r;
   });
@@ -172,7 +172,7 @@ it.each(["drafts", "settings", "messages"])("retains uncertainty after a real pr
     } else if (stage === "settings") {
       expect(saved.rows.find((s) => s.name === "settings")!.values).toEqual([{ key: "anchor", value_json: "true" }]);
     } else {
-      expect(saved.rows.find((s) => s.name === "messages")!.values).toEqual([{ id: 41, thread_id: 9, attachment_pending: 0 }, { id: 42, thread_id: 9, attachment_pending: 1 }]);
+      expect(saved.rows.find((s) => s.name === "messages")!.values).toEqual([{ id: 41, account_id: 1, thread_id: 9, attachment_pending: 0 }, { id: 42, account_id: 1, thread_id: 9, attachment_pending: 1 }]);
     }
     expect.soft(after.marker).toBe(UNCERTAINTY_KEY);
     expect.soft(exposed !== undefined).toBe(false);
