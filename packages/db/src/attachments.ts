@@ -37,13 +37,23 @@ export function sqlAssets(db: Db): AssetDb {
 export function replaceAttachments(db: Db, messageId: number, parts: import("@terno/store").IncomingAttachment[]): void {
   const owner = db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId);
   if (!owner) return;
+  writeAttachments(db, messageId, owner.account_id, parts, true);
+}
+
+/** Only for a row just inserted in the current ingestion transaction. */
+export function insertAttachments(db: Db, messageId: number, accountId: number, parts: import("@terno/store").IncomingAttachment[]): void {
+  writeAttachments(db, messageId, accountId, parts, false);
+}
+
+function writeAttachments(db: Db, messageId: number, accountId: number, parts: import("@terno/store").IncomingAttachment[], replace: boolean): void {
   const assets = sqlAssets(db);
   const refs = parts.filter((p): p is typeof p & { assetId: string } => !!p.assetId);
-  validateAssets(assets, owner.account_id, refs);
-  db.run("DELETE FROM attachments WHERE message_id = ?", messageId);
+  validateAssets(assets, accountId, refs);
+  if (replace) db.run("DELETE FROM attachments WHERE message_id = ?", messageId);
   for (const a of parts) db.run("INSERT INTO attachments (message_id,filename,mime,size,content_id,provider_ref,asset_id) VALUES (?,?,?,?,?,?,?)", messageId, attachmentFilename(a.filename), attachmentMime(a.mime), a.size, a.contentId ?? null, a.providerRef ?? null, a.assetId ?? null);
-  linkAssets(assets, "message", messageId, refs);
-  db.run("UPDATE messages SET attachments_captured = ?, has_attachments = ? WHERE id = ?", parts.every((p) => p.assetId) ? 1 : 2, Number(parts.length > 0), messageId);
+  if (replace) assets.unlink("message", messageId);
+  for (const ref of refs) assets.link(ref.assetId, "message", messageId);
+  if (replace) db.run("UPDATE messages SET attachments_captured = ?, has_attachments = ? WHERE id = ?", parts.every((p) => p.assetId) ? 1 : 2, Number(parts.length > 0), messageId);
 }
 import { attachmentFilename, attachmentMime } from "@terno/core";
-import { linkAssets, validateAssets } from "@terno/store";
+import { validateAssets } from "@terno/store";

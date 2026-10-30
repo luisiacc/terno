@@ -1,5 +1,5 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
-import { replaceAttachments } from "./attachments";
+import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
@@ -192,8 +192,8 @@ INSERT INTO messages (
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
-  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json, attachments_captured
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -252,6 +252,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       const fromEmail = normalizeText(msg.from.email.trim());
       const recipients = preparedRecipients?.text ?? recipientsText(msg.to, msg.cc, msg.bcc);
       const allocated = ids.next();
+      // A new row has no attachment metadata or pins to replace.
+      const capture = !msg.captureUnavailable && msg.attachments !== undefined;
       // the body goes in first: the message's insert trigger indexes it in the same write
       if (msg.bodyText !== null || msg.bodyHtml !== null) {
         db.run("INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml);
@@ -289,12 +291,13 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         b(msg.isDraft),
         b(msg.isTrash),
         b(msg.isSpam),
-        b(msg.hasAttachments),
+        b(capture ? msg.attachments!.length > 0 : msg.hasAttachments),
         msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
         msg.size,
         now,
         b(msg.bulk ?? false),
         JSON.stringify(msg.replyTo ?? []),
+        capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
       ).lastInsertRowid;
       if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
       if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
@@ -309,7 +312,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(db, refs)) result.touchedThreads.add(t);
       }
-      if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(db, id, msg.attachments);
+      if (capture && msg.attachments!.length) insertAttachments(db, id, msg.accountId, msg.attachments!);
       if (msg.captureUnavailable) db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", id);
       upsertLocations(db, id, msg);
       result.inserted.push(id);
