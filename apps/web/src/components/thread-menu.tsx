@@ -40,7 +40,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type R
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { act, openCompose, targetRows } from "~/lib/actions";
-import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
+import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
@@ -324,6 +324,7 @@ function MenuItems() {
   const anyStarred = scope !== null || rows.some((t) => t.starred);
   const anyPlain = scope !== null || rows.some((t) => !t.starred);
   const sender = scope ? null : sharedSender(rows);
+  const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
     // the menu's own thread, passed explicitly (the selection follows, it isn't read back); the composer takes focus
@@ -444,6 +445,14 @@ function MenuItems() {
                   <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
                     <CategoryDot color={c.color as CategoryColor} />
                     <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
+                  </ContextMenuItem>
+                ))}
+                {/* plan 76: and the way back out of the categories this mail is in */}
+                {filedIn.length > 0 && <ContextMenuSeparator />}
+                {filedIn.map((c) => (
+                  <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
+                    <CategoryDot color={c.color as CategoryColor} />
+                    <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
                   </ContextMenuItem>
                 ))}
               </ContextMenuSubContent>

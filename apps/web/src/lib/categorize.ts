@@ -201,6 +201,40 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 }
 
 /**
+ * Plan 76: everything from a sender out of a category. The loaded rows lose
+ * it in this frame; the backend finds the rest. Undo (button or z) files the
+ * same threads back.
+ */
+export async function removeSenderFromCategory(categoryId: number, email: string): Promise<void> {
+  const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
+  const lower = email.toLowerCase();
+  patch(useList.getState().items.filter((t) => t.fromEmail.toLowerCase() === lower && t.categoryIds.includes(categoryId)).map((t) => t.id), categoryId, false);
+  const id = snack.loading(t("category.removing", { category: name }));
+  try {
+    const { removed } = await client.call("categories.removeSender", { categoryId, email });
+    refreshReader(removed);
+    const undo = removed.length ? registerUndo(() => refile(categoryId, removed, name)) : null;
+    snack.success(t("category.removed", { count: removed.length, category: name }), { id, duration: 8000, action: undo ? undoAction(undo, t("category.undoRemove", { category: name })) : undefined });
+  } catch (error) {
+    snack.error(t("category.removeFailed", { error: errorText(error) }), { id });
+  } finally {
+    void reloadList({ keepSelection: true });
+  }
+}
+
+/** The undo of a sender's removal: the same threads back, as the user's own filing. */
+async function refile(categoryId: number, threadIds: readonly number[], name: string): Promise<void> {
+  patch(threadIds, categoryId, true);
+  try {
+    for (let i = 0; i < threadIds.length; i += 5000) await client.call("categories.addThreads", { categoryId, threadIds: threadIds.slice(i, i + 5000), source: "picker" });
+    refreshReader(threadIds);
+    snack(t("category.undone", { category: name }), { background: true });
+  } finally {
+    void reloadList({ keepSelection: true });
+  }
+}
+
+/**
  * Takes back one categorization exactly (its batch), whether one thread or a
  * thousand; for a move, the backend restores every category the threads
  * left in the same transaction. Throws when the backend refuses: the caller keeps its undo

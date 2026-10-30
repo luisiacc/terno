@@ -637,6 +637,16 @@ export const contract = {
     z.object({ categoryId: id, threadIds: ids, reason: z.enum(["user", "undo"]).default("user") }),
   ),
 
+  /**
+   * Plan 76: "Everything from X → Out of C". Every thread from the sender in
+   * the category leaves it (a user removal each: the model learns it); the
+   * ids come back so Undo can file them again.
+   */
+  "categories.removeSender": m<{ removed: number[] }>()(
+    z.object({ categoryId: id, email: z.string().trim().email().max(320) }),
+    { timeoutMs: 300_000 },
+  ),
+
   /** What the snackbar offers after filing: same sender / domain / list, distinguishing words, a filter draft. */
   "categorize.quickActions": m<QuickActions>()(z.object({ categoryId: id, threadIds: z.array(id).min(1).max(200) })),
   "categorize.count": m<{ count: number; capped: boolean }>()(z.object({ categoryId: id, scope: categorizeScope })),

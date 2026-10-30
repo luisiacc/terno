@@ -381,6 +381,20 @@ export function createHandlers(b: Backend): Handlers {
       });
       return { removed };
     },
+    "categories.removeSender": async ({ categoryId, email }) => {
+      await requireCategory(categoryId);
+      // the set is fixed once, by the same search as "Search mail from X", inside the category
+      const { ids, capped } = await resolveThreadScope(b, { kind: "search", query: `from:${email}`, categoryId });
+      if (capped) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
+      const removed: number[] = [];
+      await sliced(ids, async (chunk) => {
+        const r = await store.categories.remove({ categoryId, threadIds: chunk, reason: "user", now: b.now() });
+        b.categorizer.apply(r.deltas);
+        removed.push(...r.removed);
+        b.notifyChanged(chunk);
+      });
+      return { removed };
+    },
     "categorize.quickActions": async ({ categoryId, threadIds }) => {
       await requireCategory(categoryId);
       return store.categorize.quickActions(categoryId, threadIds, b.categorizer.model);

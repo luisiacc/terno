@@ -129,6 +129,40 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
   });
 });
 
+test.describe("everything from a sender, out of a category (plan 76)", () => {
+  test("the menu's Everything from X → Out of Facturas takes all their mail out; Undo files it back", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const cat = (name: string) => db.get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
+    const [facturas, viajes] = [cat("Facturas"), cat("Viajes")];
+    const rappi = "SELECT DISTINCT thread_id FROM messages WHERE from_email = 'recibos@rappi.com'";
+    const ids = db.all<{ thread_id: number }>(rappi).map((r) => r.thread_id);
+    expect(ids.length).toBeGreaterThan(1);
+    await server.backend.server.invoke("categories.removeThreads", { categoryId: viajes, threadIds: ids, reason: "undo" }, { clientId: "test", origin: "dev" });
+    await server.backend.server.invoke("categories.addThreads", { categoryId: facturas, threadIds: ids, source: "picker" }, { clientId: "test", origin: "dev" });
+    const inFacturas = () => db.get<{ c: number }>(`SELECT count(*) c FROM thread_categories WHERE category_id = ? AND thread_id IN (${rappi})`, facturas)!.c;
+    expect(inFacturas()).toBe(ids.length);
+
+    await selectThread(page, ids[0]!, "from:recibos@rappi.com");
+    const row = page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`);
+    await row.click({ button: "right" });
+    await page.getByTestId("menu-sender-file").hover();
+    // only the categories this mail is in are offered to leave
+    await expect(page.getByTestId(`menu-sender-out-${facturas}`)).toHaveText("Out of Facturas");
+    await expect(page.getByTestId(`menu-sender-out-${viajes}`)).toHaveCount(0);
+    await page.getByTestId(`menu-sender-out-${facturas}`).click();
+    await expect(toast(page, `${ids.length} removed from Facturas`)).toBeVisible();
+    expect(inFacturas()).toBe(0);
+    // a user removal: the engine learns it
+    expect(db.get<{ c: number }>(`SELECT count(*) c FROM cls_examples WHERE category_id = ? AND label < 0 AND thread_id IN (${rappi})`, facturas)!.c).toBe(ids.length);
+    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toHaveCount(0);
+
+    await toast(page, "removed from Facturas").getByTestId("snack-action").click();
+    await expect(toast(page, "Undone: Facturas")).toBeVisible();
+    await expect.poll(inFacturas).toBe(ids.length);
+    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
+  });
+});
+
 test.describe("everything about X and Y", { tag: "@design" }, () => {
   test("topic chips recount as they toggle, View previews the query, 4 files it", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);

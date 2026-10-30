@@ -157,6 +157,27 @@ describe("categorizer: training hooks", () => {
     await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/no longer exists/);
   });
 
+  it("plan 76: everything from a sender leaves a category (a user removal each); other senders and categories stay", async () => {
+    const { backend, client } = setup();
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const other = createCategory(sqlDb(backend.store), "Viajes", "cyan").id;
+    const rappi = { name: "Rappi", email: "recibos@rappi.com" };
+    const mine = [...ingestMessages(sqlDb(backend.store), [incoming(acct, { from: rappi }), incoming(acct, { from: rappi }), incoming(acct, { from: rappi })]).touchedThreads];
+    const [uber] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [...mine.slice(0, 2), uber!] });
+    await client.call("categories.addThreads", { categoryId: other, threadIds: [mine[0]!] });
+    const { removed } = await client.call("categories.removeSender", { categoryId: cat, email: "Recibos@Rappi.com" });
+    expect(removed.sort()).toEqual(mine.slice(0, 2).sort());
+    const members = (c: number) => sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_categories WHERE category_id = ? ORDER BY thread_id", c).map((r) => r.thread_id);
+    expect(members(cat)).toEqual([uber]);
+    expect(members(other)).toEqual([mine[0]]);
+    expect(sqlDb(backend.store).get("SELECT label FROM cls_examples WHERE thread_id = ? AND category_id = ?", mine[1]!, cat)).toEqual({ label: -1 });
+    // nothing left to take out: an empty answer, not an error
+    expect(await client.call("categories.removeSender", { categoryId: cat, email: rappi.email })).toEqual({ removed: [] });
+    await expect(client.call("categories.removeSender", { categoryId: 999, email: rappi.email })).rejects.toThrow(/no longer exists/);
+  });
+
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
