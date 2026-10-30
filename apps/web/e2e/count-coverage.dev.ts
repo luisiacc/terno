@@ -16,7 +16,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   test(`count coverage ${language} ${theme}`, async ({ page }) => {
     const dir = mkdtempSync(join(tmpdir(), "terno-count-coverage-"));
     const calls: string[] = [];
-    const providers: ProviderRegistry = { ...demoRegistry, create(ctx) { const demo = createDemoProvider(ctx, 0); return { ...demo, async sync(sink) { calls.push("sync"); return demo.sync(sink); }, async execute(op) { calls.push("execute"); return demo.execute(op); } }; } };
+    const providers: ProviderRegistry = { ...demoRegistry, create(ctx) { const demo = createDemoProvider({ ...ctx, fetch: async () => { calls.push("fetch"); throw new Error("unexpected provider fetch"); }, google: ctx.google ? { ...ctx.google, request: async () => { calls.push("google.request"); throw new Error("unexpected managed Google request"); } } : undefined }, 0); return { ...demo, async sync(sink) { calls.push("sync"); return demo.sync(sink); }, async execute(op) { calls.push("execute"); return demo.execute(op); } }; } };
     const server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", fresh: true, threads: 180, accounts: 2, autoSync: false, providers, iconTransport: null, now: () => E2E_NOW });
     const external: string[] = [];
     await page.route("**/*", async (route) => { const url = new URL(route.request().url()); if (url.hostname === "127.0.0.1") await route.continue(); else { external.push(url.origin); await route.abort(); } });
@@ -32,6 +32,20 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await page.locator("[data-ready]").waitFor();
       const inbox = page.getByTestId("nav-inbox");
       await expect(inbox).toHaveAccessibleDescription(copy[language].general);
+      const counts = await page.evaluate(async () => {
+        const path = "/src/state/app.ts";
+        const state = await import(/* @vite-ignore */ path);
+        const previous = state.getApp().counts;
+        state.setApp({ counts: state.EMPTY_COUNTS });
+        return previous;
+      });
+      await expect(inbox.locator("[data-slot=nav-count]")).toHaveCount(0);
+      await expect(inbox).toHaveAccessibleDescription(copy[language].general);
+      await page.evaluate(async (previous) => {
+        const path = "/src/state/app.ts";
+        const state = await import(/* @vite-ignore */ path);
+        state.setApp({ counts: previous });
+      }, counts);
       const accountRow = page.getByTestId(`nav-account-${account}`);
       await expect(accountRow).toHaveAccessibleDescription(copy[language].account);
       await expect(inbox).toHaveAccessibleName(/Inbox|Entrada/);
@@ -75,3 +89,27 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     } finally { await server.close(); rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+test("single account retains its Inbox description when expanded", async ({ page }) => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-count-single-"));
+  const calls: string[] = [];
+  const providers: ProviderRegistry = { ...demoRegistry, create(ctx) {
+    const demo = createDemoProvider({ ...ctx, fetch: async () => { calls.push("fetch"); throw new Error("unexpected provider fetch"); }, google: ctx.google ? { ...ctx.google, request: async () => { calls.push("google.request"); throw new Error("unexpected managed Google request"); } } : undefined }, 0);
+    return { ...demo, async sync(sink) { calls.push("sync"); return demo.sync(sink); }, async execute(op) { calls.push("execute"); return demo.execute(op); } };
+  } };
+  const server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", fresh: true, threads: 60, accounts: 1, autoSync: false, providers, iconTransport: null, now: () => E2E_NOW });
+  try {
+    const account = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts LIMIT 1")!.id;
+    await server.backend.store.folders.replace(account, [{ key: "Label_single", path: ["Single"], selectable: true }]);
+    await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
+    await page.locator("[data-ready]").waitFor();
+    const row = page.getByTestId(`nav-account-${account}`);
+    await expect(row).toHaveAccessibleDescription(copy.en.account);
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await row.click();
+    await expect(row).toHaveAttribute("aria-expanded", "true");
+    await expect(row).toHaveAccessibleDescription(copy.en.account);
+    await expect(page.getByTestId(`nav-own-${account}-Label_single`)).toHaveAccessibleDescription(copy.en.general);
+    expect(calls).toEqual([]);
+  } finally { await server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
