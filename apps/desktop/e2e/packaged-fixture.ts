@@ -31,7 +31,12 @@ function alive(pid: number): boolean {
 async function joinOwned(child: ChildProcess, owned: number[]): Promise<void> {
   const exit = child.exitCode === null && child.signalCode === null ? once(child, "exit").then(() => {}) : Promise.resolve();
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-    for (const pid of owned) if (alive(pid)) process.kill(pid, signal);
+    for (const pid of owned) {
+      if (!alive(pid)) continue;
+      try { process.kill(pid, signal); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
     const until = Date.now() + 3000;
     while (owned.some(alive) && Date.now() < until) await delay(50);
     if (!owned.some(alive)) break;

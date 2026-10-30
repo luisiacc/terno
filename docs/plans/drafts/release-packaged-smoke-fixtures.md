@@ -47,3 +47,13 @@ Commands (each test invocation uses existing NODE_OPTIONS plus `--require=/tmp/t
 - Touched lint: `pnpm exec oxlint --deny-warnings apps/desktop/e2e/notify.smoke.ts apps/desktop/e2e/people.smoke.ts apps/desktop/e2e/packaged-fixture.ts apps/desktop/e2e/people-profile.ts apps/desktop/e2e/packaged-fixture.test.ts apps/desktop/e2e/people-profile.test.ts`.
 
 Source negative control logs: `/tmp/terno-people-source-red.log`, `/tmp/terno-cleanup-red.log`. Packaged logs and captured PID manifests: `/tmp/terno-fixture-{red,trace,green1}.{log,json}`. No hot path changed, therefore no affected perf gate; no full suites/builds run. Fresh final milestone build remains root's responsibility; no release clearance.
+
+## Single Standards+Spec review disposition
+
+Exactly one native read-only Standards+Spec review completed on `dbf9c38a..e52d17b4`, output `/tmp/terno-fixture-code-review.txt` (CLI transcript `/tmp/terno-fixture-code-review-run.log`). One finding, P2: `alive(pid)` and signal can race; ESRCH would abort the rest of owned-process cleanup. Fixed because it violates the explicit owned-process join requirement. Added a regression first: the captured child exits as the signal is sent, the injected ESRCH must not interrupt joining or mask the original close error. It failed before the fix (`/tmp/terno-cleanup-review-red.log`), then all three cleanup tests passed after handling only ESRCH at the signal operation. No additional review/reviewer, no remaining findings or lower-priority backlog.
+
+After this cleanup change, re-ran only affected packaged files:
+`python3 /tmp/terno-smoke-supervise.py green-final pnpm --filter @terno/desktop exec playwright test -c playwright.smoke.config.ts notify.smoke.ts people.smoke.ts`
+Result: **3 passed (18.2s)**, exit 0, supervisor 18.59s. Final log/manifests `/tmp/terno-fixture-green-final.{log,json}`. Targeted smoke/helper types and touched lint passed again. Desktop package types passed earlier; no desktop source changed afterward. Helper regression counts: legacy 1 passed, cleanup 3 passed.
+
+Strict `codesign --verify --deep --strict` passed on the copied app; signing remains ad-hoc (no TeamIdentifier), not distribution/notarization clearance. Original package hashes rechecked unchanged. All PIDs in the final captured manifest confirmed gone after completion. The reused worktree release copy and the two baseline/diagnostic temporary app/profile directories were removed after validation; original milestone package and user release outputs remain untouched. No builds, pushes, real profile access, whole-screen captures, or full gates. Native Keychain/encryption is intentionally outside this synthetic smoke; a fresh final milestone binary has not been tested here.

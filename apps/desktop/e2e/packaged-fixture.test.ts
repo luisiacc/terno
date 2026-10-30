@@ -31,3 +31,30 @@ test("cleanup joins later resources and reports the original failure", async () 
   ]), (error: unknown) => error instanceof AggregateError && error.errors[0].message === "app failed");
   assert.deepEqual(joined, ["imap", "smtp"]);
 });
+
+test("a process disappearing before its signal does not interrupt the remaining joins", async (t) => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+  await once(child, "spawn");
+  const signal = process.kill.bind(process);
+  let raced = false;
+  t.mock.method(process, "kill", (pid: number, how: NodeJS.Signals | number = "SIGTERM") => {
+    if (pid === child.pid && how === "SIGTERM" && !raced) {
+      raced = true;
+      signal(pid, how);
+      throw Object.assign(new Error("process exited before signal"), { code: "ESRCH" });
+    }
+    return signal(pid, how);
+  });
+  const app = { process: () => child, close: async () => { throw new Error("close failed"); } } as unknown as ElectronApplication;
+  try {
+    await assert.rejects(closePackaged(app), /close failed/);
+    assert.equal(raced, true);
+    assert.notEqual(child.signalCode, null);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exit = once(child, "exit");
+      signal(child.pid!, "SIGKILL");
+      await exit;
+    }
+  }
+});
