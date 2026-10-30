@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail";
 import { ImapFlow } from "imapflow";
-import { afterEach, describe, expect, it } from "vitest";
+import type { SessionInfo } from "imapkit";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded, deferred, idleFixture, rawIdleMail } from "./test/imap-idle-fixture";
 
@@ -24,13 +25,20 @@ async function wire(idle = true, script: Parameters<typeof idleFixture>[1] = [])
   return w;
 }
 
-async function account(w: Wire) {
-  const firstIdle = w.idles.length;
+let accountSeq = 0;
+async function account(w: Wire, heartbeatMs = 400) {
+  const user = `idle-backend-${++accountSeq}`;
+  w.server.control.addUser(user, { password: "testpass" });
+  const owned = new Set<number>();
+  const opening = (event: { type: string; session: SessionInfo }) => {
+    if (event.type === "open") owned.add(event.session.session);
+  };
+  w.server.on("session", opening);
   const dir = mkdtempSync(join(tmpdir(), "terno-idle-foreground-"));
   const backend = new Backend({
     dbPath: join(dir, "test.db"), version: "test", cipher: plaintextCipher, instantSearch: false,
     providers: createRegistry({ imap: { allowInsecure: true, timeouts: {
-      connectMs: 2000, socketMs: 3000, quietMs: 0, heartbeatMs: 400,
+      connectMs: 2000, socketMs: 3000, quietMs: 0, heartbeatMs,
       reconnectMs: 40, reconnectMaxMs: 160,
     } } }),
     autoSync: true, syncIntervalMs: 3_600_000, connectivity: { settleMs: 0 },
@@ -41,9 +49,11 @@ async function account(w: Wire) {
   let stopped = false;
   const stop = async () => {
     if (stopped) return;
+    w.server.off("session", opening);
+    for (const session of w.server.control.sessions()) if (session.user === user) owned.add(session.session);
     await bounded(backend.stop(), "backend stop");
-    await Promise.all([...new Set(w.idles.slice(firstIdle))].map((id) =>
-      w.wait(() => w.closed.has(id) ? true : undefined, "owned listener close")));
+    await w.wait(() => [...owned].every((id) => w.closed.has(id)) && !w.server.control.sessions().some((s) => s.user === user)
+      ? true : undefined, "all owned command/pending/IDLE/fallback sockets close");
     client.close();
     stopped = true;
   };
@@ -51,12 +61,13 @@ async function account(w: Wire) {
   await bounded(backend.start(), "backend start");
   const added = await bounded(client.call("accounts.addImap", {
     email: "synthetic@example.test", displayName: "Synthetic",
-    imap: { host: "127.0.0.1", port: w.port, secure: false, user: "testuser" },
+    imap: { host: "127.0.0.1", port: w.port, secure: false, user },
     smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" },
     password: "testpass", verify: false,
   }), "add account");
   await bounded(backend.syncAccount(added.id), "initial sync");
   const provider = (await backend.provider(added.id))!;
+  w.server.off("session", opening);
   return { backend, client, account: added, provider, stop };
 }
 
@@ -257,33 +268,80 @@ describe("W06 A29: installed IMAP transport foreground/IDLE ownership", () => {
     budget(w, start);
   });
 
+  it.each(["absent", "refused"])("joins the %s-IDLE listener even with a heartbeat response held", async (mode) => {
+    const w = await wire(mode !== "absent", mode === "refused"
+      ? [{ on: "command", command: "IDLE", times: 1, send: "$TAG BAD IDLE unavailable\r\n" }] : []);
+    const t = await account(w);
+    const owner = await w.wait(() => w.commands.find((c) => c.command === (mode === "absent" ? "NOOP" : "IDLE"))?.session,
+      "fallback listener session");
+    if (mode === "refused") t.provider.heartbeat!();
+    await w.wait(() => w.completions.filter((c) => c.session === owner && c.command === "NOOP").length >= (mode === "absent" ? 1 : 2)
+      ? true : undefined, "join fallback startup");
+    const held = deferred<void>();
+    const handle = w.server.script.add({ on: "response", command: "NOOP", session: owner, untagged: false, times: 1,
+      drop: true, when() { held.resolve(); return true; } });
+    try {
+      t.provider.heartbeat!();
+      await bounded(held.promise, "fallback heartbeat held");
+      await t.stop();
+      expect(w.closed.has(owner)).toBe(true);
+    } finally {
+      handle.remove();
+      await w.wait(() => w.closed.has(owner) ? true : undefined, "fallback socket closes before fixture teardown", 3500);
+    }
+  });
+
   it.each(["IDLE", "NOOP"])("heartbeat timeout during %s closes only the listener; foreground and replacement push work", async (command) => {
     const w = await wire();
-    const t = await account(w);
+    const heartbeatMs = 9001;
+    const t = await account(w, heartbeatMs);
     const owner = await listener(w);
     const observer = await unrelated(w);
     const previous = w.idles.length;
     const start = w.commands.length;
     const held = deferred<void>();
+    const deadline = deferred<() => void>();
+    const originalTimeout = globalThis.setTimeout;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    // Release only the heartbeat's real deadline after the wire assertions; other deadlines keep running.
+    const clock = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, ms, ...args) => {
+      const timer = originalTimeout(callback, ms, ...args);
+      if (ms === heartbeatMs) {
+        deadlineTimer = timer;
+        deadline.resolve(() => { clearTimeout(timer); callback(...args); });
+      }
+      return timer;
+    });
     const handle = w.server.script.add({ on: "response", command, session: owner, untagged: false, times: 1,
       drop: true, when() { held.resolve(); return true; } });
     try {
       t.provider.heartbeat!();
       await bounded(held.promise, `${command} blocked`);
+      const expire = await bounded(deadline.promise, "heartbeat deadline armed");
       w.server.control.addMessage("Projects", { raw: rawIdleMail(`timeout-${command}`) });
       await bounded(t.backend.syncAccount(t.account.id), "foreground while probe blocked");
       const d = await detail(t, `timeout-${command}`);
       await act(t, d.thread.id, "star");
+      expect(w.closed.has(owner)).toBe(false);
+      expect(w.server.control.sessions().some((s) => s.session === owner)).toBe(true);
+      expect(w.commands.slice(start).some((c) => c.command === "UID FETCH" && /BODY\.PEEK\[\]/i.test(c.data) && c.session !== owner)).toBe(true);
+      expect(w.server.control.listMessages("Projects")[0]!.flags).toEqual(["\\Flagged"]);
+      expect(w.commands.slice(start).filter((c) => c.command === "UID STORE").map((c) => c.session)).toEqual([
+        w.commands.slice(start).find((c) => c.command === "UID FETCH")!.session,
+      ]);
+      expect(handle.hits).toBe(1);
+      expire();
       await w.wait(() => w.closed.has(owner) ? true : undefined, "timed-out listener closes");
       const next = await listener(w, previous);
       expect(next).not.toBe(owner);
+      await bounded(t.backend.syncAccount(t.account.id), "drain reconnect catch-up before push probe");
       await bounded(observer.c.noop(), "unrelated session survives timeout");
       expect(w.closed.has(observer.id)).toBe(false);
       w.server.control.addMessage("INBOX", { raw: rawIdleMail(`timeout-push-${command}`) });
       await expect.poll(async () => (await t.client.call("threads.list", { view: "inbox" })).items.map((x) => x.subject)).toContain(`timeout-push-${command}`);
       expect(w.idles.slice(previous)).toEqual([next]);
       budget(w, start, 4);
-    } finally { handle.remove(); }
+    } finally { clock.mockRestore(); clearTimeout(deadlineTimer); handle.remove(); }
   });
 
   it("offline cancellation force-closes a listener awaiting DONE; unrelated and fresh accounts stay healthy", async () => {
