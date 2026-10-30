@@ -5,7 +5,9 @@ import { attachmentBlob } from "./attachments";
  * Plan 76: images placed in a draft's text. Each is one of the draft's
  * attachments with a content ID of ours (terno-img-…@terno), named by the
  * text's <img src="cid:…">: it lives in the text, never as a chip, and is
- * left out of a send whose text no longer shows it.
+ * left out of a send whose text no longer shows it. Ours by where it is,
+ * not by its name alone: a forward of a mail Terno sent carries such parts
+ * too, with no image in its text, and they stay files (chips, and sent).
  */
 
 /** what the reader shows inline (lib/cid.ts): the rest attach */
@@ -15,12 +17,30 @@ export const isInlineImage = (file: { type: string }): boolean => INLINE_TYPES.h
 export const newImageCid = (): string => `terno-img-${crypto.randomUUID()}@terno`;
 export const isOwnImage = (ref: Pick<AttachmentRef, "contentId">): boolean => /^terno-img-[0-9a-f-]+@terno$/.test(ref.contentId ?? "");
 
-/** The draft's files as chips: everything but its own inline images. */
-export const chipRefs = (refs: readonly AttachmentRef[]): AttachmentRef[] => refs.filter((r) => !isOwnImage(r));
+/** images an editor has shown in a text this session (taken out since, they may come back with Undo) */
+const inText = new Set<string>();
+export const markInText = (cid: string): void => void inText.add(cid);
+const shownBy = (ref: AttachmentRef, html: string | undefined) => (html ?? "").includes(`cid:${ref.contentId}`);
 
-/** What a send carries: its own inline images only while the text shows them. */
-export const sentRefs = (refs: readonly AttachmentRef[], html: string | undefined): AttachmentRef[] =>
-  refs.filter((r) => !isOwnImage(r) || (html ?? "").includes(`cid:${r.contentId}`));
+/** The draft's files as chips: everything but the images in (or taken out of) its text. */
+export const chipRefs = (refs: readonly AttachmentRef[], html: string | undefined): AttachmentRef[] =>
+  refs.filter((r) => !isOwnImage(r) || !(inText.has(r.contentId!) || shownBy(r, html)));
+
+/** Images taken out of the text (kept for Undo): not sent, and the first to go when a drop needs the room. */
+export const outOfText = (refs: readonly AttachmentRef[], html: string | undefined): AttachmentRef[] =>
+  refs.filter((r) => isOwnImage(r) && inText.has(r.contentId!) && !shownBy(r, html));
+
+/** What a send carries: all but the images taken out of the text. */
+export const sentRefs = (refs: readonly AttachmentRef[], html: string | undefined): AttachmentRef[] => {
+  const out = new Set(outOfText(refs, html));
+  return refs.filter((r) => !out.has(r));
+};
+
+/** A send's HTML without an image whose file isn't sent (one let go for room, then brought back by Undo). */
+export function withSentImages(html: string, refs: readonly AttachmentRef[]): string {
+  const sent = new Set(refs.map((r) => r.contentId));
+  return html.replace(/<img src="cid:(terno-img-[0-9a-f-]+@terno)"[^>]*>/g, (img, cid: string) => (sent.has(cid) ? img : ""));
+}
 
 // ── what the editor shows for an image: an object URL, by asset (a few; the oldest revoked once nothing shows it)
 
@@ -37,6 +57,14 @@ function keep(assetId: string, url: Promise<string | null>): Promise<string | nu
     void value.then((u) => { if (u && !shown(u)) URL.revokeObjectURL(u); });
   }
   return url;
+}
+
+/** A node view that showed this URL is gone: one already out of the cache, and shown nowhere else, is revoked. */
+export function releaseImageUrl(url: string): void {
+  queueMicrotask(async () => {
+    for (const cached of urls.values()) if (await cached === url) return;
+    if (!shown(url)) URL.revokeObjectURL(url);
+  });
 }
 
 /** A file just placed: shown from itself at once, no read back. */

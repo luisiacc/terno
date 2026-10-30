@@ -3,7 +3,9 @@ import { Fragment, Slice, type Node as PMNode } from "prosemirror-model";
 import { closeHistory } from "prosemirror-history";
 import { Plugin, PluginKey, Selection, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView, type NodeView } from "prosemirror-view";
+import { MAX_ATTACHMENT_BYTES } from "@terno/core";
 import { inlineRaster } from "~/lib/cid";
+import { markInText, releaseImageUrl } from "~/lib/inline-images";
 
 /**
  * Plan 76: images in the composer's text. A node view shows a placed image
@@ -31,6 +33,7 @@ export function imageView(node: PMNode, hooks: () => ImageHooks | undefined): No
     else dom.removeAttribute("width");
     if (n.attrs.cid === cid) return;
     cid = n.attrs.cid as string;
+    markInText(cid);
     const at = cid;
     dom.removeAttribute("src");
     dom.dataset.state = "loading";
@@ -49,6 +52,7 @@ export function imageView(node: PMNode, hooks: () => ImageHooks | undefined): No
       return true;
     },
     ignoreMutation: () => true,
+    destroy: () => { if (dom.src) releaseImageUrl(dom.src); },
   };
 }
 
@@ -121,8 +125,9 @@ export function placeImages(view: EditorView, placed: { id: string; node: PMNode
     tr = tr.insert(at === null ? Selection.atEnd(tr.doc).from : tr.mapping.map(at), node);
   }
   tr.setMeta(placeholderKey, { remove: placed.map((p) => p.id) } satisfies Meta);
-  // its own undo step: ⌘Z takes the images out, nothing typed before them
+  // its own undo step: ⌘Z takes the images out, nothing typed before or after them
   view.dispatch(closeHistory(tr));
+  view.dispatch(closeHistory(view.state.tr));
 }
 
 export function dropPlaceholders(view: EditorView, ids: string[]): void {
@@ -140,7 +145,15 @@ const SCALED_SIDE = 2400;
  * file itself when the reader shows it inline, else scaled down (a GIF
  * would lose its motion: it attaches). Null: it attaches as it is.
  */
-export async function inlineFile(file: File): Promise<{ file: File; width: number } | null> {
+export function inlineFile(file: File): Promise<{ file: File; width: number } | null> {
+  // one image decoded at a time, whatever was dropped (a batch of full-size photos is a lot of memory at once)
+  const next = decoding.then(() => (file.size > MAX_ATTACHMENT_BYTES ? null : prepare(file)));
+  decoding = next;
+  return next;
+}
+let decoding: Promise<unknown> = Promise.resolve();
+
+async function prepare(file: File): Promise<{ file: File; width: number } | null> {
   let bitmap: ImageBitmap;
   try { bitmap = await createImageBitmap(file); } catch { return null; }
   try {

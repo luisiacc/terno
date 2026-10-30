@@ -7,6 +7,7 @@ import { mergeAttachmentRefs } from "./compose-fields";
 import { client } from "~/rpc/connection";
 import { beginDraftWork, editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields, type LocalDraft } from "./drafts";
 import { formatBytes } from "./format";
+import { outOfText } from "./inline-images";
 import { snack } from "./snack";
 
 /** plan 76: drops waiting their turn, by draft (Send waits for them as for a staging) */
@@ -54,7 +55,10 @@ const idle = (key: string) => new Promise<void>((resolve) => {
 /** Files may still be being prepared (an image scaled down): the draft counts as adding files from the drop on, so Send waits for them. */
 export function attachFilesInTurn(key: string, files: readonly File[] | Promise<{ files: readonly File[]; o?: Parameters<typeof attachFiles>[2] }>, o: Parameters<typeof attachFiles>[2] = {}): Promise<boolean> {
   const ready = Array.isArray(files) ? Promise.resolve({ files, o }) : (files as Promise<{ files: readonly File[]; o?: Parameters<typeof attachFiles>[2] }>);
-  const run = (queued.get(key) ?? Promise.resolve()).then(() => idle(key)).then(async () => { const r = await ready; return attachFiles(key, r.files, r.o); });
+  // the drop is draft work from now on (a quit or a store switch waits for it), not only once its staging starts
+  const finish = beginDraftWork();
+  if (!finish) return Promise.resolve(false);
+  const run = (queued.get(key) ?? Promise.resolve()).then(() => idle(key)).then(async () => { const r = await ready; return attachFiles(key, r.files, r.o); }).finally(finish);
   const tail = run.catch(() => false);
   queued.set(key, tail);
   void tail.then(() => { if (queued.get(key) === tail) queued.delete(key); });
@@ -89,6 +93,11 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
     const signature = getApp().accounts.find((a) => a.id === draft.accountId)?.signature;
     const contentId = (i: number) => o.contentIds?.[i] ?? null;
     const incoming = files.map((f, i) => ({ assetId: "", filename: f.name, mime: f.type || "application/octet-stream", size: f.size, contentId: contentId(i) }));
+    // plan 76: images taken out of the text are kept for Undo, until a drop needs their room
+    const spare = outOfText(draft.attachments ?? [], materialize(key)?.bodyHtml);
+    if (spare.length && !await draftAttachmentBudget({ ...fieldsOf(draft), attachments: [...(draft.attachments ?? []), ...incoming] }, signature)) {
+      editDraft(key, { attachments: (current(true).attachments ?? []).filter((a) => !spare.some((x) => x.assetId === a.assetId)) });
+    }
     // plan 76: typing while the budget is checked doesn't refuse the files: it is checked again against what is there now
     const admitted = await settledBudget(() => current(true), (d) => draftAttachmentBudget({ ...fieldsOf(d), attachments: [...(d.attachments ?? []), ...incoming] }, getApp().accounts.find((a) => a.id === d.accountId)?.signature ?? signature));
     if (!admitted) throw new Error(t("attachments.tooLarge"));

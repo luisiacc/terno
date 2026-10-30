@@ -275,3 +275,20 @@ test("a file mail can't carry is named, with the limit; an image that can't be r
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
   await expect(body.locator("img")).toHaveCount(0);
 });
+
+test("text typed right after an image lands is its own undo step (Codex review)", async ({ app: page }) => {
+  await openRow(page, 0);
+  await page.getByTestId("quick-reply").click();
+  const body = page.getByTestId("compose-body");
+  await body.click();
+  await page.keyboard.type("Hi ");
+  const dt = await transfer(page, [{ name: "u.png", type: "image/png" }]);
+  await body.evaluate((el, dt) => el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })), dt);
+  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
+  await page.keyboard.type("there");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(body.locator("img.rt-image")).toHaveCount(1);
+  await expect(body).toHaveText("Hi ");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(body.locator("img.rt-image")).toHaveCount(0);
+});

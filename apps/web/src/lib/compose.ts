@@ -11,7 +11,7 @@ import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscri
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
 import { answered, convertFields, forwardAccountMismatch, newFields, replyFields, mergeAttachmentRefs } from "./compose-fields";
-import { sentRefs } from "./inline-images";
+import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
@@ -895,7 +895,9 @@ async function send(key: string): Promise<boolean> {
     breadcrumb("action", "action.send");
     const body = await bodyParts(d);
     const signature = getApp().accounts.find((a) => a.id === d.accountId)?.signature;
-    const bodyHtml = body.html === null ? undefined : sendHtml(body.html, d, signature);
+    // plan 76: an image taken out of the text (and not put back) isn't sent
+    const attachments = sentRefs(d.attachments ?? [], body.html ?? undefined);
+    const bodyHtml = body.html === null ? undefined : sendHtml(withSentImages(body.html, attachments), d, signature);
     const res = await client.call("compose.send", {
       accountId: d.accountId,
       to,
@@ -909,8 +911,7 @@ async function send(key: string): Promise<boolean> {
       draftId: d.id ?? undefined,
       draftRevision: d.id ? d.revision : undefined,
       draftGeneration: d.generation,
-      // plan 76: an image taken out of the text (and not put back) isn't sent
-      attachments: sentRefs(d.attachments ?? [], bodyHtml),
+      attachments,
     });
     forgetDraft(key);
     if (getApp().compose?.key === key) setApp({ compose: null });

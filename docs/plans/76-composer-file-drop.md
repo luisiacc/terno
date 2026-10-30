@@ -16,7 +16,7 @@
 
 - A drag carrying files (`dataTransfer.types` has `Files`) over a composer lights it: an inset 2 px ring in `--primary` at low alpha and a faint wash, plus a pill at the composer's foot naming what a drop does. Nothing changes for text dragged inside the editor.
 - **Two zones, one rule.** Over the text: images go *where the pointer is*; a 2 px caret in `--primary` follows the pointer to show the spot, and the pill says “Drop to place the image here” (“…images…” for several). Elsewhere in the composer (recipients, subject, chips, toolbar) or for files that aren't images, the pill says “Drop to attach”. A mix over the text: images go inline, the rest attach (“Drop to place images here and attach the rest”).
-- A drag that can't land (the draft is sending, or recovering) shows the pill “Can't add files while sending” with no ring and `dropEffect = none`.
+- A drag that can't land (the draft is sending) shows the pill “Can't add files while sending” with no ring and `dropEffect = none`.
 - Leaving the composer, Esc, or a drop anywhere clears it at once. No motion beyond the `--motion` cap; with reduced motion the ring just appears.
 - A file dropped anywhere else in the app is refused (`dropEffect = none`, `preventDefault`): it never navigates the tab away (and with it the draft).
 
@@ -31,7 +31,7 @@
 - Schema: an inline atom `image` with `cid`, `alt`, `width`. Parse rule only for `img[src^="cid:"]`; `cleanDom` keeps such an `<img>` (src, alt, width) only in Terno's own HTML; a foreign paste still drops images. A paste of an image node whose `cid` isn't one of this draft's files is dropped (`transformPasted`).
 - Mail HTML: `<img src="cid:…" alt="…" width="N" style="max-width:100%;height:auto">`; width is the image's own, capped at 600 px. Plain text: `[image: name]`.
 - In the editor a node view shows the file: an object URL from the dropped `File` at once; on reopen it is read from the local asset (`attachmentBlob`). URLs are cached per asset, at most 32, revoked when evicted or the draft goes.
-- The draft's `attachments` hold the image's ref with a `contentId` of `terno-img-<uuid>@terno` (our prefix). Chips never show these: an inline image lives in the text. At send, one the text no longer shows (deleted, not undone) is left out.
+- The draft's `attachments` hold the image's ref with a `contentId` of `terno-img-<uuid>@terno` (our prefix), set when the asset is created. Chips don't show an image that is in the text or was taken out of it this session (kept for Undo); at send one taken out is left out. Ours by where it is, not by the prefix alone (see the code review below).
 
 ## Tests
 
@@ -46,3 +46,41 @@ Nothing runs until a file drag enters the window (one `dragenter` listener). The
 ## Out of scope
 
 Resizing images by hand, images as a link, dropping a URL or text from another app (ProseMirror's own), inline images in the plain-text stand-in (it attaches).
+
+## Revisions after the Codex review (plan)
+
+1. The cid is given at `attachments.create` (the store checks a ref against its asset's cid).
+2. Nothing half-done reaches autosave: the dimmed preview is a decoration, not part of the document; the ref is adopted and the image inserted in the same task, before the save.
+3. The preview's spot follows edits (a mapped decoration); an editor rebuilt meanwhile, or closed, gets the image at the end of the text (closed: through the stored body).
+4. The insertion is an editor transaction of its own (`closeHistory`), never a body patch while an editor is mounted.
+5. Drops wait their turn (`attachFilesInTurn`) instead of being refused while another staging runs; Send counts a queued drop as adding files.
+7. Chips and pruning only touch our own prefix.
+8. A paste keeps only images whose cid is one of this draft's files (`knownImagesOnly`), whatever its `data-pm-slice`.
+9. An image goes in the text only if our reader would show it (≤ 4 MB, raster checks of `lib/cid.ts`); a bigger photo is scaled to 2400 px on its long side (a PNG too heavy as such becomes JPEG); a GIF too big attaches.
+10. The staging keeps `beginDraftWork`; the drop itself also holds it (code review 2).
+11. URLs stay valid while shown (see code review 5).
+12. The stand-in (editor still loading) attaches; the pill says "Drop to attach" there.
+Not taken: 6 (budgeting the image's HTML: about 120 bytes each against 16 KB of headroom).
+
+## Revisions after the persona run
+
+A subagent drove the web build as five users (rushed, novice, power user, support agent, skeptic) through 21 scenarios (`apps/web/e2e/composer-drop-personas.dev.ts`, run with `playwright.composer-drop-personas.config.ts`). Fixed, each with a test in `composer-drop.spec.ts`:
+
+- ⌘↵ right after dropping a photo sent the mail without it: the drop counts as adding files from the moment it lands, and Send says "Still adding files. Send again once they’re in."
+- Typing while files staged could refuse them ("unavailable"): the budget is checked again against the text as it is now (`settledBudget`).
+- A draft with 3+ images showed some broken after a reload (the backend takes two attachment calls at once): images load one at a time, a refused one is tried again.
+- Moving an image within the text (Chrome carries it as a file too) lit the composer and could duplicate it: drags that start in the page are never files coming in.
+- A file mail can't carry is named with the limit; an image that can't go in the text says it was attached instead.
+- The pill sat on the footer's save state: it is at the top. The dimmed preview has the same 600 px cap as the image.
+- Pasted screenshots (all "image.png") are numbered: "Pasted image 1.png".
+
+Left as is: reloading while a photo stages loses that drop (the text is kept; a `beforeunload` prompt would block the app's own reloads); Esc during a drag (browsers don't deliver it).
+
+## Revisions after the Codex code review
+
+1. A forward of a mail Terno sent carries parts with our prefix and no image in its text: they were hidden and not sent. Ours now means in the text, or shown in an editor's text this session (`markInText`); anything else is a file.
+2. A quit while an image was still being prepared could lose the drop: the draft-work lease is taken at the drop (`attachFilesInTurn`).
+3. Text typed right after an image landed joined its undo step: history is closed after the insertion too.
+4. Images taken out of the text kept their room in the budget for good: a drop that needs it lets them go first; one brought back by Undo afterwards isn't sent (`withSentImages` drops its `<img>`).
+5. An evicted URL still on screen was never revoked: a node view going away releases it.
+6. A batch of large photos was decoded all at once: one at a time, and nothing over the attachment limit is decoded.

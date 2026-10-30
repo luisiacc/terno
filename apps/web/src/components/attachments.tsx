@@ -35,7 +35,7 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
   const busy = useAttachmentUploads((s) => s.keys.has(d.key));
   const forward = useForwardFiles((s) => s[d.key]);
   // plan 76: an image placed in the text is shown there, not as a chip
-  const chips = chipRefs(d.attachments ?? []);
+  const chips = chipRefs(d.attachments ?? [], d.bodyHtml);
   if (!chips.length && !busy && !forward) return null;
   return <div className="px-3.5 py-2" aria-live="polite">
     {busy && <p role="status" className="text-xs text-muted-foreground">{t("attachments.adding")}</p>}
