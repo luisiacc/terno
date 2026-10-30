@@ -235,12 +235,12 @@ function keeps(p: ScopeParams): (t: R | undefined) => t is R {
  * walks the mailbox, and a deep page never walks the folder's top.
  */
 export function folderPage(c: Ctx, p: ListParams): Page {
-  const threads = T(c, "threads");
   // a folder reads through the account's list: one it no longer lists holds nothing (its rows wait unseen)
   const listed = T(c, "folders").has(p.accountId, p.folder);
   // the "Unread" filter walks the folder's unread memberships alone, by date (Codex R11: an all-read folder walked
   // whole), kept sorted across pages (Codex R12: never re-sorted per page)
-  const unreadOnly = listed && listFilterOf(p) === "unread";
+  const filter = listFilterOf(p);
+  const unreadOnly = listed && filter === "unread";
   const unread = unreadOnly ? c.scopes.folderUnreadByDate(c, p.accountId!, p.folder!) : null;
   const byDate = listed && !unreadOnly ? c.scopes.folderByDate(c, p.accountId!, p.folder!) : [];
   // a big folder's order (or its Unread one) still being built: this page selected from its members, newest first
@@ -248,6 +248,10 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   if (byDate === null || (unreadOnly && unread === null)) return selectFolderPage(c, p, unreadOnly ? "unread" : "folder");
   const size = unread ? unread.length : byDate.length;
   const order = unread ?? byDate;
+  const floor = filter === "waiting" ? waitingCutoff(p.now!) : -Infinity;
+  // Validate the order first: pending membership/date changes can bring a row back into the window.
+  if (filter === "waiting" && !p.keepIds?.length && (!size || order[0]!.date < floor)) return { items: [], nextCursor: null };
+  const threads = T(c, "threads");
   const pass = keeps(p);
   const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   let lo = 0;
@@ -260,7 +264,6 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   }
   const rows: R[] = [];
   // newest first: "Waiting" stops at its window's start (Codex R26: an expired folder walked whole)
-  const floor = listFilterOf(p) === "waiting" ? waitingCutoff(p.now!) : -Infinity;
   for (let i = lo; i < size && rows.length <= p.limit; i++) {
     const at = order[i]!;
     if (at.date < floor) break;
@@ -271,7 +274,7 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   const items: ThreadSummary[] = (hasMore ? rows.slice(0, p.limit) : rows).map((t) => toSummary(c, t));
   const last = items[items.length - 1];
   const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
-  if (!listFilterOf(p) || !p.keepIds?.length) return page;
+  if (!filter || !p.keepIds?.length) return page;
   const inView = keeps({ ...p, filter: undefined, unreadOnly: false });
   const memberships = T(c, "thread_folders");
   const kept = [...new Set(p.keepIds)].filter((id) => listed && memberships.has(id, p.folder)).map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));

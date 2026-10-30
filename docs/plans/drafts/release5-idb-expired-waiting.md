@@ -34,3 +34,46 @@ The redundant-read correction is independently established, but the release gate
 ## Production review
 
 Exactly one native `codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only -C <this checkout> -` production Standards+Spec review, after implementation and focused green. Actual verdict: **approve; Standards PASS, 0 findings; Spec PASS, 0 findings**. No high correctness/data-loss findings or lower-priority backlog observations, so no review-driven implementation changes. It confirmed tuple seeking, date maintenance/rollback and unchanged keepIds/cold/lifecycle behavior. Limits: static read-only review, no independent tests; its final text said qualification was pending, while the separately completed qualification failed as recorded above. No second review or model fallback. Transcript: `/tmp/terno-idb-waiting-review/production-review.log`.
+
+## Original-reader completion after f4839ace
+
+Request: continue the same reader repair, keep it unlanded, profile the remaining public path, preserve all fences/semantics, and permit one original affected perf qualification only after a deterministic regression and new correction. The single production review is consumed; no further critique or production review was run. The following correction is regression-verified completion of the original performance contract, not independently re-reviewed.
+
+### Separate diagnostic evidence
+
+Temporary `waiting-path.diagnostic.test.ts` used synthetic seed 42, 28,400 threads / eight accounts / bodyScale 2, and the largest account's messages labeled in batches of 2,000. It called the actual public `threads.list` with an expired Waiting window. This is a diagnostic fixture, not the entire qualification sequence. It counted parameter reads, table resolutions, JSON serializations, order calls and native IDB transactions, with phase markers wrapping `early`, `read`, `settled`, the reader callback and `folderByDate`. Wrappers, spies, Proxy and the additional promise continuation perturb timings. None of these values establish the cause of the original 0.273417 or later 0.308083 ms failures; no failure is attributed to another process.
+
+The first trace found an order still building (`null`), hence the cold selector's membership work. The cached trace explicitly completed/verified order construction outside the trace (diagnosis only). This distinction prevents confusing a cold selector with a validated cached empty result. Both traces and their source are preserved under `/tmp/terno-idb-waiting-review/`; the temporary diagnostic test was removed before qualification.
+
+Cached path before this completion:
+
+- `early -> read -> settled(inflight=false) -> reader -> folderByDate -> reader return -> public resolution`.
+- 8,683 dated members; one scope-order validation; two table resolutions (`threads`, `folders`); one composite JSON key `[accountId, folder]`; **zero native IDB transactions**. No evidence that key computation dominates; it remains necessary to validate the listed folder.
+- Four filter reads, two clock reads/cutoff calculations, one view read, one cursor read and two limit reads on the first-page path. The deterministic cursor regression observes 17 cursor property reads on its 64-member fixture.
+- Instrumented elapsed boundaries (microseconds): public 294.250; settled 11.833; reader callback 104.500; order validation 4.833. These are boundary observations with instrumentation overhead, not independent costs to sum or timing qualification.
+
+The empty result was still allocating `keeps` and cursor predicates plus a mapping callback and candidate array, and resolving a thread table it would never read. These allocations follow directly from executed source; no heap-byte attribution is claimed.
+
+### Narrow correction and regression
+
+After the existing folder-list check and `folderByDate` validation (including applying queued date/membership changes), if Waiting has no kept IDs and the validated order is empty or its newest date is **strictly below** the caller's cutoff, return a fresh empty page. By descending order and `waiting_since <= last_date`, no member can qualify, regardless of cursor or view. Equality does not return early. A building/invalidated order still takes the original cold selector. Kept IDs still use all the original predicates and merge; no empty-result cache is introduced. Defer resolving the threads table and constructing predicates until after this proof. Resolve the request's filter once in this reader.
+
+Fail-first command (guard inherited): `pnpm exec vitest run --project unit packages/idb/src/expired-waiting.test.ts --reporter=verbose`, log `setup-red.log`: **2 failed, 7 passed**. It observed one threads-table resolution, one view read, and respectively 1/17 cursor reads, while requiring the existing order validation. The same assertions pass after the correction. Existing cutoff/ties, date mutation/rollback, membership/account identity, kept rows, deleted anchor, read/star/trash, reopen and closed controls remain. Two additional synthetic in-flight fence controls verify no order read before release and unusable-store rejection after release. They exercise the public read fence state, not a claim of native failure injection.
+
+Cached diagnostic after correction (`phase-cached-after.log`): same 8,683-member order validation, one folder-table resolution, one composite key, zero IDB transactions, one filter and one clock read, **no view/cursor/limit reads**. Instrumented public 277.083 us; settled 11.625 us; reader 71.334 us; order 3.417 us. The measured `settled` boundary was an idle resolved promise, not a native transaction; it cannot safely be omitted because a write or uncertain outcome must be observed before even an empty read. The fence regression verifies this necessity. The correction removes the proven setup work; it does not bypass or rewrite `early/read/settled`.
+
+### Completion validation
+
+All test invocations append inherited `NODE_OPTIONS` with `--require=/tmp/terno-network-guard.cjs`; only synthetic mail/database names were used. The same captured PID/birth/argv deadline runner was used (180 seconds diagnostics; 120 seconds focused tests); all diagnostic and validation processes completed and were joined/reaped before original qualification. No reviewer is running and none was started again.
+
+- `pnpm exec vitest run --project unit packages/idb/src/expired-waiting.test.ts packages/idb/src/idb.conformance.test.ts -t 'expired|dated|shared dated|reopening|folders \(plan 68\)|empty Waiting read'`: **69 passed**, 602 unrelated cases deselected, 3.17 s (`completion-focused.log`).
+- `pnpm --filter @terno/idb typecheck`: **pass**.
+- `pnpm exec oxlint --deny-warnings packages/idb`: **pass**.
+- `git diff --check`: **pass**.
+- Original full affected perf file on this new code: one run, results below. No workload, oracle, budget, window, warmup, sample, timing, delay, deadline or multiplier changed; no gate-local warming, skip annotations or unchanged retry.
+
+Completion qualification: `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" python3 /tmp/terno-idb-waiting-review/run.py 1800 /tmp/terno-idb-waiting-review/completion-qualification.log pnpm exec vitest run --project perf packages/idb/src/idb.perf.test.ts`.
+
+**9 passed, 1 failed**, 97.27 seconds. The original account-folder test, including the exact expired Waiting assertion at line 192, **passed**. Vitest did not print the successful test's numeric sample, so no specific new expired runtime is claimed. The file remains **RED** on `the unread filter's counts and select-all walks read the unread threads only: none in the view, a few, or a read crossing at a time`, line **375**, `count after a read`: **1.5087510064913658 ms > unchanged 1.5 ms**. This separate Unread scope-count failure is handed back unchanged; no noise attribution, timing waiver or retry. No broad release-green claim follows from the repaired Waiting assertion.
+
+The qualification process completed and was joined (exit 1); no owned process remains running. Earlier baseline 10/10 and 0.308083/0.25 failure are historical evidence, not current passes. The original full perf file and its workload/assertions remain untouched. Only the same folder reader, its precise regression file and this spec changed. Main/Plan64–68, SQL/backend/frontend, workspace/dependencies and other-owner files were not edited. No build, other perf file, full suite, e2e, native browser test, smoke, new review, fetch/push or landing was performed.

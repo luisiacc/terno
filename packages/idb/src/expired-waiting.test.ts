@@ -118,3 +118,49 @@ it("reopening an expired folder rebuilds its order and preserves kept identity",
   expect(await reopened.threads.list(p)).toEqual({ items: [], nextCursor: null });
   expect((await reopened.threads.list({ ...p, keepIds: [ids[0]!] })).items.map((t) => t.id)).toEqual(ids.slice(0, 1));
 });
+
+it.each([false, true])("an entirely expired validated order avoids predicate setup and cursor work (cursor=%s)", async (cursor) => {
+  const { store, c, ids, p } = await fixture();
+  const fields: Record<string, number> = {};
+  const params = new Proxy({ ...p, ...(cursor ? { cursor: { lastDate: cutoff - 10, id: ids[20]! } } : {}) }, {
+    get(target, key, receiver) {
+      if (typeof key === "string") fields[key] = (fields[key] ?? 0) + 1;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const tables = vi.spyOn(c.db, "table");
+  const order = vi.spyOn(c.scopes, "folderByDate");
+  expect(await store.threads.list(params)).toEqual({ items: [], nextCursor: null });
+  expect(order).toHaveBeenCalledExactlyOnceWith(c, p.accountId, p.folder);
+  expect({ threadTable: tables.mock.calls.filter(([name]) => name === "threads").length, view: fields.view ?? 0, cursor: fields.cursor ?? 0 }).toEqual({ threadTable: 0, view: 0, cursor: 0 });
+});
+
+it.each([false, true])("an empty Waiting read waits behind the write fence and checks uncertainty after release (unusable=%s)", async (unusable) => {
+  const { store, c, p } = await fixture();
+  const state = store as unknown as { inflight: Promise<void> | null; unusable: boolean };
+  let release!: () => void;
+  state.inflight = new Promise<void>((resolve) => { release = resolve; });
+  const order = vi.spyOn(c.scopes, "folderByDate");
+  let finished = false;
+  const result = store.threads.list(p).then((page) => { finished = true; return page; }, (error: unknown) => { finished = true; return error; });
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(finished).toBe(false);
+    expect(order).not.toHaveBeenCalled();
+    state.unusable = unusable;
+    state.inflight = null;
+    release();
+    if (unusable) {
+      expect(await result).toEqual(expect.objectContaining({ message: "the store is closed" }));
+      expect(order).not.toHaveBeenCalled();
+    } else {
+      expect(await result).toEqual({ items: [], nextCursor: null });
+      expect(order).toHaveBeenCalledTimes(1);
+    }
+  } finally {
+    state.inflight = null;
+    release();
+    await result;
+    state.unusable = false;
+  }
+});
