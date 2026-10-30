@@ -50,8 +50,8 @@ export class ProviderCooldown {
   private readonly clearTimer: (timer: Timer) => void;
 
   private constructor(private readonly persistence: CooldownPersistence, private readonly clock: CooldownClock, private readonly hooks: CooldownHooks) {
-    this.timer = hooks.setTimeout ?? setTimeout;
-    this.clearTimer = hooks.clearTimeout ?? clearTimeout;
+    this.timer = hooks.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimer = hooks.clearTimeout ?? ((timer) => clearTimeout(timer));
   }
   static async open(persistence: CooldownPersistence, clock: CooldownClock, hooks: CooldownHooks = {}): Promise<ProviderCooldown> {
     const gate = new ProviderCooldown(persistence, clock, hooks);
