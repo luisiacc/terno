@@ -269,3 +269,8 @@ The initial ingestion optimization failed Root qualification0.96513versus0.97 an
 ## Recorded qualification: unchanged categorization file
 
 Evidence-only `7f2e2771`: the sole post-ingestion run passes13/13, CPUratios1.0436242585<=1.1and1.3371374669<=1.5with589/5,235decisions. Original1.1093942905failure remains recorded and causally unresolved. No production/test/gate changes or independent code review; one plan critique. Rebase was documentation-only with unrelated IDB changes, so no unchanged perf replay. [Exact commands and limitations](../plans/drafts/release-categorize-throughput.md). No release-wide clearance.
+
+
+## Landed repair: packaged notification and legacy-profile fixtures
+
+`9f4e3376` repairs native-Keychain-dependent synthetic notification setup, faithful v13 schema reconstruction, exact data preservation and exhaustive owned cleanup. Root passed3affected packaged cases and4helper tests plus desktop/smoke types and lint after rebase. One review teardown finding fixed fail-first. The original2ac77324package hashes remain unchanged; no owned process remains. [Evidence and scope](../plans/drafts/release-packaged-smoke-fixtures.md). Native encryption and a fresh milestone binary remain unverified; no package/release clearance.
