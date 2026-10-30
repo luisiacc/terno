@@ -338,19 +338,27 @@ test.describe("ghost text", { tag: "@design" }, () => {
     await expect(ghost(page)).toHaveAttribute("data-ghost", "you have any questions.");
   });
 
-  test("near the end of a line only the words that fit show, never wrapping over the text below (codex review)", async ({ app: page, server }) => {
+  for (const blockedUp of [false, true]) test(`near the end of a line only the words that fit show, never wrapping over the text below (codex review)${blockedUp ? " with native Up blocked" : ""}`, async ({ app: page, server }) => {
     await seed(server);
     await newMessage(page);
     await body(page).click();
     // a line of text below the caret's line
     await page.keyboard.press("Enter");
     await page.keyboard.type("Below.");
-    await page.keyboard.press("ArrowUp");
+    if (blockedUp) await body(page).evaluate((root) => root.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowUp") event.preventDefault();
+    }));
+    // Native ArrowUp can stay in the second paragraph; measure the authored line, never an empty BR.
+    await body(page).evaluate((root) => {
+      const selection = document.getSelection()!;
+      selection.collapse(root.querySelector("p")!, 0);
+    });
     await page.keyboard.type("Let me know if", { delay: 20 });
+    await expect(body(page).locator("p")).toHaveText(["Let me know if", "Below."]);
     await expect(ghost(page)).toHaveAttribute("data-ghost", " you have any questions.");
     await page.keyboard.press("Escape");
     // the editor narrowed so " you have" fits after the caret but " you have any" doesn't (in this design's own type)
-    await body(page).evaluate((root) => {
+    const geometry = await body(page).evaluate((root) => {
       const p = root.querySelector("p")!;
       const text = p.firstChild as Text;
       const range = document.createRange();
@@ -363,13 +371,17 @@ test.describe("ghost text", { tag: "@design" }, () => {
       probe.style.position = "absolute";
       document.body.append(probe);
       const width = (s: string) => ((probe.textContent = s), probe.getBoundingClientRect().width);
-      const room = (width(" you have") + width(" you have any")) / 2;
+      const fits = width(" you have"), wraps = width(" you have any");
+      const room = (fits + wraps) / 2;
       probe.remove();
       const box = (root as HTMLElement).getBoundingClientRect();
       const padRight = parseFloat(getComputedStyle(root).paddingRight);
       (root as HTMLElement).style.width = `${caret - box.left + room + padRight}px`;
       (root as HTMLElement).style.flex = "none";
+      return { room: p.getBoundingClientRect().right - range.getBoundingClientRect().right, fits, wraps };
     });
+    expect(geometry.room).toBeGreaterThan(geometry.fits);
+    expect(geometry.room).toBeLessThan(geometry.wraps);
     // ask again (a keystroke)
     await page.keyboard.press("Backspace");
     await page.keyboard.type("f");
@@ -382,7 +394,7 @@ test.describe("ghost text", { tag: "@design" }, () => {
     expect(shown.h).toBeLessThanOrEqual(shown.line * 1.5);
     // Tab inserts what showed, nothing more
     await page.keyboard.press("Tab");
-    await expect(body(page).locator("p").first()).toHaveText("Let me know if you have");
+    await expect(body(page).locator("p")).toHaveText(["Let me know if you have", "Below."]);
   });
 
   test("an IME composition dismisses the ghost: cancelled, Tab inserts nothing unseen (codex review)", async ({ app: page, server }) => {
