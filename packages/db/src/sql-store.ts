@@ -449,6 +449,7 @@ export class SqlMailStore implements MailStore {
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
+        if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
         if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
@@ -471,6 +472,7 @@ export class SqlMailStore implements MailStore {
         const threads = new Set<number>();
         const reconciliation: { flagReconcileAccounts?: number[] } = {};
         for (const u of updates) {
+          if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", u.messageId)) continue;
           if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId)) continue;
           const identity = this.db.get<{ account_id: number; provider_msg_id: string | null }>("SELECT account_id,provider_msg_id FROM messages WHERE id=?", u.messageId);
           if (identity?.account_id !== accountId || (u.expectedProviderMsgId !== undefined && identity.provider_msg_id !== u.expectedProviderMsgId)) continue;

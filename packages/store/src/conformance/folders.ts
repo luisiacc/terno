@@ -36,6 +36,27 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   };
 
   describe(`folders (plan 68): ${name}`, () => {
+    it("IMAP identity: a removed locator durably retains its body and claimed intent", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const result = await ingest(store, [msg({ accountId: account!, providerMsgId: "identity-held", bodyText: "exact retained body", locations: [loc("A", 1)] })]);
+      const id = result.inserted[0]!;
+      const thread = await threadOf(store, "identity-held");
+      const action = await store.threads.act({ threadIds: [thread], action: "markRead", signal: null, now: NOW });
+      await store.ops.claimReady(NOW, 20);
+      await store.providerStore(account!).locations.remove(id, "A");
+      await store.sync.remove([id]);
+      expect((await store.threads.get(thread))?.messages[0]?.bodyText).toBe("exact retained body");
+      expect(JSON.parse((await store.ops.get(action.opIds[0]!))!.target_json)).toEqual({ messageIds: [id] });
+      store = await harness.reopen(store);
+      open.push(store);
+      expect(await store.providerStore(account!).locations.unresolved([id])).toEqual([id]);
+      let dispatched = false;
+      await expect(store.providerStore(account!).locations.dispatch([id], [], async () => { dispatched = true; })).rejects.toThrow("IMAP identity unavailable");
+      expect(dispatched).toBe(false);
+      expect((await store.threads.get(thread))?.messages[0]?.bodyText).toBe("exact retained body");
+    });
+
     it("Gmail: a user label is membership at once, listed or not: listing it later rewrites nothing; system labels never are", async () => {
       const store = await fresh();
       const [g] = await withAccounts(store);

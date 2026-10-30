@@ -49,7 +49,7 @@ import {
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
 import { idbFlags } from "./flag-intents";
-import { AWAITING_AUTH, AWAITING_NETWORK, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 
@@ -934,6 +934,7 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
 export function deleteMessages(c: Ctx, messageIds: readonly number[]): Set<number> {
   const touched = new Set<number>();
   if (messageIds.length === 0) return touched;
+  messageIds = messageIds.filter((id) => !T(c, "imap_identity_holds").has(id));
   const messages = T(c, "messages");
   c.db.tx(() => {
     // plan 17 (Codex R5): a reply of yours that goes may leave what it answered waiting again
@@ -1561,7 +1562,7 @@ export function nextOpAttemptAt(c: Ctx, admission?: OpAdmission): number | null 
   const blocked = locationBlockers(c);
   let t: number | null = null;
   for (const o of T(c, "ops").by("state", "queued")) {
-    if ((admitted && !admitted(o)) || o.next_attempt_at >= AWAITING_NETWORK || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
+    if ((admitted && !admitted(o)) || o.next_attempt_at >= AWAITING_IDENTITY || (t !== null && o.next_attempt_at >= t) || blocked(o)) continue;
     t = o.next_attempt_at;
   }
   return t;
@@ -1638,9 +1639,9 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
-  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? AWAITING_NETWORK : now + delay, updated_at: now });
+  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? ("identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay, updated_at: now });
   if (state === "failed") { settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed"); dropTargets(c, id); }
-  else if (!yieldToNewerOps(c, id)) return "succeeded";
+  else if (!(park && "identity" in park) && !yieldToNewerOps(c, id)) return "succeeded";
   return state;
 }
 

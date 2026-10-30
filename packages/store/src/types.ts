@@ -230,10 +230,10 @@ export const AWAITING_AUTH = 8_640_000_000_000_000;
 export const AWAITING_NETWORK = AWAITING_AUTH - 1;
 
 /** ops.fail's network case: wait for the network; an outage gives the claim's attempt back */
-export interface OpPark {
-  network: true;
-  keepAttempt: boolean;
-}
+export type OpPark = { network: true; keepAttempt: boolean } | { identity: true; keepAttempt: true };
+
+/** Identity holds resume only after trusted locator evidence, never a network/auth event or timer. */
+export const AWAITING_IDENTITY = AWAITING_NETWORK - 1;
 
 export interface OpRow {
   sent_copy?: import("@terno/core").SentCopyState;

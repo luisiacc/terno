@@ -1443,6 +1443,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.imap.changeUnknown": "No se pudo confirmar este cambio y es posible que ya se haya aplicado. Revisa tus mensajes en la app de tu proveedor antes de volver a intentarlo.",
   "errors.imap.listRefused": "Tu servidor de correo no permitió consultar los mensajes. Intenta sincronizar de nuevo.",
   "errors.imap.changeRefused": "Tu servidor de correo rechazó este cambio. Revisa los mensajes en la aplicación de tu proveedor antes de volver a intentarlo.",
+  "errors.imap.identityUnavailable": "No se pudo verificar la ubicación de este mensaje. Tu acción está guardada. Comprueba el mensaje en tu proveedor de correo antes de volver a intentarlo.",
   "errors.imap.unsafeMove": "Tu servidor de correo no puede mover estos mensajes de forma segura sin afectar a otros. Haz este cambio en la aplicación de tu proveedor.",
   "errors.imap.noPassword": "Falta la contraseña IMAP.",
   "errors.imap.cannotConnect": "No se pudo conectar a {host}: {detail}",

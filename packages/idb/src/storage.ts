@@ -38,6 +38,7 @@ function signedOut(c: Ctx): Set<number> {
 
 /** A message that must stay: starred, yours, a draft, local or unsent, an op not settled, a flag not yet confirmed (Codex R4). */
 function held(c: Ctx, m: Record<string, unknown>): boolean {
+  if (T(c, "imap_identity_holds").has(m.id)) return true;
   const provider = m.provider_msg_id as string | null;
   // a star or a message you sent count even in Trash and Spam, where the thread's own flags ignore them (Codex code review #1)
   if (m.is_draft === 1 || m.is_starred === 1 || m.is_sent === 1 || provider == null || provider.startsWith("local:")) return true;

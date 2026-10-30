@@ -522,7 +522,8 @@ export function deleteMessages(db: Db, messageIds: readonly number[]): Set<numbe
     // plan 17 (Codex R5): a reply of yours that goes may leave what it answered waiting again
     const refs = new Set<string>();
     for (let i = 0; i < messageIds.length; i += 500) {
-      const chunk = messageIds.slice(i, i + 500);
+      const chunk = messageIds.slice(i, i + 500).filter((id) => !db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", id));
+      if (!chunk.length) continue;
       for (const r of db.all<{ thread_id: number }>(
         `SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`,
         ...chunk,

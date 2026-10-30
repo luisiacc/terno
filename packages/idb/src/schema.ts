@@ -17,7 +17,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 29;
+export const LOGICAL_SCHEMA = 30;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -42,6 +42,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   },
   { name: "message_bodies", key: ["message_id"], lazy: true },
   { name: "message_refs", key: ["account_id", "ref", "message_id"], indexes: { ...fk("message_id"), ref: ["account_id", "ref"] } },
+  { name: "imap_identity_holds", key: ["message_id"], indexes: { ...fk("message_id"), ...fk("account_id") } },
   { name: "message_locations", key: ["message_id", "mailbox"], indexes: { ...fk("message_id"), uid: ["account_id", "mailbox", "uidvalidity", "uid"], mailbox: ["account_id", "mailbox"] } },
   { name: "attachment_assets", key: ["id"], indexes: fk("account_id") },
   { name: "attachment_chunks", key: ["id"], indexes: fk("asset_id") },
@@ -100,6 +101,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("messages", "thread_id", "threads"),
   c("message_bodies", "message_id", "messages"),
   c("message_refs", "message_id", "messages"),
+  c("imap_identity_holds", "message_id", "messages"),
+  c("imap_identity_holds", "account_id", "accounts"),
   c("message_locations", "message_id", "messages"),
   c("attachment_assets", "account_id", "accounts"),
   c("attachment_chunks", "asset_id", "attachment_assets"),
@@ -264,6 +267,17 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
           const messages = open.transaction!.objectStore("messages");
           scan(messages.openCursor(), (cursor) => track(cursor.update({ ...cursor.value, attachment_pending: 1 })));
         }
+      }
+      if (event.oldVersion >= 1 && event.oldVersion < 18) {
+        const holds = db.createObjectStore("imap_identity_holds");
+        const imap = new Set<number>();
+        const located = new Set<number>();
+        scan(tx.objectStore("accounts").openCursor(), (cursor) => { if (cursor.value.kind === "imap") imap.add(cursor.value.id); });
+        scan(tx.objectStore("message_locations").openCursor(), (cursor) => { located.add(cursor.value.message_id); });
+        scan(tx.objectStore("messages").openCursor(), (cursor) => {
+          const m = cursor.value;
+          if (imap.has(m.account_id) && !String(m.provider_msg_id ?? "local:").startsWith("local:") && !located.has(m.id)) track(holds.put({ message_id: m.id, account_id: m.account_id }, m.id));
+        });
       }
       if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 15) for (const name of ["recipient_receipts", "recipient_receipt_parts"]) db.createObjectStore(name);

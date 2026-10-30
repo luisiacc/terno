@@ -28,7 +28,7 @@ interface Row {
  * own flags ignore them (Codex code review #1). No index serves it: one cost every ingest 3% of its throughput, to
  * spare a huge thread's re-check a scan its unit's recompute already does.
  */
-const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.is_sent = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:'";
+const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.is_sent = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:' OR EXISTS (SELECT 1 FROM imap_identity_holds h WHERE h.message_id=m.id)";
 
 /**
  * The report's row, one indexed aggregate per thread: its messages, what they take here (measured: headers, bodies

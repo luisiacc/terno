@@ -211,7 +211,17 @@ export interface ImapLocation {
   flags: string;
 }
 
+export class ImapIdentityError extends Error {
+  constructor() { super("IMAP identity unavailable"); }
+}
+
 export interface ImapLocationStore {
+  /** Durable holds survive journal truncation. Only a validated wire mapping may release one. */
+  fence(messageIds: readonly number[]): Promise<void>;
+  unresolved(messageIds: readonly number[]): Promise<number[]>;
+  /** Validate every logical target and the entire captured locator set, then invoke start without an async gap. */
+  dispatch<T>(messageIds: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>): Promise<T>;
+  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
   /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */

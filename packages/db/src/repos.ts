@@ -20,7 +20,7 @@ import {
   type UserActionKind,
 } from "@terno/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { AWAITING_AUTH, AWAITING_NETWORK, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 
 export type { DraftRow, OpRow } from "@terno/store";
@@ -510,7 +510,7 @@ export function pruneOpTargets(db: Db, messageIds: readonly number[]): void {
  * when its blocker settles, in the same worker pass; counting it would spin a zero-delay timer).
  */
 export function nextOpAttemptAt(db: Db, admission?: OpAdmission): number | null {
-  return db.get<{ t: number | null }>(`SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ? AND ${NOT_BLOCKED}${admission ? ` AND ${ADMITTED}` : ""}`, AWAITING_NETWORK, ...(admission ? admissionParams(admission) : []))?.t ?? null;
+  return db.get<{ t: number | null }>(`SELECT min(next_attempt_at) AS t FROM ops WHERE state = 'queued' AND next_attempt_at < ? AND ${NOT_BLOCKED}${admission ? ` AND ${ADMITTED}` : ""}`, AWAITING_IDENTITY, ...(admission ? admissionParams(admission) : []))?.t ?? null;
 }
 
 /**
@@ -530,7 +530,7 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     state,
     attempts,
     error,
-    park && state === "queued" ? AWAITING_NETWORK : now + delay,
+    park && state === "queued" ? ("identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay,
     now,
     id,
   );
@@ -538,7 +538,7 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     settleFlagEffects(sqlFlags(db), getOp(db, id)!, "removed");
     db.run("DELETE FROM op_targets WHERE op_id = ?", id);
   }
-  else if (!yieldToNewerOps(db, id)) return "succeeded"; // fully superseded: nothing left to do
+  else if (!(park && "identity" in park) && !yieldToNewerOps(db, id)) return "succeeded"; // fully superseded: nothing left to do
   return state;
 }
 

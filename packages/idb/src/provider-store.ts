@@ -1,3 +1,4 @@
+import { ImapIdentityError, AWAITING_IDENTITY } from "@terno/store";
 import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
 import { isFolder } from "./folders";
@@ -128,6 +129,7 @@ export class IdbProviderStore implements ProviderStore {
         .by("pending_bodies", this.accountId)
         .sort((x, y) => y.date - x.date || y.id - x.id)
         .flatMap((m) => {
+          if (T(this.c, "imap_identity_holds").has(m.id)) return [];
           const l = locations.by("fk_message_id", m.id).sort((x, y) => (x.mailbox < y.mailbox ? -1 : 1))[0];
           return l ? [{ id: m.id as number, mailbox: l.mailbox as string, uid: l.uid as number, uidvalidity: l.uidvalidity as number }] : [];
         })
@@ -164,6 +166,47 @@ class IdbImapLocations implements ImapLocationStore {
     private readonly read: Command,
   ) {}
 
+  fence(ids: readonly number[]) {
+    return this.command(() => {
+      for (const id of ids) if (T(this.c, "messages").get(id)?.account_id === this.accountId) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
+    });
+  }
+
+  unresolved(ids: readonly number[]) {
+    return this.read(() => ids.filter((id) => T(this.c, "imap_identity_holds").get(id)?.account_id === this.accountId));
+  }
+
+  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>): Promise<T> {
+    return await this.read(() => {
+      for (const id of ids) {
+        const rows = this.t.by("fk_message_id", id).filter((l) => l.account_id === this.accountId);
+        const want = expected.filter((l) => l.message_id === id);
+        if (T(this.c, "imap_identity_holds").has(id) || !rows.length || rows.length !== want.length || rows.some((l) => !want.some((e) => e.mailbox === l.mailbox && e.uid === l.uid && e.uidvalidity === l.uidvalidity))) throw new ImapIdentityError();
+      }
+      return start();
+    });
+  }
+
+  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
+    return this.command(() => {
+      for (const item of source) {
+        const mapped = mapping.find((m) => m.messageId === item.message_id);
+        if (!mapped) continue;
+        const old = this.t.get(item.message_id, item.mailbox);
+        if (!old || old.account_id !== this.accountId || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
+        this.t.put({ message_id: item.message_id, account_id: this.accountId, mailbox, uidvalidity, uid: mapped.uid, flags: item.flags });
+        this.located([item.message_id], mailbox, true);
+        if (!copy) { this.t.delete(item.message_id, item.mailbox); this.located([item.message_id], item.mailbox, false); }
+        T(this.c, "imap_identity_holds").delete(item.message_id);
+      }
+      for (const op of T(this.c, "ops").by("fk_account_id", this.accountId)) {
+        if (op.state !== "queued" || op.next_attempt_at !== AWAITING_IDENTITY) continue;
+        const ids = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds ?? [];
+        if (ids.length && ids.every((id) => !T(this.c, "imap_identity_holds").has(id) && this.t.count("fk_message_id", id))) T(this.c, "ops").update(op, { next_attempt_at: 0 });
+      }
+    });
+  }
+
   private get t() {
     return T(this.c, "message_locations");
   }
@@ -189,6 +232,7 @@ class IdbImapLocations implements ImapLocationStore {
 
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
     return this.command(() => {
+      if (T(this.c, "imap_identity_holds").has(messageId)) return;
       // a known location (new flags, a new UID) moves no membership
       const known = this.t.has(messageId, mailbox);
       this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
@@ -198,6 +242,7 @@ class IdbImapLocations implements ImapLocationStore {
 
   remove(messageId: number, mailbox: string) {
     return this.command(() => {
+      if (this.t.has(messageId, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: messageId, account_id: this.accountId });
       this.t.delete(messageId, mailbox);
       this.located([messageId], mailbox, false);
     });
@@ -210,6 +255,7 @@ class IdbImapLocations implements ImapLocationStore {
       await this.command(() => {
         const messages = T(this.c, "messages");
         for (const id of chunk) {
+          if (this.t.has(id, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
           this.t.delete(id, mailbox);
           const m = messages.get(id);
           if (m) threads.add(m.thread_id as number);
@@ -312,7 +358,7 @@ class IdbImapLocations implements ImapLocationStore {
   resetMailbox(mailbox: string) {
     return this.command(() => {
       const rows: R[] = this.t.by("mailbox", this.accountId, mailbox);
-      for (const r of rows) this.t.deleteRow(r);
+      for (const r of rows) { T(this.c, "imap_identity_holds").put({ message_id: r.message_id, account_id: this.accountId }); this.t.deleteRow(r); }
       // membership in an IMAP folder is its locations there: with every one gone its rows go, no thread refolded (Codex R2)
       for (const r of T(this.c, "thread_folders").by("folder", this.accountId, mailbox)) T(this.c, "thread_folders").deleteRow(r);
       return rows.map((r) => r.message_id as number);

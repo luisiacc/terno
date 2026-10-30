@@ -990,6 +990,15 @@ CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
           coalesce((SELECT body_text FROM message_bodies WHERE message_id=new.id), ''));
 END;
 ` },
+  { version: 30, name: "durable IMAP identity holds", sql: `
+CREATE TABLE imap_identity_holds (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX imap_identity_holds_account ON imap_identity_holds(account_id, message_id);
+INSERT INTO imap_identity_holds SELECT m.id, m.account_id FROM messages m JOIN accounts a ON a.id=m.account_id
+WHERE a.kind='imap' AND m.provider_msg_id NOT LIKE 'local:%' AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id=m.id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

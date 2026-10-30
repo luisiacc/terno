@@ -106,6 +106,10 @@ export class ProviderError extends Error {
  * wait for it without spending attempts and resume when the account works
  * again (a successful sync, a reconnect).
  */
+export class ProviderIdentityError extends ProviderError {
+  constructor(message: string | Localized) { super(message, false); }
+}
+
 export class ProviderAuthError extends ProviderError {
   constructor(message: string | Localized, httpResponse?: HttpResponseEvidence) {
     super(message, false, false, false, httpResponse);
