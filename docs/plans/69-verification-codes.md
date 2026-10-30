@@ -138,3 +138,7 @@ Each has a test that fails without the fix. The list e2e (codes, layout, drag an
 ### Placement, decided
 
 Shown in the inbox with ordinary rows around it, the chip stays on the top line before the date (option A). A line of its own below the preview (B, prototyped) kept the subject's room but made that row taller and the list jump when the code expired. In the full-width list (one-line rows) the chip sits right after the sender, in the sender column, so the subject and preview keep their room; a long name truncates first. An e2e test checks it sits between the sender and the subject.
+
+## Trying it: `pnpm dev:demo`
+
+The demo mailbox is seeded once and dated in the past, so it never has a code under 2 hours old. `seedDemoCode` (`packages/backend/src/demo.ts`) adds "Your Acme sign-in code" from Acme, dated now, unread, to the first account's inbox on every dev demo launch. Each launch adds a message with a new code to the same thread, so the inbox doesn't fill with copies. It runs only with `demo && dev` (`backend-entry.ts`), so the packaged demo smokes keep their mailbox. `demo-code.test.ts` checks two launches: one thread at the top of the inbox whose row offers the newest code. A real `dev:demo` launch on a temp profile seeded it (checked in its database).

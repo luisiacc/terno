@@ -80,3 +80,51 @@ export async function seedPrintFixtures(store: MailStore, options: { now: number
   await store.sync.ingest(messages, { applyFilters: false, now: options.now, classifier: null });
   return firstIds;
 }
+
+/**
+ * A verification code dated `now` in the first account's inbox, so the list's code chip (plan 69) is there on every
+ * dev demo launch: the demo mailbox is seeded once, dated in the past, and a code shows only for two hours. Every
+ * launch adds one message to the same thread, with a new code, as a service sends a new one each sign-in.
+ */
+export async function seedDemoCode(store: MailStore, now: number): Promise<string> {
+  const account = (await store.accounts.list())[0];
+  if (!account) throw new Error("seedDemoCode needs an account");
+  const code = String(100_000 + (now % 900_000)).padStart(6, "0");
+  const text = `Hi,\n\nUse this code to finish signing in to Acme: ${code}\n\nIt expires in 10 minutes. If you didn’t ask for it, you can ignore this email.\n\nThe Acme team`;
+  const html = `<div style="font-family:-apple-system,sans-serif;font-size:15px;line-height:1.5"><p>Hi,</p><p>Use this code to finish signing in to Acme:</p><p style="font-size:28px;font-weight:600;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you didn’t ask for it, you can ignore this email.</p><p>The Acme team</p></div>`;
+  await store.sync.ingest(
+    [
+      {
+        accountId: account.id,
+        providerMsgId: `demo-code-${now}`,
+        providerThreadId: "demo-code",
+        rfcMessageId: `<demo-code-${now}@acme.test>`,
+        inReplyTo: null,
+        references: [],
+        from: { name: "Acme", email: "no-reply@acme.test" },
+        replyTo: [],
+        to: [{ name: "", email: account.email }],
+        cc: [],
+        bcc: [],
+        subject: "Your Acme sign-in code",
+        date: now,
+        snippet: text.replace(/\s+/g, " ").trim(),
+        bodyText: text,
+        bodyHtml: html,
+        bodyState: "full",
+        listId: null,
+        isRead: false,
+        isStarred: false,
+        inInbox: true,
+        isSent: false,
+        isDraft: false,
+        isTrash: false,
+        isSpam: false,
+        hasAttachments: false,
+        size: text.length + html.length,
+      },
+    ],
+    { applyFilters: false, now, classifier: null },
+  );
+  return code;
+}

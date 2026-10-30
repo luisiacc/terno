@@ -3,7 +3,7 @@
  * database and sync; the renderer talks to it over a direct MessagePort, so
  * mail data never hops through the main process.
  */
-import { Backend, seedDemo, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
@@ -168,6 +168,8 @@ parentPort.on("message", async (event) => {
       if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
         await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
+      // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 69); not in smokes
+      if (msg.demo && msg.dev) await seedDemoCode(backend.store, Date.now());
       await backend.publishPolicy();
       await backend.start();
       await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
