@@ -25,7 +25,7 @@ async function aiTabWithOllama(page: Page, ollamaUrl: string) {
 async function snackbarReady(page: Page) {
   await expect(page.getByTestId("snackbar-sender-count")).toBeVisible();
   await expect(page.getByTestId("snackbar-count-loading")).toHaveCount(0);
-  await expect(page.getByTestId("snackbar-topic-count")).toHaveText(/· \d/);
+  await expect(page.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.mouse.move(0, 0);
 }

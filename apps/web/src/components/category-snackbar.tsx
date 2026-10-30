@@ -1,10 +1,11 @@
 import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { formatNumber, t } from "@terno/i18n";
+import { formatList, formatNumber, t } from "@terno/i18n";
 import { Check, Filter, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { undoFiled, type Filed } from "~/lib/categorize";
 import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -28,6 +29,18 @@ type Count = { count: number; capped: boolean } | null;
 /** "1,000+" at the cap; a scope read only in part (plan 63) says "at least" the same way */
 export const formatCount = (c: { count: number; capped: boolean }) => (c.capped ? `${formatNumber(c.count)}+` : formatNumber(c.count));
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/**
+ * What 4 files, in words: the checked words (in the offer's order), else the
+ * More… text, else how to start. A blank More… still files the words, so it
+ * says the words.
+ */
+export function topicHelp(category: string, words: readonly string[], custom: string | null): string {
+  const text = custom?.trim();
+  if (text) return t("category.topicHelpQuery", { query: text, category });
+  if (words.length) return t("category.topicHelp", { words: formatList(words.map((word) => t("category.topicWord", { word }))), category });
+  return t("category.topicHelpEmpty", { category });
+}
 
 function titleOf(filed: Filed, name: string): string {
   return t(filed.moved ? "category.filed.moved" : "category.filed.added", { count: filed.threadIds.length, category: name });
@@ -136,6 +149,35 @@ export function Strip({ children }: { children: React.ReactNode }) {
   );
 }
 
+const key = "h-4 min-w-4 shrink-0 rounded-full bg-tint text-2xs shadow-none";
+const line = "flex h-7 min-w-0 items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-fast hover:bg-muted";
+
+/** An offer's count: right-aligned so the column lines up; a pulse while counting. */
+function OfferCount({ count, testId }: { count: Count | "loading" | undefined; testId: string }) {
+  if (count === undefined) return null;
+  if (count === "loading") return <span data-testid="snackbar-count-loading" className="h-3 w-5 shrink-0 animate-pulse rounded bg-muted" />;
+  return (
+    <span data-testid={testId} className="shrink-0 font-mono text-2xs text-muted-foreground tabular">
+      {count ? formatCount(count) : formatNumber(0)}
+    </span>
+  );
+}
+
+/** One offer per line, so its whole label shows (a long name truncates with its full text in `title`). */
+function Offer({ n, label, count, onClick, testId, icon }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; icon?: React.ReactNode }) {
+  if (count === null) return null;
+  return (
+    <button type="button" data-testid={testId} onClick={onClick} className={cn(line, "w-full text-left")}>
+      <Kbd className={key}>{n}</Kbd>
+      {icon}
+      <span className="min-w-0 flex-1 truncate" title={label}>
+        {label}
+      </span>
+      <OfferCount count={count} testId={`${testId}-count`} />
+    </button>
+  );
+}
+
 function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo: Undo }) {
   const category = useApp((s) => s.categories.find((c) => c.id === filed.categoryId));
   const [qa, setQa] = useState<QuickActions | null>(null);
@@ -150,6 +192,9 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   const current = () => useSnack.getState().current?.id === id;
   /** still the dock's snack (not fading out): only then do 1–5, z and Esc drive it */
   const live = useSnack((s) => s.current?.id === id);
+  const helpId = useId();
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const refocusMore = useRef(false);
 
   const scopes = (): Partial<Record<Slot, CategorizeScope>> => {
     if (!qa || !category) return {};
@@ -228,6 +273,15 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     return () => resume("busy");
   }, [undoing]);
 
+  // Esc in More… brings More… back, and focus with it
+  useEffect(() => {
+    if (custom !== null || !refocusMore.current) return;
+    refocusMore.current = false;
+    moreRef.current?.focus();
+  }, [custom]);
+  // the tooltip is portaled out of the bar: reading it holds the countdown like hovering the bar does
+  useEffect(() => () => resume("tip"), []);
+
   /** "View": the topic as a search, so the user sees exactly what would be added. */
   const view = () => {
     if (!topicQuery || !category) return;
@@ -298,6 +352,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   };
   if (!category) return null;
   const title = titleOf(filed, category.name);
+  const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom);
   const offers = qa && (qa.sender || qa.domain || qa.list || qa.filterDraft || qa.terms.length);
   return (
     <div data-testid="category-snackbar" data-failed={failed ? "" : undefined}>
@@ -319,80 +374,99 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
         <SnackClose onClick={close} />
       </div>
       {offers && (
-        <Strip>
-          {qa.sender && <Chip n={1} testId="snackbar-sender" label={t("threadMenu.allFrom", { name: qa.sender.name })} count={counts.sender} onClick={() => run("sender")} />}
-          {qa.domain && !sameAsSender("domain") && <Chip n={2} testId="snackbar-domain" label={t("category.chip.domain", { domain: qa.domain })} count={counts.domain} onClick={() => run("domain")} />}
-          {qa.list && !sameAsSender("list") && <Chip n={3} testId="snackbar-list" label={t("category.chip.list", { list: qa.list })} count={counts.list} onClick={() => run("list")} />}
-          <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-tint pr-1 pl-1 text-xs whitespace-nowrap" data-testid="snackbar-topic">
-            <button type="button" onClick={() => run("topic")} disabled={!topicQuery} className="inline-flex items-center gap-1.5 rounded-full pr-0.5 disabled:opacity-60" data-testid="snackbar-topic-apply">
-              <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">4</Kbd>
-              {t("category.topic")}
-            </button>
-            {custom === null ? (
-              <>
-                {qa.terms.map(({ term }) => (
-                  <button
-                    key={term}
-                    type="button"
-                    data-testid="snackbar-term"
-                    aria-pressed={terms.has(term)}
-                    onClick={() =>
-                      setTerms((s) => {
-                        const n = new Set(s);
-                        if (n.has(term)) n.delete(term);
-                        else n.add(term);
-                        return n;
-                      })
-                    }
-                    className={cn(
-                      "inline-flex h-4.5 items-center gap-0.5 rounded-full px-1.5 text-2xs",
-                      terms.has(term) ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {term}
-                    {terms.has(term) && <Check className="size-2.5" />}
-                  </button>
-                ))}
-                <button type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="px-1 text-2xs text-muted-foreground hover:text-foreground">
-                  {t("category.more")}
-                </button>
-              </>
-            ) : (
-              <input
-                autoFocus
-                data-testid="snackbar-query"
-                aria-label={t("category.topicPlaceholder")}
-                value={custom}
-                placeholder={t("category.topicPlaceholder")}
-                onChange={(e) => setCustom(e.target.value)}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === "Enter") run("topic");
-                  if (e.key === "Escape") setCustom(null);
-                }}
-                className="h-5 w-48 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-              />
-            )}
-            {topicQuery && counts.topic !== undefined && (
-              <span data-testid="snackbar-topic-count" className="font-mono text-2xs text-muted-foreground tabular">
-                {counts.topic === "loading" ? "·" : counts.topic ? `· ${formatCount(counts.topic)}` : "· 0"}
+        <div data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
+          {qa.sender && <Offer n={1} testId="snackbar-sender" label={t("threadMenu.allFrom", { name: qa.sender.name })} count={counts.sender} onClick={() => run("sender")} />}
+          {qa.domain && !sameAsSender("domain") && <Offer n={2} testId="snackbar-domain" label={t("category.chip.domain", { domain: qa.domain })} count={counts.domain} onClick={() => run("domain")} />}
+          {qa.list && !sameAsSender("list") && <Offer n={3} testId="snackbar-list" label={t("category.chip.list", { list: qa.list })} count={counts.list} onClick={() => run("list")} />}
+          {/* not one button: its words, More… and View are controls of their own; the words get a line of their own, under the label */}
+          <div className="flex min-w-0 flex-col text-xs" data-testid="snackbar-topic">
+            <div className="flex h-7 min-w-0 items-center gap-2">
+              <Tooltip onOpenChange={(open) => (open ? pause("tip") : resume("tip"))}>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => run("topic")}
+                      // stays focusable with nothing checked, so its help is still there to read
+                      aria-disabled={!topicQuery || undefined}
+                      aria-describedby={helpId}
+                      className={cn(line, "flex-1 text-left aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent")}
+                      data-testid="snackbar-topic-apply"
+                    />
+                  }
+                >
+                  <Kbd className={key}>4</Kbd>
+                  {t("category.topic")}
+                </TooltipTrigger>
+                <TooltipContent align="start" data-testid="snackbar-topic-help">{help}</TooltipContent>
+              </Tooltip>
+              <span id={helpId} hidden>
+                {help}
               </span>
-            )}
-            {topicQuery && (
-              <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-4.5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
-                <Search className="size-3" /> {t("common.view")}
-              </button>
-            )}
-          </span>
-          {qa.filterDraft && (
-            <span data-testid="snackbar-filter" className="inline-flex shrink-0">
-              <button type="button" onClick={always} className={chip}>
-                <Kbd className="h-4 min-w-4 rounded-full bg-background text-2xs shadow-none">5</Kbd>
-                <Filter className="size-3 text-muted-foreground" /> {t("category.alwaysFilter")}
-              </button>
-            </span>
-          )}
-        </Strip>
+              <div className="flex shrink-0 items-center gap-2 pr-1.5">
+                {topicQuery && (
+                  <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
+                    <Search className="size-3" /> {t("common.view")}
+                  </button>
+                )}
+                {topicQuery && <OfferCount count={counts.topic} testId="snackbar-topic-count" />}
+              </div>
+            </div>
+            {/* indented to the label: the line's padding, the key and the gap */}
+            <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-1 pr-1.5 pb-1 pl-7.5">
+              {custom === null ? (
+                <>
+                  {qa.terms.map(({ term }) => (
+                    <button
+                      key={term}
+                      type="button"
+                      data-testid="snackbar-term"
+                      aria-pressed={terms.has(term)}
+                      onClick={() =>
+                        setTerms((s) => {
+                          const n = new Set(s);
+                          if (n.has(term)) n.delete(term);
+                          else n.add(term);
+                          return n;
+                        })
+                      }
+                      className={cn(
+                        "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
+                        terms.has(term) ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span className="truncate">{term}</span>
+                      {terms.has(term) && <Check className="size-2.5 shrink-0" />}
+                    </button>
+                  ))}
+                  <button ref={moreRef} type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="h-5 rounded-full px-1.5 text-2xs text-muted-foreground hover:text-foreground">
+                    {t("category.more")}
+                  </button>
+                </>
+              ) : (
+                <input
+                  autoFocus
+                  data-testid="snackbar-query"
+                  aria-label={t("category.topicName")}
+                  value={custom}
+                  placeholder={t("category.topicPlaceholder")}
+                  onChange={(e) => setCustom(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") run("topic");
+                    if (e.key === "Escape") {
+                      // focus goes back to More…, not out of the snackbar
+                      refocusMore.current = true;
+                      setCustom(null);
+                    }
+                  }}
+                  className="h-5 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                />
+              )}
+            </div>
+          </div>
+          {qa.filterDraft && <Offer n={5} testId="snackbar-filter" label={t("category.alwaysFilter")} icon={<Filter className="size-3 shrink-0 text-muted-foreground" />} onClick={always} />}
+        </div>
       )}
     </div>
   );

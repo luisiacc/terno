@@ -247,7 +247,7 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
     }
   });
 
-  test("the categorization snackbar lives in the bar: two compact rows, 1 and z still work", async ({ app: page, server }) => {
+  test("the categorization snackbar lives in the bar: its offers stacked, 1 and z still work", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     const row = page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${facturas}"]))`).first();
@@ -260,13 +260,55 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
     await expect(snack).toBeVisible();
     const box = (await dock(page).boundingBox())!;
     const list = (await page.getByTestId("thread-list").boundingBox())!;
-    expect(box.height).toBeLessThanOrEqual(84);
+    // plan 81: a title row and one 28 px line per offer; the topic's words get up to two more lines under it
+    await expect(snack.getByTestId("snackbar-offers")).toBeVisible();
+    const lines = await snack.getByTestId("snackbar-offers").evaluate((el) => el.children.length);
+    expect(box.height).toBeLessThanOrEqual(40 + lines * 28 + 2 * 24 + 8);
     expect(box.x + box.width).toBeLessThan(list.x + list.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(list.y + list.height);
     await expect(snack.getByTestId("snackbar-undo")).toHaveAccessibleName(/^Undo: Added to Facturas/);
     await page.keyboard.press("z");
     await expect(snack).toHaveCount(0);
     await expect(dock(page)).toContainText("Undone: Facturas");
     await expect.poll(() => db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, facturas)).toBeUndefined();
+  });
+
+  test("plan 81: the taller categorization bar still leaves the last row and the keyboard's row above it", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    const { email } = db.get<{ email: string }>(
+      "SELECT last_from_email AS email FROM threads WHERE in_inbox = 1 GROUP BY 1 HAVING count(*) BETWEEN 20 AND 90 ORDER BY count(*) DESC LIMIT 1",
+    )!;
+    await search(page, `in:inbox from:${email}`);
+    await rows(page).first().dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("l");
+    await page.getByTestId(`pick-category-${facturas}`).click();
+    const snack = dock(page).getByTestId("category-snackbar");
+    await expect(snack.getByTestId("snackbar-count-loading")).toHaveCount(0);
+    await dock(page).hover();
+    const top = (await dock(page).boundingBox())!.y;
+    const list = page.getByRole("listbox", { name: "Conversations" });
+    let height = -1;
+    for (let i = 0; i < 20 && height !== (await list.evaluate((el) => el.scrollHeight)); i++) {
+      height = await list.evaluate((el) => el.scrollHeight);
+      await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await page.waitForTimeout(150);
+    }
+    const last = (await rows(page).last().boundingBox())!;
+    expect(last.y + last.height).toBeLessThanOrEqual(top + 0.5);
+    await list.evaluate((el) => (el.scrollTop = 0));
+    await page.waitForTimeout(100);
+    const boxes = await rows(page).evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-thread-id"), ...e.getBoundingClientRect().toJSON() })));
+    const under = boxes.findIndex((b) => b.y + b.height > top);
+    expect(under).toBeGreaterThan(0);
+    await page.locator(`[data-thread-id="${boxes[under - 1]!.id}"]`).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("j");
+    await expect(selectedRow(page)).toHaveAttribute("data-thread-id", boxes[under]!.id!);
+    await page.waitForTimeout(100);
+    const sel = (await selectedRow(page).boundingBox())!;
+    expect(sel.y + sel.height).toBeLessThanOrEqual(top + 0.5);
   });
 
   for (const scheme of ["light", "dark"] as const) {

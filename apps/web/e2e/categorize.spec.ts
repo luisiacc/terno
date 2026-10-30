@@ -54,7 +54,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     const snack = page.getByTestId("category-snackbar");
     await expect(snack.getByTestId("snackbar-title")).toHaveText("Added to Facturas");
     await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
-    await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`· ${rest}`);
+    await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
     await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
 
     await page.keyboard.press("1");
@@ -123,7 +123,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
          AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id AND category_id = ?)`,
         lecturas,
       )!.c;
-    await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`· ${githubOutside()}`);
+    await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${githubOutside()}`);
     await page.keyboard.press("1");
     await expect.poll(githubOutside).toBe(0);
   });
@@ -181,15 +181,15 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     const selected = await pressed.allTextContents();
     const count = (terms: string[]) => countOf(server, facturas, termsQuery(terms, "Facturas"));
     const both = await count(selected);
-    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${both}`);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${both}`);
     // one word alone matches at least as much
     await pressed.first().click();
-    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${await count(selected.slice(1))}`);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${await count(selected.slice(1))}`);
     await pressed.first().click(); // back off: nothing selected
     await expect(snack.getByTestId("snackbar-topic-count")).toHaveCount(0);
     await chips.filter({ hasText: selected[0]! }).click();
     await chips.filter({ hasText: selected[1]! }).click();
-    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${both}`);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${both}`);
 
     await snack.getByTestId("snackbar-view").click();
     await expect(page.getByTestId("search-input")).toHaveValue(termsQuery(selected, "Facturas"));
@@ -200,9 +200,55 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
-    await expect(page.getByTestId("snackbar-topic-count")).not.toHaveText("·");
     await page.keyboard.press("4");
     await expect(toast(page, /\d+ added to Viajes/)).toBeVisible();
+  });
+
+  test("plan 81: one offer per line, all of it in view; 4 says what it files, on hover and to a screen reader", async ({ app: page, server }) => {
+    const { facturas, target } = uberSetup(server);
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
+    // stacked: every line sits inside the bar, the sender's above the topic's, nothing clipped sideways
+    const bar = (await snack.boundingBox())!;
+    for (const id of ["snackbar-sender", "snackbar-topic", "snackbar-filter"]) {
+      const box = (await snack.getByTestId(id).boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(bar.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+    }
+    expect((await snack.getByTestId("snackbar-sender").boundingBox())!.y).toBeLessThan((await snack.getByTestId("snackbar-topic").boundingBox())!.y);
+    for (const term of await snack.getByTestId("snackbar-term").all()) {
+      const box = (await term.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+    }
+
+    const apply = snack.getByTestId("snackbar-topic-apply");
+    await expect(apply).toContainText("Everything mentioning");
+    const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
+    const [a, b] = await pressed.allTextContents();
+    const words = `“${a}” and “${b}”`;
+    await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions ${words} to Facturas`));
+    await apply.hover();
+    const help = page.getByTestId("snackbar-topic-help");
+    await expect(help).toHaveText(`Moves every conversation that mentions ${words} to Facturas, from all your mail. Click a word to add or remove it.`);
+    // it follows the words
+    await pressed.first().click();
+    await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions “${b}” to Facturas`));
+    await pressed.first().click();
+    // nothing checked: 4 is still reachable and says how to start, and does nothing
+    await expect(apply).toHaveAttribute("aria-disabled", "true");
+    await expect(apply).toHaveAccessibleDescription("Check a word to move every conversation that mentions it to Facturas.");
+    await apply.click({ force: true });
+    await expect(snack).toBeVisible();
+
+    // More…: the description says the text; Esc brings More… back with focus on it
+    await snack.getByTestId("snackbar-more").click();
+    await snack.getByTestId("snackbar-query").fill("recibo");
+    await expect(apply).toHaveAccessibleDescription("Moves every conversation that matches “recibo” to Facturas, from all your mail.");
+    await snack.getByTestId("snackbar-query").press("Escape");
+    await expect(snack.getByTestId("snackbar-more")).toBeFocused();
+    await expect(snack).toBeVisible();
   });
 
   test("View shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {
@@ -212,7 +258,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
     const snack = page.getByTestId("category-snackbar");
-    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/· \d/);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
     const count = Number((await snack.getByTestId("snackbar-topic-count").textContent())!.replace(/\D/g, ""));
     await snack.getByTestId("snackbar-view").click();
     await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /^\["all",null,null,null,/);
@@ -244,7 +290,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await field.fill("recibo from:recibos@rappi.com");
     const expected = await countOf(server, facturas, "recibo from:recibos@rappi.com");
     expect(expected).toBeGreaterThan(0);
-    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`· ${expected}`);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${expected}`);
     // typing doesn't trigger the snackbar's keys
     await field.press("Enter");
     await expect(toast(page, `${expected} added to Facturas`)).toBeVisible();
