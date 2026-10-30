@@ -109,3 +109,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: bulk IDB grouping
 
 `8f520ff0` replaces repeated target-array copies with bounded per-account append. Root676direct checks/reopen/Undo, types/lint and3original selected perf cases pass after rebase. One review0findings. Original quick-filter timeout remains unqualified; storage removal still fails840.14ms/15ms, with fake-indexeddb index deletion scans identified as a concrete shared-dependency handoff. No index/safety/timing waiver or original all-four-green claim. [Exact attribution and limits](../plans/drafts/release2-idb-performance.md).
+
+
+## Landed repair: repeated SQL navigation
+
+`2c494cb8` adds a single bounded private thread cache with mutation isolation, real autocommit/version guards, race-bracketed retention and close disposal. Root90native/WASM checks/types/lint and unchanged34-case perf file pass;5,000-message repeated-read p95is1.5305ms/5ms, random0.11175ms/5ms. One review0findings. Cold materialization and exact heap measurement remain unqualified; no payload, schema, sample or budget changes. [Design, commands and limits](../plans/drafts/release2-sql-navigation.md).
