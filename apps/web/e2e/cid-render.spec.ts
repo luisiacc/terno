@@ -10,16 +10,20 @@ test("browser complete maximum CID resolution yields through final serialization
   const code = output.find((chunk) => chunk.type === "chunk")!;
   if (code.type !== "chunk") throw new Error("Missing browser fixture");
   const server = createServer((req, res) => {
-    if (req.url === "/") return void res.writeHead(200, { "content-type": "text/html" }).end('<!doctype html><script src="/fixture.js"></script>');
-    if (req.url === "/fixture.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(code.code);
+    if (req.url === "/") return void res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end('<!doctype html><meta charset="utf-8"><script src="/fixture.js"></script>');
+    if (req.url === "/fixture.js") return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(code.code);
     res.writeHead(404).end();
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(Number(process.env.E2E_PORT ?? 56640), "127.0.0.1", resolve));
   try {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await page.context().route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await page.goto(origin);
+    expect(await page.evaluate(() => document.characterSet)).toBe("UTF-8");
     expect(errors).toEqual([]);
+    expect(await page.evaluate(() => (window as unknown as { TernoCid: typeof import("./cid-render-fixture") }).TernoCid.unicodeSentinel)).toBe("caf\u00e9 \u65e5\u672c\u8a9e \u0300\u036f");
     for (const fixture of [
       { mime: "image/png", sizes: [4 * 1024 * 1024] },
       { mime: "image/png", sizes: [4 * 1024 * 1024, 4 * 1024 * 1024] },
