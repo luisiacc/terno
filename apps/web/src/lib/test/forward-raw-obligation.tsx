@@ -12,20 +12,20 @@ import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
 import { ingest, msg, threadOf, withAccounts } from "@terno/store/conformance";
 import type { ProviderRegistry } from "@terno/mail";
-import { BackendCore, plaintextCipher } from "../../../../packages/backend/src/core";
-import { newFields } from "./compose-fields";
-import { openCompose, supersedeCompose } from "./compose";
-import { beginComposeBodyAckRead, beginForwardEmptyOwnerRead, createDraft, editDraft, endDraftAckRead, flushDraft, forgetDraft, recipients, setDraftTransport, shownDraftKey, useDrafts, type DraftAckRead } from "./drafts";
+import { BackendCore, plaintextCipher } from "../../../../../packages/backend/src/core";
+import { newFields } from "../compose-fields";
+import { openCompose, supersedeCompose } from "../compose";
+import { beginComposeBodyAckRead, beginForwardEmptyOwnerRead, createDraft, editDraft, endDraftAckRead, flushDraft, forgetDraft, recipients, setDraftTransport, shownDraftKey, useDrafts, type DraftAckRead } from "../drafts";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useThreads } from "~/state/threads";
-import { dismissSnack } from "./snack";
+import { dismissSnack } from "../snack";
 
 const renderer = vi.hoisted(() => ({ call: vi.fn() }));
 const authorEntry = vi.hoisted(() => ({ next: undefined as ((returnedAuthor: boolean | "threw") => void) | undefined }));
-const construction = vi.hoisted(() => ({ cleanupErrors: [] as unknown[], beforeView: null as (() => void) | null, registered: null as ((key: string, c: import("../components/composer/controller").ComposerController) => void) | null }));
+const construction = vi.hoisted(() => ({ cleanupErrors: [] as unknown[], beforeView: null as (() => void) | null, registered: null as ((key: string, c: import("../../components/composer/controller").ComposerController) => void) | null }));
 vi.mock("~/rpc/connection", () => ({ client: renderer }));
-vi.mock("./drafts", async (original) => {
-  const actual = await original<typeof import("./drafts")>();
+vi.mock("../drafts", async (original) => {
+  const actual = await original<typeof import("../drafts")>();
   return { ...actual, beginForwardEmptyOwnerRead: (...args: Parameters<typeof actual.beginForwardEmptyOwnerRead>) => {
     const notify = authorEntry.next;
     if (notify) authorEntry.next = undefined;
@@ -36,15 +36,15 @@ vi.mock("./drafts", async (original) => {
     return result;
   } };
 });
-vi.mock("../components/composer/editor", async (original) => {
-  const actual = await original<typeof import("../components/composer/editor")>();
+vi.mock("../../components/composer/editor", async (original) => {
+  const actual = await original<typeof import("../../components/composer/editor")>();
   return { ...actual, createEditor: (...args: Parameters<typeof actual.createEditor>) => {
     construction.beforeView?.();
     return actual.createEditor(...args);
   } };
 });
-vi.mock("../components/composer/controller", async (original) => {
-  const actual = await original<typeof import("../components/composer/controller")>();
+vi.mock("../../components/composer/controller", async (original) => {
+  const actual = await original<typeof import("../../components/composer/controller")>();
   return { ...actual, registerController: (...args: Parameters<typeof actual.registerController>) => {
     const off = actual.registerController(...args);
     try { construction.registered?.(...args); return off; }
@@ -87,7 +87,7 @@ export async function fixture(adapter: Adapter, saved: boolean, threaded: boolea
   mount(): Promise<void>;
   unmount(): Promise<void>;
   requests: Array<ReturnType<typeof contract["drafts.save"]["params"]["parse"]>>;
-  controller(): ReturnType<typeof import("../components/composer/controller")["controllerFor"]>;
+  controller(): ReturnType<typeof import("../../components/composer/controller")["controllerFor"]>;
   armSave(): void;
   armContext(): void;
   armAuthor(): void;
@@ -114,9 +114,9 @@ export async function fixture(adapter: Adapter, saved: boolean, threaded: boolea
   let host: HTMLDivElement | undefined, root: ReturnType<typeof createRoot> | undefined;
   let raf: { mockRestore(): void } | undefined, cancel: { mockRestore(): void } | undefined;
   let key: string | undefined, threadId: number | undefined, unmounted = false;
-  let RichBody: typeof import("../components/composer/rich")["RichBody"] | undefined;
-  let controllerFor: typeof import("../components/composer/controller")["controllerFor"] | undefined;
-  let PaneBoundary: typeof import("../components/diag/error-boundary")["PaneBoundary"] | undefined;
+  let RichBody: typeof import("../../components/composer/rich")["RichBody"] | undefined;
+  let controllerFor: typeof import("../../components/composer/controller")["controllerFor"] | undefined;
+  let PaneBoundary: typeof import("../../components/diag/error-boundary")["PaneBoundary"] | undefined;
   const pending = new Set<Promise<unknown>>(), operations = new Set<Promise<unknown>>(), acquisitions = new Set<Promise<void>>();
   let scenario: Promise<void> | undefined, scenarioSettled = false;
   const errors: Array<{ method: string; error: unknown }> = [], operationErrors: unknown[] = [], cleanupErrors: unknown[] = [];
@@ -213,9 +213,9 @@ export async function fixture(adapter: Adapter, saved: boolean, threaded: boolea
     host = document.createElement("div"); document.body.append(host); root = createRoot(host);
     raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { frames.set(++next, callback); return next; });
     cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { frames.delete(id); });
-    ({ RichBody } = await import("../components/composer/rich"));
-    ({ controllerFor } = await import("../components/composer/controller"));
-    ({ PaneBoundary } = await import("../components/diag/error-boundary"));
+    ({ RichBody } = await import("../../components/composer/rich"));
+    ({ controllerFor } = await import("../../components/composer/controller"));
+    ({ PaneBoundary } = await import("../../components/diag/error-boundary"));
     const [accountId] = await withAccounts(store!);
     if (threaded) {
       await ingest(store!, [msg({ accountId: accountId!, providerMsgId: "raw-source", hasAttachments: true, attachments: [{ filename: "empty.txt", mime: "text/plain", size: 0, bytes: new Uint8Array() }] })]);

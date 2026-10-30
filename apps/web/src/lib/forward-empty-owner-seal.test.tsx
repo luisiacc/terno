@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { body, fixture } from "./forward-raw-obligation-test-utils";
+import { body, fixture } from "./test/forward-raw-obligation";
 import { act } from "react";
 import { expect, it } from "vitest";
 const { beginComposeBodyAckRead, beginForwardEmptyOwnerRead, createDraft, editDraft, endDraftAckRead, flushDraft, forgetDraft, materialize, readDraftAck, recipients, sealForwardEmptyOwnerRead, setDraftUi, useDrafts } = await import("./drafts");

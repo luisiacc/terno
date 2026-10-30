@@ -1,3 +1,5 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -178,4 +180,17 @@ describe("the repo walk", () => {
     // file:line kind text, one per line; fix by moving the text into the catalog (t()/L()), or `// i18n-ignore: <reason>`
     expect(formatFindings(scanRepo(ROOT))).toBe("");
   });
+});
+
+it("excludes test-directory helpers while retaining production label violations", () => {
+  const root = mkdtempSync(join(tmpdir(), "terno-i18n-scan-"));
+  try {
+    const src = join(root, "apps/web/src/lib");
+    mkdirSync(join(src, "test"), { recursive: true });
+    const source = 'const View = () => <input aria-label="Body" />;';
+    writeFileSync(join(src, "test/helper.tsx"), source);
+    writeFileSync(join(src, "production.tsx"), source);
+    expect(scannedFiles(root)).toEqual(["apps/web/src/lib/production.tsx"]);
+    expect(scanRepo(root).map((f) => [f.file, f.kind, f.text])).toEqual([["apps/web/src/lib/production.tsx", "attr", "Body"]]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
