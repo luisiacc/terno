@@ -1,5 +1,5 @@
-import { removable, storageBucket, type StorageBucket, type StorageThreadRow } from "@terno/core";
-import type { StorageRemoval } from "@terno/store";
+import { storageBucket, storageGoes as goes, type StorageThreadRow } from "@terno/core";
+import type { StorageRemove, StorageRemoval } from "@terno/store";
 import { deleteMessages } from "./ingest";
 import { sqlAssets } from "./attachments";
 import { placeholders, type Db } from "./sqlite";
@@ -17,12 +17,17 @@ interface Row {
   has_sent: number;
   is_starred: number;
   messages: number;
+  /** its newest message of any kind: a thread's own last_date prefers what is shown, and Trash's newer mail would hide (Codex code review #2) */
+  newest: number | null;
   bytes: number;
   held: number;
 }
 
-/** A message held by its own columns: exactly `messages_held`'s predicate (v26), so a re-check is one index probe. */
-const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:'";
+/**
+ * A message held by its own columns: exactly `messages_held`'s predicate (v26), so a re-check is one index probe.
+ * A star or a message you sent count even in Trash and Spam, where the thread's own flags ignore them (Codex code review #1).
+ */
+const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.is_sent = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:'";
 
 /**
  * The report's row, one indexed aggregate per thread: its messages, what they take here (measured: headers, bodies
@@ -31,7 +36,7 @@ const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.provider_msg_id IS NULL OR
  */
 const SELECT = /* sql */ `
 SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has_sent, t.is_starred,
-  count(m.id) AS messages,
+  count(m.id) AS messages, max(m.date) AS newest,
   coalesce(sum(
     octet_length(m.subject) + octet_length(m.snippet) + octet_length(m.to_json) + octet_length(m.cc_json) + octet_length(m.references_json)
     + coalesce((SELECT coalesce(octet_length(b.body_text), 0) + coalesce(octet_length(b.body_html), 0) FROM message_bodies b WHERE b.message_id = m.id), 0)
@@ -45,6 +50,7 @@ GROUP BY t.id ORDER BY t.id`;
 const CHECK = /* sql */ `
 SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has_sent, t.is_starred,
   (SELECT count(*) FROM messages m WHERE m.thread_id = t.id) AS messages, 0 AS bytes,
+  (SELECT max(m.date) FROM messages m WHERE m.thread_id = t.id) AS newest,
   EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND (${HELD})) AS held
 FROM threads t WHERE t.id IN (%IDS%) ORDER BY t.id`;
 
@@ -75,13 +81,16 @@ function drafted(db: Db): Set<number> {
   );
 }
 
-/** Accounts that must sign in again: what is stored may be stale for long, so their mail stays (Codex R2). */
+/**
+ * Accounts whose mail stays: one that must sign in again (what is stored may be stale for long), or one that never
+ * finished a sync (what the server holds isn't established yet) (Codex R2).
+ */
 function signedOut(db: Db): Set<number> {
   const out = new Set<number>();
   for (const a of db.all<{ id: number; sync_state: string }>("SELECT id, sync_state FROM accounts")) {
     try {
-      const s = JSON.parse(a.sync_state) as { authRequired?: boolean; authScope?: string | null };
-      if (s.authRequired && s.authScope !== "send") out.add(a.id);
+      const s = JSON.parse(a.sync_state) as { authRequired?: boolean; authScope?: string | null; lastSyncAt?: number | null };
+      if ((s.authRequired && s.authScope !== "send") || s.lastSyncAt == null) out.add(a.id);
     } catch {
       out.add(a.id);
     }
@@ -98,7 +107,7 @@ function toRows(db: Db, rows: Row[]): StorageThreadRow[] {
     id: r.id,
     accountId: r.account_id,
     bucket: storageBucket({ inInbox: r.in_inbox === 1, inTrash: r.in_trash === 1, inSpam: r.in_spam === 1, hasSent: r.has_sent === 1 }),
-    lastDate: r.last_date,
+    lastDate: r.newest ?? r.last_date,
     kept: r.is_starred === 1 || r.has_sent === 1 || r.held === 1 || drafts.has(r.id) || pending.has(r.id) || out.has(r.account_id),
     messages: r.messages,
     bytes: r.bytes,
@@ -110,14 +119,12 @@ export function storageThreads(db: Db, after: number, limit: number): StorageThr
 }
 
 /** One unit: the threads that may go now, then at most `maxMessages` of their messages, oldest first. */
-export function removeStorage(db: Db, r: { threadIds: readonly number[]; buckets: readonly StorageBucket[]; cutoff: number; maxMessages: number }): StorageRemoval {
+export function removeStorage(db: Db, r: StorageRemove): StorageRemoval {
   return db.tx(() => {
     const ids = [...new Set(r.threadIds)];
-    const eligible = ids.length
-      ? toRows(db, db.all<Row>(CHECK.replace("%IDS%", placeholders(ids.length)), ...ids)).filter((t) => removable(t, r.buckets, r.cutoff))
-      : [];
+    const eligible = ids.length ? toRows(db, db.all<Row>(CHECK.replace("%IDS%", placeholders(ids.length)), ...ids)).filter((t) => goes(t, r)) : [];
     const total = eligible.reduce((n, t) => n + t.messages, 0);
-    if (!eligible.length || r.maxMessages <= 0) return { touched: [], threads: 0, messages: 0, remaining: total, removed: [] };
+    if (!eligible.length || r.maxMessages <= 0) return { touched: [], threads: 0, messages: 0, remaining: total, removed: [], partial: [] };
     const threadIds = eligible.map((t) => t.id);
     const victims = db.all<{ id: number; account_id: number; provider_msg_id: string }>(
       `SELECT id, account_id, provider_msg_id FROM messages WHERE thread_id IN (${placeholders(threadIds.length)}) ORDER BY date, id LIMIT ?`,
@@ -133,7 +140,7 @@ export function removeStorage(db: Db, r: { threadIds: readonly number[]; buckets
     const touched = deleteMessages(db, messageIds);
     // what they alone pinned is collectable now: nothing can bring these messages back to claim it (Codex R3)
     sqlAssets(db).expireGrace([...assets]);
-    const gone = threadIds.filter((id) => !db.get("SELECT 1 FROM threads WHERE id = ?", id)).length;
+    const partial = threadIds.filter((id) => db.get("SELECT 1 FROM threads WHERE id = ?", id));
     const removed = new Map<number, string[]>();
     for (const m of victims) {
       let list = removed.get(m.account_id);
@@ -142,10 +149,11 @@ export function removeStorage(db: Db, r: { threadIds: readonly number[]; buckets
     }
     return {
       touched: [...touched],
-      threads: gone,
+      threads: threadIds.length - partial.length,
       messages: messageIds.length,
       remaining: total - messageIds.length,
       removed: [...removed].map(([accountId, providerMsgIds]) => ({ accountId, providerMsgIds })),
+      partial,
     };
   });
 }

@@ -43,6 +43,7 @@ function legacyFile(): string {
 async function filledAndEmptied(path: string) {
   const store = new SqlMailStore(openDatabase(path));
   const [a] = await withAccounts(store, 1);
+  await store.accounts.setSyncState(a!, { lastSyncAt: 1 });
   await ingest(store, Array.from({ length: 400 }, (_, i) => msg({ accountId: a!, providerMsgId: `m${i}`, inInbox: false, isTrash: true, date: 1, bodyText: "x".repeat(3000) })));
   const ids: number[] = [];
   for (let after = 0; ; ) {

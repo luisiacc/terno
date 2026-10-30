@@ -147,3 +147,27 @@ export interface StorageReport {
    - a test checks the physical file size after the checkpoint.
 10. **Sizes are estimates of the mail** (the provider's size) and say so ("about"). The measured footprint is shown separately, as the headline. "Other" isn't derived by subtraction. The snack reports conversations removed, and the report reloads to show the measured footprint after.
 11. **Engine switch.** The web engine switch is disabled while a removal runs (shared state). A switch that happens anyway (another tab) is harmless: every unit is atomic, and an interrupted removal is partial and resumable. The pending-compaction note shows for any SQLite engine with free pages.
+
+## What the Codex code review changed
+
+Each finding was fixed with a regression test that fails without it (mutation-checked).
+
+1. **A replied conversation in Trash or Spam could go.** The thread's `has_sent` ignores trashed and spam sent messages, so a message's own `is_sent` now holds its conversation (both stores, and v26's index predicate). A trashed message's star was already found and fixed while testing.
+2. **Age came from the thread's `last_date`,** which prefers shown mail over newer mail in Trash. Age is now the newest message of any kind, in the report and in a unit's re-check.
+3. **Never-synced accounts.** The first implementation left this rule out, reasoning that dev accounts never sync. That was wrong: e2e accounts sync. As revision 2 says, an account with no `lastSyncAt` keeps its mail.
+4. **The sync race was still open.** Ingest stages attachments, and yields, before its transaction. A sync pass's slice and a removal unit are now mutually exclusive (`Evictions.ingest` / `Evictions.unit`), and the slice leaves out what was removed as it enters.
+5. **A conversation whose oldest message defined its view** (Inbox) was stranded half-removed once that message went. A unit returns the threads it left `partial`, and later units `continue` them without the view check (holds and age still apply: `storageGoes`).
+6. **Huge conversations.**
+   - Each unit recomputes what remains, which can cost more than a slice, and the slicer would then go to one message a unit.
+   - A continued conversation now takes at least 1/40 of what is left per unit: about 40·ln(n/40) + 40 units, roughly forty recomputes in all (linear, not quadratic).
+   - IndexedDB keeps only the oldest `maxMessages` as it walks, and never sorts a whole thread.
+   - A unit on a 20k-message thread stays bounded by that thread's own recompute (~70–85 ms, the same as one expunge in it); the gate says so.
+7. **A Storage tab opened again during a removal showed stale numbers.**
+   - Completion bumps a shared counter, so whichever tab is open measures again, dropping stale answers.
+   - The backend no longer lets a report that began before a removal ended answer an ask made after it (found while testing this).
+   - The age and views chosen are kept for the session, so a look at another tab doesn't lose them.
+
+Also found while testing:
+
+- The shared destructive `Button` draws `text-destructive` on its own 10% tint at 3.9:1 (4.1:1 with `destructive-ink`). This is an undeclared contrast pair that predates this plan and every `ConfirmDialog` shares. The fix is a palette change of its own, left out of this plan, and the e2e axe check of the confirmation excludes only that button.
+- The Node driver's pragma list now starts with `auto_vacuum`.

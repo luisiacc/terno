@@ -56,6 +56,8 @@ async function setup() {
     rmSync(dir, { recursive: true, force: true });
   });
   const [acct] = await withAccounts(backend.store, 1);
+  // an account that finished a sync (one that never did keeps its mail)
+  await backend.store.accounts.setSyncState(acct!, { lastSyncAt: NOW });
   const client = new RpcClient(c);
   return { backend, client, db: sqlDb(backend.store), acct: acct!, state };
 }
@@ -81,6 +83,29 @@ describe("storage.report", () => {
     expect(r.disk).toEqual({ bytes: expect.any(Number), free: expect.any(Number) });
     expect(r.disk!.bytes).toBeGreaterThan(0);
     expect(r).toMatchObject({ compactPending: false, at: NOW });
+  });
+});
+
+describe("storage.report and a removal", () => {
+  it("a report begun before a removal ended never answers an ask made after it (Codex code review #7)", async () => {
+    const { backend, client, acct } = await setup();
+    await ingest(backend.store, [msg({ accountId: acct, providerMsgId: "old", inInbox: false, isSpam: true, date: OLD })]);
+    // the first report's first read waits, as one running during the removal would
+    const threads = backend.store.storage.threads.bind(backend.store.storage);
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    let calls = 0;
+    backend.store.storage.threads = async (after, limit) => {
+      if (++calls === 1) await gate;
+      return threads(after, limit);
+    };
+    const early = client.call("storage.report", {});
+    await expect.poll(() => calls).toBe(1);
+    await client.call("storage.remove", { buckets: ["spam"], olderThanDays: 365 });
+    const after = await client.call("storage.report", {});
+    expect(after.buckets.find((b) => b.bucket === "spam")).toMatchObject({ threads: 0 });
+    open();
+    await early;
   });
 });
 
@@ -155,7 +180,64 @@ describe("storage.remove", () => {
   });
 });
 
+describe("storage.remove on a large conversation", () => {
+  it("finishes it though it changes view on the way, in a bounded number of units (Codex code review #5, #6)", async () => {
+    const { backend, client, acct } = await setup();
+    // the oldest message keeps it in the Inbox; once that goes, the rest is Archive
+    const root = msg({ accountId: acct, providerMsgId: "root", rfcMessageId: "root@t", inInbox: true, date: OLD });
+    await ingest(backend.store, [root, ...Array.from({ length: 399 }, (_, i) => msg({ accountId: acct, providerMsgId: `r${i}`, rfcMessageId: `r${i}@t`, inReplyTo: "root@t", references: ["root@t"], subject: root.subject, inInbox: false, date: OLD + 1 + i }))]);
+    const t = await threadOf(backend.store, "root");
+    const remove = backend.store.storage.remove.bind(backend.store.storage);
+    // every unit costs more than a slice, as a huge thread's recompute does: the slicer shrinks units to one message
+    let units = 0;
+    backend.store.storage.remove = (r) => {
+      units++;
+      for (const until = performance.now() + 20; performance.now() < until; );
+      return remove(r);
+    };
+    expect(await client.call("storage.remove", { buckets: ["inbox"], olderThanDays: 365 })).toMatchObject({ threads: 1, messages: 400 });
+    expect(await backend.store.threads.get(t)).toBeNull();
+    // a fortieth of what is left each unit: about 40·ln(400/40) + 40, never one unit a message (400)
+    expect(units).toBeLessThanOrEqual(200);
+  });
+});
+
 describe("Evictions", () => {
+  it("never lets a removal unit and a pass's slice overlap; the slice leaves out what the unit removed (Codex code review #4)", async () => {
+    const e = new Evictions();
+    const pass = e.pass();
+    e.begin();
+    const log: string[] = [];
+    let finishIngest!: () => void;
+    // a slice in flight (staging its attachments): a unit waits for it
+    const first = e.ingest(1, pass, [msg({ accountId: 1, providerMsgId: "x" })], async (batch) => {
+      log.push(`ingest ${batch.map((m) => m.providerMsgId).join()}`);
+      await new Promise<void>((r) => (finishIngest = r));
+      log.push("ingest done");
+    });
+    let finishUnit!: () => void;
+    const unit = e.unit(async () => {
+      log.push("unit");
+      await new Promise<void>((r) => (finishUnit = r));
+      e.record([{ accountId: 1, providerMsgIds: ["x"] }]);
+      log.push("unit done");
+    });
+    await Promise.resolve();
+    expect(log).toEqual(["ingest x"]);
+    finishIngest();
+    await first;
+    await expect.poll(() => log.length).toBe(3);
+    // a slice that comes while the unit runs waits for it, then leaves out what it removed
+    const second = e.ingest(1, pass, [msg({ accountId: 1, providerMsgId: "x" }), msg({ accountId: 1, providerMsgId: "y" })], async (batch) => void log.push(`ingest ${batch.map((m) => m.providerMsgId).join()}`));
+    await Promise.resolve();
+    expect(log.at(-1)).toBe("unit");
+    finishUnit();
+    await Promise.all([unit, second]);
+    expect(log).toEqual(["ingest x", "ingest done", "unit", "unit done", "ingest y"]);
+    e.end();
+  });
+
+
   it("drops what a removal took only from passes that overlapped it, and forgets it after the next full pass", () => {
     const e = new Evictions();
     const m = (id: string) => msg({ accountId: 1, providerMsgId: id });

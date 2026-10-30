@@ -242,6 +242,16 @@ export interface ImapLocationStore {
   resetCandidate(c: { candidates: readonly number[]; subject: string; fromEmail: string; date: number; size: number; mailbox: string; rfcMessageId?: string | null }): Promise<{ id: number } | null>;
 }
 
+/** Plan 69: one storage.remove unit's ask. */
+export interface StorageRemove {
+  threadIds: readonly number[];
+  buckets: readonly StorageBucket[];
+  cutoff: number;
+  maxMessages: number;
+  /** conversations this removal already began: they go on whatever view their rest is in now (storageGoes) */
+  continuing?: readonly number[];
+}
+
 /** Plan 69: what one storage.remove unit did. */
 export interface StorageRemoval {
   touched: number[];
@@ -252,6 +262,8 @@ export interface StorageRemoval {
   remaining: number;
   /** the provider ids it removed, per account (a sync pass that fetched one before may not bring it back) */
   removed: { accountId: number; providerMsgIds: string[] }[];
+  /** conversations it took messages from that are still there (the next unit continues them) */
+  partial: number[];
 }
 
 /** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */
@@ -451,7 +463,7 @@ export interface MailStore {
      * signed in), then deletes at most `maxMessages` of their messages, oldest first (a thread's age holds until it
      * is gone). Expires the orphan grace of the attachments it unpinned (only those), for collect().
      */
-    remove(r: { threadIds: readonly number[]; buckets: readonly StorageBucket[]; cutoff: number; maxMessages: number }): Promise<StorageRemoval>;
+    remove(r: StorageRemove): Promise<StorageRemoval>;
     /** one bounded cleanup unit of an expired orphan attachment (any account); false: none left */
     collect(now: number): Promise<boolean>;
     /** what the database takes, measured (null: the store can't tell); `free`: pages it reuses for new mail */

@@ -760,7 +760,7 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation, checkCurrent?: () => void): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation, checkCurrent?: () => void, pass?: { accountId: number; pass: number }): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
@@ -768,8 +768,11 @@ export class BackendCore {
       if (life) this.assertCurrent(life);
       const classifier = await this.classifier();
       checkCurrent?.();
-      const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier, observation });
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation }) : null);
+      // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
+      const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
+      if (!r) return;
       inserted.push(...r.inserted);
       // plan 41: each committed slice, so a pass that fails later still hands over what it stored
       onInserted?.(r.inserted);
@@ -1232,9 +1235,7 @@ export class BackendCore {
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
-          const admitted = this.evictions.admit(accountId, pass, messages);
-          if (!admitted.length) return;
-          await this.ingestSliced(admitted, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass });
         },
         // the account's own window, else the general one
         windowDays,

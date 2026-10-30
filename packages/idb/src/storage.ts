@@ -1,5 +1,5 @@
-import { removable, storageBucket, type StorageBucket, type StorageThreadRow } from "@terno/core";
-import type { StorageRemoval } from "@terno/store";
+import { storageBucket, storageGoes as goes, type StorageThreadRow } from "@terno/core";
+import type { StorageRemove, StorageRemoval } from "@terno/store";
 import { idbAssets } from "./attachments";
 import { deleteMessages, seekAfter, T, type Ctx } from "./mail";
 
@@ -19,13 +19,16 @@ function drafted(c: Ctx): Set<number> {
   return out;
 }
 
-/** Accounts that must sign in again: what is stored may be stale for long, so their mail stays (Codex R2). */
+/**
+ * Accounts whose mail stays: one that must sign in again (what is stored may be stale for long), or one that never
+ * finished a sync (what the server holds isn't established yet) (Codex R2).
+ */
 function signedOut(c: Ctx): Set<number> {
   const out = new Set<number>();
   for (const a of T(c, "accounts").all()) {
     try {
-      const s = JSON.parse(a.sync_state as string) as { authRequired?: boolean; authScope?: string | null };
-      if (s.authRequired && s.authScope !== "send") out.add(a.id as number);
+      const s = JSON.parse(a.sync_state as string) as { authRequired?: boolean; authScope?: string | null; lastSyncAt?: number | null };
+      if ((s.authRequired && s.authScope !== "send") || s.lastSyncAt == null) out.add(a.id as number);
     } catch {
       out.add(a.id as number);
     }
@@ -33,11 +36,11 @@ function signedOut(c: Ctx): Set<number> {
   return out;
 }
 
-/** A message that must stay: starred, a draft, local or unsent, an op not settled, a flag not yet confirmed (Codex R4). */
+/** A message that must stay: starred, yours, a draft, local or unsent, an op not settled, a flag not yet confirmed (Codex R4). */
 function held(c: Ctx, m: Record<string, unknown>): boolean {
   const provider = m.provider_msg_id as string | null;
-  // a star counts even in Trash, where the thread's own flag ignores it
-  if (m.is_draft === 1 || m.is_starred === 1 || provider == null || provider.startsWith("local:")) return true;
+  // a star or a message you sent count even in Trash and Spam, where the thread's own flags ignore them (Codex code review #1)
+  if (m.is_draft === 1 || m.is_starred === 1 || m.is_sent === 1 || provider == null || provider.startsWith("local:")) return true;
   const ops = T(c, "ops");
   for (const t of T(c, "op_targets").by("message", m.id)) if (PENDING.has(ops.get(t.op_id)?.state as string)) return true;
   for (const f of T(c, "message_flag_intents").by("fk_message_id", m.id)) if ((f.pending_count as number) > 0 || f.needs_snapshot === 1) return true;
@@ -50,12 +53,15 @@ function row(c: Ctx, id: number, drafts: Set<number>, out: Set<number>): Storage
   const messages = T(c, "messages");
   let count = 0;
   let bytes = 0;
+  // its newest message of any kind: the thread's own last_date prefers what is shown (Codex code review #2)
+  let newest = Number.NEGATIVE_INFINITY;
   let keep = t.is_starred === 1 || t.has_sent === 1 || drafts.has(id) || out.has(t.account_id as number);
   // by key: a thread of thousands of messages is never copied into an array
   for (const key of messages.keysBy("fk_thread_id", id)) {
     const m = messages.rows.get(key);
     if (!m) continue;
     count++;
+    if ((m.date as number) > newest) newest = m.date as number;
     // its bodies are on disk only (lazy): the provider's size stands for them
     bytes += (m.size as number) || 0;
     if (!keep && held(c, m)) keep = true;
@@ -64,7 +70,7 @@ function row(c: Ctx, id: number, drafts: Set<number>, out: Set<number>): Storage
     id,
     accountId: t.account_id as number,
     bucket: storageBucket({ inInbox: t.in_inbox === 1, inTrash: t.in_trash === 1, inSpam: t.in_spam === 1, hasSent: t.has_sent === 1 }),
-    lastDate: t.last_date as number,
+    lastDate: count ? newest : (t.last_date as number),
     kept: keep,
     messages: count,
     bytes,
@@ -85,17 +91,13 @@ export function storageThreads(c: Ctx, after: number, limit: number): StorageThr
 }
 
 /** One unit (the caller's command): the threads that may go now, then at most `maxMessages` of their messages, oldest first. */
-export function removeStorage(c: Ctx, r: { threadIds: readonly number[]; buckets: readonly StorageBucket[]; cutoff: number; maxMessages: number }): StorageRemoval {
+export function removeStorage(c: Ctx, r: StorageRemove): StorageRemoval {
   const drafts = drafted(c);
   const out = signedOut(c);
-  const eligible = [...new Set(r.threadIds)].map((id) => row(c, id, drafts, out)).filter((t): t is StorageThreadRow => !!t && removable(t, r.buckets, r.cutoff));
+  const eligible = [...new Set(r.threadIds)].map((id) => row(c, id, drafts, out)).filter((t): t is StorageThreadRow => !!t && goes(t, r));
   const total = eligible.reduce((n, t) => n + t.messages, 0);
-  if (!eligible.length || r.maxMessages <= 0) return { touched: [], threads: 0, messages: 0, remaining: total, removed: [] };
-  const messages = T(c, "messages");
-  const victims: Record<string, unknown>[] = [];
-  for (const t of eligible) for (const key of messages.keysBy("fk_thread_id", t.id)) victims.push(messages.rows.get(key)!);
-  victims.sort((a, b) => (a.date as number) - (b.date as number) || (a.id as number) - (b.id as number));
-  victims.length = Math.min(victims.length, r.maxMessages);
+  if (!eligible.length || r.maxMessages <= 0) return { touched: [], threads: 0, messages: 0, remaining: total, removed: [], partial: [] };
+  const victims = oldest(c, eligible, r.maxMessages);
   const messageIds = victims.map((m) => m.id as number);
   const links = T(c, "attachment_links");
   const assets = new Set<string>();
@@ -104,6 +106,7 @@ export function removeStorage(c: Ctx, r: { threadIds: readonly number[]; buckets
   // what they alone pinned is collectable now: nothing can bring these messages back to claim it (Codex R3)
   idbAssets(c.db).expireGrace([...assets]);
   const threads = T(c, "threads");
+  const partial = eligible.filter((t) => threads.get(t.id)).map((t) => t.id);
   const removed = new Map<number, string[]>();
   for (const m of victims) {
     let list = removed.get(m.account_id as number);
@@ -112,9 +115,34 @@ export function removeStorage(c: Ctx, r: { threadIds: readonly number[]; buckets
   }
   return {
     touched: [...touched],
-    threads: eligible.filter((t) => !threads.get(t.id)).length,
+    threads: eligible.length - partial.length,
     messages: messageIds.length,
     remaining: total - messageIds.length,
     removed: [...removed].map(([accountId, providerMsgIds]) => ({ accountId, providerMsgIds })),
+    partial,
   };
+}
+
+const older = (a: Record<string, unknown>, b: Record<string, unknown>) => (a.date as number) - (b.date as number) || (a.id as number) - (b.id as number);
+
+/** The `limit` oldest messages of these threads, kept sorted as they are met: a large thread is never sorted whole (Codex code review #6). */
+function oldest(c: Ctx, threads: readonly StorageThreadRow[], limit: number): Record<string, unknown>[] {
+  const messages = T(c, "messages");
+  const out: Record<string, unknown>[] = [];
+  for (const t of threads) {
+    for (const key of messages.keysBy("fk_thread_id", t.id)) {
+      const m = messages.rows.get(key)!;
+      if (out.length === limit && older(m, out[limit - 1]!) >= 0) continue;
+      let lo = 0;
+      let hi = out.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (older(out[mid]!, m) < 0) lo = mid + 1;
+        else hi = mid;
+      }
+      out.splice(lo, 0, m);
+      if (out.length > limit) out.pop();
+    }
+  }
+  return out;
 }

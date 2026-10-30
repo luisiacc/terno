@@ -25,6 +25,13 @@ export class Evictions {
   private endSeq = 0;
   private running = false;
   private readonly ids = new Map<number, Set<string>>();
+  /**
+   * A removal unit and a sync pass's ingest never overlap (Codex code review #4: an ingest stages attachments, and
+   * yields, before its transaction): each waits for the other's in flight, and an ingest leaves out what was removed
+   * as it enters.
+   */
+  private current: Promise<unknown> | null = null;
+  private readonly writes = new Set<Promise<unknown>>();
 
   /** a sync pass starts: its number */
   pass(): number {
@@ -40,6 +47,30 @@ export class Evictions {
       let set = this.ids.get(r.accountId);
       if (!set) this.ids.set(r.accountId, (set = new Set()));
       for (const id of r.providerMsgIds) set.add(id);
+    }
+  }
+
+  /** one removal unit, which records what it removed before it resolves */
+  async unit<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.current || this.writes.size) await Promise.allSettled([this.current, ...this.writes]);
+    const p = fn();
+    this.current = p;
+    try {
+      return await p;
+    } finally {
+      if (this.current === p) this.current = null;
+    }
+  }
+
+  /** a sync pass's slice: once no unit is in flight, what was removed is left out and `write` runs with it */
+  async ingest<T>(accountId: number, pass: number, messages: IncomingMessage[], write: (admitted: IncomingMessage[]) => Promise<T>): Promise<T> {
+    while (this.current) await this.current.catch(() => {});
+    const p = write(this.admit(accountId, pass, messages));
+    this.writes.add(p);
+    try {
+      return await p;
+    } finally {
+      this.writes.delete(p);
     }
   }
 
@@ -92,7 +123,7 @@ export class StorageMaintenance {
 
   constructor(private readonly b: BackendCore) {}
 
-  /** One at a time: a second ask while one runs shares it. Nothing is kept once it is answered. */
+  /** One at a time: a second ask while one runs shares it (never across a removal's end). Nothing is kept once it is answered. */
   report(): Promise<StorageReport> {
     this.reading ??= this.read().finally(() => (this.reading = null));
     return this.reading;
@@ -125,6 +156,10 @@ export class StorageMaintenance {
       const sizer = new SliceSizer(REMOVE_SLICE);
       let threads = 0;
       let messages = 0;
+      /** conversations a unit began: they go on whatever view their rest is in now (Codex code review #5) */
+      const continuing = new Set<number>();
+      /** what the last unit left of the current pack */
+      let left = 0;
       for (let i = 0; i < targets.length && !this.b.isStopped; ) {
         // conversations up to the unit's size in messages (at least one: a large one takes several units)
         const pack: number[] = [];
@@ -132,14 +167,30 @@ export class StorageMaintenance {
           pack.push(targets[j]!.id);
           sum += targets[j]!.messages;
         }
-        const r = await timed(sizer, () => store.storage.remove({ threadIds: pack, buckets: p.buckets, cutoff, maxMessages: sizer.size }), (x) => x.messages);
-        evictions.record(r.removed);
+        // a large conversation goes in units of at least a fortieth of what is left of it: each unit recomputes what
+        // remains, which can cost more than a slice, and units of one message would make that quadratic. This way the
+        // whole is about forty recomputes of it (Codex code review #6)
+        const maxMessages = Math.max(sizer.size, Math.ceil(left / 40));
+        const r = await timed(
+          sizer,
+          () =>
+            evictions.unit(async () => {
+              const x = await store.storage.remove({ threadIds: pack, buckets: p.buckets, cutoff, maxMessages, continuing: pack.filter((id) => continuing.has(id)) });
+              evictions.record(x.removed);
+              return x;
+            }),
+          (x) => x.messages,
+        );
+        for (const t of r.partial) continuing.add(t);
         this.b.notifyChanged(r.touched);
         threads += r.threads;
         messages += r.messages;
         progress(Math.min(total, messages));
         // what is left of this pack (a large conversation) goes in the next unit; a pack nothing is left of is done
-        if (!r.remaining || !r.messages) i += pack.length;
+        if (!r.remaining || !r.messages) {
+          i += pack.length;
+          left = 0;
+        } else left = r.remaining;
         await this.b.yieldTurn();
         await store.settle?.();
       }
@@ -150,6 +201,8 @@ export class StorageMaintenance {
     } finally {
       evictions.end();
       this.removing = false;
+      // a report that began before this ended doesn't answer an ask made after it: the next one reads afresh
+      this.reading = null;
     }
   }
 

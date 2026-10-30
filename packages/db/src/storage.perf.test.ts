@@ -27,6 +27,8 @@ beforeAll(async () => {
   meta.threads = seeded.threadCount;
   meta.messages = seeded.messageCount;
   expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
+  // synced accounts: a never-synced one keeps its mail
+  for (const id of seeded.accountIds) await store.accounts.setSyncState(id, { lastSyncAt: NOW });
 }, 600_000);
 
 afterAll(async () => {

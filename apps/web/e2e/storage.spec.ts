@@ -57,6 +57,24 @@ test.describe("Settings → Storage", () => {
     await expect(page.getByTestId("storage-remove")).toBeDisabled();
   });
 
+  test("a Storage tab opened again shows what is left once the removal ends, with what was chosen kept (Codex code review #7)", async ({ app: page, server }) => {
+    const [account] = await server.backend.store.accounts.list();
+    await server.backend.ingestSliced(Array.from({ length: 400 }, (_, i) => msg({ accountId: account!.id, providerMsgId: `bulk-spam-${i}`, inInbox: false, isSpam: true, date: OLD + i, bodyText: "offer ".repeat(400) })));
+    await openStorage(page);
+    await page.getByTestId("storage-pick-trash-box").click();
+    await page.getByTestId("storage-age").click();
+    await page.getByTestId("storage-age-730").click();
+    await page.getByTestId("storage-remove").click();
+    await page.getByTestId("storage-confirm-confirm").click();
+    // away and back while it runs: the tab that started it is gone, this one must still learn it ended
+    await page.getByTestId("tab-data").click();
+    await page.getByTestId("tab-storage").click();
+    await expect(page.getByText(/^Removed \d+ conversations from this Mac\.$/).first()).toBeVisible();
+    await expect(page.getByTestId("storage-age")).toContainText("2 years");
+    await expect(page.getByTestId("storage-pick-trash-box")).not.toBeChecked();
+    await expect(page.getByTestId("storage-pick-spam")).toContainText("Nothing this old");
+  });
+
   test("every control is reachable with Tab, and nothing is removable until something is chosen", async ({ app: page }) => {
     await openStorage(page);
     for (const b of ["spam", "trash"]) await page.getByTestId(`storage-pick-${b}-box`).click();

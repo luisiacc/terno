@@ -969,7 +969,7 @@ CREATE TABLE send_copy_bytes (
   // plan 69: a removal re-checks every unit that nothing in a conversation is held (rare rows): one probe, not a scan
   // of a large thread's messages. The IndexedDB mirror reads memory and has no counterpart (like v17).
   { version: 26, name: "held messages index", sql: `
-CREATE INDEX messages_held ON messages(thread_id) WHERE is_draft = 1 OR is_starred = 1 OR provider_msg_id IS NULL OR substr(provider_msg_id, 1, 6) = 'local:';
+CREATE INDEX messages_held ON messages(thread_id) WHERE is_draft = 1 OR is_starred = 1 OR is_sent = 1 OR provider_msg_id IS NULL OR substr(provider_msg_id, 1, 6) = 'local:';
 ` },
 ];
 

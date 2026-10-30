@@ -18,9 +18,12 @@ const ALL = [...REMOVABLE_BUCKETS];
 export function defineStorageConformance(name: string, h: StoreHarness): void {
   let store: MailStore;
   afterEach(async () => store?.isOpen && store.close());
+  /** accounts that finished a sync (one that never did keeps its mail: that's a test of its own) */
   const fresh = async () => {
     store = await h.open();
-    return withAccounts(store);
+    const ids = await withAccounts(store);
+    for (const id of ids) await store.accounts.setSyncState(id, { lastSyncAt: NOW });
+    return ids;
   };
   const rows = async () => {
     const out: StorageThreadRow[] = [];
@@ -98,6 +101,49 @@ export function defineStorageConformance(name: string, h: StoreHarness): void {
       // only sending refused: the mailbox itself still syncs, so its mail may go
       await store.accounts.setSyncState(b!, { authRequired: true, authScope: "send" });
       expect((await rowOf("signed-out")).kept).toBe(false);
+    });
+
+    it("keeps what Trash and Spam hide from the thread's flags: a message you sent, a star (Codex code review #1)", async () => {
+      const [a] = await fresh();
+      const root = msg({ accountId: a!, providerMsgId: "asked", rfcMessageId: "asked@t", inInbox: false, isTrash: true, date: OLD });
+      await ingest(store, [root, msg({ accountId: a!, providerMsgId: "answered", rfcMessageId: "answered@t", inReplyTo: "asked@t", references: ["asked@t"], subject: root.subject, from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: false, isTrash: true, date: OLD + 1 })]);
+      const t = await threadOf(store, "asked");
+      expect(await rowOf("asked")).toMatchObject({ bucket: "trash", kept: true });
+      expect((await store.storage.remove({ threadIds: [t], buckets: ["trash"], cutoff: CUTOFF, maxMessages: 10 })).messages).toBe(0);
+    });
+
+    it("dates a conversation by its newest message of any kind, Trash's too (Codex code review #2)", async () => {
+      const [a] = await fresh();
+      const root = msg({ accountId: a!, providerMsgId: "kept-old", rfcMessageId: "kept-old@t", inInbox: false, date: OLD });
+      await ingest(store, [root, msg({ accountId: a!, providerMsgId: "new-trashed", rfcMessageId: "new-trashed@t", inReplyTo: "kept-old@t", references: ["kept-old@t"], subject: root.subject, inInbox: false, isTrash: true, date: NOW - DAY })]);
+      const t = await threadOf(store, "kept-old");
+      expect((await rowOf("kept-old")).lastDate).toBe(NOW - DAY);
+      expect((await store.storage.remove({ threadIds: [t], buckets: ["archive", "trash"], cutoff: CUTOFF, maxMessages: 10 })).messages).toBe(0);
+      expect((await store.threads.get(t))!.messages).toHaveLength(2);
+    });
+
+    it("keeps the mail of an account that never finished a sync (Codex R2, code review #3)", async () => {
+      store = await h.open();
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "unsynced", inInbox: false, isSpam: true, date: OLD })]);
+      expect((await rowOf("unsynced")).kept).toBe(true);
+      await store.accounts.setSyncState(a!, { lastSyncAt: NOW });
+      expect((await rowOf("unsynced")).kept).toBe(false);
+    });
+
+    it("finishes a conversation it began even when removing its oldest message moves it to another view (Codex code review #5)", async () => {
+      const [a] = await fresh();
+      // the oldest message is the one in the Inbox: the thread is Inbox until it goes, then Archive
+      const root = msg({ accountId: a!, providerMsgId: "inbox-root", rfcMessageId: "inbox-root@t", inInbox: true, date: OLD });
+      await ingest(store, [root, ...[1, 2, 3].map((i) => msg({ accountId: a!, providerMsgId: `arch${i}`, rfcMessageId: `arch${i}@t`, inReplyTo: "inbox-root@t", references: ["inbox-root@t"], subject: root.subject, inInbox: false, date: OLD + i }))]);
+      const t = await threadOf(store, "inbox-root");
+      const first = await store.storage.remove({ threadIds: [t], buckets: ["inbox"], cutoff: CUTOFF, maxMessages: 1 });
+      expect(first).toMatchObject({ messages: 1, remaining: 3, partial: [t] });
+      expect((await rowOf("arch1")).bucket).toBe("archive");
+      // a fresh look refuses it (Archive wasn't chosen); the removal that began it goes on
+      expect((await store.storage.remove({ threadIds: [t], buckets: ["inbox"], cutoff: CUTOFF, maxMessages: 10 })).messages).toBe(0);
+      expect(await store.storage.remove({ threadIds: [t], buckets: ["inbox"], cutoff: CUTOFF, maxMessages: 10, continuing: [t] })).toMatchObject({ messages: 3, threads: 1, partial: [] });
+      expect(await store.threads.get(t)).toBeNull();
     });
 
     it("keeps a change the server took but hasn't confirmed yet (op settled, snapshot pending: Codex R4)", async () => {

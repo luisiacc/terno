@@ -53,6 +53,16 @@ export function removable(row: Pick<StorageThreadRow, "bucket" | "kept" | "lastD
   return !row.kept && row.bucket !== "sent" && buckets.includes(row.bucket) && row.lastDate < cutoff;
 }
 
+/**
+ * What a removal unit takes now: removable(), except a conversation it already began, which goes on whatever view its
+ * rest is in now (removing its oldest messages can move it, say from Inbox to Archive: Codex code review #5). Holds and
+ * age are checked again either way.
+ */
+export function storageGoes(row: Pick<StorageThreadRow, "id" | "bucket" | "kept" | "lastDate">, r: { buckets: readonly StorageBucket[]; cutoff: number; continuing?: readonly number[] }): boolean {
+  if (r.continuing?.includes(row.id)) return !row.kept && row.lastDate < r.cutoff;
+  return removable(row, r.buckets, r.cutoff);
+}
+
 export interface StorageAmount {
   threads: number;
   messages: number;

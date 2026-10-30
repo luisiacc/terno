@@ -21,6 +21,8 @@ beforeAll(async () => {
   store = await IdbMailStore.open({ name: `storage-perf-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
   const seeded = await store.dev.seed(generateDataset({ threads: 50_000, accounts: 4, seed: 69, now: NOW, bodyScale: 2 }), { now: NOW });
   expect(seeded.threadCount).toBeGreaterThanOrEqual(50_000);
+  // synced accounts: a never-synced one keeps its mail
+  for (const id of seeded.accountIds) await store.accounts.setSyncState(id, { lastSyncAt: NOW });
 }, 900_000);
 afterAll(async () => {
   await store?.close();

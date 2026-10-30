@@ -1,4 +1,4 @@
-import { REMOVABLE_BUCKETS, STORAGE_AGES, STORAGE_BUCKETS, type CategoryColor, type RemovableBucket, type StorageAge, type StorageAmount, type StorageBucket, type StorageReport } from "@terno/core";
+import { REMOVABLE_BUCKETS, STORAGE_AGES, STORAGE_BUCKETS, type CategoryColor, type StorageAge, type StorageAmount, type StorageBucket, type StorageReport } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -6,7 +6,7 @@ import { Checkbox } from "@terno/ui/components/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { cn } from "@terno/ui/lib/utils";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { formatBytes, viewLabel } from "~/lib/format";
 import { snack } from "~/lib/snack";
 import { useStorageJob } from "~/lib/storage-job";
@@ -34,23 +34,29 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function StorageTab() {
   const [report, setReport] = useState<StorageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [age, setAge] = useState<StorageAge>(365);
-  const [picked, setPicked] = useState<ReadonlySet<RemovableBucket>>(() => new Set(["spam", "trash"]));
+  const age = useStorageJob((s) => s.age);
+  const picked = useStorageJob((s) => s.picked);
   const [confirming, setConfirming] = useState(false);
   const removing = useStorageJob((s) => s.removing);
   const percent = useStorageJob((s) => s.percent);
+  const finished = useStorageJob((s) => s.finished);
+  /** the latest ask: an older answer that arrives after it is dropped */
+  const asked = useRef(0);
 
   const load = useCallback(async () => {
+    const mine = ++asked.current;
     setError(null);
     try {
-      setReport(await client.call("storage.report", {}));
+      const r = await client.call("storage.report", {});
+      if (mine === asked.current) setReport(r);
     } catch (e) {
-      setError(errorText(e));
+      if (mine === asked.current) setError(errorText(e));
     }
   }, []);
+  // on open, and again after every removal (this tab's or one started before it opened)
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, finished]);
 
   const ageIndex = STORAGE_AGES.indexOf(age);
   const bucket = (b: StorageBucket) => report?.buckets.find((x) => x.bucket === b);
@@ -77,9 +83,8 @@ export function StorageTab() {
       snack.error(errorText(e));
     } finally {
       off();
-      useStorageJob.setState({ removing: false, percent: 0 });
-      // what is there now, measured again
-      void load();
+      // what is there now gets measured again, by whichever Storage tab is open
+      useStorageJob.setState((s) => ({ removing: false, percent: 0, finished: s.finished + 1 }));
     }
   };
 
@@ -122,7 +127,7 @@ export function StorageTab() {
           <SettingsGroup title={t("storage.free")} footer={t("storage.footer", { device: device() })} testId="storage-free">
             <SettingsRow label={t("storage.olderThan")}>
               {({ id: _id, ...a }) => (
-                <Select value={String(age)} onValueChange={(v) => setAge(Number(v) as StorageAge)} items={STORAGE_AGES.map((d) => ({ value: String(d), label: ageLabel(d) }))} disabled={removing}>
+                <Select value={String(age)} onValueChange={(v) => useStorageJob.setState({ age: Number(v) as StorageAge })} items={STORAGE_AGES.map((d) => ({ value: String(d), label: ageLabel(d) }))} disabled={removing}>
                   <SelectTrigger {...a} size="sm" className="w-32" data-testid="storage-age">
                     <SelectValue />
                   </SelectTrigger>
@@ -147,11 +152,11 @@ export function StorageTab() {
                       disabled={removing}
                       data-testid={`storage-pick-${b}-box`}
                       onCheckedChange={(on) =>
-                        setPicked((cur) => {
-                          const next = new Set(cur);
+                        useStorageJob.setState((s) => {
+                          const next = new Set(s.picked);
                           if (on) next.add(b);
                           else next.delete(b);
-                          return next;
+                          return { picked: next };
                         })
                       }
                     />
