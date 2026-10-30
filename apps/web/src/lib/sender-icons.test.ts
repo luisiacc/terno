@@ -3,7 +3,7 @@
  * many frames ask, no image kept alive by an avatar that's gone, and nothing asked in spam.
  */
 import type { IconAnswer } from "@terno/core/rpc";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
@@ -44,6 +44,16 @@ beforeEach(() => {
   store.reset();
   fake.pending.length = 0;
   fake.resetStats();
+});
+
+afterEach(async () => {
+  store.visible.clear();
+  for (let i = 0; i < 20; i++) {
+    for (const p of fake.pending.splice(0)) p.resolve({});
+    await frame();
+    if (i >= 3 && store.inflight === 0 && fake.pending.length === 0) break;
+  }
+  expect(store.inflight).toBe(0);
 });
 
 describe("the renderer's sender icons (plan 22)", () => {
@@ -243,5 +253,147 @@ describe("holding through a reset, the edge cases", () => {
     take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2), "bob@bob.com": ref("d:bob.com") });
     await frame();
     expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+  });
+});
+
+// A backend reset cannot retract RPC replies that are already on their way to the renderer.
+describe("reset generations", () => {
+  const email = "ana@acme.com";
+  const ref = { id: "d:acme.com", v: 1, kind: "site" as const, px: 32, full: false };
+  const reset = () => fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+
+  it("an old lookup cannot resurrect an icon after the new generation answers none", async () => {
+    store.visible.add(email);
+    store.request(email);
+    await frame();
+    const old = fake.pending.shift()!;
+    reset();
+    await frame();
+    fake.pending.shift()!.resolve({ [email]: null });
+    await frame();
+    old.resolve({ [email]: ref });
+    await frame();
+    await frame();
+    expect(store.entries.get(email)).toEqual({ state: "none" });
+    expect(fake.pending).toEqual([]);
+    expect(shown(email)).toBeNull();
+  });
+
+  it("old bytes cannot populate a new generation's same ref while its own data is held", async () => {
+    store.visible.add(email);
+    store.entries.set(email, { state: "ref", ref });
+    store.request(email);
+    await frame();
+    const old = fake.pending.shift()!;
+    reset();
+    await frame();
+    fake.pending.shift()!.resolve({ [email]: ref });
+    await frame();
+    old.resolve({ [ref.id]: "data:old" });
+    await frame();
+    await frame();
+    const current = fake.pending.shift()!;
+    expect(current.method).toBe("icons.data");
+    const before = shown(email);
+    current.resolve({ [ref.id]: "data:new" });
+    await frame();
+    expect(before).toBeNull();
+    expect(shown(email)?.url).toBe("data:new");
+  });
+});
+
+describe("obsolete failures and retries (review regression)", () => {
+  const email = "ana@acme.com";
+  const ref = (v: number) => ({ id: "d:acme.com", v, kind: "site" as const, px: 32, full: false });
+  const reset = () => fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+  const showing = () => {
+    store.visible.add(email);
+    store.entries.set(email, { state: "ref", ref: ref(1) });
+    store.data.set("d:acme.com:1", "data:initial");
+    store.request(email);
+  };
+
+  it.each(["lookup", "data"] as const)("an old %s rejection cannot release the current replacement", async (method) => {
+    showing();
+    if (method === "data") {
+      store.data.clear();
+      store.request(email);
+    } else reset();
+    await frame();
+    const old = fake.pending.shift()!;
+    expect(old.method).toBe(`icons.${method}`);
+    if (method === "data") {
+      store.entries.set(email, { state: "ref", ref: ref(0) });
+      store.data.set("d:acme.com:0", "data:initial");
+    }
+    reset();
+    await frame();
+    fake.pending.shift()!.resolve({ [email]: ref(method === "data" ? 1 : 2) });
+    await frame();
+    await frame();
+    const current = fake.pending.shift()!;
+    expect(current.method).toBe("icons.data");
+    old.reject(new Error("old connection closed"));
+    await frame();
+    current.resolve({ "d:acme.com": "data:current" });
+    await frame();
+    expect(shown(email)?.url).toBe("data:current");
+    expect(fake.stats().maxInflight).toBeLessThanOrEqual(2);
+  });
+
+  it.each([false, true])("a pre-reset again timer launches no stale retry (held=%s)", async (held) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      showing();
+      if (!held) {
+        store.entries.clear();
+        store.data.clear();
+      } else {
+        reset();
+        await vi.advanceTimersByTimeAsync(1);
+        fake.pending.shift()!.resolve({});
+        await vi.advanceTimersByTimeAsync(1);
+      }
+      fake.listeners.forEach((l) => l({ icons: { [email]: "again" } }));
+      reset();
+      await vi.advanceTimersByTimeAsync(1);
+      const current = fake.pending.shift()!;
+      // A failed current lookup leaves an unheld address eligible to ask again.
+      if (held) current.resolve({});
+      else current.reject(new Error("offline"));
+      await vi.advanceTimersByTimeAsync(1501);
+      const calls = fake.pending.length;
+      for (const p of fake.pending.splice(0)) p.resolve({});
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(0);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("two obsolete jobs retain their slots until settled, then current work resumes", async () => {
+    const other = "bob@other.com";
+    store.visible.add(email);
+    store.request(email);
+    await frame();
+    store.visible.add(other);
+    store.request(other);
+    await frame();
+    const old = fake.pending.splice(0);
+    expect(old).toHaveLength(2);
+    reset();
+    await frame();
+    expect(fake.pending).toEqual([]);
+    old[0]!.resolve({});
+    await frame();
+    await frame();
+    const current = fake.pending.shift()!;
+    expect(current.params.emails).toEqual([email, other]);
+    current.resolve({ [email]: null, [other]: null });
+    old[1]!.resolve({});
+    await frame();
+    expect(fake.stats().maxInflight).toBe(2);
+    expect(store.inflight).toBe(0);
   });
 });

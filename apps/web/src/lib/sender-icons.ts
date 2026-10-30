@@ -38,6 +38,7 @@ let flushQueued = false;
 /** addresses that already looked up again after their icon's bytes were gone (once each) */
 const refetched = new Set<string>();
 let wired = false;
+let generation = 0;
 /**
  * After a reset, the on-screen addresses being asked again: each keeps drawing its icon until its new answer can be
  * drawn, so a reset never blanks the avatars on screen (they'd flash to initials and back).
@@ -103,12 +104,13 @@ function setEntry(email: string, e: Entry): void {
 }
 
 function apply(answers: Record<string, IconAnswer>): void {
+  const epoch = generation;
   for (const [email, a] of Object.entries(answers)) {
     // a held icon stays until its replacement's bytes are here; the same icon (or none) settles it now
     if (held.has(email) && a === "again") {
       // the backend is busy: still drawn, asked again shortly
       setTimeout(() => {
-        if (!visible.has(email)) return;
+        if (epoch !== generation || !visible.has(email)) return;
         batch.add(email);
         schedule();
       }, AGAIN_MS);
@@ -123,7 +125,7 @@ function apply(answers: Record<string, IconAnswer>): void {
     release(email);
     if (a === "again") {
       setEntry(email, { state: "idle" });
-      setTimeout(() => visible.has(email) && request(email), AGAIN_MS);
+      setTimeout(() => epoch === generation && visible.has(email) && request(email), AGAIN_MS);
     } else if (a === null) setEntry(email, { state: "none" });
     else {
       setEntry(email, { state: "ref", ref: a });
@@ -139,6 +141,7 @@ function wire(): void {
   wired = true;
   client.on("icons", ({ icons, reset }) => {
     if (reset) {
+      generation++;
       // stale-while-revalidate: what's on screen keeps showing and asks again (a source turned on or off, photos listed,
       // icons forgotten); each avatar changes only when its new answer can be drawn. The rest is forgotten.
       for (const email of entries.keys()) {
@@ -210,11 +213,15 @@ function pump(): void {
 }
 
 async function lookup(emails: string[]): Promise<void> {
+  const epoch = generation;
   // asked: but an icon on screen stays drawn while it's asked again
   for (const e of emails) if (entries.get(e)?.state !== "ref") entries.set(e, { state: "asked" });
   try {
-    apply(await client.call("icons.lookup", { emails }));
+    const answers = await client.call("icons.lookup", { emails });
+    if (epoch !== generation) return;
+    apply(answers);
   } catch {
+    if (epoch !== generation) return;
     // the initials stay (a held icon too); a later mount or scroll asks again
     for (const e of emails) {
       release(e);
@@ -224,10 +231,12 @@ async function lookup(emails: string[]): Promise<void> {
 }
 
 async function fetchData(refs: IconRef[]): Promise<void> {
+  const epoch = generation;
   let got: Record<string, string | null>;
   try {
     got = await client.call("icons.data", { ids: [...new Set(refs.map((r) => r.id))] });
   } catch {
+    if (epoch !== generation) return;
     // a replacement whose bytes didn't come: its address looks up again (never stuck on the old icon)
     const keys = new Set(refs.map(dataKey));
     for (const [email, ref] of replacing) {
@@ -237,6 +246,7 @@ async function fetchData(refs: IconRef[]): Promise<void> {
     }
     return;
   }
+  if (epoch !== generation) return;
   const gone = new Set<string>();
   for (const ref of refs) {
     const url = got[ref.id];

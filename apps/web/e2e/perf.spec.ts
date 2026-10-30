@@ -231,6 +231,19 @@ for (const design of DESIGNS) for (const density of ["comfortable", "compact"] a
 
 test.describe("sender icons (plan 22)", () => {
   test.use({ design: "lumen" });
+  test.beforeEach(async ({ context }) => {
+    await context.route("**/*", (route) => {
+      const host = new URL(route.request().url()).hostname;
+      return ["localhost", "127.0.0.1", "[::1]"].includes(host) ? route.continue() : route.abort();
+    });
+  });
+  test.afterEach(async ({ page }, info) => {
+    if (!process.env.SENDER_ICON_ADMISSION) return;
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.screenshot({ path: info.outputPath(`sender-icons-${colorScheme}.png`) });
+    }
+  });
   test("continuous scrolling with website icons arriving (Lumen): frames stay smooth, icons re-render no row", async ({ app: page, server }) => {
     // every site has an icon, so icons arrive for every row scrolled into view
     server.icons.everySite = true;

@@ -1,0 +1,16 @@
+import { defineConfig } from "@playwright/test";
+import config from "./playwright.config";
+
+const port = Number(process.env.E2E_PORT ?? 56510);
+export default defineConfig({
+  ...config,
+  workers: 1,
+  use: { ...config.use, baseURL: `http://127.0.0.1:${port}` },
+  outputDir: "/tmp/terno-sender-icon-clear/browser-results",
+  webServer: {
+    command: `VITE_RENDER_PROBE=1 pnpm --config.verify-deps-before-run=false vite --port ${port} --strictPort --host 127.0.0.1`,
+    url: `http://127.0.0.1:${port}`,
+    reuseExistingServer: false,
+    timeout: 30000,
+  },
+});
