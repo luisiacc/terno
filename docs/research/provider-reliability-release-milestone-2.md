@@ -124,3 +124,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: fake IndexedDB maintenance/traversal
 
 `f0157cbb` patches exact index deletion, iterative traversal allocation and cursor-range intersection in the locked simulator; no production schema or original gate changes. Root688caller checks/types/lint, frozen offline installs and complete12-case original IDB/storage perf run pass. Both independent50kaccess/allocation controls remain. One review covered deletion; later cursor/iterator runtime changes have tests but no independent re-review. Original41.37mscached failure remains unattributed and recorded. [Evidence and limits](../plans/drafts/release2-fake-idb-index-deletion.md). No browser/native/global release clearance.
+
+
+## Landed repair: controlled slow-disk recovery fixture
+
+`1bd9b5d2` explicitly qualifies a real controller restart after200prefixthreads at initial20, preserving original20kworkload/costs/publicdeadline/budgets. It does not claim natural growth or continuation of prefix history. Root5load+7slicer tests/types/lint pass; exact18,792targets/18,216affected/zero duplicates and older/excluded state preserved. One review0/0; later assertion corrections tested without independent re-review. Root's mistaken50kbrief/probe remains separately unqualified; no production deadline or controller change. [Full commands and limits](../plans/drafts/release2-adaptive-load.md).
