@@ -283,10 +283,15 @@ test.describe("sender icons (plan 22)", () => {
     server.icons.hold = new Promise<void>((r) => (release = r));
     await page.waitForTimeout(500);
     const rowsAtRest = await renders(page, "ThreadRow");
-    // forgotten: every avatar on screen goes back to initials and asks again (held)
+    const retained = await page.getByTestId("sender-icon").evaluateAll((icons) => icons.map((icon) => icon.querySelector("img")?.getAttribute("src")));
+    expect(retained.length).toBeGreaterThan(0);
+    expect(retained.every((src) => src?.startsWith("data:image/"))).toBe(true);
+    const requestsBeforeForget = server.icons.requests.length;
+    // Plan 75: Forget clears the saved cache, while visible images stay until revalidation finishes.
     await server.backend.server.invoke("icons.forget", {}, { clientId: "setup", origin: "dev" as const });
-    await expect(page.getByTestId("sender-icon")).toHaveCount(0);
+    await expect.poll(() => server.icons.requests.length).toBeGreaterThan(requestsBeforeForget);
     await page.waitForTimeout(500);
+    expect(await page.getByTestId("sender-icon").evaluateAll((icons) => icons.map((icon) => icon.querySelector("img")?.getAttribute("src")))).toEqual(retained);
     const rowsBefore = await renders(page, "ThreadRow");
     expect(rowsBefore - rowsAtRest, "rows re-rendered by forgetting icons").toBe(0);
     const iconsBefore = await renders(page, "SenderIcon");
@@ -300,6 +305,14 @@ test.describe("sender icons (plan 22)", () => {
     expect(rowRenders).toBe(0);
     // only visible avatars asked: far fewer sites than the 2,000 rows scrolled past
     expect(new Set(server.icons.requests.map((u) => new URL(u).hostname)).size).toBeLessThan(400);
+    await page.keyboard.press("Meta+,");
+    await page.getByTestId("tab-appearance").click();
+    const websiteIcons = page.getByTestId("site-icons-switch");
+    await expect(websiteIcons).toBeChecked();
+    await websiteIcons.click();
+    await expect(websiteIcons).not.toBeChecked();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("sender-icon")).toHaveCount(0);
   });
 });
 
