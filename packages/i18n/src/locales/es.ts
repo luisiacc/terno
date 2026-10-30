@@ -1366,6 +1366,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.tooManyThreads": "Demasiadas conversaciones: acota la vista o la búsqueda",
   "errors.undoGone": "Esta acción ya no se puede deshacer",
   "errors.moveExpired": "Este movimiento ya no se puede deshacer",
+  "errors.replySourceGone": "El mensaje original ya no está disponible. Copia tu borrador en un mensaje nuevo para enviarlo.",
   "errors.draftGone": "Este borrador ya se envió o se descartó",
   "errors.originalGone": "El mensaje original ya no existe.",
   "errors.send.alreadyAccepted": "Este mensaje ya fue aceptado para su envío y no se puede volver a enviar. La aceptación no confirma su entrega.",

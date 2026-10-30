@@ -1,3 +1,4 @@
+import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
@@ -673,7 +674,7 @@ export class SqlMailStore implements MailStore {
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.yieldTo)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
       return this.db.tx(() => {
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string }>("SELECT account_id, revision, generation, attachments_json FROM drafts WHERE id = ?", p.draftId);
+        const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         const account = getAccount(this.db, p.accountId);
@@ -682,6 +683,8 @@ export class SqlMailStore implements MailStore {
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(sqlAssets(this.db), p.accountId, p.attachments ?? []);
+        const context = draft?.reply_context_json ? JSON.parse(draft.reply_context_json) as import("@terno/core/rpc").ReplyContext : null;
+        if (context && (p.draftRevision === undefined || p.subject !== draft?.subject || draft?.in_reply_to_message_id !== context.sourceId || p.inReplyToMessageId !== context.sourceId || (draft.mode !== "reply" && draft.mode !== "replyAll"))) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
@@ -691,7 +694,8 @@ export class SqlMailStore implements MailStore {
             "SELECT rfc_message_id, references_json, thread_id, account_id FROM messages WHERE id = ?",
             p.inReplyToMessageId,
           );
-          if (original) {
+          if (!original || (context && original.account_id !== context.sourceAccountId)) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
+          if (!context || !detachedReply(p.subject, context)) {
             inReplyTo = original.rfc_message_id;
             references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
             replyThreadId = original.thread_id;

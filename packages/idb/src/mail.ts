@@ -1773,6 +1773,7 @@ const draftRow = (r: R): DraftRow => ({
   bcc_json: r.bcc_json ?? "[]",
   subject: r.subject,
   subject_edited: r.subject_edited ?? 0,
+  reply_context_json: r.reply_context_json ?? null,
   body_text: r.body_text,
   // drafts stored before plan 16 have none: plain
   body_html: r.body_html ?? "",
@@ -1807,7 +1808,8 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const requestedThread = d.threadId !== undefined ? d.threadId : row ? (row.thread_id ?? null) : original?.thread_id ?? null;
   const forwardOf = d.forwardOfMessageId !== undefined ? d.forwardOfMessageId : (row?.forward_of_message_id ?? null);
   const exists = (id: number | null) => id === null || T(c, "messages").has(id);
-  const reply = exists(inReplyTo) ? inReplyTo : null;
+  const retainedContext = row?.reply_context_json ? JSON.parse(row.reply_context_json) as import("@terno/core/rpc").ReplyContext : null;
+  const reply = exists(inReplyTo) || (inReplyTo !== null && (retainedContext?.sourceId === inReplyTo || d.replyContext?.sourceId === inReplyTo)) ? inReplyTo : null;
   const forward = exists(forwardOf) ? forwardOf : null;
   const sourceMode = d.mode ?? row?.mode ?? (inReplyTo ? "reply" : "new");
   const source = sourceMode === "forward" ? (forward ? T(c, "messages").get(forward) : undefined) : sourceMode === "new" ? undefined : original;
@@ -1823,6 +1825,10 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const priorSource = row?.mode === "forward" ? row.forward_of_message_id : row?.in_reply_to_message_id;
   const intent = d.showSourceContext ?? Boolean(sameRevision && row?.show_source_context === 1 && row.mode === mode && priorSource === selected);
   const showSourceContext = Boolean(intent && selectedSource && selectedThread && selectedSource.account_id === selectedThread.account_id);
+  const unchangedReply = row && row.mode !== "new" && row.mode !== "forward" && mode !== "new" && mode !== "forward" && row.in_reply_to_message_id === reply;
+  const candidate = unchangedReply ? retainedContext : d.replyContext ?? null;
+  if (candidate && (candidate.sourceId !== reply || (selectedSource && selectedSource.account_id !== candidate.sourceAccountId))) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
+  const replyContext = mode === "reply" || mode === "replyAll" ? candidate : null;
   const values = {
     account_id: d.accountId,
     thread_id: threadId,
@@ -1832,6 +1838,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     cc_json: JSON.stringify(d.cc),
     bcc_json: d.bcc !== undefined ? JSON.stringify(d.bcc) : (row?.bcc_json ?? "[]"),
     subject: d.subject,
+    reply_context_json: replyContext ? JSON.stringify(replyContext) : null,
     subject_edited: d.subjectEdited !== undefined ? Number(d.subjectEdited) : (row?.subject_edited ?? 0),
     body_text: d.bodyText,
     body_html: d.bodyHtml ?? "",
@@ -1864,7 +1871,7 @@ function projectDraft(c: Ctx, d: DraftRow, normalize = true): DraftRow {
   const thread = source ? T(c, "threads").get(source.thread_id) : undefined;
   const presentation = d.show_source_context === 1 && source && thread && source.account_id === thread.account_id ? thread.id : null;
   const lost = d.mode !== "new" && !source && (d.thread_id === null || sourceId !== null);
-  return normalize && lost ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null, presentation_thread_id: null } : { ...d, presentation_thread_id: presentation };
+  return normalize && lost && !d.reply_context_json ? { ...d, mode: "new", thread_id: null, in_reply_to_message_id: null, forward_of_message_id: null, presentation_thread_id: null } : { ...d, presentation_thread_id: presentation };
 }
 
 export function listDrafts(c: Ctx): DraftRow[] {

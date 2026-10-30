@@ -173,3 +173,37 @@ it("a reply-all to 250 people saves, exports and imports back with its body (pla
   expect(imported.cc).toHaveLength(10);
   expect(imported.bodyText).toBe("hola a todos");
 });
+
+it("backs up cross-account reply baselines and retains distinct contexts on repeated import", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-reply-export-"));
+  const make = (name: string) => {
+    const b = new Backend({ dbPath: join(dir, name), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+    cleanups.push(() => b.stop());
+    return b;
+  };
+  cleanups.push(async () => { rmSync(dir, { recursive: true, force: true }); });
+  const source = make("source.db"), target = make("target.db");
+  const setup = async (b: Backend) => {
+    const sender = (await b.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "indigo", now: 0 })).account.id;
+    const originalAccount = (await b.store.accounts.create({ kind: "gmail", email: "source@example.test", displayName: "Source", color: "indigo", now: 0 })).account.id;
+    await b.store.sync.ingest([{ accountId: originalAccount, providerMsgId: "original", providerThreadId: "provider-thread", rfcMessageId: "original@example.test", inReplyTo: null, references: [], from: { name: "Source", email: "other@example.test" }, to: [], cc: [], bcc: [], subject: "Original", date: 1, snippet: "source", bodyText: "source", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1 }], { applyFilters: false, now: 1, classifier: null });
+    const original = (await b.store.debug.snapshot()).messages[0]!;
+    return { sender, originalAccount, original };
+  };
+  const src = await setup(source); const dst = await setup(target);
+  for (const baseline of ["Original", "Another"]) {
+    await source.store.drafts.save({ accountId: src.sender, threadId: null, mode: "reply", inReplyToMessageId: src.original.id, replyContext: { subject: baseline, sourceId: src.original.id, sourceAccountId: src.originalAccount, rfcMessageId: "original@example.test" }, to: [], cc: [], subject: "Re: Original", bodyText: "authored", quotedText: "> source", includeQuote: true }, 1);
+  }
+  const invoke = (b: Backend) => { const [c, s] = createMemoryTransportPair(); b.connect(s, { clientId: "r", origin: "renderer" }); return new RpcClient(c); };
+  const dump = await invoke(source).call("app.export", {});
+  expect(dump.drafts.map((d) => d.replyContext?.sourceAccountEmail)).toEqual(["source@example.test", "source@example.test"]);
+  const client = invoke(target);
+  expect((await client.call("app.import", { data: dump })).drafts).toBe(2);
+  expect((await client.call("app.import", { data: dump })).drafts).toBe(0);
+  const drafts = await target.store.drafts.list();
+  expect(drafts).toHaveLength(2);
+  expect(drafts.map((d) => JSON.parse(d.reply_context_json!))).toEqual(expect.arrayContaining([
+    expect.objectContaining({ subject: "Original", sourceId: dst.original.id, sourceAccountId: dst.originalAccount }),
+    expect.objectContaining({ subject: "Another", sourceId: dst.original.id, sourceAccountId: dst.originalAccount }),
+  ]));
+});

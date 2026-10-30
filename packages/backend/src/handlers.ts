@@ -44,6 +44,7 @@ function toDraft(r: DraftRow): Draft {
     attachments: JSON.parse(r.attachments_json ?? "[]"),
     quotedText: r.quoted_text,
     includeQuote: r.include_quote === 1,
+    replyContext: r.reply_context_json ? JSON.parse(r.reply_context_json) : null,
     inReplyToMessageId: r.in_reply_to_message_id,
     forwardOfMessageId: r.forward_of_message_id,
     showSourceContext: r.show_source_context === 1,

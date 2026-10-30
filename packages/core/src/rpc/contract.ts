@@ -246,6 +246,7 @@ export interface ExportedDraft {
   attachments?: ExportedAttachment[];
   quotedText: string;
   includeQuote: boolean;
+  replyContext?: { subject: string; sourceAccountEmail: string | null; rfcMessageId: string | null } | null;
   inReplyTo: string | null;
   forwardOf: string | null;
   uiState: "open" | "collapsed";
@@ -320,6 +321,8 @@ export type DraftAddress = z.infer<typeof address> & { auto?: true };
  * quoted original (quotedText), joined only when sent, so a restore never
  * quotes twice. Format-1 drafts (before v9) carry everything in bodyText.
  */
+export interface ReplyContext { subject: string; sourceId: number; sourceAccountId: number; rfcMessageId?: string | null }
+
 export interface Draft {
   id: number;
   /** Immutable target fence; empty/omitted only for drafts created before schema 20. */
@@ -341,6 +344,7 @@ export interface Draft {
   attachments?: AttachmentRef[];
   quotedText: string;
   includeQuote: boolean;
+  replyContext?: ReplyContext | null;
   inReplyToMessageId: number | null;
   forwardOfMessageId: number | null;
   showSourceContext?: boolean;
@@ -433,6 +437,7 @@ export const exportDraftSchema = z.object({
   attachments: z.array(exportedAttachmentSchema).max(100).optional(),
   quotedText: z.string().max(5_000_000).default(""),
   includeQuote: z.boolean().default(false),
+  replyContext: z.object({ subject: z.string().max(998), sourceAccountEmail: z.string().max(320).nullable(), rfcMessageId: z.string().min(1).max(1000).nullable() }).nullable().optional(),
   inReplyTo: z.string().max(1000).nullable().default(null),
   forwardOf: z.string().max(1000).nullable().default(null),
   uiState: z.enum(["open", "collapsed"]).default("open"),
@@ -724,6 +729,7 @@ export const contract = {
       attachments: attachmentRefs.optional(),
       quotedText: z.string().max(5_000_000).optional(),
       includeQuote: z.boolean().optional(),
+      replyContext: z.object({ subject: z.string().max(998), sourceId: id, sourceAccountId: id, rfcMessageId: z.string().max(1000).nullable().optional() }).nullable().optional(),
       inReplyToMessageId: id.nullable().optional(),
       forwardOfMessageId: id.nullable().optional(),
       showSourceContext: z.boolean().optional(),

@@ -1,6 +1,6 @@
 import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
 import { t } from "@terno/i18n";
-import type { Draft, DraftAddress, DraftMode } from "@terno/core/rpc";
+import type { Draft, DraftAddress, DraftMode, ReplyContext } from "@terno/core/rpc";
 import { create } from "zustand";
 import { emailDocument, GAP, signatureHtml, textToHtml } from "@terno/richtext/quote";
 import { client } from "~/rpc/connection";
@@ -88,6 +88,7 @@ export interface LocalDraft {
   bodyHtml: string;
   quotedText: string;
   includeQuote: boolean;
+  replyContext?: ReplyContext | null;
   inReplyToMessageId: number | null;
   forwardOfMessageId: number | null;
   uiState: "open" | "collapsed";
@@ -107,7 +108,7 @@ export interface LocalDraft {
 
 export type DraftFields = Pick<
   LocalDraft,
-  "showSourceContext" | "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
+  "showSourceContext" | "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "replyContext" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
 >;
 
 interface DraftsState {
@@ -262,6 +263,7 @@ export function fromServer(d: Draft): LocalDraft {
     attachmentOwner: Boolean(d.attachments?.length),
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
+    replyContext: d.replyContext ?? null,
     inReplyToMessageId: d.inReplyToMessageId,
     forwardOfMessageId: d.forwardOfMessageId,
     uiState: d.uiState,
@@ -276,8 +278,8 @@ export function fromServer(d: Draft): LocalDraft {
 /** A draft's content, without its identity or save state (its body as the editor has it now). */
 export function fieldsOf(d: LocalDraft): DraftFields {
   const cur = materialize(d.key) ?? d;
-  const { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
-  return { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, inReplyToMessageId, forwardOfMessageId, uiState };
+  const { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
+  return { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState };
 }
 
 // ───────────────────────────── the editor's body ─────────────────────────────
@@ -875,6 +877,7 @@ function save(key: string, copy = false): Promise<void> {
     attachments: d.attachments ?? [],
     quotedText: d.quotedText,
     includeQuote: d.includeQuote,
+    replyContext: d.replyContext ?? null,
     inReplyToMessageId: d.inReplyToMessageId,
     forwardOfMessageId: d.forwardOfMessageId,
     showSourceContext: d.showSourceContext ?? false,
@@ -901,7 +904,7 @@ function save(key: string, copy = false): Promise<void> {
       }
       const done = cur.localRev === rev;
       if (cur.id !== d.id || cur.generation !== d.generation) return;
-      const sameContext = cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId && cur.showSourceContext === d.showSourceContext;
+      const sameContext = JSON.stringify(cur.replyContext ?? null) === JSON.stringify(d.replyContext ?? null) && cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId && cur.showSourceContext === d.showSourceContext;
       const placement = draftPresentationThread(cur);
       const currentMount = cur.presentationEpoch === d.presentationEpoch;
       const context = sameContext
@@ -917,7 +920,7 @@ function save(key: string, copy = false): Promise<void> {
         (cur.mode === "forward" ? cur.forwardOfMessageId : cur.inReplyToMessageId) !== null && !d.presentationExpired && !cur.presentationExpired &&
         typeof placement === "number" && draftPresentationThread(d) === placement && saved.presentationThreadId === placement &&
         (d.sourceContextThreadId === undefined || d.sourceContextThreadId === placement) && (cur.sourceContextThreadId === undefined || cur.sourceContextThreadId === placement);
-      const source = saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement) || canonicalNull);
+      const source = JSON.stringify(saved.replyContext ?? null) === JSON.stringify(cur.replyContext ?? null) && saved.mode === cur.mode && saved.threadId === cur.threadId && saved.inReplyToMessageId === cur.inReplyToMessageId && saved.forwardOfMessageId === cur.forwardOfMessageId && (saved.showSourceContext ?? false) === (cur.showSourceContext ?? false) && (!saved.showSourceContext || (cur.threadId !== null && (saved.presentationThreadId ?? null) === placement) || canonicalNull);
       publishWriter(w, cur, acknowledged, !copy && sameContext && currentMount && identity && source, !copy && sameContext && currentMount && identity && source);
       if (!done && !w.stopping && !sources.get(key)?.failed) {
         const next = save(key);
@@ -1042,6 +1045,9 @@ async function settle(key: string): Promise<LocalDraft | undefined> {
 export async function draftForSend(key: string): Promise<LocalDraft | undefined> {
   if (draftEditsHeld() || get(key)?.recovery || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
+  await flushDraft(key);
+  const ready = get(key);
+  if (!ready || ready.recovery || ready.status === "error" || (authored(ready) && ready.savedRev !== ready.localRev)) return undefined;
   w.stopping = "send";
   const d = await settle(key);
   return d?.recovery ? undefined : d;

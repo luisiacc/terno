@@ -81,7 +81,11 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     return parts;
   };
   for (const d of await store.drafts.list()) {
+    const context = d.reply_context_json ? JSON.parse(d.reply_context_json) as import("@terno/core/rpc").ReplyContext : null;
+    const sourceAccountEmail = context ? emailOf(context.sourceAccountId) : null;
+    const sourceRef = context ? (await ref(context.sourceId) ?? context.rfcMessageId ?? null) : null;
     drafts.push({
+      ...(context ? { replyContext: { subject: context.subject, sourceAccountEmail, rfcMessageId: sourceRef } } : {}),
       accountEmail: emailOf(d.account_id),
       mode: d.mode,
       to: JSON.parse(d.to_json) as DraftAddress[],
@@ -197,7 +201,9 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
         left.drafts.push(d);
         continue;
       }
-      const draft = await draftFrom(b, accountId, d);
+      const sourceAccount = d.replyContext ? (d.replyContext.sourceAccountEmail ? idOf(d.replyContext.sourceAccountEmail) : undefined) : accountId;
+      if (d.replyContext && (sourceAccount === undefined || !d.replyContext.rfcMessageId || !await store.drafts.findMessage(sourceAccount, d.replyContext.rfcMessageId))) { left.drafts.push(d); continue; }
+      const draft = await draftFrom(b, accountId, d, sourceAccount);
       if (!draft) continue;
       const final = options.final === true || options.final === accountId;
       if (draft.mode === "new" && d.mode !== "new" && !final) {
@@ -235,10 +241,11 @@ export async function restorePending(b: Backend, final: number | false = false):
 /** What makes two drafts the same draft: where it goes, from where, and everything written in it. */
 async function draftKey(b: Backend, d: DraftInput | DraftRow, portableKeys?: unknown[]): Promise<string> {
   const norm = (list: unknown) => (list as DraftAddress[]).map((a) => [a.name, a.email, a.auto === true]);
+  const contextKey = (c: import("@terno/core/rpc").ReplyContext | null | undefined) => c ? [c.subject, c.sourceId, c.sourceAccountId] : null;
   if ("account_id" in d) {
-    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, await attachmentKeys(b, d.account_id, JSON.parse(d.attachments_json ?? "[]")), norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json))]);
+    return JSON.stringify([d.account_id, d.mode, d.subject, d.body_text, d.body_html, d.quoted_text, await attachmentKeys(b, d.account_id, JSON.parse(d.attachments_json ?? "[]")), norm(JSON.parse(d.to_json)), norm(JSON.parse(d.cc_json)), norm(JSON.parse(d.bcc_json)), contextKey(d.reply_context_json ? JSON.parse(d.reply_context_json) : null)]);
   }
-  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", portableKeys ?? await attachmentKeys(b, d.accountId, d.attachments ?? []), norm(d.to), norm(d.cc), norm(d.bcc ?? [])]);
+  return JSON.stringify([d.accountId, d.mode, d.subject, d.bodyText, d.bodyHtml ?? "", d.quotedText ?? "", portableKeys ?? await attachmentKeys(b, d.accountId, d.attachments ?? []), norm(d.to), norm(d.cc), norm(d.bcc ?? []), contextKey(d.replyContext)]);
 }
 
 /**
@@ -247,18 +254,19 @@ async function draftKey(b: Backend, d: DraftInput | DraftRow, portableKeys?: unk
  * new message whose kept quote joins its text, so nothing it would have sent
  * is hidden or lost.
  */
-async function draftFrom(b: Backend, accountId: number, d: ExportDraft): Promise<DraftInput | null> {
+async function draftFrom(b: Backend, accountId: number, d: ExportDraft, sourceAccountId = accountId): Promise<DraftInput | null> {
   const to = addresses.safeParse(d.to);
   const cc = addresses.safeParse(d.cc);
   const bcc = addresses.safeParse(d.bcc ?? []);
   if (!to.success || !cc.success || !bcc.success) return null;
   const base = { accountId, to: to.data, cc: cc.data, bcc: bcc.data, subject: d.subject, subjectEdited: d.subjectEdited, uiState: d.uiState };
-  const ref = d.mode === "forward" ? d.forwardOf : d.mode === "new" ? null : d.inReplyTo;
-  const original = ref ? await b.store.drafts.findMessage(accountId, ref) : null;
+  const ref = d.mode === "forward" ? d.forwardOf : d.mode === "new" ? null : d.replyContext?.rfcMessageId ?? d.inReplyTo;
+  const original = ref ? await b.store.drafts.findMessage(sourceAccountId, ref) : null;
   if (original) {
     return {
       ...base,
       mode: d.mode,
+      ...(d.replyContext ? { replyContext: { subject: d.replyContext.subject, sourceId: original.id, sourceAccountId, rfcMessageId: d.replyContext.rfcMessageId } } : {}),
       threadId: original.threadId,
       bodyText: d.bodyText,
       bodyHtml: d.bodyHtml,

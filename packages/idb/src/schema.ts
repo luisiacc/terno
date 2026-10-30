@@ -13,10 +13,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 6 adds attachment assets (SQL v16); SQL v17 adds an in-memory partial index, with no persisted shape change.
  * Version 10 fences older adapters from mailboxes with incomplete-save markers.
  * Version 12 adds an account's own folders and their memberships (SQL v24, plan 68).
+ * Version 14 fences adapters that cannot preserve reply subject context (SQL v26).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 25;
+export const LOGICAL_SCHEMA = 26;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

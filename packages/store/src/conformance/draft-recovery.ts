@@ -8,6 +8,50 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
   const open = async () => { const s = await harness.open(); opened.push(s); return s; };
   afterEach(async () => { for (const s of opened.splice(0)) if (s.isOpen) await s.close(); });
   describe(`draft recovery: ${name}`, () => {
+    it.each(["Re: Original", " re: Re: Original ", "Different"])("reply baseline survives reopen and controls queue linkage: %s", async (subject) => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "baseline", providerThreadId: "native-thread", rfcMessageId: "baseline@example.test", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const context = { subject: "Original", sourceId: original.id, sourceAccountId: a!, rfcMessageId: "baseline@example.test" };
+      const fields = { accountId: a!, mode: "reply" as const, threadId: original.threadId, inReplyToMessageId: original.id, replyContext: context, to: [], cc: [], subject, bodyText: "authored", quotedText: "> source", includeQuote: true };
+      const draft = (await store.drafts.save(fields, 0))!;
+      context.subject = "mutated externally";
+      store = await harness.reopen(store); opened.push(store);
+      expect(JSON.parse((await store.drafts.list())[0]!.reply_context_json!)).toMatchObject({ subject: "Original", sourceId: original.id });
+      const sent = await store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject, bodyText: "authored", inReplyToMessageId: original.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, recordReply: false, now: 1 });
+      const payload = JSON.parse((await store.ops.get(sent.opId))!.payload_json);
+      expect(payload).toMatchObject(subject === "Different" ? { subject, inReplyTo: null, references: [], providerThreadId: null } : { subject, inReplyTo: "baseline@example.test", references: ["baseline@example.test"], providerThreadId: "native-thread" });
+    });
+
+    it("refuses a removed reply source atomically after reopen, retaining the draft", async () => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "removed", rfcMessageId: "removed@example.test", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const fields = { accountId: a!, mode: "reply" as const, threadId: original.threadId, inReplyToMessageId: original.id, replyContext: { subject: "Original", sourceId: original.id, sourceAccountId: a! }, to: [], cc: [], subject: "Different", bodyText: "authored", quotedText: "> source", includeQuote: true };
+      const attachment = await store.attachments.create({ accountId: a!, filename: "keep.txt", mime: "text/plain", size: 0, now: 0 });
+      await store.attachments.seal(a!, attachment.assetId);
+      const draft = (await store.drafts.save({ ...fields, attachments: [attachment] }, 0))!;
+      await store.sync.remove([original.id]);
+      store = await harness.reopen(store); opened.push(store);
+      expect((await store.drafts.list())[0]).toMatchObject({ id: draft.id, mode: "reply", in_reply_to_message_id: original.id, body_text: "authored", quoted_text: "> source" });
+      await expect(store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "Different", bodyText: "authored", inReplyToMessageId: original.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, attachments: [attachment], recordReply: false, now: 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect((await store.drafts.list())[0]!.id).toBe(draft.id);
+      await expect(store.attachments.info(a!, attachment.assetId)).resolves.toMatchObject({ assetId: attachment.assetId });
+      expect((await store.debug.snapshot()).ops).toHaveLength(0);
+    });
+
+    it("retains source intent when the original disappears before the first draft save", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "gone-before-save", rfcMessageId: "gone-before-save@example.test", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      await store.sync.remove([original.id]);
+      const draft = (await store.drafts.save({ accountId: a!, mode: "reply", threadId: original.threadId, inReplyToMessageId: original.id, replyContext: { subject: "Original", sourceId: original.id, sourceAccountId: a! }, to: [], cc: [], subject: "Different", bodyText: "authored" }, 0))!;
+      expect(draft).toMatchObject({ mode: "reply", in_reply_to_message_id: original.id, body_text: "authored" });
+      expect(JSON.parse(draft.reply_context_json!)).toMatchObject({ sourceId: original.id });
+      await expect(store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "Different", bodyText: "authored", inReplyToMessageId: original.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, recordReply: false, now: 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await store.drafts.list()).toHaveLength(1);
+    });
+
     it("never reuses deleted highest identity after reopen; stale saves and sends cannot target its copy", async () => {
       let store = await open();
       const [accountId] = await withAccounts(store);

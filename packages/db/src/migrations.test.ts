@@ -404,7 +404,7 @@ describe("migration v13: rich drafts", () => {
     db.run("INSERT INTO drafts (id, account_id, format, mode, to_json, cc_json, subject, body_text, quoted_text, include_quote, updated_at) VALUES (1, 1, 2, 'new', '[]', '[]', 'Plano', ?, 'cita', 1, 5)", text);
     const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
     expect(migrate(db)).toEqual({ from: 12, to: SCHEMA_VERSION });
-    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "", attachments_json: "[]", generation: "", show_source_context: 0 });
+    expect(db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, body_html: "", attachments_json: "[]", generation: "", show_source_context: 0, reply_context_json: null });
     const saved = saveDraft(db, { id: 1, baseRevision: 1, accountId: 1, to: [], cc: [], subject: "Plano", bodyText: "Hola", bodyHtml: "<div><b>Hola</b></div>" }, 6)!;
     expect(saved).toMatchObject({ body_text: "Hola", body_html: "<div><b>Hola</b></div>", revision: 2 });
   });
@@ -546,7 +546,7 @@ describe("migration v23: durable draft source context", () => {
     db.run("INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (1, 'generation', 1, 2, 'reply', '[]', '[]', 'subject', 'exact text', '<b>exact</b>', 5)");
     const before = db.get<Record<string, unknown>>("SELECT * FROM drafts WHERE id = 1")!;
     expect(migrate(db)).toEqual({ from: 22, to: SCHEMA_VERSION });
-    expect(db.get("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, show_source_context: 0 });
+    expect(db.get("SELECT * FROM drafts WHERE id = 1")).toEqual({ ...before, show_source_context: 0, reply_context_json: null });
     expect(() => db.run("UPDATE drafts SET show_source_context = 2 WHERE id = 1")).toThrow();
     db.run("UPDATE drafts SET show_source_context = 1 WHERE id = 1");
     expect(db.get("SELECT generation, body_text, body_html, show_source_context FROM drafts WHERE id = 1")).toEqual({ generation: "generation", body_text: "exact text", body_html: "<b>exact</b>", show_source_context: 1 });

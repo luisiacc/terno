@@ -287,6 +287,7 @@ export interface DraftRow {
   attachments_json: string;
   quoted_text: string;
   include_quote: number;
+  reply_context_json?: string | null;
   in_reply_to_message_id: number | null;
   forward_of_message_id: number | null;
   show_source_context?: number;
@@ -319,6 +320,7 @@ export interface DraftInput {
   attachments?: import("@terno/core").AttachmentRef[];
   quotedText?: string;
   includeQuote?: boolean;
+  replyContext?: import("@terno/core/rpc").ReplyContext | null;
   inReplyToMessageId?: number | null;
   forwardOfMessageId?: number | null;
   showSourceContext?: boolean;

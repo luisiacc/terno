@@ -108,11 +108,13 @@ export function subjectFor(mode: DraftMode, subject: string): string {
 /** A fresh reply/forward draft for a conversation. */
 /** `identities`: every account's address (plan 34: none of them is replied to); the draft's account's alone by default. */
 /** `forwardRefs`: the original's files a forward carries (plan 60: those confirmed on this device); every stored part by default. */
-export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[]; forwardRefs?: readonly AttachmentRef[] } = {}): DraftFields {
+export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, opts: { quoteInBody?: boolean; identities?: readonly string[]; forwardRefs?: readonly AttachmentRef[]; sourceId?: number } = {}): DraftFields {
   const mine = identitiesIn(detail, [account.email, ...(opts.identities ?? [])]);
-  const { to, cc } = autoRecipients(mode, detail, mine);
-  const quote = quoteFor(mode, detail, mine);
-  const last = answered(detail, mine);
+  const source = opts.sourceId === undefined ? undefined : detail.messages.find((message) => message.id === opts.sourceId);
+  const sourceDetail = source ? { ...detail, messages: [source] } : detail;
+  const { to, cc } = autoRecipients(mode, sourceDetail, mine);
+  const quote = quoteFor(mode, sourceDetail, mine);
+  const last = answered(sourceDetail, mine);
   return {
     accountId: account.id,
     threadId: detail.thread.id,
@@ -129,6 +131,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     attachments: mode === "forward" ? [...(opts.forwardRefs ?? storedRefs(last))] : [],
     quotedText: opts.quoteInBody ? "" : quote,
     includeQuote: !opts.quoteInBody,
+    replyContext: mode === "forward" ? null : { subject: detail.thread.subject, sourceId: last.id, sourceAccountId: last.accountId, rfcMessageId: last.rfcMessageId },
     inReplyToMessageId: mode === "forward" ? null : last.id,
     forwardOfMessageId: mode === "forward" ? last.id : null,
     uiState: "open",
@@ -165,7 +168,9 @@ export function forwardAccountMismatch(accountId: number, detail: ThreadDetail, 
  */
 export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, detail: ThreadDetail, account: Account, identities: readonly string[] = [], forwardRefs?: readonly AttachmentRef[]): DraftFields {
   if (mode === "forward" && forwardAccountMismatch(d.accountId, detail, identities, forwardRefs)) return d;
-  const fresh = replyFields(mode, detail, account, { identities, forwardRefs });
+  const continuing = mode !== "forward" && d.mode !== "forward" && d.mode !== "new" && d.inReplyToMessageId !== null;
+  if (continuing && !detail.messages.some((message) => message.id === d.inReplyToMessageId)) return d;
+  const fresh = replyFields(mode, detail, account, { identities, forwardRefs, ...(continuing ? { sourceId: d.inReplyToMessageId! } : {}) });
   const attachments = mergeAttachmentRefs(d.attachments ?? [], mode === "forward" ? fresh.attachments ?? [] : []);
   if (!attachmentMessageBudget("", undefined, attachments)) return d;
   const lower = (e: string) => e.toLowerCase();
@@ -190,10 +195,11 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
     ccText: formatAddressList([...typedCc, ...autoCc]),
     bccText: formatAddressList(typedBcc),
     auto: { to: autoTo.map((a) => a.email), cc: autoCc.map((a) => a.email), bcc: [] },
-    subject: d.subjectEdited ? d.subject : fresh.subject,
+    subject: d.subjectEdited ? d.subject : continuing ? d.subject : fresh.subject,
     quotedText: fresh.quotedText,
     includeQuote: fresh.includeQuote,
-    inReplyToMessageId: fresh.inReplyToMessageId,
+    replyContext: mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.replyContext : fresh.replyContext,
+    inReplyToMessageId: mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.inReplyToMessageId : fresh.inReplyToMessageId,
     forwardOfMessageId: fresh.forwardOfMessageId,
     uiState: "open",
   };

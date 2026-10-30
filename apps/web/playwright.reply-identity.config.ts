@@ -4,13 +4,13 @@ const port = Number(process.env.E2E_PORT ?? 55010);
 
 export default defineConfig({
   testDir: "e2e",
-  testMatch: ["reply-identity.spec.ts", "reply-to.spec.ts"],
+  testMatch: ["reply-identity.spec.ts", "reply-to.spec.ts", "reply-subject.spec.ts"],
   globalSetup: "./e2e/reply-identity.setup.ts",
   workers: 1,
   retries: 0,
   timeout: 45_000,
   expect: { timeout: 8_000 },
-  outputDir: "../../test-results/reply-identity",
+  outputDir: "/tmp/terno-w09-s37/playwright-results",
   reporter: [["list"]],
   use: {
     ...devices["Desktop Chrome"],

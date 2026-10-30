@@ -1,3 +1,4 @@
+import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
@@ -1200,13 +1201,16 @@ export class IdbMailStore implements MailStore {
         const from: Address = { name: cfg.config.senderName || account.displayName, email: account.email };
         if (draft && p.attachments === undefined && JSON.parse(draft.attachments_json ?? "[]").length) throw assetError();
         const attachments = validateAssets(idbAssets(this.db), p.accountId, p.attachments ?? []);
+        const context = draft?.reply_context_json ? JSON.parse(draft.reply_context_json) as import("@terno/core/rpc").ReplyContext : null;
+        if (context && (p.draftRevision === undefined || p.subject !== draft?.subject || draft?.in_reply_to_message_id !== context.sourceId || p.inReplyToMessageId !== context.sourceId || (draft.mode !== "reply" && draft.mode !== "replyAll"))) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
         let inReplyTo: string | null = null;
         let references: string[] = [];
         let providerThreadId: string | null = null;
         let replyThreadId: number | null = null;
         if (p.inReplyToMessageId) {
           const original = T(this.c, "messages").get(p.inReplyToMessageId);
-          if (original) {
+          if (!original || (context && original.account_id !== context.sourceAccountId)) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
+          if (!context || !detachedReply(p.subject, context)) {
             inReplyTo = original.rfc_message_id;
             references = [...(JSON.parse(original.references_json) as string[]), ...(original.rfc_message_id ? [original.rfc_message_id] : [])];
             replyThreadId = original.thread_id;

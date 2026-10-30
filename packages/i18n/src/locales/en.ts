@@ -1374,6 +1374,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.tooManyThreads": "Too many conversations. Narrow the view or the search.",
   "errors.undoGone": "This action can no longer be undone.",
   "errors.moveExpired": "This move can no longer be undone.",
+  "errors.replySourceGone": "The original message is no longer available. Copy your draft into a new message to send it.",
   "errors.draftGone": "This draft was already sent or discarded.",
   "errors.originalGone": "The original message no longer exists.",
   "errors.send.alreadyAccepted": "This message was already accepted for submission and cannot be sent again. Acceptance does not confirm delivery.",

@@ -966,6 +966,9 @@ CREATE TABLE send_copy_bytes (
   position INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(opId,position)
 ) WITHOUT ROWID;
 ` },
+  { version: 26, name: "reply subject context", sql: `
+ALTER TABLE drafts ADD COLUMN reply_context_json TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
