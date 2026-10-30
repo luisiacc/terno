@@ -279,3 +279,8 @@ Evidence-only `7f2e2771`: the sole post-ingestion run passes13/13, CPUratios1.04
 ## Landed repair: pending Send/storage switch fixture
 
 `0fe00824` gates the actual Send after its durable preparation instead of deleting the draft prematurely. Real missing refusal, zero export/no navigation, exact authored content/binary recovery and native OPFS→IDB switch/reload remain asserted. Root passed2theme cases, scoped axe, Web/test types and lint after rebase and inspected screenshots. One review: Standards0, two P2 oracle gaps backlogged, no second round. [Commands and limits](../plans/drafts/release-web-storage-send.md). No production change or full Web/release clearance.
+
+
+## Second release milestone announced — 2026-10-30
+
+After the targeted repairs above, run each required full gate once on current main: typecheck, lint, test (including normal WASM stage), e2e, standalone Web, UI perf, backend perf, macOS packaging and fresh packaged smoke. No threshold/input/skip/retry-policy changes or repeat-until-green runs. Preserve first-milestone artifacts. Backend perf supervision must observe test/hook lifecycle and each actual declared timeout (including20–60minute overrides); reporter silence alone is not proof of a hang. Record pass/fail/not-run/skip counts and HEAD before/after, stop for source drift, preserve generated outputs safely, and return honest partial results on any supervision failure. This announcement does not close the report or waive known feature backlog.
