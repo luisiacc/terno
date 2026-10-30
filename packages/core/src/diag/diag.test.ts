@@ -203,13 +203,15 @@ describe("consent", () => {
   it.each(settings.flatMap((errorReports) => [true, false].flatMap((localMode) => [true, false].flatMap((dsn) => [true, false].map((approved) => ({ errorReports, localMode, dsn, approved }))))))(
     "%o",
     ({ errorReports, localMode, dsn, approved }) => {
-      const expected = dsn && !localMode && (errorReports === "always" || (errorReports === "ask" && approved));
+      // plan 78: the user's choice is the consent, in local mode too
+      const expected = dsn && (errorReports === "always" || (errorReports === "ask" && approved));
       expect(mayReport({ errorReports, localMode, dsn }, approved)).toBe(expected);
-      expect(reportsAutomatically({ errorReports, localMode, dsn })).toBe(dsn && !localMode && errorReports === "always");
+      expect(reportsAutomatically({ errorReports, localMode, dsn })).toBe(dsn && errorReports === "always");
     },
   );
-  it("offers export instead in local mode, without a DSN, or when never", () => {
-    expect(reportOffer({ errorReports: "always", localMode: true, dsn: true })).toBe("local");
+  it("offers Send in local mode too; keeps it here without a DSN or when never", () => {
+    expect(reportOffer({ errorReports: "ask", localMode: true, dsn: true })).toBe("ask");
+    expect(reportOffer({ errorReports: "always", localMode: true, dsn: true })).toBe("sent");
     expect(reportOffer({ errorReports: "ask", localMode: false, dsn: false })).toBe("local");
     expect(reportOffer({ errorReports: "never", localMode: false, dsn: true })).toBe("local");
     expect(reportOffer({ errorReports: "ask", localMode: false, dsn: true })).toBe("ask");

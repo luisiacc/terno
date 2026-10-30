@@ -81,7 +81,7 @@ test.describe("diagnostics", () => {
     await expect(page.getByTestId("report-row")).toHaveCount(0);
   });
 
-  test("Settings → Diagnostics: locked in local mode, a sample report and an export, none with mail in them", async ({ app: page }) => {
+  test("Settings → Diagnostics: locked in a build without a DSN, a sample report and an export, none with mail in them", async ({ app: page }) => {
     // leave a trail and a record: open threads, archive one, break the reader
     for (let i = 0; i < 3; i++) await openRow(page, i);
     const never = await fixtureStrings(page);
@@ -93,7 +93,7 @@ test.describe("diagnostics", () => {
     const section = page.getByTestId("diagnostics-section");
     await section.scrollIntoViewIfNeeded();
     await expect(page.getByTestId("error-reports-select")).toBeDisabled();
-    await expect(page.getByTestId("error-reports-row")).toContainText(/Local mode sends no error reports|doesn’t send reports/);
+    await expect(page.getByTestId("error-reports-row")).toContainText("doesn’t send reports");
     await expect(page.getByTestId("build-line")).toContainText(/Terno \d+\.\d+\.\d+ · /);
 
     await page.getByTestId("report-sample").click();

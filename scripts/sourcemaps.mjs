@@ -7,7 +7,7 @@
 // mapped line, so the maps stay exact.
 //
 // archiveMaps: moves every .map out of the build into an archive folder,
-// with a copy of its minified file beside it (what `sentry-cli sourcemaps
+// with a copy of its minified file beside it (what `sentry sourcemap
 // upload` and `pnpm diag:symbolicate` read). Runs before packaging and
 // signing: the signed app never contains a map.
 import { createHash } from "node:crypto";

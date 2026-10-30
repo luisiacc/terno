@@ -27,6 +27,7 @@ if (testBuild && !(typeof testBuild.feed === "string" && typeof testBuild.userDa
 }
 if (testBuild && !process.env.TERNO_BUILD_OUT) throw new Error("a test build needs TERNO_BUILD_OUT: dist/ is what dist:mac packages");
 const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(join(repo, "scripts/sourcemaps.mjs"));
+const { buildDsn } = await import(join(repo, "scripts/release-env.mjs"));
 
 /** The commit this build is from (and whether the tree had changes on top). */
 function buildSha() {
@@ -39,8 +40,9 @@ function buildSha() {
   }
 }
 const sha = process.env.TERNO_BUILD_SHA || buildSha();
-// public by design (it can only submit events); without it the reporter is never loaded
-const dsn = process.env.TERNO_SENTRY_DSN ?? "";
+// public by design (it can only submit events); a release (TERNO_RELEASE=1) gets Terno's, never a test build;
+// without one the reporter is never loaded
+const dsn = testBuild ? "" : buildDsn();
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -71,7 +73,7 @@ const entries = [
   { in: join(root, "src/backend-entry.ts"), out: "backend" },
   { in: join(repo, "packages/backend/src/incoming.worker.ts"), out: "incoming.worker" },
   { in: join(root, "src/preload.ts"), out: "preload" },
-  // the Sentry pipe, required by main only when a report is about to go
+  // the report pipe, required by main only when a report is about to go
   { in: join(root, "src/diag/reporter.ts"), out: "reporter" },
   // electron-updater, required by main only once the updater has work to do
   { in: join(root, "src/updates/engine.ts"), out: "updater" },
@@ -124,6 +126,6 @@ resetArchive(archive);
 const tagged = injectDebugIds(out);
 const moved = archiveMaps(out, archive, "dist");
 assertNoMaps(out);
-// what dist:mac uploads (when a Sentry token is set): this build's archive and release name
+// what dist:mac uploads to Sentry: this build's archive and release name
 if (!testBuild) writeFileSync(join(root, ".maps", "LATEST"), JSON.stringify({ release: `terno@${version}+${sha}`, archive }));
 console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);

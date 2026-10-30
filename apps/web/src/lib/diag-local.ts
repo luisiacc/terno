@@ -9,8 +9,8 @@
  *   each paired with a Web Lock the tab holds for its life: a marker whose
  *   lock nobody holds belongs to a tab that died without a goodbye (pagehide
  *   removes it), and the next tab reports it. No heartbeat: idle is idle.
- * - Reports (web builds with a DSN): @sentry/browser's fetch transport behind
- *   the same consent boundary as desktop.
+ * - Reports (web builds with a DSN): the shared reporter over fetch, behind
+ *   the same consent boundary as desktop (plan 78).
  */
 import {
   breadcrumbs,
@@ -18,7 +18,6 @@ import {
   ERROR_REPORTS,
   mayReport,
   newId,
-  releaseName,
   reportOffer,
   reportsAutomatically,
   Ring,
@@ -38,7 +37,7 @@ import {
   type ReportEvent,
   type ReportPolicy,
 } from "@terno/core/diag";
-import type { Reporter } from "@terno/core/diag/sentry";
+import type { Reporter } from "@terno/core/diag/envelope";
 import { t } from "@terno/i18n";
 import { BUILD, pendingSink } from "./diag";
 import { ENTRIES_MAX, mergeRecords, openDiagDb, readEntries, readRecords, writeBatch } from "./diag-store";
@@ -231,13 +230,13 @@ export class LocalDiag implements DiagSink {
   }
 
   private async send(r: ErrorRecord): Promise<boolean> {
-    // a constant: builds without a DSN contain no Sentry code at all
+    // a constant: builds without a DSN contain no report code at all
     if (!DSN) return false;
-    this.reporter ??= import("./diag-sentry").then((m) =>
+    if (this.state.sent.includes(r.id)) return true;
+    this.reporter ??= import("./diag-report").then((m) =>
       m.createWebReporter({
         dsn: DSN,
-        release: releaseName(BUILD.version, BUILD.sha),
-        environment: BUILD.channel,
+        client: `terno/${BUILD.version}`,
         allow: (eventId) => {
           const ok = mayReport(this.policy, this.approved.has(eventId));
           this.approved.delete(eventId);
@@ -273,15 +272,19 @@ export class LocalDiag implements DiagSink {
 
   async decide(ids: string[], decision: "send" | "dismiss"): Promise<{ sent: number }> {
     let sent = 0;
+    const failed = new Set<string>();
     for (const id of ids) {
       const r = this.records.find((x) => x.id === id);
       if (!r) continue;
       if (decision === "send") {
         this.approved.add(id);
         if (await this.send(r)) sent++;
+        else failed.add(id);
+        this.approved.delete(id);
       }
     }
-    this.state.seen.push(...ids);
+    // a report that couldn't go stays pending: the row keeps offering Send
+    this.state.seen.push(...ids.filter((id) => !failed.has(id)));
     this.saveState();
     this.changed();
     return { sent };

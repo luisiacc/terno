@@ -26,7 +26,6 @@
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
-    "@sentry/cli": "catalog:",
     "@terno/mock-data": "workspace:*",
     "@types/node": "catalog:",
     "@types/smtp-server": "^3.5.13",

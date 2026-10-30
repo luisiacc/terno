@@ -8,6 +8,7 @@ declare const performance: { now(): number };
 // addresses (plan 34): encoded words, punycode
 declare function atob(data: string): string;
 declare function btoa(data: string): string;
+declare function encodeURIComponent(s: string): string;
 declare class TextDecoder {
   constructor(label?: string, options?: { fatal?: boolean });
   decode(input?: Uint8Array): string;
@@ -18,4 +19,19 @@ declare class TextEncoder {
 declare class URL {
   constructor(url: string, base?: string);
   readonly hostname: string;
+  // the reporter's DSN (plan 78)
+  readonly protocol: string;
+  readonly host: string;
+  readonly username: string;
+  readonly password: string;
+  readonly pathname: string;
+}
+// the reporter's timeout and close (plan 78)
+declare class AbortSignal {
+  readonly aborted: boolean;
+  addEventListener(type: "abort", listener: () => void): void;
+}
+declare class AbortController {
+  readonly signal: AbortSignal;
+  abort(): void;
 }

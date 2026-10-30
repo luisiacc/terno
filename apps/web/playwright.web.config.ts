@@ -42,7 +42,8 @@ export default defineConfig({
   webServer: [
     {
       // a demo build (seeds an empty mailbox from the mock generator; ?demo=<threads>, ?mailbox=<name>)
-      command: `VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir ${OUT} && pnpm vite preview --outDir ${OUT} --port ${WEB} --strictPort --host 127.0.0.1`,
+      // plan 78: a DSN nobody can reach (.invalid), so the report flow runs; diagnostics.web.spec.ts routes it
+      command: `TERNO_SENTRY_DSN=https://testkey@reports.invalid/7 VITE_TARGET=web VITE_WEB_DEMO=1 pnpm vite build --outDir ${OUT} && pnpm vite preview --outDir ${OUT} --port ${WEB} --strictPort --host 127.0.0.1`,
       url: `http://127.0.0.1:${WEB}`,
       // never reuse: the command builds this checkout, a running server may be serving an older build
       reuseExistingServer: false,

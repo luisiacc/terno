@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { buildDsn } from "../../scripts/release-env.mjs";
 
 /**
  * Two targets from one renderer:
@@ -58,7 +59,7 @@ function serviceWorker(buildId: string): Plugin {
  * the maps to .maps/<build id>/ (outside what is deployed). Test builds just
  * drop them.
  */
-function webMaps(outDir: string, buildId: string): Plugin {
+function webMaps(outDir: string, buildId: string, release: string): Plugin {
   return {
     name: "terno:web-maps",
     apply: "build",
@@ -70,6 +71,8 @@ function webMaps(outDir: string, buildId: string): Plugin {
       resetArchive(archive);
       archiveMaps(out, archive);
       assertNoMaps(out);
+      // what `pnpm upload:web-maps` sends to Sentry: this deployable build's archive and release name
+      if (outDir === "dist-web") writeFileSync(resolve(import.meta.dirname, ".maps", "LATEST"), JSON.stringify({ release, archive }));
     },
   };
 }
@@ -110,15 +113,16 @@ export default defineConfig(({ mode }) => {
   return {
     // relative asset URLs so the bundle works from app://terno/ in Electron (and from any path on a static host)
     base: "./",
-    plugins: [react({ compiler: true }), tailwindcss(), ...(target === "web" ? [serviceWorker(buildId), webHtml(), webMaps(outDir, buildId)] : [desktopGuard()])],
+    plugins: [react({ compiler: true }), tailwindcss(), ...(target === "web" ? [serviceWorker(buildId), webHtml(), webMaps(outDir, buildId, `terno@${version}+${process.env.TERNO_BUILD_SHA || (mode === "production" ? buildSha() : "dev")}`)] : [desktopGuard()])],
     define: {
       "import.meta.env.VITE_TARGET": JSON.stringify(target),
       // desktop builds stay reproducible: no timestamp
       "import.meta.env.VITE_BUILD_ID": JSON.stringify(target === "web" ? buildId : version),
       "import.meta.env.VITE_WEB_DEMO": JSON.stringify(process.env.VITE_WEB_DEMO === "1" ? "1" : ""),
       "import.meta.env.VITE_BUILD_SHA": JSON.stringify(process.env.TERNO_BUILD_SHA || (mode === "production" ? buildSha() : "dev")),
-      // the web reports from the page (@sentry/browser); the desktop renderer never does (main sends)
-      "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(target === "web" ? (process.env.TERNO_SENTRY_DSN ?? "") : ""),
+      // the web reports from the page (plan 78: a release gets Terno's DSN, a demo or test build none unless
+      // TERNO_SENTRY_DSN says so); the desktop renderer never does (main sends)
+      "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(target === "web" ? buildDsn() : ""),
     },
     resolve: {
       alias: {

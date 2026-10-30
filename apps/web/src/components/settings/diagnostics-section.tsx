@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BUILD, DESKTOP_DIAG, WEB } from "~/lib/diag";
+import { BUILD, DESKTOP_DIAG } from "~/lib/diag";
 import { exportDiagnostics, openPreview, refreshDiag, showLogs, useDiag } from "~/state/diag";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
@@ -17,7 +17,6 @@ const REPORTS = [
 const CHANNEL = { production: null, dev: "diag.channel.dev", test: "diag.channel.test", demo: "diag.channel.demo" } as const;
 
 function reportsHint(settings: AppSettings, dsn: boolean): string {
-  if (settings.localMode) return t(WEB ? "diag.settings.hint.localWeb" : "diag.settings.hint.localMac");
   if (!dsn) return t("diag.settings.hint.noDsn");
   if (settings.errorReports === "always") return t("diag.settings.hint.always");
   if (settings.errorReports === "never") return t("diag.settings.hint.never");
@@ -58,7 +57,8 @@ function BuildLine() {
 export function DiagnosticsSection({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const dsn = useDiag((s) => s.view?.reporting.dsn ?? false);
   useEffect(() => void refreshDiag(), []);
-  const locked = settings.localMode || !dsn;
+  // plan 78: local mode doesn't decide reports; the user's choice here does
+  const locked = !dsn;
   return (
     <SettingsGroup title={t("diag.settings.title")} testId="diagnostics-section" footer={<BuildLine />}>
       <SettingsRow label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">

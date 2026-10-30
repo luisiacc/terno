@@ -34,6 +34,8 @@ interface StoredSettings extends Partial<General> {
   appearanceVersion?: number;
   /** plan 37: 1 once local mode stopped deciding remote images (see migrateRemoteImages) */
   remoteImagesVersion?: number;
+  /** plan 78: 1 once local mode stopped deciding error reports (see migrateErrorReports) */
+  errorReportsVersion?: number;
 }
 
 export const APPEARANCE_VERSION = 2;
@@ -65,9 +67,22 @@ export function migrateRemoteImages(s: StoredSettings): StoredSettings {
   return { ...s, ...(local && s.remoteImages === "always" ? { remoteImages: "ask" as const } : {}), remoteImagesVersion: REMOTE_IMAGES_VERSION };
 }
 
+export const ERROR_REPORTS_VERSION = 1;
+
+/**
+ * Plan 78: local mode no longer decides error reports. A profile in local
+ * mode that stored "always" (chosen while connected) showed "never" and sent
+ * nothing; it doesn't start sending silently: "ask". Pure, like the others.
+ */
+export function migrateErrorReports(s: StoredSettings): StoredSettings {
+  if ((s.errorReportsVersion ?? 0) >= ERROR_REPORTS_VERSION) return s;
+  const local = s.localMode ?? DEFAULT_SETTINGS.localMode;
+  return { ...s, ...(local && s.errorReports === "always" ? { errorReports: "ask" as const } : {}), errorReportsVersion: ERROR_REPORTS_VERSION };
+}
+
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
-  return migrateRemoteImages(migrateAppearance(s));
+  return migrateErrorReports(migrateRemoteImages(migrateAppearance(s)));
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -307,7 +322,7 @@ function resolveThemes(g: General): General {
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);

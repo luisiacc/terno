@@ -8,7 +8,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { IDBFactory } from "fake-indexeddb";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openDiagDb, readRecords, writeBatch } from "./diag-store";
 
 const g = globalThis as Record<string, unknown>;
@@ -63,6 +63,63 @@ describe("LocalDiag", () => {
     expect(tab.records.map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
     await tab.idle();
     expect((await readRecords(await openDiagDb(factory))).map((r) => r.id)).toEqual([meanwhile.id, earlier.id]);
+  });
+});
+
+describe("sending (plan 78)", () => {
+  const requests: string[] = [];
+  let respond: () => Promise<Response> = async () => new Response("{}", { status: 200 });
+  let Sending: typeof import("./diag-local").LocalDiag;
+  beforeAll(async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_SENTRY_DSN", "http://key@127.0.0.1:9/1");
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      expect(init).toMatchObject({ credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
+      requests.push(url);
+      return respond();
+    });
+    ({ LocalDiag: Sending } = await import("./diag-local"));
+  });
+  afterEach(() => {
+    requests.length = 0;
+    respond = async () => new Response("{}", { status: 200 });
+  });
+
+  it("local mode with ask offers Send, sends nothing on its own, and sends what the user approved", async () => {
+    const tab = new Sending();
+    tab.setPolicy({ localMode: true, errorReports: "ask" });
+    const r = record();
+    tab.capture(r);
+    expect(tab.view().reporting.offer).toBe("ask");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(0);
+    expect(await tab.decide([r.id], "send")).toEqual({ sent: 1 });
+    expect(requests).toEqual([`http://127.0.0.1:9/api/1/envelope/?sentry_version=7&sentry_key=key&sentry_client=${encodeURIComponent("terno/0.0.0")}`]);
+    expect(tab.view().pending.find((p) => p.id === r.id)).toBeUndefined();
+  });
+
+  it("a report that couldn't go stays pending, to send again", async () => {
+    const tab = new Sending();
+    tab.setPolicy({ localMode: true, errorReports: "ask" });
+    const r = record();
+    tab.capture(r);
+    respond = async () => new Response("", { status: 503 });
+    expect(await tab.decide([r.id], "send")).toEqual({ sent: 0 });
+    expect(tab.view().pending.map((p) => p.id)).toContain(r.id);
+    respond = async () => new Response("{}", { status: 200 });
+    expect(await tab.decide([r.id], "send")).toEqual({ sent: 1 });
+    expect(tab.view().pending.map((p) => p.id)).not.toContain(r.id);
+  });
+
+  it("Always plus the explicit send of the same reports posts each once (review finding 4)", async () => {
+    const tab = new Sending();
+    tab.setPolicy({ localMode: true, errorReports: "ask" });
+    const r = record();
+    tab.capture(r);
+    tab.setPolicy({ localMode: true, errorReports: "always" });
+    await tab.decide([r.id], "send");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(1);
   });
 });
 

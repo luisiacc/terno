@@ -98,15 +98,8 @@ const notarize = developerId && Boolean((process.env.APPLE_ID && process.env.APP
 assertCanSign(identity);
 console.log(`signing with ${identity === "-" ? "an ad-hoc signature (this build can't update itself)" : identity}${developerId ? `, hardened runtime${notarize ? ", notarized" : ", not notarized (no APPLE_* credentials)"}` : ""}`);
 
-// Source maps (archived by build.mjs, never in the app) go to Sentry only when a token is set.
-const latest = join(root, ".maps", "LATEST");
-if (!testBuild && process.env.SENTRY_AUTH_TOKEN && existsSync(latest)) {
-  const { release: name, archive } = JSON.parse(readFileSync(latest, "utf8"));
-  const cli = join(root, "node_modules/.bin/sentry-cli");
-  const scope = [...(process.env.SENTRY_ORG ? ["--org", process.env.SENTRY_ORG] : []), ...(process.env.SENTRY_PROJECT ? ["--project", process.env.SENTRY_PROJECT] : [])];
-  execFileSync(cli, ["sourcemaps", "upload", ...scope, "--release", name, archive], { stdio: "inherit" });
-  console.log(`✓ source maps for ${name} uploaded`);
-}
+// Source maps (archived by build.mjs, never in the app) go to Sentry for a release (plan 78)
+if (!testBuild && process.env.TERNO_RELEASE === "1") (await import(join(root, "../../scripts/upload-maps.mjs"))).uploadMaps(join(root, ".maps", "LATEST"));
 
 rmSync(stage, { recursive: true, force: true });
 rmSync(release, { recursive: true, force: true });

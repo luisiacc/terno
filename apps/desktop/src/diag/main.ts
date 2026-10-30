@@ -7,9 +7,9 @@
  *   unclean exit found at the next start) go to crashes/; every process
  *   mirrors its breadcrumbs here so even a hard crash has its trail.
  * - Native minidumps stay local: crashReporter never uploads.
- * - Reports: built from a record by allowlist, sent through Sentry only when
- *   the live policy allows (never in local mode or without a DSN; "ask"
- *   sends what the user approved, one report at a time).
+ * - Reports: built from a record by allowlist, sent to Sentry's ingest only
+ *   when the live policy allows (never without a DSN; "ask" sends what the
+ *   user approved, one report at a time, local mode or not: plan 78).
  */
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -27,7 +27,6 @@ import {
   log,
   newId,
   RotatingLog,
-  releaseName,
   reportOffer,
   resetRepeats,
   reportsAutomatically,
@@ -48,10 +47,11 @@ import {
   type ReportEvent,
   type ReportPolicy,
 } from "@terno/core/diag";
-import type { Reporter, SendResult } from "@terno/core/diag/sentry";
+import type { Reporter, SendResult } from "@terno/core/diag/envelope";
 import { t } from "@terno/i18n";
 import { BUILD_DSN, BUILD_ID, BUILD_SHA, BUILD_VERSION, channelOf } from "./build-info";
 import { collectExport, zip } from "./export";
+import { loopbackDsn } from "./report-fence";
 import { diagPaths, ensureDirs, nodeRotatingFs, RecordStore, Rings, runMarker, StateFile, type DiagPaths } from "./store";
 import { IPC_ENTRIES_PER_SECOND, IPC_MAX_BATCH_BYTES, RateLimit } from "./supervisor";
 
@@ -114,8 +114,9 @@ class MainDiag implements DiagSink {
     const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
     this.testHooks = test;
     this.channel = channelOf({ packaged: app.isPackaged, demo, test });
-    // a test build points at a local sink; a release only ever uses the DSN it was built with
-    this.dsn = BUILD_DSN || (test ? (process.env.TERNO_TEST_SENTRY_DSN ?? "") : "");
+    // a test run only ever reports to its loopback sink (never the DSN the copied release was built with);
+    // a release only ever uses the DSN it was built with
+    this.dsn = test ? loopbackDsn(process.env.TERNO_TEST_SENTRY_DSN) : BUILD_DSN;
   }
 
   // ───────────────────────────── the main process's own diag ─────────────────────────────
@@ -303,13 +304,13 @@ class MainDiag implements DiagSink {
 
   private async send(record: ErrorRecord): Promise<SendResult> {
     if (!this.dsn) return { sent: false, reason: "policy" };
-    // its own bundle (dist/reporter.cjs, @sentry/core inside): main.cjs stays small and never loads it without a DSN
+    if (this.state?.get().sent.includes(record.id)) return { sent: true, status: 200 };
+    // its own bundle (dist/reporter.cjs): main.cjs stays small and never loads it without a DSN
     this.reporter ??= Promise.resolve((require(join(__dirname, "reporter.cjs")) as typeof import("./reporter")).createMainReporter).then((createMainReporter) =>
       createMainReporter({
         dsn: this.dsn,
-        release: releaseName(BUILD_VERSION, BUILD_SHA),
-        environment: this.channel,
-        // the consent boundary: asked for every envelope, at send time
+        client: `terno/${BUILD_VERSION}`,
+        // the consent boundary: asked for every report, at send time
         allow: (eventId) => {
           const ok = mayReport(this.policy, this.approved.has(eventId));
           this.approved.delete(eventId);
@@ -326,8 +327,8 @@ class MainDiag implements DiagSink {
     const result = await (await this.reporter).send(this.reportFor(record));
     if (result.sent) {
       this.state?.update((s) => {
-        s.sent.push(record.id);
-        s.seen.push(record.id);
+        if (!s.sent.includes(record.id)) s.sent.push(record.id);
+        if (!s.seen.includes(record.id)) s.seen.push(record.id);
       });
       log.info("report.sent", { count: 1 });
       this.changed();
@@ -355,16 +356,20 @@ class MainDiag implements DiagSink {
 
   async decide(ids: string[], decision: "send" | "dismiss"): Promise<{ sent: number }> {
     let sent = 0;
+    const failed = new Set<string>();
     for (const id of ids.slice(0, 20)) {
       const record = this.record(id);
       if (!record) continue;
       if (decision === "send") {
-        // one-time approval of this report; the transport still checks local mode, the setting and the DSN
+        // one-time approval of this report; the reporter still checks the setting and the DSN
         this.approved.add(id);
         if ((await this.send(record)).sent) sent++;
+        else failed.add(id);
+        this.approved.delete(id);
       }
     }
-    this.state?.update((s) => s.seen.push(...ids.filter((id) => /^[0-9a-f]{32}$/.test(id))));
+    // a report that couldn't go stays pending: the row keeps offering Send
+    this.state?.update((s) => s.seen.push(...ids.filter((id) => /^[0-9a-f]{32}$/.test(id) && !failed.has(id) && !s.seen.includes(id))));
     this.changed();
     return { sent };
   }

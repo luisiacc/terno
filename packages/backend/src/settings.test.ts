@@ -117,6 +117,27 @@ describe("remote images (plan 37)", () => {
   });
 });
 
+describe("error reports (plan 78)", () => {
+  it("a profile in local mode that stored always reads as ask (it sent nothing before); a later always sticks", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { localMode: true, errorReports: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("ask");
+    await client.call("settings.update", { motionMs: 50 });
+    expect(getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {})).toMatchObject({ errorReports: "ask", errorReportsVersion: 1 });
+    expect(await client.call("settings.update", { errorReports: "always" })).toMatchObject({ localMode: true, errorReports: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("always");
+    expect((await client.call("app.bootstrap", {})).settings).not.toHaveProperty("errorReportsVersion");
+  });
+
+  it("a connected profile keeps always; never stays never", async () => {
+    const { backend, client } = setup();
+    setSetting(sqlDb(backend.store), "app", { localMode: false, errorReports: "always" });
+    expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("always");
+    setSetting(sqlDb(backend.store), "app", { localMode: true, errorReports: "never" });
+    expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("never");
+  });
+});
+
 describe("designs (plan 15)", () => {
   it("an install from before designs moves to Lumen in its own colors; its palettes are remembered as previous, not applied", async () => {
     const { backend, client } = setup();

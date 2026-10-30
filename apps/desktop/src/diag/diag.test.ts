@@ -9,7 +9,8 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectExport, zip } from "./export";
-import { diagPaths, ensureDirs, fitRecord, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
+import { loopbackDsn, reportInboundHeaders, reportOutboundHeaders, reportRequestAllowed } from "./report-fence";
+import { diagPaths, ensureDirs, fitRecord, keptPolicy, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
 import { BACKOFF_MS, HEALTHY_MS, RateLimit, RestartPolicy } from "./supervisor";
 
 const dirs: string[] = [];
@@ -135,6 +136,41 @@ describe("state, rings, run marker", () => {
     expect(runMarker.read(dir)).toMatchObject({ session: "s" });
     runMarker.clear(dir);
     expect(runMarker.read(dir)).toBeNull();
+  });
+});
+
+describe("reports (plan 78)", () => {
+  const ingest = "https://o1.ingest.us.sentry.io/api/42/envelope/";
+  it("the reports session reaches the envelope URL by POST and nothing else", () => {
+    expect(reportRequestAllowed({ url: ingest, method: "POST" }, ingest)).toBe(true);
+    expect(reportRequestAllowed({ url: ingest, method: "GET" }, ingest)).toBe(false);
+    expect(reportRequestAllowed({ url: `${ingest}?x=1`, method: "POST" }, ingest)).toBe(false);
+    expect(reportRequestAllowed({ url: "https://elsewhere.example/api/42/envelope/", method: "POST" }, ingest)).toBe(false);
+  });
+
+  it("no cookie goes out and none is kept", () => {
+    expect(reportOutboundHeaders({ Cookie: "a=1", "Content-Type": "application/x-sentry-envelope", "X-Sentry-Auth": "Sentry sentry_key=k" })).toEqual({ "Content-Type": "application/x-sentry-envelope", "X-Sentry-Auth": "Sentry sentry_key=k" });
+    expect(reportInboundHeaders({ "Set-Cookie": ["a=1"], "content-type": ["application/json"] })).toEqual({ "content-type": ["application/json"] });
+  });
+
+  it("a test run only reports to loopback, never to a real ingest (review: the smoke copies the release app)", () => {
+    expect(loopbackDsn("http://k@127.0.0.1:9/1")).toBe("http://k@127.0.0.1:9/1");
+    expect(loopbackDsn("http://k@localhost:9/1")).toBe("http://k@localhost:9/1");
+    expect(loopbackDsn("https://k@o1.ingest.us.sentry.io/1")).toBe("");
+    expect(loopbackDsn(undefined)).toBe("");
+    expect(loopbackDsn("garbage")).toBe("");
+  });
+
+  it("a policy kept before plan 78 with local mode and always reads as ask; a new one is kept as is", () => {
+    expect(keptPolicy({ localMode: true, errorReports: "always" }, undefined)).toEqual({ localMode: true, errorReports: "ask" });
+    expect(keptPolicy({ localMode: false, errorReports: "always" }, undefined)).toEqual({ localMode: false, errorReports: "always" });
+    expect(keptPolicy({ localMode: true, errorReports: "always" }, 2)).toEqual({ localMode: true, errorReports: "always" });
+    const dir = tmp();
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ installId: "0".repeat(8) + "-0000-4000-8000-" + "0".repeat(12), seen: [], sent: [], policy: { localMode: true, errorReports: "always" } }));
+    const state = new StateFile(join(dir, "state.json"));
+    expect(state.get().policy).toEqual({ localMode: true, errorReports: "ask" });
+    state.update((s) => (s.policy = { localMode: true, errorReports: "always" }));
+    expect(new StateFile(join(dir, "state.json")).get().policy).toEqual({ localMode: true, errorReports: "always" });
   });
 });
 

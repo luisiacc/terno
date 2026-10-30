@@ -75,6 +75,21 @@ export interface DiagState {
   sent: string[];
   /** the last policy the backend published, so a backend that never starts still has one (fail closed until the first) */
   policy: { localMode: boolean; errorReports: ErrorReports } | null;
+  /** plan 78: 2 once local mode stopped deciding reports */
+  policyVersion?: number;
+}
+
+const POLICY_VERSION = 2;
+
+/**
+ * Plan 78: local mode no longer decides reports. A policy kept before that
+ * with local mode and "always" (chosen while connected) sent nothing; it
+ * keeps that until the user chooses again: "ask". The backend migrates its
+ * setting the same way and publishes it at start.
+ */
+export function keptPolicy(p: { localMode: boolean; errorReports: ErrorReports }, version: unknown): { localMode: boolean; errorReports: ErrorReports } {
+  if (typeof version === "number" && version >= POLICY_VERSION) return { localMode: p.localMode, errorReports: p.errorReports };
+  return { localMode: p.localMode, errorReports: p.localMode && p.errorReports === "always" ? "ask" : p.errorReports };
 }
 
 export class StateFile {
@@ -87,11 +102,11 @@ export class StateFile {
     try {
       const raw = JSON.parse(readFileSync(this.path, "utf8")) as Partial<DiagState>;
       const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && /^[0-9a-f]{32}$/.test(x)).slice(-200) : []);
-      const policy = raw.policy && typeof raw.policy.localMode === "boolean" && ERROR_REPORTS.includes(raw.policy.errorReports) ? { localMode: raw.policy.localMode, errorReports: raw.policy.errorReports } : null;
+      const policy = raw.policy && typeof raw.policy.localMode === "boolean" && ERROR_REPORTS.includes(raw.policy.errorReports) ? keptPolicy(raw.policy, raw.policyVersion) : null;
       const installId = typeof raw.installId === "string" && /^[0-9a-f-]{36}$/.test(raw.installId) ? raw.installId : randomUUID();
-      return { installId, seen: ids(raw.seen), sent: ids(raw.sent), policy };
+      return { installId, seen: ids(raw.seen), sent: ids(raw.sent), policy, policyVersion: POLICY_VERSION };
     } catch {
-      return { installId: randomUUID(), seen: [], sent: [], policy: null };
+      return { installId: randomUUID(), seen: [], sent: [], policy: null, policyVersion: POLICY_VERSION };
     }
   }
 

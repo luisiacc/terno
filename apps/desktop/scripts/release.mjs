@@ -32,9 +32,10 @@ if (run("gh", ["release", "view", `v${version}`, "--repo", REPO]).status === 0) 
 const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repo, encoding: "utf8" }).trim();
 if (dirty && process.env.TERNO_RELEASE_ALLOW_DIRTY !== "1") fail("the working tree has changes: commit them (or TERNO_RELEASE_ALLOW_DIRTY=1)");
 
-// web + desktop bundles, then the signed app and its update artifacts
+// web + desktop bundles, then the signed app and its update artifacts; a release carries
+// Terno's DSN (scripts/release-env.mjs) unless TERNO_SENTRY_DSN overrides it
 const step = (cmd, args, cwd) => {
-  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", env: process.env });
+  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", env: { ...process.env, TERNO_RELEASE: "1" } });
   if (r.status !== 0) fail(`${cmd} ${args.join(" ")} failed`);
 };
 step("pnpm", ["build"], repo);

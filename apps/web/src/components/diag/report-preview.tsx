@@ -18,9 +18,10 @@ export function ReportPreview() {
   if (!preview) return null;
   const json = JSON.stringify(preview.event, null, 2);
   const pending = view?.pending.find((p) => p.id === preview.target);
-  const canSend = pending && !pending.sent && view?.reporting.offer === "ask";
+  // "ask", or "always" with a report that couldn't go: Send (again)
+  const canSend = pending && !pending.sent && view?.reporting.offer !== "local";
   const sample = preview.target === "sample";
-  // only call it "sent" when it can be: local mode, "never" or a build without a DSN keep everything here
+  // only call it "sent" when it can be: "never" or a build without a DSN keep everything here
   const goes = Boolean(preview.host) && view?.reporting.offer !== "local";
   const title = t(sample ? "diag.preview.sampleTitle" : pending?.sent ? "diag.whatWasSent" : goes ? "diag.whatGetsSent" : "diag.preview.detailsTitle");
   const lead = t(
@@ -30,9 +31,7 @@ export function ReportPreview() {
         ? "diag.preview.sent"
         : goes
           ? "diag.preview.goes"
-          : view?.reporting.localMode
-            ? "diag.preview.localMode"
-            : !preview.host
+          : !preview.host
               ? "diag.preview.noDsn"
               : "diag.preview.off",
   );

@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { breadcrumb, breadcrumbs, captureError, installDiag, log, mirrorBreadcrumbs } from "./diag";
 import { normalizeError } from "./error";
 import { buildReport } from "./report";
-import { createReporter, fetchTransport } from "./sentry";
+import { createReporter } from "./envelope";
 import type { Crumb, DiagEntry, ErrorRecord } from "./types";
 import { sanitizeEntry, sanitizeRecord } from "./validate";
 
-declare const TextDecoder: { new (): { decode(b: Uint8Array): string } };
 
 const MARKERS = {
   secret: "S51SyntheticSecret",
@@ -108,13 +107,12 @@ describe("S51 provider failures at diagnostic boundaries", () => {
     const uploads: { url: string; headers: Record<string, string>; body: string }[] = [];
     const reporter = createReporter({
       dsn: "https://publickey@diagnostics.invalid/42",
-      release: "terno@1+s51",
-      environment: "test",
+      client: "terno/1",
       allow: () => true,
-      transport: fetchTransport(async (url, init) => {
-        uploads.push({ url, headers: init.headers, body: typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body) });
+      fetch: async (url, init) => {
+        uploads.push({ url, headers: init.headers, body: init.body });
         return { status: 200, headers: { get: () => null } };
-      }),
+      },
     });
     try {
       const event = buildReport(m.records[0]!, { installId: "synthetic-install" });
@@ -127,7 +125,7 @@ describe("S51 provider failures at diagnostic boundaries", () => {
       expect(lines[2]).toEqual(event);
       containsNoMarkers(uploads);
     } finally {
-      await reporter.close();
+      reporter.close();
     }
   });
 });

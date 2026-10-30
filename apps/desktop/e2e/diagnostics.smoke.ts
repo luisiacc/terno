@@ -1,9 +1,10 @@
 /**
- * Plan 10 on the PACKAGED app (a copy outside the repo, demo mailbox, temp
- * profile). Reports go to a local HTTP sink through a test DSN (honored only
- * by demo/dev builds with TERNO_DIAG_TEST): every envelope is decoded and
- * every item checked. Local mode is proven by the counter at the transport,
- * not by the sink (main's fence lets loopback through).
+ * Plans 10 and 78 on the PACKAGED app (a copy outside the repo, demo mailbox,
+ * temp profile). Reports go to a local HTTP sink through a test DSN (honored
+ * only by demo/dev builds with TERNO_DIAG_TEST, and only on loopback: the
+ * release's own DSN is never used by a test run): every envelope is decoded
+ * and every item checked. Local mode no longer decides reports (plan 78): the
+ * user's choice does, which the sink and the counters prove.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -116,23 +117,30 @@ test("the packaged app ships no source map, and its maps are archived for its bu
   expect(readdirSync(join(archive, "dist/renderer/assets")).some((f) => f.endsWith(".js.map"))).toBe(true);
 });
 
-test("local mode (the default): nothing reaches the network, even an approved report", async () => {
-  expect(await hooks((h) => h.view().reporting)).toMatchObject({ localMode: true, offer: "local" });
+test("local mode (the default) asks: nothing leaves on its own; Send sends exactly that report", async () => {
+  expect(await hooks((h) => h.view().reporting)).toMatchObject({ localMode: true, errorReports: "ask", offer: "ask" });
   const id = await hooks((h) => h.throwKnown());
   expect(id).toMatch(/^[0-9a-f]{32}$/);
-  await hooks((h, a) => h.decide([a as string], "send"), id);
-  expect(await hooks((h) => h.counters())).toMatchObject({ allowed: 0, sent: 0 });
-  expect((await hooks((h) => h.counters())).refused).toBeGreaterThan(0);
+  await page.waitForTimeout(1000);
   expect(requests).toBe(0);
+  expect(await hooks((h) => h.counters())).toMatchObject({ allowed: 0, sent: 0 });
+  // the row offers Send, in place; the click is the consent
+  await expect(page.getByTestId("report-row")).toHaveAttribute("data-offer", "ask");
+  await expect(page.getByTestId("report-export")).toHaveCount(0);
+  const preview = await hooks((h, a) => h.preview(a as string), id);
+  await page.getByTestId("report-send").click();
+  await expect.poll(() => envelopes.length).toBe(1);
+  expect(envelopes[0]!.header.event_id).toBe(id);
+  expect(envelopes[0]!.items[0]!.payload).toEqual(preview!.event);
+  await expect(page.getByTestId("report-row")).toHaveCount(0);
+  expect(await hooks((h) => h.counters())).toMatchObject({ allowed: 1, sent: 1 });
+  expect(requests).toBe(1);
 });
 
 test("always: one scrubbed event per error, exactly what 'What gets sent' showed", async () => {
   const never = await fixtureStrings();
-  await page.getByTestId("open-settings").click();
-  await page.getByTestId("local-mode-switch").click();
-  await page.getByTestId("local-mode-confirm-off").click();
-  await expect.poll(() => hooks((h) => h.view().reporting.localMode)).toBe(false);
-  await page.keyboard.press("Escape");
+  // still in local mode: "always" is the user's choice, and it holds there too
+  expect(await hooks((h) => h.view().reporting.localMode)).toBe(true);
   envelopes = [];
   requests = 0;
   await setReports("always");
@@ -258,14 +266,8 @@ test("the export is Terno's diagnostics only, scrubbed; native dumps only when a
   expect(execFileSync("unzip", ["-Z1", withNative]).toString()).toMatch(/^native\/.*\.dmp$/m);
 });
 
-test("killed outright: the next start finds the marker and says Terno quit unexpectedly; in local mode nothing goes", async () => {
-  // "always", then local mode on: a restart into local mode sends nothing it recorded
-  await setReports("always");
-  await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-general").click();
-  await page.getByTestId("local-mode-switch").click();
-  await expect.poll(() => hooks((h) => h.view().reporting.localMode)).toBe(true);
-  await page.keyboard.press("Escape");
+test("killed outright: the next start finds the marker and says Terno quit unexpectedly; with Never nothing goes", async () => {
+  await setReports("never");
   const sent = envelopes.length;
   const pid = app.process().pid!;
   process.kill(pid, "SIGKILL");

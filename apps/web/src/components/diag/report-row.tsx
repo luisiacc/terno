@@ -20,8 +20,9 @@ const TITLE = {
 /**
  * The one quiet place a problem shows up: after a crash or an unclean exit
  * (on the next start), or in place for an unexpected error when reports are
- * "ask". What it offers follows the policy: ask to send, say it was sent, or
- * (local mode, no DSN, "never") keep it here with an export.
+ * "ask". What it offers follows the policy (plan 78: local mode too): ask to
+ * send, say it was sent, offer Send again for one that couldn't go, or (no
+ * DSN, "never") keep it here with an export.
  */
 export function ReportRow() {
   const view = useDiag((s) => s.view);
@@ -31,8 +32,8 @@ export function ReportRow() {
   // crashes always say so; an ordinary error only asks (it was logged either way)
   const shown = view.pending.filter((p) => p.fatal || p.kind !== "error" || policy === "ask");
   if (!shown.length) return null;
-  // "sent" only when it really went (a send that failed is still here, for export)
-  const offer = policy === "sent" && !shown.every((p) => p.sent) ? "local" : policy;
+  // "sent" only when it really went: one that couldn't go offers Send again
+  const offer = policy === "sent" && !shown.every((p) => p.sent) ? "retry" : policy;
   const first = shown[0]!;
   const ids = shown.map((p) => p.id);
   const many = shown.length > 1;
@@ -60,7 +61,7 @@ export function ReportRow() {
           {title}
         </p>
         <p className="mt-0.5 text-muted-foreground">
-          {t(offer === "ask" ? "diag.row.ask" : offer === "sent" ? "diag.row.sent" : "diag.row.local")}
+          {t(offer === "ask" ? "diag.row.ask" : offer === "sent" ? "diag.row.sent" : offer === "retry" ? "diag.row.notSent" : "diag.row.local")}
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {offer === "ask" && (
@@ -76,6 +77,16 @@ export function ReportRow() {
               </Button>
               <Button size="xs" variant="ghost" data-testid="report-later" onClick={dismiss}>
                 {t("diag.row.notNow")}
+              </Button>
+            </>
+          )}
+          {offer === "retry" && (
+            <>
+              <Button size="xs" variant="outline" disabled={busy} data-testid="report-send" onClick={() => void send()}>
+                {t("common.send")}
+              </Button>
+              <Button size="xs" variant="ghost" data-testid="report-preview" onClick={() => void openPreview(first.id)}>
+                {t("diag.whatGetsSent")}
               </Button>
             </>
           )}

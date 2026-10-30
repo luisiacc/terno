@@ -19,6 +19,8 @@ const PATTERNS: { name: string; re: RegExp }[] = [
   { name: "global fetch", re: /(^|[^\w.$])fetch\s*\(/ },
   { name: "globalThis.fetch", re: /globalThis\.fetch/ },
   { name: "Electron net", re: /\bnet\.(fetch|request)\s*\(/ },
+  // a session's own fetch (plan 78's reports session): the same network as net.fetch
+  { name: "Electron session fetch", re: /\b(ses|session|\w+Session)\.fetch\s*\(/ },
   { name: "http(s).request/get", re: /\bhttps?\.(request|get)\s*\(/ },
   { name: "node:http client imports", re: /import\s*\{[^}]*\b(request|get)\b[^}]*\}\s*from\s*["']node:https?["']/ },
   { name: "raw sockets", re: /\b(net|tls)\.connect\s*\(|\bimport\s*\{[^}]*\bconnect\b[^}]*\}\s*from\s*["']node:(net|tls)["']/ },
@@ -43,8 +45,8 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "apps/web/src/rpc/connection.ts": { patterns: ["WebSocket client"], why: "renderer ↔ loopback backend-dev; the renderer is fenced by main's webRequest backstop" },
   "apps/web/src/web/sw.js": { patterns: ["global fetch"], why: "web build's service worker: same-origin app files only (cross-origin requests are not intercepted)" },
   "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
-  "packages/core/src/diag/sentry.ts": { patterns: ["SMTP client"], why: "Sentry's createTransport (not SMTP): every envelope passes consentTransport, which refuses in local mode, without a DSN or consent" },
-  "apps/desktop/src/diag/reporter.ts": { patterns: ["Electron net"], why: "error reports from main, through consentTransport (local mode, the setting and the DSN, checked per envelope)" },
+  "apps/desktop/src/diag/reporter.ts": { patterns: ["Electron session fetch"], why: "plan 78: error reports from main, in a session fenced to the DSN's envelope URL, each asked of the consent boundary (the setting, the user's approval, the DSN)" },
+  "apps/web/src/lib/diag-report.ts": { patterns: ["global fetch"], why: "plan 78: error reports from the web page to the DSN's envelope URL only (no redirects, no credentials), each asked of the consent boundary" },
 };
 
 function sources(dir: string): string[] {

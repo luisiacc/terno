@@ -199,7 +199,7 @@ A style is one file in [`packages/ui/src/designs/`](packages/ui/src/designs) (`l
 
 ## Diagnostics and error reports
 
-Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. Reports go to Sentry only from builds given a DSN, never in local mode, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never). [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
+Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. A report goes to Sentry (the `terno` project) only from a build given a DSN, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never), in local mode too: clicking Send is their choice ([plan 78](docs/plans/78-send-error-reports.md)). No Sentry SDK ships: the app posts its own envelope. [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
 
 **Where things live (desktop, under the profile, `~/Library/Application Support/Terno`):**
 
@@ -216,19 +216,21 @@ Help → Show Logs opens the folder; Help → Export Diagnostics… (or the Sett
 **Configuring Sentry:**
 
 ```bash
-# reports on: the DSN is baked in at build time (public by design: it can only submit events)
-TERNO_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project> pnpm dist:mac
-TERNO_SENTRY_DSN=… pnpm build:web          # the web build reports from the page (@sentry/browser)
+# a release carries Terno's DSN (scripts/release-env.mjs; public by design: it can only submit events)
+pnpm dist:mac                                # TERNO_RELEASE=1: reports on, source maps uploaded
+pnpm build:web && pnpm upload:web-maps       # the web build reports from the page
+TERNO_SENTRY_DSN= pnpm dist:mac              # a fork, or reports off: no DSN, the reporter is never loaded
+TERNO_SENTRY_DSN=https://<key>@<host>/<project> pnpm dist:mac   # another project
 
 # source maps: every bundle gets a debug id; maps are archived outside the app in
-# apps/desktop/.maps/<version>-<sha>/ (web: apps/web/.maps/<build>/) and uploaded when a token is set
-SENTRY_AUTH_TOKEN=… SENTRY_ORG=<org> SENTRY_PROJECT=<project> TERNO_SENTRY_DSN=… pnpm dist:mac
+# apps/desktop/.maps/<version>-<sha>/ (web: apps/web/.maps/<build>/) and uploaded with the
+# sentry CLI (https://cli.sentry.dev: its own login, or SENTRY_AUTH_TOKEN; SENTRY_ORG/SENTRY_PROJECT override)
 
 # a local crash record (or one from a user's export) back to source lines, offline
 pnpm diag:symbolicate path/to/crashes/<record>.json [--maps <archive dir>]
 ```
 
-Builds without `TERNO_SENTRY_DSN` (dev, forks) never load the reporter. Release names are `terno@<version>+<sha>`, taken from the record (a crash kept across an upgrade reports the build that crashed). Server-side scrubbing in the Sentry project is a good extra, but nothing in a report needs it: there is no message, no address and no path in one ("What gets sent" shows the exact event).
+Dev, demo and test builds never get a DSN (a test run only ever reports to a loopback sink). Release names are `terno@<version>+<sha>`, taken from the record (a crash kept across an upgrade reports the build that crashed). The `terno` project also scrubs server side, but nothing in a report needs it: there is no message, no address and no path in one ("What gets sent" shows the exact event).
 
 ## Agents (MCP + Skill)
 
