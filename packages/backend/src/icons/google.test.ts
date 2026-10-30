@@ -364,3 +364,22 @@ describe("photos waiting for a sign-in: races (plan 71)", () => {
     expect((await client.call("settings.update", {})).googlePhotos[String(gmail.id)]).toMatchObject({ apiDisabled: true });
   });
 });
+
+// a reset redraws every avatar in the windows: only when something of the account's was shown or on its way
+describe("no needless icon resets", () => {
+  it("photos off for an account that never had them leaves the windows' icons alone", async () => {
+    const { client, gmail, events } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    expect(events.filter((e) => e.reset)).toEqual([]);
+  });
+
+  it("photos that were on going off still reset (their photos must go)", async () => {
+    const { client, gmail, events } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true });
+    events.length = 0;
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    expect(events.some((e) => e.reset)).toBe(true);
+  });
+});

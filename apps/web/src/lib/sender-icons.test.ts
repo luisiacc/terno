@@ -122,3 +122,61 @@ describe("the renderer's sender icons (plan 22)", () => {
     expect(store.entries.get("a@gone.com")).toEqual({ state: "none" });
   });
 });
+
+// A reset (a source on or off, photos listed, icons forgotten) never blanks the avatars on screen: they'd flash to
+// initials and back. What's on screen keeps drawing until its new answer can be drawn.
+describe("a reset doesn't flash the list", () => {
+  const ref = (id: string, v = 1) => ({ id, v, kind: "site" as const, px: 32, full: false });
+  const answerAll = async (answer: (p: (typeof fake.pending)[number]) => unknown) => {
+    for (let i = 0; i < 10 && fake.pending.length; i++) {
+      const p = fake.pending.shift()!;
+      p.resolve(answer(p));
+      await frame();
+    }
+  };
+  const showing = (email: string, a: ReturnType<typeof ref>) => {
+    store.visible.add(email);
+    store.entries.set(email, { state: "ref", ref: a });
+    store.data.set(`${a.id}:${a.v}`, `data:${a.id}`);
+  };
+
+  it("an icon on screen stays drawn through the reset and its lookup; the same answer keeps it", async () => {
+    showing("ana@acme.com", ref("d:acme.com"));
+    const seen: (string | undefined)[] = [];
+    subscribeIcon("ana@acme.com", () => seen.push(shown("ana@acme.com")?.url));
+    fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    await frame();
+    expect(fake.pending.map((p) => p.method)).toEqual(["icons.lookup"]);
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    await answerAll(() => ({ "ana@acme.com": ref("d:acme.com") }));
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
+    // never drawn as initials in between
+    expect(seen.every((u) => u !== undefined)).toBe(true);
+  });
+
+  it("a new icon replaces the old one only once its bytes are here", async () => {
+    showing("ana@gmail.com", ref("d:gmail.com"));
+    fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+    await frame();
+    fake.pending.shift()!.resolve({ "ana@gmail.com": { ...ref("p:ana"), kind: "photo" } });
+    await frame();
+    await frame();
+    // the lookup answered; the photo's bytes are on their way: still the old icon
+    expect(fake.pending.map((p) => p.method)).toEqual(["icons.data"]);
+    expect(shown("ana@gmail.com")?.url).toBe("data:d:gmail.com");
+    await answerAll(() => ({ "p:ana": "data:photo" }));
+    expect(shown("ana@gmail.com")?.url).toBe("data:photo");
+  });
+
+  it("an icon that's gone (its source off) goes to initials when the answer says so; off-screen ones are forgotten", async () => {
+    showing("ana@gmail.com", { ...ref("p:ana"), kind: "photo" } as unknown as ReturnType<typeof ref>);
+    store.entries.set("away@x.com", { state: "ref", ref: ref("d:x.com") });
+    fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+    expect(store.entries.has("away@x.com")).toBe(false);
+    await frame();
+    expect(shown("ana@gmail.com")?.url).toBe("data:p:ana");
+    await answerAll(() => ({ "ana@gmail.com": null }));
+    expect(shown("ana@gmail.com")).toBeNull();
+  });
+});

@@ -155,8 +155,17 @@ export function applyAppearance(a: Appearance): void {
   } catch {
     /* private mode / quota: theme.js falls back to defaults */
   }
-  window.ternoDesktop?.setAppearance?.({ themeSource: a.theme, background: opaqueBackground(theme), vibrancy });
+  // only when it changes: the shell re-dressing the window (vibrancy, background) for nothing can flash it
+  const shell = { themeSource: a.theme, background: opaqueBackground(theme), vibrancy };
+  const shellKey = JSON.stringify(shell);
+  if (shellKey !== sentShell) {
+    sentShell = shellKey;
+    window.ternoDesktop?.setAppearance?.(shell);
+  }
 }
+
+/** What the desktop shell was last told (applyAppearance runs on every appearance save). */
+let sentShell: string | null = null;
 
 /**
  * Motion coming back on lifts `animation: none`, and every element with an entrance animation (an open dialog, its

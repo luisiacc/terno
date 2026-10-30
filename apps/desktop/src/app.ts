@@ -518,7 +518,13 @@ function readAppearance(): Appearance | null {
 let appearance: Appearance | null = null;
 let appearanceWrite: ReturnType<typeof setTimeout> | null = null;
 
+/** What each window was last dressed in: setting the same vibrancy and background again can flash it on macOS. */
+const dressed = new WeakMap<BrowserWindow, string>();
+
 function applyAppearanceTo(win: BrowserWindow, a: Appearance) {
+  const key = JSON.stringify([a, nativeTheme.prefersReducedTransparency]);
+  if (dressed.get(win) === key) return;
+  dressed.set(win, key);
   if (process.platform !== "darwin") {
     win.setBackgroundColor(a.background);
     return;

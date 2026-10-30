@@ -34,6 +34,24 @@ function rememberHeight(key: number, h: number) {
  * scripts (sandbox without allow-scripts), strict CSP, links opened externally.
  * allow-same-origin (without scripts) only lets the parent measure the height.
  */
+interface MailLook {
+  mail: "paper" | "themed";
+  /** the root's custom properties, as a style attribute */
+  style: string;
+}
+
+/** A mail document's colors, scheme and padding for the painted theme. */
+function mailLook(paper: boolean, mode: string): MailLook {
+  const c = mailColors()[paper ? "paper" : "themed"];
+  return { mail: paper ? "paper" : "themed", style: `--m-bg:${c.bg};--m-fg:${c.fg};--m-link:${c.link};--m-scheme:${paper ? "light" : mode};--m-pad:${paper ? "16px" : "0"}` };
+}
+
+/** Repaints a loaded mail document in place (no reload). */
+function paint(root: HTMLElement, look: MailLook): void {
+  root.setAttribute("style", look.style);
+  root.dataset.mail = look.mail;
+}
+
 export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper" }) {
   const ref = useRef<HTMLIFrameElement>(null);
   // the setting or this message's "Load content", in either mode (plan 37)
@@ -58,11 +76,24 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   }, [cidAllowed, accountId, cidKey, clean]);
   const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
   const paper = appearance === "paper" || hasOwnColors(clean);
-  const doc = useMemo(() => {
-    const c = mailColors()[paper ? "paper" : "themed"];
-    // the CSP is unchanged by theming
-    return `<!doctype html><html data-mail="${paper ? "paper" : "themed"}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:${c.bg};color:${c.fg};font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:${paper ? "light" : mode}}body{padding:${paper ? "16px" : "0"}}img{max-width:100%;height:auto}a{color:${c.link}}table{max-width:100%}</style></head><body>${visibleHtml}</body></html>`;
-  }, [visibleHtml, allowRemote, paper, themeKey, mode]);
+  // the colors, as variables on the document's root: a theme or "HTML mail" change repaints the loaded mail in place
+  const look = useMemo(() => mailLook(paper, mode), [paper, themeKey, mode]);
+  // the document is rebuilt only when what it shows changes (the mail, its remote content); its first paint has the
+  // colors of that moment. A rebuild reloads the frame (blank, then re-measured): theming must never cause one.
+  const [built, setBuilt] = useState({ html: visibleHtml, allowRemote, look });
+  if (built.html !== visibleHtml || built.allowRemote !== allowRemote) setBuilt({ html: visibleHtml, allowRemote, look });
+  const doc = useMemo(
+    () =>
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad)}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}</style></head><body>${built.html}</body></html>`,
+    [built],
+  );
+  // the loaded document follows the colors (and gets them again once a rebuilt one loads)
+  const lookRef = useRef(look);
+  useEffect(() => {
+    lookRef.current = look;
+    const root = ref.current?.contentDocument?.documentElement;
+    if (root) paint(root, look);
+  }, [look]);
 
   useEffect(() => {
     const frame = ref.current;
@@ -75,6 +106,7 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
       detach?.();
       const d = frame.contentDocument;
       if (!d) return;
+      paint(d.documentElement, lookRef.current);
       // the frame is sized to its content, so it never scrolls inside. The box (not scrollHeight, which
       // never drops below the frame and rounds down) shrinks back and covers fractional heights.
       const measure = () => {

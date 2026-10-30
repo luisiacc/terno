@@ -38,6 +38,11 @@ let flushQueued = false;
 /** addresses that already looked up again after their icon's bytes were gone (once each) */
 const refetched = new Set<string>();
 let wired = false;
+/**
+ * After a reset, the icon an on-screen address showed, kept until its new answer can be drawn (its bytes are here):
+ * a reset never blanks the avatars on screen (they'd flash to initials and back).
+ */
+const held = new Map<string, IconRef>();
 /** `shown` cache per address, so useSyncExternalStore sees the same object until something changes */
 const snapshots = new Map<string, ShownIcon | null>();
 
@@ -90,6 +95,22 @@ function setEntry(email: string, e: Entry): void {
 
 function apply(answers: Record<string, IconAnswer>): void {
   for (const [email, a] of Object.entries(answers)) {
+    // a held icon stays until its replacement's bytes are here; the same icon (or none) settles it now
+    if (held.has(email) && a === "again") {
+      // the backend is busy: still drawn, asked again shortly
+      setTimeout(() => {
+        if (!visible.has(email)) return;
+        batch.add(email);
+        schedule();
+      }, AGAIN_MS);
+      continue;
+    }
+    if (held.has(email) && a !== null && a !== "again" && getData(a) === undefined && dataKey(a) !== dataKey(held.get(email)!)) {
+      held.set(email, a);
+      dataBatch.set(dataKey(a), a);
+      continue;
+    }
+    held.delete(email);
     if (a === "again") {
       setEntry(email, { state: "idle" });
       setTimeout(() => visible.has(email) && request(email), AGAIN_MS);
@@ -108,14 +129,21 @@ function wire(): void {
   wired = true;
   client.on("icons", ({ icons, reset }) => {
     if (reset) {
-      entries.clear();
-      data.clear();
+      // stale-while-revalidate: what's on screen keeps showing and asks again (a source turned on or off, photos listed,
+      // icons forgotten); each avatar changes only when its new answer can be drawn. The rest is forgotten.
+      for (const email of entries.keys()) {
+        if (visible.has(email)) continue;
+        entries.delete(email);
+        snapshots.delete(email);
+      }
       batch.clear();
       dataBatch.clear();
-      snapshots.clear();
-      for (const email of listeners.keys()) notify(email);
-      // what's on screen asks again (a source turned on or off, photos listed, icons forgotten)
-      for (const email of visible) request(email);
+      for (const email of visible) {
+        const e = entries.get(email);
+        if (e?.state === "ref") held.set(email, e.ref);
+        batch.add(email);
+      }
+      schedule();
     }
     apply(icons);
   });
@@ -169,12 +197,16 @@ function pump(): void {
 }
 
 async function lookup(emails: string[]): Promise<void> {
-  for (const e of emails) entries.set(e, { state: "asked" });
+  // asked: but an icon on screen stays drawn while it's asked again
+  for (const e of emails) if (entries.get(e)?.state !== "ref") entries.set(e, { state: "asked" });
   try {
     apply(await client.call("icons.lookup", { emails }));
   } catch {
-    // the initials stay; a later mount or scroll asks again
-    for (const e of emails) if (entries.get(e)?.state === "asked") entries.delete(e);
+    // the initials stay (a held icon too); a later mount or scroll asks again
+    for (const e of emails) {
+      held.delete(e);
+      if (entries.get(e)?.state === "asked") entries.delete(e);
+    }
   }
 }
 
@@ -190,6 +222,12 @@ async function fetchData(refs: IconRef[]): Promise<void> {
     const url = got[ref.id];
     if (url) putData(dataKey(ref), url);
     else gone.add(ref.id);
+  }
+  // held icons whose replacement just arrived: swapped in one step
+  for (const [email, ref] of held) {
+    if (getData(ref) === undefined && !gone.has(ref.id)) continue;
+    held.delete(email);
+    setEntry(email, gone.has(ref.id) ? { state: "none" } : { state: "ref", ref });
   }
   // bytes the backend no longer has (evicted, a lost file): those addresses look the icon up again, once
   if (gone.size) {
@@ -335,5 +373,5 @@ export const __senderIconsForTests = {
   get inflight() {
     return inflight;
   },
-  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched].forEach((m) => m.clear()),
+  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched, held].forEach((m) => m.clear()),
 };

@@ -355,6 +355,7 @@ export class IconService {
   /** An account's photos off, or the account removed: its lists go, and their photos with them. */
   async dropPhotos(accountId: number): Promise<void> {
     await this.load();
+    const listing = this.peopleAborts.has(accountId) || this.peopleSyncing.has(accountId);
     this.peopleAborts.get(accountId)?.abort();
     this.peopleAborts.delete(accountId);
     this.peopleSyncing.delete(accountId);
@@ -364,7 +365,8 @@ export class IconService {
       for (const url of [had.own, ...had.map.values()]) if (url) this.cache.delete(photoKey(url));
       this.savePeople();
     }
-    this.invalidate();
+    // nothing of this account's was shown or on its way: the windows keep their icons (a reset redraws every avatar)
+    if (had || listing) this.invalidate();
   }
 
   // ───────────────────────────── Google photos ─────────────────────────────

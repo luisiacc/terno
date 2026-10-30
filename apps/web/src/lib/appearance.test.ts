@@ -220,3 +220,19 @@ describe("concurrent appearance changes", () => {
     expect(painted()).toBe("nord");
   });
 });
+
+// every appearance save re-applies; the desktop shell is told only what changed (re-dressing a window can flash it)
+describe("the desktop shell", () => {
+  it("hears an appearance once, and again only when it changes", async () => {
+    const { applyAppearance } = await import("./appearance");
+    const sent: unknown[] = [];
+    (window as unknown as { ternoDesktop: unknown }).ternoDesktop = { setAppearance: (a: unknown) => sent.push(a) };
+    applyAppearance({ ...SERVER, htmlMailAppearance: "auto" });
+    applyAppearance({ ...SERVER, htmlMailAppearance: "paper" });
+    applyAppearance({ ...SERVER, motionMs: 50 });
+    expect(sent).toHaveLength(1);
+    applyAppearance({ ...SERVER, theme: "light" });
+    expect(sent).toHaveLength(2);
+    delete (window as unknown as { ternoDesktop?: unknown }).ternoDesktop;
+  });
+});
