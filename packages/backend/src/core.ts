@@ -753,13 +753,14 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation, checkCurrent?: () => void): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
       // the categorizer's decisions commit together
       if (life) this.assertCurrent(life);
       const classifier = await this.classifier();
+      checkCurrent?.();
       const write = () => this.store.sync.ingest(chunk, { applyFilters, now: this.now(), classifier, observation });
       const r = await (life ? this.accountWrite(life, write) : write());
       inserted.push(...r.inserted);
@@ -1212,11 +1213,17 @@ export class BackendCore {
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
       let observation: FlagObservation | null = null;
-      const windowDays = (await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
+      const before = await this.store.accounts.get(accountId);
+      if (!this.current(life)) return;
+      const checkCurrent = () => {
+        this.assertCurrent(life);
+        if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
+      };
+      const windowDays = before?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, observation ?? undefined);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, observation ?? undefined, checkCurrent);
         },
         // the account's own window, else the general one
         windowDays,
@@ -1224,6 +1231,7 @@ export class BackendCore {
         updateFlags: async (updates) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
+            checkCurrent();
             for (const t of (await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, observation ?? undefined))).touched) touched.add(t);
           });
           this.notifyChanged(touched);
@@ -1231,6 +1239,7 @@ export class BackendCore {
         setBody: async (messageId, text, html, attachments, capture) => {
           this.assertCurrent(life);
           const classifier = await this.classifier();
+          checkCurrent();
           const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, captureUnavailable: capture?.captureUnavailable }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
@@ -1239,12 +1248,14 @@ export class BackendCore {
           this.notifyChanged(r.touched, false);
         },
         removeMessages: async (ids) => {
+          checkCurrent();
           this.notifyChanged((await this.accountWrite(life, () => this.store.sync.remove(ids))).touched);
         },
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
         // plan 68: the account's own folders; an unchanged list writes and says nothing
         setFolders: async (folders) => {
+          checkCurrent();
           const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders));
           if (!r.changed) return;
           this.server.emit("folders", await this.store.folders.list());
@@ -1252,23 +1263,23 @@ export class BackendCore {
           void this.rebuildFolders();
         },
       };
-      const before = await this.store.accounts.get(accountId);
       if (!this.current(life)) return;
       const accountKind = accountKindOf(before?.kind);
       // once the account is offline it says so until a pass works: a retry reads "reconnecting", never healthy
       const wasDown = Boolean(before?.syncState.connection);
       const epoch = this.connectivity.epoch;
       const startedOffline = !this.connectivity.online;
-      await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
       const started = performance.now();
       try {
         // plan 41: the pass is over (done or failed): what it stored as live mail is looked at now
         try {
-          this.assertCurrent(life);
+          checkCurrent();
+          await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
+          checkCurrent();
           observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
-          this.assertCurrent(life);
+          checkCurrent();
           await provider.sync(sink);
-          if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
+          checkCurrent();
           // plan 68: the account's own folders (Gmail's labels), only when they may have changed; a failure waits for the next pass
           try {
             await provider.folders?.(sink);

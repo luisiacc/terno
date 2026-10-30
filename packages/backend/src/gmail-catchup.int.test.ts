@@ -538,4 +538,59 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).not.toBe("idle");
   });
 
+
+  it("refuses later refresh chunks after credentials change following the first committed chunk", async () => {
+    const t = await mailbox(kind);
+    for (let i = 0; i < 450; i++) t.add(`chunk-${i}`);
+    const update = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
+    const writes = vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementation(async (...args) => {
+      const result = await update(...args);
+      if (t.backend.credentialsOf(t.account.id) === 0) await t.backend.signedIn(t.account.id);
+      return result;
+    });
+    await t.backend.syncAccount(t.account.id);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes.mock.calls[0]![1]).toHaveLength(200);
+    expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "refresh", baseline: t.baseline } });
+    expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(0);
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastSyncAt).toBeNull();
+    writes.mockRestore(); await t.reopen(); t.requests.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+    expect(t.requests.filter((u) => u.pathname === "/messages" || u.pathname === "/profile")).toHaveLength(0);
+    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(450);
+  });
+
+  it("rechecks credentials after classifier preparation before admitting ingestion", async () => {
+    const t = await mailbox(kind); t.seed();
+    const writes = vi.spyOn(t.backend.store.sync, "ingest");
+    vi.spyOn(t.backend, "classifier").mockImplementationOnce(async () => { await t.backend.signedIn(t.account.id); return null; });
+    await t.backend.syncAccount(t.account.id);
+    expect(writes).not.toHaveBeenCalled();
+    expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "enumerate", pages: 0 } });
+    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(0);
+    await t.reopen(); await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(4);
+  });
+
+
+  it("does not publish a stale syncing state when credentials change during window preparation", async () => {
+    const t = await mailbox(kind); t.seed();
+    const read = t.backend.store.settings.get.bind(t.backend.store.settings);
+    let replace = true;
+    vi.spyOn(t.backend.store.settings, "get").mockImplementation(async <T,>(key: string, fallback: T): Promise<T> => {
+      const result = await read(key, fallback);
+      if (key === "app" && replace) { replace = false; await t.backend.signedIn(t.account.id); }
+      return result;
+    });
+    await t.backend.syncAccount(t.account.id);
+    expect(replace).toBe(false);
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "idle", lastSyncAt: null });
+    expect(await t.cursor()).toBeUndefined();
+    expect(t.requests).toHaveLength(0);
+    await t.reopen(); await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+  });
+
 });
