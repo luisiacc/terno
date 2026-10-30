@@ -66,7 +66,7 @@ it("follows a renamed localized role and retains exact custom-folder identity th
 });
 
 it("ignores a nonselectable special-use parent when a selectable duplicate role exists", async () => {
-  const t = await setup({ A: { flags: ["\\Noselect"], "special-use": "\\Trash", folders: { Child: {} } }, Papelera: { "special-use": "\\Trash" } });
+  const t = await setup({ A: { flags: ["\\Noselect"], "special-use": "\\Trash", folders: { Child: {} } }, Zed: { "special-use": "\\Trash" } });
   const bytes = rawIdleMail("To trash", "Exact bytes");
   t.server.control.addMessage("INBOX", { raw: bytes });
   await t.backend.syncAccount(t.account.id);
@@ -77,7 +77,7 @@ it("ignores a nonselectable special-use parent when a selectable duplicate role 
   await t.client.call("threads.act", { threadIds: [thread.id], action: "trash" });
   await t.backend.runWorker();
   expect((await t.client.call("ops.list", {})).find((op) => op.kind === "trash")?.state).toBe("succeeded");
-  expect(t.server.control.listMessages("Papelera", { raw: true })[0]!.raw).toEqual(Buffer.from(bytes));
+  expect(t.server.control.listMessages("Zed", { raw: true })[0]!.raw).toEqual(Buffer.from(bytes));
 });
 
 it("refreshes a renamed special-use destination on the next sync", async () => {

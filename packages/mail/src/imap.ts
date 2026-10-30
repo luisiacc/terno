@@ -446,7 +446,7 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const rolePaths = new Set(Object.values(roles) as string[]);
   // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
   const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name");
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || [...m.flags].some((flag) => Object.hasOwn(SPECIAL_USE, flag) || flag === "\\Flagged" || flag === "\\Important");
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
@@ -690,12 +690,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const found: Partial<Record<Role, string>> = { inbox: "INBOX" };
     const list = listed ?? (await c.list());
     const selectable = list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent"));
-    for (const mb of selectable) {
-      const role = mb.specialUse && mb.specialUseSource !== "name" ? SPECIAL_USE[mb.specialUse] : undefined;
+    for (const mb of selectable) for (const flag of mb.flags) {
+      const role = Object.hasOwn(SPECIAL_USE, flag) ? SPECIAL_USE[flag] : undefined;
       if (role && roles?.[role] === mb.path && role !== "inbox") found[role] = mb.path;
     }
-    for (const mb of selectable) {
-      const role = mb.specialUse && mb.specialUseSource !== "name" ? SPECIAL_USE[mb.specialUse] : undefined;
+    for (const mb of selectable) for (const flag of mb.flags) {
+      const role = Object.hasOwn(SPECIAL_USE, flag) ? SPECIAL_USE[flag] : undefined;
       if (role && !found[role]) found[role] = mb.path;
     }
     for (const [role, re] of Object.entries(NAME_HINTS) as [Role, RegExp][]) {
