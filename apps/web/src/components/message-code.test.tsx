@@ -132,3 +132,17 @@ it("a copy that settles after the chip is gone leaves no timer and no snack", as
   expect(vi.getTimerCount()).toBe(0);
   root = createRoot(host);
 });
+
+// Codex review round 2: a chip shown again before the clipboard answers still learns of the copy
+it("a late copy turns the chip shown again outlined", async () => {
+  let ok!: () => void;
+  writeText.mockImplementation(() => new Promise<void>((resolve) => (ok = resolve)));
+  await show(message());
+  await click();
+  act(() => root.unmount());
+  root = createRoot(host);
+  await show(message());
+  expect(chip()!.hasAttribute("data-used")).toBe(false);
+  await act(async () => ok());
+  expect(chip()!.hasAttribute("data-used")).toBe(true);
+});

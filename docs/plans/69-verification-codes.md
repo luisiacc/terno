@@ -27,15 +27,15 @@
 
 `packages/i18n/src/code-words.ts` exports `CODE_WORDS: Record<LocaleId, readonly string[]>`, the words that announce a code in each shipped language (`en`: code, passcode, OTP; `es`: código, clave). The `Record<LocaleId, …>` type makes the type check fail until a new language adds its words, and the README's "Adding a language" step mentions it. Detection always uses the words of **every** language, not just the UI's: a Spanish speaker using Terno in English still gets codes from Spanish mail. The list is tiny and bundled eagerly (catalogs stay lazy).
 
-### Detection (`packages/core/src/codes.ts`, pure)
+### Detection
 
-`findCode(subject, bodyText, bodyHtml): string | null`
+`findCode(subject, body): string | null` in `packages/core/src/codes.ts` (pure, text only), and `mailText(html)` in `apps/web/src/lib/mail-text.ts`, which gives an HTML body's visible text.
 
-1. Text: the subject plus the body text, or, when there is none, the HTML reduced to text (drop `head`/`style`/`script` with their content, tags become spaces, entities for spaces and numbers decoded). Tags are gone before matching, so `<code>` never counts. URLs are removed too (`?code=123456` in a link is not shown to the reader). The body is capped at 20 000 characters.
+1. Text: the body the reader shows. For HTML, the browser's `DOMParser` reads it (so markup means what it means in the reader) and a tree walk keeps the text: `head`, `style`, `script`, `template`, `blockquote` (quoted mail), and elements hidden by their `hidden` attribute or an inline `display:none`, `visibility:hidden` or zero size/opacity are skipped whole. Cells and images become spaces, inline tags join digits ("<b>12</b>3456") and are spaces elsewhere, other tags line breaks; tags are never text, so `<code>` never counts. The HTML is capped at 200 kB and the text at 20 000 characters. Quoted lines and "On … wrote:" history are dropped, as are URLs (`?code=123456` in a link is not shown to the reader).
 2. Normalized like search (`normalizeText`: NFKD, marks stripped, lower case), so "Código" matches "codigo".
-3. Keywords: every language's words, normalized, whole words for scripts that space words (`\p{L}` lookarounds), plain substrings otherwise.
-4. Candidates: six digits, optionally split 3+3 by one space or hyphen (`123 456`, `123-456`), not part of something larger: no digit, letter or `#$€£+/` before it, no letter or digit after it, no decimal (`.5`, `,00`) after it, and no `digit[ -]` before or `[ -]digit` after it (phone numbers like `650 253 0000`).
-5. A candidate counts only within 120 characters of a keyword. The candidate closest to any keyword wins; the subject is checked first, so "123456 is your code" in the subject wins over the body. The result is the six digits without separators.
+3. Keywords: every language's words, normalized, whole words for scripts that space words (`\p{L}` lookarounds), plain substrings for Han, Kana, Thai, Lao, Khmer and Myanmar.
+4. Candidates: six digits, optionally split 3+3 by one space or hyphen (`123 456`, `123-456`) or one per box (`1 2 3 4 5 6`), not part of something larger: no digit, letter or `#$€£¥+/@=` before it, no letter, digit or `%` after it, no decimal or reference (`.5`, `,00`, `/789`) after it, no `letter.`/`digit.` before it, and no `digit[ -]` before or `[ -]digit` after it (phone numbers like `650 253 0000`).
+5. A candidate counts only within 120 characters of a keyword. The candidate closest to any keyword wins (one pass: both lists are in order). The subject is checked first, unless it is a reply's or forward's (`Re:`, `Fwd:`…), so "123456 is your code" wins over the body; a subject that announces a code takes the body's only candidate.
 
 Simple on purpose: it misses alphanumeric and 4/8-digit codes (out of scope) rather than guessing.
 
@@ -97,3 +97,11 @@ Codex's code review found six problems, each now covered by a test that fails wi
 4. **Named entities weren't decoded:** `c&oacute;digo` missed and `&pound;123456` passed. Common named entities (spaces, punctuation, currencies, accented letters) are decoded before matching.
 5. **A reply's subject brought back the original's code.** Subjects with a `Re:`/`Fwd:` prefix (any language `baseSubject` knows) aren't read.
 6. **A clipboard answer after the chip unmounted** started an uncancelled timer, or showed "Couldn't copy" over another thread. Late answers now only remember the copy.
+
+### Round 2
+
+Codex's second review found nine more, each now covered by a failing-without-the-fix test:
+
+1. **Matching was still quadratic:** every code was measured against every word (`"code 123456;"` × 16 000 took 530 ms). The closest word is now found in one pass over both ordered lists, and the subject is capped at 1 000 characters.
+2.–8. **The hand-written HTML scanner disagreed with the reader's parser:** a quoted `>` in an attribute, `İ` changing offsets when lowercased, a fake `</blockquote>` inside a comment, `<div hidden/>` (not self-closing in HTML), an unfinished tag, `</stylesheet>` ending a `<style>`, and `hidden` or `display:none` inside an unrelated attribute. The scanner is gone: the renderer parses with `DOMParser`, the same parser that decides what the reader shows, and hiding is read from the `hidden` attribute and the style attribute only. `findCode` takes text, so core stays parser-free.
+9. **A chip shown again before the clipboard answered stayed blue.** "Copied" is a small store the chips subscribe to (`useSyncExternalStore`), written when the check goes, or at once when the chip is already gone.

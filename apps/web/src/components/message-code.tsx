@@ -1,13 +1,9 @@
-import {
-  codeExpiry,
-  codeFresh,
-  findCode,
-  type MessageDetail,
-} from "@terno/core";
+import { codeExpiry, codeFresh, findCode, type MessageDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
 import { Check, Copy } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { mailText } from "~/lib/mail-text";
 import { snack } from "~/lib/snack";
 
 /** How long the check shows after a copy. */
@@ -15,11 +11,18 @@ export const COPIED_MS = 5000;
 const USED_MAX = 200;
 /** Messages whose code was copied this session, oldest first: their chip comes back outlined. */
 const used = new Set<number>();
+const listeners = new Set<() => void>();
 
 function remember(id: number): void {
   used.delete(id);
   used.add(id);
   if (used.size > USED_MAX) used.delete(used.values().next().value!);
+  for (const l of listeners) l();
+}
+
+function subscribe(l: () => void): () => void {
+  listeners.add(l);
+  return () => listeners.delete(l);
 }
 
 /** Tests: forget what was copied. */
@@ -34,24 +37,18 @@ export function resetCopiedCodes(): void {
 export function MessageCode({ m }: { m: MessageDetail }) {
   const [now, setNow] = useState(Date.now);
   const fresh = !m.isSent && codeFresh(m.date, now);
-  const code = useMemo(
-    () => (fresh ? findCode(m.subject, m.bodyText, m.bodyHtml) : null),
-    [fresh, m.subject, m.bodyText, m.bodyHtml],
-  );
+  // the body the reader shows: its HTML when there is one
+  const code = useMemo(() => (fresh ? findCode(m.subject, m.bodyHtml ? mailText(m.bodyHtml) : m.bodyText) : null), [fresh, m.subject, m.bodyText, m.bodyHtml]);
   const chip = useRef<HTMLButtonElement>(null);
   // one timer, to the exact expiry; a focused chip waits for the user to move on, so focus is never dropped
   useEffect(() => {
     if (!code) return;
     const expire = () => {
       const el = chip.current;
-      if (el && el === document.activeElement)
-        el.addEventListener("blur", () => setNow(Date.now()), { once: true });
+      if (el && el === document.activeElement) el.addEventListener("blur", () => setNow(Date.now()), { once: true });
       else setNow(Date.now());
     };
-    const id = setTimeout(
-      expire,
-      Math.max(0, codeExpiry(m.date) - Date.now()) + 1,
-    );
+    const id = setTimeout(expire, Math.max(0, codeExpiry(m.date) - Date.now()) + 1);
     return () => clearTimeout(id);
   }, [code, m.date]);
   if (!code) return null;
@@ -62,17 +59,10 @@ export function MessageCode({ m }: { m: MessageDetail }) {
   );
 }
 
-function CodeChip({
-  id,
-  code,
-  ref,
-}: {
-  id: number;
-  code: string;
-  ref: React.Ref<HTMLButtonElement>;
-}) {
+function CodeChip({ id, code, ref }: { id: number; code: string; ref: React.Ref<HTMLButtonElement> }) {
   const [copied, setCopied] = useState(false);
-  const [usedOnce, setUsedOnce] = useState(() => used.has(id));
+  // remembered when the check goes (or when the chip goes first): this chip, or the one shown again later, turns outlined
+  const usedOnce = useSyncExternalStore(subscribe, () => used.has(id));
   const [said, setSaid] = useState("");
   const hold = useRef<ReturnType<typeof setTimeout>>(undefined);
   // the clipboard answers later: a chip gone by then (folded, another thread) only remembers the copy
@@ -81,21 +71,24 @@ function CodeChip({
     alive.current = true;
     return () => {
       alive.current = false;
-      clearTimeout(hold.current);
+      if (hold.current !== undefined) {
+        clearTimeout(hold.current);
+        remember(id);
+      }
     };
-  }, []);
+  }, [id]);
   const copy = () => {
     navigator.clipboard.writeText(code).then(
       () => {
-        remember(id);
-        if (!alive.current) return;
+        if (!alive.current) return remember(id);
         clearTimeout(hold.current);
         setCopied(true);
         setSaid(t("codes.copied"));
         hold.current = setTimeout(() => {
+          hold.current = undefined;
           setCopied(false);
-          setUsedOnce(true);
           setSaid("");
+          remember(id);
         }, COPIED_MS);
       },
       () => {
@@ -124,10 +117,7 @@ function CodeChip({
         {/* the copy icon turns into a check: both stay mounted, one fades and grows as the other shrinks away */}
         <span aria-hidden className="relative size-3.5 shrink-0">
           <Copy className="absolute inset-0 size-3.5 transition-[opacity,scale] duration-base ease-spring group-data-copied/code:scale-50 group-data-copied/code:opacity-0" />
-          <Check
-            strokeWidth={2.75}
-            className="absolute inset-0 size-3.5 scale-50 opacity-0 transition-[opacity,scale] duration-base ease-spring group-data-copied/code:scale-100 group-data-copied/code:opacity-100"
-          />
+          <Check strokeWidth={2.75} className="absolute inset-0 size-3.5 scale-50 opacity-0 transition-[opacity,scale] duration-base ease-spring group-data-copied/code:scale-100 group-data-copied/code:opacity-100" />
         </span>
       </button>
       <span aria-live="polite" className="sr-only">
