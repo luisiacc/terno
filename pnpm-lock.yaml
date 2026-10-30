@@ -185,6 +185,7 @@ catalogs:
 
 patchedDependencies:
   '@base-ui/react@1.9.0': 57cd3032dc5edaa9f538a057c350e3655ed26a7566c65223bc4b3393384e82c2
+  fake-indexeddb@6.2.6: 41510dd9dc6bf4465b519ed80822240d40eb0e2c1a76eba0e516ddbebcfaffd9
   postal-mime@4.1.3: 7edae6a8972b96bd6d1b59e13f6528a0b5f3ec19e455e0ddc6cddcfc9102fd9d
 
 importers:
@@ -406,7 +407,7 @@ importers:
         version: 6.1.2(oxc-transform-react@0.155.0)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
       fake-indexeddb:
         specifier: 6.2.6
-        version: 6.2.6
+        version: 6.2.6(patch_hash=41510dd9dc6bf4465b519ed80822240d40eb0e2c1a76eba0e516ddbebcfaffd9)
       oxc-transform-react:
         specifier: ^0.155.0
         version: 0.155.0
@@ -495,7 +496,7 @@ importers:
         version: 0.28.2
       fake-indexeddb:
         specifier: 6.2.6
-        version: 6.2.6
+        version: 6.2.6(patch_hash=41510dd9dc6bf4465b519ed80822240d40eb0e2c1a76eba0e516ddbebcfaffd9)
       imapflow:
         specifier: ^2.8.0
         version: 2.8.0
@@ -569,7 +570,7 @@ importers:
         version: link:../mock-data
       fake-indexeddb:
         specifier: 6.2.6
-        version: 6.2.6
+        version: 6.2.6(patch_hash=41510dd9dc6bf4465b519ed80822240d40eb0e2c1a76eba0e516ddbebcfaffd9)
 
   packages/mail:
     dependencies:
@@ -6855,7 +6856,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  fake-indexeddb@6.2.6: {}
+  fake-indexeddb@6.2.6(patch_hash=41510dd9dc6bf4465b519ed80822240d40eb0e2c1a76eba0e516ddbebcfaffd9): {}
 
   fast-deep-equal@3.1.3: {}
 

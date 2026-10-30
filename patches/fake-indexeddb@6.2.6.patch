@@ -1,0 +1,233 @@
+diff --git a/build/cjs/lib/Index.js b/build/cjs/lib/Index.js
+index ee17791247174a3cfe8ec6f5054b496b36602f57..aff1f955d28dc16fa91e02d810d910619c6e268b 100644
+--- a/build/cjs/lib/Index.js
++++ b/build/cjs/lib/Index.js
+@@ -4,6 +4,7 @@ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+ exports.default = void 0;
++var _cmp = require("./cmp.js");
+ var _FDBRecord = _interopRequireDefault(require("../FDBRecord.js"));
+ var _errors = require("./errors.js");
+ var _extractKey = _interopRequireDefault(require("./extractKey.js"));
+@@ -83,22 +84,22 @@ class Index {
+   }
+ 
+   // http://www.w3.org/TR/2015/REC-IndexedDB-20150108/#dfn-steps-for-storing-a-record-into-an-object-store (step 7)
+-  storeRecord(newRecord) {
++  getIndexKeys(newRecord) {
+     let indexKey;
+     try {
+       indexKey = (0, _extractKey.default)(this.keyPath, newRecord.value).key;
+     } catch (err) {
+       if (err.name === "DataError") {
+         // Invalid key is not an actual error, just means we do not store an entry in this index
+-        return;
++        return [];
+       }
+       throw err;
+     }
+     if (!this.multiEntry || !Array.isArray(indexKey)) {
+       try {
+-        (0, _valueToKey.default)(indexKey);
++        indexKey = (0, _valueToKey.default)(indexKey);
+       } catch (e) {
+-        return;
++        return [];
+       }
+     } else {
+       // remove any elements from index key that are not valid keys and remove any duplicate elements from index
+@@ -115,35 +116,29 @@ class Index {
+       }
+       indexKey = keep;
+     }
+-    if (!this.multiEntry || !Array.isArray(indexKey)) {
+-      if (this.unique) {
+-        const existingRecord = this.records.get(indexKey);
+-        if (existingRecord) {
+-          throw new _errors.ConstraintError();
+-        }
++    return this.multiEntry && Array.isArray(indexKey) ? indexKey : [indexKey];
++  }
++  deleteRecord(record) {
++    for (const key of this.getIndexKeys(record)) {
++      const entry = { key, value: record.key };
++      const existing = this.records.records.get(entry);
++      // Unique trees compare only index keys; a failed write may belong to another primary key.
++      if (existing && (0, _cmp.cmpKeys)(existing.value, record.key) === 0) {
++        this.records.records.delete(entry);
+       }
+-    } else {
+-      if (this.unique) {
+-        for (const individualIndexKey of indexKey) {
+-          const existingRecord = this.records.get(individualIndexKey);
+-          if (existingRecord) {
+-            throw new _errors.ConstraintError();
+-          }
++    }
++  }
++  storeRecord(newRecord) {
++    const keys = this.getIndexKeys(newRecord);
++    if (this.unique) {
++      for (const key of keys) {
++        if (this.records.get(key)) {
++          throw new _errors.ConstraintError();
+         }
+       }
+     }
+-    if (!this.multiEntry || !Array.isArray(indexKey)) {
+-      this.records.put({
+-        key: indexKey,
+-        value: newRecord.key
+-      });
+-    } else {
+-      for (const individualIndexKey of indexKey) {
+-        this.records.put({
+-          key: individualIndexKey,
+-          value: newRecord.key
+-        });
+-      }
++    for (const key of keys) {
++      this.records.put({ key, value: newRecord.key });
+     }
+   }
+   initialize(transaction) {
+diff --git a/build/cjs/lib/ObjectStore.js b/build/cjs/lib/ObjectStore.js
+index b9be024817bd4150e35a5f462a98284aa6c4a0bf..a3b111375e6eb3ecaedcfd8572d7ac7efc5afba5 100644
+--- a/build/cjs/lib/ObjectStore.js
++++ b/build/cjs/lib/ObjectStore.js
+@@ -176,7 +176,7 @@ class ObjectStore {
+     // Delete existing indexes
+     if (existingRecord) {
+       for (const rawIndex of this.rawIndexes.values()) {
+-        rawIndex.records.deleteByValue(newRecord.key);
++        rawIndex.deleteRecord(existingRecord);
+       }
+     }
+ 
+@@ -210,7 +210,9 @@ class ObjectStore {
+       }
+     }
+     for (const rawIndex of this.rawIndexes.values()) {
+-      rawIndex.records.deleteByValue(key);
++      for (const record of deletedRecords) {
++        rawIndex.deleteRecord(record);
++      }
+     }
+   }
+ 
+diff --git a/build/esm/lib/Index.js b/build/esm/lib/Index.js
+index de0b14be5b1fee07ba204d271da0458daea609a0..eca9ee94c9688a93b53a4ad0eda1820541909c70 100644
+--- a/build/esm/lib/Index.js
++++ b/build/esm/lib/Index.js
+@@ -1,3 +1,4 @@
++import { cmpKeys } from "./cmp.js";
+ import FDBRecord from "../FDBRecord.js";
+ import { ConstraintError } from "./errors.js";
+ import extractKey from "./extractKey.js";
+@@ -76,22 +77,22 @@ class Index {
+   }
+ 
+   // http://www.w3.org/TR/2015/REC-IndexedDB-20150108/#dfn-steps-for-storing-a-record-into-an-object-store (step 7)
+-  storeRecord(newRecord) {
++  getIndexKeys(newRecord) {
+     let indexKey;
+     try {
+       indexKey = extractKey(this.keyPath, newRecord.value).key;
+     } catch (err) {
+       if (err.name === "DataError") {
+         // Invalid key is not an actual error, just means we do not store an entry in this index
+-        return;
++        return [];
+       }
+       throw err;
+     }
+     if (!this.multiEntry || !Array.isArray(indexKey)) {
+       try {
+-        valueToKey(indexKey);
++        indexKey = valueToKey(indexKey);
+       } catch (e) {
+-        return;
++        return [];
+       }
+     } else {
+       // remove any elements from index key that are not valid keys and remove any duplicate elements from index
+@@ -108,35 +109,29 @@ class Index {
+       }
+       indexKey = keep;
+     }
+-    if (!this.multiEntry || !Array.isArray(indexKey)) {
+-      if (this.unique) {
+-        const existingRecord = this.records.get(indexKey);
+-        if (existingRecord) {
+-          throw new ConstraintError();
+-        }
++    return this.multiEntry && Array.isArray(indexKey) ? indexKey : [indexKey];
++  }
++  deleteRecord(record) {
++    for (const key of this.getIndexKeys(record)) {
++      const entry = { key, value: record.key };
++      const existing = this.records.records.get(entry);
++      // Unique trees compare only index keys; a failed write may belong to another primary key.
++      if (existing && cmpKeys(existing.value, record.key) === 0) {
++        this.records.records.delete(entry);
+       }
+-    } else {
+-      if (this.unique) {
+-        for (const individualIndexKey of indexKey) {
+-          const existingRecord = this.records.get(individualIndexKey);
+-          if (existingRecord) {
+-            throw new ConstraintError();
+-          }
++    }
++  }
++  storeRecord(newRecord) {
++    const keys = this.getIndexKeys(newRecord);
++    if (this.unique) {
++      for (const key of keys) {
++        if (this.records.get(key)) {
++          throw new ConstraintError();
+         }
+       }
+     }
+-    if (!this.multiEntry || !Array.isArray(indexKey)) {
+-      this.records.put({
+-        key: indexKey,
+-        value: newRecord.key
+-      });
+-    } else {
+-      for (const individualIndexKey of indexKey) {
+-        this.records.put({
+-          key: individualIndexKey,
+-          value: newRecord.key
+-        });
+-      }
++    for (const key of keys) {
++      this.records.put({ key, value: newRecord.key });
+     }
+   }
+   initialize(transaction) {
+diff --git a/build/esm/lib/ObjectStore.js b/build/esm/lib/ObjectStore.js
+index 8dafa6c65aabddbc55ba1371189989c709c33930..7cd61b479025d7411bd187e015c6fe259a6a4a60 100644
+--- a/build/esm/lib/ObjectStore.js
++++ b/build/esm/lib/ObjectStore.js
+@@ -169,7 +169,7 @@ class ObjectStore {
+     // Delete existing indexes
+     if (existingRecord) {
+       for (const rawIndex of this.rawIndexes.values()) {
+-        rawIndex.records.deleteByValue(newRecord.key);
++        rawIndex.deleteRecord(existingRecord);
+       }
+     }
+ 
+@@ -203,7 +203,9 @@ class ObjectStore {
+       }
+     }
+     for (const rawIndex of this.rawIndexes.values()) {
+-      rawIndex.records.deleteByValue(key);
++      for (const record of deletedRecords) {
++        rawIndex.deleteRecord(record);
++      }
+     }
+   }
+ 
