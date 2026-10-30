@@ -245,7 +245,7 @@ The missing direct OPFS verification is now complete on unchanged conformance/ru
 
 `d0a977ae` prevents stale renderer RPC/retry work crossing reset generations. Root also corrected the old perf oracle to Plan75's intentional retained-image revalidation, with a clear-on-reset inverse failing the exact image assertion. New held requests, zero row rerenders, positive icon renders, network/DOM/frame bounds and real Settings-off clearing remain asserted. After rebase58direct checks/types/lint pass and the exact dev browser case passes. No shared reset-policy change, budget relaxation, production build or38-successor qualification. [Evidence and review limits](../plans/drafts/release-sender-icon-clear.md).
 
-The ingestion optimization is NOT landed: Root's660functional checks pass, but the same paired perf gate fails0.96513versus0.97. Further measured source work is pending; original and later failures remain recorded.
+The initial ingestion optimization failed Root qualification0.96513versus0.97 and was not landed. The continued bounded-write series is now landed below; that original failure remains recorded.
 
 ## Landed repair: standalone CID encoding
 
@@ -254,3 +254,8 @@ The ingestion optimization is NOT landed: Root's660functional checks pass, but t
 ## Landed repair: remaining navigation/print/visual cluster
 
 `e67b69cc` fixes the print fixture's focus/dismissal sequencing and updates only the two light search/category-picker baselines to independently verified approved production ACTUALs. No production changes or screenshot-policy relaxation. Root's 5 targeted browser cases, 2 dark captures/axe checks, web types, lint and whitespace pass after rebase; one review: zero findings. The live design-switch case passes unchanged, with no new product-fix claim. [Exact scope/provenance](../plans/drafts/release-navigation-visual.md). Full release gates remain open.
+
+
+## Landed repair: bounded SQL ingestion writes
+
+`e43b611d` eliminates redundant new attachment writes and batches eligible new bodies/reverse references with transactional rollback and reader boundaries intact. Root passed678native/WASM controls, db types/lint/whitespace and the unchanged paired throughput gate:1.0189412380>=0.97, multiplier1, CPU0.931. Earlier failures remain recorded. One review covered the earlier attachment optimization; later batching has fail-first and integration evidence without independent re-review. [Scope, commands and limits](../plans/drafts/release-ingest-throughput.md). No full performance/release clearance.
