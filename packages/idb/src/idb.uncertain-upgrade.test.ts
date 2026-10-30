@@ -58,7 +58,7 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 16, logical: 28 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 17, logical: 29 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -101,7 +101,7 @@ it("preserves a complete canonical physical10/logical23 fixture through the phys
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 16, logical: 28 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 17, logical: 29 });
     const [account] = await withAccounts(seed, 1);
     await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
     await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);

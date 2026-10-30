@@ -980,6 +980,16 @@ ALTER TABLE recipient_receipts ADD COLUMN hasRejected INTEGER NOT NULL DEFAULT 0
 ALTER TABLE recipient_receipts ADD COLUMN wireOwnerId TEXT;
 UPDATE recipient_receipts SET hasRejected=1 WHERE state='accepted';
 ` },
+  { version: 29, name: "bounded recipient FTS preparation", sql: `
+CREATE TABLE recipient_fts_stage (message_id INTEGER PRIMARY KEY, tokens TEXT NOT NULL);
+DROP TRIGGER messages_fts_ai;
+CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, subject, from_text, recipients, body)
+  VALUES (new.id, new.subject, new.from_name || ' ' || new.from_email,
+          coalesce((SELECT tokens FROM recipient_fts_stage WHERE message_id=new.id), new.recipients_text),
+          coalesce((SELECT body_text FROM message_bodies WHERE message_id=new.id), ''));
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

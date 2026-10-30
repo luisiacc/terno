@@ -7,15 +7,17 @@ export const RECIPIENT_RECEIPT_BYTES = 4 * 1024 * 1024;
 export const RECIPIENT_OCCURRENCE_LIMIT = 3000;
 export const RECIPIENT_PART_BYTES = 16384;
 
-export async function recipientReceiptParts(fields: { to: Address[]; cc: Address[]; bcc: Address[] }, yieldTo: () => Promise<void>): Promise<{ parts: string[]; count: number; charge: number; text: string; normalized: string }> {
+export async function recipientReceiptParts(fields: { to: Address[]; cc: Address[]; bcc: Address[] }, yieldTo: () => Promise<void>): Promise<{ parts: string[]; count: number; charge: number; text: string; normalized: string; toJson: string; ccJson: string; bccJson: string }> {
   const count = fields.to.length + fields.cc.length + fields.bcc.length;
   if (count > RECIPIENT_OCCURRENCE_LIMIT) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.capacity"));
   const encoder = new TextEncoder();
   const parts: string[] = [], textParts: string[] = [], normalizedParts: string[] = [];
+  const addressJson: Record<"to" | "cc" | "bcc", string[]> = { to: [], cc: [], bcc: [] };
   let part: string[] = [], size = 2, bytes = 0, processed = 0;
   for (const role of ["to", "cc", "bcc"] as const) for (const address of fields[role]) {
     const text = address.name ? `${address.name} ${address.email}` : address.email;
     textParts.push(text); normalizedParts.push(normalizeText(text));
+    addressJson[role].push(JSON.stringify(address));
     const item = JSON.stringify({ role, ...address });
     const itemBytes = encoder.encode(item).length;
     if (itemBytes + 2 > RECIPIENT_PART_BYTES) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.capacity"));
@@ -26,7 +28,7 @@ export async function recipientReceiptParts(fields: { to: Address[]; cc: Address
     if (++processed % 32 === 0) await yieldTo();
   }
   if (part.length) { const serialized = `[${part.join(",")}]`; parts.push(serialized); bytes += encoder.encode(serialized).length; }
-  return { parts, count, charge: bytes + count * 16 + parts.length * 128 + 1024, text: textParts.join(" "), normalized: normalizedParts.join(" ") };
+  return { parts, count, charge: bytes + count * 16 + parts.length * 128 + 1024, text: textParts.join(" "), normalized: normalizedParts.join(" "), toJson: `[${addressJson.to.join(",")}]`, ccJson: `[${addressJson.cc.join(",")}]`, bccJson: `[${addressJson.bcc.join(",")}]` };
 }
 
 export type RecipientOutcome = { email: string; outcome: "accepted" | "rejected" | "unknown" };

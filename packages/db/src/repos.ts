@@ -332,6 +332,7 @@ export function enqueueOp(
   op: { accountId: number; kind: string; target: { messageIds?: number[] } & Record<string, unknown>; payload?: unknown },
   now = Date.now(),
   intentVersion?: number,
+  preparedPayloadJson?: string,
 ): string | null {
   const targetJson = JSON.stringify(op.target);
   const group = GROUP[op.kind];
@@ -383,13 +384,13 @@ export function enqueueOp(
       op.accountId,
       op.kind,
       targetJson,
-      JSON.stringify(op.payload ?? {}),
+      preparedPayloadJson ?? JSON.stringify(op.payload ?? {}),
       now,
       now,
     );
     for (const messageId of new Set(op.target.messageIds ?? [])) {
       db.run("INSERT OR IGNORE INTO op_targets (op_id, message_id, grp) VALUES (?, ?, ?)", id, messageId, group ?? op.kind);
-      bindFlagTarget(sqlFlags(db), getOp(db, id)!, messageId, flagVersion);
+      if (operationFlagFields(op.kind).length) bindFlagTarget(sqlFlags(db), getOp(db, id)!, messageId, flagVersion);
     }
     return id;
   });

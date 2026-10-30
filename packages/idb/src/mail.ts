@@ -730,7 +730,7 @@ export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId"
   return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
 }
 
-export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number, observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string }): IngestResult {
+export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number, observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string; toJson: string; ccJson: string; bccJson: string }): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   const messages = T(c, "messages");
   let own: Set<string> | null = null;
@@ -774,10 +774,10 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         from_email: fromEmail,
         from_domain: normalizeText(emailDomain(fromEmail)),
         from_name_norm: normalizeText(msg.from.name),
-        to_json: JSON.stringify(msg.to),
-        cc_json: JSON.stringify(msg.cc),
+        to_json: preparedRecipients?.toJson ?? JSON.stringify(msg.to),
+        cc_json: preparedRecipients?.ccJson ?? JSON.stringify(msg.cc),
         reply_to_json: JSON.stringify(msg.replyTo ?? []),
-        bcc_json: JSON.stringify(msg.bcc),
+        bcc_json: preparedRecipients?.bccJson ?? JSON.stringify(msg.bcc),
         recipients_text: recipients,
         recipients_norm: preparedRecipients?.normalized ?? normalizeText(recipients),
         subject: msg.subject,

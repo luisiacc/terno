@@ -7,7 +7,7 @@ import { sqlFlags } from "./flag-intents";
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
 import { pendingFlagFields, pruneOpTargets } from "./repos";
-import { answeredThreads, FACT_COLUMNS, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
+import { answeredThreads, FACT_COLUMNS, noteSentMail, noteSentMailPrepared, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
 
 
@@ -220,7 +220,7 @@ export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId"
 }
 
 /** Upserts and threads one batch atomically; recomputes aggregates once per touched thread. */
-export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string }): IngestResult {
+export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string; toJson: string; ccJson: string; bccJson: string; ftsTokens?: string; correspondentChunks?: string[][] }): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   let own: Set<string> | null = null;
   db.tx(() => {
@@ -255,6 +255,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       if (msg.bodyText !== null || msg.bodyHtml !== null) {
         db.run("INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml);
       }
+      if (preparedRecipients?.ftsTokens !== undefined) db.run("INSERT INTO recipient_fts_stage(message_id,tokens) VALUES(?,?)", allocated, preparedRecipients.ftsTokens);
       const id = db.run(
         INSERT_MESSAGE,
         allocated,
@@ -268,9 +269,9 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         fromEmail,
         normalizeText(emailDomain(fromEmail)),
         normalizeText(msg.from.name),
-        JSON.stringify(msg.to),
-        JSON.stringify(msg.cc),
-        JSON.stringify(msg.bcc),
+        preparedRecipients?.toJson ?? JSON.stringify(msg.to),
+        preparedRecipients?.ccJson ?? JSON.stringify(msg.cc),
+        preparedRecipients?.bccJson ?? JSON.stringify(msg.bcc),
         recipients,
         preparedRecipients?.normalized ?? normalizeText(recipients),
         msg.subject,
@@ -294,13 +295,15 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         b(msg.bulk ?? false),
         JSON.stringify(msg.replyTo ?? []),
       ).lastInsertRowid;
+      if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
       if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
       else if (refs.length > 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) SELECT ?, value, ? FROM json_each(?)", msg.accountId, id, JSON.stringify(refs));
       // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
       if (!msg.isDraft) {
         own ??= ownAddresses(db);
         if (msg.isSent) {
-          noteSentMail(db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
+          if (preparedRecipients?.correspondentChunks) noteSentMailPrepared(db, fromEmail, preparedRecipients.correspondentChunks);
+          else noteSentMail(db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
           own.add(addressKey(fromEmail));
         }
         if (refs.length && (msg.isSent || own.has(addressKey(fromEmail)))) for (const t of answeredThreads(db, refs)) result.touchedThreads.add(t);

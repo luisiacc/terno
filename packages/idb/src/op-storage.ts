@@ -3,7 +3,7 @@ import { UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
 export const OP_STORAGE_VERSION = 11;
 /** the database's physical version (schema.ts says what each one added); a newer one is another adapter's */
-export const IDB_VERSION = 16;
+export const IDB_VERSION = 17;
 export const OP_PART_STORES = ["op_control", "op_target", "op_error"] as const;
 export type OpPartStore = typeof OP_PART_STORES[number];
 export type OpPhysicalStore = "ops" | OpPartStore;

@@ -1,3 +1,4 @@
+import { prepareRecipientCorrespondents, prepareRecipientFts } from "./recipient-fts-preparation";
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
 import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
@@ -722,7 +723,10 @@ export class SqlMailStore implements MailStore {
     queueSend: async (p) => {
       p = structuredClone(p);
       const preparedRecipients = (await this.accounts.get(p.accountId))?.kind === "imap" ? await recipientReceiptParts(p, this.yieldTo) : null;
+      const ftsTokens = preparedRecipients ? await prepareRecipientFts(this.db, p, this.yieldTo) : undefined;
+      const correspondentChunks = preparedRecipients ? await prepareRecipientCorrespondents(p, this.yieldTo) : undefined;
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.yieldTo)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
+      if (preparedRecipients) await this.yieldTo();
       return this.db.tx(() => {
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
@@ -793,10 +797,13 @@ export class SqlMailStore implements MailStore {
           ],
           p.now,
           undefined,
-          preparedRecipients ?? undefined,
+          preparedRecipients ? { ...preparedRecipients, ftsTokens, correspondentChunks } : undefined,
         );
         const localId = ingest.inserted[0]!;
-        const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        const payloadJson = preparedRecipients
+          ? `${JSON.stringify({ ...payload, to: undefined, cc: undefined, bcc: undefined }).slice(0, -1)},"to":${preparedRecipients.toJson},"cc":${preparedRecipients.ccJson},"bcc":${preparedRecipients.bccJson}}`
+          : undefined;
+        const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now, undefined, payloadJson)!;
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(sqlRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap") reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);

@@ -247,6 +247,24 @@ export function noteSentMail(db: Db, from: string, recipients: readonly Address[
   return queued;
 }
 
+/** The same written-recipient updates, with bounded batches for a prepared outgoing envelope. */
+export function noteSentMailPrepared(db: Db, from: string, chunks: readonly string[][]): boolean {
+  let queued = noteSentMail(db, from, []);
+  for (const chunk of chunks) {
+    const changed = new Set(db.all<{ email: string }>(`INSERT INTO correspondents (email, written)
+      SELECT value, 1 FROM json_each(?) WHERE instr(value, '@') > 0
+      ON CONFLICT (email) DO UPDATE SET written = 1 WHERE written = 0 RETURNING email`, JSON.stringify(chunk)).map((row) => row.email));
+    const eligible = chunk.filter((key) => changed.has(key) && automatedLevel({ from_email: key, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) !== 2);
+    if (!eligible.length || factsPhase(db).phase === "senders") continue;
+    const probes = eligible.map((key) => { const at = key.lastIndexOf("@"); const local = at > 0 ? key.slice(0, at) : null; return { key, lower: local === null ? null : `${local}+`, upper: local === null ? null : `${local},` }; });
+    const candidates = new Set(db.all<{ email: string }>(`SELECT json_extract(j.value, '$.key') AS email FROM json_each(?) j
+      WHERE EXISTS (SELECT 1 FROM messages WHERE from_email=json_extract(j.value, '$.key') AND id>0)
+         OR (json_extract(j.value, '$.lower') IS NOT NULL AND EXISTS (SELECT 1 FROM messages WHERE from_email>json_extract(j.value, '$.lower') AND from_email<json_extract(j.value, '$.upper')))`, JSON.stringify(probes)).map((row) => row.email));
+    for (const key of eligible) if (candidates.has(key) && requeueSender(db, key)) queued = true;
+  }
+  return queued;
+}
+
 /** Threads, in every account, holding a message these references name: a reply of yours may have answered them (Codex R7). */
 export function answeredThreads(db: Db, refs: readonly string[]): number[] {
   if (refs.length === 0) return [];

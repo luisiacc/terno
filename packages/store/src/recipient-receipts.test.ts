@@ -11,6 +11,7 @@ it("bounds captured recipient parts and reserves UTF-8 bytes for outcome publica
   expect(receipt.count).toBe(3000);
   const expected = to.map((address) => `${address.name} ${address.email}`).join(" ");
   expect(receipt.text).toBe(expected); expect(receipt.normalized).toBe(normalizeText(expected));
+  expect((receipt as unknown as { toJson: string }).toJson).toBe(JSON.stringify(to));
   expect(receipt.charge).toBeGreaterThan(receipt.parts.reduce((n, part) => n + new TextEncoder().encode(part).length, 0));
   await expect(recipientReceiptParts({ to: [...to, to[0]!], cc: [], bcc: [] }, yieldTo)).rejects.toThrow();
   expect((await recipientReceiptParts({ to: [{ name: "ñ", email: "a@example.test" }], cc: [], bcc: [] }, yieldTo)).charge).toBeGreaterThan((await recipientReceiptParts({ to: [{ name: "n", email: "a@example.test" }], cc: [], bcc: [] }, yieldTo)).charge);
