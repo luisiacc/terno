@@ -114,3 +114,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: repeated SQL navigation
 
 `2c494cb8` adds a single bounded private thread cache with mutation isolation, real autocommit/version guards, race-bracketed retention and close disposal. Root90native/WASM checks/types/lint and unchanged34-case perf file pass;5,000-message repeated-read p95is1.5305ms/5ms, random0.11175ms/5ms. One review0findings. Cold materialization and exact heap measurement remain unqualified; no payload, schema, sample or budget changes. [Design, commands and limits](../plans/drafts/release2-sql-navigation.md).
+
+
+## Landed repair: revealed-field focus intent
+
+`3e800534` cancels a pending Cc/Bcc/Subject reveal move when newer focus/pointer/Tab/draft/compose intent wins, with bounded frame/listener cleanup and ordinary keyboard positive controls. Root71unit/56browser cases/types/lint/axe pass; four en/es light/dark captures inspected. One review0findings. [Exact controls and limits](../plans/drafts/release2-revealed-field-focus.md). Held stored-open P2 unchanged; no full or packaged clearance.
