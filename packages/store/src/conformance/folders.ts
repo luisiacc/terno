@@ -1,5 +1,6 @@
 import { folderRef } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { AWAITING_IDENTITY } from "../types";
 import type { MailStore } from "../mail-store";
 import { generateDataset } from "@terno/mock-data";
 import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
@@ -36,6 +37,82 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   };
 
   describe(`folders (plan 68): ${name}`, () => {
+    it("IMAP identity: holds reject stale adoption, hydration, flags and automatic asset deletion", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const original = msg({ accountId: account!, providerMsgId: "held-assets", bodyText: "exact body", locations: [loc("A", 1)], attachments: [{ filename: "bytes.bin", mime: "application/octet-stream", size: 3, bytes: new Uint8Array([0, 255, 128]) }] });
+      const { inserted: [id] } = await ingest(store, [original]);
+      const thread = await threadOf(store, "held-assets");
+      const attachment = (await store.threads.get(thread))!.messages[0]!.attachments[0]!;
+      const locations = store.providerStore(account!).locations;
+      await locations.removeMany([id!], "A");
+      await locations.upsert(id!, "B", 2, 99, ["\\Seen"]);
+      expect(await locations.of([id!])).toEqual([]);
+      await store.sync.setBody(id!, "WRONG body", null, { now: NOW, classifier: null, attachments: [] });
+      await store.sync.updateFlags(account!, [{ messageId: id!, flags: { isRead: true } }]);
+      await ingest(store, [{ ...original, bodyText: "WRONG ingest", locations: [loc("B", 99)], attachments: [] }]);
+      await store.sync.remove([id!]);
+      store = await harness.reopen(store); open.push(store);
+      expect((await store.threads.get(thread))!.messages[0]).toMatchObject({ id, bodyText: "exact body", isRead: false });
+      expect(await store.attachments.read(account!, attachment.assetId!, 0)).toBe("AP+A");
+      expect((await store.storage.threads(0, 50)).find((row) => row.id === thread)?.kept).toBe(true);
+    });
+
+    it("IMAP identity: every target and every captured locator must match before dispatch", async () => {
+      const store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: [first, second] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1)] }), msg({ accountId: account!, locations: [loc("A", 2)] })]);
+      const locations = store.providerStore(account!).locations;
+      const captured = await locations.of([first!, second!]);
+      let issued = 0;
+      const start = async () => { issued++; };
+      await locations.dispatch([first!, second!], captured, start);
+      await locations.upsert(first!, "A", 1, 8, []);
+      await expect(locations.dispatch([first!, second!], captured, start)).rejects.toThrow("IMAP identity unavailable");
+      await locations.remove(second!, "A");
+      await expect(locations.dispatch([first!, second!], await locations.of([first!, second!]), start)).rejects.toThrow("IMAP identity unavailable");
+      expect(issued).toBe(1);
+    });
+
+    it("IMAP identity: parking keeps W02 intent, refunds dispatch and ignores network/auth resumes", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: [id] } = await ingest(store, [msg({ accountId: account!, providerMsgId: "parked-identity", locations: [loc("A", 1)] })]);
+      await store.sync.beginObservation(account!, { authoritativeFlags: true });
+      const thread = await threadOf(store, "parked-identity");
+      const action = await store.threads.act({ threadIds: [thread], action: "markRead", signal: null, now: NOW });
+      const [claimed] = await store.ops.claimReady(NOW, 20);
+      await store.providerStore(account!).locations.remove(id!, "A");
+      await store.ops.fail(claimed!.id, "identity guidance", true, NOW, { identity: true, keepAttempt: true });
+      store = await harness.reopen(store); open.push(store);
+      await store.ops.recover(NOW + 1);
+      await store.ops.resumeNetwork(account!, NOW + 2);
+      await store.ops.resumeAuth(account!, NOW + 3);
+      expect(await store.ops.claimReady(NOW + 86400000, 20)).toEqual([]);
+      expect(await store.ops.nextAttemptAt()).toBeNull();
+      const op = await store.ops.get(action.opIds[0]!);
+      expect(op).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: JSON.stringify({ messageIds: [id] }) });
+      const observation = await store.sync.beginObservation(account!, { authoritativeFlags: true });
+      await store.sync.updateFlags(account!, [{ messageId: id!, expectedProviderMsgId: "parked-identity", flags: { isRead: false } }], observation!);
+      expect((await store.threads.get(thread))!.messages[0]!.isRead).toBe(true);
+    });
+
+    it("IMAP identity: a stale second mapping rolls back the first binding and all holds", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: [first, second] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1)] }), msg({ accountId: account!, locations: [loc("A", 2)] })]);
+      let locations = store.providerStore(account!).locations;
+      const before = await locations.of([first!, second!]);
+      await locations.dispatch([first!, second!], before, async () => {}, [first!, second!]);
+      await expect(locations.mappedMove([before[0]!, { ...before[1]!, uid: 999 }], "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false)).rejects.toThrow();
+      store = await harness.reopen(store); open.push(store); locations = store.providerStore(account!).locations;
+      expect(await locations.of([first!, second!])).toEqual(before);
+      expect(await locations.unresolved([first!, second!])).toEqual([first!, second!]);
+      await locations.mappedMove(before, "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false);
+      expect(await locations.unresolved([first!, second!])).toEqual([]);
+      await expect(locations.dispatch([first!, second!], await locations.of([first!, second!]), async () => "mapped")).resolves.toBe("mapped");
+    });
+
     it("IMAP identity: a removed locator durably retains its body and claimed intent", async () => {
       let store = await fresh();
       const [, account] = await withAccounts(store);

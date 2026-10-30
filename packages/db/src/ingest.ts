@@ -229,6 +229,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       // the same provider message, else the server copy of a message we sent (adopt the optimistic local row
       // instead of duplicating it): one lookup for both
       const existing = findIngestMessage(db, msg);
+      if (existing && db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", existing.id)) continue;
       if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;

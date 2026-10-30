@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail";
+import { AWAITING_IDENTITY } from "@terno/store";
 import { sqlDb } from "@terno/db";
 import imapkit from "imapkit";
 import { afterEach, expect, it, vi } from "vitest";
@@ -81,7 +82,10 @@ it("does not acknowledge a queued read while its target is unlocated", async () 
   const retained = await reopened.backend.store.ops.get(op.id);
   expect(retained).not.toBeNull();
   expect(JSON.parse(retained!.target_json)).toEqual({ messageIds: [message.id] });
-  expect(retained!.state).not.toBe("succeeded");
+  expect(retained).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY });
+  expect(retained!.last_error).toContain("errors.imap.identityUnavailable");
+  await reopened.backend.runWorker();
+  expect(await reopened.backend.store.ops.get(op.id)).toEqual(retained);
   expect(t.server.control.getMessage("A", destination.uid, { raw: true }).flags).not.toContain("\\Seen");
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
 });
@@ -106,6 +110,7 @@ it.each([false, true])("does not target an equal-envelope different body after r
   expect(before.bodyText).toBe("AAAA\n");
   await t.client.call("threads.act", { threadIds: [firstRow.thread_id], action: "markRead" });
   const queued = (await t.client.call("ops.list", {})).find((item) => item.kind === "markRead")!;
+  const queuedTarget = (await t.backend.store.ops.get(queued.id))!.target_json;
   expect(queued.state).toBe("queued");
   const original = ImapFlow.prototype.status;
   let moved = false;
@@ -129,6 +134,9 @@ it.each([false, true])("does not target an equal-envelope different body after r
   const firstRemote = remote.find((m) => m.raw!.equals(Buffer.from(firstBytes)))!;
   const otherRemote = remote.find((m) => m.raw!.equals(Buffer.from(secondBytes)))!;
   expect(t.server.control.getMessage("A", otherRemote.uid).flags).not.toContain("\\Seen");
+  const retained = await reopened.backend.store.ops.get(queued.id);
+  expect(retained).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: queuedTarget });
+  expect(retained!.last_error).toContain("errors.imap.identityUnavailable");
   const location = (await reopened.backend.store.providerStore(t.account.id).locations!.of([firstId!]))[0];
   if (location) expect(t.server.control.getMessage("A", location.uid, { raw: true }).raw).toEqual(Buffer.from(firstBytes));
   expect((await reopened.client.call("threads.get", { threadId: firstRow.thread_id })).messages.find((m) => m.id === firstId)).toMatchObject({ bodyText: "AAAA\n" });
@@ -179,6 +187,76 @@ it("does not replay an acknowledged MOVE when UIDPLUS is unavailable", async () 
   expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
   await reopened.backend.syncAccount(t.account.id);
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
-  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "Trash", uidvalidity: t.server.control.getMailbox("Trash").uidvalidity, uid: remote[0]!.uid })]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([message.id]);
+  await reopened.client.call("threads.act", { threadIds: [thread.id], action: "markRead" });
+  await reopened.backend.runWorker();
+  expect((await reopened.client.call("ops.list", {})).find((item) => item.kind === "markRead")).toMatchObject({ state: "queued" });
+  expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
   expect(old.uidvalidity).toBe(t.server.control.getMailbox("INBOX").uidvalidity);
+});
+
+it.each(["markRead", "star", "trash"] as const)("rechecks an already claimed %s at the mailbox lock boundary", async (action) => {
+  const { ImapFlow } = await import("imapflow");
+  const t = await setup({ Trash: { "special-use": "\\Trash" } });
+  const bytes = rawIdleMail("Claimed target", "Exact claimed bytes");
+  const otherBytes = rawIdleMail("Claimed unrelated", "Exact unrelated bytes");
+  const old = t.server.control.addMessage("INBOX", { raw: bytes });
+  const other = t.server.control.addMessage("INBOX", { raw: otherBytes });
+  await t.backend.syncAccount(t.account.id);
+  const thread = (await t.client.call("threads.list", { view: "inbox" })).items.find((item) => item.subject === "Claimed target")!;
+  const message = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
+  await t.client.call("threads.act", { threadIds: [thread.id], action });
+  const op = (await t.client.call("ops.list", {})).find((item) => item.kind === action)!;
+  const original = ImapFlow.prototype.getMailboxLock;
+  let gap = false;
+  const lock = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    if (!gap && String(args[0]) === "INBOX") {
+      gap = true;
+      expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "running" });
+      await t.backend.store.providerStore(t.account.id).locations.remove(message.id, "INBOX");
+    }
+    return original.apply(this, args);
+  });
+  const start = t.commands.length;
+  try { await t.backend.runWorker(); } finally { lock.mockRestore(); }
+  expect(gap).toBe(true);
+  expect(t.commands.slice(start).filter((command) => /^(?:UID )?(?:STORE|MOVE|COPY|EXPUNGE)$/.test(command))).toEqual([]);
+  expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: JSON.stringify({ messageIds: [message.id] }) });
+  expect(t.server.control.getMessage("INBOX", old.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes), flags: [] });
+  expect(t.server.control.getMessage("INBOX", other.uid, { raw: true })).toMatchObject({ raw: Buffer.from(otherBytes), flags: [] });
+});
+
+it.each(["missing", "duplicate", "epoch"] as const)("withholds an invalid %s COPYUID result after one acknowledged MOVE", async (fault) => {
+  const { ImapFlow } = await import("imapflow");
+  const t = await setup({ Trash: { "special-use": "\\Trash" } });
+  const bytes = [rawIdleMail("Map one", "Exact first bytes"), rawIdleMail("Map two", "Exact second bytes")];
+  for (const raw of bytes) t.server.control.addMessage("INBOX", { raw });
+  await t.backend.syncAccount(t.account.id);
+  const threads = (await t.client.call("threads.list", { view: "inbox" })).items;
+  const messages = (await Promise.all(threads.map((thread) => t.client.call("threads.get", { threadId: thread.id })))).flatMap((detail) => detail.messages);
+  await t.client.call("threads.act", { threadIds: threads.map((thread) => thread.id), action: "trash" });
+  const original = ImapFlow.prototype.messageMove;
+  const altered = vi.spyOn(ImapFlow.prototype, "messageMove").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    const result = await original.apply(this, args);
+    expect(result).toBeTruthy();
+    if (!result) throw new Error("Expected acknowledged MOVE");
+    const pairs = [...result.uidMap!];
+    if (fault === "missing") result.uidMap!.delete(pairs[0]![0]);
+    else if (fault === "duplicate") result.uidMap!.set(pairs[1]![0], pairs[0]![1]);
+    else result.uidValidity = BigInt(Number(result.uidValidity) + 100);
+    return result;
+  });
+  try { await t.backend.runWorker(); } finally { altered.mockRestore(); }
+  const moves = t.commands.filter((command) => command === "UID MOVE").length;
+  expect(moves).toBe(1);
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  await reopened.backend.runWorker();
+  expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(moves);
+  const ids = messages.map((message) => message.id);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.of(ids)).toEqual([]);
+  expect(new Set(await reopened.backend.store.providerStore(t.account.id).locations.unresolved(ids))).toEqual(new Set(ids));
+  expect(t.server.control.listMessages("Trash", { raw: true }).map((message) => message.raw!.toString()).sort()).toEqual([...bytes].sort());
+  for (const thread of threads) expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ bodyState: "full" });
 });

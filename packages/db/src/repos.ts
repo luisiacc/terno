@@ -488,6 +488,7 @@ function yieldToNewerOps(db: Db, id: string): boolean {
  * by SQLite, so a stale target must never resolve to an unrelated new message.
  */
 export function pruneOpTargets(db: Db, messageIds: readonly number[]): void {
+  messageIds = messageIds.filter((id) => !db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", id));
   if (messageIds.length === 0) return;
   const json = JSON.stringify(messageIds);
   for (const op of db.all<{ id: string; kind: string; target_json: string }>(

@@ -270,13 +270,12 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       }
       if (event.oldVersion >= 1 && event.oldVersion < 18) {
         const holds = db.createObjectStore("imap_identity_holds");
-        const imap = new Set<number>();
-        const located = new Set<number>();
-        scan(tx.objectStore("accounts").openCursor(), (cursor) => { if (cursor.value.kind === "imap") imap.add(cursor.value.id); });
-        scan(tx.objectStore("message_locations").openCursor(), (cursor) => { located.add(cursor.value.message_id); });
         scan(tx.objectStore("messages").openCursor(), (cursor) => {
           const m = cursor.value;
-          if (imap.has(m.account_id) && !String(m.provider_msg_id ?? "local:").startsWith("local:") && !located.has(m.id)) track(holds.put({ message_id: m.id, account_id: m.account_id }, m.id));
+          const account = tx.objectStore("accounts").get(m.account_id);
+          track(account, (owner) => {
+            if (owner?.kind === "imap" && !String(m.provider_msg_id ?? "local:").startsWith("local:")) track(holds.put({ message_id: m.id, account_id: m.account_id }, m.id));
+          });
         });
       }
       if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);

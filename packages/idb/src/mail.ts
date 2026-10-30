@@ -738,6 +738,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
     const ids = messageIdAllocator(c);
     for (const msg of batch) {
       let existing = findIngestMessage(c, msg);
+      if (existing && T(c, "imap_identity_holds").has(existing.id)) continue;
       if (existing && existing.provider_msg_id !== msg.providerMsgId) existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
       if (existing) {
         const before = existing.body_state;
@@ -1613,6 +1614,7 @@ function yieldToNewerOps(c: Ctx, id: string): boolean {
 }
 
 export function pruneOpTargets(c: Ctx, messageIds: readonly number[]): void {
+  messageIds = messageIds.filter((id) => !T(c, "imap_identity_holds").has(id));
   if (messageIds.length === 0) return;
   const ops = T(c, "ops");
   const targets = T(c, "op_targets");

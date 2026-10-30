@@ -3,6 +3,18 @@ import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationS
 import { getSetting, T, type Ctx, type R } from "./mail";
 import { isFolder } from "./folders";
 
+const identityVersions = new WeakMap<object, { value: number }>();
+function identityVersion(c: Ctx) {
+  let version = identityVersions.get(c.db);
+  if (!version) {
+    version = { value: 0 };
+    identityVersions.set(c.db, version);
+    const observed = version;
+    c.db.onRow(() => { observed.value++; });
+  }
+  return version;
+}
+
 type Command = <V>(fn: () => V) => Promise<V>;
 
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
@@ -176,25 +188,45 @@ class IdbImapLocations implements ImapLocationStore {
     return this.read(() => ids.filter((id) => T(this.c, "imap_identity_holds").get(id)?.account_id === this.accountId));
   }
 
-  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>): Promise<T> {
-    return await this.read(() => {
-      for (const id of ids) {
-        const rows = this.t.by("fk_message_id", id).filter((l) => l.account_id === this.accountId);
-        const want = expected.filter((l) => l.message_id === id);
-        if (T(this.c, "imap_identity_holds").has(id) || !rows.length || rows.length !== want.length || rows.some((l) => !want.some((e) => e.mailbox === l.mailbox && e.uid === l.uid && e.uidvalidity === l.uidvalidity))) throw new ImapIdentityError();
-      }
-      return start();
-    });
+  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>, fenceIds?: readonly number[]): Promise<T> {
+    const wanted = new Map<number, Map<string, ImapLocation>>();
+    for (const row of expected) {
+      const group = wanted.get(row.message_id) ?? new Map();
+      if (group.has(row.mailbox)) throw new ImapIdentityError();
+      group.set(row.mailbox, row); wanted.set(row.message_id, group);
+    }
+    const targetSet = new Set(ids), targets = [...targetSet], fencing = new Set(fenceIds);
+    if ([...wanted.keys(), ...fencing].some((id) => !targetSet.has(id))) throw new ImapIdentityError();
+    const revision = identityVersion(this.c);
+    let version = await this.read(() => revision.value);
+    for (let i = 0; i < targets.length; i += 128) {
+      const validate = () => {
+        if (revision.value !== version) throw new ImapIdentityError();
+        for (const id of targets.slice(i, i + 128)) {
+          const rows = this.t.by("fk_message_id", id).filter((l) => l.account_id === this.accountId);
+          const want = wanted.get(id);
+          if (T(this.c, "imap_identity_holds").has(id) || !rows.length || rows.length !== want?.size || rows.some((l) => { const e = want.get(l.mailbox); return !e || e.uid !== l.uid || e.uidvalidity !== l.uidvalidity; })) throw new ImapIdentityError();
+        }
+        if (fenceIds) for (const id of targets.slice(i, i + 128)) if (fencing.has(id)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
+        if (fenceIds) version += targets.slice(i, i + 128).filter((id) => fencing.has(id)).length;
+      };
+      if (fenceIds) await this.command(validate);
+      else await this.read(validate);
+    }
+    return await this.read(() => { if (revision.value !== version) throw new ImapIdentityError(); return start(); });
   }
 
   mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
+    const mappedById = new Map(mapping.map((m) => [m.messageId, m.uid]));
+    if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
     return this.command(() => {
       for (const item of source) {
-        const mapped = mapping.find((m) => m.messageId === item.message_id);
+        const mapped = mappedById.get(item.message_id);
         if (!mapped) continue;
         const old = this.t.get(item.message_id, item.mailbox);
         if (!old || old.account_id !== this.accountId || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
-        this.t.put({ message_id: item.message_id, account_id: this.accountId, mailbox, uidvalidity, uid: mapped.uid, flags: item.flags });
+        if (this.t.by("uid", this.accountId, mailbox, uidvalidity, mapped).some((l) => l.message_id !== item.message_id)) throw new ImapIdentityError();
+        this.t.put({ message_id: item.message_id, account_id: this.accountId, mailbox, uidvalidity, uid: mapped, flags: "[]" });
         this.located([item.message_id], mailbox, true);
         if (!copy) { this.t.delete(item.message_id, item.mailbox); this.located([item.message_id], item.mailbox, false); }
         T(this.c, "imap_identity_holds").delete(item.message_id);

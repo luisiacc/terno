@@ -996,8 +996,8 @@ CREATE TABLE imap_identity_holds (
   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
 );
 CREATE INDEX imap_identity_holds_account ON imap_identity_holds(account_id, message_id);
-INSERT INTO imap_identity_holds SELECT m.id, m.account_id FROM messages m JOIN accounts a ON a.id=m.account_id
-WHERE a.kind='imap' AND m.provider_msg_id NOT LIKE 'local:%' AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id=m.id);
+INSERT INTO imap_identity_holds (message_id, account_id) SELECT m.id, m.account_id FROM messages m JOIN accounts a ON a.id=m.account_id
+WHERE a.kind='imap' AND m.provider_msg_id NOT LIKE 'local:%';
 ` },
 ];
 

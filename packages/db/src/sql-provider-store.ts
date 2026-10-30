@@ -81,7 +81,7 @@ class SqlImapLocations implements ImapLocationStore {
 
   async fence(messageIds: readonly number[]) {
     for (let i = 0; i < messageIds.length; i += RESET_SLICE) this.db.tx(() => {
-      for (const id of messageIds.slice(i, i + RESET_SLICE)) this.db.run("INSERT OR IGNORE INTO imap_identity_holds SELECT id, account_id FROM messages WHERE id=? AND account_id=?", id, this.accountId);
+      for (const id of messageIds.slice(i, i + RESET_SLICE)) this.db.run("INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT id, account_id FROM messages WHERE id=? AND account_id=?", id, this.accountId);
     });
   }
 
@@ -89,27 +89,45 @@ class SqlImapLocations implements ImapLocationStore {
     return messageIds.filter((id) => !!this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=? AND account_id=?", id, this.accountId));
   }
 
-  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>): Promise<T> {
-    const current = await this.of(ids);
-    if ((await this.unresolved(ids)).length || ids.some((id) => !current.some((l) => l.message_id === id)) || current.length !== expected.length || current.some((l) => !expected.some((e) => e.message_id === l.message_id && e.mailbox === l.mailbox && e.uid === l.uid && e.uidvalidity === l.uidvalidity))) throw new ImapIdentityError();
-    // Recheck inside the synchronous start boundary, including changes while the reads above yielded.
-    for (const id of ids) {
-      if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", id)) throw new ImapIdentityError();
-      const rows = this.db.all<ImapLocation>("SELECT * FROM message_locations WHERE message_id=? AND account_id=?", id, this.accountId);
-      const want = expected.filter((l) => l.message_id === id);
-      if (!rows.length || rows.length !== want.length || rows.some((l) => !want.some((e) => e.mailbox === l.mailbox && e.uid === l.uid && e.uidvalidity === l.uidvalidity))) throw new ImapIdentityError();
+  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>, fenceIds?: readonly number[]): Promise<T> {
+    const wanted = new Map<number, Map<string, ImapLocation>>();
+    for (const row of expected) {
+      const group = wanted.get(row.message_id) ?? new Map();
+      if (group.has(row.mailbox)) throw new ImapIdentityError();
+      group.set(row.mailbox, row); wanted.set(row.message_id, group);
     }
+    const targetSet = new Set(ids), targets = [...targetSet], fencing = new Set(fenceIds);
+    if ([...wanted.keys(), ...fencing].some((id) => !targetSet.has(id))) throw new ImapIdentityError();
+    const revision = () => this.db.get<{ n: number }>("SELECT total_changes() AS n")!.n;
+    let version = revision();
+    for (let i = 0; i < targets.length; i += 128) {
+      if (revision() !== version) throw new ImapIdentityError();
+      this.db.tx(() => {
+        for (const id of targets.slice(i, i + 128)) {
+          const hold = this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", id);
+          const rows = this.db.all<ImapLocation>("SELECT * FROM message_locations WHERE message_id=? AND account_id=?", id, this.accountId);
+          const want = wanted.get(id);
+          if (hold || !rows.length || rows.length !== want?.size || rows.some((l) => { const e = want.get(l.mailbox); return !e || e.uid !== l.uid || e.uidvalidity !== l.uidvalidity; })) throw new ImapIdentityError();
+          if (fencing.has(id)) this.db.run("INSERT INTO imap_identity_holds(message_id,account_id) VALUES(?,?)", id, this.accountId);
+        }
+      });
+      version += targets.slice(i, i + 128).filter((id) => fencing.has(id)).length;
+      if (i + 128 < targets.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    if (revision() !== version) throw new ImapIdentityError();
     return start();
   }
 
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
+    const mappedById = new Map(mapping.map((m) => [m.messageId, m.uid]));
+    if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
     this.db.tx(() => {
       for (const item of source) {
-        const mapped = mapping.find((m) => m.messageId === item.message_id);
+        const mapped = mappedById.get(item.message_id);
         if (!mapped) continue;
-        const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=?", item.message_id, item.mailbox);
+        const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=? AND account_id=?", item.message_id, item.mailbox, this.accountId);
         if (!old || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
-        this.write(item.message_id, mailbox, uidvalidity, mapped.uid, JSON.parse(item.flags) as string[]);
+        this.write(item.message_id, mailbox, uidvalidity, mapped, []);
         this.located([item.message_id], mailbox, true);
         if (!copy) {
           this.db.run("DELETE FROM message_locations WHERE message_id=? AND mailbox=?", item.message_id, item.mailbox);
@@ -176,7 +194,7 @@ class SqlImapLocations implements ImapLocationStore {
 
   async remove(messageId: number, mailbox: string) {
     this.db.tx(() => {
-      this.db.run("INSERT OR IGNORE INTO imap_identity_holds SELECT message_id, account_id FROM message_locations WHERE message_id=? AND mailbox=?", messageId, mailbox);
+      this.db.run("INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations WHERE message_id=? AND mailbox=?", messageId, mailbox);
       this.db.run("DELETE FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
       this.located([messageId], mailbox, false);
     });
@@ -188,7 +206,7 @@ class SqlImapLocations implements ImapLocationStore {
       const chunk = messageIds.slice(i, i + RESET_SLICE);
       this.db.tx(() => {
         for (const r of this.db.all<{ thread_id: number }>(`SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)) threads.add(r.thread_id);
-        this.db.run(`INSERT OR IGNORE INTO imap_identity_holds SELECT message_id, account_id FROM message_locations WHERE mailbox=? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
+        this.db.run(`INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations WHERE mailbox=? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
         this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -359,7 +377,7 @@ class SqlImapLocations implements ImapLocationStore {
     for (;;) {
       const removed = this.db.tx(
         () => {
-          this.db.run("INSERT OR IGNORE INTO imap_identity_holds SELECT message_id, account_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id=? AND mailbox=? LIMIT ?", this.accountId, mailbox, RESET_SLICE);
+          this.db.run("INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id=? AND mailbox=? LIMIT ?", this.accountId, mailbox, RESET_SLICE);
           return this.db
             .all<{ message_id: number }>(
               "DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (SELECT message_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT ?) RETURNING message_id",

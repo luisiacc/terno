@@ -7,9 +7,9 @@ import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
-import { AdoptIndex } from "./adopt";
+import { ImapIdentityError } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
-import { ProviderAuthError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 
@@ -61,27 +61,6 @@ function bounded(cursor: Cursor, ids: readonly number[], max: number, keep: "new
   cursor.overflow = true;
   return keep === "newest" ? ids.slice(-max) : ids.slice(0, max);
 }
-
-/** Plan 68 (Codex R18): an ID-less message held back until every folder is read (a copy, or its twin moved here) */
-interface Ambiguous {
-  /** the stored ID-less messages with its envelope, oldest first */
-  candidates: number[];
-  incoming: IncomingMessage;
-  /** older than the window in a folder read whole: a copy of it isn't fetched */
-  old: boolean;
-  path: string;
-  uidvalidity: number;
-  uid: number;
-  flags: string[];
-  live: boolean;
-  /** its folder's UIDNEXT when read: acknowledged once it's told apart */
-  uidnext: number;
-  /** a Message-ID's: as a copy, this stored message gains the place (the same message in one more folder) */
-  attachTo: number | null;
-  /** a Message-ID's: as a copy, the first of its twins (`attachTo` first) with no place in the folder gains it */
-  idCopy: boolean;
-}
-
 
 /**
  * Plan 68 (Codex R18–R30): what each held-back message is, in one linear pass. Per envelope, its twins with no place
@@ -372,9 +351,7 @@ export async function readTwins(page: (after: number) => Promise<readonly number
 }
 
 /** an envelope's key among the twins kept in a pass (its Message-ID, or none) */
-function twinKey(e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }): string {
-  return `${e.rfcMessageId ?? ""}\u0000${e.fromEmail}\u0000${e.date}\u0000${e.size}\u0000${e.subject}`;
-}
+
 
 /**
  * Plan 68 (Codex R32): the held-back messages' candidates and every place of theirs, by mailbox, read 500 at a time and
@@ -547,6 +524,7 @@ const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
 
 export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
+  if (error instanceof ImapIdentityError) return new ProviderIdentityError(L("errors.imap.identityUnavailable"));
   const e = error as { authenticationFailed?: boolean; serverResponseCode?: string; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
   // the server refused the login: a sign-in to redo (plan 25), unless it says the refusal is temporary (RFC 5530)
@@ -733,7 +711,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const locatorKey = (id: number, mailbox: string, uidvalidity: number, uid: number) => JSON.stringify([id, mailbox, uidvalidity, uid]);
 
   async function observeLocations(c: ImapFlow, ids: number[], check: () => void, evidence?: ReadonlyMap<string, string>): Promise<ImapLocation[]> {
-    const rows = await locations.of(ids);
+    const unresolved = new Set(await locations.unresolved(ids));
+    const rows = (await locations.of(ids)).filter((l) => !unresolved.has(l.message_id));
     check();
     const byMailbox = new Map<string, ImapLocation[]>();
     for (const row of rows) {
@@ -767,7 +746,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   async function reconcile(messageIds: Iterable<number>, sink: SyncSink, keepOrphans: boolean, c: ImapFlow, authoritative: boolean, check: () => void, identities?: ReadonlyMap<number, string>, evidence?: ReadonlyMap<string, string>): Promise<number[]> {
     return reconcileMessages(messageIds, {
-      of: (ids) => locations.of(ids), providerIds: (ids) => identities ? Promise.resolve(identities) : store.providerIds(ids), check,
+      of: async (ids) => { const held = new Set(await locations.unresolved(ids)); return (await locations.of(ids)).filter((l) => !held.has(l.message_id)); }, providerIds: (ids) => identities ? Promise.resolve(identities) : store.providerIds(ids), check,
       ...(authoritative && { observe: (ids: number[]) => observeLocations(c, ids, check, evidence) }),
       state: stateFromLocations, updateFlags: (u) => sink.updateFlags(u, authoritative ? undefined : { authoritative: false }),
       removeMessages: (ids) => sink.removeMessages(ids),
@@ -806,17 +785,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return ids;
   }
 
-  /**
-   * `reidentify` (plan 68, Codex R1): a folder seen for the first time is read whole once, so mail already stored
-   * (older than the window too) gains its location; mail it doesn't know is fetched only inside the window.
-   * `recover`: every message that lost a location this pass or before (a vanished folder, a sweep, a reset, kept
-   * orphans), by envelope, one index for every mailbox (Codex R11): a copy found anywhere is the same message, even
-   * without a Message-ID, never a second one, and each is claimed once.
-   * `checkpoint` (Codex R6): for a mailbox we already had, what its sweep saw (message count, mod-sequence): the
-   * cursor never acknowledges changes that came after the sweep read the flags; null (a sweep that failed, or none)
-   * checkpoints nothing, so the next pass looks again.
-   */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; recover?: AdoptIndex; checkpoint?: Snapshot | null; ambiguous?: Ambiguous[]; twins?: Map<string, number[]> } = {}) {
+  /** Unknown locators never establish logical identity from an envelope or arrival order. */
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null } = {}) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -825,55 +795,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       let state = cursor.mailboxes[path];
       const hadState = state !== undefined;
       const reset = Boolean(state && state.uidvalidity !== uidvalidity);
-      const resetOrphans = new Set<number>();
-      const recover = opts.recover ?? new AdoptIndex();
-      const twinsOf = opts.twins ?? new Map<string, number[]>();
-      /**
-       * Every stored ID-less message with this envelope, under any key, oldest first: read once a pass (paged, never
-       * cut: Codex R20), one list shared by every message held back with it, so telling them apart stays linear.
-       */
-      const twinGroup = async (e: { subject: string; fromEmail: string; date: number; size: number; rfcMessageId?: string | null }, include: number | null): Promise<number[]> => {
-        const at = twinKey(e);
-        let group = twinsOf.get(at);
-        if (!group) {
-          group = await readTwins((after) => locations.twins(e, after, 500));
-          twinsOf.set(at, group);
-        }
-        // the row found under the plain key, if its stored envelope differs (no date at all): one of them too
-        if (include !== null && !group.includes(include)) {
-          group.push(include);
-          group.sort((x, y) => x - y);
-        }
-        return group;
-      };
-      if (state && state.uidvalidity !== uidvalidity) {
-        // (the sweep normally did this already; here it's whatever is still pending, or a reset since the sweep)
-        for (const id of await resetLocations(cursor, path, state.uidvalidity, touched)) resetOrphans.add(id);
-        // candidates like any other, so a twin of theirs found here keeps its identity (Codex R12)
-        await recover.add(resetOrphans, (ids) => locations.envelopes(ids));
+      if (state && reset) {
+        await resetLocations(cursor, path, state.uidvalidity, touched);
         state = undefined;
       }
-      const takeAny = (e: Omit<import("./adopt").Envelope, "id">) => recover.take(e, notHere);
-
-      // plan 41: new UIDs past a uidnext we kept, same UIDVALIDITY, are live mail (not a first sync, not a reset)
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
-      // a candidate is usable here while this folder doesn't already hold it
-      const notHere = async (id: number) => (await locations.get(id, path)) === null;
-      // 1) messages we haven't seen
-      // After a UIDVALIDITY reset every message must be re-identified, including ones older
-      // than the sync window that we already have (otherwise they'd be dropped as orphans).
       const searched = await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
       if (!searched) throw new ProviderError(L("errors.imap.listRefused"), false);
       const found = state ? searched.filter((uid) => uid >= state!.uidnext) : searched;
       const fresh: IncomingMessage[] = [];
-      /** each fresh message's twin key: once written, it joins its envelope's group if one is kept (Codex R34) */
-      const freshTwins: string[] = [];
-      // held back here, handed over only once this folder's read completes: one that fails part-way keeps its old
-      // cursor and is read again, never acknowledged past what it didn't read (Codex R23)
-      const held: Ambiguous[] = [];
-      /** provider keys already claimed in this pass (by UID): duplicates within one batch stay distinct */
       const claimed = new Map<string, number>();
+      let held = Infinity;
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
         const expected = new Set(batch);
@@ -881,143 +814,43 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const m = msg as FetchMessageObject;
           if (!expected.delete(m.uid) || !(m.flags instanceof Set)) throw new ProviderError(L("errors.imap.listRefused"), false);
           const flags = [...m.flags];
-          /** an ID-less message whose stored twins are still placed: a copy, or one of them moved since its sweep */
-          let ambiguousOf: number[] | null = null;
-          /** a Message-ID held back: as a copy, the same message (this one) in one more folder (Codex R26) */
-          let attachTo: number | null = null;
-          /** a Message-ID held back with no plain-key row: as a copy, one of its twins in one more folder (Codex R29) */
-          let idCopy = false;
           const env = m.envelope;
-          // 1) this exact location is already known (e.g. recorded from a MOVE's COPYUID)
           const atLocation = await locations.at(path, uidvalidity, m.uid);
           if (atLocation !== null) {
-            await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
-            touched.add(atLocation);
-            // placed: no longer a candidate, even if a pass that stopped left it in the journal (Codex R37)
-            recover.drop(atLocation);
-            resetOrphans.delete(atLocation);
+            if (!(await locations.unresolved([atLocation])).length) {
+              await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
+              touched.add(atLocation);
+            }
             continue;
           }
           if (!env) throw new ProviderError(L("errors.imap.listRefused"), false);
-          // Without a Message-ID, identify by content (date, sender, subject, size): stable across
-          // moves and UIDVALIDITY resets, unlike a mailbox/UID-based key.
-          const fingerprint = () =>
-            `nomid:${createHash("sha1").update(`${new Date(env?.date ?? m.internalDate ?? 0).getTime()}|${env?.from?.[0]?.address ?? ""}|${env?.subject ?? ""}|${m.size ?? 0}`).digest("hex")}`;
-          let key = messageKey(env?.messageId) ?? fingerprint();
+          const envelope = { subject: env.subject ?? "", fromEmail: (env.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0, rfcMessageId: messageKey(env.messageId) };
+          const fingerprint = `nomid:${createHash("sha1").update(`${envelope.date}|${envelope.fromEmail}|${envelope.subject}|${envelope.size}`).digest("hex")}`;
+          let key = messageKey(env.messageId) ?? fingerprint;
           let existing = await store.messageByProviderId(key);
-          if (existing && messageKey(env?.messageId)) {
-            // Same Message-ID but clearly different content (sender/subject): a collision, not a copy.
-            const sameContent = existing.subject === (env?.subject ?? "") && existing.fromEmail === (env?.from?.[0]?.address ?? "").toLowerCase();
-            if (!sameContent) {
-              key = `${key}#${fingerprint()}`;
-              existing = await store.messageByProviderId(key);
-            }
+          if (existing && (existing.subject !== envelope.subject || existing.fromEmail !== envelope.fromEmail)) {
+            key = `${key}#${fingerprint}`;
+            existing = await store.messageByProviderId(key);
           }
-          if (existing && !messageKey(env?.messageId)) {
-            // A fingerprint is only evidence enough to re-attach a message that currently has no
-            // live location (it moved, or its mailbox was reset). Otherwise two distinct messages
-            // with identical envelopes must stay separate.
-            const live = await locations.count(existing.id);
-            // a message of a folder that vanished this pass is this one, moved (a rename): re-attached, not copied
-            if (live > 0 && !recover.ids.has(existing.id)) {
-              // its twin, moved or renamed or reset, under a key of its old place: recognised by envelope (Codex R8)
-              const twin = await takeAny({ subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0, rfcMessageId: null });
-              if (twin !== null) {
-                resetOrphans.delete(twin);
-                await upsertLocation(twin, path, uidvalidity, m.uid, flags);
-                touched.add(twin);
-                continue;
-              }
-              // a copy, or a stored twin (under any key: Codex R19) moved here after its folder's sweep: told apart once
-              // every folder is read (Codex R18)
-              const e = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
-              ambiguousOf = await twinGroup(e, existing.id);
-              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
-              existing = await store.messageByProviderId(key);
-            }
+          const candidates = new Set(await locations.twins(envelope, 0, 1));
+          if (existing) candidates.add(existing.id);
+          let uncertain = false;
+          for (const id of candidates) {
+            const here = await locations.get(id, path);
+            // Two distinct UIDs in the same live epoch can be stored separately. A new place
+            // elsewhere, or a missing/reset place, supplies no evidence of which body moved.
+            if (!here || here.uidvalidity !== uidvalidity || (await locations.unresolved([id])).length) { uncertain = true; break; }
           }
-          // a renamed folder's ID-less copy: by its envelope, from the index (Codex R4: never a scan per message)
-          const envelope = { subject: env?.subject ?? "", fromEmail: (env?.from?.[0]?.address ?? "").toLowerCase(), date: new Date(env?.date ?? m.internalDate ?? 0).getTime(), size: m.size ?? 0 };
-          // mail that lost its place (moved, renamed, reset, under an older key scheme) with no row under the plain key:
-          // by its envelope (and Message-ID: Codex R28, a Message-ID twin whose plain-key one was deleted); a row
-          // already re-attached in this mailbox can't be claimed twice
-          if (!existing && recover.size) {
-            const found = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
-            if (found !== null) {
-              resetOrphans.delete(found);
-              await upsertLocation(found, path, uidvalidity, m.uid, flags);
-              touched.add(found);
-              continue;
-            }
+          if (uncertain) {
+            held = Math.min(held, m.uid);
+            continue;
           }
-          // no row under the plain key (it was deleted), yet twins under other keys: a copy, or one of them moved here
-          // late; told apart like the rest, before the window decides anything (Codex R20)
-          if (!existing && ambiguousOf === null) {
-            const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, null);
-            if (group.length) {
-              ambiguousOf = group;
-              // a Message-ID's copy is the same message in one more folder: one of its twins gains the place (Codex R29)
-              if (messageKey(env?.messageId)) idCopy = true;
-              // a copy held back gets a key of its own place: two of them, in two folders, are never one (Codex R21)
-              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
-            }
-          }
-          // a Message-ID twin that lost its place this pass (moved here) is this one, not the twin still placed under the
-          // plain key, which would otherwise take its place and leave it to be deleted (Codex R25)
-          if (existing && messageKey(env?.messageId) && recover.size && !recover.ids.has(existing.id) && (await locations.count(existing.id)) > 0) {
-            const twin = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
-            if (twin !== null) {
-              resetOrphans.delete(twin);
-              await upsertLocation(twin, path, uidvalidity, m.uid, flags);
-              touched.add(twin);
-              continue;
-            }
-          }
-          // a Message-ID with twins (the same envelope stored more than once), the plain-key one still placed elsewhere:
-          // a copy of it here, or one of the others moved here after its folder's sweep; told apart once every folder
-          // is read, like ID-less twins (Codex R26)
-          // (the plain-key one here already too: Codex R27); as a copy, the plain-key one gains this place if it has
-          // none here yet, else it's a message of its own, under a key of its place
-          let idHeld = false;
-          if (existing && messageKey(env?.messageId) && ambiguousOf === null && (await locations.count(existing.id)) > 0) {
-            const group = await twinGroup({ ...envelope, rfcMessageId: messageKey(env?.messageId) }, existing.id);
-            if (group.length > 1) {
-              ambiguousOf = group;
-              idHeld = true;
-              idCopy = true;
-              attachTo = existing.id;
-              key = `${key}#${path}:${uidvalidity}:${m.uid}`;
-            }
-          }
-          if (existing && !idHeld) {
-            // 2) same Message-ID: the same message in another folder (moved/copied, our sent mail)…
-            const sameMailbox = await locations.get(existing.id, path);
-            if (!sameMailbox || sameMailbox.uidvalidity !== uidvalidity || sameMailbox.uid === m.uid) {
-              await upsertLocation(existing.id, path, uidvalidity, m.uid, flags);
-              touched.add(existing.id);
-              resetOrphans.delete(existing.id);
-              recover.drop(existing.id);
-              continue;
-            }
-            // …unless a different UID in the same mailbox already holds it: a distinct message
-            // that reuses the Message-ID. Keep both instead of collapsing them. A renamed folder's twin is
-            // already stored under the old path's key: found by its envelope, re-attached (plan 68, Codex R2)
-            if (recover.size) {
-              const twin = await takeAny({ ...envelope, rfcMessageId: messageKey(env?.messageId) });
-              if (twin !== null) {
-                resetOrphans.delete(twin);
-                await upsertLocation(twin, path, uidvalidity, m.uid, flags);
-                touched.add(twin);
-                continue;
-              }
-            }
-            key = `${key}#${path}:${uidvalidity}:${m.uid}`;
-          }
-          if (claimed.has(key) && claimed.get(key) !== m.uid) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+          if (existing || (claimed.has(key) && claimed.get(key) !== m.uid)) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
+          // A stable per-locator key that lost its locator also needs proof, never an ingest overwrite.
+          if (await store.messageByProviderId(key)) { held = Math.min(held, m.uid); continue; }
           claimed.set(key, m.uid);
-          // only re-identify old mail; one held back is told apart first (Codex R19: a twin moved here keeps its identity)
-          const old = reidentify && new Date(env?.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart;
-          if (old && ambiguousOf === null) continue;
+          const old = reidentify && new Date(env.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart;
+          if (old) continue;
           const role = roleOf(path);
           // the raw address fields, read by our parser (plan 34); the server's envelope where one is missing
           const addrs = messageAddresses(headerFields(m.headers), { from: env?.from, to: env?.to, cc: env?.cc, bcc: env?.bcc, replyTo: env?.replyTo });
@@ -1052,96 +885,24 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             size: m.size ?? 0,
             locations: [{ mailbox: path, uidvalidity, uid: m.uid, flags }],
           };
-          if (ambiguousOf !== null && opts.ambiguous) held.push({ candidates: ambiguousOf, incoming, old, path, uidvalidity, uid: m.uid, flags, live, uidnext: Number(mb.uidNext), attachTo, idCopy });
-          else if (!old) {
-            fresh.push(incoming);
-            freshTwins.push(twinKey({ ...envelope, rfcMessageId: messageKey(env?.messageId) }));
-          }
+          fresh.push(incoming);
         }
         if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
       if (fresh.length) await sink.ingest(fresh, { live });
+      await addAll(touched, await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key)));
 
-      // written: in the groups kept for its envelope, so a folder read later (or a message held back) sees it as a
-      // twin, never only the ones there were before (Codex R34: a copy moved on would take the original's place)
-      const written = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key), true);
-      await addAll(touched, written.filter((id): id is number => id !== null));
-      await joinGroups(twinsOf, freshTwins, written);
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
       // a message set aside isn't acknowledged until it's told apart: a pass that stops first reads it again
-      const uidnext = heldUidnext(Number(mb.uidNext), held);
+      const uidnext = Math.min(Number(mb.uidNext), held);
       cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
       // one at a time: a folder may hold back more than an argument list takes (Codex R24: 150,000 copies)
-      if (opts.ambiguous) for (const a of held) opts.ambiguous.push(a);
     } finally {
       lock.release();
     }
   }
-
-  /**
-   * Plan 68 (Codex R18): ID-less messages set aside because their stored twin was still placed elsewhere, told apart
-   * now that every folder is read: where the twin's places are all gone from the server (one lock and one search per
-   * mailbox), it moved here after its folder's sweep, so it keeps its identity, thread and categories; otherwise it's
-   * a copy. A mailbox no longer listed holds nothing (a rename's old name); one that can't be read fails the pass, and
-   * what was held back is read again next time (nothing merged, or copied, on a guess).
-   */
-  async function tellApart(c: ImapFlow, list: readonly Ambiguous[], listed: ReadonlySet<string>, sink: SyncSink, touched: Set<number>) {
-    if (!list.length) return;
-    // every candidate's places (another UID in the same folder counts: Codex R19), gathered a slice at a time
-    const { places, byMailbox } = await gatherPlaces(list, (ids) => locations.of(ids));
-    const present = new Set<string>();
-    for (const [mailbox, box] of byMailbox) {
-      if (sink.signal.aborted) return;
-      if (!listed.has(mailbox)) continue;
-      const all = [...box.uids];
-      const lock = await c.getMailboxLock(mailbox);
-      try {
-        if (Number(c.mailbox && c.mailbox.uidValidity) !== box.uidvalidity) continue;
-        for (let i = 0; i < all.length; i += 500) for (const uid of (await c.search({ uid: all.slice(i, i + 500).join(",") }, { uid: true })) || []) present.add(`${mailbox}\u0000${uid}`);
-      } finally {
-        lock.release();
-      }
-    }
-    // what each held-back message is (planned in one linear pass, a few milliseconds a turn, then written a slice at
-    // a time: Codex R30, R31)
-    const steps = planSteps(list, places, present);
-    let plan: Plan<Ambiguous>;
-    for (;;) {
-      const until = performance.now() + 4;
-      let r = steps.next();
-      while (!r.done && performance.now() < until) r = steps.next();
-      if (r.done) {
-        plan = r.value;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    // old places of the ones that moved, per mailbox: removed together once the new ones are written (Codex R24: one
-    // at a time re-read a long conversation each time)
-    const leaving = new Map<string, number[]>();
-    const breathe = breather();
-    for (const { id, a, moved } of plan.placed) {
-      // its new place first, then the old ones go: a stop in between leaves it placed, never placeless (Codex R22)
-      await upsertLocation(id, a.path, a.uidvalidity, a.uid, a.flags);
-      if (moved) {
-        for (const l of places.get(id)!) {
-          if (l.mailbox === a.path) continue;
-          const ids = leaving.get(l.mailbox) ?? [];
-          ids.push(id);
-          leaving.set(l.mailbox, ids);
-        }
-      }
-      touched.add(id);
-      await breathe();
-    }
-    const copies = plan.copies;
-    for (const [mailbox, ids] of leaving) await locations.removeMany(ids, mailbox);
-    if (copies.length) await sink.ingest(copies.map((a) => a.incoming), { live: list.some((a) => a.live) });
-    await addAll(touched, (await storedIds(copies.map((a) => a.incoming.providerMsgId!), (key) => store.messageByProviderId(key), true)).filter((id): id is number => id !== null));
-  }
-
 
 
   /**
@@ -1232,7 +993,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             const id = byUid.get(msg.uid);
             if (!id || !msg.source) continue;
             const parsed = await parseRaw(msg.source);
-            await sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, parsed.captureUnavailable ? { captureUnavailable: parsed.captureUnavailable } : undefined);
+            const captured = all.find((item) => item.id === id)!;
+            await locations.dispatch([id], (await locations.of([id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity, flags: "[]" }]), () => sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, parsed.captureUnavailable ? { captureUnavailable: parsed.captureUnavailable } : undefined));
           }
         }
       } finally {
@@ -1242,7 +1004,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     await sink.setSyncState({ bodiesPending: await store.countPendingBodies() });
   }
 
-  type Loc = { message_id: number; mailbox: string; uid: number; uidvalidity: number };
+  type Loc = ImapLocation;
 
   /** Throws (retryable) if the mailbox's UIDVALIDITY no longer matches our stored UIDs. */
   function assertValidity(c: ImapFlow, mailbox: string, items: Loc[]) {
@@ -1257,7 +1019,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     return c.capabilities.has(capability) || c.enabled.has("IMAP4REV2") || (c.capabilities.has("IMAP4rev2") && !c.capabilities.has("IMAP4rev1"));
   }
 
-  async function moveLocations(c: ImapFlow, locs: Loc[], destination: string | (() => Promise<string>), beforeMutation: () => void, mode: "move" | "copy" = "move") {
+  async function moveLocations(c: ImapFlow, locs: Loc[], destination: string | (() => Promise<string>), beforeMutation: () => void, admission: { ids: readonly number[]; expected: ImapLocation[] }, mode: "move" | "copy" = "move") {
     if (!locs.some((l) => typeof destination !== "string" || l.mailbox !== destination)) return;
     if (mode === "move" && !targetedCapability(c, "MOVE") && !targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
     const target = typeof destination === "string" ? destination : await destination();
@@ -1274,16 +1036,24 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         assertValidity(c, mailbox, items);
         if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
-        beforeMutation();
-        const res = mode === "move" ? await c.messageMove(uids, target, { uid: true }) : await c.messageCopy(uids, target, { uid: true });
+        const res = await locations.dispatch(admission.ids, admission.expected, async () => {
+          beforeMutation();
+          return mode === "move" ? c.messageMove(uids, target, { uid: true }) : c.messageCopy(uids, target, { uid: true });
+        }, items.map((l) => l.message_id));
         if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
-        // the new places first, then the old ones go together (sliced, each thread looked at once: Codex R54, one
-        // removal a message walked a long conversation again each time)
-        for (const item of items) {
-          const newUid = res.uidMap?.get(item.uid);
-          if (newUid && res.uidValidity) await upsertLocation(item.message_id, target, Number(res.uidValidity), newUid, []);
+        const epoch = Number(res.uidValidity);
+        const mapping = items.map((item) => ({ messageId: item.message_id, uid: res.uidMap?.get(item.uid) ?? 0 }));
+        const targetStatus = await c.status(target, { uidValidity: true });
+        const targetEpoch = Number(targetStatus && targetStatus.uidValidity);
+        const valid = epoch === targetEpoch && Number.isSafeInteger(epoch) && epoch > 0 && mapping.every((m) => Number.isSafeInteger(m.uid) && m.uid > 0) && new Set(mapping.map((m) => m.uid)).size === items.length && res.uidMap?.size === items.length;
+        if (valid) {
+          await locations.mappedMove(items, target, epoch, mapping, mode === "copy");
+          const moved = new Set(items.map((l) => l.message_id));
+          admission.expected = admission.expected.filter((l) => !(moved.has(l.message_id) && (l.mailbox === target || (mode === "move" && l.mailbox === mailbox))));
+          for (const item of items) admission.expected.push({ ...item, mailbox: target, uidvalidity: epoch, uid: mapping.find((m) => m.messageId === item.message_id)!.uid });
         }
-        if (mode === "move") await locations.removeMany(items.map((i) => i.message_id), mailbox);
+        else if (mode === "move") await locations.removeMany(items.map((i) => i.message_id), mailbox);
+
       } finally {
         lock.release();
       }
@@ -1504,28 +1274,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for (const l of await locations.of(ask.slice(i, i + 500))) if (!vanishedPaths.has(l.mailbox)) pending.delete(l.message_id);
           await breathe();
         }
-        const recover = new AdoptIndex();
-        await recover.add(pending, (ids) => locations.envelopes(ids));
-        const ambiguous: Ambiguous[] = [];
-        const twins = new Map<string, number[]>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0), recover, ambiguous, twins });
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true, recover, ambiguous, twins } : { checkpoint: swept.get(path) ?? null, recover, ambiguous, twins });
+            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true } : { checkpoint: swept.get(path) ?? null });
           } catch (error) {
             tolerate(error);
           }
-        }
-        await tellApart(c, ambiguous, new Set([...boxes, ...listed]), sink, touched);
-        if (sink.signal.aborted) return;
-        // told apart: their folders acknowledged up to what the server had when read
-        for (const a of ambiguous) {
-          const state = cursor.mailboxes[a.path];
-          if (state) state.uidnext = Math.max(state.uidnext, a.uidnext);
         }
         // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
         for (const path of incomplete ? [] : vanished) {
@@ -1545,7 +1304,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (overflowed) await addAll(touched, lost);
         const covered = new Set([...boxes, ...custom]);
         const authoritative = full && list.length <= LISTED_MAX && list.every((mailbox) => mailbox.flags.has("\\Noselect") || mailbox.flags.has("\\NonExistent") || covered.has(mailbox.path));
-        const kept = await reconcile(touched, sink, !full, c, false, check);
+        const kept = await reconcile(touched, sink, true, c, false, check);
         // Capture the finite work boundary after incomplete derivations have recorded fresh obligations.
         if (authoritative && ctx.flagObservation) {
           let page: FlagSnapshotPage = await store.pendingFlagSnapshots({ limit: 50 });
@@ -1581,11 +1340,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async execute(op: ProviderOp) {
       if (op.kind === "send") return send(op.payload as SendPayload, op);
+      if (!["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox"].includes(op.kind)) throw new ProviderError(`Unsupported operation ${op.kind}`, false);
       const ids = op.target.messageIds ?? [];
       if (ids.length === 0) return;
       await withConnection(async (c, beforeMutation) => {
         const r = await discoverRoles(c);
         const locs: Loc[] = await locations.of(ids);
+        await locations.dispatch(ids, locs, async () => {});
+        const admission = { ids, expected: [...locs] };
         const inRole = (role: Role) => locs.filter((l) => l.mailbox === r[role]);
         const flagOp = async (flag: string, add: boolean) => {
           const byMailbox = new Map<string, Loc[]>();
@@ -1595,7 +1357,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             try {
               assertValidity(c, mailbox, items);
               const uids = items.map((i) => i.uid);
-              const ok = add ? await c.messageFlagsAdd(uids, [flag], { uid: true }) : await c.messageFlagsRemove(uids, [flag], { uid: true });
+              const ok = await locations.dispatch(ids, locs, () => add ? c.messageFlagsAdd(uids, [flag], { uid: true }) : c.messageFlagsRemove(uids, [flag], { uid: true }));
               // imapflow resolves false when the server rejects the STORE
               if (ok === false) throw new ProviderError(`Server refused to update ${flag} in ${mailbox}`, false);
               for (const i of items) {
@@ -1623,7 +1385,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           case "archive": {
             const inbox = inRole("inbox");
             if (!inbox.length) return;
-            if (r.archive || !r.all) return void (await moveLocations(c, inbox, r.archive ?? (() => ensureMailbox(c, "archive", "Archive")), beforeMutation));
+            if (r.archive || !r.all) return void (await moveLocations(c, inbox, r.archive ?? (() => ensureMailbox(c, "archive", "Archive")), beforeMutation, admission));
             if (!targetedCapability(c, "UIDPLUS")) throw new ProviderError(L("errors.imap.unsafeMove"), false);
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
@@ -1631,7 +1393,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               assertValidity(c, r.inbox!, inbox);
               if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
               beforeMutation();
-              const deleted = await c.messageDelete(inbox.map((l) => l.uid), { uid: true });
+              const deleted = await locations.dispatch(ids, locs, () => c.messageDelete(inbox.map((l) => l.uid), { uid: true }));
               if (!deleted) throw new ProviderError(L("errors.imap.changeRefused"), false);
               await locations.removeMany(inbox.map((l) => l.message_id), r.inbox!);
             } finally {
@@ -1640,16 +1402,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             return;
           }
           case "trash":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), r.trash ?? (() => ensureMailbox(c, "trash", "Trash")), beforeMutation));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.trash), r.trash ?? (() => ensureMailbox(c, "trash", "Trash")), beforeMutation, admission));
           case "spam":
-            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), r.junk ?? (() => ensureMailbox(c, "junk", "Junk")), beforeMutation));
+            return void (await moveLocations(c, locs.filter((l) => l.mailbox !== r.junk && l.mailbox !== r.sent), r.junk ?? (() => ensureMailbox(c, "junk", "Junk")), beforeMutation, admission));
           case "notSpam":
-            return void (await moveLocations(c, inRole("junk"), r.inbox!, beforeMutation));
+            return void (await moveLocations(c, inRole("junk"), r.inbox!, beforeMutation, admission));
           case "moveToInbox": {
             const away = locs.filter((l) => l.mailbox !== r.inbox && l.mailbox !== r.sent);
             const all = away.filter((l) => l.mailbox === r.all);
-            await moveLocations(c, away.filter((l) => l.mailbox !== r.all), r.inbox!, beforeMutation);
-            if (all.length) await moveLocations(c, all, r.inbox!, beforeMutation, "copy");
+            await moveLocations(c, away.filter((l) => l.mailbox !== r.all), r.inbox!, beforeMutation, admission);
+            if (all.length) await moveLocations(c, all, r.inbox!, beforeMutation, admission, "copy");
             return;
           }
           default:
