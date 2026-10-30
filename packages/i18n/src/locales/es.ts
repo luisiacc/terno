@@ -612,6 +612,7 @@ const es = {
   "list.waitingCount": { one: "# espera tu respuesta", other: "# esperan tu respuesta" },
   "list.caughtUp": "Estás al día.",
   "list.search.placeholder": "Buscar en todas tus cuentas",
+  "list.search.coverage": "La búsqueda abarca el correo guardado en Terno, que puede estar incompleto. Si falta algo, consulta el sitio web de tu proveedor de correo.",
   "list.search.title": "Búsqueda",
   "list.search.clear": "Limpiar búsqueda",
   "list.search.results": { one: "# resultado", other: "# resultados" },

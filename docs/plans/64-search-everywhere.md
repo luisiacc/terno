@@ -179,3 +179,9 @@ Round 3 (`9831710a..88afd1e0`) found one issue, fixed with a test that fails wit
 - the Inbox's unread set.
 
 They now say what they mean. The heading test expects "Search". The Inbox-specific tests type `in:inbox` (list focus, filters, reader, unread filter).
+
+## Follow-up · W11 / S58 local coverage
+
+Search everywhere means every account/category/place **within mail saved in Terno**, including Archive, Spam and Trash; typed operators and quick filters still narrow it. It does not promise all provider history or downloaded bodies, Gmail UI alias expansion, or thread-wide provider UI matching. A missing search result is not evidence that the provider deleted mail. Renderer `complete` describes the local answer and pending bodies, not full-provider retention coverage.
+
+Plan69 adds paired English/Spanish scope help only while ordinary search has focus or a query, associated with the input for screen readers. Existing indexing statistics still follow the RPC response. No provider search, network, synchronization, coverage calculation, or search-engine changes are introduced. Dev-only regression tests qualify default breadth, typed narrowing/filter RPCs, true/false completeness with saved header-only mail, keyboard/focus/scroll, and light/dark accessibility. Durable Gmail reconciliation remains W03; IMAP IDLE remains W06.

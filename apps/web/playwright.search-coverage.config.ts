@@ -3,10 +3,13 @@ import { defineConfig } from "@playwright/test";
 const port = Number(process.env.E2E_PORT ?? 54660);
 
 /** S58: scoped renderer checks on Vite dev, without a production webServer build. */
-export default defineConfig({
+export default defineConfig<{ design: "lumen" }>({
   testDir: "e2e",
-  testMatch: ["search-coverage.spec.ts", "search.spec.ts", "search-everywhere.spec.ts"],
-  globalSetup: "./e2e/global-setup.ts",
+  projects: [
+    { name: "coverage", testMatch: "search-coverage.spec.ts" },
+    { name: "existing-search", testMatch: ["search.spec.ts", "search-everywhere.spec.ts"], use: { design: "lumen" } },
+  ],
+  globalSetup: "./e2e/search-coverage.setup.ts",
   workers: 1,
   retries: 0,
   timeout: 45_000,

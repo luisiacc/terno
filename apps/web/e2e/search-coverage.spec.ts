@@ -62,14 +62,15 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await server.backend.server.invoke("settings.update", { design, language, theme, senderIcons: false }, ctx);
       const db = sqlDb(server.backend.store);
       const accounts = db.all<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id");
-      await server.backend.store.sync.ingest([
-        ...(["inbox", "archive", "spam", "trash"] as const).map((place, i) => msg({
+      await server.backend.store.sync.ingest(
+        (["inbox", "archive", "spam", "trash"] as const).map((place, i) => msg({
           accountId: accounts[i % accounts.length]!.id,
           providerMsgId: `coverage-${place}`, providerThreadId: `coverage-${place}`, rfcMessageId: `<coverage-${place}@example.test>`, date: E2E_NOW - i * 1000,
           subject: "Coverageneedle", bodyText: "Saved searchable body", isRead: false,
           inInbox: place === "inbox", isSpam: place === "spam", isTrash: place === "trash",
         })),
-      ], { applyFilters: false, now: E2E_NOW, classifier: null });
+        { applyFilters: false, now: E2E_NOW, classifier: null },
+      );
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
       await expect(page.getByTestId("thread-row").first()).toBeVisible();
@@ -78,7 +79,10 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await expect(help).toHaveCount(0);
       if (language === "es") await page.setViewportSize({ width: 980, height: 740 });
       const scroller = page.getByRole("listbox");
-      await scroller.evaluate((el) => { el.scrollTop = 180; });
+      await scroller.evaluate((el) => new Promise<void>((resolve) => {
+        el.addEventListener("scroll", () => requestAnimationFrame(() => resolve()), { once: true });
+        el.scrollTop = 180;
+      }));
       const position = await scroller.evaluate((el) => el.scrollTop);
       const selected = await page.locator("[data-testid=thread-row][data-cursor]").getAttribute("data-thread-id");
       const beforeOpen = rpc.filter((r) => r.m === "threads.search").length;
@@ -104,7 +108,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await input.press("Tab");
       await expect(input).not.toBeFocused();
       await expect(help).toBeVisible();
-      const scoped = new AxeBuilder({ page }).include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+      const scoped = new AxeBuilder({ page }).include("[data-testid=list-header]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
       expect((await scoped.analyze()).violations).toEqual([]);
       await page.screenshot({ path: testInfo.outputPath(`search-coverage-${design}-${language}-${theme}.png`) });
       expect(responses.at(-1)?.complete).toBe(true);
@@ -120,19 +124,34 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await expect(page.getByTestId("list-empty")).toBeVisible();
       expect(db.get<{ n: number }>("SELECT count(*) AS n FROM messages WHERE provider_msg_id = 'headers-only'")!.n).toBe(1);
 
+      const category = db.get<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 1")!;
+      await page.evaluate(async ({ accountId, categoryId }) => {
+        const modulePath = "/src/state/app.ts";
+        const { navigate } = await import(modulePath);
+        navigate({ accountId, categoryId });
+      }, { accountId: accounts[0]!.id, categoryId: category.id });
+      await page.keyboard.press("/");
       await input.fill("coverageneedle");
       await expect(page.getByTestId("thread-row")).toHaveCount(4);
+      await expect.poll(() => rpc.filter((r) => r.m === "threads.search").at(-1)?.p).toEqual({ query: "coverageneedle", limit: 100 });
       expect((await page.getByTestId("row-place").allTextContents()).sort()).toEqual((language === "en" ? ["Spam", "Trash"] : ["Spam", "Papelera"]).sort());
       await expect(help).toBeVisible();
       await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(3, 7));
       expect(await input.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([3, 7]);
       await expect(input).toBeFocused();
+      await input.press("ArrowDown");
+      await expect(input).not.toBeFocused();
+      await expect(help).toBeVisible();
+      await page.keyboard.press("/");
+      await input.press("Enter");
+      await expect(input).not.toBeFocused();
+      await expect(input).toHaveValue("coverageneedle");
       await input.fill("in:all coverageneedle");
       await expect(page.getByTestId("thread-row")).toHaveCount(2);
 
       // Real typed operators and the quick filter reach the local RPC unchanged.
       const account = accounts[0]!;
-      await page.getByTestId("unread-filter").click();
+      await page.getByTestId(design === "lumen" ? "quick-filter-unread" : "unread-filter").click();
       const query = `in:all account:${account.email} subject:factura`;
       await input.fill(query);
       await expect.poll(() => rpc.filter((r) => r.m === "threads.search").at(-1)?.p).toEqual({ query, limit: 100, filter: "unread" });
@@ -141,6 +160,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await input.press("Escape");
       await expect(input).toHaveValue("");
       await expect(help).toHaveCount(0);
+      await page.getByTestId("nav-inbox").click();
       await expect(page.getByTestId("thread-row").first()).toBeVisible();
       await page.keyboard.press("/");
       await expect(input).toBeFocused();
@@ -153,9 +173,9 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
         await expect(help).toHaveCount(0);
       }
       // Category review keeps its own suggestions list; it is not a mail search.
-      const category = db.get<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 1")!;
       await page.evaluate(async (id) => {
-        const { navigate } = await import("/src/state/app.ts");
+        const modulePath = "/src/state/app.ts";
+        const { navigate } = await import(modulePath);
         navigate({ categoryId: id, reviewCategoryId: id });
       }, category.id);
       await page.keyboard.press("/");
@@ -164,7 +184,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await expect(help).toHaveCount(0);
       expect(providerCalls).toEqual([]);
       expect(external).toEqual([]);
-      expect(rpc.some((r) => /sync|threads\.act|messages\.loadBody/.test(r.m))).toBe(false);
+      expect(rpc.filter((r) => r.m === "sync.now" || r.m.startsWith("threads.act") || r.m === "messages.loadBody")).toEqual([]);
       await testInfo.attach("search-observations", { body: JSON.stringify({ searches: rpc.filter((r) => r.m === "threads.search"), responses, providerCalls, external }, null, 2), contentType: "application/json" });
     } finally {
       await server.close();

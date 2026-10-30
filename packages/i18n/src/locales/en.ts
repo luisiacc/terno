@@ -618,6 +618,7 @@ const en = {
   "list.waitingCount": { one: "# waiting for your reply", other: "# waiting for your reply" },
   "list.caughtUp": "You’re all caught up.",
   "list.search.placeholder": "Search all your accounts",
+  "list.search.coverage": "Search covers mail saved in Terno, which may be incomplete. Check your mail provider’s website if something is missing.",
   "list.search.title": "Search",
   "list.search.clear": "Clear search",
   "list.search.results": { one: "# result", other: "# results" },

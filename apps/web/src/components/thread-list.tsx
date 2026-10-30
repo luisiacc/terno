@@ -203,47 +203,57 @@ export function focusSearch(): void {
 
 function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
   const query = useApp((s) => s.query);
+  const review = useApp((s) => s.reviewCategoryId !== null);
+  const [focused, setFocused] = useState(false);
+  const showCoverage = !review && (focused || query.trim() !== "");
   return (
-    <div className="no-drag relative">
-      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        ref={(el) => {
-          searchInputRef.current = el;
-        }}
-        data-testid="search-input"
-        value={query}
-        placeholder={t("list.search.placeholder")}
-        className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
-        onChange={(e) => {
-          setApp({ query: e.target.value });
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            if (getApp().query) setApp({ query: "" });
-            else if (autoCollapse) {
-              // an empty field behind a button closes, and focus goes back to the button
-              useSearchOpen.setState({ open: false });
-              requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
+    <>
+      <div className="no-drag relative">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          ref={(el) => {
+            searchInputRef.current = el;
+          }}
+          data-testid="search-input"
+          value={query}
+          placeholder={t("list.search.placeholder")}
+          aria-label={t("list.search.placeholder")}
+          aria-describedby={showCoverage ? "search-coverage" : undefined}
+          className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onChange={(e) => {
+            setApp({ query: e.target.value });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (getApp().query) setApp({ query: "" });
+              else if (autoCollapse) {
+                // an empty field behind a button closes, and focus goes back to the button
+                useSearchOpen.setState({ open: false });
+                requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-testid=search-button]")?.focus());
+              }
+              e.currentTarget.blur();
+            } else if (e.key === "Enter" || e.key === "ArrowDown") {
+              e.currentTarget.blur();
             }
-            e.currentTarget.blur();
-          } else if (e.key === "Enter" || e.key === "ArrowDown") {
-            e.currentTarget.blur();
-          }
-        }}
-      />
-      {query ? (
-        <button
-          type="button"
-          aria-label={t("list.search.clear")}
-          className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-          onClick={() => setApp({ query: "" })}
-        >
-          <X className="size-3.5" />
-        </button>
-      ) : (
-        <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
-      )}
-    </div>
+          }}
+        />
+        {query ? (
+          <button
+            type="button"
+            aria-label={t("list.search.clear")}
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+            onClick={() => setApp({ query: "" })}
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : (
+          <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
+        )}
+      </div>
+      {showCoverage && <p id="search-coverage" data-testid="search-coverage" className="no-drag mt-1.5 text-2xs text-muted-foreground">{t("list.search.coverage")}</p>}
+    </>
   );
 }
 
