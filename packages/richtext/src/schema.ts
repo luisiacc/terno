@@ -89,6 +89,16 @@ export const schema = new Schema({
       parseDOM: [{ tag: "br" }],
       toDOM: () => ["br"],
     },
+    // plan 76: an image dropped or pasted into the text, sent as one of the mail's inline parts (cid: only, never a URL)
+    image: {
+      inline: true,
+      group: "inline",
+      atom: true,
+      draggable: true,
+      attrs: { cid: {}, alt: { default: "" }, width: { default: null } },
+      parseDOM: [{ tag: "img[src]", getAttrs: imageAttrs }],
+      toDOM: (node) => ["img", { src: `cid:${node.attrs.cid}`, alt: node.attrs.alt, ...(node.attrs.width ? { width: String(node.attrs.width) } : {}) }],
+    },
   },
   // nesting order, outermost first: a highlight's ink sits outside a chosen color, so the color wins
   marks: {
@@ -184,6 +194,25 @@ function linkAttrs(dom: HTMLElement) {
   if (dom.hasAttribute("data-rt-manual")) return { href, auto: false };
   // a line break in it is a delimiter, as in the editor: such a link spells nothing
   return { href, auto: !dom.querySelector("br") && spelledHref(dom.textContent ?? "") === href };
+}
+
+/** The widest an image goes in: wider ones are shown (and sent) at this width, scaled down by the reader's own max-width. */
+export const IMAGE_MAX_WIDTH = 600;
+
+/** A content ID, as a cid: URL names it (the same rule as a received mail's parts: no spaces, controls or brackets). */
+export function imageCid(src: string): string | null {
+  if (!/^cid:/i.test(src)) return null;
+  let cid: string;
+  try { cid = decodeURIComponent(src.slice(4)); } catch { return null; }
+  // oxlint-disable-next-line no-control-regex -- content IDs cannot contain header controls
+  return cid && cid.length <= 300 && !/[\x00-\x20\x7f<>"]/.test(cid) ? cid.toLowerCase() : null;
+}
+
+function imageAttrs(dom: HTMLElement) {
+  const cid = imageCid(dom.getAttribute("src") ?? "");
+  if (!cid) return false;
+  const width = Math.round(Number(dom.getAttribute("width")));
+  return { cid, alt: (dom.getAttribute("alt") ?? "").slice(0, 200), width: width > 0 ? Math.min(width, IMAGE_MAX_WIDTH) : null };
 }
 
 function fontAttrs(font: Font | null) {

@@ -9,11 +9,13 @@ import { blockStyle } from "./schema";
  * only (what Gmail and Outlook keep), no <style>, no classes or ids; the only
  * attributes are style, href and start. Default text carries no font, size
  * or color: the recipient's defaults, as Gmail's own mail does, so dark
- * modes and our own reader keep it readable. parseHtml reads it back to the
+ * modes and our own reader keep it readable (an image, plan 76: src, alt and
+ * width too). parseHtml reads it back to the
  * same document (the draft's storage).
  */
 
 export const LIST_STYLE = "margin:0 0 0 24px;padding:0";
+export const IMAGE_STYLE = "max-width:100%;height:auto";
 
 const styleAttr = (style: string) => (style ? ` style="${style}"` : "");
 
@@ -58,6 +60,15 @@ function inlineHtml(textblock: PMNode): string {
   for (let i = 0; i < count; i++) {
     const child = block.child(i);
     const isBreak = child.type.name === "hard_break";
+    if (child.type.name === "image") {
+      // plan 76: one of the mail's inline parts; the reader's own max-width scales a wide one down
+      const { cid, alt, width } = child.attrs as { cid: string; alt: string; width: number | null };
+      while (open.length) out += closeTag(open.pop()!);
+      out += `<img src="cid:${escapeHtml(cid)}" alt="${escapeHtml(alt)}"${width ? ` width="${width}"` : ""} style="${IMAGE_STYLE}">`;
+      lineStart = false;
+      afterSpace = false;
+      continue;
+    }
     if (!isBreak && !child.isText) continue;
     const marks = child.marks;
     let keep = 0;

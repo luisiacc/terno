@@ -210,6 +210,31 @@ describe("paste", () => {
   });
 });
 
+describe("images (plan 76)", () => {
+  const img = (cid: string, alt = "", width: number | null = null, ...marks: Mark[]) => schema.nodes.image.create({ cid, alt, width }, null, marks);
+
+  it("writes a cid image with its alt and width, reads it back, and reads as [image: name] in plain text", () => {
+    const d = doc(p("see ", img("terno-img-1@terno", "chart.png", 480), " here"), p(t("b", m.bold), img("terno-img-2@terno", "a&b \"x\".gif", null, m.bold)));
+    const html = toEmailHtml(d);
+    expect(html).toBe('<div>see <img src="cid:terno-img-1@terno" alt="chart.png" width="480" style="max-width:100%;height:auto"> here</div><div><b>b</b><img src="cid:terno-img-2@terno" alt="a&amp;b &quot;x&quot;.gif" style="max-width:100%;height:auto"></div>');
+    expect(roundTrip(d).toJSON()).toEqual(doc(p("see ", img("terno-img-1@terno", "chart.png", 480), " here"), p(t("b", m.bold), img("terno-img-2@terno", 'a&b "x".gif'))).toJSON());
+    expect(toPlainText(d)).toBe('see [image: chart.png] here\nb[image: a&b "x".gif]');
+  });
+
+  it("caps a width, keeps only src, alt and width, and drops an image that isn't a cid part", () => {
+    const d = parseHtml('<div><img src="CID:Terno-Img-9@terno" alt="x" width="4000" onerror="alert(1)" class="c" style="border:9px"><img src="https://t.example/p.png"><img src="data:image/png;base64,AAAA"><img src="cid:bad%20id"><img></div>', impl);
+    expect(d.toJSON()).toEqual(doc(p(img("terno-img-9@terno", "x", 600))).toJSON());
+    expect(toEmailHtml(d)).not.toMatch(/onerror|class=|border|https:|data:/);
+  });
+
+  it("a paste from outside Terno never brings an image; a Terno copy keeps its own", () => {
+    expect(cleanPastedHtml('<p>a<img src="cid:terno-img-1@terno">b</p>', impl)).not.toMatch(/<img/);
+    const own = cleanPastedHtml('<p data-pm-slice="1 1 []">a<img src="cid:terno-img-1@terno" alt="x" onerror="1">b<img src="https://t.example/x.png"></p>', impl);
+    expect(own).toMatch(/<img src="cid:terno-img-1@terno" alt="x">/);
+    expect(own).not.toMatch(/onerror|https:/);
+  });
+});
+
 describe("links", () => {
   it("allows http, https and mailto only; completes bare hosts and addresses", () => {
     expect(normalizeHref("https://example.com/a")).toBe("https://example.com/a");

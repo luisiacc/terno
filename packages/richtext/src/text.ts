@@ -25,7 +25,7 @@ function inlineText(block: PMNode): string {
   spelledLinks(block).forEach((child) => {
     const mark = child.marks.find((m) => m.type === schema.marks.link);
     if (link && !(mark && link.mark.eq(mark))) flush();
-    const text = child.isText ? child.text! : child.type === schema.nodes.hard_break ? "\n" : "";
+    const text = child.isText ? child.text! : child.type === schema.nodes.hard_break ? "\n" : child.type === schema.nodes.image ? `[image: ${(child.attrs.alt as string) || "image"}]` : "";
     if (mark) {
       link ??= { mark, href: mark.attrs.href as string, text: "" };
       link.text += text;

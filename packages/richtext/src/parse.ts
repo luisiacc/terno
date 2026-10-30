@@ -1,6 +1,6 @@
 import { DOMParser as PMDOMParser, Fragment, Slice, type Node as PMNode } from "prosemirror-model";
 import { isSafeHref } from "./links";
-import { schema } from "./schema";
+import { imageCid, schema } from "./schema";
 
 /**
  * HTML into the composer's document (plan 16 §3): a draft's stored HTML and
@@ -70,7 +70,9 @@ export function cleanDom(body: HTMLElement, { own }: ParseOptions): void {
   for (const el of Array.from(body.querySelectorAll("*"))) {
     if (!el.isConnected) continue;
     const name = el.localName.toLowerCase();
-    if (DROP.has(name)) {
+    // plan 76: Terno's own image (one of the draft's inline parts, by cid) stays; any other image goes
+    const ownImage = own && name === "img" && imageCid(el.getAttribute("src") ?? "") !== null;
+    if (DROP.has(name) && !ownImage) {
       el.remove();
       continue;
     }
@@ -94,7 +96,7 @@ export function cleanDom(body: HTMLElement, { own }: ParseOptions): void {
     for (const attr of Array.from(el.attributes)) {
       const n = attr.name.toLowerCase();
       // data-rt-auto / data-rt-manual (Terno's copy of a link): which kind it is; an autolink only ever follows its text, so harmless from anywhere
-      const keep = n === "style" || n === "data-pm-slice" || (name === "a" && ((n === "href" && isSafeHref(attr.value)) || n === "data-rt-auto" || n === "data-rt-manual")) || (n === "start" && name === "ol") || (own && name === "font" && (n === "face" || n === "size" || n === "color"));
+      const keep = (ownImage && (n === "src" || n === "alt" || n === "width")) || n === "style" || n === "data-pm-slice" || (name === "a" && ((n === "href" && isSafeHref(attr.value)) || n === "data-rt-auto" || n === "data-rt-manual")) || (n === "start" && name === "ol") || (own && name === "font" && (n === "face" || n === "size" || n === "color"));
       if (!keep) el.removeAttribute(attr.name);
     }
   }
