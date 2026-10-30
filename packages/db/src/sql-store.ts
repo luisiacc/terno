@@ -1,5 +1,5 @@
 import { sqlSendCopies } from "./send-copies";
-import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, copyUnavailable } from "@terno/store";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -515,6 +515,10 @@ export class SqlMailStore implements MailStore {
   readonly ops: MailStore["ops"] = {
     claimReady: async (now, limit, admission) => claimReadyOps(this.db, now, limit, undefined, admission && copyOpAdmission(admission)),
     get: async (id) => this.copyOp(getOp(this.db, id)),
+    sendSubmission: async (id) => {
+      const op = this.db.get<Pick<import("@terno/store").OpRow, "kind" | "state" | "target_json">>("SELECT kind,state,target_json FROM ops WHERE id=?", id);
+      return op?.kind === "send" ? { state: op.state, accepted: submissionAccepted(op) } : null;
+    },
     complete: async (id, result, now) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
         const op = getOp(this.db, id);
@@ -524,6 +528,7 @@ export class SqlMailStore implements MailStore {
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
+        if (op.kind === "send" && result?.sendAccepted) sqlSendCopies(this.db).markSubmissionAccepted(id);
         const receipt = sqlSendCopies(this.db).get(id);
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, result.sendAccepted.warning);
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
@@ -555,8 +560,10 @@ export class SqlMailStore implements MailStore {
         return state;
       })),
     markUnknown: async (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => this.db.tx(() => {
+      const op = getOp(this.db, id);
+      if (op?.kind === "send" && op.state === "running" && sendAccepted) sqlSendCopies(this.db).markSubmissionAccepted(id);
       const receipt = sqlSendCopies(this.db).get(id);
-      if (getOp(this.db, id)?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
+      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.db, id, error, now);
     })),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
@@ -577,11 +584,12 @@ export class SqlMailStore implements MailStore {
           completeOp(this.db, id, now);
           if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
           const receipt = sqlSendCopies(this.db).get(id);
+          if (receipt?.submission === "accepted") sqlSendCopies(this.db).markSubmissionAccepted(id);
           if (receipt?.submission === "accepted") this.db.run("UPDATE ops SET last_error=? WHERE id=?", copyWarningText(receipt), id);
           return { touched: [] };
         }
         if (resolution === "retry") {
-          if (sqlSendCopies(this.db).get(id)?.submission === "accepted") throw copyUnavailable();
+          if (submissionAccepted(op) || sqlSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
           if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) {
             const ids = rearmFlagEffects(sqlFlags(this.db), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));

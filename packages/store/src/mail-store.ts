@@ -316,6 +316,8 @@ export interface MailStore {
   ops: {
     claimReady(now: number, limit: number, admission?: OpAdmission): Promise<OpRow[]>;
     get(id: string): Promise<OpRow | null>;
+    /** Point-read only send control/target metadata, without materializing the immutable wire payload. */
+    sendSubmission(id: string): Promise<{ state: OpState; accepted: boolean } | null>;
     /** success, including adopting the provider's ids for a sent message */
     complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: { warning: string | null } } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
     /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */

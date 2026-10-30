@@ -47,7 +47,7 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
 }
 
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
-export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void }): Promise<{ raw: Buffer; rejected: string[]; recipientOutcomeUnknown?: true }> {
+export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void; beforeSubmission?(): Promise<void> }): Promise<{ raw: Buffer; rejected: string[]; recipientOutcomeUnknown?: true }> {
   let raw = await buildRaw(payload, { smtp: true });
   if (hooks?.prepare) {
     const prepared = await hooks.prepare(raw);
@@ -61,6 +61,7 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
     if (!snapshot.equals(raw)) throw new ProviderError(L("errors.sentCopy.unavailable"), false);
     raw = snapshot;
   }
+  await hooks?.beforeSubmission?.();
   let accepted = false;
   // nodemailer reports a dropped connection as "CONN" no matter the stage, so we
   // follow the SMTP transcript to know whether the body was already handed over.

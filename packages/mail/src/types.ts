@@ -31,6 +31,7 @@ export interface ProviderOp {
   payload: unknown;
   requestRun?: RequestRun;
   submissionAccepted?(): void;
+  beforeSubmission?(): Promise<void>;
   sentCopy?: import("./sent-copy").SentCopyHooks;
 }
 

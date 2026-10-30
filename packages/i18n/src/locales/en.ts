@@ -1373,6 +1373,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.moveExpired": "This move can no longer be undone.",
   "errors.draftGone": "This draft was already sent or discarded.",
   "errors.originalGone": "The original message no longer exists.",
+  "errors.send.alreadyAccepted": "This message was already accepted for submission and cannot be sent again. Acceptance does not confirm delivery.",
   "errors.opResolved": "That send was already resolved.",
   // settings
   "errors.themeUnknownLight": "Unknown light theme: {id}",

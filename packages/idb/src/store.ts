@@ -1,5 +1,5 @@
 import { idbSendCopies } from "./send-copies";
-import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, copyUnavailable } from "@terno/store";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
@@ -1024,6 +1024,10 @@ export class IdbMailStore implements MailStore {
       return this.command(() => claimReadyOps(this.c, now, limit, snapshot), { early: true });
     },
     get: (id) => this.early(() => this.copyOp(getOp(this.c, id))),
+    sendSubmission: (id) => this.early(() => {
+      const op = getOp(this.c, id);
+      return op?.kind === "send" ? { state: op.state, accepted: submissionAccepted(op) } : null;
+    }),
     complete: (id, result, now) =>
       this.preparedFlagOutcome(id, () => {
         const op = getOp(this.c, id);
@@ -1033,6 +1037,7 @@ export class IdbMailStore implements MailStore {
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
+        if (op.kind === "send" && result?.sendAccepted) idbSendCopies(this.db).markSubmissionAccepted(id);
         const receipt = idbSendCopies(this.db).get(id);
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
@@ -1064,8 +1069,10 @@ export class IdbMailStore implements MailStore {
         return state;
       }),
     markUnknown: (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => {
+      const op = getOp(this.c, id);
+      if (op?.kind === "send" && op.state === "running" && sendAccepted) idbSendCopies(this.db).markSubmissionAccepted(id);
       const receipt = idbSendCopies(this.db).get(id);
-      if (getOp(this.c, id)?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
+      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.c, id, error, now);
     }),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
@@ -1093,11 +1100,12 @@ export class IdbMailStore implements MailStore {
           completeOp(this.c, id, now);
           if (op.kind === "send") idbAssets(this.db).unlink("op", id);
           const receipt = idbSendCopies(this.db).get(id);
+          if (receipt?.submission === "accepted") idbSendCopies(this.db).markSubmissionAccepted(id);
           if (receipt?.submission === "accepted") T(this.c, "ops").update(T(this.c, "ops").get(id)!, { last_error: copyWarningText(receipt) });
           return { touched: [] };
         }
         if (resolution === "retry") {
-          if (idbSendCopies(this.db).get(id)?.submission === "accepted") throw copyUnavailable();
+          if (submissionAccepted(op) || idbSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
           if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) {
             const ids = rearmFlagEffects(idbFlags(this.c), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));

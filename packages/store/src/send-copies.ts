@@ -29,6 +29,7 @@ export interface SendCopyDb {
   all(): SendCopyRow[];
   put(row: SendCopyRow): void;
   remove(id: string): void;
+  markSubmissionAccepted(id: string): void;
   chunk(id: string, index: number): string | null;
   putChunk(id: string, index: number, data: string): void;
   removeChunks(id: string, limit: number): number;
@@ -38,7 +39,10 @@ export const copyUnavailable = () => new RpcError("BAD_REQUEST", L("errors.sentC
 
 export function reserveSendCopy(db: SendCopyDb, opId: string, accountId: number, now: number, recipients: number): void {
   let rows = db.all();
-  for (const old of rows) if (old.copy === "saved" && old.chunks === 0) db.remove(old.opId);
+  for (const old of rows) if (old.copy === "saved" && old.chunks === 0) {
+    if (old.submission === "accepted") db.markSubmissionAccepted(old.opId);
+    db.remove(old.opId);
+  }
   rows = db.all();
   if (recipients > SEND_RECIPIENT_LIMIT || rows.length >= SEND_COPY_LIMIT || rows.reduce((n, r) => n + r.reserved, 0) + MAX_MIME_BYTES > SEND_COPY_BYTES || db.accountBytes(accountId) + MAX_MIME_BYTES > ATTACHMENT_ACCOUNT_BYTES) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.capacity"));
   db.put({ opId, accountId, submission: "pending", copy: "pending", createdAt: now, reserved: MAX_MIME_BYTES, size: 0, chunks: 0, ready: false, mailbox: null, uidValidity: null, uid: null, warning: null, retiring: false });
@@ -72,6 +76,7 @@ export function sealCopyWire(db: SendCopyDb, id: string): void {
 export function acceptCopySubmission(db: SendCopyDb, id: string, warning: string | null): void {
   const row = requireSendCopy(db, id);
   if (!row.ready || row.submission !== "pending") throw copyUnavailable();
+  db.markSubmissionAccepted(id);
   db.put({ ...row, submission: "accepted", warning });
 }
 
@@ -85,6 +90,7 @@ export function recordCopy(db: SendCopyDb, id: string, copy: SentCopyState, iden
 export function forgetCopySlice(db: SendCopyDb, id: string): boolean {
   const row = db.get(id);
   if (!row) return false;
+  if (row.submission === "accepted") db.markSubmissionAccepted(id);
   if (!row.retiring) db.put({ ...row, retiring: true });
   const removed = db.removeChunks(id, 8);
   if (removed < 8) { db.remove(id); return false; }
@@ -94,6 +100,7 @@ export function forgetCopySlice(db: SendCopyDb, id: string): boolean {
 export function pruneSavedCopySlice(db: SendCopyDb, id: string): boolean {
   const row = requireSendCopy(db, id);
   if (row.copy !== "saved") throw copyUnavailable();
+  if (row.submission === "accepted") db.markSubmissionAccepted(id);
   const removed = db.removeChunks(id, 8);
   if (removed < 8) { db.put({ ...row, reserved: 1024, chunks: 0 }); return false; }
   return true;

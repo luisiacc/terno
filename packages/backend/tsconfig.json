@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
   "include": ["src"],
-  "exclude": ["src/ai-filter-output.test.ts", "src/sent-copy-store.int.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-cooldown.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts", "src/folders-upgrade.test.ts"]
+  "exclude": ["src/send-submission-store.int.test.ts", "src/ai-filter-output.test.ts", "src/sent-copy-store.int.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-cooldown.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts", "src/folders-upgrade.test.ts"]
 }

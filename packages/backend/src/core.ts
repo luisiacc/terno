@@ -1648,15 +1648,26 @@ export class BackendCore {
         await this.store.ops.release(op.id, this.now());
         return;
       }
-      // No await between the final admission check and provider dispatch.
+      // SMTP repeats the durable submission fence after its yielding preparation.
       this.undispatched.delete(op.id);
       transportStarted = true;
       const receipt = sending ? await this.store.sendCopies.get(op.id) : null;
-      if (receipt?.submission === "accepted") throw new ProviderError(L("errors.sentCopy.unavailable"), false, true);
+      const currentSend = sending ? await this.store.ops.sendSubmission(op.id) : null;
+      if (receipt?.submission === "accepted" || currentSend?.accepted) throw new ProviderError(L("errors.send.alreadyAccepted"), false, true);
+      if (sending && (!currentSend || currentSend.state !== "running")) return;
       if (!this.current(life) || hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) { await this.store.ops.release(op.id, this.now()); return; }
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
         requestRun: { markDispatched: () => { remoteDispatched = true; } },
-        submissionAccepted: () => { accepted = true; },
+        submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
+        ...(sending && { beforeSubmission: async () => {
+          // Receipt-first, then fresh op: retirement transfers proof atomically before deleting a receipt.
+          const copy = await this.store.sendCopies.get(op.id);
+          const current = await this.store.ops.sendSubmission(op.id);
+          if (copy?.submission === "accepted" || current?.accepted) throw new ProviderError(L("errors.send.alreadyAccepted"), false, true);
+          if (!current || current.state !== "running") throw new ProviderError(L("errors.sentCopy.unavailable"), false);
+          this.assertCurrent(life);
+          if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true);
+        } }),
         ...(receipt && { sentCopy: {
           prepare: (raw) => this.accountWrite(life, () => prepareCopyWire(this.store, op.id, raw, () => this.platform.yield(), () => { this.assertCurrent(life); if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true); })),
           accepted: (warning) => { sendAccepted = { warning: warning ? encodeText(warning) : null }; return this.accountWrite(life, () => this.store.sendCopies.accepted(op.id, sendAccepted!.warning)); },
@@ -1664,6 +1675,7 @@ export class BackendCore {
         } }),
       });
       accepted = true;
+      if (sending) sendAccepted ??= { warning: null };
       const { warning, ...result } = execution || {};
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;

@@ -281,17 +281,29 @@ describe("sending", () => {
     expect(await backend.store.ops.nextAttemptAt()).toBeNull();
   });
 
-  it.each(["retry", "markSent"] as const)("only an explicit %s resolution can settle a send whose local completion failed", async (resolution) => {
+  it("retains the synchronous acceptance latch when the provider throws before returning a result", async () => {
+    const { backend, client, providers, accountId } = setup(); await backend.provider(accountId);
+    let acknowledgements = 0;
+    providers.get(accountId)!.beforeExecute = (op) => { op.submissionAccepted?.(); acknowledgements++; throw new Error("Synthetic post-acceptance result failure"); };
+    const { opId } = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "Accepted once", bodyText: "Synthetic" });
+    await backend.runWorker();
+    expect((await backend.store.ops.get(opId))?.state).toBe("unknown");
+    await expect(client.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await backend.runWorker(); expect(acknowledgements).toBe(1);
+  });
+
+  it.each(["retry", "markSent"] as const)("a proven accepted send permits markSent but refuses whole-send %s after local completion failed", async (resolution) => {
     const { backend, client, providers, accountId } = setup();
     await backend.provider(accountId);
     vi.spyOn(backend.store.ops, "complete").mockRejectedValueOnce(new Error("completion failed"));
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
     await backend.runWorker();
-    await client.call("ops.resolveUnknown", { opId: sent.opId, resolution });
+    if (resolution === "retry") await expect(client.call("ops.resolveUnknown", { opId: sent.opId, resolution })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    else await client.call("ops.resolveUnknown", { opId: sent.opId, resolution });
     await backend.runWorker();
-    expect(providers.get(accountId)!.executed).toHaveLength(resolution === "retry" ? 2 : 1);
-    expect((await backend.store.ops.get(sent.opId))?.state).toBe("succeeded");
-    await expect(client.call("ops.resolveUnknown", { opId: sent.opId, resolution })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(providers.get(accountId)!.executed).toHaveLength(1);
+    expect((await backend.store.ops.get(sent.opId))?.state).toBe(resolution === "retry" ? "unknown" : "succeeded");
+    if (resolution === "markSent") await expect(client.call("ops.resolveUnknown", { opId: sent.opId, resolution })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("shows the reply in the thread instantly and adopts the provider id after sending", async () => {

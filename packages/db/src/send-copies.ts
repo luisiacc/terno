@@ -1,3 +1,4 @@
+import { acceptedSubmissionTarget, submissionAccepted, type OpRow } from "@terno/store";
 import type { SendCopyDb, SendCopyRow } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -8,6 +9,10 @@ export function sqlSendCopies(db: Db): SendCopyDb {
     get: (id) => { const r = db.get<SendCopyRow>("SELECT * FROM send_copies WHERE opId=?", id); return r ? row(r) : null; },
     all: () => db.all<SendCopyRow>("SELECT * FROM send_copies").map(row),
     put: (r) => { db.run(`INSERT INTO send_copies (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(opId) DO UPDATE SET ${columns.slice(1).map((c) => `${c}=excluded.${c}`).join(",")}`, ...columns.map((c) => typeof r[c] === "boolean" ? Number(r[c]) : r[c])); },
+    markSubmissionAccepted: (id) => {
+      const op = db.get<Pick<OpRow, "kind" | "target_json">>("SELECT kind,target_json FROM ops WHERE id=?", id);
+      if (op?.kind === "send" && !submissionAccepted(op)) db.run("UPDATE ops SET target_json=? WHERE id=?", acceptedSubmissionTarget(op), id);
+    },
     remove: (id) => { db.run("DELETE FROM send_copies WHERE opId=?", id); },
     chunk: (id, index) => db.get<{ data: string }>("SELECT data FROM send_copy_bytes WHERE opId=? AND position=?", id, index)?.data ?? null,
     putChunk: (id, index, data) => { db.run("INSERT INTO send_copy_bytes(opId,position,data) VALUES (?,?,?)", id, index, data); },

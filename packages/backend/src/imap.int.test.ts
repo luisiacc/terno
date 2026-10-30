@@ -1,3 +1,4 @@
+import nodemailer from "../../mail/node_modules/nodemailer/dist/esm/nodemailer.js";
 /**
  * Real imapflow ↔ in-process ImapKit (strict RFC server) and nodemailer ↔
  * in-process smtp-server, driven through the real Backend.
@@ -2845,6 +2846,126 @@ describe("IMAP identity and safety (review fixes)", () => {
 });
 
 describe("sending through SMTP", () => {
+  it.each([
+    { append: false, partial: true, fault: "rollback" }, { append: true, partial: true, fault: "rollback" },
+    { append: false, partial: false, fault: "rollback" }, { append: true, partial: false, fault: "rollback" },
+    { append: false, partial: true, fault: "normalizer" }, { append: true, partial: true, fault: "normalizer" },
+    { append: false, partial: true, fault: "committed rejection" }, { append: true, partial: true, fault: "committed rejection" },
+  ] as const)("proven SMTP acceptance fences public retry after reopen: %j", async ({ append, partial, fault }) => {
+    const t = await setup({ smtp: { rejectRcpt: "nadie@example.com", tempFailRcpt: "luego@example.com" } });
+    const account = await t.addAccount(t.imap.port);
+    if (!append) {
+      await t.backend.dropAccount(account.id);
+      await t.backend.store.accounts.setProviderConfig(account.id, { ...(await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config, appendToSent: false });
+      await t.backend.signedIn(account.id);
+    }
+    let normalizations = 0;
+    const create = nodemailer.createTransport.bind(nodemailer);
+    const factory = fault === "normalizer" ? vi.spyOn(nodemailer, "createTransport").mockImplementation((...args: Parameters<typeof nodemailer.createTransport>) => {
+      const transport = create(...args), send = transport.sendMail.bind(transport);
+      transport.sendMail = (async (input: Parameters<typeof send>[0]) => {
+        const result = await send(input); normalizations++;
+        return Object.defineProperty(result, "rejected", { get() { throw new Error("Synthetic post-acceptance normalization failed"); } });
+      }) as typeof transport.sendMail;
+      return transport;
+    }) : null;
+    let opId = "", faults = 0;
+    const db = sqlDb(t.backend.store);
+    const inject = () => {
+      if (faults || !opId || db.get<{ state: string }>("SELECT state FROM ops WHERE id=?", opId)?.state !== "succeeded") return;
+      faults++; throw new Error("Synthetic native completion acknowledgement failed");
+    };
+    if (fault === "committed rejection") db.onCommit(inject); else db.onBeforeCommit(inject);
+    try {
+      ({ opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, ...(partial ? [{ name: "", email: "nadie@example.com" }] : [])], cc: partial ? [{ name: "", email: "luego@example.com" }] : [], bcc: [{ name: "", email: "hidden@example.com" }], subject: "Proven acceptance", bodyText: "Original synthetic bytes" }));
+      await t.backend.runWorker();
+    } finally { factory?.mockRestore(); }
+    expect(faults).toBe(1); expect(normalizations).toBe(fault === "normalizer" ? 1 : 0);
+    expect(t.smtp.received).toHaveLength(1); expect(t.smtp.received[0]!.rcpt).toEqual(["ana@example.com", "hidden@example.com"]);
+    expect(t.smtp.received[0]!.raw).not.toMatch(/^Bcc:/mi);
+    const copies = t.imap.server.control.listMessages("Sent", { raw: true }) as { raw: Buffer }[];
+    expect(copies).toHaveLength(append ? 1 : 0);
+    if (append) {
+      expect(copies[0]!.raw.toString()).toBe(t.smtp.received[0]!.raw);
+      while (await t.backend.store.sendCopies.forgetSlice(opId)) { /* Store retirement is independent of public cleanup availability. */ }
+    }
+    await t.backend.dropAccount(account.id);
+    await t.backend.store.accounts.setProviderConfig(account.id, { ...(await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config, appendToSent: !append });
+    await t.stop();
+    const reopened = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false }); cleanups.push(() => reopened.stop()); await reopened.ready;
+    const [c, server] = createMemoryTransportPair(); reopened.connect(server, { clientId: "acceptance", origin: "renderer" }); const rpc = new RpcClient(c); cleanups.push(() => rpc.close());
+    const retried = await rpc.call("ops.resolveUnknown", { opId, resolution: "retry" }).then(() => true, () => false);
+    await reopened.runWorker();
+    expect(t.smtp.received).toHaveLength(1); expect(retried).toBe(false);
+    const op = (await reopened.store.ops.get(opId))!;
+    expect(JSON.parse(op.target_json).submissionAccepted).toBe(true);
+    expect(op.state).toBe(fault === "committed rejection" ? "succeeded" : "unknown");
+    if (op.state === "unknown") await expect(rpc.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("accepted for submission") });
+    sqlDb(reopened.store).run("UPDATE ops SET state='queued', next_attempt_at=0 WHERE id=?", opId);
+    await reopened.runWorker();
+    expect(t.smtp.received).toHaveLength(1);
+    expect((await reopened.store.ops.get(opId))?.state).toBe("unknown");
+  });
+
+  it("rechecks proven acceptance after yielding MIME preparation before creating an SMTP transport", async () => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    await t.backend.dropAccount(account.id);
+    await t.backend.store.accounts.setProviderConfig(account.id, { ...(await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config, appendToSent: false });
+    await t.backend.signedIn(account.id);
+    let arrive = () => {}, release = () => {}, held = false;
+    const reached = new Promise<void>((r) => { arrive = r; }), resumed = new Promise<void>((r) => { release = r; });
+    vi.stubGlobal("scheduler", { yield: async () => { if (!held) { held = true; arrive(); await resumed; } } });
+    const transport = vi.spyOn(nodemailer, "createTransport");
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Late proof", bodyText: "Synthetic" });
+    const worker = t.backend.runWorker();
+    try {
+      await reached;
+      const op = (await t.backend.store.ops.get(opId))!;
+      sqlDb(t.backend.store).run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...JSON.parse(op.target_json), submissionAccepted: true }), opId);
+    } finally { release(); await worker; vi.unstubAllGlobals(); }
+    expect(transport).not.toHaveBeenCalled(); transport.mockRestore();
+    expect(t.smtp.received).toHaveLength(0);
+    expect((await t.backend.store.ops.get(opId))?.state).toBe("unknown");
+  });
+
+  it("receipt retirement between proof reads cannot open a stale legacy send's transport", async () => {
+    const t = await setup(); const account = await t.addAccount(t.imap.port);
+    // Queue directly so the worker cannot claim until the legacy receipt is seeded.
+    const { opId } = await t.backend.store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "ana@example.com" }], cc: [], bcc: [], subject: "Legacy proof", bodyText: "Synthetic", recordReply: false, now: Date.now() });
+    await t.backend.store.sendCopies.startWire(opId, 1); await t.backend.store.sendCopies.appendWire(opId, 0, "YQ=="); await t.backend.store.sendCopies.sealWire(opId);
+    await t.backend.store.sendCopies.accepted(opId, null); await t.backend.store.sendCopies.record(opId, "saved");
+    const op = (await t.backend.store.ops.get(opId))!, legacy = JSON.parse(op.target_json); delete legacy.submissionAccepted;
+    sqlDb(t.backend.store).run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify(legacy), opId);
+    const get = t.backend.store.sendCopies.get.bind(t.backend.store.sendCopies);
+    let retired = false;
+    const proof = vi.spyOn(t.backend.store.sendCopies, "get").mockImplementation(async (id) => {
+      if (!retired && id === opId) { retired = true; while (await t.backend.store.sendCopies.forgetSlice(id)) { /* atomic transfer before deletion */ } }
+      return get(id);
+    });
+    const transport = vi.spyOn(nodemailer, "createTransport");
+    try { await t.backend.runWorker(); } finally { proof.mockRestore(); }
+    expect(retired).toBe(true); expect(transport).not.toHaveBeenCalled(); transport.mockRestore();
+    expect(t.smtp.received).toHaveLength(0);
+    expect(JSON.parse((await t.backend.store.ops.get(opId))!.target_json).submissionAccepted).toBe(true);
+    expect((await t.backend.store.ops.get(opId))?.state).toBe("unknown");
+  });
+
+  it("a temporary pre-DATA refusal remains safely retryable and later submits once", async () => {
+    const refusal: { tempFailRcpt?: string } = { tempFailRcpt: "ana@example.com" };
+    const t = await setup({ smtp: refusal }); const account = await t.addAccount(t.imap.port);
+    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }], subject: "Safe retry", bodyText: "Synthetic" });
+    await t.backend.runWorker();
+    const before = (await t.backend.store.ops.get(opId))!;
+    expect(before.state).toBe("queued"); expect(JSON.parse(before.target_json).submissionAccepted).toBeUndefined();
+    expect(t.smtp.received).toHaveLength(0);
+    delete refusal.tempFailRcpt;
+    sqlDb(t.backend.store).run("UPDATE ops SET next_attempt_at=0 WHERE id=?", opId);
+    await t.backend.runWorker();
+    expect(t.smtp.received).toHaveLength(1); expect(t.smtp.received[0]!.rcpt).toEqual(["ana@example.com"]);
+    expect((await t.backend.store.ops.get(opId))?.state).toBe("succeeded");
+    expect(JSON.parse((await t.backend.store.ops.get(opId))!.target_json).submissionAccepted).toBe(true);
+  });
+
   it.each(["rejected", "lost acknowledgement", "lost before application"] as const)("durably repairs a %s Sent APPEND without a second SMTP submission", async (fault) => {
     const t = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
     const account = await t.addAccount(t.imap.port);

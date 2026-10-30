@@ -1365,6 +1365,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.moveExpired": "Este movimiento ya no se puede deshacer",
   "errors.draftGone": "Este borrador ya se envió o se descartó",
   "errors.originalGone": "El mensaje original ya no existe.",
+  "errors.send.alreadyAccepted": "Este mensaje ya fue aceptado para su envío y no se puede volver a enviar. La aceptación no confirma su entrega.",
   "errors.opResolved": "Ese envío ya se resolvió.",
   // settings
   "errors.themeUnknownLight": "Tema desconocido para el modo claro: {id}",
