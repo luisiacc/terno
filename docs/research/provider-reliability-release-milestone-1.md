@@ -198,3 +198,7 @@ The original report contains exact project variants, full test names, expected/r
 `df46ed46` addresses the stale unknown-operation completion expectation and IDB historical schema, migration fault activation, delayed loading and early-load exception identity. Root's rebased targeted qualification:84upgrade/persistence +62adjacency +12Node/fake-IDB +4WASM cases pass; store/db/idb/web types, scoped package lint and whitespace pass. One native code review: no Standards/Spec findings. See [Plan76](../plans/76-store-release-repair.md). This does not replace the failed milestone result.
 
 OPFS remains unverified after worker timeouts. Native IDB's unintentionally expanded608-pass/2-existing-skip observation is separately recorded. The three Node-disk/WASM-adapter storage failures remain open. No full gate was replayed, no thresholds or safety assertions relaxed, and no held feature backlog was reworked.
+
+## Landed repair: renderer admission
+
+`4a945b1b` normalizes new draft representation and permits read-only pending-Send reopening while retaining strict edit/Send admission. Root's rebased266unit/direct cases,8affected perf cases and18selected browser cases pass; web types/lint and light/dark visual inspection pass. One code-review P2 dev-port finding received a failing regression and fix. See [the renderer repair record](../plans/drafts/release-renderer-admission.md). Immediate-typing and lazy-browser interception failures remain open, and the original full milestone remains failed.
