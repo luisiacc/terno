@@ -18,6 +18,12 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
+function gate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
 function open(dir: string, now: () => number = () => NOW, options: Pick<BackendOptions, "aiFactory" | "log"> = {}) {
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now, autoSync: false, ...options });
   const [c, s] = createMemoryTransportPair();
@@ -429,6 +435,277 @@ describe("categorizer: auto-apply at ingestion", () => {
     }
     throw new Error(`no uncertain draft: ${seen.join(" ")}`);
   }
+
+  async function assistMail(count: number, options: Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+    const t = await trained(options);
+    const draft = await uncertainMail(t.backend, t.acct, t.cat);
+    const threads = [...ingestMessages(sqlDb(t.backend.store), Array.from({ length: count }, () => incoming(t.acct, draft)), NOW).touchedThreads];
+    return { ...t, threads };
+  }
+
+  function classification(req: Parameters<ModelTransport["complete"]>[0]) {
+    const items = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
+    return { stop: "end" as const, text: JSON.stringify({ results: items.map(({ id }) => ({ id, label: "Facturas", confidence: 0.95 })) }) };
+  }
+
+  it.each(["none", "missing-key", "local-mode", "factory-error", "factory-value"] as const)("releases current and queued admission after %s preparation refusal, only on explicit enqueue", async (mode) => {
+    let refuse = mode === "factory-error" || mode === "factory-value";
+    let calls = 0;
+    const sentinel = "synthetic-private-config-model-key-detail";
+    const logs: unknown[] = [];
+    const t = await assistMail(2, {
+      log: (...args) => logs.push(args),
+      aiFactory: (config) => {
+        if (refuse) throw mode === "factory-value" ? { detail: sentinel } : new Error(sentinel);
+        return createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } });
+      },
+    });
+    const { backend, threads } = t;
+    const ai = mode === "local-mode" || mode === "missing-key" ? { provider: "openai", model: sentinel } : { provider: mode === "none" ? "none" : "fake", model: sentinel };
+    setSetting(sqlDb(backend.store), "app", { aiCategorize: true, localMode: mode !== "missing-key", ai });
+    await backend.aiAssist.enqueue(threads);
+    await backend.aiAssist.drain();
+    expect(calls).toBe(0);
+    expect(backend.aiAssist.pending).toBe(0);
+    expect.soft(JSON.stringify(logs)).not.toContain(sentinel);
+    for (const id of threads) expect(t.decision(id)).toBeUndefined();
+    refuse = false;
+    setSetting(sqlDb(backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await backend.aiAssist.drain();
+    expect(calls).toBe(0); // fixing settings alone never retries
+    await backend.aiAssist.enqueue(threads);
+    await backend.aiAssist.drain();
+    expect(calls).toBe(2);
+    for (const id of threads) {
+      expect(t.decision(id)?.kind).toBe("suggest");
+      expect(t.inCategory(id)).toBeNull();
+    }
+  });
+
+  it.each(["assist", "auto"] as const)("releases a queue discarded while %s is disabled for later explicit enqueue", async (setting) => {
+    let calls = 0;
+    const t = await assistMail(2, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    const settings = (enabled: boolean) => setSetting(sqlDb(t.backend.store), "app", { aiCategorize: setting === "assist" ? enabled : true, autoCategorize: setting === "auto" && !enabled ? "off" : "auto", ai: { provider: "fake" } });
+    settings(true);
+    await t.backend.aiAssist.enqueue(t.threads);
+    settings(false);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(0);
+    expect(t.backend.aiAssist.pending).toBe(0);
+    settings(true);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(0);
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(2);
+    for (const id of t.threads) expect(t.decision(id)?.kind).toBe("suggest");
+  });
+
+  it("does not charge refused preparation against the 20 actual task attempts", async () => {
+    let refuse = true;
+    let calls = 0;
+    const t = await assistMail(25, { aiFactory: (config) => {
+      if (refuse) throw new Error("synthetic-refusal");
+      return createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } });
+    } });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue([t.threads[0]!]);
+    await t.backend.aiAssist.drain();
+    refuse = false;
+    await t.backend.aiAssist.enqueue(t.threads.slice(1));
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(20);
+    expect(t.backend.aiAssist.pending).toBe(4);
+    expect(t.threads.filter((id) => t.decision(id)?.kind === "suggest")).toHaveLength(20);
+  });
+
+  it.each(["disable", "auto-off", "shutdown"] as const)("does not start tasks after %s during actual preparation", async (interrupt) => {
+    let calls = 0;
+    const t = await assistMail(2, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    const prepared = gate(); const answer = gate();
+    const real = t.backend.ai.bind(t.backend);
+    t.backend.ai = async () => { const ai = await real(); prepared.release(); await answer.promise; return ai; };
+    const settings = (enabled: boolean) => setSetting(sqlDb(t.backend.store), "app", { aiCategorize: enabled, ai: { provider: "fake" } });
+    settings(true);
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await prepared.promise;
+    await t.backend.aiAssist.enqueue(t.threads); // in-flight/queued duplicates
+    if (interrupt === "disable") settings(false);
+    else if (interrupt === "auto-off") setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, autoCategorize: "off", ai: { provider: "fake" } });
+    else t.backend.aiAssist.stop();
+    answer.release();
+    await running;
+    expect.soft(calls).toBe(0);
+    for (const id of t.threads) expect(t.decision(id)).toBeUndefined();
+    settings(true);
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(interrupt !== "shutdown" ? 2 : 0);
+  });
+
+  it("does not admit an enqueue whose settings read finishes after shutdown", async () => {
+    let calls = 0;
+    const t = await assistMail(1, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    const started = gate(); const read = gate();
+    const get = t.backend.store.settings.get.bind(t.backend.store.settings);
+    const spy = vi.spyOn(t.backend.store.settings, "get").mockImplementation(async (key, fallback) => {
+      const value = await get(key, fallback);
+      if (key === "app") { started.release(); await read.promise; }
+      return value;
+    });
+    const enqueue = t.backend.aiAssist.enqueue(t.threads);
+    await started.promise;
+    t.backend.aiAssist.stop();
+    read.release();
+    await enqueue;
+    spy.mockRestore();
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(0);
+    expect(t.backend.aiAssist.pending).toBe(0);
+  });
+
+  it("retains completed non-decisions when later queued preparation is refused", async () => {
+    let calls = 0;
+    const t = await assistMail(3, { aiFactory: (config) => createAi(config, { transport: { async complete(req) {
+      calls++;
+      const result = classification(req);
+      const parsed = JSON.parse(result.text);
+      parsed.results[0].label = null;
+      return { ...result, text: JSON.stringify(parsed) };
+    } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue([t.threads[0]!]);
+    await t.backend.aiAssist.drain();
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "none" } });
+    await t.backend.aiAssist.enqueue(t.threads.slice(1));
+    await t.backend.aiAssist.drain();
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(3); // completed null is retained; only the two discarded IDs run
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(3);
+    for (const id of t.threads) expect(t.decision(id)).toBeUndefined();
+  });
+
+  it.each(["disable", "shutdown"] as const)("does not issue structured repairs after %s during model work", async (interrupt) => {
+    let calls = 0;
+    const started = gate(); const answer = gate();
+    const t = await assistMail(1, { aiFactory: (config) => createAi({ ...config, capabilities: { output: "json_schema", contextTokens: null, embeddings: false, probedAt: null } }, { transport: { async complete() {
+      calls++;
+      started.release();
+      await answer.promise;
+      return { stop: "end", text: "{}" };
+    } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    if (interrupt === "disable") setSetting(sqlDb(t.backend.store), "app", { aiCategorize: false, ai: { provider: "fake" } });
+    else t.backend.aiAssist.stop();
+    answer.release();
+    await running;
+    expect(calls).toBe(1);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+  });
+
+  it("timestamps actual task starts after slow preparation and expires at exactly one minute", async () => {
+    let calls = 0;
+    const prepared = gate(); const answer = gate();
+    const t = await assistMail(21, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    const real = t.backend.ai.bind(t.backend);
+    let first = true;
+    t.backend.ai = async () => {
+      const ai = await real();
+      if (first) { first = false; prepared.release(); await answer.promise; }
+      return ai;
+    };
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      vi.setSystemTime(NOW);
+      await t.backend.aiAssist.enqueue(t.threads);
+      const running = t.backend.aiAssist.drain();
+      await prepared.promise;
+      vi.setSystemTime(NOW + 60_000);
+      answer.release();
+      await running;
+      expect(calls).toBe(20);
+      expect(t.backend.aiAssist.pending).toBe(1);
+      vi.setSystemTime(NOW + 119_999);
+      await t.backend.aiAssist.drain();
+      expect(calls).toBe(20);
+      vi.setSystemTime(NOW + 120_000);
+      await t.backend.aiAssist.drain();
+      expect(calls).toBe(21);
+      expect(t.backend.aiAssist.pending).toBe(0);
+    } finally { t.backend.aiAssist.stop(); vi.useRealTimers(); }
+  });
+
+  it("does not restore rate-wait admission after shutdown during category context", async () => {
+    let calls = 0;
+    const t = await assistMail(21, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue(t.threads.slice(0, 20));
+    await t.backend.aiAssist.drain();
+    const started = gate(); const read = gate();
+    const list = t.backend.store.categories.list.bind(t.backend.store.categories);
+    t.backend.store.categories.list = async () => { const categories = await list(); started.release(); await read.promise; return categories; };
+    await t.backend.aiAssist.enqueue(t.threads.slice(20));
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    t.backend.aiAssist.stop();
+    read.release();
+    await running;
+    expect(calls).toBe(20);
+    expect(t.backend.aiAssist.pending).toBe(0);
+  });
+
+  it("does not persist when shutdown occurs during the final settings read", async () => {
+    let armed = false;
+    const started = gate(); const read = gate();
+    const t = await assistMail(1, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { armed = true; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    const get = t.backend.store.settings.get.bind(t.backend.store.settings);
+    const spy = vi.spyOn(t.backend.store.settings, "get").mockImplementation(async (key, fallback) => {
+      const value = await get(key, fallback);
+      if (key === "app" && armed) { started.release(); await read.promise; }
+      return value;
+    });
+    const record = vi.spyOn(t.backend.store.categorize, "recordAiSuggestion");
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    t.backend.aiAssist.stop();
+    read.release();
+    await running;
+    spy.mockRestore();
+    expect(record).not.toHaveBeenCalled();
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+  });
+
+  it("deduplicates current work and cannot persist or restart after shutdown during a task", async () => {
+    let calls = 0;
+    const started = gate(); const answer = gate();
+    const t = await assistMail(2, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; started.release(); await answer.promise; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    await t.backend.aiAssist.enqueue(t.threads);
+    expect(t.backend.aiAssist.pending).toBe(1);
+    t.backend.aiAssist.stop();
+    answer.release();
+    await running;
+    for (const id of t.threads) expect.soft(t.decision(id)).toBeUndefined();
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(1);
+    expect(t.backend.aiAssist.pending).toBe(0);
+  });
 
   it("the AI assist is off by default: uncertain mail stays undecided and no AI is asked", async () => {
     const { backend, acct, cat, arrive, decision } = await trained();
