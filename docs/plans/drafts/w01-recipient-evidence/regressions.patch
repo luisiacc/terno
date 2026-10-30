@@ -1,0 +1,173 @@
+diff --git a/packages/backend/src/imap.int.test.ts b/packages/backend/src/imap.int.test.ts
+index 376b5303..0c281282 100644
+--- a/packages/backend/src/imap.int.test.ts
++++ b/packages/backend/src/imap.int.test.ts
+@@ -2845,6 +2845,36 @@ describe("IMAP identity and safety (review fixes)", () => {
+ });
+
+ describe("sending through SMTP", () => {
++  it.each([true, false])("durable recipient evidence survives acceptance/completion failures and restart (append=%s)", async (appendToSent) => {
++    const t = await setup({ smtp: { rejectRcpt: "nadie@example.com", tempFailRcpt: "luego@example.com" } });
++    const account = await t.addAccount(t.imap.port);
++    if (!appendToSent) {
++      await t.backend.dropAccount(account.id);
++      await t.backend.store.accounts.setProviderConfig(account.id, { ...(await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config, appendToSent: false });
++      await t.backend.signedIn(account.id);
++    }
++    const complete = vi.spyOn(t.backend.store.ops, "complete").mockRejectedValueOnce(new Error("Synthetic local completion refused"));
++    const accepted = vi.spyOn(t.backend.store.sendCopies, "accepted").mockRejectedValueOnce(new Error("Synthetic acceptance refused"));
++    const { opId } = await t.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], cc: [{ name: "", email: "luego@example.com" }], bcc: [{ name: "", email: "hidden@example.com" }], subject: "Recipient evidence", bodyText: "Exact synthetic bytes" });
++    if (!appendToSent) expect(await t.backend.store.sendCopies.get(opId)).toBeNull();
++    await t.backend.runWorker(); complete.mockRestore(); accepted.mockRestore();
++    expect(t.imap.server.control.listMessages("Sent")).toHaveLength(0);
++    expect(t.smtp.received).toHaveLength(1); expect(t.smtp.received[0]!.rcpt).toEqual(["ana@example.com", "hidden@example.com"]);
++    expect(t.smtp.received[0]!.raw).not.toMatch(/^Bcc:/mi);
++    await t.stop();
++    const reopened = new Backend({ dbPath: join(t.dir, "u.db"), version: "t", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false }); cleanups.push(() => reopened.stop()); await reopened.ready;
++    const info = reopened.opInfo((await reopened.store.ops.get(opId))!);
++    const retried = await reopened.store.ops.resolveUnknown(opId, "retry", Date.now()).then(() => true, () => false);
++    await reopened.runWorker();
++    expect(t.smtp.received).toHaveLength(1); expect(retried).toBe(false);
++    expect(info).toMatchObject({ state: "unknown", partialRecipients: true, recipientOutcomeUnknown: false, recipients: { version: 1, source: "smtp-response", submission: "accepted", entries: [
++      { field: "to", index: 0, address: "ana@example.com", status: "accepted" },
++      { field: "to", index: 1, address: "nadie@example.com", status: "rejected" },
++      { field: "cc", index: 0, address: "luego@example.com", status: "rejected" },
++      { field: "bcc", index: 0, address: "hidden@example.com", status: "accepted" },
++    ] } });
++  });
++
+   it.each(["rejected", "lost acknowledgement", "lost before application"] as const)("durably repairs a %s Sent APPEND without a second SMTP submission", async (fault) => {
+     const t = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
+     const account = await t.addAccount(t.imap.port);
+@@ -2939,7 +2969,7 @@ describe("sending through SMTP", () => {
+     expect(await reopened.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "unknown" });
+   });
+
+-  it("partial delivery succeeds but records which recipients were rejected", async () => {
++  it("partial submission succeeds but records which recipients were rejected", async () => {
+     const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
+     const account = await addAccount(imap.port);
+     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
+diff --git a/packages/backend/src/sent-copy-store.int.test.ts b/packages/backend/src/sent-copy-store.int.test.ts
+index 2e650b36..398f6331 100644
+--- a/packages/backend/src/sent-copy-store.int.test.ts
++++ b/packages/backend/src/sent-copy-store.int.test.ts
+@@ -30,6 +30,37 @@ for (const adapter of ["SQL", "IDB"] as const) describe(`${adapter} durable Sent
+     return { store, open, account, command };
+   }
+
++  it.each([true, false])("persists recipient evidence independently of Sent-copy storage (append=%s)", async (appendToSent) => {
++    const { store, open, command } = await setup();
++    const { account } = await store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "", color: "indigo", providerConfig: { appendToSent }, now: 1 });
++    const { opId } = await store.compose.queueSend({ ...command, accountId: account.id, cc: [{ email: "reject@example.test", name: "" }] });
++    await store.ops.claimReady(2, 10);
++    const recipients = { version: 1 as const, source: "smtp-response" as const, submission: "accepted" as const, entries: [
++      { field: "to" as const, index: 0, address: "recipient@example.test", status: "accepted" as const },
++      { field: "cc" as const, index: 0, address: "reject@example.test", status: "rejected" as const },
++    ] };
++    await store.ops.markUnknown(opId, "Synthetic local completion failure", 3, undefined, recipients);
++    await store.close(); const next = await open();
++    expect(await next.ops.get(opId)).toMatchObject({ state: "unknown", send_recipients: recipients, send_partial: true, send_recipient_unknown: false });
++    expect((await next.ops.recent(10))[0]?.send_recipients).toEqual(recipients);
++    await expect(next.ops.resolveUnknown(opId, "retry", 4)).rejects.toThrow();
++    expect(await next.ops.claimReady(100000, 10)).toEqual([]);
++    await next.ops.resolveUnknown(opId, "markSent", 5);
++    expect(await next.ops.get(opId)).toMatchObject({ state: "succeeded", send_recipients: recipients, send_partial: true });
++  });
++
++  it("keeps completed evidence immutable across stale completion and unknown callbacks", async () => {
++    const { store, open, command } = await setup();
++    const { opId } = await store.compose.queueSend(command); await store.ops.claimReady(2, 10);
++    const recipients = { version: 1 as const, source: "smtp-response" as const, submission: "accepted" as const, entries: [{ field: "to" as const, index: 0, address: "recipient@example.test", status: "accepted" as const }] };
++    await store.ops.complete(opId, { recipients }, 3);
++    const wrong = { ...recipients, source: "smtp-ambiguous" as const, submission: "unknown" as const, entries: recipients.entries.map((e) => ({ ...e, status: "unknown" as const })) };
++    await store.ops.complete(opId, { recipients: wrong }, 4);
++    await store.ops.markUnknown(opId, "Stale callback", 5, undefined, wrong);
++    await store.close(); const next = await open();
++    expect(await next.ops.get(opId)).toMatchObject({ state: "succeeded", send_recipients: recipients, send_partial: false, send_recipient_unknown: false });
++  });
++
+   it("reserves Sent-copy recovery before dispatch instead of silently losing APPEND evidence", async () => {
+     const { store, command } = await setup();
+     const { opId } = await store.compose.queueSend(command);
+diff --git a/packages/mail/src/smtp-recipients.test.ts b/packages/mail/src/smtp-recipients.test.ts
+new file mode 100644
+index 00000000..936df715
+--- /dev/null
++++ b/packages/mail/src/smtp-recipients.test.ts
+@@ -0,0 +1,75 @@
++import { createRequire } from "node:module";
++import nodemailer from "nodemailer";
++import { afterEach, expect, it, vi } from "vitest";
++import { sendViaSmtp } from "./smtp";
++import type { SendPayload } from "./types";
++
++const { SMTPServer } = createRequire(new URL("../../backend/src/imap.int.test.ts", import.meta.url))("smtp-server") as typeof import("../../backend/node_modules/@types/smtp-server");
++const closes: (() => Promise<void>)[] = [];
++afterEach(async () => { vi.restoreAllMocks(); for (const close of closes.splice(0)) await close(); });
++const address = (email: string) => ({ name: "", email });
++const payload: SendPayload = { from: address("sender@example.test"), to: [address("yes@example.test"), address("no@example.test")], cc: [address("later@example.test")], bcc: [address("hidden@example.test")], subject: "Synthetic", text: "One immutable submission", messageId: "recipients@example.test", inReplyTo: null, references: [], providerThreadId: null };
++const entries = [
++  { field: "to", index: 0, address: "yes@example.test", status: "accepted" },
++  { field: "to", index: 1, address: "no@example.test", status: "rejected" },
++  { field: "cc", index: 0, address: "later@example.test", status: "rejected" },
++  { field: "bcc", index: 0, address: "hidden@example.test", status: "accepted" },
++];
++async function fixture(drop = false) {
++  const received: { raw: Buffer; recipients: string[] }[] = [];
++  const server = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }),
++    onRcptTo(a, _s, cb) { cb(a.address === "no@example.test" || a.address === "later@example.test" ? Object.assign(new Error("Synthetic rejection"), { responseCode: a.address === "no@example.test" ? 550 : 450 }) : undefined); },
++    onData(stream, session, cb) { const chunks: Buffer[] = []; stream.on("data", (c: Buffer) => chunks.push(c)); stream.on("end", () => { received.push({ raw: Buffer.concat(chunks), recipients: session.envelope.rcptTo.map((r) => r.address) }); if (drop) for (const socket of sockets) socket.destroy(); else cb(); }); },
++  });
++  const sockets = new Set<import("node:net").Socket>();
++  server.server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
++  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
++  closes.push(() => new Promise<void>((resolve) => server.close(resolve)));
++  return { received, config: { host: "127.0.0.1", port: (server.server.address() as { port: number }).port, secure: false, user: "synthetic", password: "synthetic", allowInsecure: true } };
++}
++function transformResult(transform: (info: unknown) => unknown) {
++  const create = nodemailer.createTransport.bind(nodemailer);
++  vi.spyOn(nodemailer, "createTransport").mockImplementation((...args: Parameters<typeof nodemailer.createTransport>) => {
++    const transport = create(...args), send = transport.sendMail.bind(transport);
++    transport.sendMail = (async (input: Parameters<typeof send>[0]) => transform(await send(input))) as typeof transport.sendMail;
++    return transport;
++  });
++}
++it("reports exact captured occurrences from real partial SMTP acceptance without claiming delivery", async () => {
++  const t = await fixture();
++  const result = await sendViaSmtp(t.config, payload);
++  expect(t.received).toHaveLength(1); expect(t.received[0]!.recipients).toEqual(["yes@example.test", "hidden@example.test"]);
++  expect(t.received[0]!.raw.equals(result.raw)).toBe(true); expect(result.raw.toString()).not.toMatch(/^Bcc:/mi);
++  expect(result.recipients).toEqual({ version: 1, source: "smtp-response", submission: "accepted", entries });
++});
++it("keeps identical duplicates coherent and case variants unknown", async () => {
++  const t = await fixture();
++  const result = await sendViaSmtp(t.config, { ...payload, to: [address("yes@example.test"), address("yes@example.test"), address("YES@example.test")], cc: [], bcc: [] });
++  expect(result.recipients.entries.map((r) => r.status)).toEqual(["unknown", "unknown", "unknown"]);
++  expect(t.received).toHaveLength(1);
++});
++it.each([
++  { accepted: ["yes@example.test"], rejected: [] },
++  { accepted: ["yes@example.test", "no@example.test", "hidden@example.test"], rejected: ["no@example.test", "later@example.test"] },
++  { accepted: ["outsider@example.test"], rejected: ["no@example.test", "later@example.test"] },
++  { accepted: [], rejected: ["yes@example.test", "no@example.test", "later@example.test", "hidden@example.test"] },
++  { accepted: ["yes@example.test", "hidden@example.test"], rejected: [null] },
++])("treats malformed/inconsistent provider results as unknown: %j", async (report) => {
++  const t = await fixture(); transformResult(() => report);
++  const result = await sendViaSmtp(t.config, payload);
++  expect(t.received).toHaveLength(1);
++  expect(result.recipients).toEqual({ version: 1, source: "smtp-invalid-response", submission: "accepted", entries: entries.map((r) => ({ ...r, status: "unknown" })) });
++  expect(result.recipientOutcomeUnknown).toBe(true); expect(result.rejected).toEqual([]);
++});
++it("accepts provider address objects without retaining foreign diagnostics", async () => {
++  const t = await fixture(); transformResult(() => ({ accepted: ["yes@example.test", "hidden@example.test"], rejected: [{ address: "no@example.test", response: "Untrusted provider text" }, { address: "later@example.test" }] }));
++  const result = await sendViaSmtp(t.config, payload);
++  expect(result.recipients.entries).toEqual(entries);
++});
++
++it("reports all recipients unknown when DATA was received but the final reply is lost", async () => {
++  const t = await fixture(true), recipients = vi.fn();
++  await expect(sendViaSmtp(t.config, payload, { recipients })).rejects.toMatchObject({ ambiguous: true, retryable: false });
++  expect(t.received).toHaveLength(1); expect(t.received[0]!.recipients).toEqual(["yes@example.test", "hidden@example.test"]);
++  expect(recipients).toHaveBeenCalledExactlyOnceWith({ version: 1, source: "smtp-ambiguous", submission: "unknown", entries: entries.map((r) => ({ ...r, status: "unknown" })) });
++});
