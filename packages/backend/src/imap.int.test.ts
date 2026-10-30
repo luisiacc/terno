@@ -8,7 +8,7 @@ import { createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { createRegistry } from "@terno/mail";
+import { createRegistry, ProviderError } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1089,23 +1089,88 @@ describe("a new account's first sync (plan 76)", () => {
     expect(events).toEqual(["ingest:1:301", "bodies"]);
   });
 
-  it("a first pass that stopped runs the preview again without writing anything twice", async () => {
+  /** the pass stops right after the preview (its bodies in): the full read's first ingest fails, once; the sizes of every ingest */
+  const stopAfterPreview = (backend: Backend) => {
+    const core = backend as unknown as { ingestSliced: (...a: unknown[]) => Promise<unknown> };
+    const ingest = core.ingestSliced.bind(core);
+    const sizes: number[] = [];
+    vi.spyOn(core, "ingestSliced").mockImplementation((...a) => {
+      sizes.push((a[0] as unknown[]).length);
+      if (sizes.length === 2) throw new Error("synthetic stop after the preview");
+      return ingest(...a);
+    });
+    return sizes;
+  };
+  const placed = (backend: Backend) => sqlDb(backend.store).all<{ subject: string; uid: number; uidvalidity: number }>("SELECT m.subject, l.uid, l.uidvalidity FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY l.uid");
+
+  it("a first pass that stopped after the preview doesn't preview again, and writes nothing twice (twins on both sides of its edge)", async () => {
     const { imap, backend, addAccount } = await setup();
-    for (let i = 1; i <= 260; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
-    // the same message twice, one copy on each side of the preview's edge
+    // the same message twice: UID 1, before the preview's edge, and UID 272, inside it
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "msg 0", id: "twice@test.local" }) });
-    for (let i = 261; i <= 270; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    for (let i = 1; i <= 270; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
     imap.server.control.addMessage("INBOX", { raw: raw({ subject: "msg 0", id: "twice@test.local" }) });
     const account = await addAccount(imap.port);
+    const sizes = stopAfterPreview(backend);
     await backend.syncAccount(account.id);
-    const rows = sqlDb(backend.store).all<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY l.uid");
-    expect(rows).toHaveLength(272);
-    // as if the pass had stopped before saving where it got to
-    await backend.store.accounts.setCursor(account.id, null);
-    const events = record(backend);
     await backend.syncAccount(account.id);
-    expect(events.filter((e) => e.startsWith("ingest"))).toEqual([]);
-    expect(sqlDb(backend.store).all<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY l.uid")).toEqual(rows);
+    // the preview, the stopped read, then (its retry) only the 22 older ones (UIDs 1…22): never a second preview
+    expect(sizes).toEqual([250, 22, 22]);
+    // the preview was written down when it was done, and the Inbox's full read took its place
+    const cursor = JSON.parse(sqlDb(backend.store).get<{ c: string }>("SELECT provider_config AS c FROM accounts WHERE id = ?", account.id)!.c).cursor as { previewed?: object; mailboxes: object };
+    expect(cursor.previewed).toEqual({});
+    expect(cursor.mailboxes).toHaveProperty("INBOX");
+    const rows = placed(backend);
+    expect(rows.map((r) => r.uid)).toEqual(Array.from({ length: 272 }, (_, i) => i + 1));
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(272);
+    expect(count(backend, "SELECT 1 FROM messages WHERE rfc_message_id = 'twice@test.local'")).toBe(2);
+  });
+
+  it("a UIDVALIDITY reset between the preview and the full read is a reset: what the server dropped goes", async () => {
+    const { imap, backend, addAccount } = await setup();
+    const ctl = imap.server.control;
+    for (let i = 1; i <= 260; i++) ctl.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    const account = await addAccount(imap.port);
+    // the server resets while the pass is stopped (before its retry reads the Inbox)
+    const core = backend as unknown as { ingestSliced: (...a: unknown[]) => Promise<unknown> };
+    const ingest = core.ingestSliced.bind(core);
+    let calls = 0;
+    let before = 0;
+    vi.spyOn(core, "ingestSliced").mockImplementation((...a) => {
+      if (++calls === 2) {
+        before = placed(backend)[0]!.uidvalidity;
+        ctl.expungeMessages("INBOX", [260]);
+        ctl.resetUidValidity("INBOX", { uids: "offset", offset: 1000 });
+        throw new Error("synthetic stop after the preview");
+      }
+      return ingest(...a);
+    });
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(before).toBeGreaterThan(0);
+    const rows = placed(backend);
+    expect(rows).toHaveLength(259);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(259);
+    expect(rows.some((r) => r.subject === "msg 260")).toBe(false);
+    expect(rows.every((r) => r.uidvalidity !== before && r.uid > 1000)).toBe(true);
+  });
+
+  it("a preview body the server won't give doesn't hold back the rest of the first sync", async () => {
+    const { imap, backend, addAccount } = await setup();
+    for (let i = 1; i <= 260; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    const account = await addAccount(imap.port);
+    const core = backend as unknown as { store: { sync: { setBody: (...a: unknown[]) => Promise<unknown> } } };
+    const setBody = core.store.sync.setBody.bind(core.store.sync);
+    // one message's body never comes, however often it's asked for
+    let refused: unknown;
+    vi.spyOn(core.store.sync, "setBody").mockImplementation((...a) => {
+      refused ??= a[0];
+      if (a[0] === refused) throw new ProviderError("synthetic refused body", false);
+      return setBody(...a);
+    });
+    await backend.syncAccount(account.id);
+    // every envelope is in all the same (the body waits like any other that failed)
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(260);
+    expect(count(backend, "SELECT 1 FROM message_locations")).toBe(260);
   });
 
   it("downloads the window chosen when connecting, kept as the account's own", async () => {

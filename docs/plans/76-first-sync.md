@@ -73,3 +73,11 @@ Also from the review:
 - **Window shown:** the account's own (`syncWindowDays`, set at connect), else the General one. Several accounts: their count, no window.
 - **Ports:** `shrink-0` as well as the width.
 - **Import:** unchanged; a restored General window is the dialog's default.
+
+## Codex code review, round 1
+
+1. **A reset between the preview and the full read left stale places.** The preview kept no validity, so the full read couldn't see a reset. The preview's UIDVALIDITY is now written down in the cursor (`previewed`) as soon as the preview is in. The full read treats a change as a reset (`resetLocations`, re-identify), and clears the mark once it has read the folder. Saving also means a pass that stops after the preview doesn't preview again. Test: reset plus an expunge after the preview: the dropped message goes, and every place has the new validity.
+2. **A body the server won't give blocked the rest.** The preview's bodies are now a head start, not a gate: a non-retryable failure there is left for the end-of-pass body fetch, and the full read goes on. Test: one message's body is always refused, and all 260 envelopes still come in.
+3. **The interruption test didn't test interruption.** It now stops the pass right after the preview, with one twin below the preview's edge (UID 1) and one inside it (UID 272). It checks the sizes ingested (250, then 22, never a second preview), the saved mark and the twins.
+
+All three tests fail on the code before these fixes.
