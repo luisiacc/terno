@@ -81,6 +81,7 @@ function NavItem({
   expanded,
   controls,
   countHelp,
+  countHelpDisabled,
   shortcut,
 }: {
   active: boolean;
@@ -103,6 +104,7 @@ function NavItem({
   expanded?: boolean;
   controls?: string;
   countHelp?: "general" | "account";
+  countHelpDisabled?: boolean;
   shortcut?: string;
 }) {
   renderProbe("NavItem");
@@ -115,7 +117,7 @@ function NavItem({
   const button = (
     <button
       type="button"
-      aria-describedby={countHelp ? `sidebar-count-${countHelp}` : undefined}
+      aria-describedby={countHelp && !countHelpDisabled ? `sidebar-count-${countHelp}` : undefined}
       data-testid={testId}
       data-active={active || undefined}
       aria-current={active ? "page" : undefined}
@@ -161,7 +163,7 @@ function NavItem({
   );
   if (!countHelp && !shortcut) return button;
   return (
-    <Tooltip>
+    <Tooltip disabled={countHelpDisabled}>
       <TooltipTrigger render={button} />
       <TooltipContent side="right">
         {countHelp && t(countHelp === "account" ? "sidebar.countAccountHelp" : "sidebar.countHelp")}
@@ -645,7 +647,8 @@ const AccountEntry = memo(function AccountEntry({
           label={a.displayName}
           // open, the count is its Inbox's (with one account, the top Inbox's)
           count={open && many ? undefined : unread || undefined}
-          countHelp={open && many ? undefined : "account"}
+          countHelp="account"
+          countHelpDisabled={open && many}
           reserveEnd={a.syncState.authRequired ? "icon" : undefined}
         />
         {a.syncState.authRequired && <SignInMarker account={a} />}

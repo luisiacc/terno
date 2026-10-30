@@ -14,6 +14,7 @@ export async function checkCountCoverage(store: MailStore) {
   await ingest(store, [
     msg({ accountId: a, providerMsgId: "old", providerThreadId: "old", date: 1_600_000_000_000, bodyState: "none", bodyText: null, gmailLabels: ["Label_1"], inInbox: false }),
     msg({ accountId: a, providerMsgId: "folder-read", providerThreadId: "mixed", isRead: true, gmailLabels: ["Label_1"], inInbox: false }),
+    msg({ accountId: a, providerMsgId: "another-unread", providerThreadId: "old", gmailLabels: ["Label_1"], inInbox: false }),
     msg({ accountId: a, providerMsgId: "other-unread", providerThreadId: "mixed", gmailLabels: [], inInbox: false }),
     msg({ accountId: a, providerMsgId: "trash-folder-read", providerThreadId: "trash-mixed", isRead: true, gmailLabels: ["Label_1"], inInbox: false }),
     msg({ accountId: a, providerMsgId: "trash-unread", providerThreadId: "trash-mixed", gmailLabels: [], inInbox: false, isTrash: true }),
