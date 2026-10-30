@@ -66,7 +66,7 @@ function Reconnect({ account }: { account: Account }) {
     }
   };
   const error = attempt?.error ? (
-    <div role="alert" className="text-xs leading-relaxed" data-testid="account-reconnect-error">
+    <div role="alert" className="text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="account-reconnect-error">
       <p className="text-destructive-ink">{attempt.error.message}</p>
       {attempt.error.detail && <p className="text-muted-foreground">{attempt.error.detail}</p>}
     </div>
@@ -91,7 +91,7 @@ function Reconnect({ account }: { account: Account }) {
             autoComplete="off"
             autoFocus
             required
-            disabled={busy}
+            readOnly={busy}
             aria-invalid={attempt?.error ? true : undefined}
             className="h-7 flex-1 bg-background dark:bg-input/30"
             placeholder={t("account.password")}
@@ -113,7 +113,7 @@ function Reconnect({ account }: { account: Account }) {
           >
             {t("common.cancel")}
           </Button>
-          <Button type="submit" size="sm" disabled={busy || !password} data-testid="account-reconnect-submit">
+          <Button type="submit" size="sm" focusableWhenDisabled disabled={busy || !password} data-testid="account-reconnect-submit">
             {busy && <Loader2 className="animate-spin" />} {t("account.verifySave")}
           </Button>
         </form>
@@ -125,10 +125,11 @@ function Reconnect({ account }: { account: Account }) {
   const failed = !ready && google === "failed";
   const label = needsSignIn(account) ? t("account.signInAgain") : account.kind === "gmail" ? t("account.connectGoogle") : t("account.changePassword");
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex w-full min-w-0 flex-col items-end gap-1.5">
       <Button
         variant="outline"
         size="sm"
+        focusableWhenDisabled
         disabled={busy}
         aria-disabled={(!ready && !failed) || undefined}
         data-testid="account-reconnect"
@@ -180,7 +181,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           />
         )}
       </SettingsRow>
-      <SettingsRow label={t("account.connection")} hint={status(account)}>
+      <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
       {account.kind === "imap" && <SentCopies key={account.id} accountId={account.id} />}
@@ -225,7 +226,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
         aria-expanded={open}
         aria-controls={panel}
         onClick={() => setOpen((o) => !o)}
-        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left [contain:inline-size] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         data-testid="account-toggle"
       >
         <CategoryDot color={account.color as CategoryColor} />

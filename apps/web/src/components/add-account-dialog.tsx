@@ -9,6 +9,7 @@ import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { DesktopOnly } from "~/lib/web-parts";
+import { attemptError, type Attempt } from "~/lib/sign-in";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -30,6 +31,7 @@ export function AddAccountDialog() {
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
   const [form, setForm] = useState({ email: "", name: "", password: "", imapHost: "", imapPort: 993, smtpHost: "", smtpPort: 465, user: "" });
   const [busy, setBusy] = useState<"gmail" | "imap" | null>(null);
+  const [error, setError] = useState<{ kind: "gmail" | "imap"; text: NonNullable<Attempt["error"]> } | null>(null);
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   const onEmail = (email: string) => {
@@ -45,6 +47,7 @@ export function AddAccountDialog() {
 
   const connectGmail = async () => {
     setBusy("gmail");
+    setError(null);
     try {
       const a = WEB ? await (await import("~/web/google")).connectGmailWeb() : await client.call("accounts.connectGmail", {});
       // plan 22: photos from Google came on with the account
@@ -52,9 +55,11 @@ export function AddAccountDialog() {
       snack.success(t("account.connected", { email: a.email }));
       setApp({ dialog: null });
     } catch (error) {
-      snack.error(error instanceof Error ? error.message : String(error));
       // no client ID yet: Settings → Accounts is where it goes
-      if ((error as { i18n?: { key?: string } } | null)?.i18n?.key === "errors.gmailClientIdMissing") setApp({ dialog: "settings", settingsTab: "accounts" });
+      if ((error as { i18n?: { key?: string } } | null)?.i18n?.key === "errors.gmailClientIdMissing") {
+        snack.error(error instanceof Error ? error.message : String(error));
+        setApp({ dialog: "settings", settingsTab: "accounts" });
+      } else setError({ kind: "gmail", text: attemptError(error)! });
     } finally {
       setBusy(null);
     }
@@ -62,6 +67,7 @@ export function AddAccountDialog() {
 
   const addImap = async () => {
     setBusy("imap");
+    setError(null);
     try {
       const a = await client.call("accounts.addImap", {
         email: form.email.trim(),
@@ -73,15 +79,22 @@ export function AddAccountDialog() {
       snack.success(t("account.connectedSyncing", { email: a.email }));
       setApp({ dialog: null });
     } catch (error) {
-      snack.error(error instanceof Error ? error.message : String(error));
+      setError({ kind: "imap", text: attemptError(error)! });
     } finally {
       setBusy(null);
     }
   };
 
+  const failure = error && (
+    <div role="alert" className="text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="add-account-error">
+      <p className="text-destructive-ink">{error.text.message}</p>
+      {error.text.detail && <p className="text-muted-foreground">{error.text.detail}</p>}
+    </div>
+  );
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })}>
-      <DialogContent className="sm:max-w-md" data-testid="add-account-dialog">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md" data-testid="add-account-dialog">
         <DialogHeader>
           <DialogTitle>{t("account.addTitle")}</DialogTitle>
           <DialogDescription>{t("account.addDescription")}</DialogDescription>
@@ -91,9 +104,10 @@ export function AddAccountDialog() {
             {t("account.ownerFirst")}
           </p>
         )}
-        <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} disabled={busy !== null} data-testid="connect-gmail">
+        <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} focusableWhenDisabled disabled={busy !== null} data-testid="connect-gmail">
           {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} {t("account.continueGoogle")}
         </Button>
+        {error?.kind === "gmail" && failure}
         {!imapHere && DesktopOnly ? (
           <Suspense>
             <DesktopOnly feature="imap" />
@@ -107,7 +121,7 @@ export function AddAccountDialog() {
             className="space-y-3"
             onSubmit={(e) => {
               e.preventDefault();
-              void addImap();
+              if (busy === null) void addImap();
             }}
           >
             <div className="grid grid-cols-2 gap-3">
@@ -138,9 +152,10 @@ export function AddAccountDialog() {
                 </div>
               </div>
             </div>
-            <Button type="submit" className="w-full" disabled={busy !== null} data-testid="imap-submit">
+            <Button type="submit" className="w-full" focusableWhenDisabled disabled={busy !== null} data-testid="imap-submit">
               {busy === "imap" && <Loader2 className="animate-spin" />} {t("account.connectAccount")}
             </Button>
+            {error?.kind === "imap" && failure}
           </form>
           </>
         )}
