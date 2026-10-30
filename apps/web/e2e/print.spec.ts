@@ -25,6 +25,10 @@ async function open(page: Page, server: DevServer, key: "long-plain" | "inline-r
   return ids;
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https?:\/\//, (route) => ["127.0.0.1", "localhost", "[::1]"].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
+});
+
 test.describe("print sheet", { tag: "@design" }, () => {
   test("⌘P opens it on the open conversation, ⇧⌘P on “Save PDF…”; Esc closes; nothing to print, nothing opens", async ({ app: page, server }) => {
     // a new message in the reader pane: nothing to print, and the browser doesn't print the app either
@@ -135,6 +139,47 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await page.keyboard.press("Enter");
     await expect(sheet(page)).toBeVisible();
     await expect(page.getByTestId("print-save-pdf")).toBeFocused();
+  });
+
+  test("Escape during the frame-to-palette print focus handoff closes the sheet and returns focus", async ({ app: page, server }) => {
+    await open(page, server, "inline-replies", 'subject:"Preguntas sobre el contrato"');
+    const mail = page.frameLocator("[data-testid=reader] iframe >> nth=-1").locator("body");
+    await mail.click();
+    await page.keyboard.press("ControlOrMeta+p");
+    await expect(page.getByTestId("print-submit")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
+    await expect(page.locator("[data-testid=reader] iframe").last()).toBeFocused();
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-input").fill("print");
+    const readerPosition = await page.getByTestId("reader").evaluate((el) => ({ top: el.scrollTop, subject: el.querySelector("[data-testid=reader-subject]")?.textContent }));
+    // Pin the real palette restore before the sheet's deferred initial focus, without a sleep.
+    await page.evaluate(() => {
+      const original = window.requestAnimationFrame.bind(window);
+      const pending: FrameRequestCallback[] = [];
+      window.requestAnimationFrame = (callback) => document.querySelector("[data-testid=print-sheet]") ? (pending.push(callback), -pending.length) : original(callback);
+      Object.assign(window, { releasePrintFocus: () => {
+        window.requestAnimationFrame = original;
+        for (const callback of pending) original(callback);
+      } });
+    });
+    try {
+      await page.getByTestId("palette-print").click();
+      await expect(sheet(page)).toBeVisible();
+      await expect(page.locator("[data-testid=reader] iframe").last()).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(sheet(page)).toHaveCount(0);
+      await expect(page.locator("[data-testid=reader] iframe").last()).toBeFocused();
+      expect(await page.getByTestId("reader").evaluate((el) => ({ top: el.scrollTop, subject: el.querySelector("[data-testid=reader-subject]")?.textContent }))).toEqual(readerPosition);
+    } finally {
+      await page.evaluate(() => (window as unknown as { releasePrintFocus(): void }).releasePrintFocus());
+    }
+    // A cancelled deferred focus must not pull the next keyboard command into a removed sheet.
+    await page.keyboard.press("ControlOrMeta+p");
+    await expect(page.getByTestId("print-submit")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
   });
 
   test("the options change the print document: headers, quoted text, paper; the choices are remembered", async ({ app: page, server }) => {
@@ -388,12 +433,13 @@ test.describe("print sheet", { tag: "@design" }, () => {
   }
 
   for (const scheme of ["light", "dark"] as const) {
-    test(`accessible (axe) in ${scheme}`, async ({ app: page, server }) => {
+    test(`accessible (axe) in ${scheme}`, async ({ app: page, server }, testInfo) => {
       await page.emulateMedia({ colorScheme: scheme });
       await open(page, server, "images", 'subject:"Fotos de la visita a la obra"');
       await page.keyboard.press("ControlOrMeta+p");
       await ready(page);
       // the app's controls (the preview is the mail's own document, checked by the print-quality suite)
+      await page.screenshot({ path: testInfo.outputPath(`print-${scheme}.png`) });
       const r = await new AxeBuilder({ page }).include("[data-testid=print-sheet]").exclude("[data-testid=print-preview]").setLegacyMode(true).analyze();
       expect(r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
     });

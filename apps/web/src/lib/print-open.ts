@@ -40,8 +40,14 @@ export function printCommand(intent: PrintIntent): void {
 /**
  * Keys pressed inside a mail's frame never reach the document's handler: the
  * print chords are passed on (else the browser prints the frame alone).
+ * Palette dismissal can restore frame focus before the sheet takes it.
  */
 export function forwardPrintKey(e: KeyboardEvent): void {
+  if (e.key === "Escape" && !e.isComposing && !e.defaultPrevented && getApp().dialog === "print") {
+    e.preventDefault();
+    setApp({ dialog: null, printTarget: null });
+    return;
+  }
   const chord = chordOf({ key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey }, isMac);
   if (chord !== "mod+p" && chord !== "mod+shift+p") return;
   e.preventDefault();
