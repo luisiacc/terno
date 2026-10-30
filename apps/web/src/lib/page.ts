@@ -65,10 +65,10 @@ export function closePage(options: { focus?: boolean } = {}): void {
 }
 
 const listSection = () => document.querySelector<HTMLElement>("[data-list-section]");
-const listbox = () => document.querySelector<HTMLElement>("[data-testid=thread-list] [role=listbox]");
+const listScroller = () => document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]");
 
 function focusList() {
-  const el = returnTo?.isConnected && returnTo.checkVisibility?.() !== false && !returnTo.closest("[inert]") ? returnTo : listbox();
+  const el = returnTo?.isConnected && returnTo.checkVisibility?.() !== false && !returnTo.closest("[inert]") ? returnTo : listScroller();
   returnTo = null;
   el?.focus({ preventScroll: true });
 }

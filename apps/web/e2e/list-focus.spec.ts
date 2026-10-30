@@ -59,13 +59,14 @@ test.describe("no focus ring around the conversation list @design", () => {
   });
 
   test("trashing the last conversation hands keyboard focus to a visible control, not the empty list", async ({ app: page }) => {
-    const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+    const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
     // the Inbox's: a trashed result leaves it (a search everywhere keeps it, tagged Trash)
     await search(page, "in:inbox 291 gadgets");
     await expect(rows(page)).toHaveCount(1);
     await rows(page).first().click();
     await page.keyboard.press("#");
     await expect(page.getByTestId("list-empty")).toBeVisible();
+    await expect(list).toHaveRole("group");
     await expect(list).not.toBeFocused();
     expect(await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;
@@ -75,9 +76,10 @@ test.describe("no focus ring around the conversation list @design", () => {
   });
 
   test("Tab skips an empty list", async ({ app: page }) => {
-    const list = page.getByRole("listbox", { name: "Conversations", exact: true });
+    const list = page.locator("[data-testid=thread-list] [data-keep-scroll=list]");
     await search(page, "zzqx-no-such-mail");
     await expect(page.getByTestId("list-empty")).toBeVisible();
+    await expect(list).toHaveRole("group");
     await expect(list).toHaveAttribute("tabindex", "-1");
     await page.getByTestId("nav-inbox").focus();
     for (let step = 0; step < 40; step++) {
@@ -95,7 +97,7 @@ test.describe("no focus ring around the conversation list @design", () => {
       const w = window as unknown as { __tabbableEmpty: number };
       w.__tabbableEmpty = 0;
       const check = () => {
-        const list = document.querySelector("[data-testid=thread-list] [role=listbox]");
+        const list = document.querySelector("[data-testid=thread-list] [data-keep-scroll=list]");
         if (list?.getAttribute("tabindex") === "0" && !list.querySelector("[role=option]")) w.__tabbableEmpty++;
       };
       new MutationObserver(check).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["tabindex"] });

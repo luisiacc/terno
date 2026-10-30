@@ -333,7 +333,7 @@ function MenuItems() {
     const id = single.id;
     const pane = getApp().compose;
     void openCompose(mode, id).then(() => {
-      if (!replyOpened(id, pane) && document.activeElement === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [role=listbox]")?.focus({ preventScroll: true });
+      if (!replyOpened(id, pane) && document.activeElement === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
     });
   };
   const inAll = (categoryId: number) => rows.length > 0 && rows.every((t) => t.categoryIds.includes(categoryId));
