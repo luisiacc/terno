@@ -60,6 +60,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...CAT_NAMES.flatMap((c) => (["pane", "tint", "row-hover", "row-selected", "accent"] as const).map((over): ContrastPair => ({ fg: `cat-${c}-ink`, bg: `cat-${c}`, tint: true, min: 4.5, overToken: over }))),
   // plan 34: an invalid recipient chip's mark (its dotted underline and alert glyph) on the chip's fill
   ...ui("destructive", ["muted"]),
+  // a chosen outline toggle (settings): its text on the accent's 15% wash, over the tint group it sits on
+  { fg: "foreground", bg: "primary", tint: true, min: 4.5, overToken: "tint" },
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];

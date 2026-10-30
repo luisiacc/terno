@@ -42,7 +42,8 @@
   visibility: hidden;
   transition:
     clip-path var(--chip-settle) cubic-bezier(0.65, 0, 0.35, 1) var(--motion),
-    visibility 0s linear calc(var(--motion) + var(--chip-settle));
+    /* visibility holds "visible" through a transition and flips at its end: hidden as the circle closes */
+    visibility var(--chip-settle) linear var(--motion);
 }
 /* hover: a veil over both surfaces, with its own quick fade */
 .code-chip::after {
@@ -86,7 +87,7 @@
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   /* undrawn only once it's out of sight */
-  transition: stroke-dashoffset 0s linear var(--chip-quick);
+  transition: stroke-dashoffset var(--chip-quick) step-end;
 }
 
 /* copied: the copy icon goes, the check springs in and draws, left to right */
@@ -96,7 +97,7 @@
   filter: blur(1.5px);
   transition-duration: var(--chip-quick);
   transition-timing-function: var(--motion-ease-in);
-  transition-delay: 0s;
+  transition-delay: initial;
 }
 .code-chip[data-copied] .code-chip-check {
   opacity: 1;
