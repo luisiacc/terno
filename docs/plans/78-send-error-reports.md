@@ -112,3 +112,11 @@ Also found while building: the architecture scan didn't recognise a session's ow
 
 1. **Demo runs of a release carried the real DSN** (other smoke suites launch the copied release with `TERNO_DEMO=1` only). Main now uses the built DSN only on the production channel; a test run its loopback sink; demo and dev nowhere (`effectiveDsn`, `report-fence.ts`; unit test per channel).
 2. **Under "always", an ordinary error whose send failed lost its row** (the row only shows ordinary errors under "ask"). Hosts track reports whose send failed this run (`PendingReport.failed`), and the row shows them with the `retry` offer under any setting but "never" (`diagnostics.web.spec.ts`: Always → 503 → Send → sent; fails without the fix).
+
+## Verified against Sentry (2026-10-30)
+
+- The packaged release (`dist:mac`, production channel, local mode on, "ask") offered Send and sent a real uncaught renderer error: `sentry api …/projects/luisiaccorg/terno/events/<id>/` shows it (`TypeError: process.uncaught`, release `terno@0.1.0+7d1e7cef29`, `proc: renderer`, no IP).
+- Source maps: `dist:mac` uploaded the archive with the `sentry` CLI; an event with a frame at `app:///dist/main.cjs:68:9224` and its debug id resolved in Sentry to `src/diag/main.ts:652` with source context. `pnpm build:web && pnpm upload:web-maps` uploads the web archive the same way.
+- Location: Sentry derived `user.geo` (city, country) from the connection even with IP scrubbing on, and ignores `sdk.settings.infer_ip`, `ip_address: null` and the platform. The project now removes it with an advanced scrubbing rule (`relayPiiConfig`: remove `$user.geo` and `$user.geo.**`); a probe after the change arrived with `geo: {}`. Sentry still sees the connection's IP while receiving, as any server does; it keeps neither the IP nor anything derived from it.
+- Project settings (`terno`): data scrubber with defaults, IP scrubbing, extra sensitive fields, no crash-report storage, the geo rule. Per-key rate limits don't stick on this plan.
+- Smoke runs found something on this machine sending `GET /` to listening loopback ports (Node, with tracing headers). It failed the diagnostics sink (now it counts envelopes only) and explains a stray `GET /` in `update.smoke.ts` and the web key-redirect test; neither is Terno's traffic.
