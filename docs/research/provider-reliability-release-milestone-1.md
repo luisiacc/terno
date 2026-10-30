@@ -259,3 +259,8 @@ The initial ingestion optimization failed Root qualification0.96513versus0.97 an
 ## Landed repair: bounded SQL ingestion writes
 
 `e43b611d` eliminates redundant new attachment writes and batches eligible new bodies/reverse references with transactional rollback and reader boundaries intact. Root passed678native/WASM controls, db types/lint/whitespace and the unchanged paired throughput gate:1.0189412380>=0.97, multiplier1, CPU0.931. Earlier failures remain recorded. One review covered the earlier attachment optimization; later batching has fail-first and integration evidence without independent re-review. [Scope, commands and limits](../plans/drafts/release-ingest-throughput.md). No full performance/release clearance.
+
+
+## Landed repair: early-blocked IDB operation scheduling
+
+`7a53d4af` avoids eager target materialization while preserving all dependency/admission semantics. Fail-first complexity controls improve100,002target reads to3; Root's20scale/identity tests, original100,000-message10ms gate, IDB types and scoped lint pass. Timing failure did not reproduce on the once-only baseline, so this is a proven complexity correction rather than exact attribution of the original sample. One review: Standards0, one P3 independent group-isolation coverage gap retained under the cap. [Evidence and limits](../plans/drafts/release-idb-scheduling.md). No full-suite or native persistence clearance.

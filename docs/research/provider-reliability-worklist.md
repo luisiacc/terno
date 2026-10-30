@@ -667,6 +667,7 @@ All four unchanged maximum workloads pass, including exact reads/data URLs/outpu
 | Group | Finding / severity | Evidence and disposition |
 |---|---|---|
 | W08/W11 | P3 — standalone CID oracle passes optional assetId to resources.get | The independent E2E-only typing probe reports the pre-existing AttachmentInfo optional-field mismatch; normal web package types pass and all concrete maximum fixtures have IDs. Retained under the post-review cap rather than adding a type escape or silently claiming E2E type clearance. See the CID repair spec; future test-typing cleanup requires a proper required-ID fixture type or explicit oracle guard. |
+| W11 | P3 — IDB scheduler group-isolation oracle | The combined later-overlap case does not independently fail when either group filter is removed. Retained after the sole review under the post-cap rule. Future separate nonblocking predecessor-location/candidate-read and predecessor-read/candidate-location controls should discriminate each filter. No production correctness defect was reported. See [scheduling spec](../plans/drafts/release-idb-scheduling.md). |
 
 No report-scenario disposition/count or held feature policy changes.
 
@@ -684,3 +685,10 @@ Landed `e43b611d` after local rebase. New-message attachment capture avoids redu
 Root passed 678 native/WASM safety tests, db types, strict owned-file lint and whitespace. The unchanged paired throughput gate passes **1.0189412380 >=0.97**, multiplier1; CPU ratio0.931. Earlier Root0.96513 and worker0.96950 failures remain valid observations; no identical failing candidate was repeated until green. Evidence: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ingest-batched-ci0n0co4`; [spec and detailed attribution](../plans/drafts/release-ingest-throughput.md).
 
 Review accounting: one completed Codex Standards+Spec round on the earlier attachment optimization, zero findings. The subsequent bounded reference/body changes have fail-first tests and Root qualification but no independent re-review; no second round was run. This clears this targeted gate only. Categorization throughput, scheduling, packaged smoke and broader release qualification remain open; report dispositions and held feature backlog are unchanged.
+
+
+## Release repair: stop blocked IDB scheduling reads early — 2026-10-30
+
+Landed `7a53d4af` after local rebase. The scheduler now resolves candidate target keys one at a time and stops at the first location blocker, rather than eagerly materializing every target before `some` can return. On the original100,000-message fixture the independent access-count regressions fail at100,002reads without the fix and pass at3with it. Existing indexed predecessor state/group/sequence checks, pass-local cache, admission, claim attempts and durable dispatch fences remain unchanged. This bounds early-blocked traversal; it does not make all scheduling constant-time.
+
+Root passed20scale/identity cases, including the original unchanged10ms timing gate, IDB types, strict touched-file lint and whitespace. The original milestone10.116625ms failure did not reproduce on the worker's once-only baseline; no precise timing attribution or full-suite clearance is claimed. Evidence: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-idb-scheduling-ajp2lyrb`; [spec](../plans/drafts/release-idb-scheduling.md). One completed Codex review reported Standards0 and one P3 coverage gap, retained in the release backlog above. No second review, budget/workload change, warmup or native-browser persistence qualification. Report dispositions remain unchanged.
