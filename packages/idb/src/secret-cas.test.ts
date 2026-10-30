@@ -65,3 +65,26 @@ it("a Google first pin superseded during persistence preparation rolls back both
   expect((await store.accounts.config(account.id))!.config).toEqual({ cursor: "keep" });
   expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
 });
+
+it("owner proof expiry during persistence preparation rolls back pin, credential and owner history", async () => {
+  let store = await open();
+  const claim = { displayName: "Reader", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "first", emailVerified: true } };
+  await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Owner", color: "indigo", ownerClaim: claim, now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Target", color: "indigo", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 2 });
+  const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`, owner = await store.owner.get();
+  let now = 1;
+  const take = store["db"].takeCommit.bind(store["db"]);
+  const spy = vi.spyOn(store["db"], "takeCommit").mockImplementationOnce(() => { const commit = take(); queueMicrotask(() => { now = 3; }); return commit; });
+  expect(await store.owner.change({ claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace", name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), google: { expectedSubject: null, subject: "first", eligible: () => true } }, eligible: () => now < 2, reason: "synthetic", now: 3 })).toBe(false);
+  spy.mockRestore();
+  await store.close(); store = await open(store.name);
+  expect(await store.owner.get()).toEqual(owner);
+  expect((await store.accounts.config(account.id))!.config).toEqual({ cursor: "keep" });
+  expect(await store.secrets.get(name)).toEqual(Uint8Array.of(1));
+  const request = indexedDB.open(`terno-${store.name}`);
+  const db = await new Promise<IDBDatabase>((resolve, reject) => { request.onsuccess = () => resolve(request.result as unknown as IDBDatabase); request.onerror = () => reject(request.error); });
+  try {
+    const rows = db.transaction("owner_history").objectStore("owner_history").getAll();
+    expect(await new Promise((resolve, reject) => { rows.onsuccess = () => resolve(rows.result); rows.onerror = () => reject(rows.error); })).toEqual([]);
+  } finally { db.close(); }
+});

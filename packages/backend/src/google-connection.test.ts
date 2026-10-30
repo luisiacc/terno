@@ -250,6 +250,23 @@ describe("Google connection RPC validation", () => {
     expect((await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBe(identity.sub);
   });
 
+  it("browser photo consent cannot extend expiry across account reads and admission", async () => {
+    const t = await setup();
+    const account = await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 });
+    await t.backend.syncAccount(account.id);
+    await t.backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true });
+    const before = await t.backend.store.accounts.get(account.id), config = await t.backend.store.accounts.config(account.id);
+    const get = t.backend.store.accounts.get.bind(t.backend.store.accounts);
+    vi.spyOn(t.backend.store.accounts, "get").mockImplementationOnce(async (id) => { t.advance(30_000); return get(id); });
+    const admit = t.backend.store.accounts.admitGoogle.bind(t.backend.store.accounts);
+    vi.spyOn(t.backend.store.accounts, "admitGoogle").mockImplementationOnce(async (...args) => { t.advance(31_000); return admit(...args); });
+    t.installed.mockClear();
+    await expect(t.client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: "expired-photo-token", expiresIn: 60, scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/contacts.readonly" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(t.installed).not.toHaveBeenCalled();
+    expect(await t.backend.store.accounts.get(account.id)).toEqual(before);
+    expect(await t.backend.store.accounts.config(account.id)).toEqual(config);
+  });
+
   it("a browser token expired during inspection is never installed or saved", async () => {
     const t = await setup();
     t.inspect.mockImplementationOnce(async () => { t.advance(60_001); return { ...identity, refreshToken: "unused" }; });

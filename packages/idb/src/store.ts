@@ -1668,7 +1668,7 @@ export class IdbMailStore implements MailStore {
         if (!this.commitSecret(secret, { ...stamp, id: claim.accountId })) return false;
         changeOwner(this.c, claim, o.reason, o.now);
         return true;
-      }, { check: () => { if (secret.google?.eligible && !secret.google.eligible()) throw new CredentialAdmissionExpired(); } });
+      }, { check: () => { if ((eligible && eligible() !== true) || (secret.google?.eligible && !secret.google.eligible())) throw new CredentialAdmissionExpired(); } });
     },
   };
 

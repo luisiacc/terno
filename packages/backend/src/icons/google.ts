@@ -108,6 +108,7 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
 
 /** icons.authorizeGoogle (web): the token must open this account's mailbox and still cover mail; it never creates one. */
 export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; accessToken: string; expiresIn: number; scope: string; ifPending?: boolean }): Promise<AppSettings> {
+  const expiresAt = b.now() + p.expiresIn * 1000;
   const tokens = b.options.providers.gmailTokens;
   // i18n-ignore: a wiring mistake (only the web build calls this), for developers
   if (!tokens) throw new RpcError("UNAVAILABLE", "This host turns photos on with icons.googlePhotos.");
@@ -115,7 +116,6 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   try {
     const account = await gmailAccount(b, p.accountId);
     const admission = await googleAdmission(b, account.id, flow);
-    const expiresAt = b.now() + p.expiresIn * 1000;
     const who = await tokens.inspect(p.accessToken, b.net.fetchFor("mail"), { signal: AbortSignal.any([b.abort.signal, flow.signal]) }).catch((error: unknown) => {
       throw new RpcError("BAD_REQUEST", messageOf(error));
     });
