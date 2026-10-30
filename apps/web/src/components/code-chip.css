@@ -1,5 +1,5 @@
 /*
- * The code chip (plan 69): the one place motion runs past the 100 ms cap, at the user's request. Every duration is a
+ * The code chip (plan 72): the one place motion runs past the 100 ms cap, at the user's request. Every duration is a
  * multiple of --motion (75 ms by default; 50 and 100 scale it), and Motion Off or the OS asking for reduced motion
  * turns all of it off (globals.css), so the cap's purpose holds: quick by default, none when asked.
  *

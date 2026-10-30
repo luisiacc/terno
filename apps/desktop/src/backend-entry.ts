@@ -168,7 +168,7 @@ parentPort.on("message", async (event) => {
       if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
         await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
-      // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 69); not in smokes
+      // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
       if (msg.demo && msg.dev) await seedDemoCode(backend.store, Date.now());
       await backend.publishPolicy();
       await backend.start();

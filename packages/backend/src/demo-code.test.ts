@@ -1,4 +1,4 @@
-/** plan 69: `pnpm dev:demo` always has a fresh verification code at the top of the inbox. */
+/** plan 72: `pnpm dev:demo` always has a fresh verification code at the top of the inbox. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

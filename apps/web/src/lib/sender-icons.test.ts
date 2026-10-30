@@ -181,7 +181,7 @@ describe("a reset doesn't flash the list", () => {
   });
 });
 
-// Codex review (plan 72)
+// Codex review (plan 75)
 describe("holding through a reset, the edge cases", () => {
   const ref = (id: string, v = 1) => ({ id, v, kind: "site" as const, px: 32, full: false });
   const showing = (email: string, a: ReturnType<typeof ref>) => {

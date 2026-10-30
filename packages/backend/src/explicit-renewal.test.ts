@@ -627,7 +627,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     expect(result).toBe(false); expect(await t.backend.store.owner.get()).toEqual(before); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
 
-  // plan 71, Codex review round 2: switched off at any moment of a reconnect asking for waiting photos, they stay off
+  // plan 74, Codex review round 2: switched off at any moment of a reconnect asking for waiting photos, they stay off
   it("photos switched off during the reconnect's photo proof stay off; mail is signed in", async () => {
     const t = await setup(kind); const entered = t.gate(), held = t.gate();
     t.answer({ refreshToken: null, grantedScopes: [MAIL, PHOTO] }); t.rotate("rotated-refresh");

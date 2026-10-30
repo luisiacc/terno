@@ -223,21 +223,21 @@ export async function readGooglePhotos(store: SettingsStore): Promise<AppSetting
 }
 
 /** Plan 22: an account's photo state (null: off), written only by the icons service. */
-/** `clearPending`: a consent or the user's off ends any wait (plan 71); the icon service's own updates leave it alone. */
+/** `clearPending`: a consent or the user's off ends any wait (plan 74); the icon service's own updates leave it alone. */
 export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null, clearPending = true): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
     const s = migrate(raw);
     const next = { ...s.googlePhotos };
     if (state) next[String(accountId)] = state;
     else delete next[String(accountId)];
-    // plan 71: on (through any flow) or off, it no longer waits for a sign-in
+    // plan 74: on (through any flow) or off, it no longer waits for a sign-in
     const pending = clearPending ? (s.googlePhotosPending ?? []).filter((id) => id !== accountId) : (s.googlePhotosPending ?? []);
     return { value: { ...s, googlePhotos: next, googlePhotosPending: pending }, result: undefined };
   });
 }
 
 /**
- * Plan 71: a sign-in's consent turns photos on only if the account still waits, read in the same transaction as the
+ * Plan 74: a sign-in's consent turns photos on only if the account still waits, read in the same transaction as the
  * write (off at any moment before it wins). True when it turned them on.
  */
 export async function consumeGooglePhotosPending(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string]): Promise<boolean> {
@@ -249,7 +249,7 @@ export async function consumeGooglePhotosPending(store: SettingsStore, accountId
   });
 }
 
-/** Plan 71: an account's photos switched on to come with its next sign-in with Google (or no longer waiting). */
+/** Plan 74: an account's photos switched on to come with its next sign-in with Google (or no longer waiting). */
 export async function setGooglePhotosPending(store: SettingsStore, accountId: number, on: boolean): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
     const s = migrate(raw);
@@ -258,7 +258,7 @@ export async function setGooglePhotosPending(store: SettingsStore, accountId: nu
   });
 }
 
-/** Plan 71: whether an account's next sign-in with Google should ask for the contacts scopes too. */
+/** Plan 74: whether an account's next sign-in with Google should ask for the contacts scopes too. */
 export async function googlePhotosPending(store: SettingsStore, accountId: number): Promise<boolean> {
   return ((await stored(store)).googlePhotosPending ?? []).includes(accountId);
 }

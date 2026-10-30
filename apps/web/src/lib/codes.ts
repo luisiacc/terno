@@ -8,7 +8,7 @@ export const COPIED_MS = 5000;
 const USED_MAX = 200;
 
 /**
- * Verification codes in the list (plan 69). A code is keyed by its thread and itself (a newer code in the same
+ * Verification codes in the list (plan 72). A code is keyed by its thread and itself (a newer code in the same
  * thread is a new one). What was copied lives here, not in a row: rows come and go as the list scrolls, and the
  * chip and the thread menu copy the same code.
  */

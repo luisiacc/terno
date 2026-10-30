@@ -1,7 +1,7 @@
 import type { LocaleId } from "./locales/index";
 
 /**
- * Words that announce a verification code in each language (plan 69). Mail
+ * Words that announce a verification code in each language (plan 72). Mail
  * is matched against every language's words, whatever the UI's, so this stays
  * bundled while the catalogs load lazily. A new language must add its own:
  * the Record makes the type check fail until it does. Written as people do;

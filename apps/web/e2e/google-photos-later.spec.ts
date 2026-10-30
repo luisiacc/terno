@@ -1,4 +1,4 @@
-/** Plan 71: Photos from Google switch on with no Google window; they wait for the account's next sign-in. */
+/** Plan 74: Photos from Google switch on with no Google window; they wait for the account's next sign-in. */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, stabilize, test } from "./fixtures";
 

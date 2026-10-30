@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Plan 71 on the web: a waiting account's sign-in, and nothing reaching Google before the user signs in. */
+/** Plan 74 on the web: a waiting account's sign-in, and nothing reaching Google before the user signs in. */
 import type { Account } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { act } from "react";
@@ -37,7 +37,7 @@ afterEach(() => vi.unstubAllGlobals());
 const MAIL = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS = "https://www.googleapis.com/auth/contacts.readonly";
 
-// Codex review round 1 (plan 71)
+// Codex review round 1 (plan 74)
 it("Add account reaching a waiting mailbox: contacts declined, it stops waiting", async () => {
   granted = MAIL;
   const { connectGmailWeb } = await import("./google");

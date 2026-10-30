@@ -349,7 +349,7 @@ function MenuItems() {
     setApp({ dialog: "categoryPicker", pickerMode: mode });
   };
   const count = scope ? scope.count : ids.length;
-  // plan 69: the keyboard's (and screen readers') way to the code a row's chip copies
+  // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
   const code = single ? threadCode(single, Date.now()) : null;
 
   return (

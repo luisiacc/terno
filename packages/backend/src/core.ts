@@ -277,7 +277,7 @@ export class BackendCore {
       googlePhotos: () => readGooglePhotos(this.store),
       setGooglePhotoState: (accountId, state) => {
         const flow = this.signIns.get(accountId);
-        // maintenance (scopes or the API changed), not consent: an account waiting for its sign-in keeps waiting (plan 71)
+        // maintenance (scopes or the API changed), not consent: an account waiting for its sign-in keeps waiting (plan 74)
         return flow ? this.credentialWrite(accountId, flow, () => setGooglePhotoState(this.store, accountId, state, false)) : setGooglePhotoState(this.store, accountId, state, false);
       },
       accountEmail: async (accountId) => (await this.store.accounts.get(accountId))?.email ?? null,

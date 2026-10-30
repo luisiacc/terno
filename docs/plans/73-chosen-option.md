@@ -1,4 +1,4 @@
-# 70 · The chosen option is plain to see
+# 73 · The chosen option is plain to see
 
 ## Request
 
@@ -20,7 +20,7 @@ The settings' option buttons (Appearance's mode, animations and HTML mail; Gener
 
 `settings-toggles.spec.ts` (`@design`, light and dark): a fresh profile has 75 ms chosen; the chosen button's border and fill differ from the others and the fill isn't transparent; axe passes on the mode and animation groups. Contrast suite: the new pair in every palette.
 
-The suite's "tokens only" scan also caught `0s` literals in `code-chip.css` (plan 69), now `step-end`, `initial` and a visibility transition over the settle's own duration.
+The suite's "tokens only" scan also caught `0s` literals in `code-chip.css` (plan 72), now `step-end`, `initial` and a visibility transition over the settle's own duration.
 
 ## Round 2
 

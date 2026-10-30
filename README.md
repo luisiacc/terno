@@ -188,7 +188,7 @@ Terno's interface is in English, and in Spanish when you choose Español (Settin
 
 1. Copy `packages/i18n/src/locales/es.ts` to `locales/xx.ts` (`xx` = the language code) and translate the values. Keep every key, every `{placeholder}`, every `<tag>`, and the plural objects (add the forms your language needs: `zero`, `one`, `two`, `few`, `many`, `other`).
 2. Add one line to `packages/i18n/src/locales/index.ts`: `xx: { name: "<the language's own name>", tag: "xx-YY", load: async () => (await import("./xx")).default },`.
-3. Add the words that announce a verification code in that language to `packages/i18n/src/code-words.ts` (plan 69).
+3. Add the words that announce a verification code in that language to `packages/i18n/src/code-words.ts` (plan 72).
 4. `pnpm typecheck` lists anything missing, extra or mismatched (`xx.ts` ends with `satisfies LocaleCheck<typeof xx>`), and `pnpm test` checks it again at runtime. Optionally give it its own date formats in `apps/web/src/lib/format.ts` (otherwise the locale's defaults apply).
 
 The language then appears in Settings → General, "System" picks it on systems in that language, and English remains the fallback for anything missing.

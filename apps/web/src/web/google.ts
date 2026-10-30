@@ -107,7 +107,7 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number): P
   await preloadGoogle();
   // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
   const adding = loginHint === undefined && accountId === undefined;
-  // plan 71: an account whose photos wait for this sign-in asks for them too
+  // plan 74: an account whose photos wait for this sign-in asks for them too
   // the accounts waiting before Google's popup: their consent is read again by the backend (switched off meanwhile, it counts for nothing)
   const waitedBefore = new Set(getApp().settings?.googlePhotosPending ?? []);
   const pending = accountId !== undefined && waitedBefore.has(accountId);

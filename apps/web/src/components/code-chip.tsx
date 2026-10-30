@@ -4,7 +4,7 @@ import { codeKey, copyCode, useCodeState } from "~/lib/codes";
 import "./code-chip.css";
 
 /**
- * A row's verification code, one click from the clipboard (plan 69). A pointer target, not a control: a row is an
+ * A row's verification code, one click from the clipboard (plan 72). A pointer target, not a control: a row is an
  * option of the list, which can't hold a button. Keyboards and screen readers get the code in the row's name and
  * copy it from the thread menu. Pressing it neither opens the thread nor starts a drag (`data-row-control`).
  */

@@ -190,7 +190,7 @@ export async function connectExistingGoogle(b: Backend, account: Account, flow: 
   return result;
 }
 
-/** Plan 71: reconnects asking Google for photos waiting on them (photos switched off meanwhile don't cancel them). */
+/** Plan 74: reconnects asking Google for photos waiting on them (photos switched off meanwhile don't cancel them). */
 export const photoReconnects = new WeakSet<AbortController>();
 
 /** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
@@ -211,7 +211,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       b.assertSignIn(accountId, flow);
       blob = await encryptCredential(b, password);
     } else {
-      // plan 71: photos switched on to come with this sign-in: Google asks for the contacts scopes too
+      // plan 74: photos switched on to come with this sign-in: Google asks for the contacts scopes too
       photos = await googlePhotosPending(b.store, accountId);
       b.assertSignIn(accountId, flow);
       if (photos) photoReconnects.add(flow);

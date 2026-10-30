@@ -36,14 +36,14 @@ async function turnOn(b: Backend, accountId: number, state: GooglePhotoState): P
 
 /** icons.googlePhotos: off anywhere; on through Google's consent on desktop (the web uses authorizeGooglePhotos). */
 export async function setGooglePhotos(b: Backend, accountId: number, on: boolean, later = false): Promise<AppSettings> {
-  // plan 71: on without a Google window now; the account's next sign-in asks for the contacts scopes
+  // plan 74: on without a Google window now; the account's next sign-in asks for the contacts scopes
   if (on && later) {
     await gmailAccount(b, accountId);
     const settings = await readSettings(b.store);
     if (!settings.googlePhotos[String(accountId)]) await setGooglePhotosPending(b.store, accountId, true);
     return readSettings(b.store);
   }
-  // plan 71: off while the account's reconnect is asking Google for these photos: that sign-in carries on (it reads the
+  // plan 74: off while the account's reconnect is asking Google for these photos: that sign-in carries on (it reads the
   // wait again before turning anything on). Decided synchronously, so anything else supersedes older flows as before.
   const running = b.signIns.get(accountId);
   if (!on && running && photoReconnects.has(running)) {
@@ -117,7 +117,7 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
   tokens.set(account.id, p.accessToken, b.now() + p.expiresIn * 1000);
   await b.resumeAuth(account.id);
-  // plan 71: a sign-in's consent counts only if the account still waits, checked with the write (off meanwhile wins)
+  // plan 74: a sign-in's consent counts only if the account still waits, checked with the write (off meanwhile wins)
   if (p.ifPending) {
     const state = photoStateFrom(granted);
     if (await consumeGooglePhotosPending(b.store, account.id, state)) await b.icons.syncPeople(account.id, state);

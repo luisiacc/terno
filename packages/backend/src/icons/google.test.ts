@@ -259,7 +259,7 @@ describe("photos from Google (plan 22)", () => {
   });
 });
 
-describe("photos from Google, on without signing in now (plan 71)", () => {
+describe("photos from Google, on without signing in now (plan 74)", () => {
   it("turning on with `later` asks Google nothing and fetches nothing: the account waits for its next sign-in", async () => {
     const { client, f, gmail, fetchSpy } = await setup();
     const settings = await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
@@ -323,8 +323,8 @@ describe("photos from Google, on without signing in now (plan 71)", () => {
   });
 });
 
-// Codex review round 1 (plan 71)
-describe("photos waiting for a sign-in: races (plan 71)", () => {
+// Codex review round 1 (plan 74)
+describe("photos waiting for a sign-in: races (plan 74)", () => {
   it("web: a sign-in's consent arriving after the switch went off turns nothing on", async () => {
     const { client, f, gmail } = await setup({ web: true });
     f.inspectEmail = gmail.email;

@@ -28,7 +28,7 @@ test("switching the theme and the HTML mail setting doesn't reload the open mail
   expect(await frame.evaluate((f: HTMLIFrameElement) => (window as unknown as { __loads: number; __doc: Document | null }).__loads === 0 && (window as unknown as { __doc: Document | null }).__doc === f.contentDocument)).toBe(true);
 });
 
-// Codex review (plan 72): a repaint keeps the root's own style (a mail past the height cap scrolls inside its frame)
+// Codex review (plan 75): a repaint keeps the root's own style (a mail past the height cap scrolls inside its frame)
 test("a mail taller than the cap still scrolls after the theme changes", async ({ app: page, server }) => {
   const [account] = await server.backend.store.accounts.list();
   const html = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;

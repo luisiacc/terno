@@ -149,7 +149,7 @@ export async function signInAgain(account: Account, password?: string): Promise<
       await google.connectGmailWeb(account.email, account.id);
     } else {
       await client.call("accounts.reconnect", { id: account.id, password: account.kind === "imap" ? password : undefined });
-      // plan 71: photos waiting for this sign-in may have come on: Settings shows the state now (an empty update reads it)
+      // plan 74: photos waiting for this sign-in may have come on: Settings shows the state now (an empty update reads it)
       if ((getApp().settings?.googlePhotosPending ?? []).includes(account.id)) setApp({ settings: await client.call("settings.update", {}) });
     }
     if (!latest(account.id, mine)) return false;

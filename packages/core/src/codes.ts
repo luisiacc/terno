@@ -1,7 +1,7 @@
 import { CODE_WORDS } from "@terno/i18n";
 import { baseSubject, normalizeText } from "./text";
 
-/** A code is offered only on mail at most this old (plan 69). */
+/** A code is offered only on mail at most this old (plan 72). */
 export const CODE_MAX_AGE = 2 * 3_600_000;
 /** Mail dated a little ahead (the sender's clock) still counts as fresh. */
 const CLOCK_SKEW = 5 * 60_000;
@@ -74,7 +74,7 @@ function closest(text: string): { code: string | null; announced: boolean; codes
 }
 
 /**
- * The verification code a message carries, or null (plan 69). Simple on purpose: six digits near a word like
+ * The verification code a message carries, or null (plan 72). Simple on purpose: six digits near a word like
  * "code" or "código". `body` is the text the reader shows (an HTML body's visible text: the renderer's `mailText`).
  * The subject (not a reply's) wins over the body; a subject that announces a code ("Your sign-in code") takes the
  * body's only six-digit number even when no word sits beside it.

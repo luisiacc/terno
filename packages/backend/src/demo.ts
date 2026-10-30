@@ -82,7 +82,7 @@ export async function seedPrintFixtures(store: MailStore, options: { now: number
 }
 
 /**
- * A verification code dated `now` in the first account's inbox, so the list's code chip (plan 69) is there on every
+ * A verification code dated `now` in the first account's inbox, so the list's code chip (plan 72) is there on every
  * dev demo launch: the demo mailbox is seeded once, dated in the past, and a code shows only for two hours. Every
  * launch adds one message to the same thread, with a new code, as a service sends a new one each sign-in.
  */

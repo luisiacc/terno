@@ -62,7 +62,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const categories = useApp((s) => s.categories);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
   const hasDraft = useHasDraft(thread.id);
-  /** plan 69: a verification code in fresh mail, one click from the clipboard */
+  /** plan 72: a verification code in fresh mail, one click from the clipboard */
   const code = useThreadCode(thread);
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
@@ -189,7 +189,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           {avatar}
           {wide ? (
             // the senders line up in a column, so the subjects do too
-            // the full-width list's code sits with the sender, out of the subject's way (plan 69)
+            // the full-width list's code sits with the sender, out of the subject's way (plan 72)
             <span className="flex w-[clamp(9rem,18%,14rem)] shrink-0 items-center gap-1.5">
               {from}
               {count}

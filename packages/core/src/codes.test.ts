@@ -4,7 +4,7 @@ import { CODE_MAX_AGE, codeFresh, findCode } from "./codes";
 
 const text = (body: string, subject = "Hello") => findCode(subject, body);
 
-describe("verification codes (plan 69)", () => {
+describe("verification codes (plan 72)", () => {
   it("finds six digits next to a word that announces them, in English and Spanish", () => {
     expect(text("Your verification code is 482913.")).toBe("482913");
     expect(text("Code: 482913")).toBe("482913");
@@ -74,7 +74,7 @@ describe("verification codes (plan 69)", () => {
 
 
 
-  // Codex review (plan 69)
+  // Codex review (plan 72)
 
 
 

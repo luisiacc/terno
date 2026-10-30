@@ -23,7 +23,7 @@ function photoHint(account: Account, state: GooglePhotoState | undefined, pendin
 }
 
 /**
- * Plan 71: switching photos on asks Google nothing now: they come with the account's next sign-in with Google, when
+ * Plan 74: switching photos on asks Google nothing now: they come with the account's next sign-in with Google, when
  * Google asks. "Sign in now" is today's consent, for anyone who wants them at once.
  */
 function GooglePhotosRow({ account, state, pending }: { account: Account; state: GooglePhotoState | undefined; pending: boolean }) {
