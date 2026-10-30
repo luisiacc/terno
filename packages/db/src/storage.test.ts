@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { compactOnOpen, openDatabase } from "./index";
 import { getSetting } from "./repos";
 import { SqlMailStore } from "./sql-store";
 import { COMPACT_KEY, footprint } from "./storage";
+import { filledAndEmptied } from "./test/storage";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -39,27 +39,10 @@ function legacyFile(): string {
   return path;
 }
 
-/** Fills the store with mail and removes it through the storage commands; returns the store, still open. */
-async function filledAndEmptied(path: string) {
-  const store = new SqlMailStore(openDatabase(path));
-  const [a] = await withAccounts(store, 1);
-  await store.accounts.setSyncState(a!, { lastSyncAt: 1 });
-  await ingest(store, Array.from({ length: 400 }, (_, i) => msg({ accountId: a!, providerMsgId: `m${i}`, inInbox: false, isTrash: true, date: 1, bodyText: "x".repeat(3000) })));
-  const ids: number[] = [];
-  for (let after = 0; ; ) {
-    const rows = await store.storage.threads(after, 100);
-    if (!rows.length) break;
-    ids.push(...rows.map((r) => r.id));
-    after = rows.at(-1)!.id;
-  }
-  for (;;) if (!(await store.storage.remove({ threadIds: ids, buckets: ["trash"], cutoff: Date.now(), maxMessages: 500 })).remaining) break;
-  return store;
-}
-
 describe("storage on disk (plan 69)", () => {
   it("a new file is incremental: removed mail's pages leave the file once the checkpoint runs", async () => {
     const path = tempPath();
-    const store = await filledAndEmptied(path);
+    const store = await filledAndEmptied(path, openDatabase);
     expect(autoVacuum(path)).toBe(2);
     expect(footprint(store.db).free).toBeGreaterThan(0);
     while ((await store.storage.compact(100)).more);
@@ -73,7 +56,7 @@ describe("storage on disk (plan 69)", () => {
 
   it("an older file asks for a VACUUM on its next open, which runs once and leaves it incremental", async () => {
     const path = legacyFile();
-    const store = await filledAndEmptied(path);
+    const store = await filledAndEmptied(path, openDatabase);
     expect(autoVacuum(path)).toBe(0);
     const before = footprint(store.db);
     expect(before.free).toBeGreaterThan(0);
@@ -93,7 +76,7 @@ describe("storage on disk (plan 69)", () => {
 
   it("waits for room on the disk, and a failed VACUUM opens the file as it was and isn't tried again", async () => {
     const path = legacyFile();
-    const store = await filledAndEmptied(path);
+    const store = await filledAndEmptied(path, openDatabase);
     await store.storage.compact(100);
     expect(compactOnOpen(store.db, { freeDisk: () => 1024 })).toBe("noRoom");
     expect(await store.storage.compactPending()).toBe(true);

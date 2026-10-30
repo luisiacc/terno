@@ -23,8 +23,8 @@ export default defineConfig({
         test: {
           name: "db-wasm",
           include: ["packages/db/src/**/*.test.ts"],
-          // node:sqlite specifics (driver pragmas, the checkpoint worker) and source scans
-          exclude: ["**/*.perf.test.ts", "packages/db/src/sqlite.test.ts", "packages/db/src/portable.test.ts", "**/node_modules/**"],
+          // Native pragmas/live disk lifecycle and source scans; storage-images covers WASM persistence.
+          exclude: ["**/*.perf.test.ts", "packages/db/src/sqlite.test.ts", "packages/db/src/storage.test.ts", "packages/db/src/portable.test.ts", "**/node_modules/**"],
           setupFiles: ["packages/db/src/test/wasm-setup.ts"],
           environment: "node",
           testTimeout: 60_000,
