@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { parseRaw } from "@terno/mail/portable";
 import { expectIdle, timers } from "./timers";
 
 test("queued Gmail survives worker reload and waits for the same account", async ({ page, context }) => {
@@ -26,6 +27,10 @@ test("queued Gmail survives worker reload and waits for the same account", async
   await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
   const workers = page.workers();
   const account = await page.evaluate(() => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "synthetic-token", expiresIn: 3600 }));
+  await expect.poll(async () => {
+    const boot = await page.evaluate(() => window.__ternoWeb!.client.call("app.bootstrap", {}));
+    return boot.accounts.find(({ id }) => id === account.id)?.syncState;
+  }, { timeout: 15_000 }).toMatchObject({ status: "idle", lastError: null, lastSyncAt: expect.any(Number) });
   await page.waitForTimeout(2500);
   const healthyWorker = page.workers()[0]!;
   const receiverCheck = await healthyWorker.evaluate(() => {
@@ -138,7 +143,11 @@ test("queued Gmail survives worker reload and waits for the same account", async
   await expect.poll(() => sends.length).toBe(1);
   await expect.poll(async () => (await op())?.state).toBe("succeeded");
   const mime = Buffer.from(JSON.parse(sends[0]!).raw, "base64url").toString();
-  expect(mime).toContain("Queued synthetic"); expect(mime).toContain(Buffer.from("Exact queued body").toString("base64")); expect(mime).toContain("AP+A"); expect(mime).toContain("hidden@example.test");
+  const parsed = await parseRaw(mime);
+  expect(parsed).toMatchObject({ subject: "Queued synthetic", text: "Exact queued body", to: [{ name: "Recipient", email: "recipient@example.test" }], cc: [], bcc: [{ name: "", email: "hidden@example.test" }] });
+  expect(parsed.attachments).toHaveLength(1);
+  expect(parsed.attachments[0]).toMatchObject({ filename: "bytes.bin", mime: "application/octet-stream", size: 3 });
+  expect(Buffer.from(parsed.attachments[0]!.bytes!)).toEqual(Buffer.from([0, 255, 128]));
   await page.reload(); await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
   await page.evaluate((accountId) => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "last-token", expiresIn: 3600, accountId }), account.id);
   await page.evaluate((accountId) => window.__ternoWeb!.client.call("sync.now", { accountId, reason: "user" }), account.id);
