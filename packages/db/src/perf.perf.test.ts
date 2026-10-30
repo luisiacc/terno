@@ -5,11 +5,13 @@
  */
 import { waitingCutoff } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
+import { msg } from "@terno/store/conformance";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyThreadAction } from "./actions";
+import { ingestMessages } from "./ingest";
 import { openDatabase } from "./index";
 import { countScopeThreads, getCounts, getThread, listThreads, scopeThreadIds, waitingCounts } from "./queries";
 import { countScope } from "./categorize-bulk";
@@ -171,9 +173,22 @@ describe("navigation", () => {
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Big'")!.c).toBeGreaterThan(0);
     // Codex R10: a long conversation's locations coming back one by one (a rename, a reset) keep membership
     // incrementally, never refolding the whole thread per location
-    const convo = db.all<{ id: number }>("SELECT id FROM messages WHERE account_id = ? ORDER BY id LIMIT 5000", big.account_id).map((r) => r.id);
-    const thread = db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", convo[0]!)!.thread_id;
-    db.run(`UPDATE messages SET thread_id = ? WHERE id IN (${convo.join(",")})`, thread);
+    const held = db.all<{ id: number }>("SELECT id FROM messages WHERE account_id = ? ORDER BY id LIMIT 5000", big.account_id).map((r) => r.id);
+    expect(await locations.unresolved(held)).toEqual(held);
+    // Reset identities stay held. Model a fresh trusted import, before measuring recovery.
+    const { inserted: convo } = ingestMessages(db, Array.from({ length: 5000 }, (_, i) => msg({
+      accountId: big.account_id, providerMsgId: `perf-convo-${i}`, providerThreadId: "perf-convo",
+      rfcMessageId: `perf-convo-${i}@test`, date: NOW,
+      locations: [{ mailbox: "ConvoSource", uidvalidity: 1, uid: i + 1, flags: [] }],
+    })), NOW);
+    expect(convo).toHaveLength(5000);
+    expect(await locations.unresolved(convo)).toEqual([]);
+    expect(await locations.unresolved(held)).toEqual(held);
+    const source = await locations.of(convo);
+    expect(source).toHaveLength(5000);
+    expect(await locations.dispatch(convo, source, async () => "trusted source")).toBe("trusted source");
+    expect(db.get<{ c: number }>("SELECT count(DISTINCT m.thread_id) c FROM messages m JOIN threads t ON t.id=m.thread_id WHERE t.account_id = ? AND t.provider_thread_id = 'perf-convo'", big.account_id)!.c).toBe(1);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM message_locations WHERE mailbox = 'Convo'")!.c).toBe(0);
     db.run("INSERT OR IGNORE INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Convo', '[\"Convo\"]', 1, 101)", big.account_id);
     const t0 = performance.now();
     for (const [i, id] of convo.entries()) await locations.upsert(id, "Convo", 1, i + 1, []);
@@ -181,6 +196,7 @@ describe("navigation", () => {
     stats.push({ name: `a 5,000-message conversation's locations back one by one: ${recoverMs.toFixed(0)} ms in all`, budgetMs: 1000, p50: recoverMs / 5000, p95: recoverMs / 5000, max: recoverMs, n: 5000 } as never);
     expect(recoverMs, "5,000 locations of one conversation").toBeLessThanOrEqual(1000 * BUDGET_MULTIPLIER);
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(1);
+    expect(db.all<{ message_id: number; uidvalidity: number; uid: number }>("SELECT message_id, uidvalidity, uid FROM message_locations WHERE account_id = ? AND mailbox = 'Convo' ORDER BY uid", big.account_id)).toEqual(convo.map((id, i) => ({ message_id: id, uidvalidity: 1, uid: i + 1 })));
     // Codex R11: the same conversation relisted (a long one, a slice of locations at a time, never re-read whole)
     const withConvo = listFolders(db).filter((f) => f.accountId === big.account_id).map(({ key, path, selectable }) => ({ key, path, selectable }));
     replaceFolders(db, big.account_id, withConvo.filter((f) => f.key !== "Convo"));
@@ -194,6 +210,8 @@ describe("navigation", () => {
     convoSlices.sort((a, b) => a - b);
     stats.push({ name: `relist a 5,000-message conversation's folder: ${convoSlices.length} slices, the longest`, budgetMs: 4, p50: convoSlices[Math.floor(convoSlices.length / 2)]!, p95: convoSlices.at(-1)!, max: convoSlices.at(-1)!, n: convoSlices.length } as never);
     expect(convoSlices.at(-1)!, "a conversation's rebuild slice").toBeLessThanOrEqual(4 * BUDGET_MULTIPLIER);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM message_locations WHERE account_id = ? AND mailbox = 'Convo'", big.account_id)!.c).toBe(5000);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE account_id = ? AND folder = 'Convo'", big.account_id)!.c).toBe(1);
     // Codex R11: its 5,000 messages expunged at once: in slices, each thread looked at once a slice
     let lastTick = performance.now();
     let expungeStall = 0;
@@ -210,6 +228,7 @@ describe("navigation", () => {
     stats.push({ name: `expunge a 5,000-message conversation: ${expungeMs.toFixed(0)} ms in all, longest stall`, budgetMs: 16, p50: expungeStall, p95: expungeStall, max: expungeStall, n: 1 } as never);
     expect(expungeStall, "expunge: longest stall").toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
     expect(db.get<{ c: number }>("SELECT count(*) c FROM thread_folders WHERE folder = 'Convo'")!.c).toBe(0);
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM message_locations WHERE account_id = ? AND mailbox = 'Convo'", big.account_id)!.c).toBe(0);
     // Codex R14: a catalog of 10,000 folders 20 levels deep, one renamed: the differences written, never the catalog
     const catalog = Array.from({ length: 10_000 }, (_, i) => ({ key: `Cat${i}`, path: Array.from({ length: 20 }, (_, j) => `Nivel ${j} de la carpeta ${i}`), selectable: true }));
     replaceFolders(db, big.account_id, catalog);
