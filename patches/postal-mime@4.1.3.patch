@@ -1,14 +1,14 @@
 diff --git a/dist/cjs/postal-mime.d.ts.map b/dist/cjs/postal-mime.d.ts.map
-index 940f94db6faa6da8e041cb9667f286e7386dc87c..2b79ea31e2a816af4accdef7d64754ee3715fb20 100644
+index 940f94db6faa6da8e041cb9667f286e7386dc87c..538e7a86b6816de7d9de9d9ec476f6ad22494aad 100644
 --- a/dist/cjs/postal-mime.d.ts.map
 +++ b/dist/cjs/postal-mime.d.ts.map
 @@ -1 +1 @@
 -{"version":3,"file":"postal-mime.d.ts","sourceRoot":"","sources":["../../src/postal-mime.ts"],"names":[],"mappings":";;;AAMA,OAAO,KAAK,EAA2C,KAAK,EAAE,iBAAiB,EAAE,QAAQ,EAAE,MAAM,YAAY,CAAC;AAqK9G,cAAqB,UAAU;IAsB3B;;;;;;OAMG;WAGU,KAAK,CAAC,GAAG,EAAE,QAAQ,EAAE,OAAO,CAAC,EAAE,iBAAiB,GAAG,OAAO,CAAC,KAAK,CAAC;gBAKlE,OAAO,CAAC,EAAE,iBAAiB;IAmlBvC;;;;;OAKG;IACG,KAAK,CAAC,GAAG,EAAE,QAAQ,GAAG,OAAO,CAAC,KAAK,CAAC;CAiC7C"}
 \ No newline at end of file
-+{"version":3,"file":"postal-mime.d.ts","sourceRoot":"","sources":["../../src/postal-mime.ts"],"names":[],"mappings":"AAEA,OAAO,aAAa,MAAM,qBAAqB,CAAC;AAChD,OAAO,EAAE,WAAW,EAAyD,MAAM,qBAAqB,CAAC;AAGzG,OAAO,KAAK,EAA2C,KAAK,EAAE,iBAAiB,EAAE,QAAQ,EAAE,MAAM,YAAY,CAAC;AAE9G,OAAO,EAAE,aAAa,EAAE,WAAW,EAAE,CAAC;AACtC,YAAY,EACR,OAAO,EACP,YAAY,EACZ,oBAAoB,EACpB,UAAU,EACV,qBAAqB,EACrB,kBAAkB,EAClB,KAAK,EACL,MAAM,EACN,UAAU,EACV,OAAO,EACP,iBAAiB,EACjB,QAAQ,EACX,MAAM,YAAY,CAAC;AACpB,YAAY,EAAE,SAAS,EAAE,eAAe,EAAE,MAAM,aAAa,CAAC;AAsL9D,MAAM,CAAC,OAAO,OAAO,UAAU;IAsB3B;;;;;;OAMG;IAGH,OAAa,KAAK,CAAC,GAAG,EAAE,QAAQ,EAAE,OAAO,CAAC,EAAE,iBAAiB,GAAG,OAAO,CAAC,KAAK,CAAC,CAG7E;IAED,YAAY,OAAO,CAAC,EAAE,iBAAiB,EAAE;IAqmBzC;;;;;OAKG;IACG,KAAK,CAAC,GAAG,EAAE,QAAQ,GAAG,OAAO,CAAC,KAAK,CAAC,CAgCzC;CACJ"}
++{"version":3,"file":"postal-mime.d.ts","names":[],"sourceRoot":"","sources":["../../src/postal-mime.ts"],"mappings":";;;AAMA,OAAO,KAAK,EAA2C,KAAK,EAAE,iBAAiB,EAAE,QAAQ,EAAE,MAAM,YAAY,CAAC;AAuM9G,cAAqB,UAAU;IAsB3B;;;;;;OAMG;IAGH,OAAa,KAAK,CAAC,GAAG,EAAE,QAAQ,EAAE,OAAO,CAAC,EAAE,iBAAiB,GAAG,OAAO,CAAC,KAAK,CAAC,CAG7E;IAED,YAAY,OAAO,CAAC,EAAE,iBAAiB,EAAE;IAqmBzC;;;;;OAKG;IACG,KAAK,CAAC,GAAG,EAAE,QAAQ,GAAG,OAAO,CAAC,KAAK,CAAC,CAgCzC;CACJ"}
 \ No newline at end of file
 diff --git a/dist/cjs/postal-mime.js b/dist/cjs/postal-mime.js
-index 2e658d8f90d302a417c56681222b9c19370c4d21..a8b13e1caf796839195f5f3ea28075d966a01c23 100644
+index 2e658d8f90d302a417c56681222b9c19370c4d21..c2ddaa8476b31534b9efac2fed64a2eb787def78 100644
 --- a/dist/cjs/postal-mime.js
 +++ b/dist/cjs/postal-mime.js
 @@ -46,6 +46,34 @@ function renderEntry(textEntry, textType, convert) {
@@ -125,20 +125,6 @@ index 2e658d8f90d302a417c56681222b9c19370c4d21..a8b13e1caf796839195f5f3ea28075d9
          // A nested parser hands its text parts to its parent, see collectSubMessage, and the
          // root parser renders them all at once. Rendering at every level as well cost each
          // level the text and html of everything below it, and kept them until the root was
-@@ -647,12 +694,4 @@ class PostalMime {
-     }
- }
- exports.default = PostalMime;
--for (const key of Object.keys(exports)) {
--    if (key !== "default") {
--        exports.default[key] = exports[key];
--    }
--}
--Object.defineProperty(exports.default, '__esModule', { value: true });
--Object.defineProperty(exports.default, 'default', { value: exports.default, enumerable: false, writable: true, configurable: true });
--module.exports = exports.default;
- //# sourceMappingURL=postal-mime.js.map
-\ No newline at end of file
 diff --git a/dist/cjs/postal-mime.js.map b/dist/cjs/postal-mime.js.map
 index cd38bc1a39904f340218bcce8ff5ef16a0e40542..ce90f11c6d916dfc8cb09c17c3aaa069212fdd86 100644
 --- a/dist/cjs/postal-mime.js.map
