@@ -264,3 +264,8 @@ The initial ingestion optimization failed Root qualification0.96513versus0.97 an
 ## Landed repair: early-blocked IDB operation scheduling
 
 `7a53d4af` avoids eager target materialization while preserving all dependency/admission semantics. Fail-first complexity controls improve100,002target reads to3; Root's20scale/identity tests, original100,000-message10ms gate, IDB types and scoped lint pass. Timing failure did not reproduce on the once-only baseline, so this is a proven complexity correction rather than exact attribution of the original sample. One review: Standards0, one P3 independent group-isolation coverage gap retained under the cap. [Evidence and limits](../plans/drafts/release-idb-scheduling.md). No full-suite or native persistence clearance.
+
+
+## Recorded qualification: unchanged categorization file
+
+Evidence-only `7f2e2771`: the sole post-ingestion run passes13/13, CPUratios1.0436242585<=1.1and1.3371374669<=1.5with589/5,235decisions. Original1.1093942905failure remains recorded and causally unresolved. No production/test/gate changes or independent code review; one plan critique. Rebase was documentation-only with unrelated IDB changes, so no unchanged perf replay. [Exact commands and limitations](../plans/drafts/release-categorize-throughput.md). No release-wide clearance.
