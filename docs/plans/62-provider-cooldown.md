@@ -568,3 +568,7 @@ Browser-like receiver enforcement was RED on the original fallback for both nati
 ### W12 code review round 1
 
 Native read-only Standards+Spec review of `8a189280` found no Standards issue and two P2 test gaps: the returned account identity was not asserted, and provider silence alone did not prove zero authentication RPC submissions on refusal. The dev test now checks returned and persisted account identities and forwards/instruments the real client call, asserting zero refusal RPCs and exactly one valid RPC. Controlled test mutants were RED for wrong returned ID and an invalid extra RPC respectively; the restored test is GREEN. These are test-oracle controls, not product REDs. Review invocation emitted optional MCP authentication errors and a failed subagent transport attempt, but the native reviewer completed its own static review.
+
+### W12 code review round 2
+
+Native read-only Standards+Spec review of `aab6d731..bd28bee9` returned zero findings and confirmed both R1 test-oracle corrections. Static review only; the remaining browser and S53 qualification limits above stay open.
