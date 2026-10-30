@@ -6,7 +6,7 @@ import { fromPlainText, toEmailHtml, toPlainText } from "@terno/richtext";
 import { EditorState, TextSelection, AllSelection } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { history, undo, redo } from "prosemirror-history";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 const cjs = createRequire(import.meta.url)("prosemirror-view") as typeof import("prosemirror-view");
 
@@ -247,3 +247,32 @@ it("ships the same observer invalidation in source, ESM and CJS", () => {
   expect(predicates[0]).toBe(predicates[1]);
   expect(predicates[0]).toBe(predicates[2]);
 });
+
+for (const [entry, View] of [["ESM", EditorView], ["CJS", cjs.EditorView]] as const) {
+  it(`${entry}: reconciles huge text edits without allocating a whole-root owner map`, () => {
+    const { view, close } = setup(128, View);
+    const doc = fromPlainText(Array.from({ length: 4098 }, (_, i) => `line ${i}`).join("\n"));
+    view.updateState(EditorState.create({ doc, plugins: [history()] }));
+    let ownerEntries = 0;
+    const set = Map.prototype.set;
+    const spy = vi.spyOn(Map.prototype, "set").mockImplementation(function (this: Map<unknown, unknown>, key: unknown, value: unknown) {
+      if (value && typeof value === "object" && "dom" in value && value.dom instanceof HTMLElement && value.dom.classList.contains("ProseMirror-sibling-group")) ownerEntries++;
+      return set.call(this, key, value);
+    });
+    try {
+      for (const end of [false, true]) view.dispatch(view.state.tr.insertText("x", end ? view.state.doc.content.size - 1 : 1));
+      expect(view.state.doc.firstChild!.textContent).toBe("xline 0");
+      expect(view.state.doc.lastChild!.textContent).toBe("line 4097x");
+      const removed = (view.dom.querySelector(".ProseMirror-sibling-group p") as unknown as { pmViewDesc: { groupOwner?: unknown; parent?: unknown } }).pmViewDesc;
+      const from = view.state.doc.firstChild!.nodeSize;
+      view.dispatch(view.state.tr.delete(from, from + view.state.doc.child(1).nodeSize));
+      expect(removed.parent).toBeUndefined();
+      expect(removed.groupOwner, "destroyed descriptions release temporary ownership").toBeUndefined();
+      expect(ownerEntries, "existing group ownership is already known before flattening").toBe(0);
+      for (const paragraph of view.dom.querySelectorAll("p")) {
+        const desc = (paragraph as unknown as { pmViewDesc: { groupOwner?: unknown } }).pmViewDesc;
+        expect(desc.groupOwner, "temporary ownership must not survive reconciliation").toBeUndefined();
+      }
+    } finally { spy.mockRestore(); close(); }
+  });
+}
