@@ -719,3 +719,10 @@ Landed `0fe00824`, fixture/config/docs only. Original RED was real fixture order
 Root passed2light/dark browser cases with scoped composer axe, Web main/worker and dedicated test/config types, strict owned lint and whitespace after rebase, and inspected both screenshots. Root's first external type config failed to resolve vite/client; its next local config omitted the Web global declaration. Including the actual Web source fixed the harness configuration; no source/type escape was added. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-web-storage-send-uhj8hl5j`; [spec](../plans/drafts/release-web-storage-send.md).
 
 Exactly one Sol/high code review: Standards0, two P2 test-coverage gaps retained above under the cap. No clean Spec-review claim or second round. Development server/service-worker exclusion does not qualify emitted production Web behavior; the full release milestone remains pending. No report-scenario or held feature disposition changes.
+
+
+## Second release milestone: failed, isolated repairs continue — 2026-10-30
+
+At clean unchanged59b3661b, all full gates ran once. Typecheck/lint, WASM fallback1,822, Web49, UIperf62 and macOS package pass. Unit38failures plus10errors, E2E5, backendperf6 and freshsmoke6remain. Backendperf finished naturally270pass/6fail/1skip; its native900s timeout is a real runner failure, not an external hang diagnosis. Smoke7not-run/7skips are not passes. No budget/input/skip-policy waiver or repeat-until-green. [Committed inventory and repair order](provider-reliability-release-milestone-2.md); complete external evidence `/tmp/terno-release-milestone2-zknp9dnl/report.md`.
+
+Next isolated owners: renderer focus/admission, IDB performance and IMAP archive recovery; overlapping renderer/native-reload and SQL/store follow-ups stay serial. Scenario dispositions/counts and held post-review feature backlog remain unchanged. No release clearance.
