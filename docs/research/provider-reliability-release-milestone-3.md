@@ -103,3 +103,8 @@ AssertionError: expected 12.574916999999914 to be less than 10
 ## Landed repair: adoption ordered-input work
 
 `7985fd4d` bypasses redundant sorting/merge allocation for already ordered IDs, retaining owned copy, original yields and unsorted fallback. Root9unit+6unchanged perf cases/types/lint pass. One review0findings. Historical12.575msfailure is unreproduced and causally unproven; budgets/workloads unchanged. [Source evidence and limits](../plans/drafts/release3-mail-adoption.md). Other milestone failures remain open.
+
+
+## Landed repair: published-reply Escape ownership
+
+`1005ef7c` hands early Escape to a ready published reply while retaining pre-admission cancellation and later-focus supersession. Root61unit+13scoped browser cases/types/lint pass, including the original Atelier failure; light/dark captures inspected. One review0findings. [Evidence and limits](../plans/drafts/release3-compose-editor.md). The separate2MBeditor failure remains OPEN55.9ms/50ms in the worker's final unchanged run; no editor performance correction or release-wide clearance is claimed.
