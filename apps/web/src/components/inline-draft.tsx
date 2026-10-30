@@ -43,6 +43,8 @@ const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholde
 /** The draft's fields, shared by the inline reply and the new message in the reader. */
 export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; flat?: boolean }) {
   const id = useId();
+  const cancelReveal = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelReveal.current?.(), []);
   // a row shows when it was disclosed, when it has something in it, or when the mode needs it (a forward's
   // subject): a conversion that fills Cc in while the draft is open shows it, never sends to a hidden field
   const [ccOpen, setCc] = useState(false);
@@ -85,9 +87,34 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         aria-expanded="false"
         aria-controls={`${id}-${field}`}
         data-testid={testId}
-        onClick={() => {
+        onClick={(event) => {
+          cancelReveal.current?.();
+          const root = event.currentTarget.closest<HTMLElement>("[data-draft-key]");
+          if (!root || !canEditRecipients()) return;
+          const generation = focusMoveGeneration();
+          let raf = 0;
+          const cancel = () => {
+            cancelAnimationFrame(raf);
+            document.removeEventListener("focusin", cancel, true);
+            document.removeEventListener("pointerdown", cancel, true);
+            document.removeEventListener("keydown", key, true);
+            offDrafts();
+            if (cancelReveal.current === cancel) cancelReveal.current = null;
+          };
+          const key = (event: KeyboardEvent) => { if (event.key === "Tab") cancel(); };
+          const offDrafts = useDrafts.subscribe((state, previous) => {
+            if (state.held || previous.held || !canEditRecipients()) cancel();
+          });
+          cancelReveal.current = cancel;
+          document.addEventListener("focusin", cancel, true);
+          document.addEventListener("pointerdown", cancel, true);
+          document.addEventListener("keydown", key, true);
           set(true);
-          requestAnimationFrame(() => document.getElementById(`${id}-${field}`)?.focus());
+          raf = requestAnimationFrame(() => {
+            cancel();
+            if (!root.isConnected || root.closest("[inert]") || generation !== focusMoveGeneration() || !canEditRecipients()) return;
+            root.querySelector<HTMLElement>(`[data-testid="compose-${field}"]`)?.focus();
+          });
         }}
         className="h-[22px] rounded-sm px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
       >
