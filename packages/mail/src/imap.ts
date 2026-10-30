@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
 import { bulkHeaders } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
-import type { IncomingMessage, ProviderFolder } from "@terno/store";
+import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
 import { AdoptIndex } from "./adopt";
@@ -296,6 +296,8 @@ export async function reconcileMessages(
   messageIds: Iterable<number>,
   deps: {
     of(ids: number[]): Promise<readonly { message_id: number; mailbox: string; flags: string }[]>;
+    observe?(ids: number[]): Promise<readonly ImapLocation[]>;
+    check?(): void;
     providerIds(ids: number[]): Promise<ReadonlyMap<number, string | null>>;
     state(locs: { mailbox: string; flags: string }[]): FlagUpdate["flags"];
     updateFlags(updates: FlagUpdate[]): Promise<void>;
@@ -310,22 +312,27 @@ export async function reconcileMessages(
   for (let i = 0; i < ids.length; i += 500) {
     const updates: FlagUpdate[] = [];
     const chunk = ids.slice(i, i + 500);
-    const rows = await deps.of(chunk);
+    const providerIds = await deps.providerIds(chunk);
+    deps.check?.();
+    const rows = deps.observe ? await deps.observe(chunk) : await deps.of(chunk);
+    deps.check?.();
     const byMessage = new Map<number, { mailbox: string; flags: string }[]>();
     for (const r of rows) {
       const list = byMessage.get(r.message_id);
       if (list) list.push(r);
       else byMessage.set(r.message_id, [r]);
     }
-    const providerIds = await deps.providerIds(chunk);
     for (const id of chunk) {
       const locs = byMessage.get(id);
       if (!locs) {
         if (providerIds.has(id) && !providerIds.get(id)?.startsWith("local:")) orphans.push(id);
         continue;
       }
-      updates.push({ messageId: id, flags: deps.state(locs) });
+      const identity = providerIds.get(id);
+      if (!identity) continue;
+      updates.push({ messageId: id, expectedProviderMsgId: identity, ...(deps.observe && { expectedImapLocations: locs as ImapLocation[] }), flags: deps.state(locs) });
     }
+    deps.check?.();
     if (updates.length) await deps.updateFlags(updates);
     await breathe();
   }
@@ -713,8 +720,48 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   const upsertLocation = (messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) => locations.upsert(messageId, mailbox, uidvalidity, uid, flags);
 
   /** `keepOrphans` (plan 68, Codex R3): a pass where a folder failed part-way may have taken locations it didn't give back yet: nothing is removed for it */
-  async function reconcile(messageIds: Set<number>, sink: SyncSink, keepOrphans = false): Promise<number[]> {
-    return reconcileMessages(messageIds, { of: (ids) => locations.of(ids), providerIds: (ids) => store.providerIds(ids), state: stateFromLocations, updateFlags: (u) => sink.updateFlags(u), removeMessages: (ids) => sink.removeMessages(ids) }, keepOrphans);
+  const locatorKey = (id: number, mailbox: string, uidvalidity: number, uid: number) => JSON.stringify([id, mailbox, uidvalidity, uid]);
+
+  async function observeLocations(c: ImapFlow, ids: number[], check: () => void, evidence?: ReadonlyMap<string, string>): Promise<ImapLocation[]> {
+    const rows = await locations.of(ids);
+    check();
+    const byMailbox = new Map<string, ImapLocation[]>();
+    for (const row of rows) {
+      const captured = evidence?.get(locatorKey(row.message_id, row.mailbox, row.uidvalidity, row.uid));
+      if (captured !== undefined) { row.flags = captured; continue; }
+      const batch = byMailbox.get(row.mailbox) ?? [];
+      batch.push(row);
+      byMailbox.set(row.mailbox, batch);
+    }
+    for (const [mailbox, batch] of byMailbox) {
+      const lock = await c.getMailboxLock(mailbox);
+      try {
+        check();
+        assertValidity(c, mailbox, batch);
+        for (let i = 0; i < batch.length; i += 500) {
+          const expected = new Map(batch.slice(i, i + 500).map((row) => [row.uid, row]));
+          for await (const message of c.fetch([...expected.keys()], { uid: true, flags: true }, { uid: true })) {
+            check();
+            const row = expected.get(message.uid);
+            if (!row || !(message.flags instanceof Set)) throw new ProviderError(L("errors.imap.listRefused"), false);
+            row.flags = JSON.stringify([...message.flags]);
+            expected.delete(message.uid);
+          }
+          if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
+        }
+      } finally { lock.release(); }
+    }
+    check();
+    return rows;
+  }
+
+  async function reconcile(messageIds: Iterable<number>, sink: SyncSink, keepOrphans: boolean, c: ImapFlow, authoritative: boolean, check: () => void, identities?: ReadonlyMap<number, string>, evidence?: ReadonlyMap<string, string>): Promise<number[]> {
+    return reconcileMessages(messageIds, {
+      of: (ids) => locations.of(ids), providerIds: (ids) => identities ? Promise.resolve(identities) : store.providerIds(ids), check,
+      ...(authoritative && { observe: (ids: number[]) => observeLocations(c, ids, check, evidence) }),
+      state: stateFromLocations, updateFlags: (u) => sink.updateFlags(u, authoritative ? undefined : { authoritative: false }),
+      removeMessages: (ids) => sink.removeMessages(ids),
+    }, keepOrphans);
   }
 
   /** Plan 68 (Codex R8, R9): messages about to lose locations, written down durably first; reconciliation clears them. */
@@ -1090,7 +1137,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * mailbox before any new mail is identified, so a message moved between folders (the destination synced first)
    * finds its old location gone and keeps its identity, its thread and categories, never a second copy.
    */
-  async function sweepMailbox(c: ImapFlow, path: string, cursor: Cursor, touched: Set<number>): Promise<Snapshot | null> {
+  async function sweepMailbox(c: ImapFlow, path: string, cursor: Cursor, touched: Set<number>, remember: (id: number, mailbox: string, uidvalidity: number, uid: number, flags: Set<string> | undefined) => void): Promise<Snapshot | null> {
     const state = cursor.mailboxes[path];
     if (!state) return null;
     const lock = await c.getMailboxLock(path);
@@ -1105,13 +1152,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidvalidity = state.uidvalidity;
       // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
       const seen = snapshotOf(mb);
+      const known = await readMailbox(locations, path, uidvalidity);
+      // SELECT already proves an empty mailbox; with no cached UIDs there is nothing to reconcile.
+      if (mb.exists === 0 && known.length === 0) return seen;
       const found = await c.search({ all: true }, { uid: true });
       // A refused search says nothing about which cached messages still exist.
       if (!found) throw new ProviderError(L("errors.imap.listRefused"), false);
       // gathered and split a few thousand at a time (Codex R46: 500,000 mapped and filtered at once, 46 to 71 ms)
       const serverUids = new Set<number>();
       await addAll(serverUids, found);
-      const known = await readMailbox(locations, path, uidvalidity);
       const { byUid, gone, stillThere } = await partitionKnown(known, serverUids);
       if (gone.length) {
         // written down first, durably: a moved message is recognised under its new folder, an expunged one
@@ -1125,6 +1174,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
           const k = byUid.get(msg.uid);
           if (!k) continue;
+          remember(k.message_id, path, uidvalidity, msg.uid, msg.flags);
           const flags = JSON.stringify([...(msg.flags ?? new Set<string>())]);
           if (flags !== k.flags) {
             await locations.setFlags(k.message_id, path, flags);
@@ -1298,6 +1348,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   return {
+    flagSnapshots: true,
+    flagSnapshotSource: "locations",
     async verify() {
       const c = await makeClient();
       c.on("error", () => {});
@@ -1312,6 +1364,19 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
     async sync(sink) {
       await withConnection(async (c) => {
+        const passGeneration = generation;
+        const check = () => {
+          sink.signal.throwIfAborted();
+          if (generation !== passGeneration) throw ProviderError.network(L("errors.network.changed"));
+        };
+        const snapshots = ctx.flagObservation ? await store.pendingFlagSnapshots({ limit: 50 }) : undefined;
+        const wanted = new Set(snapshots?.items.map((item) => item.id));
+        // Reuse only real FLAGS evidence for the first bounded page; later pages use targeted reads.
+        const evidence = new Map<string, string>();
+        const remember = (id: number, mailbox: string, uidvalidity: number, uid: number, flags: Set<string> | undefined) => {
+          if (wanted.has(id) && flags instanceof Set && evidence.size < 1000) evidence.set(locatorKey(id, mailbox, uidvalidity, uid), JSON.stringify([...flags]));
+        };
+        check();
         // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 68)
         const list = await c.list();
         const r = await discoverRoles(c, list);
@@ -1340,26 +1405,31 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // the custom folders to read this pass: new ones, and known ones STATUS says changed
         // (a pass owing a full check reads every folder: STATUS may have skipped where a moved message went, Codex R9)
         const custom: string[] = [];
+        const forceSnapshots = Boolean(snapshots?.items.length);
         let skipped = 0;
         for (const f of folders) {
           if (!f.selectable || boxes.has(f.key)) continue;
           try {
-            if (cursor.fullCheck || cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
+            if (forceSnapshots || cursor.fullCheck || cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
             else skipped++;
           } catch (error) {
             tolerate(error);
           }
         }
+        // Snapshot obligations include selectable special-use paths omitted from the folder UI.
+        if (forceSnapshots && list.length <= LISTED_MAX) for (const mailbox of list) {
+          if (!mailbox.flags.has("\\Noselect") && !mailbox.flags.has("\\NonExistent") && !boxes.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
+        }
         // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
         const swept = new Map<string, Snapshot | null>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          swept.set(path, await sweepMailbox(c, path, cursor, touched));
+          swept.set(path, await sweepMailbox(c, path, cursor, touched, remember));
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            swept.set(path, await sweepMailbox(c, path, cursor, touched));
+            swept.set(path, await sweepMailbox(c, path, cursor, touched, remember));
           } catch (error) {
             swept.set(path, null);
             tolerate(error);
@@ -1443,7 +1513,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // what the cut journal's scan found (those found again have a place now: their flags, nothing more)
         const overflowed = full && cursor.overflow === true;
         if (overflowed) await addAll(touched, lost);
-        const kept = await reconcile(touched, sink, !full);
+        const covered = new Set([...boxes, ...custom]);
+        const authoritative = full && list.length <= LISTED_MAX && list.every((mailbox) => mailbox.flags.has("\\Noselect") || mailbox.flags.has("\\NonExistent") || covered.has(mailbox.path));
+        const kept = await reconcile(touched, sink, !full, c, false, check);
+        // Capture the finite work boundary after incomplete derivations have recorded fresh obligations.
+        if (authoritative && ctx.flagObservation) {
+          let page: FlagSnapshotPage = await store.pendingFlagSnapshots({ limit: 50 });
+          const through = page.throughMessageId;
+          for (;;) {
+            check();
+            await reconcile(page.items.map((item) => item.id), sink, true, c, true, check, new Map(page.items.map((item) => [item.id, item.providerMsgId])), evidence);
+            if (!page.hasMore || !page.items.length) break;
+            page = await store.pendingFlagSnapshots({ limit: 50, throughMessageId: through, afterMessageId: page.items[page.items.length - 1]!.id });
+          }
+        }
+        check();
         if (full) {
           delete cursor.orphans;
           delete cursor.fullCheck;

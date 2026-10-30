@@ -320,15 +320,14 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const t = await setup(true, "INBOX");
     t.advance();
     t.ctl.setFlags(t.path, [t.target.uid], ["\\Seen"], "set");
-    const store = t.backend.store.providerStore(t.account.id);
-    const original = store.providerIds.bind(store);
+    const original = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
     const captured = deferred<void>(), release = deferred<void>();
-    // reconcileMessages has already captured location flags when it awaits provider IDs.
-    vi.spyOn(store, "providerIds").mockImplementationOnce(async (ids) => {
-      const result = await original(ids);
+    // Identity is now captured first. Gate the derived old payload immediately before its transaction.
+    vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementationOnce(async (...args) => {
+      expect(args[1].find((update) => update.messageId === t.message.id)?.flags).toMatchObject({ isRead: true, isStarred: false });
       captured.resolve();
       await bounded(release.promise, "release old reconciliation");
-      return result;
+      return original(...args);
     });
     const running = t.backend.syncAccount(t.account.id);
     try {
@@ -347,12 +346,135 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await t.stop();
     const durable = await t.open();
     expect.soft((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: true, isStarred: true });
-    // Location/raw witnesses still run when the intentionally unmarked ACK spec is red.
+    // Location/raw witnesses remain independent of the effective-flag oracle.
     expect((await durable.backend.store.providerStore(t.account.id).locations!.of([t.message.id]))[0]).toMatchObject({ uid: t.target.uid, uidvalidity: t.target.uidvalidity });
     expect(t.ctl.getMessage(t.path, t.target.uid).flags.sort()).toEqual(FLAGS);
     expect(t.ctl.getMessage(t.path, t.target.uid).raw).toEqual(Buffer.from(t.targetRaw));
     expect(t.ctl.getMessage(t.path, t.other.uid).raw).toEqual(Buffer.from(t.otherRaw));
     if (!acknowledged) await witness(durable, t, FLAGS);
+  });
+
+  it("confirms unchanged ACK cache rows, then accepts a genuine external reversal after reopen", async () => {
+    const t = await setup(true, "INBOX");
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    const pending = () => t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 });
+    expect((await pending()).items).toEqual([{ id: t.message.id, providerMsgId: t.providerId }]);
+    await pass(t, t);
+    expect((await pending()).items).toEqual([]);
+    await witness(t, t, ["\\Flagged"]);
+    await t.stop();
+    const durable = await t.open();
+    t.ctl.setFlags(t.path, [t.target.uid], ["\\Seen"], "set");
+    for (let i = 0; i < 4; i++) await pass(durable, t);
+    await witness(durable, t, ["\\Seen"]);
+  });
+
+  it.each(["UID", "FLAGS"] as const)("incomplete final %s evidence cannot retire acknowledged intent", async (missing) => {
+    const t = await setup(true, "INBOX");
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    const ctl = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: t.path, times: 2,
+      match: /\(UID FLAGS(?: MODSEQ)?\)/i,
+      send: missing === "UID" ? "$TAG OK Synthetic omitted UID\r\n" : `* 1 FETCH (UID ${t.target.uid})\r\n$TAG OK Synthetic omitted FLAGS\r\n` });
+    await bounded(t.backend.syncAccount(t.account.id), "incomplete final evidence");
+    expect(ctl.hits).toBe(2);
+    expect((await detail(t)).messages[0]).toMatchObject({ isStarred: true, bodyText: t.message.bodyText });
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+    await pass(t, t);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+  });
+
+  it("a failed location in a multi-location pass retains intent until complete evidence", async () => {
+    const t = await setup(true, "INBOX");
+    t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    await bounded(t.backend.syncAccount(t.account.id), "discover second location");
+    const locations = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
+    expect(locations).toHaveLength(2);
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    for (const location of locations) t.ctl.setFlags(location.mailbox, [location.uid], [], "set");
+    const refusal = t.w.server.script.add({ on: "command", command: "UID SEARCH", mailbox: "Projects", match: / ALL\s*$/i, times: 1, send: "$TAG NO Synthetic partial location\r\n" });
+    await bounded(t.backend.syncAccount(t.account.id), "partial multi-location pass");
+    expect(refusal.hits).toBe(1);
+    expect((await detail(t)).messages[0]).toMatchObject({ isStarred: true, bodyText: t.message.bodyText });
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+    await pass(t, t);
+    expect((await detail(t)).messages[0]).toMatchObject({ isStarred: false, bodyText: t.message.bodyText });
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toHaveLength(2);
+    await t.stop();
+    const durable = await t.open();
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, isStarred: false, bodyText: t.message.bodyText });
+  });
+
+  it("a newer queued and acknowledged inverse fences the same captured observation", async () => {
+    const t = await setup(true, "INBOX");
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    const original = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
+    const captured = deferred<void>(), release = deferred<void>();
+    vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementationOnce(async (...args) => {
+      captured.resolve(); await bounded(release.promise, "release old star snapshot"); return original(...args);
+    });
+    const running = t.backend.syncAccount(t.account.id);
+    try {
+      await bounded(captured.promise, "old star snapshot captured");
+      await t.client.call("threads.act", { threadIds: [t.thread.id], action: "unstar" });
+      expect(await t.backend.runWorker()).toBe(1);
+      expect(t.ctl.getMessage(t.path, t.target.uid).flags).toEqual([]);
+    } finally { release.resolve(); await bounded(running, "old star snapshot finishes"); }
+    expect((await detail(t)).messages[0]).toMatchObject({ isStarred: false, bodyText: t.message.bodyText });
+    await pass(t, t);
+    await witness(t, t, []);
+    await t.stop(); const durable = await t.open(); await witness(durable, t, []);
+  });
+
+  it("drains three finite pages once, retaining a superseded first target and a new tail", async () => {
+    const t = await setup(true, "INBOX");
+    for (let i = 0; i < 123; i++) t.ctl.addMessage("INBOX", { raw: raw(`page-${i}`), internaldate: new Date(START - DAY) });
+    await bounded(t.backend.syncAccount(t.account.id), "page fixture discovery");
+    const messages = (await t.backend.store.debug.snapshot()).messages.filter((message) => message.subject !== "unrelated");
+    expect(messages).toHaveLength(124);
+    const tail = messages[messages.length - 1]!;
+    const targets = messages.slice(0, -1);
+    await t.backend.store.threads.act({ threadIds: targets.map((message) => message.threadId), action: "star", signal: null, now: t.now() });
+    expect(await t.backend.runWorker()).toBe(1);
+    t.advance();
+    const original = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
+    const visited: number[] = [];
+    let edited = false;
+    vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementation(async (...args) => {
+      const confirmed = args[1].filter((update) => update.expectedImapLocations);
+      visited.push(...confirmed.map((update) => update.messageId));
+      if (confirmed.length && !edited) {
+        edited = true;
+        for (const action of ["unstar", "star"] as const) {
+          await t.backend.store.threads.act({ threadIds: [targets[0]!.threadId], action, signal: null, now: t.now() });
+          expect(await t.backend.runWorker()).toBe(1);
+        }
+        await t.backend.store.threads.act({ threadIds: [tail.threadId], action: "star", signal: null, now: t.now() });
+        expect(await t.backend.runWorker()).toBe(1);
+      }
+      return original(...args);
+    });
+    const start = t.w.commands.length;
+    await bounded(t.backend.syncAccount(t.account.id), "finite three-page sync");
+    expect(edited).toBe(true);
+    expect(visited).toEqual(targets.map((message) => message.id));
+    const pending = await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 });
+    expect(pending.items.map((item) => item.id)).toEqual([targets[0]!.id, tail.id]);
+    expect(t.w.commands.slice(start).filter((command) => command.command === "UID SEARCH" && / ALL\s*$/i.test(command.data) && command.mailbox === "INBOX")).toHaveLength(1);
+    expect(t.w.commands.slice(start).filter((command) => /BODY(?:\.PEEK)?\[|ENVELOPE|BODYSTRUCTURE/.test(command.data))).toEqual([]);
+    await bounded(t.backend.syncAccount(t.account.id), "finish retained targets");
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    expect((await t.backend.store.debug.snapshot()).messages.filter((message) => message.isStarred)).toHaveLength(124);
+    expect(t.ctl.getMessage(t.path, t.target.uid).raw).toEqual(Buffer.from(t.targetRaw));
+    expect((await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]))[0]).toMatchObject({ uid: t.target.uid, uidvalidity: t.target.uidvalidity });
   });
 
 });

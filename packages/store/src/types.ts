@@ -74,6 +74,8 @@ export interface MessageState {
 export interface FlagUpdate {
   messageId: number;
   expectedProviderMsgId?: string;
+  /** Complete locator set verified by a real IMAP FLAGS read; compared inside the write transaction. */
+  expectedImapLocations?: readonly { mailbox: string; uidvalidity: number; uid: number }[];
   flags: Partial<{ isRead: boolean; isStarred: boolean; inInbox: boolean; isTrash: boolean; isSpam: boolean; isSent: boolean; isDraft: boolean }>;
   /** Gmail: the message's labels now (its category decides who it's from, plan 17); absent: unchanged */
   gmailLabels?: string[];

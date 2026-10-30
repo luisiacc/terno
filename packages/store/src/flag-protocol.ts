@@ -169,9 +169,13 @@ export function flagObservationValid(repo: FlagRepository, accountId: number, ob
   const clock = repo.clock(accountId);
   return !!clock?.phase && !!observation && observation.accountId === accountId && observation.protocolId === clock.protocol_id && Number.isSafeInteger(observation.epoch) && observation.epoch > 0 && observation.epoch <= clock.epoch;
 }
-export function acceptFlagObservation(repo: FlagRepository, messageId: number, field: LocalFlagField, observation?: FlagObservation): boolean {
+export function acceptFlagObservation(repo: FlagRepository, messageId: number, field: LocalFlagField, observation?: FlagObservation, value?: boolean, needsSnapshot?: () => void): boolean {
   const row = repo.intent(messageId, field);
   if (!row) return true;
+  if (!observation && !row.pending_count && !row.needs_snapshot && value !== undefined && Number(value) !== repo.message(messageId)?.[FLAG_COLUMNS[field]]) {
+    putFlagIntent(repo, { ...row, needs_snapshot: 1 });
+    needsSnapshot?.();
+  }
   if (row.pending_count || !flagObservationValid(repo, row.account_id, observation) || observation!.epoch <= row.barrier_epoch || observation!.epoch < row.last_observation_epoch) return false;
   putFlagIntent(repo, { ...row, last_observation_epoch: observation!.epoch, needs_snapshot: 0 });
   return true;
@@ -209,4 +213,17 @@ export function rearmFlagEffects(repo: FlagRepository, op: FlagOp): number[] | n
     repo.setMessageFlags(effect.message_id, { [effect.field]: effect.value });
   }
   return [...eligible];
+}
+
+/** Locator identity, including absence of additional copies, is checked at the flag commit boundary. */
+export function sameImapLocations(expected: readonly { mailbox: string; uidvalidity: number; uid: number }[], current: readonly { mailbox: string; uidvalidity: number; uid: number }[]): boolean {
+  if (!expected.length || expected.length !== current.length) return false;
+  const byMailbox = new Map(current.map((row) => [row.mailbox, row]));
+  if (byMailbox.size !== expected.length) return false;
+  for (const row of expected) {
+    const found = byMailbox.get(row.mailbox);
+    if (!found || found.uid !== row.uid || found.uidvalidity !== row.uidvalidity) return false;
+    byMailbox.delete(row.mailbox);
+  }
+  return true;
 }

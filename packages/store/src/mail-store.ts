@@ -306,7 +306,7 @@ export interface MailStore {
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
-    updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation): Promise<{ touched: number[] }>;
+    updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation): Promise<{ touched: number[] } & FlagReconciliation>;
     remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
     pendingMessageIds(accountId: number): Promise<Set<number>>;
     /** plan 41: newly inserted messages as they are now (missing ids left out), for the notification rule; bounded by the caller */

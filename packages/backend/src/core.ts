@@ -1223,16 +1223,18 @@ export class BackendCore {
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, observation ?? undefined, checkCurrent);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent);
         },
         // the account's own window, else the general one
         windowDays,
         windowStart: this.now() - windowDays * 86_400_000,
-        updateFlags: async (updates) => {
+        updateFlags: async (updates, o) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
             checkCurrent();
-            for (const t of (await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, observation ?? undefined))).touched) touched.add(t);
+            const result = await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, o?.authoritative === false ? undefined : observation ?? undefined));
+            for (const t of result.touched) touched.add(t);
+            this.reconcileFlags(result.flagReconcileAccounts);
           });
           this.notifyChanged(touched);
         },

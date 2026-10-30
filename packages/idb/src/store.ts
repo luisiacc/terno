@@ -4,7 +4,7 @@ import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceF
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -957,12 +957,15 @@ export class IdbMailStore implements MailStore {
         () => {
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
+          let needsSnapshot = false;
           for (const u of updates) {
             const identity = messages.get(u.messageId);
-            if (observation && (!flagObservationValid(idbFlags(this.c), accountId, observation) || !u.expectedProviderMsgId || identity?.account_id !== accountId || identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
+            if (observation && (!flagObservationValid(idbFlags(this.c), accountId, observation) || !u.expectedProviderMsgId)) continue;
+            if (u.expectedProviderMsgId !== undefined && (identity?.account_id !== accountId || identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
+            if (u.expectedImapLocations && !sameImapLocations(u.expectedImapLocations, T(this.c, "message_locations").by("fk_message_id", u.messageId).map((row) => ({ mailbox: row.mailbox as string, uidvalidity: row.uidvalidity as number, uid: row.uid as number })))) continue;
             const pending = pendingFlagFields(this.c, accountId, u.messageId);
             const sets: [string, number | string][] = Object.entries(u.flags)
-              .filter(([k]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation))
+              .filter(([k, v]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { needsSnapshot = true; }))
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
             // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
             if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
@@ -975,7 +978,7 @@ export class IdbMailStore implements MailStore {
             if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
-          return { touched: [...threads] };
+          return { touched: [...threads], ...(needsSnapshot && { flagReconcileAccounts: [accountId] }) };
         },
         { durability: "relaxed" },
       ),

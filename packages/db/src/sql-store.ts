@@ -3,7 +3,7 @@ import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCop
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
@@ -464,11 +464,14 @@ export class SqlMailStore implements MailStore {
         // read inside this unit: a user action committed just before is honoured
         const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
+          let needsSnapshot = false;
         for (const u of updates) {
-          if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId || !this.db.get("SELECT id FROM messages WHERE id=? AND account_id=? AND provider_msg_id=?", u.messageId, accountId, u.expectedProviderMsgId))) continue;
+          if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId)) continue;
+          if (u.expectedProviderMsgId !== undefined && !this.db.get("SELECT id FROM messages WHERE id=? AND account_id=? AND provider_msg_id=?", u.messageId, accountId, u.expectedProviderMsgId)) continue;
+          if (u.expectedImapLocations && !sameImapLocations(u.expectedImapLocations, this.db.all<{ mailbox: string; uidvalidity: number; uid: number }>("SELECT mailbox,uidvalidity,uid FROM message_locations WHERE account_id=? AND message_id=?", accountId, u.messageId))) continue;
           const owned = pending.get(u.messageId);
           const sets: [string, number | string][] = Object.entries(u.flags)
-            .filter(([k]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation))
+            .filter(([k, v]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { needsSnapshot = true; }))
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
           // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
           if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
@@ -487,7 +490,7 @@ export class SqlMailStore implements MailStore {
           if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
-        return { touched: [...threads] };
+        return { touched: [...threads], ...(needsSnapshot && { flagReconcileAccounts: [accountId] }) };
       }),
     remove: async (ids) => ({ touched: [...deleteMessages(this.db, ids)] }),
     pendingMessageIds: async (accountId) => messagesWithPendingOps(this.db, accountId),

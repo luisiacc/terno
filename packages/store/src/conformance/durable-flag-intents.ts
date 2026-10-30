@@ -54,6 +54,59 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       expect((await store.debug.snapshot()).messages[0]!.inInbox).toBe(true);
     });
 
+    it.each(["reset", "move", "copy"] as const)("location evidence is fenced at commit after a %s and reopen", async (change) => {
+      let store = await harness.open(); stores.push(store);
+      const [, a] = await withAccounts(store, 2);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "locator", locations: [{ mailbox: "INBOX", uidvalidity: 10, uid: 1, flags: [] }] })]);
+      await observe(store, a!);
+      const threadId = await threadOf(store, "locator");
+      const action = await store.threads.act({ threadIds: [threadId], action: "star", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 20);
+      await store.ops.complete(op!.id, undefined, 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      const fresh = (await observe(store, a!))!;
+      const captured = await store.providerStore(a!).locations.of([id]);
+      if (change === "reset") await store.providerStore(a!).locations.upsert(id, "INBOX", 11, 1, ["\\Flagged"]);
+      else {
+        await store.providerStore(a!).locations.upsert(id, "Projects", 20, 2, ["\\Flagged"]);
+        if (change === "move") await store.providerStore(a!).locations.remove(id, "INBOX");
+      }
+      store = await harness.reopen(store); stores.push(store);
+      const stale = { messageId: id, expectedProviderMsgId: "locator", expectedImapLocations: captured, flags: { isStarred: false, isRead: true, isSent: true } };
+      await store.sync.updateFlags(a!, [stale], fresh);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isStarred: true, isRead: false });
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([{ id, providerMsgId: "locator" }]);
+      expect((await store.ops.get(action.opIds[0]!))?.state).toBe("succeeded");
+      const current = await store.providerStore(a!).locations.of([id]);
+      await store.sync.updateFlags(a!, [{ ...stale, expectedImapLocations: current }], (await observe(store, a!))!);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isStarred: false, isRead: true });
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    });
+
+    it("an incomplete derived change records durable targeted work without retiring observed intent", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [, a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "partial", locations: [{ mailbox: "INBOX", uidvalidity: 1, uid: 1, flags: [] }] })]);
+      await observe(store, a!);
+      await store.threads.act({ threadIds: [await threadOf(store, "partial")], action: "star", signal: null, now: 1 });
+      const [op] = await store.ops.claimReady(2, 1);
+      await store.ops.complete(op!.id, undefined, 3);
+      const id = (await store.debug.snapshot()).messages[0]!.id;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "partial", flags: { isStarred: true } }], (await observe(store, a!))!);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      const mismatch = await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "replacement", flags: { isStarred: false, isRead: true } }]);
+      expect(mismatch.touched).toEqual([]);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      const partial = await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "partial", flags: { isStarred: false, isRead: true } }]);
+      expect(partial.flagReconcileAccounts).toEqual([a]);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ isStarred: true, isRead: true });
+      store = await harness.reopen(store); stores.push(store);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([{ id, providerMsgId: "partial" }]);
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "partial", expectedImapLocations: await store.providerStore(a!).locations.of([id]), flags: { isStarred: false } }], (await observe(store, a!))!);
+      expect((await store.debug.snapshot()).messages[0]!.isStarred).toBe(false);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    });
+
     it("keeps incapable accounts inactive but refuses downgrade after durable activation", async () => {
       let store = await harness.open(); stores.push(store);
       const [accountId] = await withAccounts(store, 1);

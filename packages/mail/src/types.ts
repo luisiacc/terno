@@ -122,7 +122,7 @@ export interface SyncSink {
   setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { captureUnavailable?: "size" }): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
   /** Applies provider state, preserving fields affected by queued/running local operations. */
-  updateFlags(updates: FlagUpdate[]): Promise<void>;
+  updateFlags(updates: FlagUpdate[], o?: { authoritative?: false }): Promise<void>;
   /** Sync window start (ms): only mail newer than this is downloaded initially. */
   windowStart: number;
   /** Effective configured window; stable across retries even as windowStart advances with the clock. */
@@ -177,8 +177,10 @@ export interface ProviderContext {
 }
 
 export interface MailProvider {
-  /** Fresh minimal reads authoritatively represent all user-controlled flags. */
+  /** This provider can supply fresh authoritative evidence for all user-controlled flags. */
   flagSnapshots?: true;
+  /** Envelopes describe a single location and cannot confirm all-location state. */
+  flagSnapshotSource?: "locations";
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
   /**
