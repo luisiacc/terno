@@ -192,3 +192,9 @@ The remaining report scenarios and held round-two backlog remain distinct from m
 - `apps/desktop` `people.smoke.ts:83`: v13 People-profile startup does not show its first thread within 60 seconds.
 
 The original report contains exact project variants, full test names, expected/received values and retained traces. No missing count or unfinished oracle is credited as a pass.
+
+## Landed repair: storage conformance and IDB upgrades
+
+`df46ed46` addresses the stale unknown-operation completion expectation and IDB historical schema, migration fault activation, delayed loading and early-load exception identity. Root's rebased targeted qualification:84upgrade/persistence +62adjacency +12Node/fake-IDB +4WASM cases pass; store/db/idb/web types, scoped package lint and whitespace pass. One native code review: no Standards/Spec findings. See [Plan76](../plans/76-store-release-repair.md). This does not replace the failed milestone result.
+
+OPFS remains unverified after worker timeouts. Native IDB's unintentionally expanded608-pass/2-existing-skip observation is separately recorded. The three Node-disk/WASM-adapter storage failures remain open. No full gate was replayed, no thresholds or safety assertions relaxed, and no held feature backlog was reworked.
