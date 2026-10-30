@@ -162,6 +162,11 @@ function chineseLines(megabytes: number) {
   return Array.from({ length: n }, (_, i) => `${i} ${CHINESE}`).join("\n");
 }
 
+async function waitForHabitGhost(page: Page) {
+  // A missing locator makes Playwright snapshot the whole page's ARIA tree on each miss.
+  await expect.poll(() => page.evaluate(() => document.querySelector<HTMLElement>('[data-testid="compose-ghost"]:not([hidden])')?.dataset.ghost ?? ""), { timeout: 10_000 }).toMatch(/^ look/);
+}
+
 for (const mb of [5, 10]) {
   test(`a ${mb} MB draft: suggestions at the start, middle and end cost typing nothing beyond the paired gate, and appear in time`, async ({ app: page, server }) => {
     test.setTimeout(1_500_000);
@@ -191,7 +196,7 @@ for (const mb of [5, 10]) {
         await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
         await resetProbe(page);
         await page.keyboard.type(HABIT, { delay: 30 });
-        await expect(page.locator("[data-testid=compose-ghost]:not([hidden])")).toHaveAttribute("data-ghost", /^ look/, { timeout: 10_000 });
+        await waitForHabitGhost(page);
         // typing stopped → shown: the 60 ms pause, then the request (window, RPC, model) and the frame that places it
         latency = Math.min(
           latency,
@@ -422,4 +427,35 @@ test("injected regression: 10 ms on one key in four fails the paired tail gate (
   await page.evaluate(() => delete (window as unknown as { __ternoInject?: string }).__ternoInject);
   expect(withinGate(r, gate)).toBe(false);
   expect(r.tail).toBeGreaterThan(gate.tail * MULT);
+});
+
+
+test("waiting for a pending ghost never measures the draft body", async ({ page }) => {
+  await page.setContent('<main data-testid="compose-body" role="textbox" contenteditable="true">' + '<p>Draft line.</p>'.repeat(3000) + '</main><div data-testid="compose-ghost" hidden></div>');
+  await page.locator('body').count();
+  const cdp = await page.context().newCDPSession(page);
+  const contexts: { id: number; name: string }[] = [];
+  cdp.on('Runtime.executionContextCreated', ({ context }) => contexts.push(context));
+  await cdp.send('Runtime.enable');
+  const utility = contexts.find((c) => c.name.includes('utility'))!;
+  expect(utility).toBeDefined();
+  await cdp.send('Runtime.evaluate', { contextId: utility.id, expression: `
+    globalThis.__draftMeasurements = 0;
+    const rect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.closest('[data-testid="compose-body"]')) globalThis.__draftMeasurements++;
+      return rect.call(this);
+    };
+  ` });
+  await page.evaluate(() => {
+    setTimeout(() => {
+      const layer = document.querySelector<HTMLElement>('[data-testid="compose-ghost"]')!;
+      layer.dataset.ghost = ' look at this';
+      layer.hidden = false;
+    }, 500);
+  });
+  await waitForHabitGhost(page);
+  const { result } = await cdp.send('Runtime.evaluate', { contextId: utility.id, expression: 'globalThis.__draftMeasurements' });
+  expect(result.value).toBe(0);
+  await cdp.detach();
 });
