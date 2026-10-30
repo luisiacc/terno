@@ -1,13 +1,25 @@
 import { createServer, type Server } from "node:https";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { icoBytes, pngBytes } from "../test/icons-fixtures";
 import { TEST_TLS_CA, TEST_TLS_CERT, TEST_TLS_KEY } from "../test/icons-tls";
 import { loadSuffixList, registrableDomain } from "./domain";
 import { fetchSiteIcon } from "./fetcher";
 import { nodeIconTransport } from "./node-transport";
 import { IconNetworkError } from "./transport";
+
+vi.mock("node:https", async (original) => {
+  const https = await original<typeof import("node:https")>();
+  return { ...https, request(options: import("node:https").RequestOptions, callback: (res: IncomingMessage) => void) {
+    const host = String(options.host);
+    if (!["example.com", "www.example.com", "example.org", "example.net", "cdn.example.net"].includes(host) || options.port !== port) throw new Error("Unexpected icon fixture destination");
+    const lookup = options.lookup!;
+    // localhost passes the native pre-DNS guard; guarded still resolves and checks the original host.
+    return https.request({ ...options, host: "localhost", headers: { ...options.headers, host },
+      lookup: (_hostname, settings, done) => lookup(host, settings, done) }, callback);
+  } };
+});
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 
@@ -37,9 +49,14 @@ afterAll(() => new Promise<void>((r) => server.close(() => r())));
 beforeEach(() => {
   routes.clear();
   seen.length = 0;
+  resolved.length = 0;
 });
 
-const loopback = async () => [{ address: "127.0.0.1", family: 4 }];
+const resolved: string[] = [];
+const loopback = async (host: string) => {
+  resolved.push(host);
+  return [{ address: "127.0.0.1", family: 4 }];
+};
 const asserted: string[] = [];
 function fetchIcon(domain: string, o: { strictAddresses?: boolean; timeoutMs?: number; assert?: (u: URL) => Promise<void> } = {}) {
   asserted.length = 0;
@@ -67,6 +84,7 @@ describe("fetching a site's icon over HTTPS (plan 22)", () => {
       expect(s.headers["user-agent"]).toMatch(/^Mozilla\/5\.0 \(Macintosh/);
     }
     expect(asserted).toEqual(["https://example.com/", "https://example.com/touch.png"]);
+    expect(resolved).toEqual(["example.com", "example.com"]);
   });
 
   it("falls back to /favicon.ico (its largest PNG entry) when the page names nothing usable", async () => {
@@ -123,6 +141,7 @@ describe("fetching a site's icon over HTTPS (plan 22)", () => {
     routes.set("example.com/", html("<head></head>"));
     routes.set("example.com/favicon.ico", bytes(pngBytes(32)));
     expect(await fetchIcon("example.com", { strictAddresses: true })).toBeNull();
+    expect(resolved).toEqual(["example.com", "example.com"]);
     expect(seen).toEqual([]);
   });
 

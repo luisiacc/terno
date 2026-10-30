@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createImapProvider, createRegistry, type ImapTimeouts, type ProviderContext } from "@terno/mail";
-import { sqlDb } from "@terno/db";
+import { sqlDb, SqlProviderStore, createAccount } from "@terno/db";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -164,6 +164,10 @@ describe("plan 20: mail comes back after the network changes", () => {
     t.imap.server.control.addMessage("INBOX", { raw: raw("archive me offline") });
     await t.backend.syncAccount(t.account.id);
     const [thread] = (await t.client.call("threads.list", { view: "inbox" })).items.filter((x) => x.subject === "archive me offline");
+    const identity = t.db().get<{ id: number; provider_msg_id: string }>("SELECT id, provider_msg_id FROM messages WHERE thread_id=?", thread!.id)!;
+    const source = t.db().get<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations WHERE message_id=? AND mailbox='INBOX'", identity.id)!;
+    expect(source.uidvalidity).toBe(t.imap.server.control.getMailbox("INBOX").uidvalidity);
+    expect(t.imap.server.control.listMessages("INBOX").some((m) => m.uid === source.uid)).toBe(true);
     await t.proxy.refuse();
     t.proxy.resetAll();
     (await t.backend.provider(t.account.id))!.reset!();
@@ -175,7 +179,13 @@ describe("plan 20: mail comes back after the network changes", () => {
     await t.proxy.pass();
     t.backend.networkChanged(true, "network");
     await expect.poll(() => op().state, { timeout: 5000, interval: 20 }).toBe("succeeded");
-    expect(t.imap.server.control.listMessages("Archive").length).toBe(1);
+    const archived = t.imap.server.control.listMessages("Archive");
+    expect(archived).toHaveLength(1);
+    expect(t.imap.server.control.listMessages("INBOX").some((m) => m.uid === source.uid)).toBe(false);
+    expect(t.db().get("SELECT id, provider_msg_id FROM messages WHERE id=?", identity.id)).toEqual(identity);
+    expect(t.db().all("SELECT mailbox, uid, uidvalidity FROM message_locations WHERE message_id=?", identity.id)).toEqual([
+      { mailbox: "Archive", uid: archived[0]!.uid, uidvalidity: t.imap.server.control.getMailbox("Archive").uidvalidity },
+    ]);
   });
 
   it("offline, the worker claims nothing (no attempt spent); online, the queued action runs", async () => {
@@ -248,17 +258,55 @@ describe("plan 20: sends across a network change are never duplicated", () => {
 });
 
 describe("plan 20: the IMAP provider's own connections", () => {
-  function provider(port: number, o: { secretDelayMs?: number; timeouts?: Partial<ImapTimeouts> } = {}) {
+  const fixtures = new Map<number, Awaited<ReturnType<typeof startImap>>>();
+  const probes = new WeakMap<ReturnType<typeof createImapProvider>, () => Promise<void>>();
+
+  async function provider(port: number, o: { secretDelayMs?: number; timeouts?: Partial<ImapTimeouts> } = {}) {
+    const fixture = fixtures.get(port);
+    const dir = mkdtempSync(join(tmpdir(), "terno-net-session-"));
+    const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher,
+      providers: createRegistry({ imap: { allowInsecure: true, timeouts: FAST } }), autoSync: false });
+    cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+    await backend.start();
+    const [c, s] = createMemoryTransportPair();
+    backend.connect(s, { clientId: "session", origin: "renderer" });
+    const client = new RpcClient(c);
+    const smtp = fixture ? await startSmtp() : null;
+    const config = { imap: { host: "127.0.0.1", port: fixture?.port ?? port, secure: false, user: "testuser" },
+      smtp: { host: "127.0.0.1", port: smtp?.port ?? 1, secure: false, user: "t" } };
+    const account = fixture
+      ? await client.call("accounts.addImap", { email: "luis@test.local", displayName: "Test", ...config, password: "testpass" })
+      : createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@test.local", displayName: "Test", color: "blue", providerConfig: config });
+    let messageId = 0;
+    if (fixture) {
+      const subject = `session probe ${++seq}`;
+      fixture.server.control.addMessage("INBOX", { raw: raw(subject) });
+      await backend.syncAccount(account.id);
+      messageId = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE account_id=? AND subject=?", account.id, subject)!.id;
+      await (await backend.provider(account.id))!.close();
+    }
+    const store = new SqlProviderStore(sqlDb(backend.store), account.id);
     const ctx = {
-      account: { id: 1, email: "luis@test.local", kind: "imap" },
+      account,
       config: { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "t" }, senderName: "", appendToSent: false },
       getSecret: async () => {
         if (o.secretDelayMs) await new Promise((r) => setTimeout(r, o.secretDelayMs));
         return "testpass";
       },
-      store: { locations: { of: async () => [] } },
+      store,
     } as unknown as ProviderContext;
-    return createImapProvider(ctx, { allowInsecure: true, timeouts: { ...FAST, ...o.timeouts } });
+    const p = createImapProvider(ctx, { allowInsecure: true, timeouts: { ...FAST, ...o.timeouts } });
+    if (fixture) {
+      const [location] = await store.locations.of([messageId]);
+      expect(location).toMatchObject({ message_id: messageId, mailbox: "INBOX", uidvalidity: fixture.server.control.getMailbox("INBOX").uidvalidity });
+      expect(fixture.server.control.listMessages("INBOX").some((m) => m.uid === location!.uid)).toBe(true);
+      probes.set(p, async () => {
+        await p.execute({ id: "probe", kind: "markRead", target: { messageIds: [messageId] }, payload: null });
+        const remote = fixture.server.control.listMessages("INBOX").find((m) => m.uid === location!.uid)!;
+        expect(remote.flags).toContain("\\Seen");
+      });
+    }
+    return p;
   }
 
   it("the IDLE reconnect loop never multiplies while the server refuses (one attempt at a time, backing off)", async () => {
@@ -269,7 +317,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     cleanups.push(() => new Promise<void>((r) => server.close(() => r())));
-    const p = provider((server.address() as { port: number }).port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 400 } });
+    const p = await provider((server.address() as { port: number }).port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 400 } });
     const stop = p.watch!(() => {});
     await new Promise((r) => setTimeout(r, 4000));
     stop();
@@ -284,7 +332,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     cleanups.push(() => proxy.close());
     // the password was changed on the server
     imap.server.control.updateUser("testuser", { password: "changed" });
-    const p = provider(proxy.port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 200 } });
+    const p = await provider(proxy.port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 200 } });
     const stop = p.watch!(() => {});
     cleanups.push(() => stop());
     await expect.poll(() => proxy.accepted).toBe(1);
@@ -299,19 +347,32 @@ describe("plan 20: the IMAP provider's own connections", () => {
     await expect(p.sync({} as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
   });
 
-  /** an op on a message the provider has no location for: it connects, discovers folders and does nothing else */
-  const markRead = (p: ReturnType<typeof provider>) => p.execute({ id: "x", kind: "markRead", target: { messageIds: [1] }, payload: null });
+  const markRead = (p: Awaited<ReturnType<typeof provider>>) => probes.get(p)!();
 
   async function behindProxy() {
     const imap = await startImap();
     const proxy = await startNetProxy(imap.port);
     cleanups.push(() => proxy.close());
+    fixtures.set(proxy.port, imap);
+    const close = proxy.close;
+    proxy.close = async () => {
+      fixtures.delete(proxy.port);
+      await close();
+    };
     return proxy;
   }
 
+  it("closing a fixture retires its seeding route before the port can be reused", async () => {
+    const proxy = await behindProxy();
+    await proxy.close();
+    const p = await provider(proxy.port);
+    cleanups.push(() => p.close());
+    expect(probes.has(p)).toBe(false);
+  });
+
   it("two callers asking for a session together share one connection, and later calls reuse it", async () => {
     const proxy = await behindProxy();
-    const p = provider(proxy.port);
+    const p = await provider(proxy.port);
     cleanups.push(() => p.close());
     await Promise.all([markRead(p), markRead(p), markRead(p)]);
     await markRead(p);
@@ -320,7 +381,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
 
   it("a reset while the password is being read never connects on the old network (the call still succeeds)", async () => {
     const proxy = await behindProxy();
-    const p = provider(proxy.port, { secretDelayMs: 300 });
+    const p = await provider(proxy.port, { secretDelayMs: 300 });
     cleanups.push(() => p.close());
     const run = markRead(p);
     await new Promise((r) => setTimeout(r, 100));
@@ -332,7 +393,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
 
   it("a reset while connecting abandons that session; the next one is kept and reused", async () => {
     const proxy = await behindProxy();
-    const p = provider(proxy.port);
+    const p = await provider(proxy.port);
     cleanups.push(() => p.close());
     const run = markRead(p);
     await expect.poll(() => proxy.accepted, { interval: 1 }).toBe(1);
@@ -349,7 +410,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     cleanups.push(() => proxy.close());
     // the old network: connections open, nothing ever answers (the greeting never comes)
     await proxy.blackholeAll();
-    const p = provider(proxy.port, { timeouts: { connectMs: 10_000 } });
+    const p = await provider(proxy.port, { timeouts: { connectMs: 10_000 } });
     let changes = 0;
     const stop = p.watch!(() => void changes++);
     cleanups.push(stop);
@@ -372,7 +433,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
     const proxy = await startNetProxy(imap.port);
     cleanups.push(() => proxy.close());
     await proxy.blackholeAll();
-    const p = provider(proxy.port, { timeouts: { connectMs: 10_000 } });
+    const p = await provider(proxy.port, { timeouts: { connectMs: 10_000 } });
     const stop = p.watch!(() => {});
     await expect.poll(() => proxy.open).toBe(1);
     stop();
@@ -381,7 +442,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
 
   it("a reset closes the cached session at once (no LOGOUT on a dead socket) and the next call opens a new one", async () => {
     const proxy = await behindProxy();
-    const p = provider(proxy.port);
+    const p = await provider(proxy.port);
     cleanups.push(() => p.close());
     await markRead(p);
     proxy.blackholeExisting();
