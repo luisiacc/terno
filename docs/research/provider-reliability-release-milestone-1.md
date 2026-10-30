@@ -214,3 +214,9 @@ Separate actual failures were observed: database account-folder membership, inge
 `c5c950ad` repairs four IMAP session fixture/API mismatches and ten icon fixture/guard mismatches. Root passed29targeted tests and backend types/lint after rebase. Production is unchanged; valid synced source identity, guarded original-host DNS, TLS policy and external isolation remain asserted. One review P2 lifetime finding received a failing regression and fix. [Details](../plans/drafts/release-network-repair.md).
 
 The archive-unknown observation remains unexplained. Stronger exact source/destination and stable local identity witnesses pass, but repeated passing attempts do not count as its correction.
+
+## Landed repair: driver contracts and folder perf fixture
+
+`19e46fc4` preserves the three native disk/fault tests, routes them to the native project with actual discovery regression, and supplies explicit WASM image reclamation/reopen/legacy-space tests. No runtime skips or production changes. The 5,000-message folder recovery fixture now uses fresh trusted source identities while proving prior reset identities remain held; original timing and membership/removal gates remain. Root's 9 storage/discovery + 82 direct-caller + 1 affected perf cases, db types, lint and final whitespace pass after rebase. One native review: no findings. [Details](../plans/drafts/release-db-driver-folder.md).
+
+This resolves the identified native-disk/WASM image mismatch and account-folder fixture failure, not OPFS, throughput or the incomplete full perf gate.
