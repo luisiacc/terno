@@ -911,3 +911,16 @@ Dev-source evidence does not certify production or explain every historical pair
 All required gates ran once at193e705a. Typecheck/lint,unit+WASM13,730tests,Web53,fresh macOS build and defaultsmoke64 pass; existing skips are documented. E2E1,UIperf1,backendperf2failures remain. Backendperf completed naturally1822.5s; no stage NOTRUN. [Exact signatures and counts](provider-reliability-release-milestone-5.md); `/tmp/terno-release-milestone5-d8__6urj/report.md`. Outputs restored and owned processes joined. User's later README commits are preserved; no source change or timing variance waiver explains the four failures.
 
 Three disjoint current-main repair scopes: autocomplete fitted text+10MBpaired typing, IDB expired Waiting-folder fast path, and exclusive5000×20category move/Undo stall attribution. No new report workgroup slices before main is green. Plans64–68 remain unedited; dispositions/counts and held feature backlog stay unchanged.
+
+
+## Release repair: fitted ghost fixture measures the authored line — 2026-10-30
+
+Landed test-only `f553de80`. The fixture explicitly places the caret in the first paragraph and verifies both authored paragraphs before measuring available width. It requires actual room between the two candidate phrase widths, the unchanged exact fitted suggestion, no wrapping, and exact paragraphs after Tab. The archived failure had typed into paragraph two while measuring an empty first paragraph; no product trimming defect or runtime correction is claimed.
+
+Root's rebased verification passes57/57functional browser cases across all three designs, Web main/worker types, strict exact-file lint and whitespace; light/dark captures personally inspected. One native Sol/high review returned Standards PASS/Spec PASS,0findings; no second round. [Spec, commands and evidence](../plans/drafts/release5-autocomplete.md). Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ac-fit5-7bfxarl_`. Temporary dev config removed and original hardcoded screenshots restored.
+
+| Review-cap follow-up | Disposition |
+| --- | --- |
+| Blocked-Up twin installs a key blocker but never sends Up, so adds no distinct blocked-key coverage | Low-priority test-coverage backlog; archived fail-first old-navigation replay remains preserved |
+
+The original10MBpaired typing failure remains OPEN. Prior profiling showed substantial real-edit reconciliation on both sides and did not explain the historical on/off differential; a new coherent runtime investigation may inspect the grouping dependency only after causal attribution. Expired Waiting lookup and exclusive category move/Undo remain active release blockers. No full-release clearance, report row/count change or held feature-backlog disposition change.

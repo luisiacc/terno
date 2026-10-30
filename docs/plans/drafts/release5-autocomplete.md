@@ -54,3 +54,9 @@ Exactly one native gpt-6.1-sol/high read-only production review after actual fix
 ```sh
 python3 /tmp/terno-ac-run.py 420 /tmp/terno-r5-production-review.log codex exec --disable plugins -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C . - < /tmp/terno-r5-review-prompt.txt
 ```
+
+## Root integration — 2026-10-30
+
+Landed fixture-only `f553de80` after local rebase onto `a4f629c0`. Root independently passes57/57functional cases across macOS/Lumen/Atelier, Web main/worker types, exact-file strict lint and whitespace. Root inspected light/dark ghost captures. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ac-fit5-7bfxarl_`; temporary source-dev config removed and prior hardcoded screenshot artifacts restored. No build, original10 qualification or runtime change. Historical paired failures remain open.
+
+Correction to the earlier permanent-twin claim: the committed blocked-Up case installs a listener but never dispatches Up. It therefore adds no independent blocked-key witness. The separately archived old-navigation replay remains meaningful RED evidence; the primary deterministic caret, real-width and exact two-paragraph assertions remain valid. Record the redundant twin as a low-priority test-coverage backlog under the consumed single-review cap; no post-cap lower-severity rework or second review. R1's actual PASS/0 verdict applies to the fixture series only.
