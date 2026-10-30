@@ -510,6 +510,10 @@ export function RecipientInput({
 
   const collapsed = !focused && field.chips.length > COLLAPSE_OVER && !field.text;
   const shown = collapsed ? field.chips.slice(0, 2) : field.chips;
+  // Keep chip allocation independent of the delegated handlers, which follow every text edit.
+  const chipElements = useMemo(() => shown.map((c) => (
+    <RecipientChip key={c.key} chip={c} selected={selected.has(c.key)} ids={ids} />
+  )), [shown, selected, ids]);
   const optionId = (i: number) => `${listId}-${i}`;
   return (
     <div
@@ -538,9 +542,7 @@ export function RecipientInput({
     >
       {shown.length > 0 && (
         <div role="listbox" aria-multiselectable="true" aria-label={t("compose.recipients.list", { field: label })} aria-orientation="horizontal" className="contents" onKeyDown={onChipKeyDown} onMouseDown={onChipMouseDown} data-testid="recipient-chips">
-          {shown.map((c) => (
-            <RecipientChip key={c.key} chip={c} selected={selected.has(c.key)} ids={ids} />
-          ))}
+          {chipElements}
         </div>
       )}
       {collapsed && (
