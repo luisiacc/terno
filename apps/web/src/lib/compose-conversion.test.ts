@@ -46,8 +46,9 @@ it.each(["edit", "focus", "account", "discard", "navigation", "new intent", "fai
     if (scenario === "failed save") throw { code: "BAD_REQUEST" };
     return { ...input, id: 9, generation: "stable", revision: calls, updatedAt: 0 };
   });
-  const document = { activeElement: {} };
+  const document = Object.assign(new EventTarget(), { activeElement: {} });
   vi.stubGlobal("document", document);
+  vi.stubGlobal("window", new EventTarget());
   const opening = openCompose("forward", 7);
   await waiting;
   expect(useDrafts.getState().drafts[key]!.mode).toBe("reply");
