@@ -94,3 +94,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 - 4) e2e/native-reload.smoke.ts:203:54 › native menu and CmdR/CmdShiftR retain unknown work, and only disclosed override discards it
 - 5) e2e/native-reload.smoke.ts:258:1 › native reload holds the exact saved ACK through changed focus and document commit
 - 6) e2e/print.smoke.ts:103:3 › long-urls: real PDFs with headers and content only, on Letter and A4
+
+
+## Landed repair: archive network fixture boundaries
+
+`76f30095` retains succeeded for controlled pre-mutation recovery and adds a real applied-MOVE/withheld-ACK unknown/no-replay witness. Provider-reset completion is observed before reopening refused traffic. Exact remote identity/content, attempts, recovery and unresolved fences remain asserted; no production edit. Root passes19network+5directambiguity controls, scoped types/lint/whitespace. One code review: Standards0/Spec0. Historical uninstrumented timing is not attributed or waived. [Details](../plans/drafts/release2-network-archive.md). Full milestone remains failed until later integration qualification.
