@@ -99,3 +99,41 @@
   overflow-wrap: anywhere;
   color: var(--muted-foreground);
 }
+
+/* plan 76: an image in the text, as mail shows it (its own width, never wider than the text); a placed one is
+   selected as a whole; one being staged shows dimmed at its spot; one that can't be read is a quiet box */
+.rt-body .rt-image {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  vertical-align: bottom;
+  border-radius: var(--radius-sm);
+}
+.rt-body .rt-image.ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.rt-body .rt-image[data-state="adding"] {
+  opacity: 0.5;
+}
+.rt-body .rt-image[data-state="loading"],
+.rt-body .rt-image[data-state="missing"] {
+  min-width: 48px;
+  min-height: 32px;
+  background: var(--tint);
+}
+/* where dropped images would go: a caret in the accent, following the pointer over the text */
+.rt-drop-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--primary);
+  pointer-events: none;
+}
+.rt-drop-caret[hidden] {
+  display: none;
+}

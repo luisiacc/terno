@@ -7,6 +7,7 @@ import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { attachFiles, downloadAttachment, useAttachmentUploads } from "~/lib/attachments";
 import { editDraft, type LocalDraft } from "~/lib/drafts";
+import { chipRefs } from "~/lib/inline-images";
 import { formatBytes } from "~/lib/format";
 import { retryForwardFiles, useForwardFiles, type ForwardFiles } from "~/lib/forward-files";
 import { snack } from "~/lib/snack";
@@ -33,15 +34,17 @@ function forwardFilesText(state: ForwardFiles): string {
 export function DraftAttachments({ d }: { d: LocalDraft }) {
   const busy = useAttachmentUploads((s) => s.keys.has(d.key));
   const forward = useForwardFiles((s) => s[d.key]);
-  if (!d.attachments?.length && !busy && !forward) return null;
+  // plan 76: an image placed in the text is shown there, not as a chip
+  const chips = chipRefs(d.attachments ?? []);
+  if (!chips.length && !busy && !forward) return null;
   return <div className="px-3.5 py-2" aria-live="polite">
     {busy && <p role="status" className="text-xs text-muted-foreground">{t("attachments.adding")}</p>}
     {forward && <p role="status" data-testid="forward-files" data-status={forward.status} className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
       <span>{forwardFilesText(forward)}</span>
       {forward.status === "failed" && <Button type="button" variant="link" size="sm" data-testid="forward-files-retry" className="h-auto p-0 text-xs font-medium text-foreground underline underline-offset-2 hover:no-underline" disabled={d.sending} onClick={() => retryForwardFiles(d.key)}>{t("compose.forwardFiles.tryAgain")}</Button>}
     </p>}
-    {!!d.attachments?.length && <ul aria-label={t("reader.attachments")} className={cn("flex flex-wrap gap-2", forward && "mt-2")}>
-      {(d.attachments ?? []).map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full items-center gap-2 rounded-md bg-tint py-1 pl-2.5 pr-1 text-xs">
+    {!!chips.length && <ul aria-label={t("reader.attachments")} className={cn("flex flex-wrap gap-2", forward && "mt-2")}>
+      {chips.map((a) => <li key={a.assetId} data-testid="draft-attachment" className="flex max-w-full items-center gap-2 rounded-md bg-tint py-1 pl-2.5 pr-1 text-xs">
         <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="max-w-48 truncate">{a.filename}</span><span className="text-muted-foreground tabular">{formatBytes(a.size)}</span>
         <Button type="button" variant="ghost" size="icon-sm" aria-label={t("attachments.remove", { name: a.filename })} disabled={d.sending || busy} onClick={(e) => {

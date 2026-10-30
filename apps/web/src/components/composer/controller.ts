@@ -73,6 +73,10 @@ export interface ComposerController {
   setAlign(value: Align): void;
   /** opens the link popover for the selection (⌘K, the Link button) */
   openLink(): void;
+  /** plan 76: files dropped on the text (images at the pointer, the rest attach) */
+  dropFiles(files: File[], coords: { x: number; y: number }): void;
+  /** plan 76: shows where images dropped at these coordinates would go (null hides it) */
+  dropCaret(coords: { x: number; y: number } | null): void;
   /** focus the editor, its caret where it was (or at the end the first time) */
   focus(where?: "end" | "keep"): void;
   /** the editable root */

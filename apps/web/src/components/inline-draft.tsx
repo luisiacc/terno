@@ -1,4 +1,5 @@
 import { AttachButton, DraftAttachments } from "./attachments";
+import { useComposerDrop } from "./composer-drop";
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
@@ -388,6 +389,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const me = account?.displayName || account?.email || "";
   const who = d ? d.toText.split(",")[0]?.replace(/<.*$/, "").replace(/"/g, "").trim() || d.toText : "";
   const label = !d ? "" : d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
+  const drop = useComposerDrop(d?.key ?? "", d?.sending ?? false);
 
   return (
     <div ref={rootRef} className="mt-5 rounded-xl bg-(--draft-bg) [box-shadow:0_0_0_var(--hairline-w)_var(--draft-ring),var(--draft-shadow)]" data-testid="draft-slot" data-state={state} data-thread={threadId}>
@@ -424,6 +426,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
             data-testid="composer"
             data-draft-key={d.key}
             data-mode={d.mode}
+            className="relative rounded-xl"
+            {...drop.handlers}
             onSubmit={(e) => {
               e.preventDefault();
               void send();
@@ -467,6 +471,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 </ToolIcon>
               </span>
             </div>
+            {state === "open" && drop.layer}
           </form>
         )}
       </Expand>

@@ -1,4 +1,5 @@
 import { AttachButton, DraftAttachments } from "./attachments";
+import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -51,6 +52,7 @@ export function NewMessage() {
     };
   }, [compose?.seq]);
 
+  const drop = useComposerDrop(compose?.key ?? "", d?.sending ?? false);
   if (!compose || !d) return null;
   const key = compose.key;
   const send = async () => {
@@ -82,7 +84,8 @@ export function NewMessage() {
       aria-label={t("compose.newMessage")}
       data-testid="composer"
       data-mode="new"
-      className="flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
+      className="relative flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
+      {...drop.handlers}
       onSubmit={(e) => {
         e.preventDefault();
         void send();
@@ -145,6 +148,7 @@ export function NewMessage() {
           </div>
         </div>
       </div>
+      {drop.layer}
     </form>
   );
 }

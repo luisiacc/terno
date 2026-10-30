@@ -33,11 +33,11 @@ import {
   Unlink,
 } from "lucide-react";
 import { TextSelection, type EditorState } from "prosemirror-state";
-import type { Node as PMNode } from "prosemirror-model";
+import { Fragment, type Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { attachBody, bodyCheckpoint, draftEditsHeld, enterEditorBodyConstruction, keptEditorBody, retainedBodyState, useDrafts, validBodyCheckpoint, type BodyCheckpoint } from "~/lib/drafts";
+import { attachBody, bodyCheckpoint, draftEditsHeld, editDraft, enterEditorBodyConstruction, keptEditorBody, materialize, retainedBodyState, useDrafts, validBodyCheckpoint, type BodyCheckpoint } from "~/lib/drafts";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
@@ -47,6 +47,9 @@ import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
 import { takeEarly, takeStandInFocus } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
+import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, type ImageHooks } from "./images";
+import { attachFilesInTurn } from "~/lib/attachments";
+import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline-images";
 import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
@@ -160,6 +163,8 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
   const refreshRef = useRef<() => void>(() => {});
   /** the screen-reader announcement of a new suggestion (written directly: no re-render) */
   const announceRef = useRef<HTMLSpanElement>(null);
+  /** plan 76: where dropped images would go (moved directly while a file is dragged over the text) */
+  const caretRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     stylePalette();
@@ -235,6 +240,8 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
             const el = announceRef.current;
             if (el) el.textContent = t("compose.suggest.announce", { text: text.trim() });
           }),
+          images: imageHooks(draftKey),
+          files: (files, coords) => { if (viewRef.current) void placeFiles(draftKey, viewRef.current, files, coords, canMutate); },
         },
       });
       const view = editor.view;
@@ -242,6 +249,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       try {
         viewRef.current = view;
         views.add(view);
+        liveViews.set(draftKey, view);
         emptyClass(view);
         const focus = (where: "end" | "keep" = "keep") => {
           if (!canMutate()) return;
@@ -262,6 +270,8 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
           setHighlight: (v, f) => run(setMark(schema.marks.highlight, v), f),
           setAlign: (v: Align) => run(setAlign(v)),
           openLink: () => openLinkRef.current(),
+          dropFiles: (files, coords) => void placeFiles(draftKey, view, files, coords, canMutate),
+          dropCaret: (coords) => showDropCaret(view, caretRef.current, wrapRef.current, coords),
           focus,
           dom: view.dom as HTMLElement,
           getState: () => format,
@@ -310,6 +320,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
           unregister?.();
           viewRef.current = null;
           views.delete(view);
+          if (liveViews.get(draftKey) === view) liveViews.delete(draftKey);
           editor.destroy();
         };
       } catch (error) {
@@ -317,6 +328,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
         unregister?.();
         viewRef.current = null;
         views.delete(view);
+        if (liveViews.get(draftKey) === view) liveViews.delete(draftKey);
         editor.destroy();
         throw error;
       }
@@ -391,6 +403,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       {/* the ghost layer's containing block (beside the editor's own element) */}
       <div ref={mountRef} className="relative" />
       <span ref={announceRef} className="sr-only" aria-live="polite" data-testid="compose-ghost-announce" />
+      <div ref={caretRef} className="rt-drop-caret" aria-hidden="true" data-testid="compose-drop-caret" hidden />
       {link && viewRef.current && <LinkPopover view={viewRef.current} draft={link} onClose={closeLink} canEdit={canMutate} />}
       {bubble && !link && viewRef.current && (
         <LinkBubble
@@ -408,6 +421,92 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       )}
     </div>
   );
+}
+
+// ── plan 76: files dropped or pasted into the text
+
+/** the editor on screen for each draft (a staged image goes into whichever shows the draft when it is ready) */
+const liveViews = new Map<string, EditorView>();
+
+function imageHooks(draftKey: string): ImageHooks {
+  const ref = (cid: string) => useDrafts.getState().drafts[draftKey]?.attachments?.find((a) => a.contentId === cid);
+  return {
+    known: (cid) => ref(cid) !== undefined,
+    url: (cid) => {
+      const d = useDrafts.getState().drafts[draftKey];
+      const r = ref(cid);
+      return d && r ? imageUrl(d.accountId, r) : null;
+    },
+  };
+}
+
+/**
+ * Files dropped on the text (at the pointer) or pasted (at the caret): the
+ * images show there at once, dimmed, while they are staged, then are part of
+ * the text (one undo step); the rest attach as chips. One staging at a time
+ * per draft, as with the paperclip.
+ */
+async function placeFiles(draftKey: string, view: EditorView, files: File[], coords: { x: number; y: number } | null, canMutate: () => boolean): Promise<void> {
+  if (!canMutate() || !files.length) return;
+  // at once, at the pointer (or the caret): each image dimmed in its spot, following the edits around it
+  const spots = files.map((f) => (isInlineImage(f) ? { id: crypto.randomUUID(), url: URL.createObjectURL(f), width: null } : null));
+  const pending = spots.filter((p) => p !== null);
+  if (pending.length) {
+    addPlaceholders(view, dropPos(view, coords), pending);
+    view.focus();
+  }
+  try {
+    // what our reader shows inline goes in the text (a photo too big for it, scaled down); the rest attaches
+    const ready = await Promise.all(files.map((f, i) => (spots[i] ? inlineFile(f) : null)));
+    const attach = spots.flatMap((p, i) => (p && !ready[i] ? [p.id] : []));
+    if (attach.length) dropPlaceholders(view, attach);
+    files = files.map((f, i) => ready[i]?.file ?? f);
+    const cids = ready.map((r) => (r ? newImageCid() : null));
+    await attachFilesInTurn(draftKey, files, {
+      contentIds: cids,
+      placed: (refs) => {
+        const nodes: { id: string; node: PMNode }[] = [];
+        refs.forEach((r, i) => {
+          if (!r.contentId) return;
+          seedImageUrl(r.assetId, files[i]!);
+          nodes.push({ id: spots[i]!.id, node: schema.nodes.image.create({ cid: r.contentId, alt: r.filename, width: ready[i]!.width }) });
+        });
+        if (nodes.length) placeStaged(draftKey, view, nodes);
+      },
+    });
+  } finally {
+    if (pending.length) dropPlaceholders(view, pending.map((p) => p.id));
+    // (the placeholders' own: a placed image is shown from its asset's URL)
+    for (const p of pending) URL.revokeObjectURL(p.url);
+  }
+}
+
+/** Staged images into the draft's text: its editor on screen (where they were dropped, or the end), else its stored body. */
+function placeStaged(draftKey: string, dropped: EditorView, nodes: { id: string; node: PMNode }[]): void {
+  const view = liveViews.get(draftKey);
+  if (view === dropped && !view.isDestroyed) return placeImages(view, nodes);
+  if (view && !view.isDestroyed) return placeImages(view, nodes.map((n) => ({ ...n, id: "" })));
+  // the draft was closed while they were staged: they join the end of its text (never a file the text doesn't show)
+  const d = materialize(draftKey);
+  if (!d) return;
+  const doc = docOf(d.bodyHtml, d.bodyText);
+  const last = doc.lastChild!;
+  const lines = last.type === schema.nodes.paragraph && last.childCount === 0
+    ? doc.content.replaceChild(doc.childCount - 1, last.copy(Fragment.from(nodes.map((n) => n.node))))
+    : doc.content.addToEnd(schema.nodes.paragraph.create(null, nodes.map((n) => n.node)));
+  const body = serialize(doc.copy(lines));
+  editDraft(draftKey, { bodyHtml: body.html, bodyText: body.text });
+}
+
+/** The drop caret at the spot an image dropped at these coordinates would take (hidden for null). */
+function showDropCaret(view: EditorView, caret: HTMLDivElement | null, wrap: HTMLDivElement | null, coords: { x: number; y: number } | null): void {
+  if (!caret || !wrap) return;
+  if (!coords || view.isDestroyed) { caret.hidden = true; return; }
+  const at = view.coordsAtPos(dropPos(view, coords));
+  const box = wrap.getBoundingClientRect();
+  caret.style.transform = `translate(${Math.round(at.left - box.left)}px, ${Math.round(at.top - box.top)}px)`;
+  caret.style.height = `${Math.max(12, at.bottom - at.top)}px`;
+  caret.hidden = false;
 }
 
 /** The draft's recipients' first names and the sender's name, for a learned greeting or sign-off. */

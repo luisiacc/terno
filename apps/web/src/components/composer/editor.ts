@@ -11,6 +11,7 @@ import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
 import { keepEditorBody, keptEditorBody, forgetEditorBody, type KeptEditorBody } from "~/lib/drafts";
 import { ghostPlugin, type GhostHooks } from "./ghost";
+import { imageView, knownImagesOnly, placeholderPlugin, type ImageHooks } from "./images";
 
 /**
  * The composer's ProseMirror editor (plan 16): plugins, commands, shortcuts,
@@ -350,7 +351,13 @@ export interface EditorHooks {
   openLink(href: string): void;
   /** plan 18: ghost text */
   ghost?: GhostHooks;
+  /** plan 76: the draft's images, and files dropped or pasted into the text (at these coordinates, or the caret) */
+  images?: ImageHooks;
+  files?(files: File[], coords: { x: number; y: number } | null): void;
 }
+
+/** The files a drop or paste carries (none for text, or ProseMirror's own drag). */
+const filesOf = (data: DataTransfer | null): File[] => (data?.files.length ? [...data.files] : []);
 
 /** Whether a copied HTML has a link to anywhere but `href` (an inert parse: nothing in it loads or runs). */
 function linksElsewhere(html: string, href: string): boolean {
@@ -413,6 +420,7 @@ export function createPlugins(): Plugin[] {
     }),
     // plan 39: an autolink's href follows its text
     liveLinks(ghostProbe),
+    placeholderPlugin,
     keymap(mod),
     // Esc belongs to the composer (collapse, leave), not to "select the parent node"
     keymap(BASE_KEYS),
@@ -429,12 +437,20 @@ export function createPlugins(): Plugin[] {
           return true;
         },
         transformPastedHTML: (html) => cleanPastedHtml(html),
-        transformPasted: (slice) => restoreSlice(slice),
+        // plan 76: an image comes in only when it is this draft's own (a copy from another draft has no file here)
+        transformPasted: (slice, view) => knownImagesOnly(restoreSlice(slice), (cid) => viewHooks.get(view)?.images?.known(cid) ?? false),
         // what is copied: a part of an autolink goes where its text says (plan 39), in any app it is pasted into
         transformCopied: (slice) => spelledSlice(slice),
         // plain text keeps its lines (one paragraph per line, as a plain draft opens); its URLs link, unless pasted as plain (⇧⌘V)
         clipboardTextParser: (text, _context, plain) => textSlice(text, !plain),
         handlePaste(view, event) {
+          // plan 76: a pasted file (a screenshot, an image copied alone): an image goes in at the caret, anything else
+          // attaches; with text beside it (a copy from a document) the text is what is pasted
+          const files = filesOf(event.clipboardData);
+          if (files.length && !event.clipboardData?.getData("text/plain").trim()) {
+            viewHooks.get(view)?.files?.(files, null);
+            return true;
+          }
           // ⇧⌘V (ProseMirror's own plain-paste test): the text goes in as text, a URL included
           const input = (view as unknown as { input?: { shiftKey?: boolean; lastKeyCode?: number } }).input;
           if (input?.shiftKey && input.lastKeyCode !== 45) return false;
@@ -450,6 +466,14 @@ export function createPlugins(): Plugin[] {
           return true;
         },
         handleDOMEvents: {
+          // plan 76: files dropped on the text (ProseMirror's own drop would read their names as text, or nothing)
+          drop(view, event) {
+            const files = filesOf(event.dataTransfer);
+            if (!files.length) return false;
+            event.preventDefault();
+            viewHooks.get(view)?.files?.(files, { x: event.clientX, y: event.clientY });
+            return true;
+          },
           click(view, event) {
             const a = (event.target as HTMLElement).closest?.("a[href]");
             if (!a || !(event.metaKey || event.ctrlKey)) return false;
@@ -499,7 +523,7 @@ export function createEditor(
 ): RichEditor {
   const view: EditorView = new EditorView(mount, {
     state: o.state,
-    nodeViews: { paragraph: (node) => paragraphView(node) },
+    nodeViews: { paragraph: (node) => paragraphView(node), image: (node) => imageView(node, () => o.hooks.images) },
     attributes: o.attributes,
     editable: o.editable,
     dispatchTransaction(tr) {
