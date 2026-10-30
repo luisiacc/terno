@@ -220,6 +220,8 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
   layer.style.letterSpacing = letterSpacing;
   layer.style.lineHeight = lineHeightStyle;
   const line = Math.max(glyph, Number.isFinite(lineHeight) ? lineHeight : glyph);
+  // A fixed line box isolates trial wrapping from the editor. Measure actual overflow, not glyph estimates.
+  layer.style.height = `${line}px`;
   const parts = pieces(g.text);
   // measured laid out but unseen (a hidden element measures 0 high: everything would seem to fit)
   layer.style.visibility = "hidden";
@@ -230,7 +232,7 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
   while (lo < hi) {
     const mid = (lo + hi + 1) >>> 1;
     layer.textContent = parts.slice(0, mid).join("").trimEnd();
-    if (layer.getBoundingClientRect().height <= line * 1.5) lo = mid;
+    if (layer.scrollHeight <= line * 1.5) lo = mid;
     else hi = mid - 1;
   }
   layer.style.visibility = "";
@@ -301,6 +303,7 @@ export function ghostPlugin(hooksOf: (view: EditorView) => GhostHooks | undefine
       let lastTyped = ghostKey.getState(editor.state)?.typed ?? 0;
       const layer = document.createElement("div");
       layer.className = "rt-ghost-layer";
+      layer.style.contain = "size layout style";
       layer.dataset.testid = "compose-ghost";
       layer.setAttribute("aria-hidden", "true");
       layer.hidden = true;
