@@ -201,8 +201,9 @@ export const nodeSqliteDriver: SqliteDriver = {
   pragmas({ readonly, memory }) {
     const pragmas = ["busy_timeout = 2000", "temp_store = MEMORY", "cache_size = -65536", "mmap_size = 268435456", "foreign_keys = ON"];
     if (!readonly && !memory) {
-      // plan 69: before WAL writes the header, or a new file never gives freed pages back (an old one ignores it)
-      pragmas.unshift("auto_vacuum = INCREMENTAL", "journal_mode = WAL");
+      // plan 69: before WAL writes the header, or a new file never gives freed pages back (an old one ignores it); after
+      // busy_timeout, which touches nothing: a file another process just left (a crash's recovery) waits, not fails
+      pragmas.splice(1, 0, "auto_vacuum = INCREMENTAL", "journal_mode = WAL");
       pragmas.push("synchronous = NORMAL", "checkpoint_fullfsync = ON", "journal_size_limit = 67108864");
     }
     return pragmas;

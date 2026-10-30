@@ -171,3 +171,16 @@ Also found while testing:
 
 - The shared destructive `Button` draws `text-destructive` on its own 10% tint at 3.9:1 (4.1:1 with `destructive-ink`). This is an undeclared contrast pair that predates this plan and every `ConfirmDialog` shares. The fix is a palette change of its own, left out of this plan, and the e2e axe check of the confirmation excludes only that button.
 - The Node driver's pragma list now starts with `auto_vacuum`.
+
+## What the full perf and test runs changed
+
+- **The v26 `messages_held` index is gone.** Paired against its baseline, ingest ran 0.867× with it and 0.898× without (`main`: 0.897×). Every ingest paid 3% so that a 20k-message thread's re-check could skip a scan its unit's recompute already does. A unit on such a thread is now bounded at 130 ms (recompute plus re-check), measured at p95 ≈ 98 ms. `auto_vacuum = INCREMENTAL` costs nothing measurable there.
+- **`busy_timeout` comes before `auto_vacuum`.** As the first pragma, `auto_vacuum` failed at once with SQLITE_BUSY on a file a killed process had just left (facts.perf's SIGKILL resume). After `busy_timeout`, it waits like everything else and still precedes WAL.
+- **Pre-existing failures, identical on `main` and left alone:**
+  - attachment conformance's "releases only the definitive successful operation pin" (every store, the browsers too);
+  - `selection-write-source`, and the i18n scan (forward-raw-obligation);
+  - two `idb.persistence` tests;
+  - e2e `compose.spec.ts:109` (all designs);
+  - `ingest.perf` against its historical baseline (0.90× on `main`).
+
+  Others failed only under parallel load and passed alone.

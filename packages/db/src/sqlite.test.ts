@@ -23,10 +23,11 @@ it("applies the driver's pragmas: WAL and fsync settings for files, none of them
   new Db(spy, ":memory:").close();
   expect(opened).toEqual([{ readonly: false, memory: true }]);
   expect(nodeSqliteDriver.pragmas({ readonly: false, memory: false })).toEqual([
-    // plan 69: first, before WAL writes the header, or a new file never gives pages back
+    // a file another process just left waits for it rather than failing, whatever comes next
+    "busy_timeout = 2000",
+    // plan 69: before WAL writes the header, or a new file never gives pages back
     "auto_vacuum = INCREMENTAL",
     "journal_mode = WAL",
-    "busy_timeout = 2000",
     "temp_store = MEMORY",
     "cache_size = -65536",
     "mmap_size = 268435456",

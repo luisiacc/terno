@@ -24,8 +24,9 @@ interface Row {
 }
 
 /**
- * A message held by its own columns: exactly `messages_held`'s predicate (v26), so a re-check is one index probe.
- * A star or a message you sent count even in Trash and Spam, where the thread's own flags ignore them (Codex code review #1).
+ * A message held by its own columns. A star or a message you sent count even in Trash and Spam, where the thread's
+ * own flags ignore them (Codex code review #1). No index serves it: one cost every ingest 3% of its throughput, to
+ * spare a huge thread's re-check a scan its unit's recompute already does.
  */
 const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.is_sent = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:'";
 

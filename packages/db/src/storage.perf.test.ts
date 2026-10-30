@@ -85,10 +85,10 @@ it("one conversation of 20k messages: its report row is one aggregate, and remov
   meta.bigThread = store.db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE thread_id = ?", t)!.c;
   // one aggregate over the whole thread (sizes, holds): it grows with the thread, so a bound of its own
   await gate("report row of the big thread", 80, () => store.storage.threads(t - 1, 1));
-  // a unit's floor here is recomputing the thread from what is left of it: what one expunge in it already costs (the
-  // store's thread aggregates), not the removal's; it shrinks as the thread does
+  // a unit's floor here is recomputing the thread from what is left of it (what one expunge in it already costs: the
+  // store's thread aggregates) plus re-reading that none of it is held; both shrink as the thread does
   let removed = 0;
-  await gate("remove unit of the big thread (30)", 100, async () => {
+  await gate("remove unit of the big thread (30)", 130, async () => {
     removed += (await store.storage.remove({ threadIds: [t], buckets: ["trash"], cutoff: NOW, maxMessages: 30 })).messages;
   }, () => store.settle());
   expect(removed).toBeGreaterThan(1000);
