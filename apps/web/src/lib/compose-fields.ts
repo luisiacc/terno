@@ -131,7 +131,7 @@ export function replyFields(mode: Exclude<DraftMode, "new">, detail: ThreadDetai
     attachments: mode === "forward" ? [...(opts.forwardRefs ?? storedRefs(last))] : [],
     quotedText: opts.quoteInBody ? "" : quote,
     includeQuote: !opts.quoteInBody,
-    replyContext: mode === "forward" ? null : { subject: detail.thread.subject, sourceId: last.id, sourceAccountId: last.accountId, rfcMessageId: last.rfcMessageId },
+    replyContext: mode === "forward" ? null : { subject: detail.thread.subject, sourceId: last.id, sourceAccountId: last.accountId, rfcMessageId: last.rfcMessageId, contextId: crypto.randomUUID() },
     inReplyToMessageId: mode === "forward" ? null : last.id,
     forwardOfMessageId: mode === "forward" ? last.id : null,
     uiState: "open",

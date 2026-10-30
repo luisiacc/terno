@@ -77,6 +77,52 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ inReplyTo: "legacy-reply@example.test", providerThreadId: "legacy-native" });
     });
 
+    it("retains the submitting baseline on a concurrent revision copy", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "conflict-source", rfcMessageId: "conflict-source@example.test", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const fields = { accountId: a!, mode: "reply" as const, inReplyToMessageId: original.id, replyContext: { subject: "Original", sourceId: original.id, sourceAccountId: a! }, to: [], cc: [], subject: "Original", bodyText: "keep" };
+      const first = (await store.drafts.save(fields, 0))!;
+      await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, bodyText: "other writer" }, 1);
+      const copy = (await store.drafts.save({ ...fields, replyContext: { ...fields.replyContext, subject: "Other baseline" }, id: first.id, generation: first.generation, baseRevision: first.revision }, 2))!;
+      expect(copy.id).not.toBe(first.id);
+      expect(JSON.parse(copy.reply_context_json!).subject).toBe("Other baseline");
+    });
+
+    it("retains a fresh baseline after an unsaved forward-to-reply round trip", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "roundtrip-source", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const fields = { accountId: a!, mode: "reply" as const, inReplyToMessageId: original.id, replyContext: { subject: "Original", sourceId: original.id, sourceAccountId: a! }, to: [], cc: [], subject: "Edited", bodyText: "keep" };
+      const first = (await store.drafts.save(fields, 0))!;
+      const fresh = { ...fields.replyContext, subject: "Later conversation", contextId: "new-reply-intent" };
+      const saved = (await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, replyContext: fresh }, 1))!;
+      expect(JSON.parse(saved.reply_context_json!).subject).toBe("Later conversation");
+    });
+
+    it("ignores a removed inactive reply source when sending a forward", async () => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "inactive-reply", rfcMessageId: "inactive@example.test" }), msg({ accountId: a!, providerMsgId: "active-forward", rfcMessageId: "forward@example.test" })]);
+      const messages = (await store.debug.snapshot()).messages;
+      const reply = messages.find((m) => m.providerMsgId === "inactive-reply")!, forward = messages.find((m) => m.providerMsgId === "active-forward")!;
+      const draft = (await store.drafts.save({ accountId: a!, mode: "forward", inReplyToMessageId: reply.id, forwardOfMessageId: forward.id, to: [], cc: [], subject: "Fwd: source", bodyText: "keep" }, 0))!;
+      await store.sync.remove([reply.id]);
+      store = await harness.reopen(store); opened.push(store);
+      const sent = await store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "Fwd: source", bodyText: "keep", inReplyToMessageId: reply.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, recordReply: false, now: 1 });
+      expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ inReplyTo: null, references: [], providerThreadId: null });
+    });
+
+    it("does not replace an established baseline under the same context identity", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "immutable-source", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const context = { subject: "Original", sourceId: original.id, sourceAccountId: a!, contextId: "same-intent" };
+      const fields = { accountId: a!, mode: "reply" as const, inReplyToMessageId: original.id, replyContext: context, to: [], cc: [], subject: "Edited", bodyText: "keep" };
+      const first = (await store.drafts.save(fields, 0))!;
+      const saved = (await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, replyContext: { ...context, subject: "mutated" } }, 1))!;
+      expect(JSON.parse(saved.reply_context_json!).subject).toBe("Original");
+    });
+
     it("never reuses deleted highest identity after reopen; stale saves and sends cannot target its copy", async () => {
       let store = await open();
       const [accountId] = await withAccounts(store);

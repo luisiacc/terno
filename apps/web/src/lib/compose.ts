@@ -682,7 +682,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const account = source ?? accounts[0]!;
   const before = existing ? fieldsOf(existing) : undefined;
   if (proof && readDraftAck(proof) !== existing) return;
-  const converted = existing && existing.mode !== "new" && written(existing)
+  const converted = existing && existing.mode !== "new" && (written(existing) || (mode !== "forward" && existing.mode !== "forward"))
     ? convertFields(before!, mode, detail, account, identities, forwardRefs)
     : replyFields(mode, detail, account, { identities, forwardRefs });
   if (converted === before) { snack.error(t("attachments.tooLarge")); return; }

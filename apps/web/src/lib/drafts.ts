@@ -904,6 +904,11 @@ function save(key: string, copy = false): Promise<void> {
       }
       const done = cur.localRev === rev;
       if (cur.id !== d.id || cur.generation !== d.generation) return;
+      if (JSON.stringify(saved.replyContext ?? null) !== JSON.stringify(d.replyContext ?? null)) {
+        invalidateCertificate(bodyCertificate(key));
+        put({ ...cur, id: saved.id, generation: saved.generation, revision: saved.revision, status: "error", ...(copy ? { recovery: { state: "unknown" as const } } : {}) });
+        return;
+      }
       const sameContext = JSON.stringify(cur.replyContext ?? null) === JSON.stringify(d.replyContext ?? null) && cur.accountId === d.accountId && cur.threadId === d.threadId && cur.mode === d.mode && cur.inReplyToMessageId === d.inReplyToMessageId && cur.forwardOfMessageId === d.forwardOfMessageId && cur.showSourceContext === d.showSourceContext;
       const placement = draftPresentationThread(cur);
       const currentMount = cur.presentationEpoch === d.presentationEpoch;
@@ -1045,9 +1050,12 @@ async function settle(key: string): Promise<LocalDraft | undefined> {
 export async function draftForSend(key: string): Promise<LocalDraft | undefined> {
   if (draftEditsHeld() || get(key)?.recovery || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
-  await flushDraft(key);
-  const ready = get(key);
-  if (!ready || ready.recovery || ready.status === "error" || (authored(ready) && ready.savedRev !== ready.localRev)) return undefined;
+  const needsContextSave = Boolean(get(key)?.replyContext || get(key)?.mode === "forward");
+  if (needsContextSave) {
+    await flushDraft(key);
+    const ready = get(key);
+    if (!ready || ready.recovery || ready.status === "error" || (authored(ready) && ready.savedRev !== ready.localRev)) return undefined;
+  }
   w.stopping = "send";
   const d = await settle(key);
   return d?.recovery ? undefined : d;

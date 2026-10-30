@@ -1207,7 +1207,7 @@ export class IdbMailStore implements MailStore {
         let references: string[] = [];
         let providerThreadId: string | null = null;
         let replyThreadId: number | null = null;
-        if (p.inReplyToMessageId) {
+        if (p.inReplyToMessageId && draft?.mode !== "forward") {
           const original = T(this.c, "messages").get(p.inReplyToMessageId);
           if (!original || (context && original.account_id !== context.sourceAccountId)) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
           if (!context || !detachedReply(p.subject, context)) {

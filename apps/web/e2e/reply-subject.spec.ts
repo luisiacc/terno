@@ -213,3 +213,30 @@ test("edited automatic recipient survives Undo, Forward conversion, reload and s
   expect(mail.inReplyTo).toBeNull(); expect(mail.references).toEqual([]);
   expect(mail.text).toContain("Authored F2 body");
 });
+
+test("untouched Reply to Reply all keeps its original source when new mail arrives", async ({ app: page, server }) => {
+  const [account] = await server.backend.store.accounts.list();
+  const source: IncomingMessage = {
+    accountId: account!.id, providerMsgId: "untouched-original", providerThreadId: "untouched-native", rfcMessageId: "untouched-original@example.test", inReplyTo: null, references: [], from: client,
+    to: [{ name: "Me", email: account!.email }], cc: [teammate], bcc: [], subject: "Untouched reply", date: E2E_NOW - 1000, snippet: "first source", bodyText: "first source", bodyHtml: null, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+  };
+  const first = await server.backend.store.sync.ingest([source], { applyFilters: false, now: E2E_NOW, classifier: null });
+  await page.reload(); await page.locator("[data-ready]").waitFor();
+  await selectThread(page, first.touched[0]!, 'in:inbox subject:"Untouched reply"');
+  await page.getByTestId("action-reply").click();
+  await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
+  const next = await server.backend.store.sync.ingest([{ ...source, providerMsgId: "untouched-newer", rfcMessageId: "untouched-newer@example.test", inReplyTo: source.rfcMessageId, references: [source.rfcMessageId!], from: old, bodyText: "new source", snippet: "new source", date: E2E_NOW }], { applyFilters: false, now: E2E_NOW, classifier: null });
+  server.backend.notifyChanged(next.touched);
+  await expect(page.getByText("new source", { exact: true })).toBeVisible();
+  await page.getByTestId("action-reply-all").click();
+  await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
+  expect(await recipientEmails(page, "compose-cc")).toEqual([teammate.email]);
+  await page.getByTestId("compose-body").fill("Keep original source");
+  await page.getByTestId("compose-send").click();
+  await expect.poll(() => server.smtp.length).toBe(1);
+  const mail = await parseRaw(server.smtp[0]!.raw);
+  expect(mail.inReplyTo).toBe(source.rfcMessageId);
+  expect(mail.text).toContain("first source");
+  expect(mail.text).not.toContain("new source");
+});

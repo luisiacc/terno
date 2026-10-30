@@ -101,7 +101,7 @@ function setup(size = 32, fault?: Fault) {
         subject: fault === "fixed-revision" && index === 1 ? "authored subject" : fields.subject,
         subjectEdited: fault === "fixed-revision" && index === 1,
         bodyText: "preserved", bodyHtml: "<div>preserved</div>", attachments: mode === "forward" ? [{ ...ref, contentId: null }] : [],
-        replyContext: fields.replyContext ?? null, inReplyToMessageId: fields.inReplyToMessageId, forwardOfMessageId: fields.forwardOfMessageId, showSourceContext: mode === "forward", uiState: "open",
+        replyContext: mode === "reply" ? expect.objectContaining({ subject: detail.thread.subject, sourceId: 3, sourceAccountId: 1, contextId: expect.any(String) }) : null, inReplyToMessageId: fields.inReplyToMessageId, forwardOfMessageId: fields.forwardOfMessageId, showSourceContext: mode === "forward", uiState: "open",
       };
       expect(p, "complete saved request").toMatchObject(expected);
       const omitted = allowFault && fault === "omitted-quote" && index === 1;

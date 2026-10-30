@@ -689,7 +689,7 @@ export class SqlMailStore implements MailStore {
         let references: string[] = [];
         let providerThreadId: string | null = null;
         let replyThreadId: number | null = null;
-        if (p.inReplyToMessageId) {
+        if (p.inReplyToMessageId && draft?.mode !== "forward") {
           const original = this.db.get<{ rfc_message_id: string | null; references_json: string; thread_id: number; account_id: number }>(
             "SELECT rfc_message_id, references_json, thread_id, account_id FROM messages WHERE id = ?",
             p.inReplyToMessageId,

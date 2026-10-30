@@ -657,3 +657,13 @@ describe("the editor's body (plan 16)", () => {
     expect(sendHtml("<div>x</div>", { quotedText: "> q", includeQuote: false })).not.toContain("blockquote");
   });
 });
+
+it("does not acknowledge a saved revision whose reply baseline changed", async () => {
+  const k = createDraft({ ...newFields(1), mode: "reply", inReplyToMessageId: 3, replyContext: { subject: "Original", sourceId: 3, sourceAccountId: 1, contextId: "original" }, toText: "to@example.test" });
+  editDraft(k, { bodyText: "keep authored text" });
+  const flushing = flushDraft(k);
+  const call = calls.shift()!;
+  call.resolve({ ...call.params, id: 10, generation: "saved", revision: 1, replyContext: { subject: "Wrong", sourceId: 3, sourceAccountId: 1, contextId: "other" } });
+  await flushing;
+  expect(state(k)).toMatchObject({ id: 10, generation: "saved", revision: 1, status: "error", savedRev: 0, bodyText: "keep authored text", replyContext: { subject: "Original", contextId: "original" } });
+});

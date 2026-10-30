@@ -321,7 +321,7 @@ export type DraftAddress = z.infer<typeof address> & { auto?: true };
  * quoted original (quotedText), joined only when sent, so a restore never
  * quotes twice. Format-1 drafts (before v9) carry everything in bodyText.
  */
-export interface ReplyContext { subject: string; sourceId: number; sourceAccountId: number; rfcMessageId?: string | null }
+export interface ReplyContext { subject: string; sourceId: number; sourceAccountId: number; rfcMessageId?: string | null; contextId?: string }
 
 export interface Draft {
   id: number;
@@ -729,7 +729,7 @@ export const contract = {
       attachments: attachmentRefs.optional(),
       quotedText: z.string().max(5_000_000).optional(),
       includeQuote: z.boolean().optional(),
-      replyContext: z.object({ subject: z.string().max(998), sourceId: id, sourceAccountId: id, rfcMessageId: z.string().max(1000).nullable().optional() }).nullable().optional(),
+      replyContext: z.object({ subject: z.string().max(998), sourceId: id, sourceAccountId: id, rfcMessageId: z.string().max(1000).nullable().optional(), contextId: z.string().min(1).max(64).optional() }).nullable().optional(),
       inReplyToMessageId: id.nullable().optional(),
       forwardOfMessageId: id.nullable().optional(),
       showSourceContext: z.boolean().optional(),
