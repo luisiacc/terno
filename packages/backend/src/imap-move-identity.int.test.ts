@@ -48,7 +48,7 @@ async function setup(folders: Record<string, object>, syncWindowDays?: number, u
 }
 
 
-it("characterizes a queued read acknowledged while its target is unlocated", async () => {
+it("does not acknowledge a queued read while its target is unlocated", async () => {
   const { ImapFlow } = await import("imapflow");
   const t = await setup({ A: {}, Z: {} });
   const bytes = rawIdleMail("Gap target", "Exact gap bytes");
@@ -78,12 +78,15 @@ it("characterizes a queued read acknowledged while its target is unlocated", asy
   const start = t.commands.length;
   await reopened.backend.runWorker();
   expect(t.commands.slice(start)).not.toContain("UID STORE");
-  expect((await reopened.client.call("ops.list", {})).find((item) => item.id === op.id)?.state).toBe("succeeded");
+  const retained = await reopened.backend.store.ops.get(op.id);
+  expect(retained).not.toBeNull();
+  expect(JSON.parse(retained!.target_json)).toEqual({ messageIds: [message.id] });
+  expect(retained!.state).not.toBe("succeeded");
   expect(t.server.control.getMessage("A", destination.uid, { raw: true }).flags).not.toContain("\\Seen");
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
 });
 
-it.each([false, true])("characterizes a queued read targeting an equal-envelope different body after reverse arrivals (Message-ID present: %s)", async (hasId) => {
+it.each([false, true])("does not target an equal-envelope different body after reverse arrivals (Message-ID present: %s)", async (hasId) => {
   const { ImapFlow } = await import("imapflow");
   const t = await setup({ A: {}, Z: {} });
   const date = new Date().toUTCString();
@@ -125,11 +128,9 @@ it.each([false, true])("characterizes a queued read targeting an equal-envelope 
   await reopened.backend.runWorker();
   const firstRemote = remote.find((m) => m.raw!.equals(Buffer.from(firstBytes)))!;
   const otherRemote = remote.find((m) => m.raw!.equals(Buffer.from(secondBytes)))!;
-  expect(t.server.control.getMessage("A", otherRemote.uid).flags).toContain("\\Seen");
-  expect(t.server.control.getMessage("A", firstRemote.uid).flags).not.toContain("\\Seen");
+  expect(t.server.control.getMessage("A", otherRemote.uid).flags).not.toContain("\\Seen");
   const location = (await reopened.backend.store.providerStore(t.account.id).locations!.of([firstId!]))[0];
-  expect(location).toBeDefined();
-  expect(t.server.control.getMessage("A", location!.uid, { raw: true }).raw).toEqual(Buffer.from(secondBytes));
+  if (location) expect(t.server.control.getMessage("A", location.uid, { raw: true }).raw).toEqual(Buffer.from(firstBytes));
   expect((await reopened.client.call("threads.get", { threadId: firstRow.thread_id })).messages.find((m) => m.id === firstId)).toMatchObject({ bodyText: "AAAA\n" });
 });
 
