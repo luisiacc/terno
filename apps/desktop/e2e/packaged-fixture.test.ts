@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import childProcess, { execFileSync, spawn } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { once } from "node:events";
 import { test } from "node:test";
 import type { ElectronApplication } from "@playwright/test";
@@ -57,4 +58,35 @@ test("a process disappearing before its signal does not interrupt the remaining 
       await exit;
     }
   }
+});
+
+test("a reused PID is never signalled as the captured process", async (t) => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+  await once(child, "spawn");
+  const signal = process.kill.bind(process);
+  const original = execFileSync("ps", ["-p", String(child.pid), "-o", "lstart="], { encoding: "utf8" }).trim();
+  let signalCalls = 0;
+  const ps = childProcess.execFileSync;
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  t.mock.method(process, "kill", (pid: number, how: NodeJS.Signals | number = "SIGTERM") => {
+    if (pid === child.pid && how !== 0) signalCalls++;
+    return signal(pid, how);
+  });
+  // Capture the real child, then expose a different birth identity after close.
+  const app = { process: () => child, close: async () => {
+    const exit = once(child, "exit"); signal(child.pid!, "SIGTERM"); await exit;
+    t.mock.method(childProcess, "execFileSync", (...args: Parameters<typeof execFileSync>) => {
+      const [file, options] = args;
+      if (file === "ps" && Array.isArray(options) && options[0] === "-p" && options[1] === String(child.pid)) return "Fri Jan  1 00:00:00 2100\n";
+      return Reflect.apply(ps, childProcess, args);
+    });
+    syncBuiltinESMExports();
+    t.mock.method(process, "kill", (pid: number, how: NodeJS.Signals | number = "SIGTERM") => {
+      if (pid === child.pid) { if (how !== 0) signalCalls++; return true; }
+      return signal(pid, how);
+    });
+  } } as unknown as ElectronApplication;
+  assert.ok(original);
+  await closePackaged(app);
+  assert.equal(signalCalls, 0);
 });

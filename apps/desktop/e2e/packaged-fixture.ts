@@ -11,29 +11,33 @@ async function within<T>(promise: Promise<T>, ms: number, label: string): Promis
 }
 
 /** Capture while parentage is observable, before Electron can orphan its helpers. */
-function descendants(parent: number): number[] {
-  const pairs = execFileSync("ps", ["-axo", "pid=,ppid="], { encoding: "utf8" }).trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number));
+interface OwnedProcess { pid: number; birth: string }
+
+function descendants(parent: number): OwnedProcess[] {
+  const pairs = execFileSync("ps", ["-axo", "pid=,ppid=,lstart="], { encoding: "utf8" }).trim().split("\n").map((line) => { const [pid, ppid, ...birth] = line.trim().split(/\s+/); return { pid: Number(pid), ppid: Number(ppid), birth: birth.join(" ") }; });
   const owned = new Set([parent]);
   for (let size = 0; size !== owned.size;) {
     size = owned.size;
-    for (const [pid, ppid] of pairs) if (pid && ppid && owned.has(ppid)) owned.add(pid);
+    for (const { pid, ppid } of pairs) if (pid && ppid && owned.has(ppid)) owned.add(pid);
   }
-  return [...owned];
+  return pairs.filter((row) => owned.has(row.pid)).map(({ pid, birth }) => ({ pid, birth }));
 }
 
-function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+function alive(owned: OwnedProcess): boolean {
+  try {
+    return execFileSync("ps", ["-p", String(owned.pid), "-o", "lstart="], { encoding: "utf8" }).trim().replace(/\s+/g, " ") === owned.birth;
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return false;
     throw error;
   }
 }
 
-async function joinOwned(child: ChildProcess, owned: number[]): Promise<void> {
+async function joinOwned(child: ChildProcess, owned: OwnedProcess[]): Promise<void> {
   const exit = child.exitCode === null && child.signalCode === null ? once(child, "exit").then(() => {}) : Promise.resolve();
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-    for (const pid of owned) {
-      if (!alive(pid)) continue;
-      try { process.kill(pid, signal); } catch (error) {
+    for (const ownedProcess of owned) {
+      if (!alive(ownedProcess)) continue;
+      try { process.kill(ownedProcess.pid, signal); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
       }
     }
