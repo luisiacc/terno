@@ -868,7 +868,7 @@ async function send(key: string): Promise<boolean> {
   if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
   const draft = useDrafts.getState().drafts[key];
   if (draft && !getApp().accounts.some((a) => a.id === draft.accountId)) { snack.error(t("errors.accountGone")); return false; }
-  if (attachmentUploading(key)) { snack.error(t("attachments.adding")); return false; }
+  if (attachmentUploading(key)) { snack.error(t("compose.stillAdding")); return false; }
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   let preparing = true;

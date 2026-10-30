@@ -1,6 +1,6 @@
 import "./rich.css";
 import { FONT_CSS, parseHtml, HIGHLIGHT_DARK, HIGHLIGHT_HEX, HIGHLIGHT_INK, HIGHLIGHT_INK_DARK, HIGHLIGHTS, normalizeHref, TEXT_COLORS, TEXT_DARK, TEXT_HEX, schema } from "@terno/richtext";
-import { t } from "@terno/i18n";
+import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
@@ -41,7 +41,7 @@ import { attachBody, bodyCheckpoint, draftEditsHeld, editDraft, enterEditorBodyC
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { suggestText } from "~/lib/autocomplete";
 import { setApp, useApp } from "~/state/app";
-import { parseAddressList } from "@terno/core";
+import { parseAddressList, type AttachmentRef } from "@terno/core";
 import { dismissGhost, withoutGhost, type GhostHooks } from "./ghost";
 import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
@@ -50,6 +50,7 @@ import { EMPTY_FORMAT, registerController, useController, useFormatState, type A
 import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, type ImageHooks } from "./images";
 import { attachFilesInTurn } from "~/lib/attachments";
 import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline-images";
+import { snack } from "~/lib/snack";
 import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
@@ -448,6 +449,18 @@ function imageHooks(draftKey: string): ImageHooks {
  */
 async function placeFiles(draftKey: string, view: EditorView, files: File[], coords: { x: number; y: number } | null, canMutate: () => boolean): Promise<void> {
   if (!canMutate() || !files.length) return;
+  // a pasted screenshot is "image.png" each time: numbered, so the recipient can tell them apart
+  if (!coords) {
+    const taken = new Set(useDrafts.getState().drafts[draftKey]?.attachments?.map((a) => a.filename));
+    let n = 1;
+    files = files.map((f) => {
+      if (!/^image\.(png|jpe?g|gif)$/i.test(f.name)) return f;
+      let name: string;
+      do name = `${t("compose.pastedImage", { n: n++ })}.${f.name.split(".").pop()}`; while (taken.has(name));
+      taken.add(name);
+      return new File([f], name, { type: f.type });
+    });
+  }
   // at once, at the pointer (or the caret): each image dimmed in its spot, following the edits around it
   const spots = files.map((f) => (isInlineImage(f) ? { id: crypto.randomUUID(), url: URL.createObjectURL(f), width: null } : null));
   const pending = spots.filter((p) => p !== null);
@@ -456,24 +469,34 @@ async function placeFiles(draftKey: string, view: EditorView, files: File[], coo
     view.focus();
   }
   try {
-    // what our reader shows inline goes in the text (a photo too big for it, scaled down); the rest attaches
-    const ready = await Promise.all(files.map((f, i) => (spots[i] ? inlineFile(f) : null)));
-    const attach = spots.flatMap((p, i) => (p && !ready[i] ? [p.id] : []));
-    if (attach.length) dropPlaceholders(view, attach);
-    files = files.map((f, i) => ready[i]?.file ?? f);
-    const cids = ready.map((r) => (r ? newImageCid() : null));
-    await attachFilesInTurn(draftKey, files, {
-      contentIds: cids,
-      placed: (refs) => {
-        const nodes: { id: string; node: PMNode }[] = [];
-        refs.forEach((r, i) => {
-          if (!r.contentId) return;
-          seedImageUrl(r.assetId, files[i]!);
-          nodes.push({ id: spots[i]!.id, node: schema.nodes.image.create({ cid: r.contentId, alt: r.filename, width: ready[i]!.width }) });
-        });
-        if (nodes.length) placeStaged(draftKey, view, nodes);
-      },
+    // what our reader shows inline goes in the text (a photo too big for it, scaled down); the rest attaches.
+    // Queued at once, the draft is adding files from the drop on (Send waits) while that is worked out.
+    const prepared = Promise.all(files.map((f, i) => (spots[i] ? inlineFile(f) : null))).then((ready) => {
+      const attach = spots.flatMap((p, i) => (p && !ready[i] ? [p.id] : []));
+      if (attach.length) {
+        dropPlaceholders(view, attach);
+        // the pill said it would go in the text: say why it didn't
+        const names = files.filter((_, i) => spots[i] && !ready[i]).map((f) => f.name);
+        snack(t("compose.drop.attachedInstead", { names: formatList(names), count: names.length }));
+      }
+      const staged = files.map((f, i) => ready[i]?.file ?? f);
+      return {
+        files: staged,
+        o: {
+          contentIds: ready.map((r) => (r ? newImageCid() : null)),
+          placed: (refs: AttachmentRef[]) => {
+            const nodes: { id: string; node: PMNode }[] = [];
+            refs.forEach((r, i) => {
+              if (!r.contentId) return;
+              seedImageUrl(r.assetId, staged[i]!);
+              nodes.push({ id: spots[i]!.id, node: schema.nodes.image.create({ cid: r.contentId, alt: r.filename, width: ready[i]!.width }) });
+            });
+            if (nodes.length) placeStaged(draftKey, view, nodes);
+          },
+        },
+      };
     });
+    await attachFilesInTurn(draftKey, prepared);
   } finally {
     if (pending.length) dropPlaceholders(view, pending.map((p) => p.id));
     // (the placeholders' own: a placed image is shown from its asset's URL)

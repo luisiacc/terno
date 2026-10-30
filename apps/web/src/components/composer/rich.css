@@ -114,6 +114,7 @@
   outline-offset: 1px;
 }
 .rt-body .rt-image[data-state="adding"] {
+  max-width: min(100%, 600px);
   opacity: 0.5;
 }
 .rt-body .rt-image[data-state="loading"],

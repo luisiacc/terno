@@ -44,12 +44,30 @@ export function seedImageUrl(assetId: string, file: Blob): void {
   keep(assetId, Promise.resolve(URL.createObjectURL(file)));
 }
 
+/**
+ * Reads one at a time: the backend takes two attachment calls at once (a
+ * staging in flight holds one), so a draft with many images would have the
+ * rest refused. One refused (busy) is tried again after a moment.
+ */
+let lane: Promise<unknown> = Promise.resolve();
+const RETRY_MS = [250, 1000, 3000];
+async function read(accountId: number, ref: AttachmentRef): Promise<string | null> {
+  for (let attempt = 0; ; attempt++) {
+    try { return URL.createObjectURL(await attachmentBlob(accountId, ref)); } catch {
+      if (attempt >= RETRY_MS.length) return null;
+      await new Promise((r) => setTimeout(r, RETRY_MS[attempt]));
+    }
+  }
+}
+
 /** The image's URL: the one at hand, else read from the local asset (null when it can't be). */
 export function imageUrl(accountId: number, ref: AttachmentRef): Promise<string | null> {
   const known = urls.get(ref.assetId);
   if (known) return keep(ref.assetId, known);
-  return keep(ref.assetId, attachmentBlob(accountId, ref).then((b) => URL.createObjectURL(b), () => {
-    urls.delete(ref.assetId); // a later look tries again
-    return null;
+  const url = lane.then(() => read(accountId, ref));
+  lane = url;
+  return keep(ref.assetId, url.then((u) => {
+    if (!u && urls.get(ref.assetId)) urls.delete(ref.assetId); // a later look tries again
+    return u;
   }));
 }

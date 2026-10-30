@@ -5,7 +5,8 @@ import { textToHtmlChunks } from "@terno/richtext/quote";
 import { getApp, useApp } from "~/state/app";
 import { mergeAttachmentRefs } from "./compose-fields";
 import { client } from "~/rpc/connection";
-import { beginDraftWork, editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields } from "./drafts";
+import { beginDraftWork, editDraft, fieldsOf, flushDraft, materialize, sendBody, sendHtml, useDrafts, type DraftFields, type LocalDraft } from "./drafts";
+import { formatBytes } from "./format";
 import { snack } from "./snack";
 
 /** plan 76: drops waiting their turn, by draft (Send waits for them as for a staging) */
@@ -50,8 +51,10 @@ const idle = (key: string) => new Promise<void>((resolve) => {
   if (!useAttachmentUploads.getState().keys.has(key)) return resolve();
   const stop = useAttachmentUploads.subscribe((s) => { if (!s.keys.has(key)) { stop(); resolve(); } });
 });
-export function attachFilesInTurn(key: string, files: readonly File[], o: Parameters<typeof attachFiles>[2] = {}): Promise<boolean> {
-  const run = (queued.get(key) ?? Promise.resolve()).then(() => idle(key)).then(() => attachFiles(key, files, o));
+/** Files may still be being prepared (an image scaled down): the draft counts as adding files from the drop on, so Send waits for them. */
+export function attachFilesInTurn(key: string, files: readonly File[] | Promise<{ files: readonly File[]; o?: Parameters<typeof attachFiles>[2] }>, o: Parameters<typeof attachFiles>[2] = {}): Promise<boolean> {
+  const ready = Array.isArray(files) ? Promise.resolve({ files, o }) : (files as Promise<{ files: readonly File[]; o?: Parameters<typeof attachFiles>[2] }>);
+  const run = (queued.get(key) ?? Promise.resolve()).then(() => idle(key)).then(async () => { const r = await ready; return attachFiles(key, r.files, r.o); });
   const tail = run.catch(() => false);
   queued.set(key, tail);
   void tail.then(() => { if (queued.get(key) === tail) queued.delete(key); });
@@ -80,12 +83,14 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
     return live;
   };
   try {
+    // plan 76: one file mail can't carry at all is named, with the limit (nothing to remove would help)
+    const huge = files.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (huge) throw new Error(t("attachments.fileTooLarge", { name: huge.name, size: formatBytes(huge.size), limit: formatBytes(MAX_ATTACHMENT_BYTES) }));
     const signature = getApp().accounts.find((a) => a.id === draft.accountId)?.signature;
     const contentId = (i: number) => o.contentIds?.[i] ?? null;
     const incoming = files.map((f, i) => ({ assetId: "", filename: f.name, mime: f.type || "application/octet-stream", size: f.size, contentId: contentId(i) }));
-    const admitted = await draftAttachmentBudget({ ...fieldsOf(draft), attachments: [...(draft.attachments ?? []), ...incoming] }, signature);
-    const latest = current(true);
-    if (latest.localRev !== draft.localRev || latest.bodyText !== draft.bodyText || latest.bodyHtml !== draft.bodyHtml) throw new Error(t("attachments.unavailable"));
+    // plan 76: typing while the budget is checked doesn't refuse the files: it is checked again against what is there now
+    const admitted = await settledBudget(() => current(true), (d) => draftAttachmentBudget({ ...fieldsOf(d), attachments: [...(d.attachments ?? []), ...incoming] }, getApp().accounts.find((a) => a.id === d.accountId)?.signature ?? signature));
     if (!admitted) throw new Error(t("attachments.tooLarge"));
     for (const [i, file] of files.entries()) {
       current();
@@ -101,14 +106,10 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
       await client.call("attachments.seal", { accountId: draft.accountId, assetId: ref.assetId });
       current();
     }
-    const live = current(true);
-    const attachments = mergeAttachmentRefs(live.attachments ?? [], staged);
-    const signatureNow = getApp().accounts.find((a) => a.id === live.accountId)?.signature;
-    const fits = await draftAttachmentBudget({ ...fieldsOf(live), attachments }, signatureNow);
-    const final = current(true);
-    if (final.localRev !== live.localRev || final.bodyVersion !== live.bodyVersion || final.bodyText !== live.bodyText || final.bodyHtml !== live.bodyHtml || getApp().accounts.find((a) => a.id === live.accountId)?.signature !== signatureNow) throw new Error(t("attachments.unavailable"));
+    const fits = await settledBudget(() => current(true), (d) => draftAttachmentBudget({ ...fieldsOf(d), attachments: mergeAttachmentRefs(d.attachments ?? [], staged) }, getApp().accounts.find((a) => a.id === d.accountId)?.signature));
     if (!fits) throw new Error(t("attachments.tooLarge"));
-    if (!editDraft(key, { attachments })) throw new Error(t("attachments.unavailable"));
+    const live = current(true);
+    if (!editDraft(key, { attachments: mergeAttachmentRefs(live.attachments ?? [], staged) })) throw new Error(t("attachments.unavailable"));
     adopted = true;
     o.placed?.(staged);
     await flushDraft(key);
@@ -125,6 +126,24 @@ async function attachFilesNow(key: string, files: readonly File[], o: { contentI
     unsubscribeAccount();
     useAttachmentUploads.setState((s) => { const keys = new Set(s.keys); keys.delete(key); return { keys }; });
   }
+}
+
+/**
+ * A budget check that holds for the draft as it is when it ends: one whose
+ * body, files or signature changed meanwhile (the user typing) runs again on
+ * the new one, a few times; a draft that keeps changing faster is refused.
+ */
+async function settledBudget(read: () => LocalDraft, check: (d: LocalDraft) => Promise<boolean>): Promise<boolean> {
+  const same = (a: LocalDraft, b: LocalDraft) => a.localRev === b.localRev && a.bodyVersion === b.bodyVersion && a.bodyText === b.bodyText && a.bodyHtml === b.bodyHtml && a.attachments === b.attachments && a.accountId === b.accountId;
+  const signatureOf = (d: LocalDraft) => getApp().accounts.find((a) => a.id === d.accountId)?.signature;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const before = read();
+    const signature = signatureOf(before);
+    const ok = await check(before);
+    const after = read();
+    if (same(before, after) && signatureOf(after) === signature) return ok;
+  }
+  throw new Error(t("attachments.unavailable"));
 }
 
 export async function attachmentBlob(accountId: number, ref: AttachmentRef): Promise<Blob> {

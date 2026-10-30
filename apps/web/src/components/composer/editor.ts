@@ -11,6 +11,7 @@ import { autolinkRule, liveLinks, textSlice, withAutolink } from "./autolink";
 import type { FormatCommand, FormatState } from "./controller";
 import { keepEditorBody, keptEditorBody, forgetEditorBody, type KeptEditorBody } from "~/lib/drafts";
 import { ghostPlugin, type GhostHooks } from "./ghost";
+import { draggingInPage } from "../composer-drop";
 import { imageView, knownImagesOnly, placeholderPlugin, type ImageHooks } from "./images";
 
 /**
@@ -468,6 +469,8 @@ export function createPlugins(): Plugin[] {
         handleDOMEvents: {
           // plan 76: files dropped on the text (ProseMirror's own drop would read their names as text, or nothing)
           drop(view, event) {
+            // an image in the text being moved (it carries itself as a file too): ProseMirror's own move
+            if (view.dragging || draggingInPage()) return false;
             const files = filesOf(event.dataTransfer);
             if (!files.length) return false;
             event.preventDefault();

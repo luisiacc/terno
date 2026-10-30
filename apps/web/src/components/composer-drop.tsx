@@ -18,8 +18,12 @@ import { controllerFor } from "./composer/controller";
 /** what a drag carries, as far as the browser tells before the drop (a file's type can be unknown until then) */
 export interface DragFiles { images: number; others: number; unknown: number }
 
+/** a drag that started in the page (an image in the text being moved carries "Files" too): never a file coming in */
+let pageDrag = false;
+export const draggingInPage = (): boolean => pageDrag;
+
 export function dragFiles(data: DataTransfer | null): DragFiles | null {
-  if (!data || !Array.from(data.types).includes("Files")) return null;
+  if (pageDrag || !data || !Array.from(data.types).includes("Files")) return null;
   const out: DragFiles = { images: 0, others: 0, unknown: 0 };
   for (const item of Array.from(data.items ?? [])) {
     if (item.kind !== "file") continue;
@@ -58,8 +62,10 @@ let installed = false;
 function install() {
   if (installed || typeof window === "undefined") return;
   installed = true;
-  const hasFiles = (e: globalThis.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  const hasFiles = (e: globalThis.DragEvent) => !pageDrag && Array.from(e.dataTransfer?.types ?? []).includes("Files");
   const reset = () => { windowDepth = 0; setWindowDrag(false); };
+  window.addEventListener("dragstart", () => { pageDrag = true; }, true);
+  window.addEventListener("dragend", () => { pageDrag = false; }, true);
   window.addEventListener("dragenter", (e) => {
     if (!hasFiles(e)) return;
     windowDepth++;
@@ -78,6 +84,7 @@ function install() {
   });
   window.addEventListener("drop", (e) => {
     if (hasFiles(e)) e.preventDefault();
+    pageDrag = false;
     reset();
   });
   window.addEventListener("dragend", reset);
@@ -152,7 +159,7 @@ function DropLayer({ zone }: { zone: DropZone | null }) {
   return (
     <div aria-hidden="true" data-testid="compose-drop" data-state={!zone ? "available" : zone.blocked ? "blocked" : zone.text ? "text" : "attach"} className="pointer-events-none absolute inset-0 z-20 rounded-[inherit]">
       <div className={cn("absolute inset-0 rounded-[inherit] ring-inset", !zone ? "ring-1 ring-primary/30" : zone.blocked ? "ring-1 ring-border" : "bg-primary/[0.04] ring-2 ring-primary/55")} />
-      <div className="absolute inset-x-0 bottom-3 flex justify-center px-3">
+      <div className="absolute inset-x-0 top-2 flex justify-center px-3">
         <div className={cn("flex max-w-full items-center gap-2 rounded-full bg-popover px-3 py-1.5 text-xs shadow-md ring-1 ring-border", zone && !zone.blocked ? "text-foreground" : "text-muted-foreground")} data-testid="compose-drop-label">
           <Icon className={cn("size-3.5 shrink-0", zone && !zone.blocked && "text-primary")} />
           <span className="truncate font-medium">{what ? what.label : t("compose.drop.available")}</span>
