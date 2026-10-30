@@ -14,7 +14,7 @@ test("browser complete maximum CID resolution yields through final serialization
     if (req.url === "/fixture.js") return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(code.code);
     res.writeHead(404).end();
   });
-  await new Promise<void>((resolve) => server.listen(Number(process.env.E2E_PORT ?? 56640), "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
