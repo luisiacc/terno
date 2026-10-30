@@ -39,3 +39,23 @@ for (const scheme of ["light", "dark"] as const) test(`Sent recovery remains dis
   expect((await store.ops.get(queued.opId))?.state).toBe("succeeded");
   expect(await store.sendCopies.get(queued.opId)).toBeNull();
 });
+
+for (const language of ["en", "es"] as const) for (const scheme of ["light", "dark"] as const) test(`clear saved copy after uncertain completion (${language}, ${scheme})`, async ({ app: page, server }) => {
+  await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
+  const store = server.backend.store, account = (await store.accounts.list()).find((a) => a.kind === "imap")!;
+  const config = (await store.accounts.config<Record<string, unknown>>(account.id))!;
+  await store.accounts.setProviderConfig(account.id, { ...config, appendToSent: true });
+  const { opId } = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact", recordReply: false, now: Date.now() });
+  await store.ops.claimReady(Date.now(), 100); await store.sendCopies.startWire(opId, 1); await store.sendCopies.appendWire(opId, 0, "YQ=="); await store.sendCopies.sealWire(opId);
+  await store.sendCopies.accepted(opId, null); await store.sendCopies.record(opId, "saved"); await store.ops.markUnknown(opId, "Synthetic local completion failure", Date.now());
+  await server.backend.server.invoke("settings.update", { theme: scheme, language, senderIcons: false }, { clientId: "copy-clear-ui", origin: "dev" });
+  await page.addInitScript((value) => localStorage.setItem("terno:language", value), language);
+  await page.reload(); await page.locator("[data-ready]").waitFor(); await page.getByTestId("open-settings").click(); await page.getByTestId("tab-accounts").click();
+  const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`); await editor.getByTestId("account-toggle").click();
+  const recovery = editor.getByTestId("sent-copy-recovery"), clear = recovery.getByRole("button", { name: language === "en" ? "Clear recovery data" : "Borrar datos de recuperación" });
+  await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(1); await expect(clear).toBeEnabled();
+  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-copy-clear-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-copy-clear-ui/${language}-${scheme}.png` });
+  await clear.focus(); await page.keyboard.press("Enter"); await expect(recovery.getByTestId("sent-copy-row")).toHaveCount(0);
+  expect((await store.ops.get(opId))?.state).toBe("unknown"); expect((await store.ops.sendSubmission(opId))?.accepted).toBe(true);
+});

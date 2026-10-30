@@ -7,8 +7,11 @@ import { expect, test } from "./fixtures";
 for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) test(`recipient outcomes remain discoverable (${language}, ${theme})`, async ({ app: page, server }) => {
   await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
   const ctx = { clientId: "recipient-ui", origin: "dev" as const }, store = server.backend.store;
-  let recoveryCalls = 0;
-  server.backend.recoverRejectedRecipients = async () => { recoveryCalls++; return crypto.randomUUID(); };
+  let recoveryCalls = 0, clearCalls = 0, releaseRecovery!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseRecovery = resolve; });
+  server.backend.recoverRejectedRecipients = async () => { recoveryCalls++; await gate; return crypto.randomUUID(); };
+  const originalClear = server.backend.forgetRecipientReceipt.bind(server.backend);
+  server.backend.forgetRecipientReceipt = async (id) => { clearCalls++; return originalClear(id); };
   const account = (await store.accounts.list()).find((entry) => entry.kind === "imap")!;
   const config = (await store.accounts.config<Record<string, unknown>>(account.id))!;
   await store.accounts.setProviderConfig(account.id, { ...config, appendToSent: false });
@@ -29,8 +32,12 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-recipient-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-recipient-ui/${language}-${theme}.png` });
   await recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" }).focus(); await page.keyboard.press("Enter");
   await expect.poll(() => recoveryCalls).toBe(1);
-  await recovery.getByRole("button", { name: language === "en" ? "Clear details" : "Borrar detalles" }).focus(); await page.keyboard.press("Enter");
-  await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(0);
+  const clear = recovery.getByRole("button", { name: language === "en" ? "Clear details" : "Borrar detalles" });
+  await expect(clear).toBeDisabled(); await clear.focus(); await page.keyboard.press("Enter");
+  expect(clearCalls).toBe(0); await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(1);
+  releaseRecovery(); await expect(clear).toBeEnabled();
+  await clear.focus(); await page.keyboard.press("Enter");
+  await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(0); expect(clearCalls).toBe(1);
   expect((await store.ops.get(queued.opId))?.last_error).not.toContain("refused@example.test");
   expect((await store.ops.sendSubmission(queued.opId))?.accepted).toBe(true);
   expect(await store.sendCopies.list(account.id)).toEqual([]);

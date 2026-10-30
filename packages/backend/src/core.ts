@@ -1899,7 +1899,7 @@ export class BackendCore {
     try {
       const row = await this.store.sendCopies.get(id);
       const op = await this.store.ops.get(id);
-      if (!row || !row.copyRequested || !op || !["succeeded", "failed"].includes(op.state)) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+      if (!row || !row.copyRequested || !op || !(["succeeded", "failed"].includes(op.state) || (op.state === "unknown" && row.submission === "accepted" && row.copy === "saved"))) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
       const life = this.lifetime(row.accountId);
       await this.accountWrite(life, async () => {
         while (true) {

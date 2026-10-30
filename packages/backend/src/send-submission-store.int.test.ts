@@ -105,6 +105,60 @@ for (const adapter of ["SQL", "IDB"] as const) describe(`${adapter} proven submi
     await expect(store.ops.resolveUnknown(t.opId, "retry", 4)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("public Clear retires a saved accepted legacy receipt with unknown operation and keeps the replay fence across reopen", async () => {
+    const t = await setup(adapter, true); let store = t.store;
+    await store.ops.claimReady(2, 1);
+    await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+    await store.sendCopies.accepted(t.opId, null); await store.sendCopies.record(t.opId, "saved");
+    await store.ops.markUnknown(t.opId, "Synthetic local completion failed", 3);
+    const before = (await store.ops.get(t.opId))!, target = JSON.parse(before.target_json);
+    delete target.submissionAccepted; target.synthetic = "keep"; target.recipientPartial = true;
+    store = await t.mutate({ target_json: JSON.stringify(target) });
+    const backendStore = store;
+    const backend = new Backend({ store: backendStore, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null });
+    const [transport, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "copy-clear", origin: "renderer" }); const client = new RpcClient(transport);
+    cleanup.push(async () => { client.close(); if (backendStore.isOpen) await backend.stop(); });
+    await expect(client.call("ops.forgetSentCopy", { opId: t.opId })).resolves.toEqual({ ok: true });
+    await expect(client.call("ops.forgetSentCopy", { opId: t.opId })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await store.sendCopies.get(t.opId)).toBeNull();
+    await backend.stop(); store = await t.open();
+    const after = (await store.ops.get(t.opId))!;
+    expect(after.state).toBe("unknown"); expect(after.payload_json).toBe(before.payload_json);
+    expect(JSON.parse(after.target_json)).toEqual({ ...target, submissionAccepted: true });
+    await expect(store.ops.resolveUnknown(t.opId, "retry", 4)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await store.ops.claimReady(100000, 1)).toEqual([]);
+    expect(await store.sendCopies.list(t.command.accountId)).toEqual([]);
+    for (let index = 0; index < 10; index++) await store.compose.queueSend(t.command);
+    expect(await store.sendCopies.list(t.command.accountId)).toHaveLength(10);
+  });
+
+  it("public Clear refuses an active recovery child and preserves its pinned wire", async () => {
+    const t = await setup(adapter, true, [{ name: "", email: "accepted@example.test" }, { name: "", email: "refused@example.test" }]);
+    const store = t.store;
+    await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+    await store.sendCopies.accepted(t.opId, null); await store.sendCopies.record(t.opId, "saved");
+    await store.ops.markUnknown(t.opId, "Synthetic failure", 3, { warning: null, outcomes: [{ email: "accepted@example.test", outcome: "accepted" }, { email: "refused@example.test", outcome: "rejected" }] });
+    const receipt = (await store.recipientReceipts.get(t.opId))!;
+    const child = await store.recipientReceipts.claimRecovery(t.opId, receipt, 4);
+    const backend = new Backend({ store, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null });
+    const [transport, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "copy-pin", origin: "renderer" }); const client = new RpcClient(transport);
+    cleanup.push(async () => { client.close(); if (store.isOpen) await backend.stop(); });
+    const before = await store.sendCopies.get(t.opId);
+    await expect(client.call("ops.forgetSentCopy", { opId: t.opId })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await store.sendCopies.get(t.opId)).toEqual(before); expect(await store.sendCopies.readWire(t.opId, 0)).toBe("YQ==");
+    expect((await store.ops.get(child))?.state).toBe("queued");
+  });
+
+  it("public Clear refuses an unknown operation without accepted saved proof", async () => {
+    const t = await setup(adapter, true), store = t.store;
+    await store.ops.claimReady(2, 1); await store.ops.markUnknown(t.opId, "Unproven submission", 3);
+    const backend = new Backend({ store, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null });
+    const [transport, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "copy-unproven", origin: "renderer" }); const client = new RpcClient(transport);
+    cleanup.push(async () => { client.close(); if (store.isOpen) await backend.stop(); });
+    await expect(client.call("ops.forgetSentCopy", { opId: t.opId })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await store.sendCopies.get(t.opId)).toMatchObject({ submission: "pending", retiring: false });
+  });
+
   it("pending copy state does not certify acceptance", async () => {
     const t = await setup(adapter, true);
     expect(await t.store.ops.sendSubmission(t.opId)).toEqual({ state: "queued", accepted: false });
