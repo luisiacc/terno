@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectIdle, timers } from "./timers";
 
 test("queued Gmail survives worker reload and waits for the same account", async ({ page, context }) => {
   const requests: string[] = [], unexpected: string[] = [], sends: string[] = [];
@@ -24,7 +25,27 @@ test("queued Gmail survives worker reload and waits for the same account", async
   await page.goto("/?demo=0&mailbox=w11-queued");
   await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
   const workers = page.workers();
-  const account = await page.evaluate(() => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "synthetic-token", expiresIn: 64 }));
+  const account = await page.evaluate(() => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "synthetic-token", expiresIn: 3600 }));
+  await page.waitForTimeout(2500);
+  const healthyWorker = page.workers()[0]!;
+  const receiverCheck = await healthyWorker.evaluate(() => {
+    let setRejected = false, clearRejected = false;
+    try { Reflect.apply(setTimeout, {}, [() => {}, 1000]); } catch { setRejected = true; }
+    const handle = setTimeout(() => {}, 1000);
+    try { Reflect.apply(clearTimeout, {}, [handle]); } catch { clearRejected = true; }
+    clearTimeout(handle);
+    return { setRejected, clearRejected };
+  });
+  expect(receiverCheck).toEqual({ setRejected: true, clearRejected: true });
+  const healthy = await timers(healthyWorker);
+  const healthyRequests = requests.length;
+  await page.waitForTimeout(5000);
+  expect(requests.length).toBe(healthyRequests);
+  const healthyAfter = await timers(healthyWorker);
+  expectIdle(healthy, healthyAfter);
+  expect(healthy.intervals).toEqual(expect.arrayContaining([120_000, 300_000, 600_000]));
+  console.log("healthy timer aggregates", JSON.stringify({ before: healthy, after: healthyAfter }));
+  await page.evaluate((accountId) => window.__ternoWeb!.client.call("accounts.connectGmailToken", { accessToken: "short-token", expiresIn: 64, accountId }), account.id);
   await page.evaluate(() => window.__ternoWeb!.client.call("sync.network", { online: false }));
   const queued = await page.evaluate(async (accountId) => {
     const c = window.__ternoWeb!.client;
@@ -63,8 +84,31 @@ test("queued Gmail survives worker reload and waits for the same account", async
   expect(await page.evaluate(({ accountId, assetId }) => window.__ternoWeb!.client.call("attachments.read", { accountId, assetId, index: 0 }), { accountId: account.id, assetId: queued.ref.assetId })).toEqual({ dataBase64: "AP+A" });
   await expect.poll(async () => (await op())?.awaitingAuth).toBe(true);
   expect(await op()).toMatchObject({ state: "queued", attempts: 0 });
+  await page.waitForTimeout(2500);
+  const authWorker = page.workers()[0]!;
+  const authTimers = await timers(authWorker);
   const beforeQuiet = requests.length;
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(5000);
+  const authAfter = await timers(authWorker);
+  expectIdle(authTimers, authAfter);
+  expect(authTimers.intervals).toEqual(expect.arrayContaining([120_000, 300_000, 600_000]));
+  console.log("auth-blocked timer aggregates", JSON.stringify({ before: authTimers, after: authAfter }));
+  const spinBefore = await timers(authWorker);
+  await authWorker.evaluate(() => {
+    const state = globalThis as typeof globalThis & { __w11Spin?: { active: boolean; handle?: ReturnType<typeof setTimeout> } };
+    const spin: { active: boolean; handle?: ReturnType<typeof setTimeout> } = state.__w11Spin = { active: true };
+    const retry = () => { if (spin.active) spin.handle = setTimeout(retry, 10); };
+    retry();
+  });
+  await page.waitForTimeout(300);
+  const spinAfter = await timers(authWorker);
+  await authWorker.evaluate(() => {
+    const spin = (globalThis as typeof globalThis & { __w11Spin: { active: boolean; handle?: ReturnType<typeof setTimeout> } }).__w11Spin;
+    spin.active = false;
+    clearTimeout(spin.handle);
+  });
+  expect(() => expectIdle(spinBefore, spinAfter)).toThrow();
+  expect((await timers(authWorker)).shortPending).toBe(0);
   expect(requests.length).toBe(beforeQuiet);
   expect(await op()).toMatchObject({ state: "queued", attempts: 0 });
   await page.evaluate(async () => {
@@ -78,6 +122,11 @@ test("queued Gmail survives worker reload and waits for the same account", async
     const { connectGmailWeb } = await import("/src/web/google.ts");
     return connectGmailWeb(email, id).then(() => "unexpected success", () => "refused");
   }, account)).toBe("refused");
+  expect(requests.length).toBe(beforeRefusal);
+  await page.waitForTimeout(1000);
+  const refusedTimers = await timers(authWorker);
+  await page.waitForTimeout(5000);
+  expectIdle(refusedTimers, await timers(authWorker));
   expect(requests.length).toBe(beforeRefusal);
   expect(await op()).toMatchObject({ state: "queued", attempts: 0 });
   identity = "other@example.test";
