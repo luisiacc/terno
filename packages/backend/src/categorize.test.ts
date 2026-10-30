@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import dc from "node:diagnostics_channel";
 import { encodeFeatures, extractFeatures } from "@terno/core";
-import { createAi, type ModelTransport } from "@terno/ai";
+import { createAi, type CompletionRequest, type ModelTransport } from "@terno/ai";
 import { addToCategory, createAccount, createCategory, ingestMessages, putSecret, seedDataset, setSetting, type IncomingMessage, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
@@ -448,6 +448,12 @@ describe("categorizer: auto-apply at ingestion", () => {
     return { stop: "end" as const, text: JSON.stringify({ results: items.map(({ id }) => ({ id, label: "Facturas", confidence: 0.95 })) }) };
   }
 
+  async function publicAssist(count: number, complete: ModelTransport["complete"]) {
+    const t = await assistMail(count, { aiFactory: (config) => createAi({ ...config, capabilities: { output: "json_schema", contextTokens: null, embeddings: false, probedAt: null } }, { transport: { complete } }) });
+    await t.client.call("settings.update", { aiCategorize: true, autoCategorize: "auto", ai: { provider: "fake" } });
+    return t;
+  }
+
   it.each(["none", "missing-key", "local-mode", "factory-error", "factory-value"] as const)("releases current and queued admission after %s preparation refusal, only on explicit enqueue", async (mode) => {
     let refuse = mode === "factory-error" || mode === "factory-value";
     let calls = 0;
@@ -610,25 +616,307 @@ describe("categorizer: auto-apply at ingestion", () => {
     for (const id of t.threads) expect(t.decision(id)).toBeUndefined();
   });
 
-  it.each(["disable", "shutdown"] as const)("does not issue structured repairs after %s during model work", async (interrupt) => {
-    let calls = 0;
+  it.each(["disable", "auto-off", "shutdown"] as const)("does not issue structured repairs after %s during model work", async (interrupt) => {
+    const requests: CompletionRequest[] = [];
     const started = gate(); const answer = gate();
-    const t = await assistMail(1, { aiFactory: (config) => createAi({ ...config, capabilities: { output: "json_schema", contextTokens: null, embeddings: false, probedAt: null } }, { transport: { async complete() {
-      calls++;
+    const t = await publicAssist(1, async (req) => {
+      requests.push(req);
       started.release();
       await answer.promise;
       return { stop: "end", text: "{}" };
-    } } }) });
-    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    });
     await t.backend.aiAssist.enqueue(t.threads);
     const running = t.backend.aiAssist.drain();
     await started.promise;
-    if (interrupt === "disable") setSetting(sqlDb(t.backend.store), "app", { aiCategorize: false, ai: { provider: "fake" } });
-    else t.backend.aiAssist.stop();
+    if (interrupt === "shutdown") t.backend.aiAssist.stop();
+    else await t.client.call("settings.update", interrupt === "disable" ? { aiCategorize: false } : { autoCategorize: "off" });
+    expect.soft(requests[0]!.signal.aborted).toBe(true);
     answer.release();
     await running;
-    expect(calls).toBe(1);
+    expect(requests).toHaveLength(1);
     expect(t.decision(t.threads[0]!)).toBeUndefined();
+    expect(t.backend.aiAssist.pending).toBe(0);
+  });
+
+  it("keeps the normal structured repair ladder enabled through public settings", async () => {
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(1, async (req) => {
+      requests.push(req);
+      return requests.length === 1 ? { stop: "end", text: "{}" } : classification(req);
+    });
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(2);
+    expect(requests.every((req) => !req.signal.aborted)).toBe(true);
+    expect(t.decision(t.threads[0]!)?.kind).toBe("suggest");
+    expect(t.inCategory(t.threads[0]!)).toBeNull();
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(2);
+  });
+
+  it("cancels before a malformed completion returns to the repair ladder", async () => {
+    const requests: CompletionRequest[] = [];
+    let disable!: () => Promise<unknown>;
+    const t = await publicAssist(1, async (req) => {
+      requests.push(req);
+      await disable();
+      expect(req.signal.aborted).toBe(true);
+      return { stop: "end", text: "{}" };
+    });
+    disable = () => t.client.call("settings.update", { aiCategorize: false });
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(1);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+  });
+
+  it.each(["valid", "malformed", "failure"] as const)("fences late %s completion and preserves explicit fresh-generation queue", async (late) => {
+    const requests: CompletionRequest[] = [];
+    const started = gate(); const answer = gate();
+    const t = await publicAssist(3, async (req) => {
+      requests.push(req);
+      if (requests.length === 1) {
+        started.release();
+        await answer.promise;
+        if (late === "failure") throw new Error("synthetic-late-failure");
+        if (late === "malformed") return { stop: "end", text: "{}" };
+      }
+      return classification(req);
+    });
+    await t.backend.aiAssist.enqueue(t.threads.slice(0, 2));
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    await t.client.call("settings.update", { aiCategorize: false });
+    expect.soft(requests[0]!.signal.aborted).toBe(true);
+    expect.soft(t.backend.aiAssist.pending).toBe(0);
+    await t.client.call("settings.update", { aiCategorize: false });
+    await t.client.call("settings.update", { aiCategorize: true });
+    expect(requests).toHaveLength(1);
+    const fresh = [t.threads[0]!, t.threads[2]!];
+    await t.backend.aiAssist.enqueue(fresh);
+    answer.release();
+    await running;
+    expect.soft(t.decision(t.threads[0]!)).toBeUndefined();
+    await t.backend.aiAssist.enqueue(fresh);
+    expect.soft(t.backend.aiAssist.pending).toBe(2);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(3);
+    expect(t.decision(t.threads[1]!)).toBeUndefined();
+    for (const id of fresh) {
+      expect(t.decision(id)?.kind).toBe("suggest");
+      expect(t.inCategory(id)).toBeNull();
+    }
+    await t.backend.aiAssist.enqueue(fresh);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(3);
+    expect(requests.slice(1).every((req) => !req.signal.aborted)).toBe(true);
+  });
+
+  it("fences old preparation while public disable/reenable admits later explicit work", async () => {
+    let calls = 0;
+    const t = await publicAssist(2, async (req) => { calls++; return classification(req); });
+    const prepared = gate(); const answer = gate();
+    const real = t.backend.ai.bind(t.backend);
+    let first = true;
+    t.backend.ai = async () => {
+      const ai = await real();
+      if (first) { first = false; prepared.release(); await answer.promise; }
+      return ai;
+    };
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await prepared.promise;
+    await t.client.call("settings.update", { aiCategorize: false });
+    await t.client.call("settings.update", { aiCategorize: true });
+    await t.backend.aiAssist.enqueue(t.threads);
+    answer.release();
+    await running;
+    expect.soft(calls).toBe(0);
+    expect.soft(t.backend.aiAssist.pending).toBe(2);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(2);
+    for (const id of t.threads) expect(t.decision(id)?.kind).toBe("suggest");
+  });
+
+  it("keeps completed non-decisions and the attempt budget across public cancellation cycles", async () => {
+    const requests: CompletionRequest[] = [];
+    const started = gate(); const answer = gate();
+    const t = await publicAssist(21, async (req) => {
+      requests.push(req);
+      if (requests.length === 19) { started.release(); await answer.promise; return { stop: "end", text: "{}" }; }
+      const result = classification(req);
+      if (requests.length <= 18) {
+        const parsed = JSON.parse(result.text);
+        parsed.results[0].label = null;
+        return { ...result, text: JSON.stringify(parsed) };
+      }
+      return result;
+    });
+    await t.backend.aiAssist.enqueue(t.threads.slice(0, 18));
+    await t.backend.aiAssist.drain();
+    await t.backend.aiAssist.enqueue([t.threads[18]!]);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    await t.client.call("settings.update", { aiCategorize: false });
+    await t.client.call("settings.update", { aiCategorize: true });
+    await t.backend.aiAssist.enqueue([...t.threads.slice(0, 18), ...t.threads.slice(19)]);
+    answer.release();
+    await running;
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(20);
+    expect(t.backend.aiAssist.pending).toBe(1);
+    expect(t.decision(t.threads[18]!)).toBeUndefined();
+    expect(t.decision(t.threads[19]!)?.kind).toBe("suggest");
+    expect(t.decision(t.threads[20]!)).toBeUndefined();
+    await t.client.call("settings.update", { aiCategorize: false });
+    expect(t.backend.aiAssist.pending).toBe(0);
+    await t.client.call("settings.update", { aiCategorize: true });
+    await t.backend.aiAssist.enqueue([t.threads[20]!]);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(20);
+    expect(t.backend.aiAssist.pending).toBe(1);
+  });
+
+  it("notifies cancellation before later settings notifications await", async () => {
+    const started = gate(); const answer = gate();
+    const notifying = gate(); const notified = gate();
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(1, async (req) => { requests.push(req); started.release(); await answer.promise; return { stop: "end", text: "{}" }; });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    const publish = t.backend.publishPolicy.bind(t.backend);
+    vi.spyOn(t.backend, "publishPolicy").mockImplementation(async () => { notifying.release(); await notified.promise; await publish(); });
+    const updating = t.client.call("settings.update", { aiCategorize: false, localMode: false });
+    await notifying.promise;
+    expect.soft(requests[0]!.signal.aborted).toBe(true);
+    answer.release();
+    await running;
+    notified.release();
+    await updating;
+    expect(requests).toHaveLength(1);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+  });
+
+  it("cancels a committed disable even when its readback sees a concurrent reenable", async () => {
+    const started = gate(); const answer = gate(); const committed = gate(); const returned = gate();
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(1, async (req) => { requests.push(req); started.release(); await answer.promise; return { stop: "end", text: "{}" }; });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    const update = t.backend.store.settings.update.bind(t.backend.store.settings);
+    let paused = false;
+    const spy = vi.spyOn(t.backend.store.settings, "update").mockImplementation(async (key, fallback, fn) => {
+      const result = await update(key, fallback, fn);
+      if (key === "app" && !paused) { paused = true; committed.release(); await returned.promise; }
+      return result;
+    });
+    const disabling = t.client.call("settings.update", { aiCategorize: false });
+    await committed.promise;
+    await t.client.call("settings.update", { aiCategorize: true });
+    returned.release();
+    expect((await disabling).aiCategorize).toBe(true); // readback coalesces the two committed updates
+    spy.mockRestore();
+    expect.soft(requests[0]!.signal.aborted).toBe(true);
+    answer.release();
+    await running;
+    expect(requests).toHaveLength(1);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+  });
+
+  it("does not cancel active work when a disabling settings patch is rejected", async () => {
+    const started = gate(); const answer = gate();
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(1, async (req) => { requests.push(req); started.release(); await answer.promise; return classification(req); });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    await expect(t.client.call("settings.update", { aiCategorize: false, ai: { provider: "openai" } })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(requests[0]!.signal.aborted).toBe(false);
+    answer.release();
+    await running;
+    expect(t.decision(t.threads[0]!)?.kind).toBe("suggest");
+  });
+
+  it.each(["enqueue", "persistence"] as const)("fences an old %s settings read across public disable and reenable", async (stage) => {
+    const started = gate(); const read = gate();
+    let armed = stage === "enqueue";
+    let calls = 0;
+    const t = await publicAssist(1, async (req) => { calls++; armed = true; return classification(req); });
+    const get = t.backend.store.settings.get.bind(t.backend.store.settings);
+    let paused = false;
+    const spy = vi.spyOn(t.backend.store.settings, "get").mockImplementation(async (key, fallback) => {
+      const value = await get(key, fallback);
+      if (key === "app" && armed && !paused) { paused = true; started.release(); await read.promise; }
+      return value;
+    });
+    const record = vi.spyOn(t.backend.store.categorize, "recordAiSuggestion");
+    const running = stage === "enqueue" ? t.backend.aiAssist.enqueue(t.threads) : (async () => { await t.backend.aiAssist.enqueue(t.threads); await t.backend.aiAssist.drain(); })();
+    await started.promise;
+    await t.client.call("settings.update", { aiCategorize: false });
+    await t.client.call("settings.update", { aiCategorize: true });
+    read.release();
+    await running;
+    spy.mockRestore();
+    expect.soft(record).not.toHaveBeenCalled();
+    expect.soft(t.backend.aiAssist.pending).toBe(0);
+    expect.soft(calls).toBe(stage === "enqueue" ? 0 : 1);
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(stage === "enqueue" ? 1 : 2);
+    expect(t.decision(t.threads[0]!)?.kind).toBe("suggest");
+  });
+
+  it("wakes only explicitly queued fresh work when a cancelled drain finally settles", async () => {
+    const started = gate(); const answer = gate(); const freshStarted = gate();
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(2, async (req) => {
+      requests.push(req);
+      if (requests.length === 1) { started.release(); await answer.promise; return { stop: "end", text: "{}" }; }
+      freshStarted.release();
+      return classification(req);
+    });
+    await t.backend.aiAssist.enqueue([t.threads[0]!]);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    await t.client.call("settings.update", { aiCategorize: false });
+    await t.client.call("settings.update", { aiCategorize: true });
+    await t.backend.aiAssist.enqueue([t.threads[1]!]);
+    answer.release();
+    await running;
+    await freshStarted.promise;
+    // A direct drain is unnecessary: fresh enqueue already requested this work.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(requests[1]!.signal).not.toBe(requests[0]!.signal);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+    expect(t.decision(t.threads[1]!)?.kind).toBe("suggest");
+  });
+
+  it("aborts assist work at backend shutdown before awaiting facts retirement", async () => {
+    const started = gate(); const answer = gate(); const retiring = gate(); const retired = gate();
+    const requests: CompletionRequest[] = [];
+    const t = await publicAssist(1, async (req) => { requests.push(req); started.release(); await answer.promise; return { stop: "end", text: "{}" }; });
+    await t.backend.aiAssist.enqueue(t.threads);
+    const running = t.backend.aiAssist.drain();
+    await started.promise;
+    const stopFacts = t.backend.facts.stop.bind(t.backend.facts);
+    vi.spyOn(t.backend.facts, "stop").mockImplementation(async () => { retiring.release(); await retired.promise; await stopFacts(); });
+    const stopping = t.backend.stop();
+    await retiring.promise;
+    expect.soft(requests[0]!.signal.aborted).toBe(true);
+    answer.release();
+    await running;
+    expect.soft(t.decision(t.threads[0]!)).toBeUndefined();
+    retired.release();
+    await stopping;
+    await t.backend.aiAssist.enqueue(t.threads);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(1);
+    expect(t.backend.aiAssist.pending).toBe(0);
   });
 
   it("timestamps actual task starts after slow preparation and expires at exactly one minute", async () => {

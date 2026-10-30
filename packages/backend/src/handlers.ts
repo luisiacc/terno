@@ -749,6 +749,7 @@ export function createHandlers(b: Backend): Handlers {
       try {
         const was = await readSettings(store);
         const next = await updateSettings(store, patch, { endpointIsLocal });
+        b.aiAssist.settingsChanged(patch);
         if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
         if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
         // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them

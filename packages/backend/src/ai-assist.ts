@@ -1,4 +1,5 @@
 import { AiError, type AiTasks } from "@terno/ai";
+import type { SettingsPatch } from "@terno/core/rpc";
 import { captureError } from "@terno/core/diag";
 import { candidateCategories, POLICY, reason, senderVetoed } from "@terno/core";
 import type { MailStore } from "@terno/store";
@@ -32,6 +33,8 @@ export class AiAssist {
   private readonly seen = new Set<number>();
   private readonly calls: number[] = [];
   private readonly abort = new AbortController();
+  private generation = new AbortController();
+  private active: { threadId: number; generation: AbortController } | null = null;
   private running = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -42,8 +45,9 @@ export class AiAssist {
   }
 
   async enqueue(threadIds: readonly number[]): Promise<void> {
-    if (this.abort.signal.aborted || threadIds.length === 0) return;
-    if (!(await this.enabled()) || this.abort.signal.aborted) return;
+    const generation = this.generation;
+    if (!this.current(generation) || threadIds.length === 0) return;
+    if (!(await this.enabled(generation)) || !this.current(generation)) return;
     for (const id of threadIds) {
       if (this.seen.has(id)) continue;
       this.seen.add(id);
@@ -54,6 +58,22 @@ export class AiAssist {
 
   stop(): void {
     this.abort.abort();
+    this.cancelPending();
+  }
+
+  settingsChanged(settings: Pick<SettingsPatch, "aiCategorize" | "autoCategorize">): void {
+    if (this.abort.signal.aborted || (settings.aiCategorize !== false && settings.autoCategorize !== "off")) return;
+    this.cancelPending();
+    this.generation = new AbortController();
+  }
+
+  private current(generation: AbortController): boolean {
+    return generation === this.generation && !generation.signal.aborted && !this.abort.signal.aborted;
+  }
+
+  private cancelPending(): void {
+    this.generation.abort();
+    if (this.active?.generation === this.generation) this.seen.delete(this.active.threadId);
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.discardQueue();
@@ -75,13 +95,17 @@ export class AiAssist {
 
   /** Processes the queue within the rate limit; resolves when it has to wait or is empty. */
   async drain(): Promise<void> {
-    if (this.abort.signal.aborted || this.running) return;
+    const generation = this.generation;
+    if (!this.current(generation) || this.running) return;
     this.running = true;
     try {
       while (this.queue.length) {
         const threadId = this.queue.shift()!;
-        const r = await this.consider(threadId);
-        if (this.abort.signal.aborted || r === "stop") {
+        this.active = { threadId, generation };
+        const r = await this.consider(threadId, generation);
+        this.active = null;
+        if (!this.current(generation)) return;
+        if (r === "stop") {
           this.seen.delete(threadId);
           this.discardQueue();
           break;
@@ -94,20 +118,22 @@ export class AiAssist {
         }
       }
     } finally {
+      this.active = null;
       this.running = false;
+      if (generation !== this.generation && this.queue.length) this.schedule(0);
     }
   }
 
-  private async enabled(): Promise<boolean> {
+  private async enabled(generation: AbortController): Promise<boolean> {
     const settings = await readSettings(this.host.store);
-    return !this.abort.signal.aborted && settings.aiCategorize && settings.autoCategorize !== "off";
+    return this.current(generation) && settings.aiCategorize && settings.autoCategorize !== "off";
   }
 
   /** "stop" when the AI can't run at all (not configured, paused by local mode); "wait" at the rate limit. */
-  private async consider(threadId: number): Promise<"done" | "wait" | "stop"> {
+  private async consider(threadId: number, generation: AbortController): Promise<"done" | "wait" | "stop"> {
     const { store } = this.host;
     const model = this.host.categorizer.model;
-    if (!(await this.enabled()) || this.abort.signal.aborted) return "stop";
+    if (!(await this.enabled(generation)) || !this.current(generation)) return "stop";
     if (!model || !store.isOpen || !(await store.categorize.aiCandidate(threadId))) return "done";
     const set = (await store.categorize.threadFeatures([threadId])).get(threadId);
     if (!set || model.lookAlike(set.encoded)) return "done";
@@ -121,6 +147,7 @@ export class AiAssist {
     if (band.length === 0) return "done";
     const names = new Map((await store.categories.list()).map((c) => [c.id, c.name]));
     const labels = band.map((s) => names.get(s.categoryId)).filter((n): n is string => !!n);
+    if (!this.current(generation)) return "stop";
     const now = Date.now();
     while (this.calls.length && now - this.calls[0]! >= 60_000) this.calls.shift();
     if (this.calls.length >= PER_MINUTE) return "wait";
@@ -131,7 +158,7 @@ export class AiAssist {
       this.host.log("info", "categorization assist skipped", { aiKind: error instanceof AiError ? error.kind : "other" });
       return "stop";
     }
-    if (!(await this.enabled()) || this.abort.signal.aborted) return "stop";
+    if (!(await this.enabled(generation)) || !this.current(generation)) return "stop";
     this.calls.push(Date.now());
     try {
       const { source } = set.root;
@@ -141,14 +168,15 @@ export class AiAssist {
         items: [{ id: String(threadId), text }],
         labels,
         instructions: "The labels are the user's mail categories. Answer null unless the message clearly belongs to one.",
-      }, this.abort.signal);
+      }, generation.signal);
+      if (!this.current(generation)) return "stop";
       if (!r?.label || r.confidence < AI_MIN_CONFIDENCE) return "done";
       const score = band.find((s) => names.get(s.categoryId) === r.label);
       if (!score || !store.isOpen) return "done";
       // the provider took a while: the user, the settings or the model may have spoken since
       const settings = await readSettings(store);
       const current = this.host.categorizer.model;
-      if (this.abort.signal.aborted || !settings.aiCategorize || settings.autoCategorize === "off") return "stop";
+      if (!this.current(generation) || !settings.aiCategorize || settings.autoCategorize === "off") return "stop";
       if (!current) return "done";
       const wrote = await store.categorize.recordAiSuggestion({
         threadId,
@@ -160,8 +188,9 @@ export class AiAssist {
         model: current,
         now: this.host.now(),
       });
-      if (wrote) this.host.notifyChanged([threadId], false);
+      if (wrote && this.current(generation)) this.host.notifyChanged([threadId], false);
     } catch (error) {
+      if (!this.current(generation)) return "stop";
       // Leave failed work eligible for a later enqueue, without scheduling retries.
       this.seen.delete(threadId);
       // an AiError is the provider's verdict (expected); anything else is ours

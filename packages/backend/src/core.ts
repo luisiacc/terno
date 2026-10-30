@@ -543,6 +543,7 @@ export class BackendCore {
     for (const flow of this.signIns.values()) flow.abort();
     this.signIns.clear();
     this.abort.abort();
+    this.aiAssist.stop();
     this.incoming.close();
     const retirement = (async () => {
       let failed: { error: unknown } | undefined;
@@ -562,7 +563,6 @@ export class BackendCore {
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
     await this.facts.stop();
-    this.aiAssist.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     for (const off of this.unwatch.values()) off();
