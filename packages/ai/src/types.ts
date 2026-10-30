@@ -63,6 +63,7 @@ export interface GeneratedFilter {
 }
 
 export interface ClassifyInput<L extends string> {
+  /** Opaque IDs must be unique within this batch. */
   items: { id: string; text: string }[];
   labels: readonly L[];
   instructions: string;
@@ -73,6 +74,7 @@ export interface AiTasks {
   readonly providerId: AiProviderId;
   readonly local: boolean;
   generateFilter(prompt: string, ctx: FilterGenerationContext, signal?: AbortSignal): Promise<GeneratedFilter>;
+  /** One result per input, in input order; malformed responses are repaired or rejected as a whole. */
   classify<L extends string>(input: ClassifyInput<L>, signal?: AbortSignal): Promise<{ id: string; label: L | null; confidence: number }[]>;
   /** declared only; built with the categorization agent */
   embed?: (texts: string[], signal?: AbortSignal) => Promise<Float32Array[]>;

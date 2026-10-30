@@ -395,3 +395,17 @@ Native read-only plan critique: no blockers; three test clarifications adopted. 
 ### RED evidence
 
 Before production edits, `pnpm exec vitest run --project unit packages/ai/src/ai.test.ts packages/backend/src/categorize.test.ts`: **17 failed / 53 passed / 2 files**, no skips. Real structured tasks accepted full-coverage and single-item duplicates, accepted ambiguous duplicate inputs, and exposed synthetic IDs in existing missing/unknown-ID feedback. The actual Backend/SQLite cases proved false suggestions for duplicate claims/identical results, plus suppressed explicit retries for all four duplicate variants. Protection cases already passed for valid reordered label/null/low-confidence batches, opaque IDs and empty batches. Output captured in `/tmp/terno-classification-review.6oNJx4/red.log`; a second pre-fix run with soft initial store assertions retained the same test counts and exposed the false persisted suggestions directly.
+
+### Implementation and scoped GREEN
+
+`createAi.classify` rejects duplicate caller IDs before transport. After normal structured shape validation, a count gate and one Set/Map pass enforce complete, unique, known result identities before returning any result. All identity failures feed the existing whole-response repair ladder with constant detail; no private IDs/text enter these errors. The prompt and public AI interface now state the identity contract. Wire schema, tokens/deadlines, repair limits, confidence clamping, null/low-confidence behavior and `AiAssist` production code are unchanged. Real Backend/SQLite regressions prove no malformed suggestion/category effect and one suggestion after a later explicit enqueue. No shared hot-file dependency was exposed.
+
+Validation before code review (all pass):
+
+- Locked `pnpm install --offline --frozen-lockfile --ignore-scripts`: 728 reused, zero downloads, no scripts.
+- The same two RED files: **70/70 passed**, no skips, after the minimal fix.
+- `pnpm exec vitest run --project unit packages/ai/src/ai.test.ts packages/ai/src/contract.test.ts packages/ai/src/browser.test.ts packages/backend/src/categorize.test.ts packages/backend/src/ai-backend.test.ts packages/backend/src/ai-filter-output.test.ts --reporter=verbose`: **174/174 passed / 6 files**, no skips. Includes SQL/IDB stale-category regression coverage from W10. Log: `/tmp/terno-classification-review.6oNJx4/scoped-tests.log`.
+- `pnpm --filter @terno/ai typecheck`; `pnpm --filter @terno/backend typecheck` (both projects): passed.
+- `pnpm exec oxlint --deny-warnings packages/ai/src/tasks.ts packages/ai/src/types.ts packages/ai/src/ai.test.ts packages/backend/src/categorize.test.ts`; `git diff --check`: passed.
+
+Contract limits: classification batches are all-or-error, and IDs identify distinct input items; duplicate input identities have no supported positional meaning. Empty batches still require valid labels and preserve the existing structured call. Domain identity validation is linear and bounded by the input count after the count gate; shared JSON/Zod parsing still processes the provider's response as before. General parser/transport diagnostics and arbitrary custom `AiTasks` implementations are outside this identity follow-up. No new provider calls, autonomous retry, UI, ingestion/perf changes or broad gates.

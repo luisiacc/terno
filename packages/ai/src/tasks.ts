@@ -96,22 +96,26 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
       // i18n-ignore: a caller's bug (the backend always passes labels), for developers
       if (input.labels.length === 0) throw new AiError("classify needs at least one label", "invalid_output");
       const ids = input.items.map((i) => i.id);
+      const itemIds = new Set(ids);
+      // i18n-ignore: ambiguous caller input, rejected before contacting the provider
+      if (itemIds.size !== ids.length) throw new AiError("classify needs unique item ids", "invalid_output");
       const zod = z.object({
         results: z.array(z.object({ id: z.string(), label: z.enum(input.labels as [L, ...L[]]).nullable(), confidence: z.number() })),
       });
       return run(
         {
-          system: `You assign each item exactly one of the given labels, or null when none fits. ${input.instructions}`,
+          system: `You assign each item exactly one of the given labels, or null when none fits. Return exactly one result for each item id, with no duplicate or extra ids. ${input.instructions}`,
           prompt: `Labels: ${JSON.stringify(input.labels)}\nItems: ${JSON.stringify(input.items)}`,
           schema: { name: "classification", zod },
           example: { results: [{ id: ids[0] ?? "1", label: input.labels[0]!, confidence: 0.8 }] },
           maxTokens: Math.min(8000, 200 + 60 * input.items.length),
           validate: ({ results }) => {
-            const byId = new Map(results.map((r) => [r.id, r]));
-            const missing = ids.filter((id) => !byId.has(id));
-            const unknown = results.filter((r) => !ids.includes(r.id)).map((r) => r.id);
-            if (missing.length || unknown.length) {
-              return { ok: false, error: [missing.length && `missing ids ${missing.join(", ")}`, unknown.length && `unknown ids ${unknown.join(", ")}`].filter(Boolean).join("; ") };
+            const error = "classification results must contain each input id exactly once and no other ids";
+            if (results.length !== ids.length) return { ok: false, error };
+            const byId = new Map<string, (typeof results)[number]>();
+            for (const result of results) {
+              if (!itemIds.has(result.id) || byId.has(result.id)) return { ok: false, error };
+              byId.set(result.id, result);
             }
             return { ok: true, value: ids.map((id) => ({ id, label: byId.get(id)!.label, confidence: Math.max(0, Math.min(1, byId.get(id)!.confidence)) })) };
           },
