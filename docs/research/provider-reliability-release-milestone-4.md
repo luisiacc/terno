@@ -25,3 +25,8 @@ Complete logs, exact stage identities, cleanup and dependency checks: `/tmp/tern
 ## Landed print repair
 
 `435b550c` closes the frame-focused print Escape gap through the existing bridge. Root67unit+42browser cases/types/lint pass after local rebase, including the original path and pinned deferred-focus regression. One review finding on port configuration was regression-fixed; no second round. [Spec/evidence/limits](../plans/drafts/release4-print-escape.md). This does not complete the interrupted release milestone; autocomplete and remaining full gates stay open.
+
+
+## Landed measurement correction; runtime gates remain open
+
+`4c14bb93` removes the pending-ghost assertion's whole-body ARIA snapshot work, proven18,006→0body measurements without changing latency clocks/caps/content. Root focused regression/types/lint pass; one review0findings. Worker full affected file9pass/2fail:10MBend paired typing and200chip paint remain RED; no waiver or repeat. [Evidence and limits](../plans/drafts/release4-autocomplete-latency.md). Separate runtime repair scopes follow; full release remains unqualified.
