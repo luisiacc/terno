@@ -346,6 +346,7 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
 
 /** Open stored work under the same private intent and destination ownership as Reply/Forward. */
 export async function openStoredDraft(key: string): Promise<void> {
+  if (getApp().compose?.key === key && useDrafts.getState().drafts[key]?.sending) return;
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();

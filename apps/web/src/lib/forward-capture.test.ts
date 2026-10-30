@@ -1,9 +1,10 @@
+// @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import type { Account, MessageDetail, ThreadDetail } from "@terno/core";
 import type { DraftInput } from "@terno/store";
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: (method: string, params: unknown) => method === "drafts.sourceContext" ? Promise.resolve({ threadId: 7, accountId: 1 }) : rpc(method, params) } }));
-const { openCompose } = await import("./compose");
+const { openCompose, supersedeCompose } = await import("./compose");
 const { replyFields } = await import("./compose-fields");
 const { createDraft, editDraft, fieldsOf, forgetDraft, setDraftTransport, useDrafts } = await import("./drafts");
 const { getApp, setApp } = await import("~/state/app");
@@ -20,7 +21,7 @@ function setup(detail: ThreadDetail) {
   setApp({ accounts: [account], selectedId: 7, checked: new Set(), scope: null, draftShown: null, draftFocus: null });
   setDraftTransport(async (_method, p) => ({ ...(p as DraftInput), id: 9, generation: "generation", revision: 1, updatedAt: 0 }));
 }
-afterEach(() => { resetForwardFiles(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.mockReset(); vi.unstubAllGlobals(); resetSnacks(); });
+afterEach(() => { supersedeCompose(); resetForwardFiles(); for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.mockReset(); vi.unstubAllGlobals(); resetSnacks(); });
 
 // plan 60: files that aren't on the device never stop a forward; it opens and asks for them again
 it.each(["pending", "unavailable", undefined] as const)("%s capture opens the Forward at once and asks for the original's files again", async (attachmentState) => {
@@ -66,14 +67,14 @@ it("source account removed during asset validation cannot create a Forward", asy
   expect(Object.values(useDrafts.getState().drafts)).toEqual([]);
 });
 
-it.each(["edit", "account", "discard", "navigation", "intent", "recovery", "sending", "capture", "focus"])("asset validation fences late %s without overwriting work or Undo", async (scenario) => {
+it.each(["edit", "account", "discard", "navigation", "intent", "recovery", "sending", "capture", "focus", "focus event"])("asset validation fences late %s without overwriting work or Undo", async (scenario) => {
   const detail = thread(); setup(detail);
   const key = createDraft(replyFields("reply", detail, account));
   editDraft(key, { bodyText: "keep" });
   let release!: () => void, reached!: () => void;
   const gate = new Promise<void>((r) => { release = r; }), waiting = new Promise<void>((r) => { reached = r; });
   rpc.mockImplementation(async (method: string) => { if (method === "threads.get") return thread({ attachmentState: "pending" }); reached(); await gate; return ref; });
-  const document = { activeElement: {} }; vi.stubGlobal("document", document);
+  const other = document.createElement("button"); document.body.append(other);
   const undo = registerUndo(() => {});
   const opening = openCompose("forward", 7); await waiting;
   if (scenario === "edit") editDraft(key, { bodyText: "later" });
@@ -83,11 +84,13 @@ it.each(["edit", "account", "discard", "navigation", "intent", "recovery", "send
   if (scenario === "intent") await openCompose("reply", 7);
   if (scenario === "recovery" || scenario === "sending") useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, ...(scenario === "recovery" ? { recovery: { state: "missing" as const } } : { sending: true }) } } }));
   if (scenario === "capture") invalidateThreads([7]);
-  if (scenario === "focus") document.activeElement = {};
+  const active = scenario === "focus" ? vi.spyOn(document, "activeElement", "get").mockReturnValue(other) : null;
+  if (scenario === "focus event") other.focus();
   const before = useDrafts.getState().drafts[key];
   release(); await opening;
   if (scenario === "focus") { expect(useDrafts.getState().drafts[key]!.mode).toBe("forward"); expect(getApp().draftFocus).toBeNull(); }
   else { expect(useDrafts.getState().drafts[key]).toEqual(before); expect(useSnack.getState().undo).toBe(undo); }
+  active?.mockRestore(); other.remove();
 });
 
 it("files captured by the retry join the Forward once, bound to its original after navigation", async () => {

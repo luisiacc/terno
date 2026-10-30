@@ -59,8 +59,10 @@ for (const theme of ["light", "dark"] as const) {
       await addRecipients(page, "compose-to", '"Author, Ana" <ana@example.test>');
       await page.getByTestId("compose-to").pressSequentially("unfinished@");
       await page.getByTestId("compose-show-cc").click();
+      await expect(page.getByTestId("compose-cc")).toBeFocused();
       await addRecipients(page, "compose-cc", "copy@example.test");
       await page.getByTestId("compose-show-bcc").click();
+      await expect(page.getByTestId("compose-bcc")).toBeFocused();
       await addRecipients(page, "compose-bcc", "blind@example.test");
       await page.getByTestId("compose-subject").pressSequentially(subject);
       await page.getByTestId("attachment-input").setInputFiles({ name: "recovery.bin", mimeType: "application/octet-stream", buffer: bytes });

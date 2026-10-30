@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Plan 24: which page List shows, the ways in and out of it, and what Split
  * keeps exactly as it was. Node, the RPC client mocked.
@@ -6,12 +7,8 @@ import type { ThreadSummary } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {
-  const html = { classList: { contains: () => false, toggle() {} }, dataset: {}, setAttribute() {}, removeAttribute() {}, style: { setProperty() {}, removeProperty() {} } };
   const g = globalThis as Record<string, unknown>;
-  g.document = { documentElement: html, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, head: { appendChild() {} }, createElement: () => ({}), activeElement: null, body: {} };
-  g.window = globalThis;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  g.localStorage = { setItem() {}, getItem: () => null, removeItem() {} };
   g.requestAnimationFrame = () => 0;
   return { handlers: {} as Record<string, (params: unknown) => Promise<unknown>>, calls: [] as string[] };
 });

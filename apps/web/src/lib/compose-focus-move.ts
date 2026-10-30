@@ -167,7 +167,7 @@ export function focusSoon(selector: string, root: HTMLElement | null, frames = 1
       const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) changed = true; };
       document.addEventListener("focusin", observe, true);
       let allowed: boolean | void;
-      try { allowed = onDone?.(true); } finally { document.removeEventListener("focusin", observe, true); }
+      try { allowed = onDone?.(!focusable(el)); } finally { document.removeEventListener("focusin", observe, true); }
       if (!changed && request === focusRequest && (!valid || allowed === true) && focusable(el)) place(el, text, () => request === focusRequest && target(selector, root) === el);
     });
   };

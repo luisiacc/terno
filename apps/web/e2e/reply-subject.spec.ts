@@ -54,11 +54,12 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       const cc = mode === "replyAll" ? [teammate] : [];
       await expect(chipsOf(page, "compose-to")).toHaveText(to.map((a) => a.name));
       const displayedTo = await recipientEmails(page, "compose-to");
-      if (mode !== "replyAll") await page.getByTestId("compose-show-cc").click();
+      if (mode !== "replyAll") { await page.getByTestId("compose-show-cc").click(); await expect(page.getByTestId("compose-cc")).toBeFocused(); }
       const displayedCc = await recipientEmails(page, "compose-cc");
       expect(displayedTo).toEqual(to.map((a) => a.email));
       expect(displayedCc).toEqual(cc.map((a) => a.email));
       await page.getByTestId("compose-show-bcc").click();
+      await expect(page.getByTestId("compose-bcc")).toBeFocused();
       expect(await recipientEmails(page, "compose-bcc")).toEqual([]);
       if (mode !== "forward") await page.getByTestId("compose-show-subject").click();
       await page.getByTestId("compose-subject").fill("New synthetic topic");

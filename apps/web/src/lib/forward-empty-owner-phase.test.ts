@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Account, ThreadDetail } from "@terno/core";
 
@@ -30,7 +31,6 @@ it.each(["UI roundtrip", "source roundtrip", "account roundtrip", "mode roundtri
     if (scenario === "rejected save") throw { code: "BAD_REQUEST" };
     return { ...input, id: 9, generation: "stable", revision: calls, updatedAt: 0 };
   });
-  vi.stubGlobal("document", { activeElement: {} });
   let stop = () => {};
   if (scenario === "reentrant restoration") stop = useDrafts.subscribe((state, previous) => {
     const current = state.drafts[key];

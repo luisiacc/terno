@@ -81,8 +81,11 @@ it.each([true, false])("honors reply focus with the Reader frame %s loading", as
     expect(h.frames.size).toBeGreaterThan(0);
     if (frameFirst) await h.flushFrame();
     await act(async () => { h.publish(); load.resolve(h.detail); await opening; });
+    const readerFocus = vi.spyOn(h.host.querySelector<HTMLElement>('[data-testid="reader"]')!, "focus");
     await h.flushFrame();
+    expect(readerFocus).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-body"]') ?? h.host.querySelector('[data-testid="compose-body-loading"]'));
+    readerFocus.mockRestore();
   } finally { load.resolve(h.detail); await h.cleanup(); }
 });
 
@@ -427,4 +430,33 @@ it("cannot publish an existing-draft focus when source validation resolves at Re
     expect(composeFocusPending(7)).toBe(false); expect(useApp.getState().draftFocus).toBeNull();
     expect(Object.values(h.useDrafts.getState().drafts)).toHaveLength(1); expect(document.activeElement).toBe(h.anchor);
   } finally { waiting.resolve(); if (opening) await opening; await h.cleanup(); error.mockRestore(); }
+});
+
+it.each(["ordinary", "control", "successor", "hold", "inert"] as const)("Reader defers to exact compose completion: %s", async (scenario) => {
+  const h = await setup(), load = deferred<ThreadDetail>(); gate.load.mockReturnValue(load.promise);
+  const { subscribeComposeFocus } = await import("~/lib/compose");
+  const { acquireDraftHold } = await import("~/lib/drafts");
+  let off = () => {}, release = () => {}, triggered = false;
+  try {
+    let opening!: Promise<void>; await act(async () => { opening = h.openCompose("reply", 7); });
+    await h.flushFrame();
+    await act(async () => { h.publish(); load.resolve(h.detail); await opening; });
+    const reader = h.host.querySelector<HTMLElement>('[data-testid="reader"]')!;
+    const editor = h.host.querySelector<HTMLElement>('[data-testid="compose-body"]') ?? h.host.querySelector<HTMLElement>('[data-testid="compose-body-loading"]');
+    expect(editor).not.toBeNull();
+    if (scenario === "inert") editor!.setAttribute("inert", "");
+    off = subscribeComposeFocus(() => {
+      if (triggered) return;
+      triggered = true;
+      if (scenario === "control") h.other.focus();
+      if (scenario === "successor") h.supersedeCompose();
+      if (scenario === "hold") { const done = acquireDraftHold(); expect(done).not.toBeNull(); release = done!; }
+    });
+    for (let i = 0; i < 13; i++) await h.flushFrame();
+    expect(triggered).toBe(true);
+    if (scenario === "ordinary") expect(document.activeElement).toBe(editor);
+    else if (scenario === "inert") expect(document.activeElement).toBe(reader);
+    else if (scenario === "control") expect(document.activeElement).toBe(h.other);
+    else expect(document.activeElement).not.toBe(editor);
+  } finally { off(); release(); load.resolve(h.detail); await h.cleanup(); }
 });
