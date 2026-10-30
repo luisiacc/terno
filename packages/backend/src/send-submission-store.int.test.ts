@@ -149,6 +149,20 @@ for (const adapter of ["SQL", "IDB"] as const) describe(`${adapter} proven submi
     expect((await store.ops.get(child))?.state).toBe("queued");
   });
 
+  it.each(["succeeded", "failed"] as const)("public Clear retains the normal %s operation outcome", async (state) => {
+    const t = await setup(adapter, true); let store = t.store;
+    await store.ops.claimReady(2, 1);
+    if (state === "succeeded") await store.ops.complete(t.opId, undefined, 3); else await store.ops.fail(t.opId, "Synthetic refusal", false, 3);
+    const before = (await store.ops.get(t.opId))!;
+    const backendStore = store;
+    const backend = new Backend({ store: backendStore, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null });
+    const [transport, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "copy-terminal", origin: "renderer" }); const client = new RpcClient(transport);
+    cleanup.push(async () => { client.close(); if (backendStore.isOpen) await backend.stop(); });
+    await expect(client.call("ops.forgetSentCopy", { opId: t.opId })).resolves.toEqual({ ok: true });
+    expect(await store.sendCopies.get(t.opId)).toBeNull(); await backend.stop(); store = await t.open();
+    expect(await store.ops.get(t.opId)).toMatchObject({ state, target_json: before.target_json, payload_json: before.payload_json });
+  });
+
   it("public Clear refuses an unknown operation without accepted saved proof", async () => {
     const t = await setup(adapter, true), store = t.store;
     await store.ops.claimReady(2, 1); await store.ops.markUnknown(t.opId, "Unproven submission", 3);
