@@ -1,5 +1,4 @@
 import { CODE_WORDS } from "@terno/i18n";
-import { QUOTE_HEADER } from "./categorize/features";
 import { baseSubject, normalizeText } from "./text";
 
 /** A code is offered only on mail at most this old (plan 69). */
@@ -25,6 +24,11 @@ const WORDS = new RegExp(
  * number ("650 253 0000"), a reference ("123456/789"), a date or a time.
  */
 const CANDIDATE = /(?<![\p{L}\p{N}_#$€£¥+/@=]|[\p{L}\p{N}][.,-]|\p{N}\s)(\d{3}[ -]?\d{3}|\d(?:\s\d){5})(?![\p{L}\p{N}_%]|[.,/:-]? ?\p{N})/gu;
+/**
+ * Where replied-to history starts ("On … wrote:", "El … escribió:", "-- Original message --"), anywhere in a line:
+ * a list snippet runs a body's lines together.
+ */
+const QUOTE_HEADER = /(?:^|\s)(?:el .{0,120}? escribi[oó]:|on .{0,120}? wrote:|-{2,} ?(?:mensaje (?:original|reenviado)|original message|forwarded message) ?-{2,})/i;
 const URL = /\b(?:https?:\/\/|www\.|mailto:)\S+/gi;
 
 interface Span {

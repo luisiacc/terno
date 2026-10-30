@@ -31,13 +31,14 @@ afterEach(() => {
 });
 
 const chip = () => host.querySelector<HTMLElement>('[data-testid="row-code"]');
+const { useThreadCode } = await import("./codes");
+const { CodeChip } = await import("~/components/code-chip");
+// one component type, so showing a changed thread updates the mounted row (as the list does)
+function Row({ th }: { th: ThreadSummary }) {
+  const code = useThreadCode(th);
+  return code ? <CodeChip threadId={th.id} code={code} /> : null;
+}
 async function showRow(th: ThreadSummary) {
-  const { useThreadCode } = await import("./codes");
-  const { CodeChip } = await import("~/components/code-chip");
-  function Row({ th }: { th: ThreadSummary }) {
-    const code = useThreadCode(th);
-    return code ? <CodeChip threadId={th.id} code={code} /> : null;
-  }
   await act(async () => root.render(<Row th={th} />));
 }
 const click = () => act(async () => chip()!.click());
@@ -125,4 +126,22 @@ it("threadCode: the menu reads the same code", async () => {
   const { threadCode } = await import("./codes");
   expect(threadCode(thread(), NOW)).toBe("048291");
   expect(threadCode(thread(), NOW + HOURS_2)).toBeNull();
+});
+
+// Codex review round 4
+it("a row on screen for a while still offers the code of mail arriving now", async () => {
+  await showRow(thread({ snippet: "Hello", subject: "Hi" }));
+  expect(chip()).toBeNull();
+  await act(async () => vi.advanceTimersByTime(10 * 60_000));
+  await showRow(thread({ snippet: "Your new code is 551234", subject: "Hi", lastDate: Date.now(), messageCount: 2 }));
+  expect(chip()!.textContent).toBe("551234");
+});
+
+it("a reply doesn't bring back the first message's code from the subject", async () => {
+  await showRow(thread({ subject: "Your code 111111", snippet: "Thanks, that worked!", messageCount: 2 }));
+  expect(chip()).toBeNull();
+  await showRow(thread({ subject: "Your code 111111", snippet: "Your new code is 222222", messageCount: 2 }));
+  expect(chip()!.textContent).toBe("222222");
+  const { threadCode } = await import("./codes");
+  expect(threadCode(thread({ subject: "Your code 111111", snippet: "Thanks", messageCount: 2 }), NOW)).toBeNull();
 });

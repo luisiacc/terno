@@ -71,7 +71,7 @@ const STOPWORDS: ReadonlySet<string> = new Set(
 );
 
 // Quoted replies repeat the previous message: only what this message adds counts.
-export const QUOTE_HEADER = /^(el .{0,120} escribi[oó]:|on .{0,120} wrote:|-{2,} ?(mensaje (original|reenviado)|original message|forwarded message) ?-{2,})/im;
+const QUOTE_HEADER = /^(el .{0,120} escribi[oó]:|on .{0,120} wrote:|-{2,} ?(mensaje (original|reenviado)|original message|forwarded message) ?-{2,})/im;
 
 /** The body text a message contributes: first 2 KB, quoted lines and replied-to history removed. */
 export function ownBodyText(body: string | null): string {

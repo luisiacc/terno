@@ -59,22 +59,30 @@ export function useCodeState(key: string): { copied: boolean; used: boolean } {
   return { copied, used: wasUsed };
 }
 
-/** The code a thread offers now: its newest message at most two hours old, read from the subject and the snippet. */
-export function threadCode(thread: Pick<ThreadSummary, "subject" | "snippet" | "lastDate">, now: number): string | null {
-  return codeFresh(thread.lastDate, now) ? findCode(thread.subject, thread.snippet) : null;
+/**
+ * The code a thread offers now: its newest message at most two hours old, read from the snippet (the newest
+ * message's) and the subject. The subject is the first message's, so it counts only while that is the only one: a
+ * reply must not bring back the original's code.
+ */
+export function threadCode(thread: Pick<ThreadSummary, "subject" | "snippet" | "lastDate" | "messageCount">, now: number): string | null {
+  return codeFresh(thread.lastDate, now) ? codeOf(thread) : null;
 }
+
+const codeOf = (thread: Pick<ThreadSummary, "subject" | "snippet" | "messageCount">) => findCode(thread.messageCount > 1 ? "" : thread.subject, thread.snippet);
 
 /**
  * A row's code. Older threads cost one subtraction per render; a fresh one is read once (memoized) and one timer, set
  * to the exact expiry, takes the chip away. Nothing runs while idle.
  */
 export function useThreadCode(thread: ThreadSummary): string | null {
-  const [now, setNow] = useState(Date.now);
-  const fresh = codeFresh(thread.lastDate, now);
-  const code = useMemo(() => (fresh ? findCode(thread.subject, thread.snippet) : null), [fresh, thread.subject, thread.snippet]);
+  // the clock is read again when newer mail arrives: a row on screen for a while must not see it as old
+  const [clock, setClock] = useState(() => ({ now: Date.now(), date: thread.lastDate }));
+  if (clock.date !== thread.lastDate) setClock({ now: Date.now(), date: thread.lastDate });
+  const fresh = codeFresh(thread.lastDate, clock.date === thread.lastDate ? clock.now : Date.now());
+  const code = useMemo(() => (fresh ? codeOf(thread) : null), [fresh, thread.subject, thread.snippet, thread.messageCount]);
   useEffect(() => {
     if (!code) return;
-    const id = setTimeout(() => setNow(Date.now()), Math.max(0, codeExpiry(thread.lastDate) - Date.now()) + 1);
+    const id = setTimeout(() => setClock({ now: Date.now(), date: thread.lastDate }), Math.max(0, codeExpiry(thread.lastDate) - Date.now()) + 1);
     return () => clearTimeout(id);
   }, [code, thread.lastDate]);
   return code;

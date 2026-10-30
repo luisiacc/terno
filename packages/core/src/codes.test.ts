@@ -95,6 +95,13 @@ describe("verification codes (plan 69)", () => {
     }
   });
 
+  // Codex review round 4: a list snippet runs the body's lines together
+  it("ignores quoted history in a snippet too", () => {
+    expect(text("Thanks On Thu, Oct 29, 2026 at 9:00 AM Acme <no-reply@acme.test> wrote: Your code is 111111")).toBeNull();
+    expect(text("Gracias El jue, 29 oct 2026 a las 9:00, Acme escribió: Tu código es 111111")).toBeNull();
+    expect(text("FYI ---------- Forwarded message --------- Your code is 111111")).toBeNull();
+  });
+
   it("has words for every language Terno ships", () => {
     for (const id of LOCALE_IDS) expect(CODE_WORDS[id].length).toBeGreaterThan(0);
   });

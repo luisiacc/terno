@@ -126,3 +126,11 @@ The chip now lives in the list row, not the message body.
 - **Perf:** an older thread costs one subtraction per row render; a fresh one, one memoized regex pass over at most ~1.2 kB. No extra row renders, except the one at expiry.
 
 Tests: `lib/codes.test.tsx` covers copy, check, outlined, restart, shared state across remounts, a new code in the same thread, clipboard refusal, the 2-hour window and the single expiry timer. `codes.spec.ts` (`@design`) covers the chip on a plain and a selected row, copying without opening the thread, the 5 s settle, axe on the list in light and dark, the thread menu's copy, no drag from the chip (fails without the `drag-install` guard), and nothing for 3-hour-old mail.
+
+### Codex review of the move (round 4)
+
+1. **A row on screen for a while saw new mail as old:** its clock was read at mount. The clock is read again whenever the thread's date changes.
+2. **The subject is the thread's first message's**, while the snippet and date are the newest's, so a reply could bring back (and make fresh again) the original's code. The subject counts only while the thread has one message.
+3. **A snippet runs the body's lines together,** so "On … wrote:" no longer started a line and a quoted code came through. The quote header is now found anywhere in a line (`codes.ts` keeps its own pattern; the categorizer's is untouched).
+
+Each has a test that fails without the fix. The list e2e (codes, layout, drag and drop, selection, triage: 183) and the list perf gates (`j` at key repeat, scrolling, render counts: 36) pass.
