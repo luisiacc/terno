@@ -322,3 +322,45 @@ describe("photos from Google, on without signing in now (plan 71)", () => {
     expect((await errorOf(client.call("icons.googlePhotos", { accountId: imap.id, on: true, later: true })))?.code).toBe("BAD_REQUEST");
   });
 });
+
+// Codex review round 1 (plan 71)
+describe("photos waiting for a sign-in: races (plan 71)", () => {
+  it("web: a sign-in's consent arriving after the switch went off turns nothing on", async () => {
+    const { client, f, gmail } = await setup({ web: true });
+    f.inspectEmail = gmail.email;
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    const s = await client.call("icons.authorizeGoogle", { accountId: gmail.id, accessToken: "t", expiresIn: 3600, scope: `${MAIL} ${CONTACTS}`, ifPending: true });
+    expect(s.googlePhotos[String(gmail.id)]).toBeUndefined();
+    expect(f.photoWants).toEqual([]);
+  });
+
+  it("switching a waiting account off doesn't cancel its reconnect under way: mail signs in, photos stay off", async () => {
+    const { backend, client, f, gmail } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const connect = backend.options.providers.connectGmail.bind(backend.options.providers);
+    vi.spyOn(backend.options.providers, "connectGmail").mockImplementation(async (o) => {
+      await held;
+      return connect(o);
+    });
+    const reconnect = client.call("accounts.reconnect", { id: gmail.id });
+    await until(() => backend.signIns.has(gmail.id));
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: false });
+    release();
+    await expect(reconnect).resolves.toMatchObject({ id: gmail.id });
+    const s = await client.call("settings.update", {});
+    expect(s.googlePhotos[String(gmail.id)]).toBeUndefined();
+    expect(s.googlePhotosPending).toEqual([]);
+    expect(f.photoWants).toEqual([]);
+  });
+
+  it("the reconnect answers after the people are listed: a People API that's off shows at once", async () => {
+    const { client, f, gmail } = await setup();
+    f.photos = { contacts: [], connections: "disabled" };
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("accounts.reconnect", { id: gmail.id });
+    expect((await client.call("settings.update", {})).googlePhotos[String(gmail.id)]).toMatchObject({ apiDisabled: true });
+  });
+});

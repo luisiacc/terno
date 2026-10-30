@@ -869,7 +869,8 @@ export const contract = {
   "icons.googlePhotos": m<AppSettings>()(z.object({ accountId: id, on: z.boolean(), later: z.boolean().optional() }), { timeoutMs: 300_000 }),
   /** plan 22, web: the token Google's consent gave for that account's photos (refused unless it opens the same mailbox) */
   "icons.authorizeGoogle": m<AppSettings>()(
-    z.object({ accountId: id, accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), scope: z.string().max(2000) }),
+    // plan 71 `ifPending`: a sign-in's consent counts only if the account still waits (not turned off meanwhile)
+    z.object({ accountId: id, accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), scope: z.string().max(2000), ifPending: z.boolean().optional() }),
     { timeoutMs: 120_000 },
   ),
 } as const;

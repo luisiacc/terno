@@ -190,6 +190,9 @@ export async function connectExistingGoogle(b: Backend, account: Account, flow: 
   return result;
 }
 
+/** Plan 71: reconnects asking Google for photos waiting on them (photos switched off meanwhile don't cancel them). */
+export const photoReconnects = new WeakSet<AbortController>();
+
 /** Explicit credential changes retain one owner through preparation, durable commit and state publication. */
 export async function reconnectAccount(b: Backend, accountId: number, password: string | undefined): Promise<Account> {
   const flow = beginSignIn(b, accountId);
@@ -211,6 +214,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       // plan 71: photos switched on to come with this sign-in: Google asks for the contacts scopes too
       photos = await googlePhotosPending(b.store, accountId);
       b.assertSignIn(accountId, flow);
+      if (photos) photoReconnects.add(flow);
       result = await connectExistingGoogle(b, account, flow, photos ? [...GMAIL_SCOPES, CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE] : undefined);
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
     }
@@ -249,7 +253,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
         } else if (state.connections || state.otherContacts) {
           await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, state));
           b.assertSignIn(accountId, flow);
-          void b.icons.syncPeople(accountId, state).catch(() => {});
+          // listed before the reconnect answers, as the switch's consent does: Settings then shows what Google said (People API off)
+          await b.icons.syncPeople(accountId, state, flow.signal).catch(() => {});
         } else await b.credentialWrite(accountId, flow, () => setGooglePhotosPending(b.store, accountId, false));
         b.assertSignIn(accountId, flow);
       }

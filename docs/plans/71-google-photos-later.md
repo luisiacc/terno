@@ -49,3 +49,13 @@ Eleven points, against the code:
 
 - `icons/google.test.ts`: `later` asks and fetches nothing; the next reconnect asks the contacts scopes and turns photos on; unticked ends the wait; a non-waiting account signs in with mail's scopes only; off and removal clear it; the service's writes don't; IMAP is refused.
 - `google-photos-later.spec.ts` (`@design`, light and dark): the switch turns on with no popup or Google request, the hint and "Sign in now", axe, and off clears it.
+
+## What the code review changed
+
+Codex found five problems; each now has a test that fails without the fix.
+
+1. **Hovering or focusing "Sign in now" (web) loaded Google's script**, reaching Google before the user chose to sign in. The preload is gone: the click loads it, as the switch always did (`google-pending.test.tsx`).
+2. **A late web consent could turn photos back on after off.** The web's sign-in passes `ifPending`, and `icons.authorizeGoogle` reads the wait again before turning anything on (`google.test.ts`).
+3. **Off cancelled a reconnect under way** (off starts its own sign-in flow, which supersedes). A reconnect asking for photos marks its flow (`photoReconnects`); off during it only ends the wait, and the reconnect, reading it again, turns nothing on. The check is synchronous: anything else supersedes older flows exactly as before (the renewal suite's ordering tests rely on it, and a first attempt that read settings first broke one under IndexedDB).
+4. **Web Add account reaching a waiting mailbox and declining the contacts** left it waiting. The wait is read for the account the sign-in returns (`google-pending.test.tsx`).
+5. **The reconnect answered before the people were listed**, so a People API that was off never showed. The listing runs inside the flow, as the switch's consent does (`google.test.ts`).

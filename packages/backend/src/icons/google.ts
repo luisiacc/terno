@@ -12,8 +12,8 @@ import { RpcError, type AppSettings, type GooglePhotoState } from "@terno/core/r
 import { L } from "@terno/i18n";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "../core";
-import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential } from "../identity";
-import { readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
+import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential, photoReconnects } from "../identity";
+import { googlePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
 
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 export const PHOTO_SCOPES = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE];
@@ -41,6 +41,13 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
     await gmailAccount(b, accountId);
     const settings = await readSettings(b.store);
     if (!settings.googlePhotos[String(accountId)]) await setGooglePhotosPending(b.store, accountId, true);
+    return readSettings(b.store);
+  }
+  // plan 71: off while the account's reconnect is asking Google for these photos: that sign-in carries on (it reads the
+  // wait again before turning anything on). Decided synchronously, so anything else supersedes older flows as before.
+  const running = b.signIns.get(accountId);
+  if (!on && running && photoReconnects.has(running)) {
+    await setGooglePhotosPending(b.store, accountId, false);
     return readSettings(b.store);
   }
   const flow = beginSignIn(b, accountId);
@@ -95,7 +102,7 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
 }
 
 /** icons.authorizeGoogle (web): the token must open this account's mailbox and still cover mail; it never creates one. */
-export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; accessToken: string; expiresIn: number; scope: string }): Promise<AppSettings> {
+export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; accessToken: string; expiresIn: number; scope: string; ifPending?: boolean }): Promise<AppSettings> {
   const tokens = b.options.providers.gmailTokens;
   // i18n-ignore: a wiring mistake (only the web build calls this), for developers
   if (!tokens) throw new RpcError("UNAVAILABLE", "This host turns photos on with icons.googlePhotos.");
@@ -108,5 +115,7 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
   tokens.set(account.id, p.accessToken, b.now() + p.expiresIn * 1000);
   await b.resumeAuth(account.id);
+  // plan 71: a sign-in's consent, read again now: turned off while Google's popup was open, it turns nothing on
+  if (p.ifPending && !(await googlePhotosPending(b.store, account.id))) return readSettings(b.store);
   return turnOn(b, account.id, photoStateFrom(granted));
 }

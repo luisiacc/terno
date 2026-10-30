@@ -54,9 +54,6 @@ function GooglePhotosRow({ account, state, pending }: { account: Account; state:
               size="sm"
               disabled={busy}
               data-testid={`google-photos-now-${account.id}`}
-              // the web's popup must open in the click itself: Google's script is loaded before it
-              onPointerEnter={() => WEB && void import("~/web/google").then((g) => g.preloadGoogle())}
-              onFocus={() => WEB && void import("~/web/google").then((g) => g.preloadGoogle())}
               onClick={() => void signInNow()}
             >
               {t("settings.appearance.googlePhotos.signInNow")}
