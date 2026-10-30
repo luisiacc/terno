@@ -105,7 +105,7 @@ function Notice({ accounts }: { accounts: Account[] }) {
               <span className="block text-balance break-words text-muted-foreground">{waits}</span>
             </span>
           </PopoverTrigger>
-          <PopoverContent side="top" align="start" sideOffset={6} className="w-80 gap-3" data-testid="sign-in-popover" data-sign-in-ui>
+          <PopoverContent side="top" align="start" sideOffset={6} className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto" data-testid="sign-in-popover" data-sign-in-ui>
             <SignInPanel accounts={accounts} onLater={later} />
           </PopoverContent>
         </Popover>
@@ -170,7 +170,7 @@ export function SignInMarker({ account }: { account: Account }) {
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-      <PopoverContent side="right" align="start" sideOffset={8} className="w-80 gap-3" data-testid="sign-in-popover" data-sign-in-ui>
+      <PopoverContent side="right" align="start" sideOffset={8} className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto" data-testid="sign-in-popover" data-sign-in-ui>
         <SignInPanel
           accounts={[account]}
           onLater={() => {

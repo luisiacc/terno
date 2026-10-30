@@ -196,7 +196,7 @@ function PasswordForm({ account, attempt, autoFocus }: { account: Account; attem
 function AttemptError({ attempt }: { attempt: Attempt | null }) {
   if (!attempt?.error) return null;
   return (
-    <div role="alert" className="flex flex-col gap-0.5 text-xs leading-relaxed" data-testid="sign-in-error">
+    <div role="alert" className="flex flex-col gap-0.5 text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="sign-in-error">
       <p className="text-destructive-ink">{attempt.error.message}</p>
       {attempt.error.detail && <p className="text-muted-foreground">{attempt.error.detail}</p>}
     </div>
