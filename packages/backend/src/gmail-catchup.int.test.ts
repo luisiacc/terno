@@ -4,8 +4,9 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IdbMailStore } from "@terno/idb";
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IDBFactory } from "fake-indexeddb";
-import { createGmailApiProvider, type ProviderRegistry } from "@terno/mail/portable";
+import { createGmailApiProvider, type ProviderContext, type ProviderRegistry } from "@terno/mail/portable";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -30,6 +31,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const getStatuses = new Map<string, number>();
   let now = Date.now();
   let snapshot: string[] = [];
+  let context: ProviderContext | undefined;
+  let holdHistory: ((send: () => void) => void) | undefined;
   const add = (id: string, record = false) => {
     const raw = ["From: Synthetic <sender@example.test>", "To: me@example.test", `Subject: ${id}`, `Message-ID: <${id}@example.test>`,
       "MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="b"', "", "--b", "Content-Type: text/plain", "", `Body ${id}`,
@@ -65,7 +68,10 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
       const entries = history.filter((h) => BigInt(h.id) > BigInt(url.searchParams.get("startHistoryId")!));
       const next = url.searchParams.get("pageToken");
       if (next !== null && next !== "history/+?=next") return json({}, 400);
-      return json({ historyId: String(historyId), history: entries.slice(next ? 2 : 0, next ? undefined : 2), ...(!next && entries.length > 2 && { nextPageToken: "history/+?=next" }) });
+      const payload = { historyId: String(historyId), history: entries.slice(next ? 2 : 0, next ? undefined : 2), ...(!next && entries.length > 2 && { nextPageToken: "history/+?=next" }) };
+      const hold = holdHistory; holdHistory = undefined;
+      if (hold) { hold(() => json(payload)); return; }
+      return json(payload);
     }
     const id = url.pathname.replace("/messages/", "");
     if (getStatuses.has(id)) return json({}, getStatuses.get(id));
@@ -83,6 +89,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   const providers: ProviderRegistry = {
     create(ctx) {
+      context = ctx;
       const provider = createGmailApiProvider({ ...ctx, saveCursor: async (value) => { await ctx.saveCursor(value); await afterCheckpoint?.(value); } }, {
         endpoints: { api }, tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(),
       });
@@ -108,6 +115,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;
   return {
     baseline, account, requests, ingested, messages, add, mutate, cursor, get abort() { return abort; },
+    get context() { return context!; },
+    holdHistory(hook: (send: () => void) => void) { holdHistory = hook; },
     get backend() { return backend; }, get terminal() { return String(historyId); },
     afterIngest(hook: () => void | Promise<void>) { afterIngest = hook; }, afterCheckpoint(hook: (value: unknown) => void | Promise<void>) { afterCheckpoint = hook; },
     listStatus(status: number) { listStatus = status; }, nextToken(value: string) { nextToken = value; }, emptyFirst() { emptyFirst = true; }, repeatToken() { repeatToken = true; },
@@ -593,4 +602,94 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
   });
 
+});
+
+
+describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public sync requests", (kind) => {
+  it("does not spin after a failed trailing pass and a later request recovers", async () => {
+    const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id); t.requests.length = 0;
+    const [local, remote] = createMemoryTransportPair();
+    t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); let release = () => {}, entered!: () => void;
+    const held = new Promise<void>((resolve) => { entered = resolve; });
+    cleanup.push(async () => { release(); rpc.close(); });
+    t.holdHistory((send) => { release = send; entered(); });
+    const first = t.backend.syncAccount(t.account.id); await held;
+    t.mutate(); await rpc.call("sync.now", { accountId: t.account.id });
+    t.historyStatus(503); release(); release = () => {}; await first;
+    await expect.poll(() => t.requests.filter((u) => u.pathname === "/history").length).toBe(2);
+    await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.lastError).toBeTruthy();
+    for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(2);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+    t.historyStatus(200);
+    await t.backend.syncAccount(t.account.id);
+    await t.assertFinal();
+    await t.reopen(); await t.assertFinal();
+  });
+  it("runs a third pass for a new public request during the trailing pass", async () => {
+    const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id); t.requests.length = 0;
+    const [local, remote] = createMemoryTransportPair();
+    t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local);
+    let releaseFirst = () => {}, releaseSecond = () => {}, enterFirst!: () => void, enterSecond!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { enterFirst = resolve; });
+    const secondEntered = new Promise<void>((resolve) => { enterSecond = resolve; });
+    cleanup.push(async () => { releaseFirst(); releaseSecond(); rpc.close(); });
+    t.holdHistory((send) => { releaseFirst = send; enterFirst(); });
+    const first = t.backend.syncAccount(t.account.id); await firstEntered;
+    t.add("middle", true);
+    await rpc.call("sync.now", { accountId: t.account.id });
+    t.holdHistory((send) => { releaseSecond = send; enterSecond(); });
+    releaseFirst(); releaseFirst = () => {}; await first; await secondEntered;
+    t.add("last", true);
+    await rpc.call("sync.now", { accountId: t.account.id });
+    expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(2);
+    releaseSecond(); releaseSecond = () => {};
+    await expect.poll(async () => (await t.cursor() as { historyId?: string })?.historyId).toBe(t.terminal);
+    await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
+    expect(t.requests.filter((u) => u.pathname === "/history").map((u) => u.searchParams.get("startHistoryId"))).toEqual([t.baseline, t.baseline, (BigInt(t.baseline) + 1n).toString()]);
+    const rows = (await t.backend.store.debug.snapshot()).messages;
+    expect(rows.find((m) => m.providerMsgId === "last")?.bodyText).toContain("Body last");
+    await t.reopen();
+    expect(await t.cursor()).toEqual({ historyId: t.terminal });
+    expect((await t.backend.store.debug.snapshot()).messages.map((m) => m.providerMsgId).sort()).toEqual(["archive", "deleted", "last", "middle", "neighbor", "read"]);
+  });
+  it.each([false, true] as const)("freezes H1 with concurrent requests: %s", async (trigger) => {
+    const t = await mailbox(kind); t.seed();
+    const managed = t.context.google;
+    expect(managed).toBeDefined();
+    const requests = vi.spyOn(managed!, "request");
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+    t.requests.length = 0;
+    let release!: () => void, entered!: () => void;
+    const held = new Promise<void>((resolve) => { entered = resolve; });
+    t.holdHistory((send) => { release = send; entered(); });
+    const [local, remote] = createMemoryTransportPair();
+    t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => { release?.(); rpc.close(); });
+    const first = t.backend.syncAccount(t.account.id);
+    await held;
+    t.mutate();
+    if (trigger) {
+      await Promise.all([rpc.call("sync.now", { accountId: t.account.id }), rpc.call("sync.now", { accountId: t.account.id })]);
+      expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(1);
+    }
+    release(); release = () => {}; await first;
+    if (trigger) {
+      await expect.poll(async () => (await t.cursor() as { historyId?: string })?.historyId).toBe(t.terminal);
+      await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
+      expect(t.requests.filter((u) => u.pathname === "/history").map((u) => u.searchParams.get("pageToken"))).toEqual([null, null, "history/+?=next"]);
+      await t.assertFinal();
+    } else {
+      expect(await t.cursor()).toEqual({ historyId: t.baseline });
+      expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(1);
+      expect((await t.backend.store.debug.snapshot()).messages.map((m) => m.providerMsgId).sort()).toEqual(["archive", "deleted", "neighbor", "read"]);
+    }
+    expect(requests).toHaveBeenCalled();
+    await t.reopen();
+    if (trigger) await t.assertFinal();
+    else expect(await t.cursor()).toEqual({ historyId: t.baseline });
+  });
 });
