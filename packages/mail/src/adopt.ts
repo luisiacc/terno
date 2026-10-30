@@ -117,11 +117,18 @@ function breather(budgetMs = 4): () => Promise<void> {
 export async function sortIds(ids: Iterable<number>): Promise<Float64Array> {
   const breathe = breather();
   const list: number[] = [];
+  let ordered = true;
   for (const id of ids) {
+    if (list.length > 0 && id < list[list.length - 1]!) ordered = false;
     list.push(id);
     if (list.length % 5000 === 0) await breathe();
   }
   let from = Float64Array.from(list);
+  if (ordered) {
+    // Ordered recovery ids need neither sorting nor a second full merge buffer.
+    await breathe();
+    return from;
+  }
   const RUN = 16_384;
   for (let i = 0; i < from.length; i += RUN) {
     from.subarray(i, Math.min(i + RUN, from.length)).sort();
