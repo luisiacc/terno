@@ -228,3 +228,7 @@ The localized roundtrip, portable graph, fixture-label and selection-source fail
 ## OPFS terminal verification
 
 The missing direct OPFS verification is now complete on unchanged conformance/runtime source at `3e0beb36`: the original Chromium-worker SQLite-WASM sahpool case passes, with 304 nested passes, one existing legacy-schema skip, zero failures and done=true/error=null. Complete/markSent pin release and independent ownership/reopen/crash controls pass. No source edits or full gate replay. Evidence: `/tmp/terno-opfs-verification-43935e92/README.md` and `state.json`. Later source/catalog test-only changes do not alter this graph. Main still has other release failures.
+
+## Landed repair: early Reply typing
+
+`6906b10c` preserves native text/caret/range across asynchronous source admission and the validated focus handoff. The original immediate-typing case is unchanged; 29 selected browser cases pass across macOS/Lumen/Atelier, including faithful deferred-editor controls. Root's direct, stored-view and reentrant-focus controls, types, lint and whitespace pass after rebase. All three findings from the single native code review were addressed; no extra round. [Exact scope and limits](../plans/drafts/release-early-compose-input.md). Full renderer/performance/release clearance remains open.
