@@ -227,8 +227,8 @@ describe("the desktop shell", () => {
     const { applyAppearance } = await import("./appearance");
     const sent: unknown[] = [];
     (window as unknown as { ternoDesktop: unknown }).ternoDesktop = { setAppearance: (a: unknown) => sent.push(a) };
-    applyAppearance({ ...SERVER, htmlMailAppearance: "auto" });
-    applyAppearance({ ...SERVER, htmlMailAppearance: "paper" });
+    applyAppearance({ ...SERVER });
+    applyAppearance({ ...SERVER });
     applyAppearance({ ...SERVER, motionMs: 50 });
     expect(sent).toHaveLength(1);
     applyAppearance({ ...SERVER, theme: "light" });

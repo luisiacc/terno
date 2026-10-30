@@ -27,3 +27,21 @@ test("switching the theme and the HTML mail setting doesn't reload the open mail
   // the same document all along: repainted, never reloaded
   expect(await frame.evaluate((f: HTMLIFrameElement) => (window as unknown as { __loads: number; __doc: Document | null }).__loads === 0 && (window as unknown as { __doc: Document | null }).__doc === f.contentDocument)).toBe(true);
 });
+
+// Codex review (plan 72): a repaint keeps the root's own style (a mail past the height cap scrolls inside its frame)
+test("a mail taller than the cap still scrolls after the theme changes", async ({ app: page, server }) => {
+  const [account] = await server.backend.store.accounts.list();
+  const html = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;
+  const { touched } = await server.backend.store.sync.ingest([{
+    accountId: account!.id, providerMsgId: "tall-repaint", providerThreadId: null, rfcMessageId: "tall-repaint@x.test", inReplyTo: null, references: [],
+    from: { name: "Long", email: "long@x.test" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Very tall repaint", date: E2E_NOW, snippet: "Line 0", bodyText: null, bodyHtml: html, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: html.length,
+  }], { applyFilters: false, now: E2E_NOW, classifier: null });
+  await selectThread(page, touched[0]!, 'subject:"Very tall repaint"');
+  const frame = page.locator("iframe[data-mail]").first();
+  const overflow = () => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.documentElement.style.overflowY);
+  await expect.poll(overflow).toBe("auto");
+  await page.evaluate(() => (window as unknown as Terno).__terno.updateAppearance({ theme: "dark" }));
+  await expect.poll(() => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.documentElement.style.getPropertyValue("--m-scheme"))).toBe("dark");
+  expect(await overflow()).toBe("auto");
+});

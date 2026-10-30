@@ -36,19 +36,22 @@ function rememberHeight(key: number, h: number) {
  */
 interface MailLook {
   mail: "paper" | "themed";
-  /** the root's custom properties, as a style attribute */
+  /** the root's custom properties */
+  vars: Record<string, string>;
+  /** the same, as a style attribute for the document's first paint */
   style: string;
 }
 
 /** A mail document's colors, scheme and padding for the painted theme. */
 function mailLook(paper: boolean, mode: string): MailLook {
   const c = mailColors()[paper ? "paper" : "themed"];
-  return { mail: paper ? "paper" : "themed", style: `--m-bg:${c.bg};--m-fg:${c.fg};--m-link:${c.link};--m-scheme:${paper ? "light" : mode};--m-pad:${paper ? "16px" : "0"}` };
+  const vars = { "--m-bg": c.bg, "--m-fg": c.fg, "--m-link": c.link, "--m-scheme": paper ? "light" : mode, "--m-pad": paper ? "16px" : "0" };
+  return { mail: paper ? "paper" : "themed", vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
 }
 
-/** Repaints a loaded mail document in place (no reload). */
+/** Repaints a loaded mail document in place (no reload); one property at a time, so the root's own (its scrolling) stay. */
 function paint(root: HTMLElement, look: MailLook): void {
-  root.setAttribute("style", look.style);
+  for (const [k, v] of Object.entries(look.vars)) root.style.setProperty(k, v);
   root.dataset.mail = look.mail;
 }
 

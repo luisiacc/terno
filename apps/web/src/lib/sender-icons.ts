@@ -39,10 +39,19 @@ let flushQueued = false;
 const refetched = new Set<string>();
 let wired = false;
 /**
- * After a reset, the icon an on-screen address showed, kept until its new answer can be drawn (its bytes are here):
- * a reset never blanks the avatars on screen (they'd flash to initials and back).
+ * After a reset, the on-screen addresses being asked again: each keeps drawing its icon until its new answer can be
+ * drawn, so a reset never blanks the avatars on screen (they'd flash to initials and back).
  */
-const held = new Map<string, IconRef>();
+const held = new Set<string>();
+/** A held address's new icon, drawn once its own bytes arrive (never on another request's answer). */
+const replacing = new Map<string, IconRef>();
+
+/** Done holding: the address shows what `entry` says from now on. */
+function release(email: string, entry?: Entry): void {
+  held.delete(email);
+  replacing.delete(email);
+  if (entry) setEntry(email, entry);
+}
 /** `shown` cache per address, so useSyncExternalStore sees the same object until something changes */
 const snapshots = new Map<string, ShownIcon | null>();
 
@@ -105,12 +114,13 @@ function apply(answers: Record<string, IconAnswer>): void {
       }, AGAIN_MS);
       continue;
     }
-    if (held.has(email) && a !== null && a !== "again" && getData(a) === undefined && dataKey(a) !== dataKey(held.get(email)!)) {
-      held.set(email, a);
+    const now = entries.get(email);
+    if (held.has(email) && a !== null && a !== "again" && getData(a) === undefined && !(now?.state === "ref" && dataKey(now.ref) === dataKey(a))) {
+      replacing.set(email, a);
       dataBatch.set(dataKey(a), a);
       continue;
     }
-    held.delete(email);
+    release(email);
     if (a === "again") {
       setEntry(email, { state: "idle" });
       setTimeout(() => visible.has(email) && request(email), AGAIN_MS);
@@ -136,11 +146,14 @@ function wire(): void {
         entries.delete(email);
         snapshots.delete(email);
       }
+      // nothing off screen is held or replaced: an answer from before the reset can't come back later (a source just
+      // turned off must not show again)
+      held.clear();
+      replacing.clear();
       batch.clear();
       dataBatch.clear();
       for (const email of visible) {
-        const e = entries.get(email);
-        if (e?.state === "ref") held.set(email, e.ref);
+        if (entries.get(email)?.state === "ref") held.add(email);
         batch.add(email);
       }
       schedule();
@@ -204,7 +217,7 @@ async function lookup(emails: string[]): Promise<void> {
   } catch {
     // the initials stay (a held icon too); a later mount or scroll asks again
     for (const e of emails) {
-      held.delete(e);
+      release(e);
       if (entries.get(e)?.state === "asked") entries.delete(e);
     }
   }
@@ -215,6 +228,13 @@ async function fetchData(refs: IconRef[]): Promise<void> {
   try {
     got = await client.call("icons.data", { ids: [...new Set(refs.map((r) => r.id))] });
   } catch {
+    // a replacement whose bytes didn't come: its address looks up again (never stuck on the old icon)
+    const keys = new Set(refs.map(dataKey));
+    for (const [email, ref] of replacing) {
+      if (!keys.has(dataKey(ref))) continue;
+      release(email, { state: "idle" });
+      if (visible.has(email)) request(email);
+    }
     return;
   }
   const gone = new Set<string>();
@@ -223,11 +243,11 @@ async function fetchData(refs: IconRef[]): Promise<void> {
     if (url) putData(dataKey(ref), url);
     else gone.add(ref.id);
   }
-  // held icons whose replacement just arrived: swapped in one step
-  for (const [email, ref] of held) {
-    if (getData(ref) === undefined && !gone.has(ref.id)) continue;
-    held.delete(email);
-    setEntry(email, gone.has(ref.id) ? { state: "none" } : { state: "ref", ref });
+  // replacements whose own bytes just arrived: swapped in one step (another request's answer settles none of them)
+  const keys = new Set(refs.map(dataKey));
+  for (const [email, ref] of replacing) {
+    if (!keys.has(dataKey(ref))) continue;
+    release(email, gone.has(ref.id) ? { state: "none" } : { state: "ref", ref });
   }
   // bytes the backend no longer has (evicted, a lost file): those addresses look the icon up again, once
   if (gone.size) {
@@ -373,5 +393,5 @@ export const __senderIconsForTests = {
   get inflight() {
     return inflight;
   },
-  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched, held].forEach((m) => m.clear()),
+  reset: () => [entries, data, visible, batch, dataBatch, snapshots, listeners, refetched, held, replacing].forEach((m) => m.clear()),
 };

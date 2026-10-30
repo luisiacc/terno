@@ -28,3 +28,12 @@ A probe (Settings open over the inbox, a setting flipped, every list mutation, `
 - `appearance.test.ts`: the shell hears an appearance once, and again only when it changes.
 
 Each fails without its fix.
+
+## What the code review changed
+
+Codex found four problems; each now has a test that fails without the fix.
+
+1. **A photo from a source just turned off could come back.** A reset forgot off-screen addresses but not their pending replacements; one arriving later reinstalled the photo. A reset now clears every hold and replacement before holding what's on screen again.
+2. **A replacement whose bytes failed left the old icon stuck** (a later request saw the old icon's bytes and asked nothing). A failed data request releases its replacements: the address looks up again.
+3. **Another address's bytes arriving released a hold**, so the new icon was drawn before its own bytes and the avatar flashed after all. "Held through a reset" (`held`) and "its new icon on the way" (`replacing`) are now separate: a replacement is drawn only from its own data answer.
+4. **Repainting the mail dropped its scrolling.** Writing the root's whole style attribute removed the `overflow-y: auto` a message past the 20,000 px cap gets. The variables are now set one by one (`mail-repaint.spec.ts`: a 28,000 px message still scrolls after the theme changes).

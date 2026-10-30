@@ -11,7 +11,7 @@ const fake = vi.hoisted(() => {
   g.window = globalThis;
   // a frame = a macrotask here
   g.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
-  const pending: { method: string; params: { emails?: string[]; ids?: string[] }; resolve(v: unknown): void }[] = [];
+  const pending: { method: string; params: { emails?: string[]; ids?: string[] }; resolve(v: unknown): void; reject(e: unknown): void }[] = [];
   const listeners: ((e: { icons: Record<string, IconAnswer>; reset?: boolean }) => void)[] = [];
   let inflight = 0;
   let maxInflight = 0;
@@ -24,7 +24,7 @@ const fake = vi.hoisted(() => {
       call: (method: string, params: { emails?: string[]; ids?: string[] }) => {
         inflight++;
         maxInflight = Math.max(maxInflight, inflight);
-        return new Promise((resolve) => pending.push({ method, params, resolve: (v) => (inflight--, resolve(v)) }));
+        return new Promise((resolve, reject) => pending.push({ method, params, resolve: (v) => (inflight--, resolve(v)), reject: (e) => (inflight--, reject(e)) }));
       },
       on: (_e: string, l: (e: { icons: Record<string, IconAnswer>; reset?: boolean }) => void) => {
         listeners.push(l);
@@ -178,5 +178,70 @@ describe("a reset doesn't flash the list", () => {
     expect(shown("ana@gmail.com")?.url).toBe("data:p:ana");
     await answerAll(() => ({ "ana@gmail.com": null }));
     expect(shown("ana@gmail.com")).toBeNull();
+  });
+});
+
+// Codex review (plan 72)
+describe("holding through a reset, the edge cases", () => {
+  const ref = (id: string, v = 1) => ({ id, v, kind: "site" as const, px: 32, full: false });
+  const showing = (email: string, a: ReturnType<typeof ref>) => {
+    store.visible.add(email);
+    store.entries.set(email, { state: "ref", ref: a });
+    store.data.set(`${a.id}:${a.v}`, `data:${a.id}`);
+  };
+  const reset = () => fake.listeners.forEach((l) => l({ icons: {}, reset: true }));
+  const take = (method: string) => {
+    const i = fake.pending.findIndex((p) => p.method === method);
+    return fake.pending.splice(i, 1)[0]!;
+  };
+
+  it("a replacement from before a reset never comes back for an address that left the screen", async () => {
+    showing("ana@gmail.com", ref("d:gmail.com"));
+    reset();
+    await frame();
+    take("icons.lookup").resolve({ "ana@gmail.com": ref("p:ana") });
+    await frame();
+    await frame();
+    const data = take("icons.data");
+    // scrolled away, then the photo source turned off
+    store.visible.delete("ana@gmail.com");
+    reset();
+    data.resolve({ "p:ana": "data:photo" });
+    await frame();
+    expect(store.entries.has("ana@gmail.com")).toBe(false);
+    expect(shown("ana@gmail.com")).toBeNull();
+  });
+
+  it("a replacement whose bytes fail to come is looked up again, not stuck on the old icon", async () => {
+    showing("ana@acme.com", ref("d:acme.com"));
+    reset();
+    await frame();
+    take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2) });
+    await frame();
+    await frame();
+    take("icons.data").reject(new Error("offline"));
+    await frame();
+    await frame();
+    expect(fake.pending.some((p) => p.method === "icons.lookup" && p.params.emails?.includes("ana@acme.com"))).toBe(true);
+  });
+
+  it("another address's bytes arriving don't release a hold: the old icon stays until the new one's are here", async () => {
+    showing("ana@acme.com", ref("d:acme.com"));
+    // another avatar on screen whose bytes are on their way
+    store.visible.add("bob@bob.com");
+    store.entries.set("bob@bob.com", { state: "ref", ref: ref("d:bob.com") });
+    reset();
+    store.request("bob@bob.com");
+    await frame();
+    await frame();
+    const other = fake.pending.find((p) => p.method === "icons.data");
+    if (other) {
+      fake.pending.splice(fake.pending.indexOf(other), 1);
+      other.resolve({ "d:bob.com": "data:bob" });
+      await frame();
+    }
+    take("icons.lookup").resolve({ "ana@acme.com": ref("d:acme.com", 2), "bob@bob.com": ref("d:bob.com") });
+    await frame();
+    expect(shown("ana@acme.com")?.url).toBe("data:d:acme.com");
   });
 });
