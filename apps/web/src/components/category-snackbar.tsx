@@ -279,8 +279,6 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     refocusMore.current = false;
     moreRef.current?.focus();
   }, [custom]);
-  // the tooltip is portaled out of the bar: reading it holds the countdown like hovering the bar does
-  useEffect(() => () => resume("tip"), []);
 
   /** "View": the topic as a search, so the user sees exactly what would be added. */
   const view = () => {
@@ -381,7 +379,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
           {/* not one button: its words, More… and View are controls of their own; the words get a line of their own, under the label */}
           <div className="flex min-w-0 flex-col text-xs" data-testid="snackbar-topic">
             <div className="flex h-7 min-w-0 items-center gap-2">
-              <Tooltip onOpenChange={(open) => (open ? pause("tip") : resume("tip"))}>
+              <Tooltip>
                 <TooltipTrigger
                   render={
                     <button

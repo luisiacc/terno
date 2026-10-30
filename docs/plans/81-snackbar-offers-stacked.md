@@ -8,7 +8,7 @@
 
 > lets go with your recommendation, also i think we'll need to stack the buttons vertical instead of the sides otehrwise they won't see the full text
 
-The recommendation chosen: label the topic offer like chip 1 ("Everything mentioning", parallel to "Everything from …"), keep its count at the end, and give it a tooltip that names the live words ("Moves every conversation that mentions “api” and “pagos” to Facturas …").
+The recommendation chosen: label the topic offer like chip 1 ("Everything mentioning", parallel to "Everything from …"), keep its count at the end, and give it a tooltip that names the live words ("Adds every conversation that mentions “api” and “pagos” to Facturas …").
 
 ## What exists
 
@@ -24,14 +24,14 @@ The recommendation chosen: label the topic offer like chip 1 ("Everything mentio
 **The topic line.** `[4] Everything mentioning  api ✓  pagos ✓  … More…        View  4`. The apply button is "[4] Everything mentioning"; the toggles follow and wrap onto a second line when they don't fit (6 words max), so every word is visible. "View" and the count sit at the right, the count in the same column as the other lines'. With "More…" open the input takes the toggles' place (placeholder "words or a search…").
 
 **Tooltip** on the topic's apply button (hover and keyboard focus, Base UI `Tooltip`), and the same text as its accessible description (`aria-describedby`, a hidden span):
-- words checked: "Moves every conversation that mentions “api” and “pagos” to Facturas, from all your mail. Click a word to add or remove it."
-- More… text: "Moves every conversation that matches “recibo from:x” to Facturas, from all your mail."
-- nothing checked: "Check a word to move every conversation that mentions it to Facturas."
+- words checked: "Adds every conversation that mentions “api” and “pagos” to Facturas, from all your mail. Click a word to add or remove it."
+- More… text: "Adds every conversation that matches “recibo from:x” to Facturas, from all your mail."
+- nothing checked: "Check a word to add every conversation that mentions it to Facturas."
 Words are joined with `formatList` (locale-aware "and"/"y"), quoted per locale (`“…”`, `«…»`).
 
 **Strings** (`en`/`es`): `category.topic` "Everything mentioning" / "Todo lo que menciona"; `category.topicPlaceholder` "words or a search…" / "palabras o una búsqueda…"; new `category.topicName` (the input's name), `category.topicWord`, `category.topicHelp`, `category.topicHelpQuery`, `category.topicHelpEmpty`.
 
-Keys 1–5, z, Esc, focus handling, the 10 s lifetime and pause-on-hover/focus are unchanged. Hovering the tooltip trigger is inside the dock, so it pauses the lifetime as before.
+Keys 1–5, z, Esc, focus handling, the 10 s lifetime and pause-on-hover/focus are unchanged. Hovering the trigger or the tooltip pauses the lifetime as before: the tooltip is a React portal of the bar, so the bar's `onPointerLeave` doesn't fire on the way onto it.
 
 ## Tests
 
@@ -47,3 +47,24 @@ No new requests: the counts are the same lazy `categorize.count` calls. The tool
 
 - The similar snackbar's chips (archive/spam/trash; short labels, plan 63).
 - What the topic matches (`termsQuery`, the term ranking).
+
+## Revisions after the Codex review (plan)
+
+1. `snack.spec`'s ≤ 84 px bound for the categorization bar is replaced by a stacked bound (title + 28 px per line + the topic's word lines); the similar bar keeps its compact checks.
+2. A new `snack.spec` test: with the taller categorization bar up, the list's last row and the keyboard's row stay above it.
+3. The topic isn't one fixed-height line: its label line is h-7 and its words get their own wrapping line under it, indented to the label (the first try, words beside the label, wrapped into a narrow column five lines tall in the screenshot).
+4. The topic line is a plain container; its apply button, words, More…, View are siblings (no nested buttons).
+5. The apply button is `aria-disabled`, not `disabled`, with nothing checked: it stays focusable, its tooltip and description say how to start, and `run` ignores it.
+6. Reading the tooltip holds the countdown. A `"tip"` pause reason was tried and dropped: the tooltip is a React portal of the bar, so the bar's `onPointerLeave` never fires on the way onto it; the test covers it.
+7. The description is our own hidden span via `aria-describedby` (Base UI's tooltip adds none); tested in the words, More… and empty states.
+8. Esc in More… gives focus back to More… (it used to drop to the body).
+9. A blank More… still files the checked words, so the help says the words.
+10. `visual.spec`'s readiness waits for a bare count; baselines regenerated and looked at.
+11. `Chip`/`Strip` stay as they are for the similar snackbar; the category bar has its own `Offer`.
+12. Spanish input name said "archivar" (archive); now "añadir a la categoría".
+
+## What the Codex code review changed
+
+- The help said "Moves", but `categorize.apply` only adds the category (a thread keeps its others): every string now says "Adds"/"Añade".
+- The e2e checks the visible tooltip after toggling a word and with More… text, not only the description, and opens it from the keyboard (Tab onto 4).
+- The countdown test hovers the tooltip itself for 11 s, then replaces the bar with 1 while the tooltip is open and checks the next snack still expires.

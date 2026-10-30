@@ -231,24 +231,59 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions ${words} to Facturas`));
     await apply.hover();
     const help = page.getByTestId("snackbar-topic-help");
-    await expect(help).toHaveText(`Moves every conversation that mentions ${words} to Facturas, from all your mail. Click a word to add or remove it.`);
-    // it follows the words
+    await expect(help).toHaveText(`Adds every conversation that mentions ${words} to Facturas, from all your mail. Click a word to add or remove it.`);
+    // it follows the words, the visible tooltip too
     await pressed.first().click();
     await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions “${b}” to Facturas`));
+    await apply.hover();
+    await expect(help).toContainText(`mentions “${b}” to Facturas`);
     await pressed.first().click();
     // nothing checked: 4 is still reachable and says how to start, and does nothing
     await expect(apply).toHaveAttribute("aria-disabled", "true");
-    await expect(apply).toHaveAccessibleDescription("Check a word to move every conversation that mentions it to Facturas.");
+    await expect(apply).toHaveAccessibleDescription("Check a word to add every conversation that mentions it to Facturas.");
     await apply.click({ force: true });
     await expect(snack).toBeVisible();
+    // from the keyboard too: Tab onto 4 shows the same help
+    await page.mouse.move(900, 100);
+    await snack.getByTestId("snackbar-sender").focus();
+    await page.keyboard.press("Tab");
+    await expect(apply).toBeFocused();
+    await expect(help).toHaveText("Check a word to add every conversation that mentions it to Facturas.");
 
     // More…: the description says the text; Esc brings More… back with focus on it
     await snack.getByTestId("snackbar-more").click();
     await snack.getByTestId("snackbar-query").fill("recibo");
-    await expect(apply).toHaveAccessibleDescription("Moves every conversation that matches “recibo” to Facturas, from all your mail.");
+    await expect(apply).toHaveAccessibleDescription("Adds every conversation that matches “recibo” to Facturas, from all your mail.");
+    await apply.hover();
+    await expect(help).toHaveText("Adds every conversation that matches “recibo” to Facturas, from all your mail.");
     await snack.getByTestId("snackbar-query").press("Escape");
     await expect(snack.getByTestId("snackbar-more")).toBeFocused();
     await expect(snack).toBeVisible();
+  });
+
+  test("plan 81: reading 4's tooltip holds the countdown (a React portal of the bar: still its hover); the next snack still runs", async ({ app: page, server }) => {
+    test.setTimeout(60_000);
+    const { facturas, target } = uberSetup(server);
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    const snack = page.getByTestId("category-snackbar");
+    await snack.getByTestId("snackbar-topic-apply").hover();
+    const help = page.getByTestId("snackbar-topic-help");
+    await expect(help).toBeVisible();
+    // onto the tooltip (portaled out of the bar's DOM): still reading
+    await help.hover();
+    await page.waitForTimeout(11_000);
+    await expect(help).toBeVisible();
+    await expect(snack).toBeVisible();
+    // the tooltip open from the keyboard while 1 replaces the bar: the next snack still expires
+    await page.mouse.move(900, 100);
+    await snack.getByTestId("snackbar-sender").focus();
+    await page.keyboard.press("Tab");
+    await expect(help).toBeVisible();
+    await page.keyboard.press("1");
+    const added = page.getByTestId("snack").filter({ hasText: /added to Facturas/ });
+    await expect(added).toBeVisible();
+    await expect(added).toHaveCount(0, { timeout: 15_000 });
   });
 
   test("View shows the same set bulk apply would file: no account or review scope carried over", async ({ app: page, server }) => {

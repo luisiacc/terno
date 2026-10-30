@@ -65,7 +65,7 @@ export interface Snack extends Omit<SnackInput, "id" | "duration" | "tone" | "ba
   news?: boolean;
 }
 
-export type PauseReason = "hover" | "focus" | "hidden" | "blocked" | "busy" | "tip";
+export type PauseReason = "hover" | "focus" | "hidden" | "blocked" | "busy";
 
 /** Elapsed time of the current snack: `elapsed` until `since` (null while paused), then running. */
 export interface Countdown {
