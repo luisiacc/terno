@@ -88,7 +88,7 @@ All three tests fail on the code before these fixes.
 
 Also: `settings-edits.test.ts` expected the old 90-day default.
 
-## Own review after round 2
+## Own review after round 2 (Codex: no findings on the fix)
 
 1. **The pill said the window in other words than the dialog.** "The last year" read "the last 365 days". The pill now uses the dialog's label: "The last year, newest first". Test: the pill unit test for 365 and 730 days.
 2. **A refused login during the preview's bodies was taken for a refused body.** The check looked at the raw error before reading it as the server meant it, so a raw `authenticationFailed` was skipped. It's now read first, like `tolerate` does, and stops the pass with a sign-in to redo. Test: a raw refused login on the first preview body asks for a sign-in (fails before the fix).
