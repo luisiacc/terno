@@ -863,3 +863,10 @@ Review-cap coverage backlog (no demonstrated remaining product defect):
 | Internal native drag plus full prior-byte comparison after mixed paste/IME/drop | Low-priority grouping qualification; OS IME is also unqualified |
 
 Report dispositions/counts and previously held feature backlog remain unchanged. This is scoped qualification, not release-green. Next: fourth full release milestone on main, all required gates once, including a fresh macOS package and default packaged smoke. Historical failed gates and parked branches stay preserved.
+
+
+## Fourth release milestone interrupted; two repair scopes — 2026-10-30
+
+Typecheck/lint,11,863unit+1,840normalWASM and49Web cases pass on the recorded initial source. E2E has1print-sheet Escape failure (1,539pass/7skip). UIperf recorded2autocomplete failures before main changed fromac4235f1toec51bd3d; its remaining counts are unknown. Runner stopped safely on drift and restored outputs. Backendperf/build/freshsmoke were never run; no release-green claim or preserved-old-package substitution. [Actual inventory](provider-reliability-release-milestone-4.md); `/tmp/terno-release-milestone4-ofu_bc1t/report.md`.
+
+Next isolated current-main repairs are disjoint: print-sheet Escape/focus, and5MB/10MBautocomplete start latency/paired typing. The interrupted heap case is not attributed as a product failure. Preserve the user's diagnostics main commits; no gate retries seeking green, budget changes or new report slices. Report dispositions/counts and held feature backlog remain unchanged.
