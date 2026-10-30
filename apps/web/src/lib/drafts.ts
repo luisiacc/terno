@@ -833,7 +833,7 @@ function schedule(key: string): void {
 }
 
 /** Sends the current content unless a save is in flight (it re-saves when that one answers). */
-function save(key: string, copy = false): Promise<void> {
+function save(key: string, copy = false, persistNew = false): Promise<void> {
   const current = get(key);
   if (!current || (current.recovery && !copy) || writers.get(key)?.stopping) return Promise.resolve();
   const w = writer(key);
@@ -852,7 +852,7 @@ function save(key: string, copy = false): Promise<void> {
     if (failed) { invalidateCertificate(bodyCertificate(key)); put({ ...failed, status: "error" }); }
     return Promise.resolve();
   }
-  if (!d || !authored(d) || (!copy && d.savedRev === d.localRev)) return Promise.resolve();
+  if (!d || (!authored(d) && !persistNew) || (!copy && d.savedRev === d.localRev && !(persistNew && d.id === null))) return Promise.resolve();
   const rev = d.localRev;
   const operation = ++w.operation;
   const uncertain = d.recovery?.state === "unknown" || d.recovery?.uncertain;
@@ -1004,7 +1004,7 @@ export function retryDraft(key: string): void {
 }
 
 /** Cancels the debounce and waits until what is written now is saved (or the save fails). */
-export async function flushDraft(key: string): Promise<void> {
+export async function flushDraft(key: string, persistNew = false): Promise<void> {
   const w = writers.get(key);
   if (!w) return;
   if (w.timer) clearTimeout(w.timer);
@@ -1012,8 +1012,8 @@ export async function flushDraft(key: string): Promise<void> {
   for (let i = 0; i < 5; i++) {
     if (w.inflight) await w.inflight;
     const d = get(key);
-    if (!d || d.recovery || d.status === "error" || !authored(d) || d.savedRev === d.localRev) return;
-    await save(key);
+    if (!d || d.recovery || d.status === "error" || (!authored(d) && !persistNew) || (d.savedRev === d.localRev && !(persistNew && d.id === null))) return;
+    await save(key, false, persistNew);
   }
 }
 
@@ -1050,15 +1050,13 @@ async function settle(key: string): Promise<LocalDraft | undefined> {
 export async function draftForSend(key: string): Promise<LocalDraft | undefined> {
   if (draftEditsHeld() || get(key)?.recovery || writers.get(key)?.stopping) return undefined;
   const w = writer(key);
-  const needsContextSave = Boolean(get(key)?.replyContext || get(key)?.mode === "forward");
-  if (needsContextSave) {
-    await flushDraft(key);
-    const ready = get(key);
-    if (!ready || ready.recovery || ready.status === "error" || (authored(ready) && ready.savedRev !== ready.localRev)) return undefined;
-  }
+  materialize(key);
+  await flushDraft(key, true);
+  const ready = get(key);
+  if (!ready || ready.id === null || !ready.generation || ready.revision < 1 || ready.recovery || ready.status === "error" || ready.savedRev !== ready.localRev) return undefined;
   w.stopping = "send";
   const d = await settle(key);
-  return d?.recovery ? undefined : d;
+  return d && d.id !== null && d.generation && d.revision > 0 && !d.recovery && d.status !== "error" && d.savedRev === d.localRev ? d : undefined;
 }
 
 /** A send started or settled: while it runs the draft can't be edited or discarded. */

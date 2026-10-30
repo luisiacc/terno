@@ -7,9 +7,12 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const rpc = vi.hoisted(() => ({ calls: [] as { method: string; resolve(v: unknown): void; reject(e: unknown): void }[] }));
+const rpc = vi.hoisted(() => ({ autoSave: true, calls: [] as { method: string; resolve(v: unknown): void; reject(e: unknown): void }[] }));
 vi.mock("~/rpc/connection", () => ({
-  client: { call: (method: string) => new Promise((resolve, reject) => rpc.calls.push({ method, resolve, reject })) },
+  client: { call: (method: string, params: Record<string, unknown>) => new Promise((resolve, reject) => {
+    rpc.calls.push({ method, resolve, reject });
+    if (method === "drafts.save" && rpc.autoSave) resolve({ ...params, id: params.id ?? 42, generation: params.generation ?? "identity", revision: Number(params.baseRevision ?? 0) + 1 });
+  }) },
 }));
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn() }));
 
@@ -23,7 +26,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   setApp({ accounts: [{ id: 1, email: "me@example.test" } as import("@terno/core").Account] });
-  rpc.calls.length = 0;
+  rpc.calls.length = 0; rpc.autoSave = true;
   useDrafts.setState({ drafts: {} });
 });
 
@@ -40,6 +43,7 @@ describe("sending a draft", () => {
   });
 
   it("a pending save returning null stops the Send waiting for it", async () => {
+    rpc.autoSave = false;
     vi.useFakeTimers();
     try {
       const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "keep" });
@@ -74,7 +78,7 @@ describe("sending a draft", () => {
     editDraft(key, { bodyText: "cambiado" });
     expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Hola");
     expect(await discardDraft(key)).toBeUndefined();
-    rpc.calls[0]!.resolve({ opId: "o", threadId: 1 });
+    rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
     expect(await first).toBe(true);
     expect(await second).toBe(true);
     expect(useDrafts.getState().drafts[key]).toBeUndefined();
@@ -84,7 +88,7 @@ describe("sending a draft", () => {
     const key = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
     const p = sendDraft(key);
     await tick();
-    rpc.calls[0]!.reject(new Error("sin conexión"));
+    rpc.calls.find((c) => c.method === "compose.send")!.reject(new Error("sin conexión"));
     expect(await p).toBe(false);
     editDraft(key, { bodyText: "Hola otra vez" });
     expect(useDrafts.getState().drafts[key]!).toMatchObject({ bodyText: "Hola otra vez", sending: false });

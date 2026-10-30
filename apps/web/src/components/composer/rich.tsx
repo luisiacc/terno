@@ -210,6 +210,7 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
         editable: canMutate,
         attributes: {
           role: "textbox",
+          tabindex: "0",
           "aria-multiline": "true",
           "aria-label": t("compose.body"),
           "aria-placeholder": placeholder,

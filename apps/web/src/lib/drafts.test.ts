@@ -34,7 +34,7 @@ async function answer(ok = true) {
     if (p.id !== undefined && !prev) c.resolve(null);
     else {
       const replace = prev && (p.baseRevision === undefined || p.baseRevision === prev.revision);
-      const d = { ...(p as unknown as Draft), id: replace ? prev!.id : nextId++, revision: replace ? prev!.revision + 1 : 1 } as Draft;
+      const d = { ...(p as unknown as Draft), id: replace ? prev!.id : nextId++, revision: replace ? prev!.revision + 1 : 1, generation: replace ? prev!.generation : "synthetic-generation" } as Draft;
       stored.set(d.id, d);
       c.resolve(d);
     }
@@ -581,6 +581,7 @@ describe("the editor's body (plan 16)", () => {
     expect(fieldsOf(state(k))).toMatchObject({ bodyText: "Sí", bodyHtml: "<div><b>Sí</b></div>" });
     ed.type(" va");
     const sending = draftForSend(k);
+    await answer();
     expect((await sending)!.bodyHtml).toBe("<div><b>Sí va</b></div>");
   });
 
@@ -615,7 +616,7 @@ describe("the editor's body (plan 16)", () => {
     expect(state(back)).toMatchObject({ bodyText: "Hola!", bodyHtml: "<div><b>Hola!</b></div>" });
   });
 
-  it("Codex review 2: a send waiting for a save in flight gets what was typed meanwhile, even when that save fails", async () => {
+  it("a failed save blocks Send and retains what was typed meanwhile", async () => {
     const k = draft();
     const ed = editor(k);
     ed.type("A");
@@ -624,7 +625,8 @@ describe("the editor's body (plan 16)", () => {
     const sending = draftForSend(k);
     ed.type("B");
     await answer(false);
-    expect((await sending)!.bodyText).toBe("AB");
+    expect(await sending).toBeUndefined();
+    expect(materialize(k)!.bodyText).toBe("AB");
   });
 
   it("Codex review 2: a source that isn't the schema's (a stand-in over a stored body) leaves the draft untrusted", () => {
