@@ -7,8 +7,15 @@ const SKIP = new Set(["HEAD", "TITLE", "STYLE", "SCRIPT", "NOSCRIPT", "TEMPLATE"
 const INLINE = new Set(["A", "ABBR", "B", "BIG", "CODE", "EM", "FONT", "I", "KBD", "LABEL", "MARK", "S", "SMALL", "SPAN", "STRONG", "SUB", "SUP", "TT", "U", "WBR"]);
 /** Cells and images separate words without breaking the line: per-digit boxes read "1 2 3 4 5 6". */
 const SPACED = new Set(["TD", "TH", "IMG"]);
-/** Inline styles that hide an element, read from its style attribute only. */
-const HIDDEN_STYLE = /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|(?:max-height|font-size|opacity)\s*:\s*0(?:\.0+)?(?:px|em|rem|%)?)\s*(?:!important\s*)?(?:;|$)/i;
+const ZERO = /^0(?:\.0+)?(?:px|em|rem|%)?$/;
+
+/** Hidden by its own attributes: `hidden`, or inline styles as the browser resolves them (the last declaration wins). */
+function hidden(el: Element): boolean {
+  if (el.hasAttribute("hidden")) return true;
+  if (!el.hasAttribute("style")) return false;
+  const s = (el as HTMLElement).style;
+  return s.display === "none" || s.visibility === "hidden" || ZERO.test(s.fontSize) || ZERO.test(s.maxHeight) || ZERO.test(s.opacity);
+}
 
 let parser: DOMParser | undefined;
 
@@ -20,33 +27,44 @@ let parser: DOMParser | undefined;
 export function mailText(html: string): string {
   parser ??= new DOMParser();
   const doc = parser.parseFromString(html.slice(0, HTML_CAP), "text/html");
-  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-      const el = node as Element;
-      if (SKIP.has(el.tagName.toUpperCase()) || el.hasAttribute("hidden") || HIDDEN_STYLE.test(el.getAttribute("style") ?? "")) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
   let out = "";
   // what separates the next text from the last: "~" joins digits and is a space otherwise
-  let gap: "" | "~" | " " | "\n" = "";
-  for (let node = walker.nextNode(); node && out.length < TEXT_CAP; node = walker.nextNode()) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.nodeValue ?? "").replace(/\s+/g, " ");
-      if (!text.trim()) {
-        if (text && gap === "") gap = " ";
-        continue;
-      }
-      if (gap === "\n" || gap === " ") out += gap;
-      else if (gap === "~" && !(/\d$/.test(out) && /^\d/.test(text))) out += " ";
-      out += text;
-      gap = "";
+  // (a property: sep() changes it between reads, which TypeScript's narrowing of a local can't see)
+  const at: { gap: "" | "~" | " " | "\n" } = { gap: "" };
+  const sep = (kind: "~" | " " | "\n") => {
+    if (kind === "\n" || at.gap === "" || (kind === " " && at.gap === "~")) at.gap = kind;
+  };
+  // depth first with an explicit stack (deep nesting can't overflow); an element separates on the way in and out
+  const stack: (Node | { leave: "~" | " " | "\n" })[] = [doc.body];
+  while (stack.length && out.length < TEXT_CAP) {
+    const item = stack.pop()!;
+    if (!(item instanceof Node)) {
+      sep(item.leave);
       continue;
     }
-    const tag = (node as Element).tagName.toUpperCase();
+    if (item.nodeType === Node.TEXT_NODE) {
+      const text = (item.nodeValue ?? "").replace(/\s+/g, " ");
+      if (!text.trim()) {
+        if (text) sep(" ");
+        continue;
+      }
+      if (at.gap === "\n" || at.gap === " ") out += at.gap;
+      else if (at.gap === "~" && !(/\d$/.test(out) && /^\d/.test(text))) out += " ";
+      out += text;
+      at.gap = "";
+      continue;
+    }
+    if (item.nodeType !== Node.ELEMENT_NODE) continue;
+    const el = item as Element;
+    const tag = el.tagName.toUpperCase();
+    if (SKIP.has(tag) || hidden(el)) {
+      sep(" ");
+      continue;
+    }
     const kind = INLINE.has(tag) ? "~" : SPACED.has(tag) ? " " : "\n";
-    if (kind === "\n" || gap === "" || (kind === " " && gap === "~")) gap = kind;
+    sep(kind);
+    stack.push({ leave: kind });
+    for (let c = el.lastChild; c; c = c.previousSibling) stack.push(c);
   }
   return out
     .split("\n")

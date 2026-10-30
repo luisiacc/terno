@@ -105,3 +105,10 @@ Codex's second review found nine more, each now covered by a failing-without-the
 1. **Matching was still quadratic:** every code was measured against every word (`"code 123456;"` × 16 000 took 530 ms). The closest word is now found in one pass over both ordered lists, and the subject is capped at 1 000 characters.
 2.–8. **The hand-written HTML scanner disagreed with the reader's parser:** a quoted `>` in an attribute, `İ` changing offsets when lowercased, a fake `</blockquote>` inside a comment, `<div hidden/>` (not self-closing in HTML), an unfinished tag, `</stylesheet>` ending a `<style>`, and `hidden` or `display:none` inside an unrelated attribute. The scanner is gone: the renderer parses with `DOMParser`, the same parser that decides what the reader shows, and hiding is read from the `hidden` attribute and the style attribute only. `findCode` takes text, so core stays parser-free.
 9. **A chip shown again before the clipboard answered stayed blue.** "Copied" is a small store the chips subscribe to (`useSyncExternalStore`), written when the check goes, or at once when the chip is already gone.
+
+### Round 3
+
+1. **Leaving an element didn't separate text** (`<div>Your code</div>482913` read "Your code482913"; `<div>code 123</div>456` read one code). The walk now uses an explicit stack with an exit marker per element, so separators come on the way in and out (and deep nesting can't overflow).
+2. **Hiding was matched as text, not resolved** (`display:none;display:block` is shown). Hiding now reads the browser's resolved inline style (`el.style`), where the last declaration wins.
+
+The perf gates: `pnpm test:ui-perf` passes except "a 2 MB draft of short lines", which fails the same way on the base commit (109–119 ms against 100 ms).

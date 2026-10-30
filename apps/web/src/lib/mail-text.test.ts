@@ -65,3 +65,16 @@ describe("an HTML body's code (plan 69)", () => {
     }
   });
 });
+
+// Codex review round 3
+describe("an HTML body's boundaries and styles (plan 69)", () => {
+  it("separates text on both sides of an element", () => {
+    expect(html("<div>Your code</div>482913")).toBe("482913");
+    expect(html("<div>code 123</div>456")).toBeNull();
+  });
+
+  it("reads inline styles as the browser resolves them", () => {
+    expect(html('<div style="display:none;display:block">code 482913</div>')).toBe("482913");
+    expect(html('<div style="display:block;display:none">code 111222</div><p>Your code is 482913</p>')).toBe("482913");
+  });
+});
