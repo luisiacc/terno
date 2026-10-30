@@ -108,3 +108,118 @@ describe("new attachment capture", () => {
     ftsIntegrity(db);
   });
 });
+
+
+describe("bounded reference writes", () => {
+  it("batches references while preserving same-batch reverse threading and account boundaries", () => {
+    const db = testDb();
+    const [a, b] = withAccounts(db);
+    const children = Array.from({ length: 96 }, (_, i) => msg({ accountId: a!, providerThreadId: `provider-${i}`, references: [`<ROOT-${i}@test>`, `other-${i}@test`, `<ROOT-${i}@test>`] }));
+    const root = msg({ accountId: a!, rfcMessageId: "root-0@test" });
+    const foreign = msg({ accountId: b!, rfcMessageId: "root-1@test" });
+    const writes = vi.spyOn(db, "run");
+    const interleaved = children.flatMap((child, i) => [child, msg({ accountId: a!, rfcMessageId: `unreferenced-${i}@test` })]);
+    const result = ingestMessages(db, [...interleaved, root, foreign]);
+    const refs = writes.mock.calls.filter(([sql]) => sql.startsWith("INSERT OR IGNORE INTO message_refs"));
+    expect(refs.length).toBeLessThanOrEqual(2);
+    expect(refs.every(([, payload]) => JSON.parse(payload as string).length <= 128)).toBe(true);
+    expect(db.get("SELECT count(*) AS n FROM message_refs")).toEqual({ n: 192 });
+    expect(db.all<{ ref: string }>("SELECT ref FROM message_refs WHERE message_id=? ORDER BY ref", result.inserted[0]!).map(r => r.ref)).toEqual(["other-0@test", "root-0@test"]);
+    expect(threadOf(db, root.providerMsgId!)).toBe(threadOf(db, children[0]!.providerMsgId!));
+    expect(threadOf(db, foreign.providerMsgId!)).not.toBe(threadOf(db, children[1]!.providerMsgId!));
+    ftsIntegrity(db);
+  });
+
+  it.each(["new sent", "existing"] as const)("publishes pending references before %s fact readers", (mode) => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    const original = msg({ accountId: a!, providerThreadId: "existing", from: { name: "Me", email: "me0@example.com" }, to: [{ name: "Person", email: "new-person@example.com" }] });
+    if (mode === "existing") ingestMessages(db, [original]);
+    db.exec(`CREATE TABLE reference_visibility (n INTEGER);
+      CREATE TRIGGER observe_teaching AFTER INSERT ON correspondents WHEN new.email='new-person@example.com' AND new.written=1 BEGIN
+        INSERT INTO reference_visibility SELECT count(*) FROM message_refs WHERE ref LIKE 'pending-%';
+      END;
+      CREATE TRIGGER observe_existing AFTER UPDATE OF is_sent ON messages WHEN new.is_sent=1 BEGIN
+        INSERT INTO reference_visibility SELECT count(*) FROM message_refs WHERE ref LIKE 'pending-%';
+      END;`);
+    const child = msg({ accountId: a!, providerThreadId: "child", references: ["pending-child@test"] });
+    ingestMessages(db, [child, { ...original, isSent: true, ...(mode === "new sent" ? { references: ["pending-sent@test"] } : {}) }]);
+    const observed = db.all<{ n: number }>("SELECT n FROM reference_visibility");
+    expect(observed.length).toBeGreaterThan(0);
+    expect(observed.every(r => r.n === (mode === "new sent" ? 2 : 1))).toBe(true);
+    ftsIntegrity(db);
+  });
+
+  it("rolls back messages, pending references and search publication when a reference write fails", () => {
+    const db = testDb();
+    const [a] = withAccounts(db);
+    db.exec(`CREATE TRIGGER refuse_ref BEFORE INSERT ON message_refs WHEN new.ref='refuse@test' BEGIN SELECT RAISE(ABORT, 'synthetic reference failure'); END;`);
+    const messages = Array.from({ length: 70 }, (_, i) => msg({ accountId: a!, providerThreadId: `rollback-${i}`, references: [`ref-${i}@test`, i === 69 ? "refuse@test" : `second-${i}@test`] }));
+    expect(() => ingestMessages(db, messages)).toThrow("synthetic reference failure");
+    for (const table of ["messages", "message_bodies", "message_refs", "threads", "search_dirty", "search_outbox"]) expect(db.get(`SELECT count(*) AS n FROM ${table}`)).toEqual({ n: 0 });
+    db.exec("DROP TRIGGER refuse_ref");
+    ingestMessages(db, messages);
+    expect(db.get("SELECT count(*) AS n FROM message_refs")).toEqual({ n: 140 });
+    ftsIntegrity(db);
+  });
+});
+
+
+describe("bounded new-message body writes", () => {
+  it("batches body rows before their messages with exact content and no orphan rows", () => {
+    const db = testDb(); const [a] = withAccounts(db);
+    const messages = Array.from({ length: 96 }, (_, i) => msg({ accountId: a!, providerThreadId: `body-${i}`, bodyText: i % 3 ? `uniqueBody${i}` : null, bodyHtml: i % 6 ? `<p>uniqueBody${i}</p>` : null }));
+    const writes = vi.spyOn(db, "run");
+    const result = ingestMessages(db, messages);
+    const bodyWrites = writes.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO message_bodies"));
+    expect(bodyWrites.length).toBeLessThanOrEqual(3);
+    expect(bodyWrites.every(([, ...args]) => args.length <= 96)).toBe(true);
+    expect(db.all("SELECT message_id AS id,body_text,body_html FROM message_bodies ORDER BY message_id")).toEqual(messages.flatMap((m, i) => m.bodyText === null && m.bodyHtml === null ? [] : [{ id: result.inserted[i]!, body_text: m.bodyText, body_html: m.bodyHtml }]));
+    expect(result.inserted).toEqual(Array.from({ length: 96 }, (_, i) => i + 1));
+    expect(searchThreads(db, { query: "uniqueBody95", limit: 10 }).items).toHaveLength(1);
+    ftsIntegrity(db);
+  });
+
+  it("uses sequential body updates for duplicate, existing and local identities", () => {
+    const db = testDb(); const [a] = withAccounts(db);
+    const local = msg({ accountId: a!, providerMsgId: "LOCAL:body", rfcMessageId: "local-body@test", bodyText: "local first" });
+    const original = msg({ accountId: a!, providerMsgId: "duplicate-body", bodyText: "first" });
+    const result = ingestMessages(db, [local, { ...local, providerMsgId: "server-body", bodyText: "adopted" }, original, { ...original, bodyText: "latest" }]);
+    expect(result.inserted).toHaveLength(2); expect(result.updated).toEqual(result.inserted);
+    expect(db.all("SELECT body_text FROM message_bodies ORDER BY message_id")).toEqual([{ body_text: "adopted" }, { body_text: "latest" }]);
+    const again = ingestMessages(db, [{ ...original, bodyText: "changed again" }]);
+    expect(again.inserted).toEqual([]); expect(again.updated).toEqual([result.inserted[1]!]);
+    expect(db.get("SELECT body_text FROM message_bodies WHERE message_id=?", result.inserted[1]!)).toEqual({ body_text: "changed again" });
+    ftsIntegrity(db);
+  });
+
+  it("keeps oversized batches on the sequential path", () => {
+    const db = testDb(); const [a] = withAccounts(db);
+    const writes = vi.spyOn(db, "run");
+    const result = ingestMessages(db, Array.from({ length: 201 }, () => msg({ accountId: a! })));
+    expect(result.inserted).toHaveLength(201);
+    expect(writes.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO message_bodies"))).toHaveLength(201);
+    ftsIntegrity(db);
+  });
+
+  it("keeps SQL's case-insensitive local identity adoption within a batch", () => {
+    const db = testDb(); const [a] = withAccounts(db);
+    const local = msg({ accountId: a!, providerMsgId: "LOCAL:case", rfcMessageId: "case@test", bodyText: "optimistic" });
+    const result = ingestMessages(db, [local, { ...local, providerMsgId: "remote-case", bodyText: "confirmed" }]);
+    expect(result.inserted).toHaveLength(1);
+    expect(result.updated).toEqual(result.inserted);
+    expect(db.all("SELECT body_text FROM message_bodies")).toEqual([{ body_text: "confirmed" }]);
+    ftsIntegrity(db);
+  });
+
+  it("rolls back all prepared bodies and reserved IDs when a later chunk fails", () => {
+    const db = testDb(); const [a] = withAccounts(db);
+    db.exec(`CREATE TRIGGER refuse_body BEFORE INSERT ON message_bodies WHEN new.body_text='refuse body' BEGIN SELECT RAISE(ABORT, 'synthetic body failure'); END;`);
+    const messages = Array.from({ length: 70 }, (_, i) => msg({ accountId: a!, bodyText: i === 69 ? "refuse body" : `body ${i}` }));
+    expect(() => ingestMessages(db, messages)).toThrow("synthetic body failure");
+    for (const table of ["messages", "message_bodies", "message_refs", "threads", "search_dirty", "search_outbox"]) expect(db.get(`SELECT count(*) AS n FROM ${table}`)).toEqual({ n: 0 });
+    db.exec("DROP TRIGGER refuse_body");
+    expect(ingestMessages(db, messages).inserted).toEqual(Array.from({ length: 70 }, (_, i) => i + 1));
+    ftsIntegrity(db);
+  });
+});

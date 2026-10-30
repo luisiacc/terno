@@ -219,19 +219,56 @@ export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId"
   );
 }
 
+/** Body-first indexing can share writes only when every input is a distinct new server row. */
+function prepareNewBodies(db: Db, messages: readonly IncomingMessage[], ids: { next(): number }): number[] | null {
+  if (messages.length > 200) return null;
+  const keys = new Set<string>();
+  for (const msg of messages) {
+    if (!msg.providerMsgId || msg.providerMsgId.slice(0, 6).toLowerCase() === "local:") return null;
+    const key = `${msg.accountId}:${msg.providerMsgId}`;
+    if (keys.has(key)) return null;
+    keys.add(key);
+  }
+  for (const msg of messages) if (findIngestMessage(db, msg)) return null;
+  const allocated: number[] = [];
+  const bodies: (number | string | null)[] = [];
+  const flush = () => {
+    if (!bodies.length) return;
+    db.run(`INSERT INTO message_bodies (message_id, body_text, body_html) VALUES ${Array.from({ length: bodies.length / 3 }, () => "(?,?,?)").join(",")}`, ...bodies);
+    bodies.length = 0;
+  };
+  for (const msg of messages) {
+    const id = ids.next();
+    allocated.push(id);
+    if (msg.bodyText !== null || msg.bodyHtml !== null) bodies.push(id, msg.bodyText, msg.bodyHtml);
+    if (bodies.length === 32 * 3) flush();
+  }
+  flush();
+  return allocated;
+}
+
 /** Upserts and threads one batch atomically; recomputes aggregates once per touched thread. */
 export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string; toJson: string; ccJson: string; bccJson: string; ftsTokens?: string; correspondentChunks?: string[][] }): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   let own: Set<string> | null = null;
   db.tx(() => {
     const ids = nextMessageIdAllocator(db);
-    for (const msg of messages) {
+    const freshIds = prepareNewBodies(db, messages, ids);
+    const pendingRefs: [number, string, number][] = [];
+    const flushRefs = () => {
+      if (!pendingRefs.length) return;
+      db.run(`INSERT OR IGNORE INTO message_refs (account_id, ref, message_id)
+        SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]') FROM json_each(?)`, JSON.stringify(pendingRefs));
+      pendingRefs.length = 0;
+    };
+    for (const [index, msg] of messages.entries()) {
       // the same provider message, else the server copy of a message we sent (adopt the optimistic local row
       // instead of duplicating it): one lookup for both
-      const existing = findIngestMessage(db, msg);
+      const existing = freshIds ? undefined : findIngestMessage(db, msg);
       if (existing && db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", existing.id)) continue;
       if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
       if (existing) {
+        flushRefs();
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;
         updateExisting(db, existing.id, msg, observation);
         if (before.body_state !== "full" && msg.bodyState === "full") result.bodyCompleted.push(existing.id);
@@ -248,14 +285,16 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       }
       const rfcId = normalizeMessageId(msg.rfcMessageId);
       const refs = [...new Set([msg.inReplyTo, ...msg.references].map(normalizeMessageId).filter((r): r is string => !!r && r !== rfcId))];
+      // RFC threading reads reverse references; provider thread ids do not.
+      if (!msg.providerThreadId && rfcId && pendingRefs.some(([accountId, ref]) => accountId === msg.accountId && ref === rfcId)) flushRefs();
       const threadId = resolveThread(db, msg, rfcId, refs, result);
       const fromEmail = normalizeText(msg.from.email.trim());
       const recipients = preparedRecipients?.text ?? recipientsText(msg.to, msg.cc, msg.bcc);
-      const allocated = ids.next();
+      const allocated = freshIds?.[index] ?? ids.next();
       // A new row has no attachment metadata or pins to replace.
       const capture = !msg.captureUnavailable && msg.attachments !== undefined;
       // the body goes in first: the message's insert trigger indexes it in the same write
-      if (msg.bodyText !== null || msg.bodyHtml !== null) {
+      if (!freshIds && (msg.bodyText !== null || msg.bodyHtml !== null)) {
         db.run("INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml);
       }
       if (preparedRecipients?.ftsTokens !== undefined) db.run("INSERT INTO recipient_fts_stage(message_id,tokens) VALUES(?,?)", allocated, preparedRecipients.ftsTokens);
@@ -300,12 +339,16 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
       ).lastInsertRowid;
       if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
-      if (refs.length === 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) VALUES (?, ?, ?)", msg.accountId, refs[0]!, id);
-      else if (refs.length > 1) db.run("INSERT OR IGNORE INTO message_refs (account_id, ref, message_id) SELECT ?, value, ? FROM json_each(?)", msg.accountId, id, JSON.stringify(refs));
+      for (const ref of refs) {
+        pendingRefs.push([msg.accountId, ref, id]);
+        if (pendingRefs.length === 128) flushRefs();
+      }
       // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
       if (!msg.isDraft) {
         own ??= ownAddresses(db);
         if (msg.isSent) {
+          // Teaching a correspondent can synchronously recompute its threads.
+          flushRefs();
           if (preparedRecipients?.correspondentChunks) noteSentMailPrepared(db, fromEmail, preparedRecipients.correspondentChunks);
           else noteSentMail(db, fromEmail, [...msg.to, ...msg.cc, ...msg.bcc]);
           own.add(addressKey(fromEmail));
@@ -318,6 +361,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }
+    flushRefs();
     // the search outbox (other message writes are marked by triggers)
     if (result.inserted.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 0, value FROM json_each(?)", JSON.stringify(result.inserted));
     recomputeThreads(db, result.touchedThreads);
