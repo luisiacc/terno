@@ -224,3 +224,46 @@ it("reconciles legacy cursors with no stored role mapping", async () => {
   await reopened.backend.syncAccount(t.account.id);
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).thread.inTrash).toBe(false);
 });
+
+it("never treats an explicit Sent mailbox named Trash as the Trash destination", async () => {
+  const t = await setup({ Trash: { "special-use": "\\Sent" } });
+  const bytes = rawIdleMail("Conflicting name", "Preserve inbox");
+  const message = t.server.control.addMessage("INBOX", { raw: bytes });
+  await t.backend.syncAccount(t.account.id);
+  const thread = (await t.client.call("threads.list", { view: "inbox" })).items[0]!;
+  const start = t.commands.length;
+  await t.client.call("threads.act", { threadIds: [thread.id], action: "trash" });
+  await t.backend.runWorker();
+  expect((await t.client.call("ops.list", {})).find((op) => op.kind === "trash")?.state).toBe("failed");
+  expect(t.commands.slice(start)).not.toContain("UID MOVE");
+  expect(t.server.control.getMessage("INBOX", message.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
+  expect(t.server.control.listMessages("Trash")).toEqual([]);
+});
+
+it("keeps a selected duplicate role through reopening", async () => {
+  const t = await setup({ Zeta: { "special-use": "\\Trash" } });
+  const bytes = rawIdleMail("Stable destination");
+  t.server.control.addMessage("INBOX", { raw: bytes });
+  await t.backend.syncAccount(t.account.id);
+  t.server.control.createMailbox("Alpha");
+  t.server.control.setSpecialUse("Alpha", ["\\Trash"]);
+  await t.backend.syncAccount(t.account.id);
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  const thread = (await reopened.client.call("threads.list", { view: "inbox" })).items[0]!;
+  await reopened.client.call("threads.act", { threadIds: [thread.id], action: "trash" });
+  await reopened.backend.runWorker();
+  expect(t.server.control.listMessages("Zeta", { raw: true })[0]!.raw).toEqual(Buffer.from(bytes));
+  expect(t.server.control.listMessages("Alpha")).toEqual([]);
+});
+
+it("uses a mixed-case provider special-use attribute", async () => {
+  const t = await setup({ Corbeille: { "special-use": "\\trash" } });
+  const bytes = rawIdleMail("Mixed case role");
+  t.server.control.addMessage("INBOX", { raw: bytes });
+  await t.backend.syncAccount(t.account.id);
+  const thread = (await t.client.call("threads.list", { view: "inbox" })).items[0]!;
+  await t.client.call("threads.act", { threadIds: [thread.id], action: "trash" });
+  await t.backend.runWorker();
+  expect(t.server.control.listMessages("Corbeille", { raw: true })[0]!.raw).toEqual(Buffer.from(bytes));
+});

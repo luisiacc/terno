@@ -446,7 +446,7 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const rolePaths = new Set(Object.values(roles) as string[]);
   // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
   const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || [...m.flags].some((flag) => Object.hasOwn(SPECIAL_USE, flag) || flag === "\\Flagged" || flag === "\\Important");
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || [...m.flags].some(isSpecialUseFlag);
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
@@ -531,6 +531,10 @@ const SPECIAL_USE: Record<string, Role> = {
   "\\Trash": "trash",
   "\\Drafts": "drafts",
 };
+
+const SPECIAL_USE_LOWER = new Map(Object.entries(SPECIAL_USE).map(([flag, role]) => [flag.toLowerCase(), role]));
+const roleForFlag = (flag: string): Role | undefined => SPECIAL_USE_LOWER.get(flag.toLowerCase());
+const isSpecialUseFlag = (flag: string) => roleForFlag(flag) !== undefined || flag.toLowerCase() === "\\flagged" || flag.toLowerCase() === "\\important";
 
 /** Name heuristics for servers without SPECIAL-USE (es/en/de variants). */
 const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
@@ -685,22 +689,22 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
   }
 
-  async function discoverRoles(c: ImapFlow, listed?: readonly ListedMailbox[]): Promise<Partial<Record<Role, string>>> {
+  async function discoverRoles(c: ImapFlow, listed?: readonly ListedMailbox[], previous = roles): Promise<Partial<Record<Role, string>>> {
     if (roles && !listed) return roles;
     const found: Partial<Record<Role, string>> = { inbox: "INBOX" };
     const list = listed ?? (await c.list());
     const selectable = list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent"));
     for (const mb of selectable) for (const flag of mb.flags) {
-      const role = Object.hasOwn(SPECIAL_USE, flag) ? SPECIAL_USE[flag] : undefined;
-      if (role && roles?.[role] === mb.path && role !== "inbox") found[role] = mb.path;
+      const role = roleForFlag(flag);
+      if (role && previous?.[role] === mb.path && role !== "inbox") found[role] = mb.path;
     }
     for (const mb of selectable) for (const flag of mb.flags) {
-      const role = Object.hasOwn(SPECIAL_USE, flag) ? SPECIAL_USE[flag] : undefined;
+      const role = roleForFlag(flag);
       if (role && !found[role]) found[role] = mb.path;
     }
     for (const [role, re] of Object.entries(NAME_HINTS) as [Role, RegExp][]) {
       if (found[role]) continue;
-      const mb = selectable.find((m) => re.test(m.path));
+      const mb = selectable.find((m) => re.test(m.path) && ![...m.flags].some(isSpecialUseFlag));
       if (mb) found[role] = mb.path;
     }
     roles = found;
@@ -1289,7 +1293,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   async function ensureMailbox(c: ImapFlow, role: Role, fallbackName: string): Promise<string> {
     const r = await discoverRoles(c);
     if (r[role]) return r[role]!;
-    if (!(await c.mailboxCreate(fallbackName))) throw new ProviderError(L("errors.imap.changeRefused"), false);
+    const created = await c.mailboxCreate(fallbackName);
+    if (!created || !created.created) throw new ProviderError(L("errors.imap.changeRefused"), false);
     r[role] = fallbackName;
     return fallbackName;
   }
@@ -1390,9 +1395,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         check();
         // one LIST a pass: the roles (kept) and the account's own folders (fresh: plan 68)
         const list = await c.list();
-        const r = await discoverRoles(c, list);
         // plan 68 (Codex R3): mailboxes by path in a map with no prototype, so a folder named "__proto__" is a path like any other
         const loaded = await ctx.loadCursor<Cursor>();
+        const r = await discoverRoles(c, list, loaded?.roles ?? roles);
         const cursor: Cursor = {
           ...loaded,
           mailboxes: Object.assign(Object.create(null) as Cursor["mailboxes"], loaded?.mailboxes),
