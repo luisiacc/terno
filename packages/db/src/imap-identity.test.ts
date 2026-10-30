@@ -47,4 +47,9 @@ it("identity: schema29 guessed or absent locators cannot authorize dispatch afte
   expect(issued).toBe(false);
   await upgraded.sync.remove(ids);
   expect((await upgraded.debug.snapshot()).messages.map((m) => m.id)).toEqual(ids);
+  const { inserted: [fresh] } = await ingest(upgraded, [msg({ accountId: account!, providerMsgId: "new-trusted-import", locations: [{ ...location, uid: 99 }] })]);
+  expect(await locations.unresolved([fresh!])).toEqual([]);
+  await expect(locations.dispatch([fresh!], await locations.of([fresh!]), async () => "new import")).resolves.toBe("new import");
+  expect(await locations.unresolved(ids)).toEqual(ids);
+
 });

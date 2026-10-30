@@ -945,7 +945,7 @@ export class IdbMailStore implements MailStore {
         () => {
           const flagBefore = flagEpochs(idbFlags(this.c));
           if (T(this.c, "imap_identity_holds").has(messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
-        if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
+          if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
           if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
           if (captureUnavailable && owner) T(this.c, "messages").update(owner, { attachments_captured: 2, attachment_pending: 0 });
@@ -968,7 +968,7 @@ export class IdbMailStore implements MailStore {
           const threads = new Set<number>();
           const reconciliation: { flagReconcileAccounts?: number[] } = {};
           for (const u of updates) {
-          if (T(this.c, "imap_identity_holds").has(u.messageId)) continue;
+            if (T(this.c, "imap_identity_holds").has(u.messageId)) continue;
             const identity = messages.get(u.messageId);
             if (observation && (!flagObservationValid(idbFlags(this.c), accountId, observation) || !u.expectedProviderMsgId)) continue;
             if (identity?.account_id !== accountId || (u.expectedProviderMsgId !== undefined && identity.provider_msg_id !== u.expectedProviderMsgId)) continue;

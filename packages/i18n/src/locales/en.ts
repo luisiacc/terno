@@ -1451,7 +1451,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.imap.changeUnknown": "This change could not be confirmed and may already have applied. Check your messages in your provider’s app before trying again.",
   "errors.imap.listRefused": "Your mail server refused to list messages. Try syncing again.",
   "errors.imap.changeRefused": "Your mail server refused this change. Check your messages in your provider’s app before trying again.",
-  "errors.imap.identityUnavailable": "This message’s location could not be verified. Your action is saved. Check the message in your mail provider before trying again.",
+  "errors.imap.identityUnavailable": "This message’s location could not be verified. Your action is saved but cannot run safely. Use your mail provider to manage this message.",
   "errors.imap.unsafeMove": "Your mail server can’t safely move these messages without affecting other mail. Make this change in your provider’s app.",
   "errors.imap.noPassword": "The IMAP password is missing.",
   "errors.imap.cannotConnect": "Couldn’t connect to {host}: {detail}",

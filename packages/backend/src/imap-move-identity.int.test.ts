@@ -90,13 +90,13 @@ it("does not acknowledge a queued read while its target is unlocated", async () 
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
 });
 
-it.each([false, true])("does not target an equal-envelope different body after reverse arrivals (Message-ID present: %s)", async (hasId) => {
+it.each([{ hasId: false, attachment: false }, { hasId: true, attachment: false }, { hasId: true, attachment: true }])("does not target equal-envelope different bytes after reverse arrivals ($hasId, attachments: $attachment)", async ({ hasId, attachment }) => {
   const { ImapFlow } = await import("imapflow");
   const t = await setup({ A: {}, Z: {} });
   const date = new Date().toUTCString();
   const make = (body: string) => ["From: Ana <ana@example.test>", "To: Test <test@example.test>", "Subject: Equal envelope",
     ...(hasId ? ["Message-ID: <duplicate@example.test>"] : []), `Date: ${date}`,
-    "Content-Type: text/plain; charset=utf-8", "", body, ""].join("\r\n");
+    ...(attachment ? ["MIME-Version: 1.0", 'Content-Type: multipart/mixed; boundary="part"', "", "--part", "Content-Type: text/plain", "", "same text", "--part", "Content-Type: application/octet-stream", 'Content-Disposition: attachment; filename="payload.bin"', "Content-Transfer-Encoding: base64", "", Buffer.from(body).toString("base64"), "--part--", ""] : ["Content-Type: text/plain; charset=utf-8", "", body, ""])].join("\r\n");
   const firstBytes = make("AAAA");
   const secondBytes = make("BBBB");
   const first = t.server.control.addMessage("Z", { raw: firstBytes });
@@ -107,7 +107,8 @@ it.each([false, true])("does not target an equal-envelope different body after r
   expect(firstId).not.toBe(secondId);
   const firstRow = sqlDb(t.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", firstId)!;
   const before = (await t.client.call("threads.get", { threadId: firstRow.thread_id })).messages.find((m) => m.id === firstId)!;
-  expect(before.bodyText).toBe("AAAA\n");
+  expect(before.bodyText).toBe(attachment ? "same text" : "AAAA\n");
+  if (attachment) expect(await t.backend.store.attachments.read(t.account.id, before.attachments[0]!.assetId!, 0)).toBe("QUFBQQ==");
   await t.client.call("threads.act", { threadIds: [firstRow.thread_id], action: "markRead" });
   const queued = (await t.client.call("ops.list", {})).find((item) => item.kind === "markRead")!;
   const queuedTarget = (await t.backend.store.ops.get(queued.id))!.target_json;
@@ -140,7 +141,8 @@ it.each([false, true])("does not target an equal-envelope different body after r
   expect(retained!.last_error).toContain("errors.imap.identityUnavailable");
   const location = (await reopened.backend.store.providerStore(t.account.id).locations!.of([firstId!]))[0];
   if (location) expect(t.server.control.getMessage("A", location.uid, { raw: true }).raw).toEqual(Buffer.from(firstBytes));
-  expect((await reopened.client.call("threads.get", { threadId: firstRow.thread_id })).messages.find((m) => m.id === firstId)).toMatchObject({ bodyText: "AAAA\n" });
+  expect((await reopened.client.call("threads.get", { threadId: firstRow.thread_id })).messages.find((m) => m.id === firstId)).toMatchObject({ bodyText: before.bodyText });
+  if (attachment) expect(await reopened.backend.store.attachments.read(t.account.id, before.attachments[0]!.assetId!, 0)).toBe("QUFBQQ==");
 });
 
 it("uses a valid MOVE mapping for the exact message and retains it across reopen", async () => {
@@ -164,6 +166,10 @@ it("uses a valid MOVE mapping for the exact message and retains it across reopen
   const reopened = await t.reopen();
   expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
   expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual(locations);
+  await reopened.client.call("threads.act", { threadIds: [thread.id], action: "markRead" });
+  await reopened.backend.runWorker();
+  expect(t.server.control.getMessage("Trash", remote.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes), flags: ["\\Seen"] });
+  expect(t.server.control.getMessage("INBOX", other.uid, { raw: true })).toMatchObject({ raw: Buffer.from(otherBytes), flags: [] });
 });
 
 it("does not replay an acknowledged MOVE when UIDPLUS is unavailable", async () => {
@@ -228,7 +234,7 @@ it.each(["markRead", "star", "trash"] as const)("rechecks an already claimed %s 
   expect(t.server.control.getMessage("INBOX", other.uid, { raw: true })).toMatchObject({ raw: Buffer.from(otherBytes), flags: [] });
 });
 
-it.each(["missing", "duplicate", "epoch"] as const)("withholds an invalid %s COPYUID result after one acknowledged MOVE", async (fault) => {
+it.each(["missing", "duplicate", "epoch", "range"] as const)("withholds an invalid %s COPYUID result after one acknowledged MOVE", async (fault) => {
   const { ImapFlow } = await import("imapflow");
   const t = await setup({ Trash: { "special-use": "\\Trash" } });
   const bytes = [rawIdleMail("Map one", "Exact first bytes"), rawIdleMail("Map two", "Exact second bytes")];
@@ -245,6 +251,7 @@ it.each(["missing", "duplicate", "epoch"] as const)("withholds an invalid %s COP
     const pairs = [...result.uidMap!];
     if (fault === "missing") result.uidMap!.delete(pairs[0]![0]);
     else if (fault === "duplicate") result.uidMap!.set(pairs[1]![0], pairs[0]![1]);
+    else if (fault === "range") result.uidMap!.set(pairs[0]![0], 0x1_0000_0000);
     else result.uidValidity = BigInt(Number(result.uidValidity) + 100);
     return result;
   });
@@ -281,4 +288,26 @@ it("imports distinct first-sync UIDs in different folders without merging equal 
   await t.backend.runWorker();
   expect(t.server.control.getMessage("A", a.uid, { raw: true })).toMatchObject({ raw: Buffer.from(one), flags: ["\\Seen"] });
   expect(t.server.control.getMessage("Z", z.uid, { raw: true })).toMatchObject({ raw: Buffer.from(two), flags: [] });
+});
+
+
+it.each(["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam", "notSpam", "moveToInbox"] as const)("admits every requested target before %s, without mutating its located sibling", async (action) => {
+  const t = await setup({ Trash: { "special-use": "\\Trash" }, Archive: { "special-use": "\\Archive" }, Junk: { "special-use": "\\Junk" } });
+  const bytes = [rawIdleMail("Located", "located bytes"), rawIdleMail("Unlocated", "unlocated bytes")];
+  const mailbox = action === "notSpam" ? "Junk" : action === "moveToInbox" ? "Archive" : "INBOX";
+  const flags = action === "markUnread" ? ["\\Seen"] : action === "unstar" ? ["\\Flagged"] : [];
+  const remote = bytes.map((raw) => t.server.control.addMessage(mailbox, { raw, flags }));
+  await t.backend.syncAccount(t.account.id);
+  const threads = sqlDb(t.backend.store).all<{ id: number }>("SELECT id FROM threads");
+  const locations = t.backend.store.providerStore(t.account.id).locations;
+  const id = (await locations.at(mailbox, remote[1]!.uidvalidity, remote[1]!.uid))!;
+  await t.client.call("threads.act", { threadIds: threads.map((thread) => thread.id), action });
+  const op = (await t.client.call("ops.list", {})).find((item) => item.kind === action)!;
+  const target = (await t.backend.store.ops.get(op.id))!.target_json;
+  await locations.remove(id, mailbox);
+  const start = t.commands.length;
+  await t.backend.runWorker();
+  expect(t.commands.slice(start).filter((command) => /^(?:UID )?(?:STORE|MOVE|COPY|EXPUNGE)$/.test(command))).toEqual([]);
+  expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: target });
+  for (const [i, message] of remote.entries()) expect(t.server.control.getMessage(mailbox, message.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes[i]!), flags });
 });

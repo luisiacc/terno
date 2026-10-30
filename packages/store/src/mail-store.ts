@@ -221,7 +221,7 @@ export interface ImapLocationStore {
   unresolved(messageIds: readonly number[]): Promise<number[]>;
   /** Validate every logical target and the entire captured locator set, then invoke start without an async gap. */
   dispatch<T>(messageIds: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>, fenceIds?: readonly number[]): Promise<T>;
-  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean): Promise<void>;
+  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[]): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
   /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */

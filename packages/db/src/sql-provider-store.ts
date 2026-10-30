@@ -1,6 +1,6 @@
 import { isFolder } from "./folders";
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
-import { ImapIdentityError, AWAITING_IDENTITY } from "@terno/store";
+import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
 import { getSetting } from "./repos";
 import { sqlFlags } from "./flag-intents";
 import type { FlagSnapshotRequest } from "@terno/store";
@@ -80,9 +80,12 @@ class SqlImapLocations implements ImapLocationStore {
   ) {}
 
   async fence(messageIds: readonly number[]) {
-    for (let i = 0; i < messageIds.length; i += RESET_SLICE) this.db.tx(() => {
-      for (const id of messageIds.slice(i, i + RESET_SLICE)) this.db.run("INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT id, account_id FROM messages WHERE id=? AND account_id=?", id, this.accountId);
-    });
+    for (let i = 0; i < messageIds.length; i += RESET_SLICE) {
+      this.db.tx(() => {
+        for (const id of messageIds.slice(i, i + RESET_SLICE)) this.db.run("INSERT OR IGNORE INTO imap_identity_holds(message_id,account_id) SELECT id, account_id FROM messages WHERE id=? AND account_id=?", id, this.accountId);
+      });
+      if (i + RESET_SLICE < messageIds.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   async unresolved(messageIds: readonly number[]) {
@@ -118,24 +121,38 @@ class SqlImapLocations implements ImapLocationStore {
     return start();
   }
 
-  async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
+  async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[]) {
+    const expectedById = new Map<number, ImapLocation[]>();
+    for (const row of expected) {
+      const group = expectedById.get(row.message_id) ?? [];
+      group.push(row); expectedById.set(row.message_id, group);
+    }
     const mappedById = new Map(mapping.map((m) => [m.messageId, m.uid]));
-    if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
+    if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || uidvalidity > 0xffff_ffff || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0 || m.uid > 0xffff_ffff) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
     for (let i = 0; i < source.length; i += 128) {
       this.db.tx(() => {
-      for (const item of source.slice(i, i + 128)) {
-        const mapped = mappedById.get(item.message_id);
-        if (!mapped) continue;
-        const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=? AND account_id=?", item.message_id, item.mailbox, this.accountId);
-        if (!old || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
-        this.write(item.message_id, mailbox, uidvalidity, mapped, []);
-        this.located([item.message_id], mailbox, true);
-        if (!copy) {
-          this.db.run("DELETE FROM message_locations WHERE message_id=? AND mailbox=?", item.message_id, item.mailbox);
-          this.located([item.message_id], item.mailbox, false);
+        for (const item of source.slice(i, i + 128)) {
+          const current = this.db.all<ImapLocation>("SELECT * FROM message_locations WHERE message_id=? AND account_id=?", item.message_id, this.accountId);
+          if (!sameImapLocations(expectedById.get(item.message_id) ?? [], current)) throw new ImapIdentityError();
+          const mapped = mappedById.get(item.message_id);
+          if (!mapped) continue;
+          const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=? AND account_id=?", item.message_id, item.mailbox, this.accountId);
+          if (!old || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
+          this.write(item.message_id, mailbox, uidvalidity, mapped, []);
+          this.located([item.message_id], mailbox, true);
+          this.db.run("DELETE FROM imap_identity_holds WHERE message_id=?", item.message_id);
         }
-        this.db.run("DELETE FROM imap_identity_holds WHERE message_id=?", item.message_id);
-      }
+        if (!copy) {
+          const byMailbox = new Map<string, number[]>();
+          for (const item of source.slice(i, i + 128)) {
+            const ids = byMailbox.get(item.mailbox) ?? [];
+            ids.push(item.message_id); byMailbox.set(item.mailbox, ids);
+          }
+          for (const [path, ids] of byMailbox) {
+            this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(ids.length)})`, path, ...ids);
+            this.located(ids, path, false);
+          }
+        }
       });
       if (i + 128 < source.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }

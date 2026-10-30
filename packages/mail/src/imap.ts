@@ -763,9 +763,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /**
    * A UIDVALIDITY reset: every UID stored for the mailbox is meaningless now. Its messages are written down first,
-   * durably (with any an earlier pass couldn't finish recognising: `resetPending`, and the journal), and only then
-   * unlocated, so a disconnect from here on still finds them (Codex R5, R6, R9). The sweep does it before any
-   * identification, so every destination can recognise them (Codex R11).
+   * durably (including `resetPending` and the journal), and only then unlocated. The store retains an
+   * identity hold independently of those bounded journals, including after a disconnect.
    */
   async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
     // every id gathered a few thousand at a time, the loop given turns (Codex R42: 500,000 merged at once, 80 ms)
@@ -1048,9 +1047,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const mapping = items.map((item) => ({ messageId: item.message_id, uid: res.uidMap?.get(item.uid) ?? 0 }));
         const targetStatus = await c.status(target, { uidValidity: true });
         const targetEpoch = Number(targetStatus && targetStatus.uidValidity);
-        const valid = epoch === targetEpoch && Number.isSafeInteger(epoch) && epoch > 0 && mapping.every((m) => Number.isSafeInteger(m.uid) && m.uid > 0) && new Set(mapping.map((m) => m.uid)).size === items.length && res.uidMap?.size === items.length;
+        const valid = epoch === targetEpoch && Number.isSafeInteger(epoch) && epoch > 0 && epoch <= 0xffff_ffff && mapping.every((m) => Number.isSafeInteger(m.uid) && m.uid > 0 && m.uid <= 0xffff_ffff) && new Set(mapping.map((m) => m.uid)).size === items.length && res.uidMap?.size === items.length;
         if (valid) {
-          await locations.mappedMove(items, target, epoch, mapping, mode === "copy");
+          await locations.mappedMove(items, target, epoch, mapping, mode === "copy", admission.expected);
           const moved = new Set(items.map((l) => l.message_id));
           admission.expected = admission.expected.filter((l) => !(moved.has(l.message_id) && (l.mailbox === target || (mode === "move" && l.mailbox === mailbox))));
           for (const item of items) admission.expected.push({ ...item, mailbox: target, uidvalidity: epoch, uid: mapping.find((m) => m.messageId === item.message_id)!.uid });
@@ -1248,18 +1247,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
         for (const path of vanished) await addAll(vanishedIds, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
-        // what sweeps unlocated (this pass, or one that failed before reconciling): reconciled at the end, and recognised if found again
+        // Revisit identities unlocated this pass or before an interrupted reconciliation.
         await addAll(touched, cursor.unlocated ?? []);
-        // one index of everything that lost a place: vanished folders, the journal (sweeps, resets), orphans a partial
-        // pass kept, resets still pending; shared by every mailbox, so each message is claimed once (Codex R10, R11)
-        // gathered a few thousand at a time (Codex R43: 500,000 spread and flattened at once)
+        // Gather missing identities in slices; a new role folder must search old mail too.
         const pending = new Set<number>();
         await addAll(pending, vanishedIds);
         await addAll(pending, cursor.unlocated ?? []);
         await addAll(pending, cursor.orphans ?? []);
         for (const ids of Object.values(cursor.resetPending ?? {})) await addAll(pending, ids);
-        // a journal that was cut: every message with no location, a window at a time, before any mail is identified,
-        // so one moved past the limit is recognised like the rest, never a new message beside a deleted one (Codex R15, R16)
+        // Rediscover identities outside a truncated journal. Their durable holds are never truncated.
         const lost: number[] = [];
         for (let after = 0, more = cursor.overflow === true; more; after += UNLOCATED_SPAN) {
           if (sink.signal.aborted) return;
@@ -1290,16 +1286,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             tolerate(error);
           }
         }
-        // a folder that's gone takes its locations now; what was only there (not found again under a new name) goes in reconcile
+        // Forget vanished paths, retaining their cached identities behind durable holds.
         for (const path of incomplete ? [] : vanished) {
           // written down before they go (Codex R9): a crash right after still reconciles them
           await journal(cursor, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
           await addAll(touched, await locations.resetMailbox(path));
           delete cursor.mailboxes[path];
         }
-        // what a failed pass kept is looked at again once a pass completes: still nowhere on the server, it goes
-        // only a pass that read every folder and failed nowhere may delete an orphan: one that skipped a quiet
-        // folder (STATUS) may have missed where a message moved, so its orphans wait and the next pass reads all (Codex R9)
+        // A complete sequential pass permits flag reconciliation, not proof of disappearance.
         const full = !incomplete && skipped === 0;
         await addAll(touched, cursor.unlocated ?? []);
         if (full) await addAll(touched, cursor.orphans ?? []);

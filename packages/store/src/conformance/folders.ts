@@ -97,6 +97,20 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect((await store.threads.get(thread))!.messages[0]!.isRead).toBe(true);
     });
 
+    it("IMAP identity: a mapping cannot release a hold created by losing another copy", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: [id] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1), loc("C", 2)] })]);
+      const locations = store.providerStore(account!).locations;
+      const before = await locations.of([id!]);
+      await locations.dispatch([id!], before, async () => {}, [id!]);
+      await locations.remove(id!, "C");
+      await expect(locations.mappedMove(before.filter((l) => l.mailbox === "A"), "B", 2, [{ messageId: id!, uid: 10 }], false, before)).rejects.toThrow("IMAP identity unavailable");
+      store = await harness.reopen(store); open.push(store);
+      expect(await store.providerStore(account!).locations.unresolved([id!])).toEqual([id!]);
+      expect(await store.providerStore(account!).locations.of([id!])).toEqual(before.filter((l) => l.mailbox === "A"));
+    });
+
     it("IMAP identity: a stale second mapping rolls back the first binding and all holds", async () => {
       let store = await fresh();
       const [, account] = await withAccounts(store);
@@ -104,11 +118,11 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       let locations = store.providerStore(account!).locations;
       const before = await locations.of([first!, second!]);
       await locations.dispatch([first!, second!], before, async () => {}, [first!, second!]);
-      await expect(locations.mappedMove([before[0]!, { ...before[1]!, uid: 999 }], "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false)).rejects.toThrow();
+      await expect(locations.mappedMove([before[0]!, { ...before[1]!, uid: 999 }], "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before)).rejects.toThrow();
       store = await harness.reopen(store); open.push(store); locations = store.providerStore(account!).locations;
       expect(await locations.of([first!, second!])).toEqual(before);
       expect(await locations.unresolved([first!, second!])).toEqual([first!, second!]);
-      await locations.mappedMove(before, "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false);
+      await locations.mappedMove(before, "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before);
       expect(await locations.unresolved([first!, second!])).toEqual([]);
       await expect(locations.dispatch([first!, second!], await locations.of([first!, second!]), async () => "mapped")).resolves.toBe("mapped");
     });

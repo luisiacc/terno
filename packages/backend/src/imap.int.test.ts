@@ -336,7 +336,6 @@ describe("IMAP provider against ImapKit", () => {
     const ctl = imap.server.control;
     const targetRaw = raw({ subject: "All Mail target", body: "Exact All Mail body" });
     const target = ctl.addMessage("INBOX", { raw: targetRaw });
-    ctl.addMessage("All", { raw: targetRaw });
     const otherRaw = raw({ subject: "All Mail unrelated", body: "Exact unrelated body" });
     const other = ctl.addMessage("INBOX", { raw: otherRaw });
     const account = await addAccount(imap.port);
@@ -345,9 +344,10 @@ describe("IMAP provider against ImapKit", () => {
     const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
     const locations = backend.store.providerStore(account.id).locations!;
     const sourceProof = (await locations.of([message.id])).find((l) => l.mailbox === "INBOX")!;
+    ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
@@ -381,7 +381,6 @@ describe("IMAP provider against ImapKit", () => {
     const ctl = imap.server.control;
     const targetRaw = raw({ subject: "All Mail target", body: "Exact All Mail body" });
     const target = ctl.addMessage("INBOX", { raw: targetRaw });
-    ctl.addMessage("All", { raw: targetRaw });
     const otherRaw = raw({ subject: "All Mail unrelated", body: "Exact unrelated body" });
     const other = ctl.addMessage("INBOX", { raw: otherRaw });
     const account = await addAccount(imap.port);
@@ -390,9 +389,10 @@ describe("IMAP provider against ImapKit", () => {
     const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
     const locations = backend.store.providerStore(account.id).locations!;
     const sourceProof = (await locations.of([message.id])).find((l) => l.mailbox === "INBOX")!;
+    ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
@@ -459,16 +459,16 @@ describe("IMAP provider against ImapKit", () => {
     const ctl = imap.server.control;
     const targetRaw = raw({ subject: "Read-only All Mail", body: "Exact All Mail readonly body" });
     const target = ctl.addMessage("INBOX", { raw: targetRaw });
-    ctl.addMessage("All", { raw: targetRaw });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
     const thread = (await client.call("threads.list", { view: "inbox" })).items.find((t) => t.subject === "Read-only All Mail")!;
     const message = (await client.call("threads.get", { threadId: thread.id })).messages[0]!;
     const locations = backend.store.providerStore(account.id).locations!;
     const sourceProof = (await locations.of([message.id])).find((l) => l.mailbox === "INBOX")!;
+    ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     expect(ctl.sessions().some((session) => session.mailbox === "INBOX" && session.readOnly)).toBe(true);
@@ -1052,6 +1052,24 @@ describe("IMAP provider against ImapKit", () => {
 describe("an account's own folders (plan 68)", () => {
   const folderOf = async (client: RpcClient, accountId: number, folder: string) => (await client.call("threads.list", { view: "all", accountId, folder })).items.map((t) => t.subject).sort();
 
+  const captureIdentity = (backend: Backend) => sqlDb(backend.store).all<{ id: number; thread_id: number; body_state: string; body_text: string | null; body_html: string | null }>(
+    "SELECT m.id, m.thread_id, m.body_state, b.body_text, b.body_html FROM messages m LEFT JOIN message_bodies b ON b.message_id=m.id ORDER BY m.id",
+  );
+  const expectRetained = async (backend: Backend, accountId: number, before: ReturnType<typeof captureIdentity>, held: number[]) => {
+    expect(before.length).toBeGreaterThan(0);
+    const after = captureIdentity(backend);
+    for (const row of before) expect(after.find((m) => m.id === row.id)).toEqual(row);
+    const locations = backend.store.providerStore(accountId).locations;
+    expect(await locations.unresolved(before.map((m) => m.id))).toEqual([...held].sort((a, b) => a - b));
+    if (held.length) {
+      expect(await locations.of(held)).toEqual([]);
+      let issued = false;
+      await expect(locations.dispatch(held, [], async () => { issued = true; })).rejects.toThrow("IMAP identity unavailable");
+      expect(issued).toBe(false);
+    }
+  };
+
+
   it("lists its own folders (nested; roles and specials left out) and syncs them; a message only in one is archived mail", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1072,7 +1090,7 @@ describe("an account's own folders (plan 68)", () => {
     expect((await client.call("counts.get", {})).folderUnread).toEqual({ [`${account.id}:Work`]: 1 });
   });
 
-  it("a move between folders moves the thread, keeping the message; a rename keeps it too; a deleted folder takes what was only there", async () => {
+  it("external moves, renames and folder deletion retain cached mail without inferring a destination", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("Work");
@@ -1080,15 +1098,16 @@ describe("an account's own folders (plan 68)", () => {
     const m = ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id;
     ctl.moveMessages("Work", [m.uid], "Clients");
     await backend.syncAccount(account.id);
     expect(await folderOf(client, account.id, "Work")).toEqual([]);
-    expect(await folderOf(client, account.id, "Clients")).toEqual(["Contrato"]);
+    expect(await folderOf(client, account.id, "Clients")).toEqual([]);
     ctl.renameMailbox("Clients", "Proyectos");
     await backend.syncAccount(account.id);
     expect((await backend.store.folders.list()).map((f) => f.key).sort()).toEqual(["Proyectos", "Work"]);
-    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual([]);
     // the same message, never removed and fetched again; its old path's locations are gone
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Contrato'")!.id).toBe(id);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Clients'")).toBe(0);
@@ -1099,10 +1118,11 @@ describe("an account's own folders (plan 68)", () => {
     // pass, which reads every folder (Codex R9), and goes then
     expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R1: a rename keeps mail older than the sync window, and mail without a Message-ID, with its thread and categories", async () => {
+  it("Codex R1: a rename retains old and ID-less mail, threads and categories without rebinding", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     const twoYears = new Date(Date.now() - 2 * 365 * 86_400_000);
@@ -1113,6 +1133,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: raw({ subject: "Sin identificador" }).replace(/^Message-ID: .*\r\n/m, "") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number; subject: string }>("SELECT id, thread_id, subject FROM messages ORDER BY subject");
     expect(before.map((m) => m.subject)).toEqual(["Contrato viejo", "Sin identificador"]);
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1123,12 +1144,13 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     const after = sqlDb(backend.store).all<{ id: number; thread_id: number; subject: string }>("SELECT id, thread_id, subject FROM messages ORDER BY subject");
     expect(after).toEqual(before);
-    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato viejo", "Sin identificador"]);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual([]);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(2);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R2: a rename whose new path can't be opened this pass keeps the old folder's mail until a pass where it can", async () => {
+  it("Codex R2: a failed destination read and its retry keep the renamed identity unresolved", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1138,6 +1160,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: raw({ subject: "Contrato", date: old }), internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
     await client.call("settings.update", { syncWindowDays: 30 });
     ctl.renameMailbox("Work", "Proyectos");
@@ -1155,11 +1178,12 @@ describe("an account's own folders (plan 68)", () => {
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")?.id).toBe(id);
-    expect(await folderOf(client, account.id, "Proyectos")).toEqual(["Contrato"]);
+    expect(await folderOf(client, account.id, "Proyectos")).toEqual([]);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R2: a rename keeps both messages that share a Message-ID and an envelope, older than the window", async () => {
+  it("Codex R2: a rename retains both indistinguishable older Message-ID twins unresolved", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     const old = new Date(Date.now() - 400 * 86_400_000);
@@ -1170,13 +1194,15 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: twin, internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
     expect(before).toHaveLength(2);
     await client.call("settings.update", { syncWindowDays: 30 });
     ctl.renameMailbox("Work", "Proyectos");
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Proyectos'")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Proyectos'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
   it("Codex R3: a UIDVALIDITY reset that fails part-way never deletes the folder's mail; the next pass finds it again", async () => {
@@ -1209,7 +1235,7 @@ describe("an account's own folders (plan 68)", () => {
     expect(await backend.store.providerStore(account.id).locations.unresolved([id])).toEqual([id]);
   });
 
-  it("Codex R4: what a failed reset kept that the server deleted goes once a pass completes; what's still there stays", async () => {
+  it("Codex R4: completing a failed reset does not prove disappearance or identity", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1220,6 +1246,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: raw({ subject: "Contrato", date: old }), internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     await client.call("settings.update", { syncWindowDays: 30 });
     ctl.expungeMessages("Work", [gone.uid]);
     ctl.resetUidValidity("Work");
@@ -1235,10 +1262,11 @@ describe("an account's own folders (plan 68)", () => {
     }
     expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Contrato"]);
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Contrato"]);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Contrato"]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R5: a reset that failed part-way still recognises two ID-less twins older than the window on the next pass", async () => {
+  it("Codex R5: interrupted reset retains old ID-less twins without assigning their new UIDs", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1250,6 +1278,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: twin, internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
     expect(before).toHaveLength(2);
     await client.call("settings.update", { syncWindowDays: 30 });
@@ -1266,10 +1295,11 @@ describe("an account's own folders (plan 68)", () => {
     }
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R5: an ID-less message moved to a folder that syncs first keeps its identity, its thread and its category", async () => {
+  it("Codex R5: a move to an earlier folder retains its logical target, body and category unresolved", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("A");
@@ -1277,6 +1307,7 @@ describe("an account's own folders (plan 68)", () => {
     const m = ctl.addMessage("Z", { raw: raw({ subject: "Sin id movido" }).replace(/^Message-ID: .*\r\n/m, "") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")!;
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
     await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before.thread_id] });
@@ -1284,11 +1315,12 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
-    expect(await folderOf(client, account.id, "A")).toEqual(["Sin id movido"]);
+    expect(await folderOf(client, account.id, "A")).toEqual([]);
     expect(await folderOf(client, account.id, "Z")).toEqual([]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R6: a disconnect right after a reset still recognises the folder's ID-less twins on the next sync", async () => {
+  it("Codex R6: disconnect after reset preserves ID-less twins across the next sync", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1300,6 +1332,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Work", { raw: twin, internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
     await client.call("settings.update", { syncWindowDays: 30 });
     ctl.resetUidValidity("Work");
@@ -1316,7 +1349,8 @@ describe("an account's own folders (plan 68)", () => {
     }
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
   it("Codex R6: a sweep that fails acknowledges nothing: a flag change it missed is read on a later pass", async () => {
@@ -1365,7 +1399,7 @@ describe("an account's own folders (plan 68)", () => {
   });
 
   for (const into of ["an existing folder", "a new folder, the mail older than the window"] as const) {
-    it(`Codex R8: two identical ID-less messages moved into ${into} keep their identities, threads and category`, async () => {
+    it(`Codex R8: identical twins moved into ${into} retain both cached identities unresolved`, async () => {
       const { imap, backend, client, addAccount } = await setup();
       const ctl = imap.server.control;
       const old = new Date(Date.now() - 400 * 86_400_000);
@@ -1378,6 +1412,7 @@ describe("an account's own folders (plan 68)", () => {
       const b = ctl.addMessage("Z", { raw: twin, internaldate: old });
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
       expect(before).toHaveLength(2);
       const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1389,12 +1424,13 @@ describe("an account's own folders (plan 68)", () => {
       ctl.moveMessages("Z", [a.uid, b.uid], "A");
       await backend.syncAccount(account.id);
       expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
-      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(2);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(0);
       expect(count(backend, "SELECT DISTINCT thread_id FROM thread_categories WHERE category_id = ?", category.id)).toBe(new Set(before.map((m) => m.thread_id)).size);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
     });
   }
 
-  it("Codex R8: a disconnect between the sweep and identification never leaves a ghost: the expunged message goes on the next sync", async () => {
+  it("Codex R8: disconnect after a sweep preserves the missing target while importing unrelated mail", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1402,6 +1438,7 @@ describe("an account's own folders (plan 68)", () => {
     const x = ctl.addMessage("Work", { raw: raw({ subject: "Borrado" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     ctl.expungeMessages("Work", [x.uid]);
     ctl.addMessage("Work", { raw: raw({ subject: "Nuevo" }) });
     // the identification's fetch (envelopes of new mail) drops, the retry too; the sweep before it has run
@@ -1417,10 +1454,11 @@ describe("an account's own folders (plan 68)", () => {
       dropping.mockRestore();
     }
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Nuevo"]);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((m) => m.subject)).toEqual(["Borrado", "Nuevo"]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R9: a message moved into a folder STATUS skipped just before keeps its identity: the orphan waits for a full pass", async () => {
+  it("Codex R9: moving behind STATUS leaves a retained unresolved target after a full pass", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1429,6 +1467,7 @@ describe("an account's own folders (plan 68)", () => {
     const m = ctl.addMessage("Z", { raw: raw({ subject: "Movido entre STATUS" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")!;
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
     await client.call("categories.addThreads", { categoryId: category.id, threadIds: [before.thread_id] });
@@ -1452,10 +1491,11 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages")).toEqual([before]);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
-    expect(await folderOf(client, account.id, "A")).toEqual(["Movido entre STATUS"]);
+    expect(await folderOf(client, account.id, "A")).toEqual([]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R9: a reset that finishes, then another that fails, still reconciles what the first found deleted", async () => {
+  it("Codex R9: sequential reset passes cannot discard or rebind either folder’s cached mail", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1466,6 +1506,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("B", { raw: raw({ subject: "En B" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     ctl.expungeMessages("A", [gone.uid]);
     ctl.resetUidValidity("A");
     ctl.resetUidValidity("B");
@@ -1481,7 +1522,8 @@ describe("an account's own folders (plan 68)", () => {
     }
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((r) => r.subject)).toEqual(["En B", "Queda en A"]);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages ORDER BY subject").map((r) => r.subject)).toEqual(["Borrado en A", "En B", "Queda en A"]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
   it("Codex R10: an ID-less message moved out of a folder that's then deleted, all between syncs, keeps its identity", async () => {
@@ -1503,7 +1545,7 @@ describe("an account's own folders (plan 68)", () => {
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(1);
   });
 
-  it("Codex R10: two identical ID-less messages moved into a folder STATUS had just skipped keep both identities", async () => {
+  it("Codex R10: moving identical twins behind STATUS retains both without guessing their order", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1514,6 +1556,7 @@ describe("an account's own folders (plan 68)", () => {
     const b = ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id);
     const original = ImapFlow.prototype.status;
     let moved = false;
@@ -1532,10 +1575,11 @@ describe("an account's own folders (plan 68)", () => {
     }
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((r) => r.id)).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R11: a reset in one folder and a move out of it to another, between syncs, keep the moved twin's identity", async () => {
+  it("Codex R11: reset plus cross-folder move retains both indistinguishable targets unresolved", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("A");
@@ -1545,6 +1589,7 @@ describe("an account's own folders (plan 68)", () => {
     const second = ctl.addMessage("A", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
     await client.call("categories.addThreads", { categoryId: category.id, threadIds: [...new Set(before.map((m) => m.thread_id))] });
@@ -1553,10 +1598,11 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'B'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'B'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R12: a reset after the sweep, before the folder is read, keeps both Message-ID twins older than the window", async () => {
+  it("Codex R12: reset after the sweep withholds old twins while importing unrelated new mail", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     const old = new Date(Date.now() - 400 * 86_400_000);
@@ -1567,6 +1613,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("A", { raw: twin, internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     await client.call("settings.update", { syncWindowDays: 30 });
@@ -1588,10 +1635,11 @@ describe("an account's own folders (plan 68)", () => {
     expect(locks).toBeGreaterThanOrEqual(2);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id").slice(0, 2)).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(3);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(1);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R13: the first of two ID-less twins moved out of a folder that's then reset: each keeps its own identity", async () => {
+  it("Codex R13: moving one twin before reset does not establish either twin’s new identity", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("A");
@@ -1601,6 +1649,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1610,11 +1659,12 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(1);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Z'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Z'")).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R15: journals cut at their limit leave nothing behind: the next full pass finds every message with no place", async () => {
+  it("Codex R15: journal overflow cannot discard unlocated targets on a full pass", async () => {
     const { IMAP_JOURNAL_LIMITS } = await import("@terno/mail");
     const limits = { ...IMAP_JOURNAL_LIMITS };
     Object.assign(IMAP_JOURNAL_LIMITS, { unlocated: 2, resetPending: 2, orphans: 2 });
@@ -1628,6 +1678,7 @@ describe("an account's own folders (plan 68)", () => {
       const kept = ctl.addMessage("Z", { raw: raw({ subject: "Queda en Z" }) });
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       expect(count(backend, "SELECT 1 FROM messages")).toBe(7);
       // five expunged while A is quiet (STATUS skips it: not a pass that may delete), more than any journal keeps
       ctl.expungeMessages("Z", gone.map((m) => m.uid));
@@ -1635,15 +1686,16 @@ describe("an account's own folders (plan 68)", () => {
       // then a pass that reads every folder, as after a restart
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
-      expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
-      expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(0);
+      expect(count(backend, "SELECT 1 FROM messages")).toBe(7);
+      expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(5);
       expect(kept.uid).toBeGreaterThan(0);
+      await expectRetained(backend, account.id, retained, retained.slice(1, 6).map((m) => m.id));
     } finally {
       Object.assign(IMAP_JOURNAL_LIMITS, limits);
     }
   });
 
-  it("Codex R16: ID-less twins moved past the journals' limit, while their destination was skipped, keep their identities", async () => {
+  it("Codex R16: moved ID-less twins survive journal overflow with all identity holds intact", async () => {
     const { IMAP_JOURNAL_LIMITS } = await import("@terno/mail");
     const { ImapFlow } = await import("imapflow");
     const limits = { ...IMAP_JOURNAL_LIMITS };
@@ -1658,6 +1710,7 @@ describe("an account's own folders (plan 68)", () => {
       const twins = Array.from({ length: 5 }, () => ctl.addMessage("Z", { raw: twin }));
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
       expect(before).toHaveLength(6);
       const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1682,13 +1735,14 @@ describe("an account's own folders (plan 68)", () => {
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
       expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
-      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(6);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A'")).toBe(1);
+      await expectRetained(backend, account.id, retained, retained.slice(1).map((m) => m.id));
     } finally {
       Object.assign(IMAP_JOURNAL_LIMITS, limits);
     }
   });
 
-  it("Codex R18: an ID-less message moved after its folder's sweep, before its destination is read, keeps its identity", async () => {
+  it("Codex R18: a move after the source sweep keeps the old target unresolved", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1697,6 +1751,7 @@ describe("an account's own folders (plan 68)", () => {
     const lone = ctl.addMessage("Z", { raw: raw({ subject: "Solo, sin Message-ID" }).replace(/^Message-ID: .*\r\n/m, "") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(1);
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1720,11 +1775,12 @@ describe("an account's own folders (plan 68)", () => {
     const after = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Solo, sin Message-ID'");
     expect(after).toEqual(before);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, before[0]!.thread_id)).toBe(1);
-    expect(await folderOf(client, account.id, "A")).toEqual(expect.arrayContaining(["Solo, sin Message-ID"]));
+    expect(await folderOf(client, account.id, "A")).toEqual(["Nuevo en A"]);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'Z'", before[0]!.id)).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R25: of two messages sharing a Message-ID and envelope, the one moved keeps its identity; the other stays", async () => {
+  it("Codex R25: one duplicate Message-ID twin moves; its target is held and the other stays located", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("A");
@@ -1734,6 +1790,7 @@ describe("an account's own folders (plan 68)", () => {
     const second = ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number; provider_msg_id: string }>("SELECT id, thread_id, provider_msg_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     const moved = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", second.uid)!.id;
@@ -1744,11 +1801,12 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number; provider_msg_id: string }>("SELECT id, thread_id, provider_msg_id FROM messages ORDER BY id")).toEqual(before);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([]);
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", stays)).toEqual([{ mailbox: "Z" }]);
+    await expectRetained(backend, account.id, retained, [moved]);
   });
 
-  it("Codex R26: of two messages sharing a Message-ID and envelope, the one moved after the sweep keeps its identity", async () => {
+  it("Codex R26: a late duplicate Message-ID move cannot bind the moved target speculatively", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1759,6 +1817,7 @@ describe("an account's own folders (plan 68)", () => {
     const second = ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     const moved = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", second.uid)!.id;
@@ -1779,11 +1838,12 @@ describe("an account's own folders (plan 68)", () => {
     expect(locks).toBeGreaterThanOrEqual(2);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Gemelos tardíos con Message-ID' ORDER BY id")).toEqual(before);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([]);
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", stays)).toEqual([{ mailbox: "Z" }]);
+    await expectRetained(backend, account.id, retained, [moved]);
   });
 
-  it("Codex R27: two copies of a Message-ID with twins arriving in one folder are both tracked", async () => {
+  it("Codex R27: duplicate Message-ID arrivals elsewhere cannot attach to either existing target", async () => {
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("A");
@@ -1793,17 +1853,20 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((m) => m.id);
     const a1 = ctl.addMessage("A", { raw: twin });
     const a2 = ctl.addMessage("A", { raw: twin });
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all<{ uid: number }>("SELECT uid FROM message_locations WHERE mailbox = 'A' ORDER BY uid").map((l) => l.uid)).toEqual([a1.uid, a2.uid]);
+    expect(sqlDb(backend.store).all<{ uid: number }>("SELECT uid FROM message_locations WHERE mailbox = 'A' ORDER BY uid").map((l) => l.uid)).toEqual([]);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((m) => m.id).slice(0, 2)).toEqual(before);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Z'")).toBe(2);
+    await expectRetained(backend, account.id, retained, []);
+    expect(ctl.listMessages("A", { raw: true }).map((m) => [m.uid, m.raw])).toEqual([[a1.uid, Buffer.from(twin)], [a2.uid, Buffer.from(twin)]]);
   });
 
-  it("Codex R27: a Message-ID twin moved late into the folder holding the other keeps its identity", async () => {
+  it("Codex R27: sequential late twin moves preserve both targets without assigning new UIDs", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1815,13 +1878,14 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     const plain = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
     ctl.moveMessages("Z", [plain.uid], "A");
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", plain.id)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", plain.id)).toEqual([]);
     // then the other (in Z) moves into A after the sweeps, before A is read
     const moved = before.find((m) => m.id !== plain.id)!.id;
     const P = "A";
@@ -1843,11 +1907,12 @@ describe("an account's own folders (plan 68)", () => {
     expect(locks).toBeGreaterThanOrEqual(2);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Gemelo hacia el otro' ORDER BY id")).toEqual(before);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([{ mailbox: P }]);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", plain.id)).toEqual([{ mailbox: P }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", moved)).toEqual([]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", plain.id)).toEqual([]);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R28: a Message-ID twin moved late and another copy arriving beside it: each keeps its own UID", async () => {
+  it("Codex R28: a late move and identical copy cannot assign either new UID to the old target", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1858,6 +1923,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages ORDER BY id").map((m) => m.id);
     const plain = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
     ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
@@ -1880,12 +1946,13 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     const inA = (ctl as unknown as { listMessages(path: string, o: { raw: boolean }): { uid: number; raw: Buffer }[] }).listMessages("A", { raw: true }).filter((x) => x.raw.toString().includes("Movido y copiado")).map((x) => x.uid).sort((a, b) => a - b);
     expect(inA).toHaveLength(2);
-    expect(sqlDb(backend.store).all<{ uid: number }>("SELECT uid FROM message_locations WHERE mailbox = 'A' AND message_id IN (SELECT id FROM messages WHERE subject = 'Movido y copiado') ORDER BY uid").map((l) => l.uid)).toEqual(inA);
+    expect(sqlDb(backend.store).all<{ uid: number }>("SELECT uid FROM message_locations WHERE mailbox = 'A' AND message_id IN (SELECT id FROM messages WHERE subject = 'Movido y copiado') ORDER BY uid").map((l) => l.uid)).toEqual([]);
     expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Movido y copiado' ORDER BY id").map((m) => m.id).slice(0, 2)).toEqual(before);
+    await expectRetained(backend, account.id, retained, [plain.id]);
   });
 
   for (const how of ["moved between passes", "moved into a new folder, older than the window"] as const) {
-    it(`Codex R28: with its plain-key twin deleted, a Message-ID twin ${how} keeps its identity`, async () => {
+    it(`Codex R28: a missing plain-key twin and a twin ${how} remain cached unresolved`, async () => {
       const { imap, backend, client, addAccount } = await setup();
       const ctl = imap.server.control;
       const old = new Date(Date.now() - 400 * 86_400_000);
@@ -1899,6 +1966,7 @@ describe("an account's own folders (plan 68)", () => {
       ctl.addMessage("Z", opts);
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       const plain = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
       const survivor = sqlDb(backend.store).get<{ id: number; thread_id: number; uid: number }>("SELECT m.id, m.thread_id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
       const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -1906,7 +1974,7 @@ describe("an account's own folders (plan 68)", () => {
       ctl.expungeMessages("Z", [plain.uid]);
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
-      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual([survivor.id]);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual(retained.map((m) => m.id));
       if (outside) {
         await client.call("settings.update", { syncWindowDays: 30 });
         ctl.createMailbox("A");
@@ -1914,14 +1982,15 @@ describe("an account's own folders (plan 68)", () => {
       ctl.moveMessages("Z", [survivor.uid], "A");
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
-      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente con Message-ID'")).toEqual([{ id: survivor.id, thread_id: survivor.thread_id }]);
-      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", survivor.id)).toEqual([{ mailbox: "A" }]);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente con Message-ID'")).toEqual(retained.map(({ id, thread_id }) => ({ id, thread_id })));
+      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", survivor.id)).toEqual([]);
       expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, survivor.thread_id)).toBe(1);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
     });
   }
 
   for (const how of ["into a folder it already knew", "into a new folder, older than the window"] as const) {
-    it(`Codex R29: with its plain-key twin deleted, a Message-ID twin copied ${how} is one message in both`, async () => {
+    it(`Codex R29: an external copy ${how} cannot bind to an existing twin`, async () => {
       const { imap, backend, client, addAccount } = await setup();
       const ctl = imap.server.control;
       const old = new Date(Date.now() - 400 * 86_400_000);
@@ -1935,6 +2004,7 @@ describe("an account's own folders (plan 68)", () => {
       ctl.addMessage("Z", opts);
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       const plain = sqlDb(backend.store).get<{ uid: number }>("SELECT l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
       const survivor = sqlDb(backend.store).get<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
       ctl.expungeMessages("Z", [plain.uid]);
@@ -1947,12 +2017,13 @@ describe("an account's own folders (plan 68)", () => {
       ctl.copyMessages("Z", [survivor.uid], "A");
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
-      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Superviviente copiado'").map((m) => m.id)).toEqual([survivor.id]);
-      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ? ORDER BY mailbox", survivor.id)).toEqual([{ mailbox: "A" }, { mailbox: "Z" }]);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Superviviente copiado'").map((m) => m.id)).toEqual(retained.map((m) => m.id));
+      expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ? ORDER BY mailbox", survivor.id)).toEqual([{ mailbox: "Z" }]);
+    await expectRetained(backend, account.id, retained, retained.filter((m) => m.id !== survivor.id).map((m) => m.id));
     });
   }
 
-  it("Codex R34: a Message-ID duplicate written in one folder and moved on before the next is read stays its own message", async () => {
+  it("Codex R34: a duplicate imported then moved keeps its own cached target unresolved", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1963,6 +2034,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("B", { raw: raw({ subject: "En B" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const original = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Duplicado que sigue'")!.id;
     // a duplicate in A (read this pass, written as its own message), moved to B as B is read
     const dup = ctl.addMessage("A", { raw: twin });
@@ -1984,10 +2056,12 @@ describe("an account's own folders (plan 68)", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toBe(original);
     expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", original)).toEqual([{ mailbox: "A" }]);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "B" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([]);
+    await expectRetained(backend, account.id, retained, []);
+    expect(await backend.store.providerStore(account.id).locations.unresolved([rows[1]!])).toEqual([rows[1]!]);
   });
 
-  it("Codex R37: after a pass that stopped once a moved ID-less message was placed, an identical copy elsewhere is its own", async () => {
+  it("Codex R37: an interrupted move and identical arrival cannot rebind the old target", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -1999,6 +2073,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("C", { raw: raw({ subject: "En C" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado y copiado'")!.id;
     // moved to A, and an identical copy appears in C; the pass stops (a dropped connection) as C is read
     ctl.moveMessages("Z", [lone.uid], "A");
@@ -2022,13 +2097,14 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     const rows = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado y copiado' ORDER BY id").map((r) => r.id);
-    expect(rows).toHaveLength(2);
+    expect(rows).toEqual([id]);
     expect(rows[0]).toBe(id);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", id)).toEqual([{ mailbox: "A" }]);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "C" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", id)).toEqual([]);
+
+    await expectRetained(backend, account.id, retained, [id]);
   });
 
-  it("Codex R38: the same, with the copy's folder read before the one the moved message was placed in", async () => {
+  it("Codex R38: reading the identical copy first still cannot rebind the interrupted move", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2041,6 +2117,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("ZZ", { raw: raw({ subject: "En ZZ" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado, copia antes'")!.id;
     // moved Y → Z; the pass places it in Z, then drops as ZZ is read (after Z)
     ctl.moveMessages("Y", [lone.uid], "Z");
@@ -2066,10 +2143,11 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     const rows = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages WHERE subject = 'Colocado, copia antes' ORDER BY id").map((r) => r.id);
-    expect(rows).toHaveLength(2);
+    expect(rows).toEqual([id]);
     expect(rows[0]).toBe(id);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", id)).toEqual([{ mailbox: "Z" }]);
-    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", rows[1]!)).toEqual([{ mailbox: "A" }]);
+    expect(sqlDb(backend.store).all<{ mailbox: string }>("SELECT mailbox FROM message_locations WHERE message_id = ?", id)).toEqual([]);
+
+    await expectRetained(backend, account.id, retained, [id]);
   });
 
   it("Codex R54: moving a long conversation to Inbox takes its old places away together, never one at a time", async () => {
@@ -2106,7 +2184,7 @@ describe("an account's own folders (plan 68)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.thread_id = ? AND l.mailbox = 'Proyectos'", thread)).toBe(0);
   });
 
-  it("Codex R24: a folder deleted while it has children (a \\Noselect parent now) loses its mail; it's still a group", async () => {
+  it("Codex R24: a deleted parent remains a hierarchy group and its missing mail stays cached", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("P");
@@ -2115,15 +2193,17 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("P/C", { raw: raw({ subject: "En el hijo" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el padre'")).toBe(1);
     ctl.deleteMailbox("P");
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el padre'")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el padre'")).toBe(1);
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'P'")).toBe(0);
     expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'En el hijo'")).toBe(1);
     const folders = (await client.call("app.bootstrap", {})).folders.filter((f) => f.accountId === account.id);
     expect(folders.find((f) => f.key === "P")).toMatchObject({ selectable: false });
+    await expectRetained(backend, account.id, retained, [retained[0]!.id]);
   });
 
   it("Codex R24: late moves told apart take their old places away a mailbox at a time, never one by one", async () => {
@@ -2160,7 +2240,7 @@ describe("an account's own folders (plan 68)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.subject = 'Muchos movidos' AND l.mailbox = 'Z'")).toBe(0);
   });
 
-  it("Codex R23: a folder whose read fails part-way, a message held back in it, isn't acknowledged past what it read", async () => {
+  it("Codex R23: partial fetch preserves its checkpoint and withholds ambiguous arrivals on retry", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2171,6 +2251,7 @@ describe("an account's own folders (plan 68)", () => {
     ctl.addMessage("A", { raw: raw({ subject: "Primero en A" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     // a copy of Z's (held back: its twin is placed), then a message after it
     ctl.addMessage("A", { raw: twin });
     ctl.addMessage("A", { raw: raw({ subject: "Tercero en A" }) });
@@ -2197,10 +2278,11 @@ describe("an account's own folders (plan 68)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Tercero en A'")).toBe(1);
-    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Copia retenida'")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM messages WHERE subject = 'Copia retenida'")).toBe(1);
+    await expectRetained(backend, account.id, retained, []);
   });
 
-  it("Codex R22: a move told apart that stops before its new place is written, then deleted there, leaves nothing behind", async () => {
+  it("Codex R22: a late move never attempts speculative upsert; later disappearance retains the target", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2209,6 +2291,7 @@ describe("an account's own folders (plan 68)", () => {
     const lone = ctl.addMessage("Z", { raw: raw({ subject: "Movido y cortado" }).replace(/^Message-ID: .*\r\n/m, "") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const id = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages")!.id;
     ctl.addMessage("A", { raw: raw({ subject: "Nuevo en A" }) });
     ctl.addMessage("Z", { raw: raw({ subject: "Nuevo en Z" }) });
@@ -2238,11 +2321,15 @@ describe("an account's own folders (plan 68)", () => {
       late.mockRestore();
       failing.mockRestore();
     }
-    expect(failed).toBe(true);
+    expect(failed).toBe(false);
+    const remote = ctl.listMessages("A", { raw: true }).find((m) => m.raw!.toString().includes("Movido y cortado"))!;
+    expect(remote).toBeDefined();
+    ctl.expungeMessages("A", [remote.uid]);
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(0);
-    expect(count(backend, "SELECT 1 FROM messages WHERE id = ?", id)).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages m WHERE NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id)")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM messages WHERE id = ?", id)).toBe(1);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
   it("Codex R19: an ID-less twin appended to the same folder is a copy; the first keeps its own UID", async () => {
@@ -2262,7 +2349,7 @@ describe("an account's own folders (plan 68)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'A' AND uid = ?", second.uid)).toBe(1);
   });
 
-  it("Codex R19: an old ID-less message moved after its folder's sweep into a folder seen for the first time keeps its identity", async () => {
+  it("Codex R19: a late move outside the window retains the cached target without rebinding", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2272,6 +2359,7 @@ describe("an account's own folders (plan 68)", () => {
     const lone = ctl.addMessage("Z", { raw: raw({ subject: "Viejo sin Message-ID", date: old }).replace(/^Message-ID: .*\r\n/m, ""), internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages");
     expect(before).toHaveLength(1);
     await client.call("settings.update", { syncWindowDays: 30 });
@@ -2295,10 +2383,11 @@ describe("an account's own folders (plan 68)", () => {
     expect(moved).toBe(true);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Viejo sin Message-ID'")).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", before[0]!.id)).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", before[0]!.id)).toBe(0);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 
-  it("Codex R19: of two stored ID-less twins, the one under a suffixed key moved late keeps its identity", async () => {
+  it("Codex R19: a suffixed ID-less twin moved late stays unresolved while its sibling stays located", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2310,6 +2399,7 @@ describe("an account's own folders (plan 68)", () => {
     const inZ = ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(2);
     const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -2334,12 +2424,13 @@ describe("an account's own folders (plan 68)", () => {
     expect(locks).toBeGreaterThanOrEqual(2);
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Gemelos repartidos' ORDER BY id")).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.subject = 'Gemelos repartidos' AND l.mailbox = 'A'")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE m.subject = 'Gemelos repartidos' AND l.mailbox = 'A'")).toBe(0);
     expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ?", category.id)).toBe(new Set(before.map((m) => m.thread_id)).size);
+    await expectRetained(backend, account.id, retained, retained.filter((m) => m.id === before[1]!.id).map((m) => m.id));
   });
 
   for (const window of ["inside", "outside"] as const) {
-    it(`Codex R20: the plain-key twin deleted, the other moved late (${window} the window) keeps its identity`, async () => {
+    it(`Codex R20: missing plain-key and late moved twins (${window} the window) both remain cached`, async () => {
       const { ImapFlow } = await import("imapflow");
       const { imap, backend, client, addAccount } = await setup();
       const ctl = imap.server.control;
@@ -2353,6 +2444,7 @@ describe("an account's own folders (plan 68)", () => {
       const inZ = ctl.addMessage("Z", opts);
       const account = await addAccount(imap.port);
       await backend.syncAccount(account.id);
+      const retained = captureIdentity(backend);
       const plain = sqlDb(backend.store).get<{ id: number; mailbox: string }>("SELECT m.id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
       const survivor = sqlDb(backend.store).get<{ id: number; thread_id: number; mailbox: string }>("SELECT m.id, m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id LIKE '%#%'")!;
       const category = await client.call("categories.create", { name: "Guardado", color: "rose" });
@@ -2361,7 +2453,7 @@ describe("an account's own folders (plan 68)", () => {
       ctl.expungeMessages(plain.mailbox, [plain.mailbox === "X" ? inX.uid : inZ.uid]);
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
-      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual([survivor.id]);
+      expect(sqlDb(backend.store).all<{ id: number }>("SELECT id FROM messages").map((m) => m.id)).toEqual(retained.map((m) => m.id));
       // then the other moves, after its folder's sweep, into a folder seen for the first time
       if (window === "outside") await client.call("settings.update", { syncWindowDays: 30 });
       ctl.addMessage(survivor.mailbox, { raw: raw({ subject: "Nuevo en el origen" }) });
@@ -2382,13 +2474,14 @@ describe("an account's own folders (plan 68)", () => {
       }
       expect(moved).toBe(true);
       await backend.syncAccount(account.id);
-      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente'")).toEqual([{ id: survivor.id, thread_id: survivor.thread_id }]);
-      expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", survivor.id)).toBe(1);
+      expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Superviviente'")).toEqual(retained.map(({ id, thread_id }) => ({ id, thread_id })));
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", survivor.id)).toBe(0);
       expect(count(backend, "SELECT 1 FROM thread_categories WHERE category_id = ? AND thread_id = ?", category.id, survivor.thread_id)).toBe(1);
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
     });
   }
 
-  it("Codex R21: with the plain-key twin gone, identical copies appended to two folders stay two messages", async () => {
+  it("Codex R21: after a twin vanishes, identical arrivals elsewhere remain unbound", async () => {
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
     ctl.createMailbox("X");
@@ -2400,20 +2493,22 @@ describe("an account's own folders (plan 68)", () => {
     const inZ = ctl.addMessage("Z", { raw: twin });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const plain = sqlDb(backend.store).get<{ mailbox: string }>("SELECT l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id WHERE m.provider_msg_id NOT LIKE '%#%'")!;
     ctl.expungeMessages(plain.mailbox, [plain.mailbox === "X" ? inX.uid : inZ.uid]);
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
     ctl.addMessage("A", { raw: twin });
     ctl.addMessage("B", { raw: twin });
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages")).toBe(3);
-    expect(count(backend, "SELECT DISTINCT message_id FROM message_locations WHERE mailbox IN ('A', 'B')")).toBe(2);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
+    expect(count(backend, "SELECT DISTINCT message_id FROM message_locations WHERE mailbox IN ('A', 'B')")).toBe(0);
+    await expectRetained(backend, account.id, retained, [retained[0]!.id]);
   });
 
-  it("Codex R20: of 55 stored ID-less twins, the last moved late keeps its identity (no candidate cut at 50)", async () => {
+  it("Codex R20: a late move of the 55th twin withholds binding and retains the exact target", async () => {
     const { ImapFlow } = await import("imapflow");
     const { imap, backend, addAccount } = await setup();
     const ctl = imap.server.control;
@@ -2423,6 +2518,7 @@ describe("an account's own folders (plan 68)", () => {
     const all = Array.from({ length: 55 }, () => ctl.addMessage("Z", { raw: twin }));
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const before = sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id");
     expect(before).toHaveLength(55);
     const last = sqlDb(backend.store).get<{ id: number }>("SELECT message_id AS id FROM message_locations WHERE mailbox = 'Z' AND uid = ?", all.at(-1)!.uid)!.id;
@@ -2441,7 +2537,8 @@ describe("an account's own folders (plan 68)", () => {
     }
     await backend.syncAccount(account.id);
     expect(sqlDb(backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE subject = 'Muchos gemelos' ORDER BY id")).toEqual(before);
-    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", last)).toBe(1);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = 'A'", last)).toBe(0);
+    await expectRetained(backend, account.id, retained, [last]);
   });
 
   it("Codex R3: a folder named __proto__ is a path like any other: its checkpoint is kept, and STATUS skips it when quiet", async () => {
@@ -2469,7 +2566,7 @@ describe("an account's own folders (plan 68)", () => {
     }
   });
 
-  it("a folder seen for the first time is read whole: mail already stored, older than the window, gains its location", async () => {
+  it("a new folder’s old mail cannot acquire a cached target from its envelope", async () => {
     const { imap, backend, client, addAccount } = await setup();
     const ctl = imap.server.control;
     const old = new Date(Date.now() - 400 * 86_400_000);
@@ -2477,12 +2574,14 @@ describe("an account's own folders (plan 68)", () => {
     const m = ctl.addMessage("INBOX", { raw: raw({ subject: "Factura 2025", date: old }), internaldate: old });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     await client.call("settings.update", { syncWindowDays: 30 });
     ctl.createMailbox("Facturas");
     ctl.copyMessages("INBOX", [m.uid], "Facturas");
     await backend.syncAccount(account.id);
-    expect(await folderOf(client, account.id, "Facturas")).toEqual(["Factura 2025"]);
+    expect(await folderOf(client, account.id, "Facturas")).toEqual([]);
     expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    await expectRetained(backend, account.id, retained, []);
   });
 
   it("a folder STATUS says is unchanged isn't opened again; a flag change in it is seen (CONDSTORE)", async () => {
@@ -2493,6 +2592,7 @@ describe("an account's own folders (plan 68)", () => {
     const m = ctl.addMessage("Work", { raw: raw({ subject: "Contrato" }) });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
+    const retained = captureIdentity(backend);
     const opened: string[] = [];
     const original = ImapFlow.prototype.getMailboxLock;
     const spy = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
@@ -2510,14 +2610,16 @@ describe("an account's own folders (plan 68)", () => {
       // Codex R2: a UIDVALIDITY reset that keeps UIDNEXT, MESSAGES and the mod-sequence is still a reset
       const before = sqlDb(backend.store).get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE mailbox = 'Work'")!.uidvalidity;
       ctl.resetUidValidity("Work");
+      expect(ctl.getMailbox("Work").uidvalidity).toBeGreaterThan(before);
       opened.length = 0;
       await backend.syncAccount(account.id);
       expect(opened).toContain("Work");
-      expect(sqlDb(backend.store).get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE mailbox = 'Work'")!.uidvalidity).toBeGreaterThan(before);
-      expect(await folderOf(client, account.id, "Work")).toEqual(["Contrato"]);
+      expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'Work'")).toBe(0);
+      expect(await folderOf(client, account.id, "Work")).toEqual([]);
     } finally {
       spy.mockRestore();
     }
+    await expectRetained(backend, account.id, retained, retained.map((m) => m.id));
   });
 });
 
@@ -2575,7 +2677,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     expect(sqlDb(backend.store).all("SELECT id FROM messages ORDER BY id")).toEqual(before); // same rows, not re-imported
   });
 
-  it("withholds an equal-envelope ID-less candidate in a different folder", async () => {
+  it("imports first-sync equal-envelope ID-less UIDs as separate targets", async () => {
     const { imap, backend, addAccount } = await setup();
     const date = new Date().toUTCString();
     const twin = (body: string) => `From: x@y.z\r\nSubject: Igual\r\nDate: ${date}\r\n\r\n${body}\r\n`;
@@ -2583,7 +2685,7 @@ describe("IMAP identity and safety (review fixes)", () => {
     imap.server.control.addMessage("Archive", { raw: twin("BBBB") });
     const account = await addAccount(imap.port);
     await backend.syncAccount(account.id);
-    expect(count(backend, "SELECT 1 FROM messages")).toBe(1);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(2);
     expect(count(backend, "SELECT 1 FROM message_locations GROUP BY message_id HAVING count(*) > 1")).toBe(0);
   });
 
