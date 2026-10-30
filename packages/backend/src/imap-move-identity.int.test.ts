@@ -132,6 +132,7 @@ it.each([false, true])("does not target an equal-envelope different body after r
   await reopened.backend.syncAccount(t.account.id);
   await reopened.backend.runWorker();
   const firstRemote = remote.find((m) => m.raw!.equals(Buffer.from(firstBytes)))!;
+  expect(t.server.control.getMessage("A", firstRemote.uid, { raw: true })).toMatchObject({ raw: Buffer.from(firstBytes), flags: [] });
   const otherRemote = remote.find((m) => m.raw!.equals(Buffer.from(secondBytes)))!;
   expect(t.server.control.getMessage("A", otherRemote.uid).flags).not.toContain("\\Seen");
   const retained = await reopened.backend.store.ops.get(queued.id);

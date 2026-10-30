@@ -216,11 +216,12 @@ class IdbImapLocations implements ImapLocationStore {
     return await this.read(() => { if (revision.value !== version) throw new ImapIdentityError(); return start(); });
   }
 
-  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
+  async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
     const mappedById = new Map(mapping.map((m) => [m.messageId, m.uid]));
     if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
-    return this.command(() => {
-      for (const item of source) {
+    for (let i = 0; i < source.length; i += 128) {
+      await this.command(() => {
+      for (const item of source.slice(i, i + 128)) {
         const mapped = mappedById.get(item.message_id);
         if (!mapped) continue;
         const old = this.t.get(item.message_id, item.mailbox);
@@ -231,6 +232,9 @@ class IdbImapLocations implements ImapLocationStore {
         if (!copy) { this.t.delete(item.message_id, item.mailbox); this.located([item.message_id], item.mailbox, false); }
         T(this.c, "imap_identity_holds").delete(item.message_id);
       }
+      });
+    }
+    await this.command(() => {
       for (const op of T(this.c, "ops").by("fk_account_id", this.accountId)) {
         if (op.state !== "queued" || op.next_attempt_at !== AWAITING_IDENTITY) continue;
         const ids = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds ?? [];

@@ -213,7 +213,7 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await witness(durable, t, FLAGS);
   });
 
-  it("a successful empty SEARCH still reconciles genuinely expunged cached mail", async () => {
+  it("a sequential empty SEARCH retains cached identity without proving global disappearance", async () => {
     const t = await setup(true, "INBOX");
     await t.stop();
     t.advance();
@@ -223,11 +223,13 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     // The first pass also visits the quiet custom folder on modulo four if needed.
     if (sqlDb(r.backend.store).get("SELECT id FROM messages LIMIT 1")) await pass(r, t);
     expect(t.w.responses.some((s) => /^\* SEARCH\s*\r?\n?$/.test(s))).toBe(true);
-    expect(sqlDb(r.backend.store).all("SELECT id FROM messages")).toEqual([]);
+    expect(sqlDb(r.backend.store).all("SELECT id FROM messages")).toHaveLength(2);
+    expect((await detail(r)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText });
     expect(await r.backend.store.providerStore(t.account.id).locations!.of([t.message.id])).toEqual([]);
     await r.stop();
     const durable = await t.open();
-    expect(sqlDb(durable.backend.store).all("SELECT id FROM messages")).toEqual([]);
+    expect(sqlDb(durable.backend.store).all("SELECT id FROM messages")).toHaveLength(2);
+    expect(await durable.backend.store.providerStore(t.account.id).locations.unresolved([t.message.id])).toEqual([t.message.id]);
   });
 
   it("STATUS refusal forces a real check instead of masquerading as absent MODSEQ", async () => {
@@ -271,7 +273,7 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await witness(durable, t, FLAGS);
   });
 
-  it.each([true, false])("reidentifies the same cached old bytes in a new epoch with CONDSTORE=%s", async (condstore) => {
+  it.each([true, false])("holds the same cached old bytes in an unproven new epoch with CONDSTORE=%s", async (condstore) => {
     const t = await setup(condstore);
     await t.stop();
     t.advance();
@@ -281,14 +283,16 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const start = t.w.commands.length;
     await bounded(r.backend.syncAccount(t.account.id), "reset sync");
     expect(epoch.uidvalidity).not.toBe(t.target.uidvalidity);
-    await witness(r, t, FLAGS, t.target.uid, epoch.uidvalidity);
+    expect((await detail(r)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: false, isStarred: false });
+    expect(await r.backend.store.providerStore(t.account.id).locations.unresolved([t.message.id])).toEqual([t.message.id]);
     const commands = t.w.commands.slice(start);
     expect(commands.filter((c) => /BODY(?:\.PEEK)?\[\](?:<|\s|\))/.test(c.data))).toEqual([]);
     expect(commands.length).toBeLessThan(35);
     expect(t.w.overflow).toBe(false);
     await r.stop();
     const durable = await t.open();
-    await witness(durable, t, FLAGS, t.target.uid, epoch.uidvalidity);
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText, isRead: false, isStarred: false });
+    expect(await durable.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual([]);
   });
 
   it("a reused old UID in a replacement epoch cannot borrow the cached identity/body", async () => {
@@ -303,7 +307,7 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     expect(replacement.uid).toBe(t.target.uid);
     const r = await t.open();
     await bounded(r.backend.syncAccount(t.account.id), "replacement sync");
-    const rows = sqlDb(r.backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages");
+    const rows = sqlDb(r.backend.store).all<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE id NOT IN (SELECT message_id FROM imap_identity_holds)");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.id).not.toBe(t.message.id);
     expect((await r.client.call("threads.get", { threadId: rows[0]!.thread_id })).messages[0]).toMatchObject({ bodyText: "Exact replacement body\n", isRead: true, isStarred: true });
@@ -313,7 +317,8 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     expect(t.ctl.getMessage(t.path, replacement.uid).raw).toEqual(Buffer.from(replacementRaw));
     await r.stop();
     const durable = await t.open();
-    expect(sqlDb(durable.backend.store).all("SELECT id, thread_id FROM messages")).toEqual(rows);
+    expect(sqlDb(durable.backend.store).all("SELECT id, thread_id FROM messages WHERE id NOT IN (SELECT message_id FROM imap_identity_holds)")).toEqual(rows);
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, bodyText: t.message.bodyText });
   });
 
   it.each([false, true])("a captured old observation preserves newer local star intent, acknowledged=%s", async (acknowledged) => {
@@ -389,7 +394,10 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
 
   it("a failed location in a multi-location pass retains intent until complete evidence", async () => {
     const t = await setup(true, "INBOX");
-    t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    const source = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
+    const copied = t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    expect(t.ctl.getMessage("Projects", copied.uids[0]!.targetUid, { raw: true }).raw).toEqual(Buffer.from(t.targetRaw));
+    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true);
     await bounded(t.backend.syncAccount(t.account.id), "discover second location");
     const locations = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     expect(locations).toHaveLength(2);
@@ -479,7 +487,10 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
 
   it.each(["UID", "ENVELOPE"] as const)("omitted reset remapping %s cannot certify a surviving location's contradictory flags", async (missing) => {
     const t = await setup(true, "INBOX");
-    t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    const source = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
+    const copied = t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    expect(t.ctl.getMessage("Projects", copied.uids[0]!.targetUid, { raw: true }).raw).toEqual(Buffer.from(t.targetRaw));
+    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true);
     await bounded(t.backend.syncAccount(t.account.id), "discover reset copy");
     const placed = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     expect(placed).toHaveLength(2);
@@ -496,10 +507,11 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });
     expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
     await bounded(t.backend.syncAccount(t.account.id), "complete reset remapping");
-    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual(expect.arrayContaining([
-      expect.objectContaining({ mailbox: "Projects", uidvalidity: epoch.uidvalidity }),
+    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual([
       expect.objectContaining({ mailbox: "INBOX", uidvalidity: t.target.uidvalidity }),
-    ]));
+    ]);
+    expect(epoch.uidvalidity).not.toBe(copy.uidvalidity);
+    expect(await t.backend.store.providerStore(t.account.id).locations.unresolved([t.message.id])).toEqual([t.message.id]);
     expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });
     await t.stop(); const durable = await t.open();
     expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });

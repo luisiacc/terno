@@ -41,7 +41,7 @@ async function setup(folders: Record<string, object>, syncWindowDays?: number) {
   return { server, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); return open(); } };
 }
 
-it("follows a renamed localized role and retains exact custom-folder identity through reopen", async () => {
+it("follows renamed localized folders while holding unproven message identity through reopen", async () => {
   const t = await setup({ Enviados: { "special-use": "\\Trash" }, "Proyectos": {} });
   const bytes = rawIdleMail("Folder identity", "Exact bytes");
   const old = t.server.control.addMessage("Proyectos", { raw: bytes });
@@ -59,8 +59,10 @@ it("follows a renamed localized role and retains exact custom-folder identity th
   await reopened.backend.syncAccount(t.account.id);
   const folders = (await reopened.client.call("app.bootstrap", {})).folders.filter((f) => f.accountId === t.account.id);
   expect(folders.find((f) => f.key === "Clientes/Contratos é")).toMatchObject({ path: ["Clientes", "Contratos é"], selectable: true });
-  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Contratos é" })).items.map((x) => x.id)).toEqual([thread.id]);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "Clientes/Contratos é", uidvalidity: old.uidvalidity, uid: old.uid })]);
+  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Contratos é" })).items.map((x) => x.id)).toEqual([]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([message.id]);
+  expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ id: message.id, bodyText: message.bodyText });
   expect(t.server.control.getMessage("Clientes/Contratos &AOk-", old.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
   expect(t.server.control.getMessage("INBOX", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
@@ -107,7 +109,9 @@ it("keeps cached old mail when a role mailbox is renamed beyond the sync window"
   t.server.control.renameMailbox("Enviados", "Envoy&AOk-s");
   await t.backend.syncAccount(t.account.id);
   expect((await t.client.call("threads.get", { threadId: message.thread_id })).messages[0]!.id).toBe(message.id);
-  expect(await t.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "Envoyés", uidvalidity: original.uidvalidity, uid: original.uid })]);
+  expect(await t.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([]);
+  expect(await t.backend.store.providerStore(t.account.id).locations.unresolved([message.id])).toEqual([message.id]);
+  expect(t.server.control.getMessage("Envoy&AOk-s", original.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
 });
 
 it("reconciles unchanged mail when a mailbox gains or loses a role", async () => {
@@ -189,7 +193,7 @@ it("keeps a queued action away from a recreated folder's reused UID", async () =
   expect(t.server.control.getMessage("Other", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
 
-it("keeps the Sent location of old mail also present in Inbox after a role rename", async () => {
+it("does not infer a shared Sent identity from equal bytes in a renamed role", async () => {
   const t = await setup({ Enviados: { "special-use": "\\Sent" } }, 3650);
   const date = new Date(Date.now() - 2 * 365 * 86_400_000);
   const bytes = rawIdleMail("Old shared sent", "Exact shared bytes").replace(/^Date: .*$/m, `Date: ${date.toUTCString()}`);
@@ -198,15 +202,16 @@ it("keeps the Sent location of old mail also present in Inbox after a role renam
   await t.backend.syncAccount(t.account.id);
   const row = sqlDb(t.backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = ?", "Old shared sent")!;
   expect(row).toBeDefined();
-  expect(await t.backend.store.providerStore(t.account.id).locations!.of([row.id])).toHaveLength(2);
+  expect(await t.backend.store.providerStore(t.account.id).locations!.of([row.id])).toHaveLength(1);
   await t.client.call("settings.update", { syncWindowDays: 30 });
   t.server.control.renameMailbox("Enviados", "Envoy&AOk-s");
   await t.backend.syncAccount(t.account.id);
   expect(await t.backend.store.providerStore(t.account.id).locations!.of([row.id])).toEqual(expect.arrayContaining([
     expect.objectContaining({ mailbox: "INBOX", uidvalidity: inbox.uidvalidity, uid: inbox.uid }),
-    expect.objectContaining({ mailbox: "Envoyés", uidvalidity: sent.uidvalidity, uid: sent.uid }),
+
   ]));
-  expect(sqlDb(t.backend.store).get<{ is_sent: number }>("SELECT is_sent FROM messages WHERE id = ?", row.id)!.is_sent).toBe(1);
+  expect(sqlDb(t.backend.store).get<{ is_sent: number }>("SELECT is_sent FROM messages WHERE id = ?", row.id)!.is_sent).toBe(0);
+  expect(t.server.control.getMessage("Envoy&AOk-s", sent.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
 });
 
 it("reconciles legacy cursors with no stored role mapping", async () => {

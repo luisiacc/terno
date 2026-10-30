@@ -121,8 +121,9 @@ class SqlImapLocations implements ImapLocationStore {
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean) {
     const mappedById = new Map(mapping.map((m) => [m.messageId, m.uid]));
     if (!Number.isSafeInteger(uidvalidity) || uidvalidity <= 0 || mapping.length !== source.length || mappedById.size !== source.length || new Set(mapping.map((m) => m.uid)).size !== mapping.length || mapping.some((m) => !Number.isSafeInteger(m.uid) || m.uid <= 0) || source.some((l) => !mappedById.has(l.message_id))) throw new ImapIdentityError();
-    this.db.tx(() => {
-      for (const item of source) {
+    for (let i = 0; i < source.length; i += 128) {
+      this.db.tx(() => {
+      for (const item of source.slice(i, i + 128)) {
         const mapped = mappedById.get(item.message_id);
         if (!mapped) continue;
         const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=? AND account_id=?", item.message_id, item.mailbox, this.accountId);
@@ -135,6 +136,10 @@ class SqlImapLocations implements ImapLocationStore {
         }
         this.db.run("DELETE FROM imap_identity_holds WHERE message_id=?", item.message_id);
       }
+      });
+      if (i + 128 < source.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    this.db.tx(() => {
       this.db.run(`UPDATE ops SET next_attempt_at=0 WHERE account_id=? AND state='queued' AND next_attempt_at=?
         AND NOT EXISTS (SELECT 1 FROM op_targets t LEFT JOIN message_locations l ON l.message_id=t.message_id LEFT JOIN imap_identity_holds h ON h.message_id=t.message_id WHERE t.op_id=ops.id AND (h.message_id IS NOT NULL OR l.message_id IS NULL))`, this.accountId, AWAITING_IDENTITY);
     });

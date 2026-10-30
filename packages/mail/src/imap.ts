@@ -726,7 +726,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const lock = await c.getMailboxLock(mailbox);
       try {
         check();
-        assertValidity(c, mailbox, batch);
+        await assertValidity(c, mailbox, batch);
         for (let i = 0; i < batch.length; i += 500) {
           const expected = new Map(batch.slice(i, i + 500).map((row) => [row.uid, row]));
           for await (const message of c.fetch([...expected.keys()], { uid: true, flags: true }, { uid: true })) {
@@ -1007,10 +1007,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   type Loc = ImapLocation;
 
   /** Throws (retryable) if the mailbox's UIDVALIDITY no longer matches our stored UIDs. */
-  function assertValidity(c: ImapFlow, mailbox: string, items: Loc[]) {
+  async function assertValidity(c: ImapFlow, _mailbox: string, items: Loc[]) {
     const current = Number(c.mailbox && c.mailbox.uidValidity);
     if (items.some((i) => i.uidvalidity !== current)) {
-      throw new ProviderError(`UIDVALIDITY of ${mailbox} changed; waiting for resync before touching messages`, true);
+      await locations.fence(items.map((item) => item.message_id));
+      throw new ProviderIdentityError(L("errors.imap.identityUnavailable"));
     }
   }
 
@@ -1033,7 +1034,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     for (const [mailbox, items] of byMailbox) {
       const lock = await c.getMailboxLock(mailbox);
       try {
-        assertValidity(c, mailbox, items);
+        await assertValidity(c, mailbox, items);
         if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
         const res = await locations.dispatch(admission.ids, admission.expected, async () => {
@@ -1355,7 +1356,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for (const [mailbox, items] of byMailbox) {
             const lock = await c.getMailboxLock(mailbox);
             try {
-              assertValidity(c, mailbox, items);
+              await assertValidity(c, mailbox, items);
               const uids = items.map((i) => i.uid);
               const ok = await locations.dispatch(ids, locs, () => add ? c.messageFlagsAdd(uids, [flag], { uid: true }) : c.messageFlagsRemove(uids, [flag], { uid: true }));
               // imapflow resolves false when the server rejects the STORE
@@ -1390,7 +1391,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // Gmail-style: archiving = removing the INBOX copy; All Mail keeps it
             const lock = await c.getMailboxLock(r.inbox!);
             try {
-              assertValidity(c, r.inbox!, inbox);
+              await assertValidity(c, r.inbox!, inbox);
               if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
               beforeMutation();
               const deleted = await locations.dispatch(ids, locs, () => c.messageDelete(inbox.map((l) => l.uid), { uid: true }));
