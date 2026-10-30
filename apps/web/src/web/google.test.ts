@@ -39,14 +39,18 @@ describe("GIS public helpers", () => {
     }
   });
   it.each([["access_denied", "errors.google.denied"], ["admin_policy_enforced", "errors.google.adminPolicy"], ["secret-provider-code", "errors.google.unavailable"]] as const)("sanitizes %s", async (error, key) => {
-    await expect(respond({ error, error_description: "secret-provider-description" })).rejects.toThrow(t(key));
-    expect(mocks.call).not.toHaveBeenCalled();
+    for (const photo of [false, true]) {
+      await expect(respond({ error, error_description: "secret-provider-description" }, photo)).rejects.toThrow(t(key));
+      expect(mocks.call).not.toHaveBeenCalled(); expect(mocks.setApp).not.toHaveBeenCalled();
+    }
   });
   it.each([["popup_closed", "web.google.popupClosed"], ["popup_failed_to_open", "web.google.popupBlocked"], ["secret", "errors.google.unavailable"], [null, "errors.google.unavailable"]] as const)("sanitizes popup error %#", async (type, key) => {
-    const result = connectGmailWeb(); await Promise.resolve();
-    config.error_callback(type === null ? null : { type, message: "secret-message" });
-    await expect(result).rejects.toThrow(t(key));
-    expect(mocks.call).not.toHaveBeenCalled();
+    for (const photo of [false, true]) {
+      const result = photo ? authorizeGooglePhotosWeb(account) : connectGmailWeb(); await Promise.resolve();
+      config.error_callback(type === null ? null : { type, message: "secret-message" });
+      await expect(result).rejects.toThrow(t(key));
+      expect(mocks.call).not.toHaveBeenCalled(); expect(mocks.setApp).not.toHaveBeenCalled();
+    }
   });
   it("connects mail without optional contacts, and forwards an explicit partial contact grant", async () => {
     await expect(respond(valid)).resolves.toEqual(account);
