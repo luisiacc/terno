@@ -2,6 +2,7 @@ import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Loader2, Mail } from "lucide-react";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
@@ -10,8 +11,12 @@ import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { DesktopOnly } from "~/lib/web-parts";
 import { attemptError, type Attempt } from "~/lib/sign-in";
+import { windowChoices, windowLabel } from "~/lib/settings-values";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
+
+/** a port fits five digits: it never shrinks beside its host, and has no spinner to cover them */
+const PORT = "w-16 shrink-0 px-1.5 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
 /** Known IMAP/SMTP settings so most people only type email + password. */
 const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> = {
@@ -29,6 +34,10 @@ export function AddAccountDialog() {
   const open = useApp((s) => s.dialog === "addAccount");
   const firstOwner = useApp((s) => !s.owner && !s.demo);
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
+  const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
+  // null: not chosen yet, the General setting (read when the dialog has it)
+  const [picked, setPicked] = useState<number | null>(null);
+  const syncWindowDays = picked ?? generalWindow;
   const [form, setForm] = useState({ email: "", name: "", password: "", imapHost: "", imapPort: 993, smtpHost: "", smtpPort: 465, user: "" });
   const [busy, setBusy] = useState<"gmail" | "imap" | null>(null);
   const [error, setError] = useState<{ kind: "gmail" | "imap"; text: NonNullable<Attempt["error"]> } | null>(null);
@@ -49,7 +58,7 @@ export function AddAccountDialog() {
     setBusy("gmail");
     setError(null);
     try {
-      const a = WEB ? await (await import("~/web/google")).connectGmailWeb() : await client.call("accounts.connectGmail", {});
+      const a = WEB ? await (await import("~/web/google")).connectGmailWeb(undefined, undefined, { syncWindowDays }) : await client.call("accounts.connectGmail", { syncWindowDays });
       // plan 22: photos from Google came on with the account
       if (!WEB) void client.call("app.bootstrap", {}).then((b) => setApp({ settings: b.settings }), () => {});
       snack.success(t("account.connected", { email: a.email }));
@@ -75,6 +84,7 @@ export function AddAccountDialog() {
         password: form.password,
         imap: { host: form.imapHost.trim(), port: form.imapPort, secure: form.imapPort === 993, user: form.user.trim() },
         smtp: { host: form.smtpHost.trim(), port: form.smtpPort, secure: form.smtpPort === 465, user: form.user.trim() },
+        syncWindowDays,
       });
       snack.success(t("account.connectedSyncing", { email: a.email }));
       setApp({ dialog: null });
@@ -104,6 +114,22 @@ export function AddAccountDialog() {
             {t("account.ownerFirst")}
           </p>
         )}
+        {/* asked once, for whichever way the account connects */}
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="acc-window">{t("account.window.label")}</Label>
+          <Select value={String(syncWindowDays)} onValueChange={(v) => setPicked(Number(v))} items={windowChoices(generalWindow).map((d) => ({ value: String(d), label: windowLabel(d) }))} disabled={busy !== null}>
+            <SelectTrigger id="acc-window" size="sm" className="min-w-40" data-testid="sync-window-choice">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {windowChoices(generalWindow).map((d) => (
+                <SelectItem key={d} value={String(d)} data-testid={`sync-window-${d}`}>
+                  {windowLabel(d)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button variant="outline" className="h-10 justify-center gap-2" onClick={connectGmail} focusableWhenDisabled disabled={busy !== null} data-testid="connect-gmail">
           {busy === "gmail" ? <Loader2 className="animate-spin" /> : <Mail />} {t("account.continueGoogle")}
         </Button>
@@ -137,18 +163,18 @@ export function AddAccountDialog() {
                 <Label htmlFor="acc-pass">{t("account.appPassword")}</Label>
                 <Input id="acc-pass" data-testid="imap-password" type="password" required value={form.password} onChange={(e) => set({ password: e.target.value })} />
               </div>
-              <div className="space-y-1">
+              <div className="col-span-2 space-y-1">
                 <Label htmlFor="acc-imap">{t("account.imapServer")}</Label>
                 <div className="flex gap-1.5">
                   <Input id="acc-imap" data-testid="imap-host" required value={form.imapHost} onChange={(e) => set({ imapHost: e.target.value })} />
-                  <Input aria-label={t("account.imapPort")} className="w-16" type="number" value={form.imapPort} onChange={(e) => set({ imapPort: Number(e.target.value) })} />
+                  <Input aria-label={t("account.imapPort")} className={PORT} type="number" inputMode="numeric" value={form.imapPort} onChange={(e) => set({ imapPort: Number(e.target.value) })} />
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="col-span-2 space-y-1">
                 <Label htmlFor="acc-smtp">{t("account.smtpServer")}</Label>
                 <div className="flex gap-1.5">
                   <Input id="acc-smtp" data-testid="smtp-host" required value={form.smtpHost} onChange={(e) => set({ smtpHost: e.target.value })} />
-                  <Input aria-label={t("account.smtpPort")} className="w-16" type="number" value={form.smtpPort} onChange={(e) => set({ smtpPort: Number(e.target.value) })} />
+                  <Input aria-label={t("account.smtpPort")} className={PORT} type="number" inputMode="numeric" value={form.smtpPort} onChange={(e) => set({ smtpPort: Number(e.target.value) })} />
                 </div>
               </div>
             </div>

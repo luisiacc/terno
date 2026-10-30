@@ -1052,6 +1052,82 @@ describe("IMAP provider against ImapKit", () => {
   });
 });
 
+describe("a new account's first sync (plan 76)", () => {
+  /** each ingest's subjects and each body set, in order, through the backend's own sink */
+  const record = (backend: Backend) => {
+    const events: string[] = [];
+    const core = backend as unknown as { ingestSliced: (m: { subject: string }[], ...rest: unknown[]) => Promise<unknown>; store: { sync: { setBody: (...a: unknown[]) => Promise<unknown> } } };
+    const ingest = core.ingestSliced.bind(core);
+    vi.spyOn(core, "ingestSliced").mockImplementation((m, ...rest) => {
+      if (m.length) events.push(`ingest:${m.length}:${m.map((x) => Number(x.subject.slice(4))).sort((a, b) => a - b)[0]}`);
+      return ingest(m, ...rest);
+    });
+    const setBody = core.store.sync.setBody.bind(core.store.sync);
+    vi.spyOn(core.store.sync, "setBody").mockImplementation((...a) => {
+      if (events.at(-1) !== "bodies") events.push("bodies");
+      return setBody(...a);
+    });
+    return events;
+  };
+
+  it("brings the newest 250 Inbox messages, with their bodies, before the rest; the end is a plain read's", async () => {
+    const { imap, backend, addAccount } = await setup();
+    for (let i = 1; i <= 300; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    const account = await addAccount(imap.port);
+    const events = record(backend);
+    await backend.syncAccount(account.id);
+    // the newest 250 (msg 51…300), their bodies, then the 50 older ones, then theirs
+    expect(events).toEqual(["ingest:250:51", "bodies", "ingest:50:1", "bodies"]);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(300);
+    expect(count(backend, "SELECT 1 FROM message_locations")).toBe(300);
+    expect(count(backend, "SELECT message_id FROM message_locations GROUP BY message_id HAVING count(*) > 1")).toBe(0);
+    expect(count(backend, "SELECT 1 FROM messages WHERE body_state = 'full'")).toBe(300);
+    // a later pass reads only what's new: no preview
+    events.length = 0;
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "msg 301" }) });
+    await backend.syncAccount(account.id);
+    expect(events).toEqual(["ingest:1:301", "bodies"]);
+  });
+
+  it("a first pass that stopped runs the preview again without writing anything twice", async () => {
+    const { imap, backend, addAccount } = await setup();
+    for (let i = 1; i <= 260; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    // the same message twice, one copy on each side of the preview's edge
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "msg 0", id: "twice@test.local" }) });
+    for (let i = 261; i <= 270; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "msg 0", id: "twice@test.local" }) });
+    const account = await addAccount(imap.port);
+    await backend.syncAccount(account.id);
+    const rows = sqlDb(backend.store).all<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY l.uid");
+    expect(rows).toHaveLength(272);
+    // as if the pass had stopped before saving where it got to
+    await backend.store.accounts.setCursor(account.id, null);
+    const events = record(backend);
+    await backend.syncAccount(account.id);
+    expect(events.filter((e) => e.startsWith("ingest"))).toEqual([]);
+    expect(sqlDb(backend.store).all<{ id: number; uid: number }>("SELECT m.id, l.uid FROM messages m JOIN message_locations l ON l.message_id = m.id ORDER BY l.uid")).toEqual(rows);
+  });
+
+  it("downloads the window chosen when connecting, kept as the account's own", async () => {
+    const { imap, smtp, backend, client } = await setup();
+    const DAY = 86_400_000;
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "recent" }), internaldate: new Date(Date.now() - 10 * DAY) });
+    imap.server.control.addMessage("INBOX", { raw: raw({ subject: "older" }), internaldate: new Date(Date.now() - 60 * DAY) });
+    const account = await client.call("accounts.addImap", {
+      email: "luis@test.local",
+      displayName: "Luis",
+      imap: { host: "127.0.0.1", port: imap.port, secure: false, user: "testuser" },
+      smtp: { host: "127.0.0.1", port: smtp.port, secure: false, user: "testuser" },
+      password: "testpass",
+      syncWindowDays: 30,
+    });
+    expect(account.syncWindowDays).toBe(30);
+    await backend.syncAccount(account.id);
+    expect(sqlDb(backend.store).all<{ subject: string }>("SELECT subject FROM messages")).toEqual([{ subject: "recent" }]);
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncWindowDays).toBe(30);
+  });
+});
+
 describe("an account's own folders (plan 68)", () => {
   const folderOf = async (client: RpcClient, accountId: number, folder: string) => (await client.call("threads.list", { view: "all", accountId, folder })).items.map((t) => t.subject).sort();
 

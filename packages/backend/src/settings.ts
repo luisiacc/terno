@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS: General = {
   remoteImages: "ask",
   allowAgentSend: false,
   gmailClientId: "",
-  syncWindowDays: 90,
+  syncWindowDays: 180,
   autoCategorize: "auto",
   aiCategorize: false,
   errorReports: "ask",

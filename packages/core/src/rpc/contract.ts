@@ -36,6 +36,8 @@ import {
 } from "../types";
 
 const id = z.number().int().positive();
+/** days of mail an account downloads (settings, an account, connecting one) */
+const syncWindow = z.number().int().min(7).max(3650);
 const ids = z.array(id).min(1).max(5000);
 const cursor = z.object({ lastDate: z.number(), id: z.number().int() });
 /** a search cursor also names the query and the store revision it was minted at (older renderers send only the keyset) */
@@ -404,7 +406,7 @@ const settingsPatch = z.object({
     .optional(),
   allowAgentSend: z.boolean().optional(),
   gmailClientId: z.string().max(300).optional(),
-  syncWindowDays: z.number().int().min(7).max(3650).optional(),
+  syncWindowDays: syncWindow.optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
@@ -786,15 +788,17 @@ export const contract = {
       smtp: imapServer,
       password: z.string().min(1).max(1000),
       verify: z.boolean().default(true),
+      /** plan 76: the days of mail asked for when connecting; absent: the General setting */
+      syncWindowDays: syncWindow.optional(),
     }),
     { timeoutMs: 60_000 },
   ),
-  "accounts.connectGmail": m<Account>()(empty, { timeoutMs: 300_000 }),
+  "accounts.connectGmail": m<Account>()(z.object({ syncWindowDays: syncWindow.optional() }).strict(), { timeoutMs: 300_000 }),
   /**
    * web: an access token from Google's token model (the page signs in); connects the mailbox or renews its token.
    * With `accountId` (plan 25: signing that account in again) the token must be that account's, else nothing changes.
    */
-  "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), accountId: id.optional() }), { timeoutMs: 60_000 }),
+  "accounts.connectGmailToken": m<Account>()(z.object({ accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), accountId: id.optional(), syncWindowDays: syncWindow.optional() }), { timeoutMs: 60_000 }),
   "accounts.update": m<Account>()(
     z.object({
       id,
@@ -803,7 +807,7 @@ export const contract = {
       senderName: z.string().trim().max(200).optional(),
       signature: z.string().max(10_000).optional(),
       /** null: the general setting */
-      syncWindowDays: z.number().int().min(7).max(3650).nullable().optional(),
+      syncWindowDays: syncWindow.nullable().optional(),
     }),
   ),
   /**

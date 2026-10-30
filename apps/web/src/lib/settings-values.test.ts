@@ -2,7 +2,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseSyncWindow } from "./settings-values";
+import { parseSyncWindow, windowChoices, windowLabel } from "./settings-values";
 
 describe("sync window", () => {
   afterEach(() => setLocale("en", en));
@@ -20,5 +20,20 @@ describe("sync window", () => {
   it("explains it in the current language", () => {
     setLocale("es", es);
     expect(parseSyncWindow("6")).toHaveProperty("error", "Escribe un número de días entre 7 y 3,650.");
+  });
+});
+
+describe("plan 76: the window asked for when connecting", () => {
+  afterEach(() => setLocale("en", en));
+
+  it("lists the usual choices, and the General setting when it's none of them", () => {
+    expect(windowChoices(180)).toEqual([30, 90, 180, 365, 730]);
+    expect(windowChoices(45)).toEqual([30, 45, 90, 180, 365, 730]);
+  });
+
+  it("names them in days or years, in the current language", () => {
+    expect([30, 180, 365, 730, 1095].map(windowLabel)).toEqual(["The last 30 days", "The last 180 days", "The last year", "The last 2 years", "The last 3 years"]);
+    setLocale("es", es);
+    expect([30, 365, 730].map(windowLabel)).toEqual(["Los últimos 30 días", "El último año", "Los últimos 2 años"]);
   });
 });

@@ -18,6 +18,7 @@ import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, setOpenAccount, toggleAc
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { LocalPill } from "./local-pill";
+import { FirstSyncPill } from "./first-sync-pill";
 import { ConnectionPill } from "./connection-pill";
 import { SignInMarker, SignInNotice } from "./sign-in-notice";
 import { UpdatePill } from "./update-pill";
@@ -841,6 +842,7 @@ export function Sidebar() {
       </nav>
       <SignInNotice />
       <ConnectionPill />
+      <FirstSyncPill />
       <UpdatePill />
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>

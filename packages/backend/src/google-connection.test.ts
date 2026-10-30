@@ -57,6 +57,19 @@ describe("Google connection RPC validation", () => {
     expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toEqual({ connections: true, otherContacts: false, apiDisabled: false });
   });
 
+  it("plan 76: the days chosen when connecting are the new account's window, on desktop and the web; a reconnect keeps its own", async () => {
+    const desktop = await setup(false);
+    expect(await desktop.client.call("accounts.connectGmail", { syncWindowDays: 365 })).toMatchObject({ syncWindowDays: 365 });
+    const web = await setup();
+    expect(await web.client.call("accounts.connectGmailToken", { accessToken: "synthetic-access", expiresIn: 3600, syncWindowDays: 30 })).toMatchObject({ syncWindowDays: 30 });
+    // the same address through Add account again: reconnected, its window unchanged
+    expect(await web.client.call("accounts.connectGmailToken", { accessToken: "synthetic-access-2", expiresIn: 3600, syncWindowDays: 730 })).toMatchObject({ syncWindowDays: 30 });
+    // none chosen: the General setting (now 180 by default)
+    const plain = await setup(false);
+    expect(await plain.client.call("accounts.connectGmail", {})).toMatchObject({ syncWindowDays: null });
+    expect((await plain.client.call("app.bootstrap", {})).settings.syncWindowDays).toBe(180);
+  });
+
   it("plan 22: a sign-in where the contacts boxes were unticked leaves photos off", async () => {
     const t = await setup(false);
     const account = await t.client.call("accounts.connectGmail", {});

@@ -35,6 +35,11 @@ interface Cursor {
   /** plan 68 (Codex R9): orphans are waiting for a pass that reads every folder (no STATUS skip), the only kind that may delete them */
   fullCheck?: boolean;
   /**
+   * plan 79 (Codex review): a folder a new account's preview placed messages in, by its UIDVALIDITY then, until its full
+   * read: a reset between them is a reset (those places go), and nothing past it is acknowledged
+   */
+  previewed?: Record<string, number>;
+  /**
    * plan 68 (Codex R15): a journal above was cut at its limit: the next pass that reads every folder looks for every
    * message with no location (a window of ids at a time), so none is left behind with neither a place nor a record
    */
@@ -397,6 +402,8 @@ export function heldUidnext(uidnext: number, held: readonly { uid: number }[]): 
 
 /** Plan 68 (Codex R15): message ids looked at a window at a time for ones with no location */
 const UNLOCATED_SPAN = 5000;
+/** plan 79: how many of a new account's newest Inbox messages come in first */
+const PREVIEW = 250;
 
 /** Plan 68: a LIST longer than this is cut before any work (a catalog keeps FOLDERS_PER_ACCOUNT_MAX at most). */
 const LISTED_MAX = 2 * FOLDERS_PER_ACCOUNT_MAX;
@@ -785,7 +792,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number> }) {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number }): Promise<number | undefined> {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -793,16 +800,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidvalidity = Number(mb.uidValidity);
       let state = cursor.mailboxes[path];
       const hadState = state !== undefined;
-      const reset = Boolean(state && state.uidvalidity !== uidvalidity);
-      if (state && reset) {
-        await resetLocations(cursor, path, state.uidvalidity, touched);
+      // plan 79: a preview is a first read's newest messages only, before that read (nothing to preview after it)
+      if (opts.preview !== undefined && hadState) return;
+      // the validity this folder's stored places were read under: its state's, else a preview's (plan 79)
+      const before = state?.uidvalidity ?? cursor.previewed?.[path];
+      const reset = before !== undefined && before !== uidvalidity;
+      if (reset) {
+        await resetLocations(cursor, path, before, touched);
         state = undefined;
       }
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
       const searched = await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
       if (!searched) throw new ProviderError(L("errors.imap.listRefused"), false);
-      const found = state ? searched.filter((uid) => uid >= state!.uidnext) : searched;
+      // a preview: the most recently arrived (highest UIDs) of the window
+      const found = state ? searched.filter((uid) => uid >= state!.uidnext) : opts.preview !== undefined ? searched.sort((a, b) => a - b).slice(-opts.preview) : searched;
       const fresh: IncomingMessage[] = [];
       const claimed = new Map<string, number>();
       let held = Infinity;
@@ -892,6 +904,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const inserted = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key));
       await addAll(touched, inserted);
       await addAll(opts.introduced, inserted);
+      // a preview acknowledges nothing: the read after it takes the whole folder, finding these where they are
+      // (its UIDVALIDITY, for the caller to keep)
+      if (opts.preview !== undefined) return uidvalidity;
 
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
@@ -899,6 +914,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidnext = Math.min(Number(mb.uidNext), held);
       cursor.mailboxes[path] = { uidvalidity, uidnext, ...(seen && { messages: seen.messages, ...(seen.modseq !== undefined && { modseq: seen.modseq }) }) };
       if (cursor.resetPending) delete cursor.resetPending[path];
+      if (cursor.previewed) {
+        delete cursor.previewed[path];
+        if (!Object.keys(cursor.previewed).length) delete cursor.previewed;
+      }
       // one at a time: a folder may hold back more than an argument list takes (Codex R24: 150,000 copies)
     } finally {
       lock.release();
@@ -1178,6 +1197,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           ...loaded,
           mailboxes: Object.assign(Object.create(null) as Cursor["mailboxes"], loaded?.mailboxes),
           ...(loaded?.resetPending && { resetPending: Object.assign(Object.create(null) as Record<string, number[]>, loaded.resetPending) }),
+          // (plan 79, Codex R2: a folder named "constructor" is a path, not an inherited validity)
+          ...(loaded?.previewed && { previewed: Object.assign(Object.create(null) as Record<string, number>, loaded.previewed) }),
         };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
@@ -1275,6 +1296,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (let i = 0; i < ask.length; i += 500) {
           for (const l of await locations.of(ask.slice(i, i + 500))) if (!vanishedPaths.has(l.mailbox)) pending.delete(l.message_id);
           await breathe();
+        }
+        // plan 79: a new account shows its newest Inbox mail, with bodies, before the rest is read (the full read
+        // finds these by their location, before any identity rule)
+        if (!loaded && r.inbox) {
+          const previewed = await syncMailbox(c, r.inbox, cursor, sink, touched, { introduced, preview: PREVIEW });
+          if (sink.signal.aborted) return;
+          // written down (Codex review): a pass that stops from here on doesn't preview again, and a reset is seen as one
+          if (previewed !== undefined) {
+            cursor.previewed = Object.assign(Object.create(null) as Record<string, number>, { [r.inbox]: previewed });
+            await ctx.saveCursor(cursor);
+          }
+          // the preview's bodies are a head start, never a gate: one the server won't give comes with the rest
+          try {
+            await syncBodies(c, sink);
+          } catch (error) {
+            // read like `tolerate` does: a refused login comes raw from the client, and stops the pass
+            const e = toProviderError(error);
+            if (sink.signal.aborted || e.retryable || e instanceof ProviderAuthError) throw e;
+          }
+          if (sink.signal.aborted) return;
         }
         for (const path of boxes) {
           if (sink.signal.aborted) return;

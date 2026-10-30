@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction } from "@terno/core";
+import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -594,11 +594,13 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.addImap": async (p) => {
       if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
-      const config: ImapAccountConfig = {
+      const config: ImapAccountConfig & AccountPrefs = {
         imap: p.imap,
         smtp: p.smtp,
         senderName: p.displayName || p.email,
         appendToSent: !/gmail\.com$/i.test(p.imap.host),
+        // plan 79: the days asked for when connecting are this account's own window
+        ...(p.syncWindowDays !== undefined && { syncWindowDays: p.syncWindowDays }),
       };
       if (p.verify) {
         try {
@@ -629,7 +631,7 @@ export function createHandlers(b: Backend): Handlers {
       return account;
     },
 
-    "accounts.connectGmail": async () => {
+    "accounts.connectGmail": async ({ syncWindowDays }) => {
       const settings = await readSettings(store);
       if (!settings.gmailClientId) {
         throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
@@ -649,7 +651,7 @@ export function createHandlers(b: Backend): Handlers {
       if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
-      const config: GmailAccountConfig = { senderName: result.name || result.email, googleSubject: result.sub! };
+      const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const color = await nextAccountColor();
       googleFlowActive(b);
@@ -676,7 +678,7 @@ export function createHandlers(b: Backend): Handlers {
       return account;
     },
 
-    "accounts.connectGmailToken": async ({ accessToken, expiresIn, accountId }) => {
+    "accounts.connectGmailToken": async ({ accessToken, expiresIn, accountId, syncWindowDays }) => {
       const tokens = b.options.providers.gmailTokens;
       // i18n-ignore: a wiring mistake (only the web build calls this, and it has the broker), for developers
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
@@ -713,7 +715,8 @@ export function createHandlers(b: Backend): Handlers {
           void b.syncAccount(existing.id);
           return existing;
         }
-        const config: GmailAccountConfig = { senderName: who.name || who.email, googleSubject: who.sub! };
+        // a new mailbox only: one already here (reconnected above) keeps its window
+        const config: GmailAccountConfig & AccountPrefs = { senderName: who.name || who.email, googleSubject: who.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
         const color = await nextAccountColor();
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));

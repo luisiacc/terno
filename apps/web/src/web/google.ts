@@ -100,8 +100,9 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
  * without a server: the token goes to the worker's memory and is never stored.
  * With `accountId` (signing that account in again, plan 25) the token must be
  * that account's: another Google account picked in the popup changes nothing.
+ * `syncWindowDays` (plan 76, Add account): the days a new mailbox downloads.
  */
-export async function connectGmailWeb(loginHint?: string, accountId?: number): Promise<Account> {
+export async function connectGmailWeb(loginHint?: string, accountId?: number, o: { syncWindowDays?: number } = {}): Promise<Account> {
   const clientId = getApp().settings?.gmailClientId;
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
@@ -114,7 +115,7 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number): P
   const token = await accessToken(clientId, loginHint, adding || pending ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
   const granted = token.scope.split(/\s+/);
   const expiresIn = token.expires_in;
-  const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }) });
+  const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }), ...(adding && o.syncWindowDays !== undefined && { syncWindowDays: o.syncWindowDays }) });
   // still wanted after Google's popup (not turned off meanwhile); Add account may have reached a waiting mailbox too
   const waited = waitedBefore.has(account.id);
   const stillPending = waited && (getApp().settings?.googlePhotosPending ?? []).includes(account.id);
