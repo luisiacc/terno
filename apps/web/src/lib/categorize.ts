@@ -64,13 +64,15 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   if (ids.length === 0) return null;
   const { items, index } = useList.getState();
   const fresh = ids.filter((id) => !items[index.get(id) ?? -1]?.categoryIds.includes(categoryId));
-  if (leavesInbox(categoryId)) leaveView(ids.filter((id) => index.has(id)));
-  else patch(fresh, categoryId, true);
+  // into a category hidden from the Inbox on screen: the rows leave once it's done (a refusal keeps your place, Codex review)
+  const leaves = leavesInbox(categoryId);
+  patch(fresh, categoryId, true);
   // the sidebar count moves in the same frame; the backend's counts event confirms it
   const unread = fresh.filter((id) => items[index.get(id) ?? -1]?.unread).length;
   const bumped = unread ? bumpUnread({ [categoryId]: unread }) : null;
   try {
     const res = await client.call("categories.addThreads", { categoryId, threadIds: ids, source: options.source ?? "picker" });
+    if (leaves) leaveLoaded(ids);
     refreshReader(ids);
     const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId };
     for (const l of listeners) l(filed, options.source ?? "picker");
@@ -109,12 +111,14 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
   }
   const s = getApp();
   const viewing = s.reviewCategoryId === null ? s.categoryId : null;
-  if ((viewing !== null && viewing !== categoryId) || leavesInbox(categoryId)) leaveView(ids.filter((id) => index.has(id)));
+  const leaves = leavesInbox(categoryId);
+  if (viewing !== null && viewing !== categoryId) leaveView(ids.filter((id) => index.has(id)));
   else patchRows(ids, (t) => ({ ...t, categoryIds: [categoryId] }));
   const bumped = Object.keys(delta).length ? bumpUnread(delta) : null;
   const source = options.source ?? "dnd";
   try {
     const res = await client.call("categories.moveThreads", { to: categoryId, threadIds: ids, source });
+    if (leaves) leaveLoaded(ids);
     refreshReader(ids);
     const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, moved: true };
     for (const l of listeners) l(filed, source);
@@ -135,12 +139,13 @@ export async function addScopeToCategory(categoryId: number, sel: ScopeSelection
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
   // the scope's loaded rows (with the unread filter, not a read row it kept)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
-  if (leavesInbox(categoryId)) leaveView(loaded);
-  else patch(loaded, categoryId, true);
+  const leaves = leavesInbox(categoryId);
+  patch(loaded, categoryId, true);
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(t("category.addingScope", { count: sel.count, category: name }));
   try {
     const { added, batchId } = await client.call("categories.addScope", { categoryId, scope: sel.scope, jobId: progress.jobId });
+    if (leaves) leaveLoaded(loaded);
     const undo = batchId === null ? null : registerUndo(() => undoFiled({ categoryId, addedIds: [], batchId }).then((n) => void snack(t("category.removed", { count: n, category: name }), { background: true })));
     snack.success(t("category.added", { count: added, category: name }), { id: progress.snackId, duration: 8000, action: undo ? undoAction(undo, t("category.undoAdd", { category: name })) : undefined });
   } catch (error) {
@@ -194,6 +199,14 @@ function leaveView(ids: readonly number[]): void {
   reflowRemoval(ids);
   patchRows(ids, () => null);
   if (s.checked.size) setApp({ checked: new Set() });
+}
+
+/** The rows still in the list leave it (after a change into a category hidden from the Inbox on screen). */
+function leaveLoaded(ids: readonly number[]): void {
+  if (!inPlainInbox(getApp())) return;
+  const { index } = useList.getState();
+  const here = ids.filter((id) => index.has(id));
+  if (here.length) leaveView(here);
 }
 
 /** A user removal: the engine learns from it (unless it undoes the user's own add a moment ago). */
@@ -424,7 +437,5 @@ export async function setShowInInbox(categoryId: number, show: boolean): Promise
 async function applyShowInInbox(categoryId: number, show: boolean): Promise<void> {
   const next = await client.call("categories.update", { id: categoryId, showInInbox: show });
   setCategories(getApp().categories.map((c) => (c.id === next.id ? next : c)));
-  if (show || !inPlainInbox(getApp())) return;
-  const leaving = useList.getState().items.filter((row) => row.categoryIds.includes(categoryId)).map((row) => row.id);
-  if (leaving.length) leaveView(leaving);
+  if (!show) leaveLoaded(useList.getState().items.filter((row) => row.categoryIds.includes(categoryId)).map((row) => row.id));
 }

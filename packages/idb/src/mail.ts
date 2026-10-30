@@ -1074,18 +1074,18 @@ export const SEARCH_VIEW_TEST: Record<SearchView, (t: R) => boolean> = { ...VIEW
 
 /**
  * Plan 80: a test that a thread is in a category hidden from the Inbox, or
- * null when none is. Allocation-free per thread: a thread in no category is
- * one index lookup; else a binary search of each hidden category's members
- * (kept ascending by the scope index until they change).
+ * null when none is. Per thread, its own memberships (a thread in none is
+ * one index lookup): never the hidden categories' member lists, which a
+ * membership change would make the next read rebuild and sort whole (Codex review).
  */
 export function inboxHiddenTest(c: Ctx): ((threadId: number) => boolean) | null {
   const hidden = hiddenCategories(c.db);
   if (!hidden) return null;
-  const members = [...hidden].map((id) => c.scopes.category(c, id));
   const memberships = T(c, "thread_categories");
   return (id) => {
-    if (memberships.count("fk_thread_id", id) === 0) return false;
-    for (const ids of members) if (ids[seekAfter(ids, id - 1)] === id) return true;
+    const keys = memberships.bucket("fk_thread_id", id);
+    if (!keys) return false;
+    for (const k of keys) if (hidden.has(memberships.rows.get(k)!.category_id as number)) return true;
     return false;
   };
 }

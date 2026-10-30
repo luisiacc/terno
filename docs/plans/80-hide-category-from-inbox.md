@@ -41,8 +41,8 @@ SQL: when hidden categories exist (`SELECT id FROM categories WHERE show_in_inbo
 
 - **Sidebar**: right-click a category → a one-item context menu, a checkbox "Show in Inbox". A hidden category shows a small muted eye-off glyph after its name (aria: "Hidden from Inbox"), which fades in within `--motion`.
 - **Settings → Categories**: in each category's editor, a "Show in Inbox" switch with the hint "Off: its mail stays out of the Inbox and the Inbox's unread count. It's still in this category." Keyboard-reachable path for everything the menu does.
-- **Toggling** (`lib/categories.ts`, `setShowInInbox`): the category list updates in the same frame; if you're looking at the Inbox and hiding, the loaded rows of that category leave with the existing fade-and-slide (`leaveView` → `reflowRemoval`; nothing when motion is reduced/off), and the selection moves on as with archive. Showing reloads the list. Then a snack: "LinkedIn hidden from the Inbox · Undo" / "LinkedIn shown in the Inbox · Undo"; Undo (and z) flips it back. A failure puts it back and says why.
-- **Filing into a hidden category while in the Inbox** (`addToCategory`, `moveToCategory`): the rows leave the Inbox the same way (they would vanish on the next reload anyway).
+- **Toggling** (`lib/categorize.ts`, `setShowInInbox`): once the backend has it (a local call), the category list updates; if you're looking at the plain Inbox and hiding, the loaded rows of that category leave with the existing fade-and-slide (`leaveView` → `reflowRemoval`; nothing when motion is reduced/off), and the selection moves on as with archive. Showing reloads the list (the backend's change event). Then a snack: "LinkedIn is hidden from the Inbox · Undo" / "LinkedIn shows in the Inbox again · Undo"; Undo (and z) sets the value it had. A refusal changes nothing and says why.
+- **Filing into a hidden category while in the Inbox** (`addToCategory`, `moveToCategory`, `addScopeToCategory`): once filed, the rows leave the Inbox the same way.
 - Strings in `en` and `es`.
 
 ## Tests
@@ -67,4 +67,23 @@ SQL: when hidden categories exist (`SELECT id FROM categories WHERE show_in_inbo
 
 ## Revisions after the Codex review
 
-(pending)
+### Plan critique
+
+1. *"Looking at the Inbox" needed more than `view === "inbox"`* (a search, a category tab, a folder, Revisar). `inPlainInbox` (state/app.ts) tests all of them; web unit test.
+2. *A select-all of the Inbox survived a change of what it shows.* `setCategories` ends it when the hidden set changes and you're in the Inbox (here or from another window's `categories` event); web unit test.
+3. *Bulk filing (`addScopeToCategory`) was missed.* It takes the loaded rows out too.
+4. *IndexedDB's Waiting scope has its own path* (`waitingScope`). Covered, with a conformance test of the Waiting page, scope ids, scope count and counts.
+5. *An optimistic removal could be undone by a refresh racing the update.* The toggle applies after the backend has it; nothing is optimistic.
+6, 7. *Per-candidate cost in both stores, several hidden categories, counts.* Perf gates in both stores at 50k messages: the seed's largest category hidden, and two hidden categories holding 95% of the Inbox (see Perf).
+8. *Import into a same-name category.* A category you already have keeps your settings; a new one comes with the file's (like autoApply).
+9. *Undo must set a captured value.* It sets the value the category had; a retry is idempotent.
+10. *A failure must keep your place.* Nothing changes before the backend answers, so a refusal changes nothing.
+
+### Code review
+
+1. *IndexedDB: the hidden test read each hidden category's member list (`ScopeIndex.category`), which any membership change makes the next Inbox read rebuild and sort whole* (20–29 ms at 50k). It now tests the thread's own memberships (`inboxHiddenTest`); the perf gate times every read right after a membership change.
+2. *Filing into a hidden category took the rows out before the backend answered, so a refusal lost the selection and the reader.* The rows leave once it's filed (web unit test: a refusal keeps the rows and the open thread).
+
+## Perf (measured)
+
+SQLite (29,500 threads, 51k messages; budgets 5 ms): with the seed's largest category hidden, an Inbox page p95 0.6 ms, the unread page 0.5 ms, counts 3.7–4.1 ms (2.9 ms with nothing hidden). Two hidden categories holding 95% of the Inbox: pages 1.4 ms, unread 0.7 ms, select all 1.8 ms, counts within 1 ms of the same memberships shown (the per-category counts grow with what is filed). IndexedDB (28,400 threads): every read at 95% hidden 0.3–3 ms, the same right after a membership change (budget: a frame).

@@ -364,3 +364,21 @@ describe("plan 80: a category hidden from the Inbox", () => {
     expect(ids()).toEqual([2, 3]);
   });
 });
+
+describe("plan 80 (Codex review): a refused filing into a hidden category keeps your place", () => {
+  it("the rows and the open thread stay when the backend refuses", async () => {
+    const items = [row(1, true), row(2, true), row(3, false)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+    setApp({ view: "inbox", categoryId: null, reviewCategoryId: null, folder: null, query: "", selectedId: 1, categories: [{ id: 9, name: "LinkedIn", color: "cyan", position: 0, autoApply: true, showInInbox: false }] });
+    let refuse!: () => void;
+    fake.handlers["categories.addThreads"] = () => new Promise((_, reject) => (refuse = () => reject(new Error("gone"))));
+    fake.handlers["threads.list"] = async () => ({ items, nextCursor: null });
+    const done = addToCategory(9, [1]);
+    // nothing leaves before the backend has it
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
+    refuse();
+    await done;
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
+    expect(getApp().selectedId).toBe(1);
+  });
+});

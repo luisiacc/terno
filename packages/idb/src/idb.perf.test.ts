@@ -574,3 +574,35 @@ it("cached refresh keyset traversal at 50k never stalls a frame", async () => {
   expect(count).toBeGreaterThanOrEqual(50_000);
   expect(result.maxStall).toBeLessThanOrEqual(FRAME * MULT);
 });
+
+it("plan 80: a category hidden from the Inbox holding 95% of it: Inbox pages, unread, select all and counts within a frame, a membership change after too", async () => {
+  const inbox = await store.threads.scopeIds({ view: "inbox", limit: 1_000_000 });
+  const hide = inbox.filter((_, i) => i % 20 !== 0);
+  const big = (await store.categories.create("Hidden big", "slate")).id;
+  const small = (await store.categories.create("Hidden small", "rose")).id;
+  await store.categories.add({ categoryId: big, threadIds: hide, addedBy: "filter", now: NOW });
+  await store.categories.add({ categoryId: small, threadIds: inbox.filter((_, i) => i % 7 === 0), addedBy: "filter", now: NOW });
+  await store.categories.update(big, { showInInbox: false });
+  await store.categories.update(small, { showInInbox: false });
+  try {
+    const reads: Record<string, () => Promise<unknown>> = {
+      "inbox page": () => store.threads.list({ view: "inbox", limit: 100 }),
+      "unread page": () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }),
+      counts: () => store.threads.counts(NOW),
+      "select all": () => store.threads.scopeCount({ view: "inbox", limit: 1_000_000 }),
+    };
+    for (const [label, read] of Object.entries(reads)) {
+      const r = await warm(read);
+      // a membership changes (Codex review: it used to make the next read rebuild a hidden category's member list)
+      await store.categories.add({ categoryId: big, threadIds: [inbox[0]!], addedBy: "filter", now: NOW });
+      await store.categories.remove({ categoryId: big, threadIds: [inbox[0]!], reason: "undo", now: NOW });
+      const after = await timed(read);
+      console.log(`hidden 95%: ${label} ${r.ms.toFixed(1)} ms, after a membership change ${after.ms.toFixed(1)} ms`);
+      expect(r.ms, label).toBeLessThanOrEqual(FRAME * MULT);
+      expect(after.ms, `${label} after a membership change`).toBeLessThanOrEqual(FRAME * MULT);
+    }
+  } finally {
+    await store.categories.delete(big);
+    await store.categories.delete(small);
+  }
+}, 900_000);

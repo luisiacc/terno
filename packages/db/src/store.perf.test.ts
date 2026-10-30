@@ -196,3 +196,46 @@ it("cached refresh keyset queries stay within the 50k store read budget", async 
     expect(page.items.length).toBeLessThanOrEqual(50);
   });
 });
+
+describe("a category hidden from the Inbox (plan 80)", () => {
+  it("hiding the seed's largest category: Inbox pages, the unread filter and counts within the navigation budgets", async () => {
+    const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;
+    await store.categories.update(largest, { showInInbox: false });
+    try {
+      await gate("hidden largest category: list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("hidden largest category: inbox unread filter, first page", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
+      await gate("hidden largest category: sidebar counts", 5, () => store.threads.counts(NOW));
+    } finally {
+      await store.categories.update(largest, { showInInbox: true });
+    }
+  });
+
+  it("holding 95% of the Inbox, with a second hidden one: pages walk past them within budget; counts cost what the memberships do", async () => {
+    const inbox = store.db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY id").map((r) => r.id);
+    const hide = inbox.filter((_, i) => i % 20 !== 0);
+    const big = (await store.categories.create("Hidden big", "slate")).id;
+    const small = (await store.categories.create("Hidden small", "rose")).id;
+    for (let i = 0; i < hide.length; i += 2000) await store.categories.add({ categoryId: big, threadIds: hide.slice(i, i + 2000), addedBy: "filter", now: NOW });
+    await store.categories.add({ categoryId: small, threadIds: inbox.filter((_, i) => i % 7 === 0), addedBy: "filter", now: NOW });
+    meta.hiddenInbox = `${hide.length} of ${inbox.length}`;
+    try {
+      // the same memberships, nothing hidden: the category counts grow with what was filed; hiding itself adds the difference
+      const control = await measureAsync("hidden 95% control (filed, shown): sidebar counts", 10, () => store.threads.counts(NOW));
+      stats.push(control);
+      await store.categories.update(big, { showInInbox: false });
+      await store.categories.update(small, { showInInbox: false });
+      const page = await store.threads.list({ view: "inbox", limit: 100 });
+      expect(page.items.length).toBeGreaterThan(0);
+      await gate("hidden 95%: list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("hidden 95%: list inbox, next page", 5, () => store.threads.list({ view: "inbox", limit: 100, cursor: page.nextCursor ?? undefined }));
+      await gate("hidden 95%: inbox unread filter, first page", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
+      await gate("hidden 95%: select all in the Inbox (count)", 10, () => store.threads.scopeCount({ view: "inbox", limit: 100_000 }));
+      const counts = await measureAsync("hidden 95%: sidebar counts", 10, () => store.threads.counts(NOW));
+      stats.push(counts);
+      expect(counts.p95 - control.p95, `hiding adds ${(counts.p95 - control.p95).toFixed(2)} ms to the counts`).toBeLessThanOrEqual(1 * BUDGET_MULTIPLIER);
+    } finally {
+      await store.categories.delete(big);
+      await store.categories.delete(small);
+    }
+  });
+});
