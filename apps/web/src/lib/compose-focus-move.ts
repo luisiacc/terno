@@ -27,7 +27,11 @@ export function prepareEarlyComposeInput(valid: () => boolean, cancel: () => voi
     if (!e.isTrusted || finished) return;
     if (!receiver && (initial instanceof HTMLInputElement || initial instanceof HTMLTextAreaElement || (initial instanceof HTMLElement && initial.isContentEditable))) return;
     if (!valid()) { stop(); return; }
-    if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); exit(); return; }
+    if (e.key === "Escape") {
+      // A published, ready draft owns Escape; the pending move replays it there.
+      if (destination && pendingFocus && focusable(pendingFocus.find())) return;
+      e.preventDefault(); e.stopImmediatePropagation(); exit(); return;
+    }
     if (receiver || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() !== "v") || e.key === "Tab") return;
     if ([...e.key].length !== 1 && e.key !== "Dead" && e.key !== "Process") return;
     receiver = document.createElement("textarea");
@@ -100,10 +104,10 @@ function keyDuringMove(e: KeyboardEvent) {
   const p = pendingFocus;
   if (!p || !e.isTrusted) return;
   const active = document.activeElement;
-  if (active && active !== document.body && !earlyInput?.owns(active)) return;
   if (e.isComposing) return;
   const el = p.find();
   if (!focusable(el)) return;
+  if (active && active !== document.body && !earlyInput?.owns(active) && !earlyInput?.armed(el)) return;
   const text = takeEarlyInput(el);
   let moved = false;
   const observe = (event: FocusEvent) => { if (event.target !== active && event.target !== document.body) moved = true; };
