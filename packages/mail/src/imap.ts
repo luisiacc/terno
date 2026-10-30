@@ -1105,9 +1105,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const uidvalidity = state.uidvalidity;
       // what the mailbox was as the sweep began: anything after it is for the next pass to see (Codex R6)
       const seen = snapshotOf(mb);
+      const found = await c.search({ all: true }, { uid: true });
+      // A refused search says nothing about which cached messages still exist.
+      if (!found) throw new ProviderError(L("errors.imap.listRefused"), false);
       // gathered and split a few thousand at a time (Codex R46: 500,000 mapped and filtered at once, 46 to 71 ms)
       const serverUids = new Set<number>();
-      await addAll(serverUids, (await c.search({ all: true }, { uid: true })) || []);
+      await addAll(serverUids, found);
       const known = await readMailbox(locations, path, uidvalidity);
       const { byUid, gone, stillThere } = await partitionKnown(known, serverUids);
       if (gone.length) {

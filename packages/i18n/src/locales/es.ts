@@ -1431,6 +1431,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.imap.loginFailed": "Falló el inicio de sesión IMAP: {detail}",
   "errors.imap.readOnly": "La carpeta de origen es de solo lectura. Haz este cambio en la aplicación de tu proveedor.",
   "errors.imap.changeUnknown": "No se pudo confirmar este cambio y es posible que ya se haya aplicado. Revisa tus mensajes en la app de tu proveedor antes de volver a intentarlo.",
+  "errors.imap.listRefused": "Tu servidor de correo no permitió consultar los mensajes. Intenta sincronizar de nuevo.",
   "errors.imap.changeRefused": "Tu servidor de correo rechazó este cambio. Revisa los mensajes en la aplicación de tu proveedor antes de volver a intentarlo.",
   "errors.imap.unsafeMove": "Tu servidor de correo no puede mover estos mensajes de forma segura sin afectar a otros. Haz este cambio en la aplicación de tu proveedor.",
   "errors.imap.noPassword": "Falta la contraseña IMAP.",
