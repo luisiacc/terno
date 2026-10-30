@@ -103,6 +103,41 @@ describe("initial Google sign-in", () => {
   });
 });
 
+describe("Google identity authority evidence", () => {
+  it.each([
+    ["case-insensitive email", { ...info, email: "READER@example.com" }, true],
+    ["omitted email and verification", { sub: info.sub }, false],
+    ["explicit unverified", { ...info, email_verified: false }, false],
+    ["hosted claim", { ...info, hd: "elsewhere.example" }, true],
+  ])("both entry points retain profile identity: %s", async (_label, claims, verified) => {
+    const inspectFetch = vi.fn<typeof fetch>(async (url) => json(String(url).endsWith("/profile") ? profile : claims));
+    const expected = { email: profile.emailAddress, sub: info.sub, emailVerified: verified };
+    await expect(inspectGmailToken("synthetic-token", inspectFetch, { endpoints })).resolves.toMatchObject(expected);
+    await expect(desktop({ info: () => json(claims) }).result).resolves.toMatchObject(expected);
+  });
+
+  it("rejects a verified third-party email contradicting the Gmail profile even with hd", async () => {
+    const claims = { ...info, email: "other@third-party.example", email_verified: true, hd: "third-party.example" };
+    const inspectFetch = vi.fn<typeof fetch>(async (url) => json(String(url).endsWith("/profile") ? profile : claims));
+    await expect(inspectGmailToken("synthetic-token", inspectFetch, { endpoints })).rejects.toThrow("invalid sign-in response");
+    await expect(desktop({ info: () => json(claims) }).result).rejects.toThrow("invalid sign-in response");
+  });
+
+  it("times out userinfo headers and cleans up its caller abort listener", async () => {
+    const caller = new AbortController();
+    const remove = vi.spyOn(caller.signal, "removeEventListener");
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => { release = resolve; });
+    const cancelled = vi.fn();
+    const netFetch = vi.fn<typeof fetch>(async (url) => String(url).endsWith("/profile") ? json(profile) : pending);
+    await expect(inspectGmailToken("synthetic-token", netFetch, { endpoints, signal: caller.signal, timeoutMs: 40 })).rejects.toThrow("Google sign-in timed out.");
+    expect(netFetch).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+    release(new Response(new ReadableStream({ cancel: cancelled })));
+    await expect.poll(() => cancelled.mock.calls.length).toBe(1);
+  });
+});
+
 describe("deliberate installed renewal", () => {
   it("normalizes true omission only when explicitly allowed", async () => {
     const omitted = { ...token, refresh_token: undefined };

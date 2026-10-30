@@ -112,6 +112,43 @@ describe("Google connection RPC validation", () => {
     expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe(scenario === "account removal" ? null : scenario === "newer reconnect" ? "newer-refresh" : "synthetic-refresh");
   });
 
+  it("currently accepts a different subject when the Gmail profile mailbox is unchanged", async () => {
+    const t = await setup(false);
+    const account = await t.client.call("accounts.connectGmail", {});
+    t.answer({ ...identity, sub: "different-subject", refreshToken: "replacement" });
+    await expect(t.client.call("accounts.reconnect", { id: account.id })).resolves.toMatchObject({ id: account.id });
+    expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("replacement");
+  });
+
+  it.each(["changed mailbox with same subject", "provider refusal"])("desktop reconnect preserves stamp and ciphertext on %s", async (scenario) => {
+    const t = await setup(false);
+    const account = await t.client.call("accounts.connectGmail", {});
+    await t.backend.syncAccount(account.id);
+    const stamp = await t.backend.store.accounts.stamp(account.id);
+    const secret = await t.backend.store.secrets.get(`account:${account.id}:refreshToken`);
+    const before = await t.client.call("app.bootstrap", {});
+    if (scenario === "provider refusal") t.connect.mockRejectedValueOnce(new Error("private provider refusal"));
+    else t.answer({ ...identity, email: "renamed@example.com", refreshToken: "replacement" });
+    await expect(t.client.call("accounts.reconnect", { id: account.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await t.backend.store.accounts.stamp(account.id)).toEqual(stamp);
+    expect(await t.backend.store.secrets.get(`account:${account.id}:refreshToken`)).toEqual(secret);
+    expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: before.accounts, owner: before.owner });
+  });
+
+  it("browser inspection refusal does not install a replacement token", async () => {
+    const t = await setup();
+    const account = await t.client.call("accounts.connectGmailToken", { accessToken: "first-token", expiresIn: 3600 });
+    await t.backend.syncAccount(account.id);
+    const stamp = await t.backend.store.accounts.stamp(account.id);
+    const before = await t.client.call("app.bootstrap", {});
+    t.installed.mockClear();
+    t.inspect.mockRejectedValueOnce(new Error("synthetic refusal"));
+    await expect(t.client.call("accounts.connectGmailToken", { accessToken: "replacement", expiresIn: 3600, accountId: account.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(t.installed).not.toHaveBeenCalled();
+    expect(await t.backend.store.accounts.stamp(account.id)).toEqual(stamp);
+    expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: before.accounts, owner: before.owner });
+  });
+
   it("wrong-mailbox desktop reconnect preserves the target instead of adding the other mailbox", async () => {
     const t = await setup(false);
     const account = await t.client.call("accounts.connectGmail", {});
