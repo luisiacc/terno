@@ -412,3 +412,20 @@ W12 S53 cross-runtime qualification is landed as tests of existing protection, n
 ## Main-green priority and user decision hold
 
 The user’s new priority is to fix current-main inherited account-lifecycle(4), incoming-admission(1), incoming-pipeline(1), incoming-transfer(4) and four incoming-inline perf fixture failures in fresh isolated worktrees before new workgroup slices or final release gates. Reproduce safely, diagnose root cause, preserve assertions/budgets and use at most two code-review rounds; no skips. Already-active children may finish normally. The parked branches `t3/mime-fallback-compat`, `t3/ai-readiness-freshness`, `t3/qualify-incoming-processing`, `t3/qualify-account-signature-switch`, `t3/gmail-sync-recovery` and the eight Round-two backlog table rows above are held for the user’s follow-up decisions: no landing, deletion or rework. Fresh main-green work does not cherry-pick/rewrite those branches. The overlap between the four account-lifecycle failures and the held Gmail fixture-isolation row is awaiting clarification; independent incoming fixes proceed.
+
+## Final user decisions — queued after main-green repairs
+
+The user’s follow-up resolves the decision hold above. Main-green remains first; existing active children may finish. Follow-up series below have at most ONE Codex code-review round: fix that round’s findings with regressions, then only high-severity correctness/data-loss changes; backlog everything else. No finding is marked fixed before its change lands.
+
+1. Keep PostalMime patch, repair direct CommonJS parse/constructor and declaration-map mismatch, rebase/targeted MIME checks/land.
+2. Fix categorization-disable cancellation in the shared settings/controller path, preserve its failing test, land the entire AI readiness branch.
+3. Land the approved incoming fixture repairs/10unitcases now. Preserve the plain perf failure honestly, with no budget relaxation; track cold native Request initialization as its separate W11 task. The fresh incoming worker may reuse those approved fixture commits rather than duplicate them.
+4. Land account/signature qualification as-is; its missing selector/preview/editor/in-flight-save/real-store/wire coverage is a low-priority W09 follow-up.
+5. Land Gmail history characterization, then schedule bounded replay-safe B11/S02 work after current core/store work, reusing existing transaction/deletion fences.
+6. Remove `t3/fix-incoming-inline-perf-fixture` and its worktree after confirming no commits beyond main and no unpreserved work.
+7. Fix reachable Settings Clear for accepted/saved+unknown while retaining acceptance fence and correct quota.
+8. Fix current-main Gmail lifecycle cancellation fixtures to intercept managed fetchGoogle and prove zero external traffic. This explicit decision resolves the account-lifecycle overlap question; the fresh main-green fixture series proceeds now.
+9. Fix non-cooldown OAuth503 retry stranding without pretending there is an OAuth constraint.
+10. Propagate folders/labels429 to rate-limited rather than idle.
+
+Hot core/store/protocol work remains serial. Worklist dispositions and the Round-two backlog table are updated as each decision lands; original evidence and earlier failed runs remain retained.
