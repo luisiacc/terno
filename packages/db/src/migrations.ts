@@ -969,6 +969,11 @@ CREATE TABLE send_copy_bytes (
   { version: 26, name: "reply subject context", sql: `
 ALTER TABLE drafts ADD COLUMN reply_context_json TEXT;
 ` },
+  { version: 27, name: "SMTP recipient evidence", sql: `
+CREATE TABLE recipient_receipts (opId TEXT PRIMARY KEY REFERENCES ops(id) ON DELETE CASCADE, accountId INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, createdAt INTEGER NOT NULL, charge INTEGER NOT NULL, count INTEGER NOT NULL, parts INTEGER NOT NULL, state TEXT NOT NULL, retired INTEGER NOT NULL, childOpId TEXT, deleteAfter INTEGER NOT NULL);
+CREATE INDEX recipient_receipts_account ON recipient_receipts(accountId);
+CREATE TABLE recipient_receipt_parts (id TEXT PRIMARY KEY, opId TEXT NOT NULL REFERENCES recipient_receipts(opId) ON DELETE CASCADE, kind TEXT NOT NULL, position INTEGER NOT NULL, data TEXT NOT NULL);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

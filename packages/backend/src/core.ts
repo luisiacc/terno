@@ -1629,7 +1629,7 @@ export class BackendCore {
     let target = JSON.parse(op.target_json) as { messageIds?: number[] };
     const started = performance.now();
     let accepted = false, transportStarted = false, remoteDispatched = false;
-    let sendAccepted: { warning: string | null } | undefined;
+    let sendAccepted: import("@terno/store").AcceptedRecipientEvidence | undefined;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
       if (operationFlagFields(op.kind).length) {
@@ -1672,6 +1672,7 @@ export class BackendCore {
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
         requestRun: { markDispatched: () => { remoteDispatched = true; } },
         submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
+        recipientOutcomes: (outcomes) => { if (sendAccepted) sendAccepted = { ...sendAccepted, outcomes }; },
         ...(sending && { beforeSubmission: async () => {
           // Receipt-first, then fresh op: retirement transfers proof atomically before deleting a receipt.
           const copy = await this.store.sendCopies.get(op.id);
@@ -1683,7 +1684,7 @@ export class BackendCore {
         } }),
         ...(receipt && { sentCopy: {
           prepare: (raw) => this.accountWrite(life, () => prepareCopyWire(this.store, op.id, raw, () => this.platform.yield(), () => { this.assertCurrent(life); if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true); })),
-          accepted: (warning) => { sendAccepted = { warning: warning ? encodeText(warning) : null }; return this.accountWrite(life, () => this.store.sendCopies.accepted(op.id, sendAccepted!.warning)); },
+          accepted: (warning) => { sendAccepted = { ...sendAccepted, warning: warning ? encodeText(warning) : null }; return this.accountWrite(life, () => this.store.sendCopies.accepted(op.id, sendAccepted!.warning)); },
           record: (copy, identity) => this.accountWrite(life, () => this.store.sendCopies.record(op.id, copy, identity)),
         } }),
       });

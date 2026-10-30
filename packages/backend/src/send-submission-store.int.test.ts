@@ -221,5 +221,101 @@ it("real SMTP plus IDB completion abort commits acceptance through fallback, reo
   const retried = await second.client.call("ops.resolveUnknown", { opId, resolution: "retry" }).then(() => true, () => false);
   await second.backend.runWorker(); expect(received).toHaveLength(1); expect(retried).toBe(false);
   expect(await second.backend.store.ops.sendSubmission(opId)).toEqual({ state: "unknown", accepted: true });
+  expect((await second.backend.store.recipientReceipts.get(opId))?.state).toBe("accepted");
+  expect(JSON.parse((await second.backend.store.recipientReceipts.readPart(opId, "outcomes", 0))!)).toEqual(["accepted", "rejected", "accepted"]);
   await expect(second.client.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+});
+
+for (const adapter of ["SQL", "IDB"] as const) for (const appendToSent of [false, true]) for (const transition of ["complete", "markUnknown"] as const) {
+  it(`${adapter} persists independent recipient evidence through ${transition}, append=${appendToSent}`, async () => {
+    const t = await setup(adapter, appendToSent); let store = t.store;
+    expect((await store.recipientReceipts.list(t.command.accountId)).map((row) => row.opId)).toContain(t.opId);
+    await store.ops.claimReady(2, 1);
+    if (appendToSent) { await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); }
+    const evidence = { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" as const }] };
+    if (transition === "complete") await store.ops.complete(t.opId, { sendAccepted: evidence }, 3);
+    else await store.ops.markUnknown(t.opId, "Synthetic local error", 3, evidence);
+    await store.close(); store = await t.open();
+    expect((await store.recipientReceipts.get(t.opId))?.state).toBe("accepted");
+    expect(JSON.parse((await store.recipientReceipts.readPart(t.opId, "envelope", 0))!)).toEqual([{ role: "to", email: "recipient@example.test", name: "" }]);
+    expect(JSON.parse((await store.recipientReceipts.readPart(t.opId, "outcomes", 0))!)).toEqual(["accepted"]);
+    while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ }
+    expect(await store.recipientReceipts.get(t.opId)).toBeNull();
+    await store.close(); store = await t.open();
+    expect(await store.ops.sendSubmission(t.opId)).toMatchObject({ accepted: true });
+  });
+}
+
+it.each(["rollback", "committed rejection"] as const)("SQL recipient publication survives %s according to native commit", async (fault) => {
+  const t = await setup("SQL"), db = sqlDb(t.store);
+  await t.store.ops.claimReady(2, 1);
+  let armed = true;
+  const inject = () => { if (armed) { armed = false; throw new Error("Synthetic acknowledgement failure"); } };
+  if (fault === "rollback") db.onBeforeCommit(inject); else db.onCommit(inject);
+  await expect(t.store.ops.markUnknown(t.opId, "local failure", 3, { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] })).rejects.toThrow("acknowledgement");
+  await t.store.close(); const next = await t.open();
+  expect((await next.recipientReceipts.get(t.opId))?.state).toBe(fault === "rollback" ? "pending" : "accepted");
+  expect((await next.ops.sendSubmission(t.opId))?.accepted).toBe(fault !== "rollback");
+  expect(await next.recipientReceipts.readPart(t.opId, "outcomes", 0)).toBe(fault === "rollback" ? null : '["accepted"]');
+});
+
+it("IDB recipient publication abort rolls back both receipt and acceptance marker", async () => {
+  const t = await setup("IDB"); await t.store.ops.claimReady(2, 1);
+  const put = IDBObjectStore.prototype.put; let hits = 0, actual: string | null = null;
+  const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const result = Reflect.apply(put, this, args) as IDBRequest;
+    if (this.name === "recipient_receipts" && this.transaction.db.name === `terno-${t.name}` && args[1] === t.opId) {
+      hits++; this.transaction.addEventListener("abort", () => { actual = "abort"; }); result.addEventListener("success", () => this.transaction.abort());
+    }
+    return result;
+  });
+  await expect(t.store.ops.markUnknown(t.opId, "local failure", 3, { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] })).rejects.toThrow();
+  expect(hits).toBe(1); expect(actual).toBe("abort"); spy.mockRestore();
+  await t.store.close(); const next = await t.open();
+  expect((await next.recipientReceipts.get(t.opId))?.state).toBe("pending");
+  expect((await next.ops.sendSubmission(t.opId))?.accepted).toBe(false);
+  expect(await next.recipientReceipts.readPart(t.opId, "outcomes", 0)).toBeNull();
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} refuses the 129th independent receipt without consuming a draft`, async () => {
+  const t = await setup(adapter); const store = t.store;
+  for (let i = 1; i < 128; i++) await store.compose.queueSend({ ...t.command, now: 2 + i });
+  expect(await store.recipientReceipts.list(t.command.accountId)).toHaveLength(128);
+  const draft = (await store.drafts.save({ accountId: t.command.accountId, to: t.command.to, cc: [], bcc: [], subject: t.command.subject, bodyText: t.command.bodyText }, 200))!;
+  await expect(store.compose.queueSend({ ...t.command, now: 201, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(draft);
+  expect(await store.recipientReceipts.list(t.command.accountId)).toHaveLength(128);
+});
+
+it("IDB hidden recipient publication acknowledgement poisons rather than inventing rollback", async () => {
+  const t = await setup("IDB"); await t.store.ops.claimReady(2, 1);
+  const put = IDBObjectStore.prototype.put; let hits = 0, actual: string | null = null;
+  const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const result = Reflect.apply(put, this, args) as IDBRequest;
+    if (this.name === "recipient_receipts" && this.transaction.db.name === `terno-${t.name}` && args[1] === t.opId) {
+      hits++; this.transaction.addEventListener("complete", () => { actual = "complete"; }); result.addEventListener("success", (event) => event.stopImmediatePropagation());
+    }
+    return result;
+  });
+  await expect(t.store.ops.markUnknown(t.opId, "local failure", 3, { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] })).rejects.toThrow();
+  expect(hits).toBe(1); expect(actual).toBe("complete"); spy.mockRestore();
+  await expect(t.store.recipientReceipts.get(t.opId)).rejects.toThrow("closed");
+  await t.store.close(); await expect(t.open()).rejects.toMatchObject({ name: "UncertainWriteError" });
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} enforces the aggregate recipient metadata budget before draft removal`, async () => {
+  const t = await setup(adapter); const store = t.store;
+  const to = Array.from({ length: 1000 }, (_, i) => ({ name: "ñ".repeat(250), email: `r${i}@example.test` }));
+  const large = { ...t.command, to, cc: to, bcc: to };
+  let admitted = 0;
+  while (admitted < 4) {
+    try { await store.compose.queueSend({ ...large, now: 10 + admitted }); admitted++; }
+    catch { break; }
+  }
+  expect(admitted).toBeGreaterThan(0); expect(admitted).toBeLessThan(4);
+  const rows = await store.recipientReceipts.list(t.command.accountId);
+  expect(rows.reduce((sum, row) => sum + row.charge, 0)).toBeLessThanOrEqual(4 * 1024 * 1024);
+  const draft = (await store.drafts.save({ accountId: t.command.accountId, to, cc: to, bcc: to, subject: large.subject, bodyText: large.bodyText }, 100))!;
+  await expect(store.compose.queueSend({ ...large, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, now: 101 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(draft);
 });

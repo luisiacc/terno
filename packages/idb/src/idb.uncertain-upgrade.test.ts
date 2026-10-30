@@ -33,7 +33,7 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
 
 /** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source, ...["op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes"].map((name) => ({
+  return [...source, ...["op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   }))].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }
@@ -58,7 +58,7 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 14, logical: 26 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 15, logical: 27 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -101,7 +101,7 @@ it("preserves a complete canonical physical10/logical23 fixture through the phys
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 14, logical: 26 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 15, logical: 27 });
     const [account] = await withAccounts(seed, 1);
     await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
     await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);
@@ -434,7 +434,7 @@ it("adds empty Sent recovery stores to physical12 while preserving Plan68 folder
     const shape = async (s: IdbMailStore) => ({ folders: await s.folders.list(), members: (await s.threads.list({ view: "all", accountId: account!, folder: "Label_1", limit: 100, now: 0 })).items.map((t) => t.id), counts: await s.threads.counts(0) });
     const before = await shape(seed);
     await seed.close(); raw = await request(factory.open(databaseName(sourceName)));
-    const source = (await image(raw)).filter((r) => !["send_copies", "send_copy_bytes"].includes(r.name)); raw.close(); raw = undefined;
+    const source = (await image(raw)).filter((r) => !["send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts"].includes(r.name)); raw.close(); raw = undefined;
     const legacy = factory.open(databaseName(name), 12);
     legacy.onupgradeneeded = () => {
       for (const saved of source) {
@@ -451,6 +451,28 @@ it("adds empty Sent recovery stores to physical12 while preserving Plan68 folder
     const upgraded = await image(raw);
     expect(raw.version).toBe(IDB_VERSION);
     for (const table of ["folders", "thread_folders", "folder_rebuilds"]) expect(upgraded.find((r) => r.name === table)).toEqual(source.find((r) => r.name === table));
-    for (const table of ["send_copies", "send_copy_bytes"]) expect(upgraded.find((r) => r.name === table)).toMatchObject({ keys: [], values: [] });
+    for (const table of ["send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts"]) expect(upgraded.find((r) => r.name === table)).toMatchObject({ keys: [], values: [] });
+  } finally { raw?.close(); if (store?.isOpen) await store.close(); if (seed.isOpen) await seed.close(); }
+});
+
+it("upgrades populated physical14 reply context and folders without inventing recipient receipts", async () => {
+  const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
+  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
+  try {
+    const [account] = await withAccounts(seed, 1);
+    const message = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "v14-message", gmailLabels: ["Label_1"] })])).inserted[0]!;
+    await seed.folders.replace(account!, [{ key: "Label_1", path: ["Clients"], selectable: true }]);
+    const draft = (await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "Re: v14", bodyText: "preserved", mode: "reply", inReplyToMessageId: message, replyContext: { subject: "v14", sourceId: message, sourceAccountId: account! } }, 17))!;
+    const before = { folders: await seed.folders.list(), draft };
+    await seed.close(); raw = await request(factory.open(databaseName(sourceName)));
+    const source = (await image(raw)).filter((r) => !["recipient_receipts", "recipient_receipt_parts"].includes(r.name)); raw.close(); raw = undefined;
+    const legacy = factory.open(databaseName(name), 14);
+    legacy.onupgradeneeded = () => { for (const saved of source) { const target = legacy.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement }); for (const index of saved.indexes) target.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry }); saved.values.forEach((value, i) => target.put(saved.name === "meta" && saved.keys[i] === "logicalSchema" ? 26 : value, saved.keys[i]!)); } };
+    raw = await request(legacy); raw.close(); raw = undefined;
+    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    expect(await store.folders.list()).toEqual(before.folders);
+    expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(before.draft);
+    expect(await store.recipientReceipts.list(account!)).toEqual([]);
   } finally { raw?.close(); if (store?.isOpen) await store.close(); if (seed.isOpen) await seed.close(); }
 });

@@ -16,3 +16,5 @@ export * from "./send-copies";
 export * from "./send-submission";
 
 export * from "./reply-context";
+
+export * from "./recipient-receipts";

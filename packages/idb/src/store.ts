@@ -1,3 +1,5 @@
+import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice } from "@terno/store";
+import { idbRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
@@ -420,6 +422,9 @@ export class IdbMailStore implements MailStore {
     chunks.evict([...chunks.rows.keys()]);
     // No pending undo remains here; cold-delete keys need not outlive their committed unit.
     chunks.absent.clear();
+    const detail = this.db.table("recipient_receipt_parts");
+    detail.evict([...detail.rows.keys()]);
+    detail.absent.clear();
     const wire = this.db.table("send_copy_bytes");
     wire.evict([...wire.rows.keys()]);
     wire.absent.clear();
@@ -1040,7 +1045,7 @@ export class IdbMailStore implements MailStore {
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
-        if (op.kind === "send" && result?.sendAccepted) idbSendCopies(this.db).markSubmissionAccepted(id);
+        if (op.kind === "send" && result?.sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, result.sendAccepted.outcomes); }
         const receipt = idbSendCopies(this.db).get(id);
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
@@ -1073,7 +1078,7 @@ export class IdbMailStore implements MailStore {
       }),
     markUnknown: (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => {
       const op = getOp(this.c, id);
-      if (op?.kind === "send" && op.state === "running" && sendAccepted) idbSendCopies(this.db).markSubmissionAccepted(id);
+      if (op?.kind === "send" && op.state === "running" && sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, sendAccepted.outcomes); }
       const receipt = idbSendCopies(this.db).get(id);
       if (op?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.c, id, error, now);
@@ -1172,6 +1177,13 @@ export class IdbMailStore implements MailStore {
     return { ...op, ...(receipt && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
   }
 
+  readonly recipientReceipts: MailStore["recipientReceipts"] = {
+    get: (id) => this.early(() => idbRecipientReceipts(this.db).get(id)),
+    list: (accountId) => this.early(() => idbRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId)),
+    readPart: async (id, kind, index) => this.exclusive(async () => { const header = idbRecipientReceipts(this.db).get(id); if (!header || header.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? header.parts : Math.ceil(header.count / 128))) return null; const tx = this.idb.transaction("recipient_receipt_parts", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Recipient read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("recipient_receipt_parts").get(`${id}:${kind}:${index}`); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),
+    retireSlice: async (id) => this.command(() => retireRecipientSlice(idbRecipientReceipts(this.db), id)),
+  };
+
   readonly sendCopies: MailStore["sendCopies"] = {
     get: (id) => this.early(() => idbSendCopies(this.db).get(id)),
     list: (accountId) => this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === accountId).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
@@ -1189,6 +1201,7 @@ export class IdbMailStore implements MailStore {
   readonly compose: MailStore["compose"] = {
     queueSend: async (p) => {
       p = structuredClone(p);
+      const preparedRecipients = (await this.accounts.get(p.accountId))?.kind === "imap" ? await recipientReceiptParts(p, this.o.platform.yield) : null;
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.o.platform.yield)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
       return this.command(() => {
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
@@ -1257,6 +1270,7 @@ export class IdbMailStore implements MailStore {
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(idbRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap" && (cfg.config as { appendToSent?: boolean }).appendToSent) reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
@@ -1545,6 +1559,7 @@ export class IdbMailStore implements MailStore {
       }),
     update: (id, patch) => this.command(() => updateAccount(this.c, id, patch)),
     remove: async (id) => {
+      for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) while (await this.recipientReceipts.retireSlice(row.opId)) await this.o.platform.yield();
       for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId)) await this.o.platform.yield();
       return this.command(() => {
         T(this.c, "accounts").delete(id);

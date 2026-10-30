@@ -31,6 +31,7 @@ export interface ProviderOp {
   payload: unknown;
   requestRun?: RequestRun;
   submissionAccepted?(): void;
+  recipientOutcomes?(outcomes: import("./smtp").RecipientOutcome[]): void;
   beforeSubmission?(): Promise<void>;
   sentCopy?: import("./sent-copy").SentCopyHooks;
 }
