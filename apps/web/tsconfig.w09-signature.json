@@ -1,0 +1,1 @@
+{"extends": "./tsconfig.json", "include": ["src/desktop.d.ts", "e2e/w09-signature.dev.ts", "e2e/w09-signature-helper.ts", "playwright.w09-signature.config.ts", "e2e-web/w09-signature/durable.dev.spec.ts", "playwright.w09-signature-web.config.ts"]}

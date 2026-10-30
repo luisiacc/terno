@@ -14,6 +14,7 @@ export { expect };
 
 /** A message the backend handed to SMTP (plan 16: the desktop's real send path into an in-process server). */
 export interface CapturedMail {
+  from: string;
   raw: string;
   rcpt: string[];
 }
@@ -36,7 +37,7 @@ async function smtpRegistry(): Promise<{ registry: import("@terno/mail").Provide
       const chunks: Buffer[] = [];
       stream.on("data", (c: Buffer) => chunks.push(c));
       stream.on("end", () => {
-        received.push({ raw: Buffer.concat(chunks).toString("utf8"), rcpt: session.envelope.rcptTo.map((r) => r.address) });
+        received.push({ from: session.envelope.mailFrom ? session.envelope.mailFrom.address : "", raw: Buffer.concat(chunks).toString("utf8"), rcpt: session.envelope.rcptTo.map((r) => r.address) });
         cb();
       });
     },
