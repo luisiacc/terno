@@ -12,7 +12,7 @@ import { createImapProvider, createRegistry, type ImapTimeouts, type ProviderCon
 import { sqlDb, SqlProviderStore, createAccount } from "@terno/db";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { startNetProxy } from "./test/net-proxy";
 
@@ -159,15 +159,72 @@ describe("plan 20: mail comes back after the network changes", () => {
     expect(await t.subjects()).toContain("while it was down");
   });
 
-  it("an archive made while the server is unreachable waits for the network (never failed), then runs after the change", async () => {
-    const t = await setup();
-    t.imap.server.control.addMessage("INBOX", { raw: raw("archive me offline") });
+  it.each(["before mutation", "after mutation before ACK"] as const)("an archive made while the server is unreachable recovers %s", async (boundary) => {
+    const timeline: string[] = [];
+    const executions: { state: string; attempts: number }[] = [];
+    const copyUids: string[] = [];
+    const mutations: { command: string; connection: number; tag: string; mailbox: string | null }[] = [];
+    let cutAck = false;
+    let ackLost = false;
+    let mutationSnapshot: ReturnType<typeof remote> | undefined;
+    const remote = () => ({
+      sourceEpoch: t.imap.server.control.getMailbox("INBOX").uidvalidity,
+      destinationEpoch: t.imap.server.control.getMailbox("Archive").uidvalidity,
+      source: t.imap.server.control.listMessages("INBOX", { raw: true }).map((m) => ({ uid: m.uid, bytes: m.raw?.toString() })),
+      destination: t.imap.server.control.listMessages("Archive", { raw: true }).map((m) => ({ uid: m.uid, bytes: m.raw?.toString() })),
+    });
+    let t!: Awaited<ReturnType<typeof setup>>;
+    t = await setup();
+    t.imap.server.script.add({ on: "command", run: true, when(context) {
+      if (/^UID (MOVE|COPY|STORE|EXPUNGE)$/.test(context.command ?? "")) {
+        mutations.push({ command: context.data.trim(), connection: context.session, tag: context.tag!, mailbox: context.mailbox });
+        timeline.push(`command ${context.data.trim()}`);
+      }
+      return false;
+    } });
+    t.imap.server.script.add({ on: "response", drop: true, when(context) {
+      if (context.command === "UID MOVE" && context.data.includes("[COPYUID ")) copyUids.push(context.data.trim());
+      if (context.response?.tag === "*") return false;
+      const move = mutations.find((m) => m.connection === context.session && m.tag === context.tag);
+      if (move) timeline.push(`MOVE ACK observed ${context.data.trim()}`);
+      const fault = boundary === "after mutation before ACK" && move;
+      if (cutAck && fault && !ackLost) {
+        // The real server has applied MOVE before either completion is suppressed.
+        mutationSnapshot = remote();
+        ackLost = true;
+        timeline.push(`suppressed ${context.command} completion; network event`);
+        t.backend.networkChanged(true, "network");
+        return true;
+      }
+      if (move) timeline.push("MOVE ACK forwarded");
+      return false;
+    } });
+    cleanups.push(() => vi.restoreAllMocks());
+    const provider = (await t.backend.provider(t.account.id))!;
+    const originalReset = provider.reset!.bind(provider);
+    const reset = vi.spyOn(provider, "reset").mockImplementation(() => {
+      originalReset();
+      timeline.push("provider reset completed");
+    });
+    const originalExecute = provider.execute.bind(provider);
+    vi.spyOn(provider, "execute").mockImplementation(async (op) => {
+      if (op.kind === "archive") {
+        const claimed = t.db().get<{ state: string; attempts: number }>("SELECT state, attempts FROM ops WHERE id=?", op.id)!;
+        executions.push(claimed);
+        timeline.push(`archive execute ${JSON.stringify(claimed)}`);
+      }
+      try { return await originalExecute(op); }
+      catch (error) { timeline.push(`execute rejected: ${String(error)}`); throw error; }
+    });
+    const destination = t.imap.server.control.getMailbox("Archive");
+    const sourceRaw = raw("archive me offline");
+    t.imap.server.control.addMessage("INBOX", { raw: sourceRaw });
     await t.backend.syncAccount(t.account.id);
     const [thread] = (await t.client.call("threads.list", { view: "inbox" })).items.filter((x) => x.subject === "archive me offline");
     const identity = t.db().get<{ id: number; provider_msg_id: string }>("SELECT id, provider_msg_id FROM messages WHERE thread_id=?", thread!.id)!;
     const source = t.db().get<{ uid: number; uidvalidity: number }>("SELECT uid, uidvalidity FROM message_locations WHERE message_id=? AND mailbox='INBOX'", identity.id)!;
     expect(source.uidvalidity).toBe(t.imap.server.control.getMailbox("INBOX").uidvalidity);
-    expect(t.imap.server.control.listMessages("INBOX").some((m) => m.uid === source.uid)).toBe(true);
+    expect(t.imap.server.control.listMessages("INBOX", { raw: true }).map((m) => [m.uid, m.raw?.toString()])).toEqual([[source.uid, sourceRaw]]);
     await t.proxy.refuse();
     t.proxy.resetAll();
     (await t.backend.provider(t.account.id))!.reset!();
@@ -176,16 +233,65 @@ describe("plan 20: mail comes back after the network changes", () => {
     // parked for the network: queued, no timer
     await expect.poll(() => op().next_attempt_at, { timeout: 8000, interval: 20 }).toBeGreaterThan(Date.now() + 1e15);
     expect(op().state).toBe("queued");
-    await t.proxy.pass();
+    expect(op().attempts).toBe(0);
+    expect(mutations).toEqual([]);
+    const resets = reset.mock.calls.length;
+    timeline.push("network recovery event while refused");
     t.backend.networkChanged(true, "network");
-    await expect.poll(() => op().state, { timeout: 5000, interval: 20 }).toBe("succeeded");
-    const archived = t.imap.server.control.listMessages("Archive");
+    await expect.poll(() => reset.mock.calls.length, { timeout: 5000, interval: 20 }).toBeGreaterThan(resets);
+    expect(mutations).toEqual([]);
+    timeline.push("network pass after reset");
+    cutAck = boundary !== "before mutation";
+    await t.proxy.pass();
+    const outcome = cutAck ? "unknown" : "succeeded";
+    try {
+      await expect.poll(() => op().state, { timeout: 5000, interval: 20 }).toBe(outcome);
+      timeline.push(`published ${JSON.stringify(op())}`);
+      expect(ackLost).toBe(cutAck);
+      expect(copyUids).toHaveLength(1);
+      expect(copyUids[0]).toContain(`[COPYUID ${destination.uidvalidity} ${source.uid} ${destination.uidnext}]`);
+      expect(op().attempts).toBe(1);
+      expect(executions.every((claim) => claim.state === "running" && claim.attempts === 1)).toBe(true);
+      expect(mutations).toEqual([{ command: `${mutations[0]!.tag} UID MOVE ${source.uid} Archive`, connection: mutations[0]!.connection, tag: mutations[0]!.tag, mailbox: "INBOX" }]);
+      if (cutAck) expect(mutationSnapshot).toEqual({
+        sourceEpoch: source.uidvalidity, destinationEpoch: destination.uidvalidity,
+        source: [], destination: [{ uid: destination.uidnext, bytes: sourceRaw }],
+      });
+      expect(timeline.indexOf("provider reset completed", timeline.indexOf("network recovery event while refused"))).toBeLessThan(timeline.indexOf("network pass after reset"));
+      if (cutAck) {
+        const attempts = op().attempts;
+        const calls = executions.length;
+        const resets = reset.mock.calls.length;
+        t.backend.networkChanged(true, "network");
+        await expect.poll(() => reset.mock.calls.length, { timeout: 5000, interval: 20 }).toBeGreaterThan(resets);
+        await t.backend.syncAccount(t.account.id);
+        const { opId } = await t.client.call("compose.send", { accountId: t.account.id, to: [{ name: "", email: "ana@example.com" }], subject: "worker recovery witness", bodyText: "recovered" });
+        await expect.poll(() => t.db().get<{ state: string }>("SELECT state FROM ops WHERE id=?", opId)!.state, { timeout: 5000, interval: 20 }).toBe("succeeded");
+        expect(t.smtp.received.filter((m) => m.includes("Subject: worker recovery witness"))).toHaveLength(1);
+        expect(op()).toMatchObject({ state: "unknown", attempts });
+        expect(executions).toHaveLength(calls);
+        expect(mutations).toHaveLength(1);
+      }
+    } finally {
+      console.log(JSON.stringify({ boundary, timeline, op: op(), mutations, executions, copyUids, mutationSnapshot, ackLost }));
+    }
+    const archived = t.imap.server.control.listMessages("Archive", { raw: true });
     expect(archived).toHaveLength(1);
-    expect(t.imap.server.control.listMessages("INBOX").some((m) => m.uid === source.uid)).toBe(false);
+    expect(archived[0]!.raw?.toString()).toBe(sourceRaw);
+    expect(t.imap.server.control.listMessages("INBOX")).toEqual([]);
     expect(t.db().get("SELECT id, provider_msg_id FROM messages WHERE id=?", identity.id)).toEqual(identity);
-    expect(t.db().all("SELECT mailbox, uid, uidvalidity FROM message_locations WHERE message_id=?", identity.id)).toEqual([
-      { mailbox: "Archive", uid: archived[0]!.uid, uidvalidity: t.imap.server.control.getMailbox("Archive").uidvalidity },
-    ]);
+    expect(t.db().all("SELECT id FROM messages WHERE provider_msg_id=?", identity.provider_msg_id)).toEqual([{ id: identity.id }]);
+    expect(await t.backend.provider(t.account.id)).toBe(provider);
+    expect(archived[0]!.uid).toBe(destination.uidnext);
+    const locations = t.backend.store.providerStore(t.account.id).locations;
+    if (cutAck) {
+      expect(await locations.unresolved([identity.id])).toEqual([identity.id]);
+      expect(await locations.of([identity.id])).toEqual([]);
+    } else {
+      expect(t.db().all("SELECT mailbox, uid, uidvalidity FROM message_locations WHERE message_id=?", identity.id)).toEqual([
+        { mailbox: "Archive", uid: archived[0]!.uid, uidvalidity: destination.uidvalidity },
+      ]);
+    }
   });
 
   it("offline, the worker claims nothing (no attempt spent); online, the queued action runs", async () => {
