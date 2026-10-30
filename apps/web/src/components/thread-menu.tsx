@@ -448,7 +448,7 @@ function MenuItems() {
                     <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
                   </ContextMenuItem>
                 ))}
-                {/* plan 76: the categories this mail is in offer the way out instead */}
+                {/* plan 77: the categories this mail is in offer the way out instead */}
                 {fileTo.length > 0 && filedIn.length > 0 && <ContextMenuSeparator />}
                 {filedIn.map((c) => (
                   <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>

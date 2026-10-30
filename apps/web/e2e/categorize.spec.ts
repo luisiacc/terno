@@ -129,7 +129,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
   });
 });
 
-test.describe("everything from a sender, out of a category (plan 76)", () => {
+test.describe("everything from a sender, out of a category (plan 77)", () => {
   test("the menu's Everything from X → Out of Facturas takes all their mail out; Undo files it back", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const cat = (name: string) => db.get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;

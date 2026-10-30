@@ -373,7 +373,7 @@ const touchedCategories = (to: number, left: readonly R[] | undefined, legacyFro
 
 /**
  * Records an exclusive move (its threads, nothing more); applyMoveSlice moves them in slices.
- * `leave` (plan 76): the threads only leave `to`, journaled alike, so categorize.undo is exact.
+ * `leave` (plan 77): the threads only leave `to`, journaled alike, so categorize.undo is exact.
  */
 export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string; leave?: boolean }): { batchId: number } {
   return c.db.tx(() => {

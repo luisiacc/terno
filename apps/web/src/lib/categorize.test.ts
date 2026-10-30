@@ -102,7 +102,7 @@ describe("addToCategory: unread counts", () => {
   });
 });
 
-describe("removeSenderFromCategory (plan 76): undo", () => {
+describe("removeSenderFromCategory (plan 77): undo", () => {
   const settle = () => new Promise((r) => setTimeout(r, 0));
   const undoCalls = () => fake.calls.filter((m) => m === "categorize.undo").length;
   const answer = () => {

@@ -201,7 +201,7 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 }
 
 /**
- * Plan 76: everything from a sender out of a category. The loaded rows lose
+ * Plan 77: everything from a sender out of a category. The loaded rows lose
  * it in this frame; the backend finds the rest. z undoes it from the start
  * (it waits for the backend's batch); the undo puts back every membership
  * exactly, including after a failure partway.

@@ -1,4 +1,4 @@
-# 76: Everything from X → Out of a category
+# 77: Everything from X → Out of a category
 
 ## Request (verbatim)
 

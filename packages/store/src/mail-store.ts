@@ -467,7 +467,7 @@ export interface MailStore {
     finishUndo(batchId: number, now: number): Promise<void>;
     /**
      * an exclusive move, recorded: afterwards every thread will be in `to` and no other category; applyMoveSlice moves them.
-     * `leave` (plan 76): they only leave `to` instead, journaled alike (undone exactly by categorize.undo)
+     * `leave` (plan 77): they only leave `to` instead, journaled alike (undone exactly by categorize.undo)
      */
     beginMove(m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string; leave?: boolean }): Promise<{ batchId: number }>;
     /** what an applied move did: the threads it added to `to`, and those it took out of another category */

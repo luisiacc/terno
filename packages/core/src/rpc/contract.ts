@@ -638,7 +638,7 @@ export const contract = {
   ),
 
   /**
-   * Plan 76: "Everything from X → Out of C". Every thread from the sender in
+   * Plan 77: "Everything from X → Out of C". Every thread from the sender in
    * the category leaves it (as a user removal: the model learns it), as a
    * journaled move; categorize.undo on the batch puts back every row,
    * example and decision. A failure partway carries `{ batchId }` in its

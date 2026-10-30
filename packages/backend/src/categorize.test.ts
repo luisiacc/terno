@@ -147,7 +147,7 @@ describe("categorizer: training hooks", () => {
     expect(fresh.backgroundSize).toBe(6);
   });
 
-  it("plan 76: a leave's threads go back to the background when it is trained, so a move resumed after a crash still sends them", async () => {
+  it("plan 77: a leave's threads go back to the background when it is trained, so a move resumed after a crash still sends them", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
@@ -176,7 +176,7 @@ describe("categorizer: training hooks", () => {
     await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/no longer exists/);
   });
 
-  it("plan 76: everything from a sender leaves a category (a user removal each); other senders and categories stay; undo is exact", async () => {
+  it("plan 77: everything from a sender leaves a category (a user removal each); other senders and categories stay; undo is exact", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
@@ -214,7 +214,7 @@ describe("categorizer: training hooks", () => {
     await expect(client.call("categories.removeSender", { categoryId: 999, email: rappi.email })).rejects.toThrow(/no longer exists/);
   });
 
-  it("plan 76: a removal that fails partway still names its batch, and its undo takes back what was done", async () => {
+  it("plan 77: a removal that fails partway still names its batch, and its undo takes back what was done", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;

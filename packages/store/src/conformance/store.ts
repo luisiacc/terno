@@ -1061,7 +1061,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.categories.undoBatchPart(bulk, await store.categories.batchThreads(bulk), NOW + 2)).removed.sort()).toEqual([t1, t3].sort());
       });
 
-      it("plan 76: a leave takes threads out of one category only (a removal example each); its undo restores rows and examples exactly", async () => {
+      it("plan 77: a leave takes threads out of one category only (a removal example each); its undo restores rows and examples exactly", async () => {
         const { store, cat, other, thread, examples } = await setup();
         // t1 in cat (a bulk batch) and other, t2 in cat (filed by a filter: no example), t3 in neither
         const [t1, t2, t3] = [await thread(), await thread(), await thread()];

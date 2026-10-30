@@ -491,7 +491,7 @@ function touched(table: string, batchId: number, to: number, ids: string | null,
 /**
  * Records a move: its threads (those that exist), nothing more, so 5,000 of
  * them cost a few ms. Nothing moves yet: applyMoveSlice does, in slices, and
- * finds out then what each thread leaves and joins. `leave` (plan 76) turns
+ * finds out then what each thread leaves and joins. `leave` (plan 77) turns
  * it around: the threads only leave `to`, journaled the same way, so
  * categorize.undo puts every row, example and decision back exactly.
  */
