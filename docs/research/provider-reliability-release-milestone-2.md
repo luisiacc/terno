@@ -99,3 +99,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: archive network fixture boundaries
 
 `76f30095` retains succeeded for controlled pre-mutation recovery and adds a real applied-MOVE/withheld-ACK unknown/no-replay witness. Provider-reset completion is observed before reopening refused traffic. Exact remote identity/content, attempts, recovery and unresolved fences remain asserted; no production edit. Root passes19network+5directambiguity controls, scoped types/lint/whitespace. One code review: Standards0/Spec0. Historical uninstrumented timing is not attributed or waived. [Details](../plans/drafts/release2-network-archive.md). Full milestone remains failed until later integration qualification.
+
+
+## Landed repair: renderer compose focus and readiness
+
+`49e8b822` prevents successful focus placement from triggering Reader fallback and preserves displayed sending-compose identity. Native EventTarget fixtures and revealed-field readiness checks preserve original scenarios. Root161direct+60three-design browser cases/types/lint/axe pass after rebase; light/dark captures inspected. One review leaves a P2 older-stored-open race backlogged; no second round or clean review claim. Separate rapid cross-field reveal-focus and native smoke dependencies remain. [Commands, counterexamples and limits](../plans/drafts/release2-renderer-focus.md). No full-renderer or release clearance.
