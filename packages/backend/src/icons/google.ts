@@ -12,7 +12,7 @@ import { RpcError, type AppSettings, type GooglePhotoState } from "@terno/core/r
 import { L } from "@terno/i18n";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "../core";
-import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential, photoReconnects } from "../identity";
+import { admitBrowserGoogle, googleAdmission, validateGoogleConnection, beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential, photoReconnects } from "../identity";
 import { consumeGooglePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
 
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
@@ -66,7 +66,9 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
       b.assertSignIn(accountId, flow);
       return readSettings(b.store);
     });
+    const admission = await googleAdmission(b, accountId, flow);
     const result = await connectExistingGoogle(b, account, flow, [...GMAIL_SCOPES, ...PHOTO_SCOPES]);
+    if (admission.expectedSubject !== null && admission.expectedSubject !== result.sub) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
     const granted = result.grantedScopes ?? [];
     if (!granted.includes(MAIL_SCOPE) && !granted.includes("https://mail.google.com/")) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
     const wanted = PHOTO_SCOPES.filter((scope) => granted.includes(scope));
@@ -77,6 +79,7 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
       await b.dropAccount(accountId);
       b.assertSignIn(accountId, flow);
       const prepared = await googleCredentialIntent(b, account, stamp, result, flow, blob);
+      prepared.intent.google = { ...admission, subject: result.sub! };
       let photoFailed = false;
       if (prepared.pending) {
         try {
@@ -108,20 +111,26 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   const tokens = b.options.providers.gmailTokens;
   // i18n-ignore: a wiring mistake (only the web build calls this), for developers
   if (!tokens) throw new RpcError("UNAVAILABLE", "This host turns photos on with icons.googlePhotos.");
-  const account = await gmailAccount(b, p.accountId);
-  const who = await tokens.inspect(p.accessToken, b.net.fetchFor("mail")).catch((error: unknown) => {
-    throw new RpcError("BAD_REQUEST", messageOf(error));
-  });
-  if (who.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: account.email }));
-  const granted = p.scope.split(/\s+/).filter(Boolean);
-  if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
-  tokens.set(account.id, p.accessToken, b.now() + p.expiresIn * 1000);
-  await b.resumeAuth(account.id);
-  // plan 74: a sign-in's consent counts only if the account still waits, checked with the write (off meanwhile wins)
-  if (p.ifPending) {
-    const state = photoStateFrom(granted);
-    if (await consumeGooglePhotosPending(b.store, account.id, state)) await b.icons.syncPeople(account.id, state);
-    return readSettings(b.store);
-  }
-  return turnOn(b, account.id, photoStateFrom(granted));
+  const flow = beginSignIn(b, p.accountId);
+  try {
+    const account = await gmailAccount(b, p.accountId);
+    const admission = await googleAdmission(b, account.id, flow);
+    const expiresAt = b.now() + p.expiresIn * 1000;
+    const who = await tokens.inspect(p.accessToken, b.net.fetchFor("mail"), { signal: AbortSignal.any([b.abort.signal, flow.signal]) }).catch((error: unknown) => {
+      throw new RpcError("BAD_REQUEST", messageOf(error));
+    });
+    b.assertSignIn(account.id, flow);
+    validateGoogleConnection(who);
+    if (who.email.toLowerCase() !== account.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: account.email }));
+    const granted = p.scope.split(/\s+/).filter(Boolean);
+    if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
+    await admitBrowserGoogle(b, account, who, p.accessToken, expiresAt, flow, admission);
+    // plan 74: a sign-in's consent counts only if the account still waits, checked with the write (off meanwhile wins)
+    if (p.ifPending) {
+      const state = photoStateFrom(granted);
+      if (await consumeGooglePhotosPending(b.store, account.id, state)) await b.icons.syncPeople(account.id, state);
+      return readSettings(b.store);
+    }
+    return await turnOn(b, account.id, photoStateFrom(granted));
+  } finally { await endSignIn(b, p.accountId, flow); }
 }

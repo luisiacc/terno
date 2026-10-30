@@ -5,7 +5,7 @@ import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, ty
 import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
-import { changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
+import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, googleAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
@@ -631,7 +631,7 @@ export function createHandlers(b: Backend): Handlers {
       if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
-      const config: GmailAccountConfig = { senderName: result.name || result.email };
+      const config: GmailAccountConfig = { senderName: result.name || result.email, googleSubject: result.sub! };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const color = await nextAccountColor();
       googleFlowActive(b);
@@ -664,55 +664,58 @@ export function createHandlers(b: Backend): Handlers {
       if (!tokens) throw new RpcError("UNAVAILABLE", "This host connects Gmail with accounts.connectGmail.");
       if (!/^[\x21-\x7e]+$/.test(accessToken) || (accountId !== undefined && (!Number.isSafeInteger(accountId) || accountId <= 0))) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const expiresAt = b.now() + expiresIn * 1000;
-      const who = await tokens.inspect(accessToken, b.net.fetchFor("mail"), { signal: b.abort.signal }).catch((error: unknown) => {
-        throw new RpcError("BAD_REQUEST", messageOf(error));
-      });
-      googleFlowActive(b);
-      validateGoogleConnection(who);
-      if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
-      if (accountId !== undefined) {
-        // plan 25: signing this account in again: another Google account picked in the popup changes nothing
-        const expected = await store.accounts.get(accountId);
-        if (!expected || expected.kind !== "gmail") throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-        if (expected.email.toLowerCase() !== who.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: expected.email }));
-      }
-      const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
-      if (accountId !== undefined && existing?.id !== accountId) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-      if (existing) {
-        if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
-        // reconnect: the same mailbox gets a fresh token and syncs what it missed
+      const snapshots = new Map(await Promise.all((await store.accounts.list()).map(async (account) => [account.id, { generation: b.credentialsOf(account.id), version: signInVersion(b, account.id), stamp: (await store.accounts.stamp(account.id))!, config: (await store.accounts.config<GmailAccountConfig>(account.id))!.config }] as const)));
+      let flow = accountId !== undefined ? beginSignIn(b, accountId) : undefined;
+      let flowId = accountId;
+      try {
+        const who = await tokens.inspect(accessToken, b.net.fetchFor("mail"), { signal: b.abort.signal }).catch((error: unknown) => {
+          throw new RpcError("BAD_REQUEST", messageOf(error));
+        });
+        googleFlowActive(b);
+        validateGoogleConnection(who);
+        if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+        if (accountId !== undefined) {
+          // plan 25: signing this account in again: another Google account picked in the popup changes nothing
+          const expected = await store.accounts.get(accountId);
+          if (!expected || expected.kind !== "gmail") throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+          if (expected.email.toLowerCase() !== who.email.toLowerCase()) throw new RpcError("BAD_REQUEST", L("errors.googleConnectedOther", { got: who.email, expected: expected.email }));
+        }
+        const existing = (await store.accounts.list()).find((a) => a.email === who.email.toLowerCase());
+        if (accountId !== undefined && existing?.id !== accountId) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        if (existing) {
+          if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
+          const snapshot = snapshots.get(existing.id);
+          if (!snapshot || snapshot.generation !== b.credentialsOf(existing.id) || (accountId === undefined && snapshot.version !== signInVersion(b, existing.id))) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
+          if (accountId === undefined && snapshot.config.googleSubject === undefined) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+          flow ??= beginSignIn(b, existing.id);
+          flowId = existing.id;
+          const admission = await googleAdmission(b, existing.id, flow);
+          if (admission.expectedSubject !== (snapshot.config.googleSubject ?? null)) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
+          await admitBrowserGoogle(b, existing, who, accessToken, expiresAt, flow, { ...admission, stamp: snapshot.stamp });
+          void b.syncAccount(existing.id);
+          return existing;
+        }
+        const config: GmailAccountConfig = { senderName: who.name || who.email, googleSubject: who.sub! };
+        const color = await nextAccountColor();
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
-        await b.dropAccount(existing.id);
-        // plan 25: Google just proved the token (its profile answered): the account stops asking now, and what waited goes
-        await b.signedIn(existing.id, () => {
-          googleFlowActive(b);
-          if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
-          tokens.set(existing.id, accessToken, expiresAt);
+        const { account, claimed } = await store.accounts.create({
+          kind: "gmail",
+          email: who.email,
+          displayName: who.email.split("@")[0]!,
+          color,
+          providerConfig: config,
+          ownerClaim: b.canClaimOwner() ? gmailClaim({ ...who, name: who.name || who.email }) : undefined,
+          now: b.now(),
         });
-        void b.syncAccount(existing.id);
-        return existing;
-      }
-      const config: GmailAccountConfig = { senderName: who.name || who.email };
-      const color = await nextAccountColor();
-      googleFlowActive(b);
-      if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
-      const { account, claimed } = await store.accounts.create({
-        kind: "gmail",
-        email: who.email,
-        displayName: who.email.split("@")[0]!,
-        color,
-        providerConfig: config,
-        ownerClaim: b.canClaimOwner() ? gmailClaim({ ...who, name: who.name || who.email }) : undefined,
-        now: b.now(),
-      });
-      tokens.set(account.id, accessToken, expiresAt);
-      await b.emitAccounts();
-      if (claimed) await b.emitOwner();
-      // what an import kept for this mailbox goes in now
-      await restorePending(b);
-      b.startAccount(account);
-      return account;
+        tokens.set(account.id, accessToken, expiresAt);
+        await b.emitAccounts();
+        if (claimed) await b.emitOwner();
+        // what an import kept for this mailbox goes in now
+        await restorePending(b);
+        b.startAccount(account);
+        return account;
+      } finally { if (flow && flowId !== undefined) await endSignIn(b, flowId, flow); }
     },
 
     "accounts.reconnect": ({ id, password }) => reconnectAccount(b, id, password),
@@ -733,6 +736,7 @@ export function createHandlers(b: Backend): Handlers {
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
       b.accountRemoved(id);
+      forgetSignInVersion(b, id);
       // nobody from a removed account lingers in suggestions
       await b.autocomplete.reset();
       await b.emitAccounts();

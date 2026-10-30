@@ -36,7 +36,7 @@ function registry(f: Fake, web = false): ProviderRegistry {
     ...demoRegistry,
     gmailTokens: web
       ? {
-          inspect: async () => ({ email: f.inspectEmail, name: "", sub: null, emailVerified: true }),
+          inspect: async () => ({ email: f.inspectEmail, name: "", sub: "synthetic-photo-subject", emailVerified: true }),
           set: (id, token) => void f.tokens.set(id, token),
         }
       : undefined,

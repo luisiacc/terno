@@ -1000,6 +1000,13 @@ export class SqlMailStore implements MailStore {
         this.providerStores.delete(id);
       });
     },
+    admitGoogle: async (stamp, google) => this.db.tx(() => {
+      const account = accountStamp(this.db, stamp.id);
+      const config = getAccountConfig<Record<string, unknown>>(this.db, stamp.id)?.config;
+      if (!account || getAccount(this.db, stamp.id)?.kind !== "gmail" || account.email !== stamp.email || account.createdAt !== stamp.createdAt || !config || (config.googleSubject ?? null) !== google.expectedSubject || (google.expectedSubject !== null && google.expectedSubject !== google.subject) || (google.eligible && !google.eligible())) return false;
+      if (config.googleSubject !== google.subject) setAccountProviderConfig(this.db, stamp.id, { ...config, googleSubject: google.subject });
+      return true;
+    }),
     setSyncState: async (id, patch) => setAccountSyncState(this.db, id, patch),
     setProviderConfig: async (id, config) => setAccountProviderConfig(this.db, id, config),
     setCursor: async (id, cursor, check) => { check?.(); setAccountCursor(this.db, id, cursor); },
@@ -1009,7 +1016,7 @@ export class SqlMailStore implements MailStore {
     get: async () => getOwner(this.db),
     confirm: async (c) => this.db.tx(() => {
       const owner = this.db.get(`SELECT 1 FROM owner WHERE id = 1 AND account_id = ? AND email = ? AND display_name = ? AND provider = ? AND verified_by = ? AND evidence_json = ? AND verified_at = ? AND updated_at = ?`, c.claim.accountId, c.claim.email.toLowerCase(), c.claim.displayName, c.claim.provider, c.claim.verifiedBy, JSON.stringify(c.claim.evidence), c.now, c.now);
-      return !!owner && this.commitSecret({ kind: "retain", name: c.secret.name, expectedBlob: c.secret.kind === "retain" ? c.secret.expectedBlob : c.secret.blob }, { ...c.stamp, id: c.claim.accountId });
+      return !!owner && this.commitSecret({ kind: "retain", google: c.secret.google && { expectedSubject: c.secret.google.subject, subject: c.secret.google.subject }, name: c.secret.name, expectedBlob: c.secret.kind === "retain" ? c.secret.expectedBlob : c.secret.blob }, { ...c.stamp, id: c.claim.accountId });
     }),
     change: async (c) =>
       this.db.tx(() => {
@@ -1078,9 +1085,12 @@ export class SqlMailStore implements MailStore {
   private commitSecret(intent: import("@terno/store").SecretIntent, stamp: { id: number; email: string; createdAt: number }): boolean {
     const account = accountStamp(this.db, stamp.id);
     if (!account || account.email !== stamp.email || account.createdAt !== stamp.createdAt) return false;
+    const config = getAccountConfig<Record<string, unknown>>(this.db, stamp.id)?.config;
+    if (intent.google && (getAccount(this.db, stamp.id)?.kind !== "gmail" || !config || (config.googleSubject ?? null) !== intent.google.expectedSubject || (intent.google.expectedSubject !== null && intent.google.expectedSubject !== intent.google.subject) || (intent.google.eligible && !intent.google.eligible()))) return false;
     const current = getSecret(this.db, intent.name);
     const expected = intent.expectedBlob;
     if (expected === null ? current !== null : !current || current.length !== expected.length || !current.every((b, i) => b === expected[i])) return false;
+    if (intent.google && config!.googleSubject !== intent.google.subject) setAccountProviderConfig(this.db, stamp.id, { ...config, googleSubject: intent.google.subject });
     if (intent.kind === "replace" && (!current || current.length !== intent.blob.length || !current.every((b, i) => b === intent.blob[i]))) putSecret(this.db, intent.name, intent.blob);
     return true;
   }

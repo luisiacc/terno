@@ -279,9 +279,16 @@ export interface StorageRemoval {
 }
 
 /** Explicit verification can deliberately replace a missing credential; ordinary refresh CAS never upserts. */
-export type SecretIntent =
+export interface GoogleAdmission {
+  expectedSubject: string | null;
+  subject: string;
+  /** Evaluated synchronously at actual store admission. */
+  eligible?: () => boolean;
+}
+
+export type SecretIntent = { google?: GoogleAdmission } & (
   | { kind: "retain"; name: string; expectedBlob: Uint8Array }
-  | { kind: "replace"; name: string; expectedBlob: Uint8Array | null; blob: Uint8Array };
+  | { kind: "replace"; name: string; expectedBlob: Uint8Array | null; blob: Uint8Array });
 
 export interface OwnerDecision {
   claim: OwnerClaim;
@@ -563,6 +570,8 @@ export interface MailStore {
     remove(id: number): Promise<void>;
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;
     setProviderConfig(id: number, config: unknown): Promise<void>;
+    /** Explicit browser consent: conditional pin admission without a durable token. */
+    admitGoogle(stamp: { id: number; email: string; createdAt: number }, admission: GoogleAdmission): Promise<boolean>;
     /** the provider's sync cursor, merged into the latest stored config in one unit (preferences beside it are kept) */
     setCursor(id: number, cursor: unknown, check?: () => void): Promise<void>;
   };

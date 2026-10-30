@@ -478,12 +478,13 @@ export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown
 }
 
 /** One readwrite transaction with every row a store command touched. Resolves once IndexedDB committed it. */
-export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed", host?: { yield(): Promise<void> }): Promise<void> {
+export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed", host?: { yield(): Promise<void> }, check?: () => void): Promise<void> {
   const stores = [...commit.writes.keys()].filter((t) => !TABLES.find((s) => s.name === t.spec.name)?.memoryOnly);
   if (!stores.length) return;
   const plans = await prepareOpWrites(commit, host);
   const hasOps = stores.some((t) => t.spec.name === "ops");
   const names = [...new Set([...stores.map((t) => t.spec.name), "meta", ...(hasOps ? OP_PART_STORES : [])])];
+  check?.();
   const tx = idb.transaction(names, "readwrite", { durability });
   await writeTransaction(tx, (track) => {
     for (const table of stores) {

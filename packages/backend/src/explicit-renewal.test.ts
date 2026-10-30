@@ -62,6 +62,22 @@ async function setup(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal", (kind) => {
+  it.each(["reconnect", "owner", "photos"] as const)("%s subject refusal preserves exact credential/config/history/queue/rules", async (method) => {
+    const t = await setup(kind);
+    await t.mark();
+    const config = await t.backend.store.accounts.config(t.account.id), account = await t.backend.store.accounts.get(t.account.id);
+    const secret = await t.backend.store.secrets.get(t.name), owner = await t.backend.store.owner.get(), history = await t.history();
+    const ops = await t.client.call("ops.list", {}), rules = await t.backend.store.filters.list();
+    t.answer({ sub: "OTHER-SUBJECT", refreshToken: "replacement" });
+    const request = method === "reconnect" ? t.client.call("accounts.reconnect", { id: t.account.id }) : method === "owner" ? t.client.call("identity.changeOwner", { accountId: t.account.id }) : t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true });
+    await expect(request).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await t.backend.store.accounts.config(t.account.id)).toEqual(config);
+    expect(await t.backend.store.accounts.get(t.account.id)).toEqual(account);
+    expect(await t.backend.store.secrets.get(t.name)).toEqual(secret);
+    expect(await t.backend.store.owner.get()).toEqual(owner); expect(await t.history()).toEqual(history);
+    expect(await t.client.call("ops.list", {})).toEqual(ops); expect(await t.backend.store.filters.list()).toEqual(rules);
+  });
+
   it.each([
     { credential: "omitted", uncertain: false }, { credential: "supplied", uncertain: false },
     { credential: "omitted", uncertain: true }, { credential: "supplied", uncertain: true },
@@ -89,12 +105,12 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     await new Promise<void>((resolve) => setImmediate(resolve)); blocked.release();
     expect(await result).toHaveProperty("error"); expect(await off).toHaveProperty("value");
     expect.soft(await t.backend.store.owner.get()).toEqual(owner); expect.soft(await t.history()).toEqual(history);
-    expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
-    expect(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
+    expect(notifications).toEqual([]); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
+    expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
     await expect(t.client.call("identity.changeOwner", { accountId: t.account.id })).resolves.toMatchObject({ accountId: t.account.id });
   });
 
-  it("failed newer consent waits for an admitted replacement before reopening", async () => {
+  it("failed newer consent waits for a superseded write to refuse before reopening", async () => {
     const t = await setup(kind), entered = t.gate(), blocked = t.gate(), declined = t.gate();
     const commit = t.backend.store.secrets.commit.bind(t.backend.store.secrets);
     vi.spyOn(t.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => { entered.release(); await blocked.promise; return commit(...args); });
@@ -114,11 +130,11 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     blocked.release(); expect(await old).toHaveProperty("error"); expect(await newer).toHaveProperty("error");
     const provider = await t.backend.provider(t.account.id);
     await expect(provider!.verify()).resolves.toBeUndefined();
-    expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
     expect(recoveredEarly).toBe(false); expect(premature).toBe(0);
   });
 
-  it.each(["reconnect", "owner"] as const)("superseded acknowledged %s retires old refusals without resending accepted mail", async (method) => {
+  it.each(["reconnect", "owner"] as const)("superseded pre-admission %s preserves credentials until explicit recovery without resending accepted mail", async (method) => {
     const t = await setup(kind), opEntered = t.gate(), opBlocked = t.gate(), commitEntered = t.gate(), commitBlocked = t.gate();
     const inserted = await t.backend.store.sync.ingest([{ accountId: t.account.id, providerMsgId: "archive-source", providerThreadId: null, rfcMessageId: "archive@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Synthetic", date: 1, snippet: "", bodyText: "Synthetic", bodyHtml: null, bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 9 }], { applyFilters: false, now: Date.now(), classifier: null });
     await t.client.call("threads.act", { threadIds: inserted.touched, action: "archive" });
@@ -139,9 +155,10 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     await new Promise<void>((r) => setImmediate(r)); commitBlocked.release();
     expect(await reconnect).toHaveProperty("error"); expect(await off).toHaveProperty("value");
     await t.backend.syncAccount(t.account.id);
-    expect(await t.backend.getSecret(t.name)).toBe("admitted-replacement");
+    expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
     opBlocked.release(); await worker;
-    expect.soft(t.backend.credentialsOf(t.account.id)).toBeGreaterThan(generation);
+    expect(t.backend.credentialsOf(t.account.id)).toBe(generation);
+    await t.client.call("accounts.reconnect", { id: t.account.id });
     expect.soft((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.awaitingAuth).not.toBe(true);
     await t.backend.runWorker();
     expect((await t.client.call("ops.list", {})).find((row) => row.kind === "archive")?.state).toBe("succeeded");

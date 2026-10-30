@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import { connectGmail, inspectGmailToken } from "@terno/mail";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +16,7 @@ async function setup(web = true) {
   let result: unknown = { ...identity, refreshToken: "synthetic-refresh" };
   let clock = 1_000_000;
   const installed = vi.fn();
-  const inspect = vi.fn(async () => result as GmailConnectResult);
+  const inspect = vi.fn<NonNullable<ProviderRegistry["gmailTokens"]>["inspect"]>(async () => result as GmailConnectResult);
   const connect = vi.fn<ProviderRegistry["connectGmail"]>(async () => result as GmailConnectResult);
   const providers: ProviderRegistry = {
     create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }),
@@ -112,12 +114,36 @@ describe("Google connection RPC validation", () => {
     expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe(scenario === "account removal" ? null : scenario === "newer reconnect" ? "newer-refresh" : "synthetic-refresh");
   });
 
-  it("currently accepts a different subject when the Gmail profile mailbox is unchanged", async () => {
-    const t = await setup(false);
-    const account = await t.client.call("accounts.connectGmail", {});
+  it.each([false, true])("refuses a different subject for the same mailbox (browser=%s)", async (web) => {
+    const t = await setup(web);
+    const account = web ? await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 }) : await t.client.call("accounts.connectGmail", {});
+    await t.backend.syncAccount(account.id);
+    const before = await t.client.call("app.bootstrap", {});
+    const config = await t.backend.store.accounts.config(account.id);
+    const secret = await t.backend.store.secrets.get(`account:${account.id}:refreshToken`);
+    t.installed.mockClear();
     t.answer({ ...identity, sub: "different-subject", refreshToken: "replacement" });
-    await expect(t.client.call("accounts.reconnect", { id: account.id })).resolves.toMatchObject({ id: account.id });
-    expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("replacement");
+    await expect(web ? t.client.call("accounts.connectGmailToken", { accessToken: "replacement", expiresIn: 3600, accountId: account.id }) : t.client.call("accounts.reconnect", { id: account.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(t.installed).not.toHaveBeenCalled();
+    expect(await t.backend.store.accounts.config(account.id)).toEqual(config);
+    expect(await t.backend.store.secrets.get(`account:${account.id}:refreshToken`)).toEqual(secret);
+    expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: before.accounts, owner: before.owner });
+  });
+
+  it.each([false, true])("explicit same-mailbox consent pins legacy accounts (browser=%s)", async (web) => {
+    const t = await setup(web);
+    const account = web ? await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 }) : await t.client.call("accounts.connectGmail", {});
+    await t.backend.syncAccount(account.id);
+    const config = (await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config;
+    expect(config.googleSubject).toBe(identity.sub);
+    delete config.googleSubject;
+    await t.backend.store.accounts.setProviderConfig(account.id, config);
+    await t.backend.syncAccount(account.id);
+    expect((await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBeUndefined();
+    t.answer({ ...identity, refreshToken: "replacement" });
+    if (web) await t.client.call("accounts.connectGmailToken", { accessToken: "replacement", expiresIn: 3600, accountId: account.id });
+    else await t.client.call("accounts.reconnect", { id: account.id });
+    expect((await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBe(identity.sub);
   });
 
   it.each(["changed mailbox with same subject", "provider refusal"])("desktop reconnect preserves stamp and ciphertext on %s", async (scenario) => {
@@ -204,6 +230,26 @@ describe("Google connection RPC validation", () => {
     expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
   });
 
+  it.each(["inspection", "admission"] as const)("browser reconnect superseded during %s cannot publish its token or pin", async (stage) => {
+    const t = await setup();
+    const account = await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 });
+    await t.backend.syncAccount(account.id);
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; }), blocked = new Promise<void>((resolve) => { entered = resolve; });
+    const admit = t.backend.store.accounts.admitGoogle.bind(t.backend.store.accounts);
+    if (stage === "inspection") t.inspect.mockImplementationOnce(async () => { entered(); await gate; return { ...identity }; });
+    else vi.spyOn(t.backend.store.accounts, "admitGoogle").mockImplementationOnce(async (...args) => { entered(); await gate; return admit(...args); });
+    const older = t.client.call("accounts.connectGmailToken", { accessToken: "older", expiresIn: 3600, accountId: account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
+    await blocked;
+    const newer = t.client.call("accounts.connectGmailToken", { accessToken: "newer", expiresIn: 3600, accountId: account.id });
+    // Admission serializes behind the old store call; release after the newer flow owns the account.
+    await vi.waitFor(() => expect(t.inspect.mock.calls.length).toBeGreaterThanOrEqual(3));
+    release();
+    expect(await older).toHaveProperty("error"); await newer;
+    expect(t.installed.mock.calls.map((call) => call[1])).toEqual(["first", "newer"]);
+    expect((await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!.config.googleSubject).toBe(identity.sub);
+  });
+
   it("a browser token expired during inspection is never installed or saved", async () => {
     const t = await setup();
     t.inspect.mockImplementationOnce(async () => { t.advance(60_001); return { ...identity, refreshToken: "unused" }; });
@@ -254,5 +300,43 @@ describe("Google connection RPC validation", () => {
     await expect(t.client.call("accounts.connectGmail", {})).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("invalid sign-in response") });
     expect(t.encrypt).not.toHaveBeenCalled();
     expect(await t.client.call("app.bootstrap", {})).toMatchObject({ accounts: [], owner: null });
+  });
+});
+
+describe("finite native identity requests through public admission", () => {
+  it.each([false, true])("inspected subject continuity and timeout preserve the account (browser=%s)", async (web) => {
+    const t = await setup(web);
+    let subject = identity.sub, delay = 0;
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* Drain synthetic token exchange. */ }
+      if (req.url === "/userinfo") {
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        res.end(JSON.stringify({ sub: subject, email: identity.email, email_verified: true }));
+      } else if (req.url === "/profile") res.end(JSON.stringify({ emailAddress: identity.email }));
+      else res.end(JSON.stringify({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", token_type: "Bearer", expires_in: 3600 }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
+    const address = server.address(); if (!address || typeof address === "string") throw new Error("Missing fixture address");
+    const origin = `http://127.0.0.1:${address.port}`;
+    const endpoints = { token: origin + "/token", api: origin, userinfo: origin + "/userinfo" };
+    t.inspect.mockImplementation(async (token, netFetch, options) => inspectGmailToken(token, netFetch, { ...options, endpoints, timeoutMs: 100 }));
+    t.connect.mockImplementation(async (options) => connectGmail({ ...options, endpoints, timeoutMs: 100, openExternal: async (url) => {
+      const auth = new URL(url), callback = new URL(auth.searchParams.get("redirect_uri")!);
+      callback.searchParams.set("state", auth.searchParams.get("state")!); callback.searchParams.set("code", "synthetic-code");
+      await fetch(callback).then((r) => r.text());
+    } }));
+    const account = web ? await t.client.call("accounts.connectGmailToken", { accessToken: "first", expiresIn: 3600 }) : await t.client.call("accounts.connectGmail", {});
+    await t.backend.syncAccount(account.id);
+    const config = await t.backend.store.accounts.config(account.id), secret = await t.backend.store.secrets.get(`account:${account.id}:refreshToken`);
+    const reconnect = () => web ? t.client.call("accounts.connectGmailToken", { accountId: account.id, accessToken: "replacement", expiresIn: 3600 }) : t.client.call("accounts.reconnect", { id: account.id });
+    subject = "different";
+    await expect(reconnect()).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    subject = identity.sub; delay = 200;
+    t.installed.mockClear();
+    await expect(reconnect()).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(t.installed).not.toHaveBeenCalled();
+    expect(await t.backend.store.accounts.config(account.id)).toEqual(config);
+    expect(await t.backend.store.secrets.get(`account:${account.id}:refreshToken`)).toEqual(secret);
   });
 });

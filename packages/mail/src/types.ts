@@ -226,6 +226,8 @@ export interface ImapAccountConfig {
 }
 
 export interface GmailAccountConfig {
+  /** Verified on explicit consent only; never inferred from the mailbox. */
+  googleSubject?: string;
   senderName: string;
 }
 
