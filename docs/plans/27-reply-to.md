@@ -89,3 +89,38 @@ Focused UI performance rerun: `E2E_PORT=55984 pnpm --filter @terno/web exec play
 ### Handoff
 
 Per parent steering, optional broader tests do not delay this owned slice's handoff. The paired ingestion benchmark completed immediately before the cancellation attempt: `pnpm exec vitest run --project perf packages/db/src/ingest.perf.test.ts` **1 passed** in 45.87 s. The final process result is exit 0; its completed log supersedes the initial cancellation note. Whole-repo lint passes at handoff (`pnpm lint`); previous temporary Gmail auth warnings are resolved by the parent. Final typecheck passed; all targeted functional results and the two default-gate failures above remain recorded honestly. Remaining series gates (full unit/e2e/performance and packaged desktop verification as applicable) and the distinct final T10 Codex code review are parent-owned. No push, new branch, worktree, real secrets/profile access, new strings, background work or extra provider requests.
+
+
+## W09: own-message recipient identity qualification (2026-10-29)
+
+Request (verbatim excerpt): “Select ONE coherent existing-supported recipient/self/list/linkage slice; do not invent send-as/provider capabilities or arbitrary identity UI.” “Tests-only already-protected is fine, no fabricated product RED.”
+
+Base: `430f406b`, isolated branch `t3/reply-recipient-identity`. This slice qualifies Plan 34 §3.4's existing own-message behavior for A18/S35 and the local reply linkage subset of S37. `identitiesIn` recognizes configured account addresses and sent From addresses; `answered` chooses the last received non-self message, falling back to the latest own message. `replyFields` shares that source for recipients, quote and numeric reply/forward source. Account selection is accountId; Account and compose RPC expose no authorized send-as catalog or selected alias field. An inferred identity is an exclusion rule, never permission to send from it.
+
+### Short spec
+
+- Independently qualify reply and reply-all for all-own threads (including an alias copy not marked sent), sent note-to-self, and a received message followed by own alias copies. Subject text does not decide identity or recipients.
+- Own continuation uses the selected source's original To; reply-all adds its Cc, with existing case-insensitive identity exclusion/deduplication. Ignore its Reply-To and original Bcc. Keep the existing Plan 27 received Reply-To list tests unchanged.
+- Forward starts with empty automatic To/Cc/Bcc and forward source only. Its manually entered recipient must be the sole queued/delivered destination.
+- Dedicated helper tests assert recipient arrays, auto markers, quote source and reply/forward source IDs. A dev-only browser matrix (reply/reply-all/forward × light/dark) asserts chips against the exact durable send payload and captured real SMTP envelope, and valid replies' RFC linkage. Use temporary synthetic accounts/mail only. Personally inspect screenshots.
+- Tests-first qualification: run new assertions on unchanged product code. If protected, report GREEN without inventing a RED. Change helpers only for a demonstrated gap. No UI/string changes are planned.
+
+### Scope and limits
+
+Only dedicated reply helper tests, relevant dev e2e/config/setup, and this plan are expected to change. Dev config is standalone, without production globalSetup/build. Run changed-module/direct-caller tests, web types and touched-file lint; no full gates/builds. No hot production file changes means no additional performance suite. Native Codex plan critique precedes implementation; Standards/Spec native code review has at most two code rounds.
+
+B29 authorized alias selection/signature replacement and S42 permission revocation remain unqualified: there is no send-as capability API. This slice does not add one or claim provider authorization from historical From. S37 deliberate subject changes/provider-native threading, List-Post and Mail-Followup-To remain outside this own-message slice. Backend/store/provider/MIME paths are read-only dependencies, not edit targets.
+
+### W09 revisions after the Codex plan critique
+
+Native command: `codex exec -s read-only -C /Users/Luis/.t3/worktrees/emailclient/t3-80bd0e1c -m gpt-6.1-sol -c model_reasoning_effort='"high"' - < /tmp/terno-w09/plan-prompt.txt` (exit 0; `/tmp/terno-w09/plan-review.log`). Nine qualification points, no demonstrated product defect. Accepted all:
+
+1. Dedicated temporary demo template setup supplies `TEMPLATE_ENV`, closes its backend and removes its own directory; no inherited build setup.
+2. Standalone config launches `VITE_TARGET=desktop VITE_RENDER_PROBE=1 pnpm --config.verify-deps-before-run=false vite --mode development --port 55010 --strictPort --host 127.0.0.1`, matching baseURL. Execute with `E2E_PORT=55010`.
+3. Own To filters self; all-self retains the first original To, empty To falls back to From. Qualify each exception independently.
+4. Alias copies have an earlier sent-From witness. Add a no-witness negative control. Neither establishes authorization to send as that alias.
+5. Distinct candidate IDs/recipients/body sentinels make latest received versus latest own source independently observable.
+6. Browser fixture has valid distinct RFC Message-IDs and References; assert exact queued and transmitted reply headers, absent for forward.
+7. MessageDetail has no Bcc. Real original Bcc privacy is checked from IncomingMessage ingest through empty composer Bcc, queue, MIME and SMTP rather than claiming the helper-only assertion proves storage behavior.
+8. Literal expected recipients per mode are checked independently against chips, queue and SMTP. Exact field equality, not just matching systems to one another.
+9. Tests-only GREEN is valid existing protection; any demonstrated production fix would require actual fail-first evidence and revised focused validation.
