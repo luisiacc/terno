@@ -113,3 +113,29 @@ test("Settings: the choice is open in local mode; Never keeps reports here", asy
   await expect(page.getByTestId("report-export")).toBeVisible();
   expect(net.sent).toHaveLength(0);
 });
+
+test("Always: an ordinary error that couldn't go keeps a row with Send (review finding 2)", async ({ page }) => {
+  let status = 503;
+  const net = ingest(page, () => status);
+  await boot(page);
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-general").click();
+  await page.getByTestId("diagnostics-section").scrollIntoViewIfNeeded();
+  await page.getByTestId("error-reports-select").click();
+  await page.getByTestId("error-reports-always").click();
+  await expect(page.getByTestId("error-reports-row")).toContainText("Sent automatically");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("thread-row").first().dispatchEvent("mousedown");
+  await page.evaluate(() => (window as unknown as { __terno: { throwIn(a: string): void } }).__terno.throwIn("reader"));
+  await expect(page.getByTestId("reader-boundary")).toBeVisible();
+  // sent automatically, refused by the ingest: the row says so and offers Send
+  await expect.poll(() => net.sent.length).toBe(1);
+  const row = page.getByTestId("report-row");
+  await expect(row).toHaveAttribute("data-offer", "retry");
+  await expect(row).toContainText("The report couldn’t be sent yet.");
+  status = 200;
+  await page.getByTestId("report-send").click();
+  await expect(page.getByTestId("snack-message")).toHaveText("Report sent. Thank you.");
+  await expect(row).toHaveCount(0);
+  expect(net.sent).toHaveLength(2);
+});

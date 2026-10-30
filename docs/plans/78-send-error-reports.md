@@ -107,3 +107,8 @@ An offline retry queue across launches; attaching logs to a report; user feedbac
 11. **The local-mode switch's explanation** now names "the error reports you choose to send" (Mac, with icons, and web; en + es).
 
 Also found while building: the architecture scan didn't recognise a session's own `fetch` (the new desktop path), so it gained an "Electron session fetch" pattern, and the reporter and the web pipe are allowlisted with their reasons.
+
+## What the Codex code review changed (2 findings, both fixed with a regression test)
+
+1. **Demo runs of a release carried the real DSN** (other smoke suites launch the copied release with `TERNO_DEMO=1` only). Main now uses the built DSN only on the production channel; a test run its loopback sink; demo and dev nowhere (`effectiveDsn`, `report-fence.ts`; unit test per channel).
+2. **Under "always", an ordinary error whose send failed lost its row** (the row only shows ordinary errors under "ask"). Hosts track reports whose send failed this run (`PendingReport.failed`), and the row shows them with the `retry` offer under any setting but "never" (`diagnostics.web.spec.ts`: Always → 503 → Send → sent; fails without the fix).

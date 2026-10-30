@@ -29,8 +29,8 @@ export function ReportRow() {
   const [busy, setBusy] = useState(false);
   if (!view) return null;
   const policy = view.reporting.offer;
-  // crashes always say so; an ordinary error only asks (it was logged either way)
-  const shown = view.pending.filter((p) => p.fatal || p.kind !== "error" || policy === "ask");
+  // crashes always say so; an ordinary error only asks (it was logged either way), or offers Send again when it couldn't go
+  const shown = view.pending.filter((p) => p.fatal || p.kind !== "error" || policy === "ask" || (p.failed && policy !== "local"));
   if (!shown.length) return null;
   // "sent" only when it really went: one that couldn't go offers Send again
   const offer = policy === "sent" && !shown.every((p) => p.sent) ? "retry" : policy;

@@ -75,6 +75,8 @@ export class LocalDiag implements DiagSink {
   private state = readState();
   private policy: ReportPolicy = { localMode: true, errorReports: "never", dsn: Boolean(DSN) };
   private approved = new Set<string>();
+  /** reports whose send was tried this run and didn't go */
+  private failed = new Set<string>();
   private reporter: Promise<Reporter> | null = null;
   private readonly tabId = crypto.randomUUID();
   private crumbs: Crumb[] = [];
@@ -247,7 +249,12 @@ export class LocalDiag implements DiagSink {
       }),
     );
     const result = await (await this.reporter).send(this.reportFor(r));
-    if (!result.sent) return false;
+    if (!result.sent) {
+      if (result.reason !== "policy") this.failed.add(r.id);
+      this.changed();
+      return false;
+    }
+    this.failed.delete(r.id);
     this.counters.sent++;
     this.state.sent.push(r.id);
     this.state.seen.push(r.id);
@@ -263,7 +270,7 @@ export class LocalDiag implements DiagSink {
       reporting: { ...this.policy, offer: reportOffer(this.policy) },
       pending: this.records
         .filter((r) => !this.state.seen.includes(r.id))
-        .map((r) => ({ id: r.id, ts: r.ts, kind: r.kind, proc: r.proc, code: r.code, fatal: r.fatal, sent: this.state.sent.includes(r.id), previousRun: r.context.session !== diagSession() })),
+        .map((r) => ({ id: r.id, ts: r.ts, kind: r.kind, proc: r.proc, code: r.code, fatal: r.fatal, sent: this.state.sent.includes(r.id), failed: this.failed.has(r.id), previousRun: r.context.session !== diagSession() })),
       engine: "running",
       installId: this.state.installId,
       logs: false,

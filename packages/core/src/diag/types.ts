@@ -87,6 +87,8 @@ export interface PendingReport {
   code: string;
   fatal: boolean;
   sent: boolean;
+  /** a send was tried in this run and didn't go (plan 78: the row keeps offering Send, whatever the setting) */
+  failed: boolean;
   /** from an earlier run (a crash or an unclean exit found at start) */
   previousRun: boolean;
 }

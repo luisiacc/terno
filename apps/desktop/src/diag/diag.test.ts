@@ -9,7 +9,7 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectExport, zip } from "./export";
-import { loopbackDsn, reportInboundHeaders, reportOutboundHeaders, reportRequestAllowed } from "./report-fence";
+import { effectiveDsn, loopbackDsn, reportInboundHeaders, reportOutboundHeaders, reportRequestAllowed } from "./report-fence";
 import { diagPaths, ensureDirs, fitRecord, keptPolicy, RECORD_MAX_BYTES, RecordStore, Rings, runMarker, StateFile } from "./store";
 import { BACKOFF_MS, HEALTHY_MS, RateLimit, RestartPolicy } from "./supervisor";
 
@@ -159,6 +159,15 @@ describe("reports (plan 78)", () => {
     expect(loopbackDsn("https://k@o1.ingest.us.sentry.io/1")).toBe("");
     expect(loopbackDsn(undefined)).toBe("");
     expect(loopbackDsn("garbage")).toBe("");
+  });
+
+  it("only production uses the built DSN; a test run its loopback sink; demo and dev nowhere (review: demo smoke runs)", () => {
+    const built = "https://k@o1.ingest.us.sentry.io/1";
+    expect(effectiveDsn({ channel: "production", built, testSink: "http://k@127.0.0.1:9/1" })).toBe(built);
+    expect(effectiveDsn({ channel: "demo", built, testSink: undefined })).toBe("");
+    expect(effectiveDsn({ channel: "dev", built, testSink: "http://k@127.0.0.1:9/1" })).toBe("");
+    expect(effectiveDsn({ channel: "test", built, testSink: undefined })).toBe("");
+    expect(effectiveDsn({ channel: "test", built, testSink: "http://k@127.0.0.1:9/1" })).toBe("http://k@127.0.0.1:9/1");
   });
 
   it("a policy kept before plan 78 with local mode and always reads as ask; a new one is kept as is", () => {

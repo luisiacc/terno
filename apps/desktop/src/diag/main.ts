@@ -51,7 +51,7 @@ import type { Reporter, SendResult } from "@terno/core/diag/envelope";
 import { t } from "@terno/i18n";
 import { BUILD_DSN, BUILD_ID, BUILD_SHA, BUILD_VERSION, channelOf } from "./build-info";
 import { collectExport, zip } from "./export";
-import { loopbackDsn } from "./report-fence";
+import { effectiveDsn } from "./report-fence";
 import { diagPaths, ensureDirs, nodeRotatingFs, RecordStore, Rings, runMarker, StateFile, type DiagPaths } from "./store";
 import { IPC_ENTRIES_PER_SECOND, IPC_MAX_BATCH_BYTES, RateLimit } from "./supervisor";
 
@@ -96,6 +96,8 @@ class MainDiag implements DiagSink {
   private deps: MainDiagDeps | null = null;
   private policy: ReportPolicy = CLOSED_POLICY;
   private approved = new Set<string>();
+  /** reports whose send was tried this run and didn't go */
+  private failed = new Set<string>();
   private reporter: Promise<Reporter> | null = null;
   private engine: EngineState = "running";
   private limits = new Map<number, RateLimit>();
@@ -114,9 +116,7 @@ class MainDiag implements DiagSink {
     const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
     this.testHooks = test;
     this.channel = channelOf({ packaged: app.isPackaged, demo, test });
-    // a test run only ever reports to its loopback sink (never the DSN the copied release was built with);
-    // a release only ever uses the DSN it was built with
-    this.dsn = test ? loopbackDsn(process.env.TERNO_TEST_SENTRY_DSN) : BUILD_DSN;
+    this.dsn = effectiveDsn({ channel: this.channel, built: BUILD_DSN, testSink: process.env.TERNO_TEST_SENTRY_DSN });
   }
 
   // ───────────────────────────── the main process's own diag ─────────────────────────────
@@ -325,6 +325,8 @@ class MainDiag implements DiagSink {
       }),
     );
     const result = await (await this.reporter).send(this.reportFor(record));
+    if (result.sent) this.failed.delete(record.id);
+    else if (result.reason !== "policy") this.failed.add(record.id);
     if (result.sent) {
       this.state?.update((s) => {
         if (!s.sent.includes(record.id)) s.sent.push(record.id);
@@ -333,6 +335,7 @@ class MainDiag implements DiagSink {
       log.info("report.sent", { count: 1 });
       this.changed();
     } else {
+      this.changed();
       log.info("report.dropped", { reason: result.reason === "policy" || result.reason === "rate" ? result.reason : "error", count: 1 });
     }
     return result;
@@ -347,7 +350,7 @@ class MainDiag implements DiagSink {
       reporting: { ...this.policy, offer: reportOffer(this.policy) },
       pending: all
         .filter((r) => !s?.seen.includes(r.id))
-        .map((r) => ({ id: r.id, ts: r.ts, kind: r.kind, proc: r.proc, code: r.code, fatal: r.fatal, sent: Boolean(s?.sent.includes(r.id)), previousRun: r.context.session !== diagSession() })),
+        .map((r) => ({ id: r.id, ts: r.ts, kind: r.kind, proc: r.proc, code: r.code, fatal: r.fatal, sent: Boolean(s?.sent.includes(r.id)), failed: this.failed.has(r.id), previousRun: r.context.session !== diagSession() })),
       engine: this.engine,
       installId: s?.installId ?? "",
       logs: Boolean(this.paths),
