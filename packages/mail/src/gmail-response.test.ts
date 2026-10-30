@@ -83,10 +83,10 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
   return { provider, sync: () => provider.sync(sink), checkpoints, ingested, flags, removed, requests, methods };
 }
 
-async function rejectedRead(box: ReturnType<typeof mailbox>) {
+async function rejectedRead(box: ReturnType<typeof mailbox>, retryable = true) {
   const error = await box.sync().catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ProviderError);
-  expect(error).toMatchObject({ retryable: true, ambiguous: false });
+  expect(error).toMatchObject({ retryable, ambiguous: false });
   expect(completedGmailCursors(box.checkpoints)).toEqual([]);
   expect(box.removed).toEqual([]);
   return box;
@@ -162,7 +162,7 @@ describe("Gmail successful response validation", () => {
     const token = "opaque/+?=token";
     const box = await rejectedRead(mailbox({ cursor: kind === "history" ? { historyId: "10" } : null, respond: (url) => {
       if (url.pathname.endsWith(`/${kind}`)) return kind === "history" ? { historyId: "11", nextPageToken: token } : { nextPageToken: token };
-    } }));
+    } }), kind !== "history");
     expect(box.requests.filter((url) => url.pathname.endsWith(`/${kind}`))).toHaveLength(kind === "history" ? 4 : 2);
     expect(box.requests.at(-1)?.searchParams.get("pageToken")).toBe(token);
   });

@@ -17,7 +17,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function mailbox(kind: "SQL" | "IndexedDB") {
+async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
   const baseline = "90071992547409930000";
   let historyId = BigInt(baseline);
   const messages = new Map<string, { id: string; threadId: string; labelIds: string[]; raw: string }>();
@@ -32,6 +32,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   let now = Date.now();
   let snapshot: string[] = [];
   let context: ProviderContext | undefined;
+  let minimalPayload: ((payload: unknown) => unknown) | undefined;
   let historyPayload: ((payload: unknown) => unknown) | undefined;
   let holdHistory: ((send: () => void) => void) | undefined;
   const add = (id: string, record = false) => {
@@ -80,7 +81,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     if (id === "arrival" && rawStatus !== 200) return json({}, rawStatus);
     const message = messages.get(id);
     if (!message) return json({}, 404);
-    return json(url.searchParams.get("format") === "raw" ? message : { id, labelIds: message.labelIds });
+    const minimal = { id, labelIds: message.labelIds };
+    return json(url.searchParams.get("format") === "raw" ? message : minimalPayload ? minimalPayload(minimal) : minimal);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -103,8 +105,11 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     },
     async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
   };
-  const open = async () => new Backend({ dbPath: join(dir, "synthetic.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined,
-    platform, providers, now: () => now, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  const open = async () => { const opened = new Backend({ dbPath: join(dir, "synthetic.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined,
+    platform, providers, now: () => now, cipher: plaintextCipher, version: "test", autoSync: retries, instantSearch: false, iconTransport: null });
+    if (retries) vi.spyOn(opened.connectivity, "failed");
+    return opened;
+  };
   let backend = await open();
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
@@ -118,6 +123,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   return {
     baseline, account, requests, ingested, messages, add, mutate, cursor, get abort() { return abort; },
     get context() { return context!; },
+    get retryTimer() { return backend.connectivity.failed; }, minimalPayload(hook?: (payload: unknown) => unknown) { minimalPayload = hook; },
     historyPayload(hook?: (payload: unknown) => unknown) { historyPayload = hook; },
     holdHistory(hook: (send: () => void) => void) { holdHistory = hook; },
     get backend() { return backend; }, get terminal() { return String(historyId); },
@@ -145,6 +151,32 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up", (kind) => {
+  it("retains automatic outage retries for an ordinary minimal GET 503", async () => {
+    const t = await mailbox(kind, true); t.seed(); await t.backend.syncAccount(t.account.id);
+    const old = await t.cursor();
+    t.historyPayload(() => ({ historyId: t.baseline, history: [{ labelsAdded: [{ message: { id: "archive" } }] }] }));
+    t.getStatus("archive", 503); await t.backend.syncAccount(t.account.id);
+    expect(t.retryTimer).toHaveBeenCalledTimes(1);
+    expect(await t.cursor()).toEqual(old);
+  });
+
+  it.each(["minimal", "catchup"] as const)("refuses deterministic %s overflow without automatic outage retries", async (mode) => {
+    const t = await mailbox(kind, true); t.seed(); await t.backend.syncAccount(t.account.id);
+    const old = await t.cursor();
+    if (mode === "minimal") {
+      t.minimalPayload((value) => ({ ...(value as object), ignored: "x".repeat(70_000) }));
+      t.historyPayload(() => ({ historyId: String(BigInt(t.baseline) + 1n), history: [{ labelsAdded: [{ message: { id: "archive" } }] }] }));
+    } else t.historyPayload(() => ({ historyId: t.baseline, history: [{ messages: [{ id: "archive" }] }] }));
+    await t.backend.syncAccount(t.account.id);
+    expect(t.retryTimer).not.toHaveBeenCalled();
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastError).toBeTruthy();
+    expect(await t.cursor()).toEqual(mode === "minimal" ? old : { ...(old as object), reconciliation: { version: 1, stage: "restart" } });
+    t.minimalPayload(); t.historyPayload(); await t.reopen(); await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual(old);
+    expect((await t.backend.store.debug.snapshot()).messages).toHaveLength(4);
+    expect(t.retryTimer).not.toHaveBeenCalled();
+  });
+
   it("does not reinsert a message evicted while overlapping history is being read", async () => {
     const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id);
     const archived = (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "archive")!;

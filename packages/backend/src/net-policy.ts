@@ -139,7 +139,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
           return (async () => {
             let bytes = 0;
             try {
-              for (let chunks = 0; chunks < 32 && bytes <= 256 * 1024 && !request.signal.aborted; chunks++) {
+              for (let chunks = 0; chunks < 32 && bytes < 256 * 1024 && !request.signal.aborted; chunks++) {
                 const chunk = await reader.read();
                 if (chunk.done) { if (!request.signal.aborted) release(); return; }
                 bytes += chunk.value.byteLength;

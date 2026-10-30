@@ -127,3 +127,19 @@ it("bounds overflow disposal and releases only a proven native terminal before r
   await response.arrayBuffer();
   expect(net.googlePending()).toBe(0);
 });
+
+it("cancels overflow disposal at the exact byte boundary without requesting another native chunk", async () => {
+  const { readResponseText } = await import("../../mail/src/http-body");
+  let reads = 0, canceled = false;
+  const net = createNetworkPolicy({ localMode: () => true, fetch: async () => new Response(new ReadableStream<Uint8Array>({
+    pull(c) { reads++; if (reads <= 33) c.enqueue(new Uint8Array(16_384)); },
+    cancel() { canceled = true; },
+  }, { highWaterMark: 0 })) });
+  const response = await net.fetchGoogle(await policy(), descriptor)("https://gmail.googleapis.com/history");
+  await expect(readResponseText(response, 256 * 1024, new AbortController().signal)).rejects.toMatchObject({ name: "ResponseBodyLimitError" });
+  await expect.poll(() => reads).toBeGreaterThanOrEqual(33);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(reads).toBe(33); // 17 to detect overflow, then exactly 16 tail chunks.
+  expect(canceled).toBe(true);
+  expect(net.googlePending()).toBe(1); // Cancellation still supplies no physical EOF proof.
+});
