@@ -134,3 +134,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: native reload and print fixtures
 
 `60e41af9` fixes owned native callback dispatch, ACK/native-hold and navigation readiness, print query identity, privacy-witness ordering and birth-checked cleanup. Root instrumented two-file integration passes23eligible/2existing skips,4helper tests, desktop/Web types and lint; app-only light/dark captures inspected and no owned process remains. One review's P1/P2 regression-fixed; later tracing not independently re-reviewed. Historical normal native Quit before teardown has no proven sender and remains recorded. Existing smoke-only PDF-helper option type mismatch is backlogged; no policy workaround or fresh build. [Evidence and full limits](../plans/drafts/release2-native-reload-print.md). A new complete release milestone is still required.
+
+
+## Third release milestone announced — 2026-10-30
+
+All repair branches described above are landed with their scoped Root integration results. Run each required full gate once on clean main, then create one fresh ad-hoc macOS package and run its default full packaged smoke without the optional native trace or dev-mode flags. Existing review/backlog/cold-read/native-Quit limits remain recorded; this announcement is not clearance or closure of all report scenarios. Preserve prior milestone artifacts and user-generated outputs. Backend perf retains actual test/hook lifecycle supervision and declared deadlines, no reporter-silence cutoff or budget/input/retry-policy change. Record all failures, skips/not-run, initial/final HEAD and cleanup; source drift stops subsequent stages. No repeats seeking green.
