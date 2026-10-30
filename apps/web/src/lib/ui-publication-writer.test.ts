@@ -111,9 +111,9 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const s
           await vi.advanceTimersByTimeAsync(799); expect(calls).toHaveLength(0);
           await vi.advanceTimersByTimeAsync(1); expect(calls).toHaveLength(1); await acknowledged;
         } else if (scenario === "nested stopping") {
-          expect(await reservation).toMatchObject({ key, uiState: "open", ...body });
+          expect(await reservation).toMatchObject({ key, uiState: "open", id: saved.id, generation: saved.generation, revision: 2, savedRev: before.localRev + 1, localRev: before.localRev + 1, ...body });
           expect(await draftForSend(key)).toBeUndefined();
-          await vi.advanceTimersByTimeAsync(1000); expect(calls).toHaveLength(0);
+          await vi.advanceTimersByTimeAsync(1000); expect(calls).toHaveLength(1);
           resumeDraft(key); await vi.advanceTimersByTimeAsync(800); expect(calls).toHaveLength(1); await acknowledged;
         } else await flushDraft(key);
         const expected = scenario === "nested successor" ? { bodyText: "newer body", bodyHtml: "<p>newer body</p>", subject: "newer subject" } : { ...body, subject: "authored subject" };

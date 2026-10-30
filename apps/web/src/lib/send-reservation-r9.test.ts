@@ -11,14 +11,18 @@ function deferred<T>() { let resolve!: (v: T) => void, reject!: (e: Error) => vo
 it.each([true, false])("reserves Send before synchronous subscriber reentry (reenter=%s)", async (reenter) => {
   const previous = app.getApp(); app.setApp({ accounts: [{ id: 1, email: "me@example.test" } as import("@terno/core").Account] });
   const key = drafts.createDraft({ ...newFields(1), toText: "person@example.test", bodyText: "preserved" });
+  const saveGate = deferred<void>(), saveEntered = deferred<void>();
   const gate = deferred<{ threadId: number }>(), entered = deferred<void>(); let calls = 0, nested: Promise<boolean> | undefined, triggered = false;
-  rpc.call.mockImplementation(async (method: string) => { if (method === "compose.send") { calls++; entered.resolve(); return gate.promise; } return []; });
+  rpc.call.mockImplementation(async (method: string, params: Record<string, unknown>) => { if (method === "drafts.save") { saveEntered.resolve(); await saveGate.promise; return { ...params, id: 42, generation: "reservation", revision: 1 }; } if (method === "compose.send") { calls++; entered.resolve(); return gate.promise; } return []; });
   const off = drafts.useDrafts.subscribe((state, prev) => {
     if (reenter && !triggered && !prev.drafts[key]?.sending && state.drafts[key]?.sending) { triggered = true; nested = sendDraft(key); }
   });
   let first: Promise<boolean> | undefined;
   try {
     first = sendDraft(key);
+    await saveEntered.promise;
+    expect(calls).toBe(0);
+    saveGate.resolve();
     await entered.promise;
     expect(triggered).toBe(reenter);
     if (reenter) expect(nested).toBe(first);
@@ -29,5 +33,5 @@ it.each([true, false])("reserves Send before synchronous subscriber reentry (ree
     expect(await first).toBe(false);
     if (nested) expect(await nested).toBe(false);
     expect(drafts.useDrafts.getState().drafts[key]).toMatchObject({ bodyText: "preserved", sending: false });
-  } finally { off(); gate.reject(new Error("cleanup")); await Promise.allSettled([first, nested].filter((p): p is Promise<boolean> => !!p)); drafts.forgetDraft(key); app.useApp.setState(previous, true); rpc.call.mockReset(); }
+  } finally { saveGate.resolve(); off(); gate.reject(new Error("cleanup")); await Promise.allSettled([first, nested].filter((p): p is Promise<boolean> => !!p)); drafts.forgetDraft(key); app.useApp.setState(previous, true); rpc.call.mockReset(); }
 });

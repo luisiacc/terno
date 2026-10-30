@@ -56,6 +56,12 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("the draft writer", () => {
+  it.each([undefined, false, true])("normalizes fresh source visibility before the first ACK (%s)", async (visible) => {
+    const k = createDraft({ ...newFields(1), showSourceContext: visible });
+    expect(state(k).showSourceContext).toBe(visible ?? false);
+    expect(state(k).replyContext).toBeNull();
+    await vi.advanceTimersByTimeAsync(1000); expect(calls).toHaveLength(0);
+  });
   it.each([false, true])("copy ACK normalizes current context without replacing newer fields (new context %s)", async (changedContext) => {
     const k = draft(); editDraft(k, { threadId: 99, mode: "reply", inReplyToMessageId: 2, bodyText: "old" }); markDraftMissing(k);
     const copying = copyDraft(k); const pending = calls.shift()!;

@@ -26,7 +26,7 @@ const apiDraft = (r: DraftRow): Draft => checked(() => {
   const dto: Draft = {
   id: r.id, generation: r.generation ?? "", revision: r.revision, format: r.format === 1 ? 1 : 2, accountId: r.account_id, threadId: r.thread_id, mode: r.mode,
   to: JSON.parse(r.to_json), cc: JSON.parse(r.cc_json), bcc: JSON.parse(r.bcc_json), subject: r.subject, subjectEdited: r.subject_edited === 1,
-  bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json ?? "[]"), quotedText: r.quoted_text, includeQuote: r.include_quote === 1,
+  bodyText: r.body_text, bodyHtml: r.body_html, attachments: JSON.parse(r.attachments_json ?? "[]"), quotedText: r.quoted_text, replyContext: r.reply_context_json ? JSON.parse(r.reply_context_json) : null, includeQuote: r.include_quote === 1,
   inReplyToMessageId: r.in_reply_to_message_id, forwardOfMessageId: r.forward_of_message_id, showSourceContext: r.show_source_context === 1, presentationThreadId: r.presentation_thread_id ?? null, uiState: r.ui_state, updatedAt: r.updated_at,
   };
   expect(dto).toMatchObject({ showSourceContext: r.show_source_context === 1, presentationThreadId: r.presentation_thread_id ?? null });
@@ -142,7 +142,7 @@ function saveParams(key: string, patch: Partial<DraftInput> = {}): DraftInput {
   return structuredClone({ id: d.id ?? undefined, generation: d.generation, baseRevision: d.id !== null ? d.revision : undefined,
     accountId: d.accountId, threadId: d.threadId, mode: d.mode, to: recipients(d.toText, d.auto.to), cc: recipients(d.ccText, d.auto.cc), bcc: recipients(d.bccText, d.auto.bcc),
     subject: d.subject, subjectEdited: d.subjectEdited, bodyText: d.bodyText, bodyHtml: d.bodyHtml, attachments: d.attachments ?? [], quotedText: d.quotedText,
-    includeQuote: d.includeQuote, inReplyToMessageId: d.inReplyToMessageId, forwardOfMessageId: d.forwardOfMessageId, showSourceContext: d.showSourceContext ?? false, uiState: d.uiState, ...patch });
+    includeQuote: d.includeQuote, replyContext: d.replyContext ?? null, inReplyToMessageId: d.inReplyToMessageId, forwardOfMessageId: d.forwardOfMessageId, showSourceContext: d.showSourceContext ?? false, uiState: d.uiState, ...patch });
 }
 beforeEach(() => { expect(draftWorkPending()).toBe(false); previousApp = getApp(); previousThreads = useThreads.getState(); cleanupFailed = false; resetOutcomes(); violations.length = 0; releases.length = 0; });
 afterEach(async () => {

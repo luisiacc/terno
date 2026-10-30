@@ -124,7 +124,7 @@ function saveParams(key: string, patch: Partial<DraftInput> = {}): DraftInput {
   return structuredClone({ id: d.id ?? undefined, generation: d.generation, baseRevision: d.id !== null ? d.revision : undefined,
     accountId: d.accountId, threadId: d.threadId, mode: d.mode, to: recipients(d.toText, d.auto.to), cc: recipients(d.ccText, d.auto.cc), bcc: recipients(d.bccText, d.auto.bcc),
     subject: d.subject, subjectEdited: d.subjectEdited, bodyText: d.bodyText, bodyHtml: d.bodyHtml, attachments: d.attachments ?? [], quotedText: d.quotedText,
-    includeQuote: d.includeQuote, inReplyToMessageId: d.inReplyToMessageId, forwardOfMessageId: d.forwardOfMessageId, showSourceContext: d.showSourceContext ?? false, uiState: d.uiState, ...patch });
+    includeQuote: d.includeQuote, replyContext: d.replyContext ?? null, inReplyToMessageId: d.inReplyToMessageId, forwardOfMessageId: d.forwardOfMessageId, showSourceContext: d.showSourceContext ?? false, uiState: d.uiState, ...patch });
 }
 function later(change: () => void, settled: () => boolean) {
   let count = 0, during = false;

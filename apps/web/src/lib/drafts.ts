@@ -734,7 +734,7 @@ export function createDraftWithReceipt(fields: DraftFields): { key: string; crea
   if (draftEditsHeld()) throw new Error("Draft editing is held for shutdown");
   changeVersion++;
   const key = newKey();
-  const created: LocalDraft = { key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields };
+  const created: LocalDraft = { key, id: null, revision: 0, status: "clean", localRev: 0, savedRev: 0, updatedAt: now(), sending: false, bodyVersion: 0, canonical: false, tooLong: false, ...fields, showSourceContext: fields.showSourceContext ?? false, replyContext: fields.replyContext ?? null };
   put(created);
   return { key, created };
 }
