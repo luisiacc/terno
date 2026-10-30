@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { setLocale, L, translate } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
-import { sendViaSmtp } from "./smtp";
+import { sendViaSmtp, smtpRecipientOutcomes } from "./smtp";
 import { sentCopyWarning } from "./sent-copy";
 
 const { SMTPServer } = createRequire(new URL("../../backend/src/imap.int.test.ts", import.meta.url))("smtp-server") as typeof import("../../backend/node_modules/@types/smtp-server");
@@ -42,4 +42,42 @@ it("latches real SMTP acceptance before normalization and preserves recipient un
       expect(text).not.toContain(locale === "en" ? "Not delivered to" : "No se entregó a");
     }
   }
+});
+
+it("reports each SMTP submission outcome for a partial envelope", async () => {
+  const recipients: string[] = [];
+  let data = 0;
+  const server = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], onAuth: (_auth, _session, cb) => cb(null, { user: "synthetic" }), onRcptTo(address, _session, cb) {
+    recipients.push(address.address);
+    cb(address.address === "refused@example.test" ? Object.assign(new Error("refused"), { responseCode: 550 }) : undefined);
+  }, onData(stream, _session, cb) { stream.resume(); stream.on("end", () => { data++; cb(); }); } });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  closes.push(() => new Promise<void>((resolve) => server.close(resolve)));
+  const port = (server.server.address() as { port: number }).port;
+  const result = await sendViaSmtp({ host: "127.0.0.1", port, secure: false, user: "synthetic", password: "synthetic", allowInsecure: true }, { from: { name: "", email: "sender@example.test" }, to: [{ name: "", email: "first@example.test" }, { name: "", email: "refused@example.test" }], cc: [], bcc: [{ name: "", email: "hidden@example.test" }], subject: "Synthetic", text: "Once", messageId: "partial@example.test", inReplyTo: null, references: [], providerThreadId: null });
+  expect(recipients).toEqual(["first@example.test", "refused@example.test", "hidden@example.test"]);
+  expect(data).toBe(1);
+  expect(result).toMatchObject({ outcomes: [
+    { email: "first@example.test", outcome: "accepted" },
+    { email: "refused@example.test", outcome: "rejected" },
+    { email: "hidden@example.test", outcome: "accepted" },
+  ] });
+});
+
+
+it("fails closed on incomplete, overlapping, foreign and case-colliding reports", () => {
+  const envelope = ["a@example.test", "b@example.test"];
+  const unknown = envelope.map((email) => ({ email, outcome: "unknown" }));
+  for (const [accepted, rejected] of [
+    [["a@example.test"], []],
+    [["a@example.test"], ["a@example.test", "b@example.test"]],
+    [["a@example.test"], ["b@example.test", "foreign@example.test"]],
+    [["a@example.test"], null],
+    [["A@example.test"], ["b@example.test"]],
+    [["a@example.test"], [{ address: 4 }]],
+  ]) expect(smtpRecipientOutcomes(envelope, accepted, rejected)).toEqual(unknown);
+  expect(smtpRecipientOutcomes(["a@example.test", "A@example.test"], ["a@example.test"], ["A@example.test"]).every((entry) => entry.outcome === "unknown")).toBe(true);
+  expect(smtpRecipientOutcomes(["a@example.test", "a@example.test", "b@example.test"], ["a@example.test"], ["b@example.test"])).toEqual([
+    { email: "a@example.test", outcome: "accepted" }, { email: "a@example.test", outcome: "accepted" }, { email: "b@example.test", outcome: "rejected" },
+  ]);
 });

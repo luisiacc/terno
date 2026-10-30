@@ -1,4 +1,5 @@
 import { L } from "@terno/i18n";
+import { asciiEmail, normalizeEmail } from "@terno/core";
 import nodemailer from "nodemailer";
 import { buildRaw, checkSmtpWire, envelopeOf } from "./compose";
 import { isNetworkError } from "./net-errors";
@@ -46,8 +47,36 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
   return new ProviderError(message, true);
 }
 
+export type RecipientOutcome = { email: string; outcome: "accepted" | "rejected" | "unknown" };
+
+/** A report grants retry authority only when it unambiguously covers the captured envelope. */
+export function smtpRecipientOutcomes(envelope: readonly string[], accepted: unknown, rejected: unknown): RecipientOutcome[] {
+  const unknown = () => envelope.map((email) => ({ email, outcome: "unknown" as const }));
+  if (envelope.length > 3000 || !Array.isArray(accepted) || !Array.isArray(rejected) || accepted.length + rejected.length > 6000) return unknown();
+  const captured = new Map<string, string>();
+  for (const email of envelope) {
+    if (typeof email !== "string" || email.length > 1024) return unknown();
+    const key = normalizeEmail(asciiEmail(email));
+    const prior = captured.get(key);
+    if (prior !== undefined && prior !== email) return unknown();
+    captured.set(key, email);
+  }
+  const report = new Map<string, "accepted" | "rejected">();
+  for (const [entries, outcome] of [[accepted, "accepted"], [rejected, "rejected"]] as const) {
+    for (const entry of entries) {
+      const email = typeof entry === "string" ? entry : entry && typeof entry === "object" && Object.getPrototypeOf(entry) === Object.prototype ? entry.address : undefined;
+      if (typeof email !== "string" || email.length > 1024) return unknown();
+      const key = normalizeEmail(asciiEmail(email));
+      if (!captured.has(key) || captured.get(key) !== email || (report.has(key) && report.get(key) !== outcome)) return unknown();
+      report.set(key, outcome);
+    }
+  }
+  if (report.size !== captured.size || ![...report.values()].includes("accepted")) return unknown();
+  return envelope.map((email) => ({ email, outcome: report.get(normalizeEmail(asciiEmail(email)))! }));
+}
+
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
-export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void; beforeSubmission?(): Promise<void> }): Promise<{ raw: Buffer; rejected: string[]; recipientOutcomeUnknown?: true }> {
+export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void; beforeSubmission?(): Promise<void> }): Promise<{ raw: Buffer; rejected: string[]; outcomes?: RecipientOutcome[]; recipientOutcomeUnknown?: true }> {
   let raw = await buildRaw(payload, { smtp: true });
   if (hooks?.prepare) {
     const prepared = await hooks.prepare(raw);
@@ -87,12 +116,14 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
     tls: config.allowInsecure ? { rejectUnauthorized: false } : undefined,
   });
   try {
-    const info = (await transport.sendMail({ envelope: envelopeOf(payload), raw })) as { rejected?: (string | { address: string })[] };
+    const envelope = envelopeOf(payload);
+    const info = (await transport.sendMail({ envelope, raw })) as { accepted?: unknown; rejected?: unknown };
     accepted = true;
     hooks?.accepted?.();
-    const rejected = (info.rejected ?? []).map((r) => (typeof r === "string" ? r : r.address));
-    // nodemailer resolves when at least one recipient was accepted; report the rest
-    return { raw, rejected };
+    const outcomes = smtpRecipientOutcomes(envelope.to, info.accepted, info.rejected);
+    if (outcomes.some((entry) => entry.outcome === "unknown")) return { raw, rejected: [], outcomes, recipientOutcomeUnknown: true };
+    const rejected = [...new Set(outcomes.filter((entry) => entry.outcome === "rejected").map((entry) => entry.email))];
+    return { raw, rejected, outcomes };
   } catch (error) {
     if (accepted) return { raw, rejected: [], recipientOutcomeUnknown: true };
     throw classifySmtpError(error, dataStarted);
