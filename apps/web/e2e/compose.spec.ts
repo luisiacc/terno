@@ -5,8 +5,10 @@
  * r/a/f resume or convert it without losing what was written, and discarding
  * can be undone.
  */
+import AxeBuilder from "@axe-core/playwright";
+import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { addRecipients, chipsOf, expect, navTo, focusList, openRow, recipientEmails, rows, selectThread, test } from "./fixtures";
+import { addRecipients, chipsOf, expect, navTo, focusList, openRow, recipientEmails, rows, selectThread, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -122,8 +124,13 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(page.locator("[data-cursor]")).not.toHaveAttribute("data-thread-id", id);
     await page.keyboard.press("k");
     await expect(page.locator("[data-cursor]")).toHaveAttribute("data-thread-id", id);
-    // coming back never steals focus into the draft
-    await expect(page.getByTestId("draft-collapsed")).not.toBeFocused();
+    // Reader navigation retires cached source placement; explicit Reply validates it again.
+    await expect(page.getByTestId("compose-body")).toHaveCount(0);
+    await expect(page.getByTestId("strip-item")).toHaveCount(1);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await expect(page.getByTestId("compose-body")).toHaveText("Lo pienso y te digo.");
+    await page.keyboard.press("Escape");
     await page.getByTestId("draft-collapsed").focus();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("compose-body")).toBeFocused();
@@ -192,6 +199,9 @@ test.describe("drafts are kept", { tag: "@design" }, () => {
     await expect(composer(page)).toHaveAttribute("data-mode", "replyAll");
     await page.keyboard.press("Escape");
     await page.keyboard.press("r");
+    // Source validation is asynchronous; wait for this explicit open before the next Escape.
+    await expect(composer(page)).toHaveAttribute("data-mode", "reply");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
     await page.keyboard.press("Escape");
     await page.keyboard.press("r");
     await expect(composer(page)).toHaveAttribute("data-mode", "reply");
@@ -318,6 +328,17 @@ test.describe("new message, in the reader pane", { tag: "@design" }, () => {
     await page.keyboard.press("Meta+Enter");
     await expect(page.getByTestId("compose-send")).toBeDisabled();
     await expect(page.getByTestId("compose-discard")).toBeDisabled();
+    await expect(page.getByTestId("compose-body")).toHaveText("Texto");
+    await expect(page.getByTestId("compose-body")).toHaveAttribute("contenteditable", "false");
+    const pendingDraft = (await server.backend.store.drafts.list())[0]!;
+    expect(pendingDraft).toMatchObject({ subject: "Una sola vez", body_text: "Texto", revision: 1 });
+    expect(pendingDraft.generation).toBeTruthy();
+    mkdirSync("/tmp/terno-renderer-admission/shots", { recursive: true });
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
+      expect((await new AxeBuilder({ page }).include("[data-testid=composer]").analyze()).violations).toEqual([]);
+      await page.screenshot({ path: `/tmp/terno-renderer-admission/shots/pending-send-${theme}.png` });
+    }
     release();
     handlers["compose.send"] = original;
     await expect.poll(sends).toBe(before + 1);

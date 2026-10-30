@@ -39,7 +39,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean }; destination?: ReaderDestination };
+type FocusLease = { selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean; sending: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -133,7 +133,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const selected = getApp().selectedId, account = getApp().accountId;
   const destination = threadId === null ? undefined : readerDestinations.get(threadId);
   const viewed = standalone ? useDrafts.getState().drafts[standalone.key] : undefined;
-  const lease: FocusLease = { intent: owner, threadId, selectionRevision: getSelectionWriteRevision(), valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
+  const lease: FocusLease = { intent: owner, threadId, selectionRevision: getSelectionWriteRevision(), valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, sending: viewed.sending, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
   const moved = (event: FocusEvent) => {
     if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
   };
@@ -145,7 +145,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   });
   const unsubDrafts = useDrafts.subscribe((state) => {
     const draft = lease.key ? state.drafts[lease.key] : undefined;
-    if (state.held || (lease.key && (!draft || draft.sending || (lease.view ? draft.uiState !== lease.view.uiState || draft.localRev !== lease.view.localRev || draft.id !== lease.view.id || draft.generation !== lease.view.generation || draft.revision !== lease.view.revision || draft.recovery !== lease.view.recovery : draft.uiState !== "open" || draft.recovery) || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
+    if (state.held || (lease.key && (!draft || (lease.view ? draft.sending !== lease.view.sending : draft.sending) || (lease.view ? draft.uiState !== lease.view.uiState || draft.localRev !== lease.view.localRev || draft.id !== lease.view.id || draft.generation !== lease.view.generation || draft.revision !== lease.view.revision || draft.recovery !== lease.view.recovery : draft.uiState !== "open" || draft.recovery) || (lease.accountId !== undefined && draft.accountId !== lease.accountId)))) releaseFocusLease(lease, false);
   });
   lease.dispose = () => {
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
@@ -216,9 +216,9 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
 const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited || d.localRev > 0 || (d.attachments?.length ?? 0) > 0;
 
 const activeSourceId = (d: LocalDraft) => d.mode === "forward" ? d.forwardOfMessageId : d.mode === "new" ? null : d.inReplyToMessageId;
-function sameStoredDraft(snapshot: LocalDraft): boolean {
+function sameStoredDraft(snapshot: LocalDraft, viewing = false): boolean {
   const d = materialize(snapshot.key);
-  return Boolean(d && d === useDrafts.getState().drafts[snapshot.key] && !d.sending && shallow(d, snapshot));
+  return Boolean(d && d === useDrafts.getState().drafts[snapshot.key] && (viewing || !d.sending) && shallow(d, snapshot));
 }
 const openedDraft = (d: LocalDraft): LocalDraft => d.uiState === "open" ? d : { ...d, uiState: "open", ...(d.id !== null ? { localRev: d.localRev + 1, status: d.status === "saving" ? "saving" : "dirty" } : {}) };
 
@@ -299,7 +299,7 @@ const validatedPresentation = (d: LocalDraft, threadId: number): LocalDraft => (
 function showStoredStandalone(key: string, owner: number, allowed: () => boolean = () => true, transfer?: FocusLease | null): FocusLease | null {
   let snapshot = materialize(key);
   const previous = getApp(), { selectedId, accountId } = previous;
-  const permitted = () => owner === intent && allowed() && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && getApp().selectedId === selectedId && getApp().accountId === accountId && snapshot !== undefined && sameStoredDraft(snapshot);
+  const permitted = () => owner === intent && allowed() && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && getApp().selectedId === selectedId && getApp().accountId === accountId && snapshot !== undefined && sameStoredDraft(snapshot, true);
   const transferable = () => !transfer || (focusLease === transfer && transfer.valid && destinationAvailable(transfer));
   if (!permitted() || !transferable()) return null;
   if (focusLease && focusLease !== transfer && releaseForAcquisition(focusLease)) return null;
@@ -362,7 +362,7 @@ export async function openStoredDraft(key: string): Promise<void> {
     if (!sameLocation(state, expected) || (!sameLocation(previous, expected) && (!publicationBefore || !sameLocation(previous, publicationBefore)))) cancelled = true;
   });
   const locationCurrent = () => sameLocation(getApp(), expected);
-  const current = (d: LocalDraft) => locationCurrent() && mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d);
+  const current = (d: LocalDraft) => locationCurrent() && mine === intent && !cancelled && !draftEditsHeld() && !getApp().dialog && !getApp().fatal && destinationAvailable(lease) && (!lease || lease.valid) && (missingFromAtStart || getApp().accounts.some((a) => a.id === d.accountId)) && sameStoredDraft(d, true);
   try {
     let snapshot = materialize(key);
     if (!snapshot) return;

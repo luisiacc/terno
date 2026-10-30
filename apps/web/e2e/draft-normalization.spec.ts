@@ -53,7 +53,7 @@ for (const normalization of ["missing original", "cross-account"] as const) test
       await page.screenshot({ path: `/tmp/terno-missing-draft-r2-shots/normalized-${normalization.replace(" ", "-")}-${info.project.name}-${theme}.png` });
     }
     await expect.poll(async () => (await server.backend.store.drafts.list())[0]?.body_text).toBe("inline exact work latest during copy");
-    expect((await server.backend.store.drafts.list())[0]).toMatchObject(normalization === "cross-account" ? { thread_id: null, mode: "reply" } : { mode: "new", in_reply_to_message_id: null });
+    expect((await server.backend.store.drafts.list())[0]).toMatchObject(normalization === "cross-account" ? { thread_id: null, mode: "reply" } : { mode: "reply", in_reply_to_message_id: original.in_reply_to_message_id, reply_context_json: original.reply_context_json });
   } finally { release(); server.backend.store.drafts.save = save; }
 });
 
