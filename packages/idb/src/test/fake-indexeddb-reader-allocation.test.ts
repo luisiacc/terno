@@ -19,15 +19,20 @@ it("50k cached refresh allocates bounded traversal iterators per real cursor req
     const index = db.transaction("messages").objectStore("messages").index("cached_provider");
     const tree = (index as unknown as { _rawIndex: { records: { records: {
       _findRecords(...args: unknown[]): IterableIterator<unknown>;
+      getRecords(...args: unknown[]): IterableIterator<unknown>;
     } } } })._rawIndex.records.records;
     const original = tree._findRecords;
-    let iterators = 0, pages = 0;
+    let iterators = 0, pages = 0, visited = 0;
     const ids = new Set<number>();
     const accounts = await store.accounts.list();
     // Each call creates an actual generator object; delegate without consuming or replacing it.
     const spy = vi.spyOn(tree, "_findRecords").mockImplementation(function (...args) {
       iterators++;
       return original.apply(tree, args);
+    });
+    const originalRecords = tree.getRecords;
+    const recordsSpy = vi.spyOn(tree, "getRecords").mockImplementation(function* (...args) {
+      for (const record of originalRecords.apply(tree, args)) { visited++; yield record; }
     });
     try {
       for (const account of accounts) {
@@ -41,10 +46,11 @@ it("50k cached refresh allocates bounded traversal iterators per real cursor req
           after = page.next;
         }
       }
-    } finally { spy.mockRestore(); }
+    } finally { recordsSpy.mockRestore(); spy.mockRestore(); }
     expect(ids.size).toBe(seeded.messageCount);
     expect(ids.size).toBeGreaterThanOrEqual(50_000);
-    console.log({ messages: ids.size, pages, iterators });
+    console.log({ messages: ids.size, pages, iterators, visited });
+    expect(visited).toBeLessThanOrEqual(2 * (ids.size + pages));
     expect(iterators).toBeLessThanOrEqual(4 * (ids.size + pages));
   } finally { db?.close(); await store.close(); }
 }, 60_000);

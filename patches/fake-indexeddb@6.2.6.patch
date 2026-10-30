@@ -1,3 +1,33 @@
+diff --git a/build/cjs/FDBCursor.js b/build/cjs/FDBCursor.js
+index e4db347a8eb6da3ccd9cb69f2e361a10af951419..aa01a03facfc2ad496a12555a34fee16148652fa 100644
+--- a/build/cjs/FDBCursor.js
++++ b/build/cjs/FDBCursor.js
+@@ -34,7 +34,7 @@ const makeKeyRange = (range, lowers, uppers) => {
+     if (lowerTemp === undefined) {
+       continue;
+     }
+-    if (lower === undefined || (0, _cmp.cmpKeys)(lower, lowerTemp) === 1) {
++    if (lower === undefined || (0, _cmp.cmpKeys)(lower, lowerTemp) === -1) {
+       lower = lowerTemp;
+     }
+   }
+@@ -42,11 +42,15 @@ const makeKeyRange = (range, lowers, uppers) => {
+     if (upperTemp === undefined) {
+       continue;
+     }
+-    if (upper === undefined || (0, _cmp.cmpKeys)(upper, upperTemp) === -1) {
++    if (upper === undefined || (0, _cmp.cmpKeys)(upper, upperTemp) === 1) {
+       upper = upperTemp;
+     }
+   }
+   if (lower !== undefined && upper !== undefined) {
++    if ((0, _cmp.cmpKeys)(lower, upper) > 0) {
++      // An internal empty range: continue(key) past the source range must exhaust, not throw.
++      return new _FDBKeyRange.default(lower, upper, false, false);
++    }
+     return _FDBKeyRange.default.bound(lower, upper);
+   }
+   if (lower !== undefined) {
 diff --git a/build/cjs/lib/Index.js b/build/cjs/lib/Index.js
 index ee17791247174a3cfe8ec6f5054b496b36602f57..aff1f955d28dc16fa91e02d810d910619c6e268b 100644
 --- a/build/cjs/lib/Index.js
@@ -116,6 +146,106 @@ index b9be024817bd4150e35a5f462a98284aa6c4a0bf..a3b111375e6eb3ecaedcfd8572d7ac7e
      }
    }
  
+diff --git a/build/cjs/lib/binarySearchTree.js b/build/cjs/lib/binarySearchTree.js
+index 9e9136b5e792a55145c71bf546ac2610203c269f..1a16986e4f35e0a6cc53a6882f19e7a762e33d32 100644
+--- a/build/cjs/lib/binarySearchTree.js
++++ b/build/cjs/lib/binarySearchTree.js
+@@ -175,42 +175,31 @@ class BinarySearchTree {
+     yield* this._findRecords(node, keyRange, descending);
+   }
+   *_findRecords(node, keyRange, descending = false) {
+-    const {
+-      lower,
+-      upper,
+-      lowerOpen,
+-      upperOpen
+-    } = keyRange;
+-    const {
+-      record: {
+-        key
+-      }
+-    } = node;
+-    const lowerComparison = lower === undefined ? -1 : (0, _cmp.cmpKeys)(lower, key);
+-    const upperComparison = upper === undefined ? 1 : (0, _cmp.cmpKeys)(upper, key);
+-
+-    // if keys are non-unique then we need to go left/right even for equality
+-    // else we can just do LT/GT rather than LTE/GTE as a slight optimization
+-    const moreLeft = this._keysAreUnique ? lowerComparison < 0 : lowerComparison <= 0;
+-    const moreRight = this._keysAreUnique ? upperComparison > 0 : upperComparison >= 0;
+-
+-    // in descending mode we start with rightmost nodes, else leftmost
+-    const moreStart = descending ? moreRight : moreLeft;
+-    const moreEnd = descending ? moreLeft : moreRight;
++    const nodes = [];
++    const branches = [];
+     const start = descending ? "right" : "left";
+     const end = descending ? "left" : "right";
+-
+-    // does the current record actually match the key range?
+-    const lowerMatches = lowerOpen ? lowerComparison < 0 : lowerComparison <= 0;
+-    const upperMatches = upperOpen ? upperComparison > 0 : upperComparison >= 0;
+-    if (moreStart && node[start]) {
+-      yield* this._findRecords(node[start], keyRange, descending);
+-    }
+-    if (lowerMatches && upperMatches && !node.deleted) {
+-      yield node.record;
+-    }
+-    if (moreEnd && node[end]) {
+-      yield* this._findRecords(node[end], keyRange, descending);
++    while (node || nodes.length) {
++      while (node) {
++        const { lower, upper, lowerOpen, upperOpen } = keyRange;
++        const key = node.record.key;
++        const lowerComparison = lower === undefined ? -1 : (0, _cmp.cmpKeys)(lower, key);
++        const upperComparison = upper === undefined ? 1 : (0, _cmp.cmpKeys)(upper, key);
++        const moreLeft = this._keysAreUnique ? lowerComparison < 0 : lowerComparison <= 0;
++        const moreRight = this._keysAreUnique ? upperComparison > 0 : upperComparison >= 0;
++        const matches = (lowerOpen ? lowerComparison < 0 : lowerComparison <= 0) &&
++          (upperOpen ? upperComparison > 0 : upperComparison >= 0);
++        nodes.push(node);
++        branches.push((matches ? 1 : 0) | ((descending ? moreLeft : moreRight) ? 2 : 0));
++        node = (descending ? moreRight : moreLeft) ? node[start] : undefined;
++      }
++      node = nodes.pop();
++      const branch = branches.pop();
++      // Keep the recursive traversal's live deletion check and post-yield child lookup.
++      if ((branch & 1) && !node.deleted) {
++        yield node.record;
++      }
++      node = (branch & 2) ? node[end] : undefined;
+     }
+   }
+   _onNewNodeInserted(newNode) {
+diff --git a/build/esm/FDBCursor.js b/build/esm/FDBCursor.js
+index ef1fb8a978f29b8c112b8cac53f1dc2aa5d061c4..3ec9b06eb5305c989fd141852b3828a1e49f207a 100644
+--- a/build/esm/FDBCursor.js
++++ b/build/esm/FDBCursor.js
+@@ -26,7 +26,7 @@ const makeKeyRange = (range, lowers, uppers) => {
+     if (lowerTemp === undefined) {
+       continue;
+     }
+-    if (lower === undefined || cmpKeys(lower, lowerTemp) === 1) {
++    if (lower === undefined || cmpKeys(lower, lowerTemp) === -1) {
+       lower = lowerTemp;
+     }
+   }
+@@ -34,11 +34,15 @@ const makeKeyRange = (range, lowers, uppers) => {
+     if (upperTemp === undefined) {
+       continue;
+     }
+-    if (upper === undefined || cmpKeys(upper, upperTemp) === -1) {
++    if (upper === undefined || cmpKeys(upper, upperTemp) === 1) {
+       upper = upperTemp;
+     }
+   }
+   if (lower !== undefined && upper !== undefined) {
++    if (cmpKeys(lower, upper) > 0) {
++      // An internal empty range: continue(key) past the source range must exhaust, not throw.
++      return new FDBKeyRange(lower, upper, false, false);
++    }
+     return FDBKeyRange.bound(lower, upper);
+   }
+   if (lower !== undefined) {
 diff --git a/build/esm/lib/Index.js b/build/esm/lib/Index.js
 index de0b14be5b1fee07ba204d271da0458daea609a0..eca9ee94c9688a93b53a4ad0eda1820541909c70 100644
 --- a/build/esm/lib/Index.js
@@ -231,3 +361,73 @@ index 8dafa6c65aabddbc55ba1371189989c709c33930..7cd61b479025d7411bd187e015c6fe25
      }
    }
  
+diff --git a/build/esm/lib/binarySearchTree.js b/build/esm/lib/binarySearchTree.js
+index ab9589e683f5c3b9a4712255447f1332ec13c074..986e6ff7b70dc8ef8d7766e039b2eb3560c75706 100644
+--- a/build/esm/lib/binarySearchTree.js
++++ b/build/esm/lib/binarySearchTree.js
+@@ -168,42 +168,31 @@ export default class BinarySearchTree {
+     yield* this._findRecords(node, keyRange, descending);
+   }
+   *_findRecords(node, keyRange, descending = false) {
+-    const {
+-      lower,
+-      upper,
+-      lowerOpen,
+-      upperOpen
+-    } = keyRange;
+-    const {
+-      record: {
+-        key
+-      }
+-    } = node;
+-    const lowerComparison = lower === undefined ? -1 : cmpKeys(lower, key);
+-    const upperComparison = upper === undefined ? 1 : cmpKeys(upper, key);
+-
+-    // if keys are non-unique then we need to go left/right even for equality
+-    // else we can just do LT/GT rather than LTE/GTE as a slight optimization
+-    const moreLeft = this._keysAreUnique ? lowerComparison < 0 : lowerComparison <= 0;
+-    const moreRight = this._keysAreUnique ? upperComparison > 0 : upperComparison >= 0;
+-
+-    // in descending mode we start with rightmost nodes, else leftmost
+-    const moreStart = descending ? moreRight : moreLeft;
+-    const moreEnd = descending ? moreLeft : moreRight;
++    const nodes = [];
++    const branches = [];
+     const start = descending ? "right" : "left";
+     const end = descending ? "left" : "right";
+-
+-    // does the current record actually match the key range?
+-    const lowerMatches = lowerOpen ? lowerComparison < 0 : lowerComparison <= 0;
+-    const upperMatches = upperOpen ? upperComparison > 0 : upperComparison >= 0;
+-    if (moreStart && node[start]) {
+-      yield* this._findRecords(node[start], keyRange, descending);
+-    }
+-    if (lowerMatches && upperMatches && !node.deleted) {
+-      yield node.record;
+-    }
+-    if (moreEnd && node[end]) {
+-      yield* this._findRecords(node[end], keyRange, descending);
++    while (node || nodes.length) {
++      while (node) {
++        const { lower, upper, lowerOpen, upperOpen } = keyRange;
++        const key = node.record.key;
++        const lowerComparison = lower === undefined ? -1 : cmpKeys(lower, key);
++        const upperComparison = upper === undefined ? 1 : cmpKeys(upper, key);
++        const moreLeft = this._keysAreUnique ? lowerComparison < 0 : lowerComparison <= 0;
++        const moreRight = this._keysAreUnique ? upperComparison > 0 : upperComparison >= 0;
++        const matches = (lowerOpen ? lowerComparison < 0 : lowerComparison <= 0) &&
++          (upperOpen ? upperComparison > 0 : upperComparison >= 0);
++        nodes.push(node);
++        branches.push((matches ? 1 : 0) | ((descending ? moreLeft : moreRight) ? 2 : 0));
++        node = (descending ? moreRight : moreLeft) ? node[start] : undefined;
++      }
++      node = nodes.pop();
++      const branch = branches.pop();
++      // Keep the recursive traversal's live deletion check and post-yield child lookup.
++      if ((branch & 1) && !node.deleted) {
++        yield node.record;
++      }
++      node = (branch & 2) ? node[end] : undefined;
+     }
+   }
+   _onNewNodeInserted(newNode) {
