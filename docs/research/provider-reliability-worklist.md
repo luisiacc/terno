@@ -924,3 +924,12 @@ Root's rebased verification passes57/57functional browser cases across all three
 | Blocked-Up twin installs a key blocker but never sends Up, so adds no distinct blocked-key coverage | Low-priority test-coverage backlog; archived fail-first old-navigation replay remains preserved |
 
 The original10MBpaired typing failure remains OPEN. Prior profiling showed substantial real-edit reconciliation on both sides and did not explain the historical on/off differential; a new coherent runtime investigation may inspect the grouping dependency only after causal attribution. Expired Waiting lookup and exclusive category move/Undo remain active release blockers. No full-release clearance, report row/count change or held feature-backlog disposition change.
+
+
+## Release repair: expired Waiting pages stop at validated dated keys — 2026-10-30
+
+Landed `707aa643` and `03079c5c` after local rebase. Folder pages use existing dated membership keys for cursor seek and expiry. An entirely expired validated Waiting order with no kept IDs returns a fresh empty page before thread-table resolution, predicate setup or cursor work. Order validation, pending-write/uncertainty/closed-store fences, inclusive cutoff, kept rows, mutation/rollback and account/folder identity remain intact. No new cache, index, schema or polling.
+
+Root passes69focused cases, IDB types, package strict lint and whitespace. One original full affected perf run passes10/10 in84.72s, including the unchanged expired Waiting and Unread count gates. No successful numeric samples were printed. [Spec, commands and review limits](../plans/drafts/release5-idb-expired-waiting.md); Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-idb-waiting5-u60s0gso`. One native Sol/high production review PASS/0; later completion regression-verified without independent re-review.
+
+Earlier Waiting0.308083/0.25 and worker Unread1.508751/1.5 failures remain preserved and causally unattributed; no timing waiver or gate change. The historical release result is still not green. Current active repair scopes are10MBsuggestion paired typing and exclusive category move/Undo. No report dispositions/counts or held feature-backlog changes.
