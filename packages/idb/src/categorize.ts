@@ -407,13 +407,11 @@ export function applyMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     const wanted = new Set(threadIds);
     const mine = journal.by("fk_batch_id", batchId).filter((r) => r.done === 0 && wanted.has(r.thread_id)).sort((x, y) => x.thread_id - y.thread_id);
     const added: number[] = [];
-    const out: number[] = [];
     for (const r of mine) {
       const rows = memberships.by("fk_thread_id", r.thread_id);
       // the rows a slice takes out: every other category's, or (leaving) the one category's
       const others = rows.filter((x) => (s.leave ? x.category_id === to : x.category_id !== to)).sort((x, y) => x.category_id - y.category_id);
       const isAdded = !s.leave && !rows.some((x) => x.category_id === to);
-      if (others.length) out.push(r.thread_id as number);
       for (const src of others) T(c, "cat_move_rows").insert({ batch_id: batchId, thread_id: r.thread_id, category_id: src.category_id, added_by: src.added_by, added_at: src.added_at, prev_batch_id: src.batch_id });
       for (const cat of touchedCategories(to, others, s.from)) {
         const d = decisions.get(r.thread_id, cat);
@@ -434,10 +432,7 @@ export function applyMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     settleSuggestions(c, to, added, "accepted");
     if (!journal.by("fk_batch_id", batchId).some((r) => r.done === 0)) finishBatch(c, batchId, journal.by("fk_batch_id", batchId).filter((r) => r.added === 1).length);
     nextPhaseWhenDone(c, batchId, "training");
-    const deltas: ModelDelta[] = added.map((threadId) => ({ op: "unbackground", threadId }));
-    // leaving can take a thread's last category: it may go back to the background
-    if (s.leave) deltas.push(...backgroundDeltas(c, out, now));
-    return { deltas, touched: mine.map((r) => r.thread_id as number) };
+    return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: mine.map((r) => r.thread_id as number) };
   });
 }
 
@@ -467,6 +462,8 @@ export function trainMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
       if (r.added && source) deltas.push(...putExample(c, { threadId: r.thread_id, categoryId: to, label: 1, source, at: now, batchId, set }));
       for (const src of left.get(r.thread_id) ?? []) deltas.push(...putExample(c, { threadId: r.thread_id, categoryId: src.category_id, label: -1, source: "removal", at: now, batchId: null, set }));
     }
+    // leaving can take a thread's last category: back to the background, here (a resumed move replays training, not the apply)
+    if (s.leave) deltas.push(...backgroundDeltas(c, rows.filter((r) => r.moved).map((r) => r.thread_id as number), now));
     for (const r of rows) journal.update(journal.get(batchId, r.thread_id)!, { done: 1 });
     if (!journal.by("fk_batch_id", batchId).some((r) => r.done === 0)) setPhase(c, batchId, "done");
     return deltas;

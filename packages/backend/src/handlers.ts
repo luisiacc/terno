@@ -450,6 +450,8 @@ export function createHandlers(b: Backend): Handlers {
       if ((await store.categories.movePhase(batchId)) !== null) {
         // a move still being applied or trained finishes first; an undo cut short (a failure, a crash) picks up where it was
         const phase = await store.categories.movePhase(batchId);
+        // its journal is gone: saying "undone" would be a lie
+        if (phase === "expired") throw new RpcError("NOT_FOUND", L("errors.moveExpired"));
         if (phase === "moving" || phase === "training") await b.finishMove(batchId);
         if ((await store.categories.movePhase(batchId)) === "done") await store.categories.undoMoveBegin(batchId, b.now());
         // memberships and decisions come back in slices, then the examples

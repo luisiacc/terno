@@ -141,6 +141,18 @@ describe("moving threads between categories", () => {
     expect(membership(backend, t1, b)).toBeUndefined();
   });
 
+  it("an expired move's undo says so instead of reporting it done", async () => {
+    const { backend, client, a, b, threads } = setup();
+    const [t1, t2] = threads as [number, number];
+    await client.call("categories.addThreads", { categoryId: a, threadIds: [t1] });
+    const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1] });
+    // a move two days later prunes this one's journal
+    await backend.store.categories.beginMove({ to: a, threadIds: [t2], addedBy: "user", now: NOW + 2 * 86_400_000, source: "dnd" });
+    expect(movePhase(sqlDb(backend.store), move.batchId)).toBe("expired");
+    await expect(client.call("categorize.undo", { batchId: move.batchId })).rejects.toThrow("This move can no longer be undone.");
+    expect(membership(backend, t1, b)).toMatchObject({ batch_id: move.batchId });
+  });
+
   it("a move recorded before the app quit is applied and trained on the next start", async () => {
     const { backend, a, b, threads, dir } = setup();
     const [t1, t2] = threads as [number, number];

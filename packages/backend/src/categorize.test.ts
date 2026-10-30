@@ -147,6 +147,25 @@ describe("categorizer: training hooks", () => {
     expect(fresh.backgroundSize).toBe(6);
   });
 
+  it("plan 76: a leave's threads go back to the background when it is trained, so a move resumed after a crash still sends them", async () => {
+    const { backend, client } = setup();
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 3 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
+    await backend.categorizer.rebuildNow();
+    const model = backend.categorizer.model!;
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: threads });
+    expect(model.backgroundSize).toBe(0);
+    const { batchId } = await backend.store.categories.beginMove({ to: cat, threadIds: threads, addedBy: "user", now: NOW, source: "sender", leave: true });
+    // the memberships leave, then the app stops before training: nothing of the model is touched yet
+    for (const t of await backend.store.categories.movePending(batchId)) backend.categorizer.apply((await backend.store.categories.applyMoveSlice(batchId, [t], NOW)).deltas);
+    expect(model.backgroundSize).toBe(0);
+    // the resume (training) sends them back
+    await backend.finishMove(batchId);
+    expect(model.backgroundSize).toBe(3);
+    expect((await backend.categorizer.rebuildNow()).backgroundSize).toBe(3);
+  });
+
   it("an add that changes nothing returns no undo handle", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;

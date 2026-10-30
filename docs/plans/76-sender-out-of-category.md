@@ -36,3 +36,8 @@ The search is the existing indexed `from:` search (exact-sender index) and the r
 1. *A failure partway lost Undo for the slices already done.* The removal is now a journaled move: the error carries `{ batchId }`, the snack offers Undo, and `categorize.undo` finishes the move, then takes it all back (backend regression with a failing training trigger).
 2. *Undo re-filed the threads as the user's own (changed origins, examples and decisions).* Replaced by the leave move's exact undo (conformance test in both stores, backend test comparing rows, examples and the model).
 3. *The z token was registered only after the RPC, so a slow removal took z from a newer action.* It is now registered at the click on a deferred batch, as `act` does (web unit tests).
+
+### Round 2
+
+1. *Background deltas were sent by the apply, so a crash between apply and training lost them* (the snapshot's examples fingerprint still matched, and a resume replays only training). A leave now sends them from `trainMoveSlice` in both stores (backend regression: apply alone leaves the model untouched; the resumed training sends them).
+2. *`categorize.undo` on an expired move returned zero counts, so the snack said "Undone".* It now refuses with "This move can no longer be undone.", which fixes drag-and-drop moves too (`move.test.ts`).

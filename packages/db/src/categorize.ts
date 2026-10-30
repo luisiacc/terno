@@ -599,24 +599,20 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
     if (nextPhaseWhenDone(db, batchId, "training")) {
       finishBatch(db, batchId, db.get<{ c: number }>("SELECT count(*) AS c FROM cat_move_threads WHERE batch_id = ? AND added = 1", batchId)!.c);
     }
-    const sliceIds = JSON.parse(ids) as number[];
-    const deltas: ModelDelta[] = added.map((threadId) => ({ op: "unbackground", threadId }));
-    // leaving can take a thread's last category: it may go back to the background
-    if (meta.leave) {
-      const out = db.all<{ thread_id: number }>(`SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1 AND thread_id IN (${slice})`, batchId, ids).map((r) => r.thread_id);
-      deltas.push(...backgroundDeltas(db, out, now));
-    }
-    return { deltas, touched: sliceIds };
+    return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: JSON.parse(ids) as number[] };
   });
 }
 
 /** One slice of a move's training: a positive in the destination for added threads, a removal example in each category a thread left. */
 export function trainMoveSlice(db: Db, batchId: number, threadIds: readonly number[], now: number, own?: OwnAddresses): ModelDelta[] {
   return db.tx(() => {
-    const meta = db.get<{ to: number; addedBy: AddedBy }>("SELECT category_id AS 'to', scope_json ->> '$.addedBy' AS addedBy FROM cat_batches WHERE id = ?", batchId);
+    const meta = db.get<{ to: number; addedBy: AddedBy; leave: number | null }>(
+      "SELECT category_id AS 'to', scope_json ->> '$.addedBy' AS addedBy, scope_json ->> '$.leave' AS leave FROM cat_batches WHERE id = ?",
+      batchId,
+    );
     if (!meta) return [];
-    const rows = db.all<{ thread_id: number; added: number }>(
-      "SELECT thread_id, added FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))",
+    const rows = db.all<{ thread_id: number; added: number; moved: number }>(
+      "SELECT thread_id, added, moved FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))",
       batchId,
       JSON.stringify(threadIds),
     );
@@ -650,6 +646,8 @@ export function trainMoveSlice(db: Db, batchId: number, threadIds: readonly numb
       if (r.added && source) deltas.push(...putExample(db, { threadId: r.thread_id, categoryId: meta.to, label: 1, source, at: now, batchId, set }));
       for (const categoryId of left.get(r.thread_id) ?? []) deltas.push(...putExample(db, { threadId: r.thread_id, categoryId, label: -1, source: "removal", at: now, batchId: null, set }));
     }
+    // leaving can take a thread's last category: back to the background, here (a resumed move replays training, not the apply)
+    if (meta.leave) deltas.push(...backgroundDeltas(db, rows.filter((r) => r.moved).map((r) => r.thread_id), now, own));
     db.run("UPDATE cat_move_threads SET done = 1 WHERE batch_id = ? AND thread_id IN (SELECT value FROM json_each(?))", batchId, ids);
     if (!db.get("SELECT 1 FROM cat_move_threads WHERE batch_id = ? AND done = 0 LIMIT 1", batchId)) setPhase(db, batchId, "done");
     return deltas;
