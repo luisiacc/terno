@@ -1473,6 +1473,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.google.unavailable": "Could not finish Google sign-in. Check your connection and try again.",
   "errors.google.timedOut": "Google sign-in timed out.",
   "errors.google.cancelled": "Sign-in cancelled.",
+  "errors.google.adminPolicy": "Google Workspace policy blocked the requested access. Please contact your Google Workspace administrator.",
   "errors.google.denied": "Google access was denied.",
   "errors.google.error": "Google error: {code}",
   "errors.google.signInFailed": "Google sign-in failed: {detail}",

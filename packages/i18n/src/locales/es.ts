@@ -1465,6 +1465,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.google.unavailable": "No se pudo completar el inicio de sesión con Google. Revisa tu conexión e inténtalo de nuevo.",
   "errors.google.timedOut": "Se agotó el tiempo para iniciar sesión con Google.",
   "errors.google.cancelled": "Se canceló el inicio de sesión.",
+  "errors.google.adminPolicy": "La política de Google Workspace bloqueó el acceso solicitado. Por favor, contacta con tu administrador de Google Workspace.",
   "errors.google.denied": "Se denegó el acceso de Google.",
   "errors.google.error": "Error de Google: {code}",
   "errors.google.signInFailed": "Falló el inicio de sesión con Google: {detail}",

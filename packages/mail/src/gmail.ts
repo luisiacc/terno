@@ -31,7 +31,7 @@ export interface ConnectOptions {
   allowOmittedRefreshToken?: boolean;
 }
 
-type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back";
+type CallbackKey = "backend.oauth.invalid" | "backend.oauth.denied" | "backend.oauth.back" | "errors.google.adminPolicy";
 
 /**
  * The page the browser shows after Google's redirect. The backend has no
@@ -80,10 +80,17 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
           }
           if (settled) return void res.writeHead(409).end();
           settled = true;
-          const error = url.searchParams.get("error");
-          if (error) {
-            done(false, "backend.oauth.denied");
-            reject(new ProviderError(error === "access_denied" ? L("errors.google.denied") : L("errors.google.invalidResponse"), false));
+          const errors = url.searchParams.getAll("error");
+          if (errors.length) {
+            if (errors.length !== 1 || !errors[0] || url.searchParams.has("code")) {
+              done(false, "backend.oauth.invalid");
+              reject(new ProviderError(L("errors.google.invalidResponse"), false));
+              return;
+            }
+            const error = errors[0];
+            const adminPolicy = error === "admin_policy_enforced";
+            done(false, adminPolicy ? "errors.google.adminPolicy" : "backend.oauth.denied");
+            reject(new ProviderError(adminPolicy ? L("errors.google.adminPolicy") : error === "access_denied" ? L("errors.google.denied") : L("errors.google.invalidResponse"), false));
             return;
           }
           const authorizationCode = url.searchParams.get("code");

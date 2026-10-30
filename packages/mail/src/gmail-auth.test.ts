@@ -267,6 +267,57 @@ describe("Google callback ownership and protocol", () => {
     await expect(fetch(callback)).rejects.toThrow();
   });
 
+  it("reports a received administrator policy refusal without exchanging tokens", async () => {
+    let callback!: URL;
+    let receivePage!: (page: string) => void;
+    const pageReceived = new Promise<string>((resolve) => { receivePage = resolve; });
+    const { result, netFetch } = desktop({ options: { openExternal: async (url) => {
+      const auth = new URL(url);
+      callback = new URL(auth.searchParams.get("redirect_uri")!);
+      callback.searchParams.set("state", auth.searchParams.get("state")!);
+      callback.searchParams.set("error", "admin_policy_enforced");
+      receivePage(await fetch(callback).then((response) => response.text()));
+    } } });
+    await expect(result).rejects.toThrow("contact your Google Workspace administrator");
+    const page = await pageReceived;
+    expect(page).toContain("contact your Google Workspace administrator");
+    expect(page).toContain("contacta con tu administrador de Google Workspace");
+    expect(netFetch).not.toHaveBeenCalled();
+    await expect(fetch(callback)).rejects.toThrow();
+  });
+
+  it("ignores a forged administrator refusal and accepts the valid callback", async () => {
+    const { result, netFetch } = desktop({ options: { openExternal: async (url) => {
+      const auth = new URL(url);
+      const callback = new URL(auth.searchParams.get("redirect_uri")!);
+      callback.searchParams.set("state", "forged");
+      callback.searchParams.set("error", "admin_policy_enforced");
+      const response = await fetch(callback);
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toContain("contact your Google Workspace administrator");
+      callback.searchParams.set("state", auth.searchParams.get("state")!);
+      callback.searchParams.delete("error");
+      callback.searchParams.set("code", "synthetic-code");
+      await fetch(callback).then((r) => r.text());
+    } } });
+    await expect(result).resolves.toMatchObject({ email: profile.emailAddress });
+    expect(netFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["duplicate error", "error and code"])("rejects ambiguous callback: %s", async (kind) => {
+    const { result, netFetch } = desktop({ options: { openExternal: async (url) => {
+      const auth = new URL(url);
+      const callback = new URL(auth.searchParams.get("redirect_uri")!);
+      callback.searchParams.set("state", auth.searchParams.get("state")!);
+      callback.searchParams.set("error", "admin_policy_enforced");
+      if (kind === "duplicate error") callback.searchParams.append("error", "access_denied");
+      else callback.searchParams.set("code", "synthetic-code");
+      expect((await fetch(callback)).status).toBe(400);
+    } } });
+    await expect(result).rejects.toThrow("Google returned an invalid sign-in response");
+    expect(netFetch).not.toHaveBeenCalled();
+  });
+
   it("an abandoned browser expires and its listener stops accepting callbacks", async () => {
     let callback!: URL;
     const { result } = desktop({ options: { timeoutMs: 100, openExternal: async (url) => { callback = new URL(new URL(url).searchParams.get("redirect_uri")!); } } });
