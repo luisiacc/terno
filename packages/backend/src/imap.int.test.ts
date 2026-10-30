@@ -3173,3 +3173,15 @@ describe("sending through SMTP", () => {
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "unknown" });
   });
 });
+
+it.each([false, true])("preserves the queued Sent-copy choice when configuration changes before SMTP (requested=%s)", async (requested) => {
+  const t = await setup(); const account = await t.addAccount(t.imap.port);
+  const config = (await t.backend.store.accounts.config<Record<string, unknown>>(account.id))!;
+  await t.backend.store.accounts.setProviderConfig(account.id, { ...config, appendToSent: requested });
+  const queued = await t.backend.store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "Captured choice", bodyText: "Synthetic", recordReply: false, now: Date.now() });
+  await t.backend.store.accounts.setProviderConfig(account.id, { ...config, appendToSent: !requested });
+  await t.backend.runWorker();
+  expect(t.smtp.received).toHaveLength(1);
+  expect(t.imap.server.control.listMessages("Sent")).toHaveLength(requested ? 1 : 0);
+  expect((await t.backend.store.ops.get(queued.opId))?.state).toBe("succeeded");
+});

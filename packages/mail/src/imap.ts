@@ -1325,7 +1325,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const { raw, rejected, outcomes, recipientOutcomeUnknown } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload, { prepare: op.sentCopy?.prepare, accepted: op.submissionAccepted, beforeSubmission: op.beforeSubmission, recovery: op.recovery });
     if (outcomes) op.recipientOutcomes?.(outcomes);
     const warning = recipientOutcomeUnknown ? L("errors.smtp.recipientOutcomeUnknown") : rejected.length ? L("errors.smtp.notDeliveredTo", { recipients: rejected.join(", ") }) : undefined;
-    if (config.appendToSent && !op.recovery) {
+    op.submissionWarning?.(warning);
+    if ((op.sentCopyRequested ?? config.appendToSent) && !op.recovery) {
       try {
         await op.sentCopy?.accepted(warning);
       } catch {

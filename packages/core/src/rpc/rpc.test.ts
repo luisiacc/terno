@@ -133,10 +133,14 @@ describe("rpc", () => {
 
   it("can reattach to a new transport after a backend restart", async () => {
     const { client, serverSide, server } = setup();
+    const versions: number[] = [], off = client.onAttach(() => versions.push(client.connectionVersion));
+    const before = client.connectionVersion;
     serverSide.close();
     const [c2, s2]: [Transport, Transport] = createMemoryTransportPair();
     server.connect(s2, { clientId: "t2", origin: "renderer" });
     client.attach(c2);
+    expect(versions).toEqual([client.connectionVersion]); expect(client.connectionVersion).toBeGreaterThan(before);
+    off();
     expect(await client.call("counts.get", {})).toMatchObject({ inboxUnread: 3 });
   });
 

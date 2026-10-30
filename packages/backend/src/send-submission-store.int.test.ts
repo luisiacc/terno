@@ -227,6 +227,8 @@ it("real SMTP plus IDB completion abort commits acceptance through fallback, reo
   expect((await second.backend.store.recipientReceipts.get(opId))?.state).toBe("accepted");
   expect(JSON.parse((await second.backend.store.recipientReceipts.readPart(opId, "outcomes", 0))!)).toEqual(["accepted", "rejected", "accepted"]);
   await expect(second.client.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await second.client.call("ops.resolveUnknown", { opId, resolution: "markSent" });
+  expect((await second.client.call("ops.list", {})).find((row) => row.id === opId)?.partialRecipients).toBe(true);
 });
 
 for (const adapter of ["SQL", "IDB"] as const) for (const appendToSent of [false, true]) for (const transition of ["complete", "markUnknown"] as const) {
@@ -539,7 +541,7 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} rechecks account l
   expect(JSON.parse((await store.ops.get(t.opId))!.target_json).recipientRecoveryChild).toBeUndefined();
 });
 
-for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} preserves shared source and recipient outcomes for a partially refused recovery`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const failCompletion of [false, true]) it(`${adapter} preserves shared source and recipient outcomes for a partially refused recovery, completion fault=${failCompletion}`, async () => {
   const commands: string[] = [], bodies: Buffer[] = [], attempts = new Map<string, number>();
   const smtp = new SMTPServer({ disabledCommands: ["STARTTLS"], authOptional: true, onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }), onRcptTo(address, _s, cb) { const count = (attempts.get(address.address) ?? 0) + 1; attempts.set(address.address, count); commands.push(address.address); const limit = address.address === "no1@example.test" ? 1 : address.address === "no2@example.test" ? 2 : 0; if (count <= limit) cb(Object.assign(new Error("Synthetic refusal"), { responseCode: 550 })); else cb(); }, onData(stream, _s, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { bodies.push(Buffer.concat(chunks)); cb(); }); } });
   await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve)); cleanup.push(() => new Promise<void>((resolve) => smtp.close(resolve)));
@@ -549,7 +551,14 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} preserves shared s
   const store = await open(); const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false } });
   const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-chain", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
   const first = connect(store); const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no1@example.test" }], bcc: [{ name: "", email: "no2@example.test" }], subject: "Synthetic chain", bodyText: "Exact wire" });
-  await first.backend.runWorker(); const child = (await first.client.call("ops.recoverRejectedRecipients", { opId })).opId; await first.backend.runWorker();
+  await first.backend.runWorker();
+  let faulted = false;
+  if (failCompletion && adapter === "SQL") sqlDb(store).onBeforeCommit(() => { if (!faulted && sqlDb(store).get("SELECT 1 FROM ops WHERE kind='send' AND state='succeeded' AND target_json LIKE '%recoveryParentId%'")) { faulted = true; throw new Error("Synthetic recovery completion rollback"); } });
+  const put = IDBObjectStore.prototype.put;
+  const injection = failCompletion && adapter === "IDB" ? vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) { const result = Reflect.apply(put, this, args) as IDBRequest; if (!faulted && this.name === "op_control" && this.transaction.db.name === `terno-${name}` && args[1] !== opId && (args[0] as { state?: string }).state === "succeeded") { faulted = true; result.addEventListener("success", () => this.transaction.abort()); } return result; }) : null;
+  const child = (await first.client.call("ops.recoverRejectedRecipients", { opId })).opId; await first.backend.runWorker(); injection?.mockRestore();
+  if (failCompletion) { expect(faulted).toBe(true); expect((await store.ops.get(child))?.state).toBe("unknown"); await first.client.call("ops.resolveUnknown", { opId: child, resolution: "markSent" }); }
+  expect((await first.client.call("ops.list", {})).find((row) => row.id === child)?.partialRecipients).toBe(true);
   expect(JSON.parse((await store.recipientReceipts.readPart(child, "outcomes", 0))!)).toEqual(["accepted", "rejected"]);
   await first.client.call("ops.forgetRecipientReceipt", { opId });
   expect(await store.recipientReceipts.get(opId)).toBeNull(); expect((await store.sendCopies.get(opId))?.ready).toBe(true);
@@ -558,4 +567,36 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} preserves shared s
   expect((await second.backend.store.ops.get(grandchild))?.state).toBe("succeeded");
   expect(commands).toEqual(["yes@example.test", "no1@example.test", "no2@example.test", "no1@example.test", "no2@example.test", "no2@example.test"]);
   expect(bodies).toHaveLength(3); expect(bodies[1]).toEqual(bodies[0]); expect(bodies[2]).toEqual(bodies[0]);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) for (const recovery of [false, true]) for (const retire of [false, true]) it(`${adapter} preserves partial submission after markSent recovery=${recovery} retired=${retire}`, async () => {
+  const t = await setup(adapter, false, [{ name: "", email: "yes@example.test" }, { name: "", email: "no1@example.test" }, { name: "", email: "no2@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+  await store.ops.markUnknown(t.opId, "Synthetic local failure", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no1@example.test", outcome: "rejected" }, { email: "no2@example.test", outcome: "rejected" }] });
+  let id = t.opId;
+  if (recovery) {
+    const receipt = (await store.recipientReceipts.get(id))!; id = await store.recipientReceipts.claimRecovery(id, receipt, 4);
+    expect((await store.ops.claimReady(5, 10)).some((op) => op.id === id)).toBe(true);
+    await store.ops.markUnknown(id, "Synthetic local failure", 6, { warning: null, outcomes: [{ email: "no1@example.test", outcome: "accepted" }, { email: "no2@example.test", outcome: "rejected" }] });
+  }
+  if (retire) {
+    while (await store.recipientReceipts.retireSlice(id)) { /* bounded */ }
+    if (!recovery) while (await store.sendCopies.forgetSlice(id)) { /* bounded */ }
+    await store.recipientReceipts.finishRetire(id);
+  }
+  await store.ops.resolveUnknown(id, "markSent", 7);
+  expect((await store.ops.get(id))?.send_partial).toBe(true);
+  await store.close(); const reopened = await t.open();
+  expect((await reopened.ops.get(id))?.send_partial).toBe(true);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} preserves unknown recipient submission after markSent and detail retirement`, async () => {
+  const t = await setup(adapter, false); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+  const warning = encodeText(L("errors.smtp.recipientOutcomeUnknown"));
+  await store.ops.markUnknown(t.opId, "Synthetic local failure", 3, { warning });
+  while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ } while (await store.sendCopies.forgetSlice(t.opId)) { /* bounded */ } await store.recipientReceipts.finishRetire(t.opId);
+  await store.ops.resolveUnknown(t.opId, "markSent", 4);
+  expect((await store.ops.get(t.opId))?.send_recipient_unknown).toBe(true);
+  await store.close(); const reopened = await t.open(); expect((await reopened.ops.get(t.opId))?.send_recipient_unknown).toBe(true);
 });

@@ -6,6 +6,11 @@ const read = (row: RecipientReceiptHeader): RecipientReceiptHeader => ({ ...row,
 export function sqlRecipientReceipts(db: Db): RecipientReceiptDb {
   return {
     all: () => db.all<RecipientReceiptHeader>("SELECT * FROM recipient_receipts").map(read),
+    markSummary: (id, partial, unknown) => {
+      if (!partial && !unknown) return;
+      const op = db.get<{ kind: string; target_json: string }>("SELECT kind,target_json FROM ops WHERE id=?", id);
+      if (op?.kind === "send") db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...JSON.parse(op.target_json), ...(partial && { recipientPartial: true }), ...(unknown && { recipientOutcomeUnknown: true }) }), id);
+    },
     childActive: (id) => { const op = db.get<{ state: string }>("SELECT state FROM ops WHERE id=?", id); return !op || (op.state !== "succeeded" && op.state !== "failed" && op.state !== "unknown"); },
     get: (id) => { const row = db.get<RecipientReceiptHeader>("SELECT * FROM recipient_receipts WHERE opId=?", id); return row ? read(row) : null; },
     put: (row) => { db.run(`INSERT INTO recipient_receipts (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(opId) DO UPDATE SET ${columns.slice(1).map((column) => `${column}=excluded.${column}`).join(",")}`, ...columns.map((column) => typeof row[column] === "boolean" ? Number(row[column]) : row[column])); },

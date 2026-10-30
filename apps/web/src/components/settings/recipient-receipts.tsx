@@ -15,11 +15,24 @@ export function RecipientReceipts({ accountId }: { accountId: number }) {
   const generation = useRef(0), mounted = useRef(false);
   const refresh = async (version: number) => { const next = await client.call("ops.recipientReceipts", { accountId }); if (generation.current === version) setRows(next); };
   useEffect(() => {
-    mounted.current = true; const version = ++generation.current; void refresh(version).catch(() => { if (generation.current === version) setError(true); });
+    mounted.current = true;
+    let active = true, inflight = 0, deferred = false;
+    const load = (version: number) => {
+      if (inflight >= 2) { deferred = true; return; }
+      inflight++;
+      void refresh(version).catch(() => { if (active && generation.current === version) setError(true); }).finally(() => {
+        inflight--;
+        if (active && deferred) { deferred = false; load(generation.current); }
+      });
+    };
+    const reload = () => { const version = ++generation.current; setBusy(false); setSelected(null); setError(false); load(version); };
+    reload();
     const off = client.on("recipientReceiptRetired", ({ opId }) => { generation.current++; setBusy(false); setSelected(null); setRows((current) => current?.filter((row) => row.opId !== opId) ?? null); });
     const close = client.onClose(() => { generation.current++; setBusy(false); setSelected(null); setRows(null); setError(true); });
-    const accounts = client.on("accounts", () => { generation.current++; setBusy(false); setSelected(null); });
-    return () => { mounted.current = false; generation.current++; off(); close(); accounts(); };
+    const attach = client.onAttach(reload);
+    const accounts = client.on("accounts", reload);
+    const ops = client.on("op", (op) => { if (op.accountId === accountId && op.kind === "send") reload(); });
+    return () => { active = false; mounted.current = false; generation.current++; off(); close(); attach(); accounts(); ops(); };
   }, [accountId]);
   const details = async (row: Receipt) => {
     const version = ++generation.current, connection = client.connectionVersion; setBusy(true); setError(false); setSelected(null);

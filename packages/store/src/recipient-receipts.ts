@@ -1,4 +1,4 @@
-import { ATTACHMENT_CHUNK, asciiEmail, isValidEmail, normalizeEmail, normalizeText, type Address } from "@terno/core";
+import { ATTACHMENT_CHUNK, asciiEmail, decodeText, isValidEmail, normalizeEmail, normalizeText, type Address } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 
@@ -42,6 +42,7 @@ export interface RecipientReceiptDb {
   removePart(id: string, kind: "envelope" | "outcomes", index: number): void;
   remove(id: string): void;
   childActive(id: string): boolean;
+  markSummary(id: string, partial: boolean, unknown: boolean): void;
 }
 export function reserveRecipientReceipt(db: RecipientReceiptDb, opId: string, accountId: number, now: number, prepared: Awaited<ReturnType<typeof recipientReceiptParts>>, wireOwnerId: string | null = null): void {
   const rows = db.all();
@@ -51,13 +52,15 @@ export function reserveRecipientReceipt(db: RecipientReceiptDb, opId: string, ac
 }
 
 export type AcceptedRecipientEvidence = { warning: string | null; outcomes?: RecipientOutcome[] };
-export function publishRecipientReceipt(db: RecipientReceiptDb, id: string, outcomes?: RecipientOutcome[]): void {
+export function publishRecipientReceipt(db: RecipientReceiptDb, id: string, outcomes?: RecipientOutcome[], warning: string | null = null): void {
   const row = db.get(id);
   if (!row || row.retired || row.state !== "pending") return;
-  if (outcomes && outcomes.length === row.count && outcomes.every((entry) => entry.outcome === "accepted" || entry.outcome === "rejected" || entry.outcome === "unknown")) {
-    for (let i = 0; i < outcomes.length; i += 128) db.putPart(id, "outcomes", i / 128, JSON.stringify(outcomes.slice(i, i + 128).map((entry) => entry.outcome)));
-  }
-  db.put({ ...row, state: "accepted", hasRejected: !!outcomes && outcomes.length === row.count && outcomes.some((entry) => entry.outcome === "rejected") });
+  const valid = !!outcomes && outcomes.length === row.count && outcomes.every((entry) => entry.outcome === "accepted" || entry.outcome === "rejected" || entry.outcome === "unknown");
+  const partial = valid && outcomes.some((entry) => entry.outcome === "rejected");
+  const unknown = (valid && outcomes.some((entry) => entry.outcome === "unknown")) || (!!warning && decodeText(warning).i18n?.key === "errors.smtp.recipientOutcomeUnknown");
+  if (valid) for (let i = 0; i < outcomes.length; i += 128) db.putPart(id, "outcomes", i / 128, JSON.stringify(outcomes.slice(i, i + 128).map((entry) => entry.outcome)));
+  db.markSummary(id, partial, unknown);
+  db.put({ ...row, state: "accepted", hasRejected: partial });
 }
 
 export function retireRecipientSlice(db: RecipientReceiptDb, id: string, force = false): boolean {

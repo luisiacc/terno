@@ -27,6 +27,7 @@ export class RpcClient {
   private readonly observe?: RpcClientOptions["observe"];
   private readonly translate?: RpcClientOptions["translate"];
   private readonly closeListeners = new Set<() => void>();
+  private readonly attachListeners = new Set<() => void>();
 
   constructor(transport?: Transport, options: RpcClientOptions = {}) {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
@@ -48,6 +49,12 @@ export class RpcClient {
         for (const l of this.closeListeners) l();
       }),
     ];
+    for (const listener of this.attachListeners) listener();
+  }
+
+  onAttach(listener: () => void): () => void {
+    this.attachListeners.add(listener);
+    return () => this.attachListeners.delete(listener);
   }
 
   onClose(listener: () => void): () => void {

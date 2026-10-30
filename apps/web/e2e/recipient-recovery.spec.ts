@@ -35,3 +35,32 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   expect((await store.ops.sendSubmission(queued.opId))?.accepted).toBe(true);
   expect(await store.sendCopies.list(account.id)).toEqual([]);
 });
+
+test("recipient history refreshes after account and operation events while reads are delayed", async ({ app: page, server }) => {
+  await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
+  const store = server.backend.store, account = (await store.accounts.list()).find((entry) => entry.kind === "imap")!;
+  const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "synthetic@example.test" }, { name: "", email: "refused@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact", recordReply: false, now: Date.now() });
+  const original = store.recipientReceipts.list.bind(store.recipientReceipts); let calls = 0, release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  store.recipientReceipts.list = async (id) => { calls++; if (calls === 1) await gate; return original(id); };
+  try {
+    await page.getByTestId("open-settings").click(); await page.getByTestId("tab-accounts").click();
+    const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`); await editor.getByTestId("account-toggle").click();
+    const recovery = editor.getByTestId("recipient-recovery"); await expect.poll(() => calls).toBe(1);
+    server.backend.server.emit("accounts", await store.accounts.list());
+    await expect.poll(() => calls).toBeGreaterThan(1); release();
+    await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(1); await expect(recovery).toContainText("Submission pending");
+    await store.ops.claimReady(Date.now(), 100); await store.sendCopies.startWire(queued.opId, 1); await store.sendCopies.appendWire(queued.opId, 0, "YQ=="); await store.sendCopies.sealWire(queued.opId);
+    await store.ops.complete(queued.opId, { sendAccepted: { warning: null, outcomes: [{ email: "synthetic@example.test", outcome: "accepted" }, { email: "refused@example.test", outcome: "rejected" }] } }, Date.now());
+    server.backend.server.emit("op", server.backend.opInfo((await store.ops.get(queued.opId))!));
+    await expect(recovery).not.toContainText("Submission pending");
+    const header = (await store.recipientReceipts.get(queued.opId))!;
+    const child = await store.recipientReceipts.claimRecovery(queued.opId, header, Date.now());
+    server.backend.server.emit("op", server.backend.opInfo((await store.ops.get(child))!));
+    await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(2); await expect(recovery).toContainText("Submission pending");
+    await store.ops.claimReady(Date.now(), 100);
+    await store.ops.complete(child, { sendAccepted: { warning: null, outcomes: [{ email: "refused@example.test", outcome: "accepted" }] } }, Date.now());
+    server.backend.server.emit("op", server.backend.opInfo((await store.ops.get(child))!));
+    await expect(recovery).not.toContainText("Submission pending");
+  } finally { release(); store.recipientReceipts.list = original; }
+});

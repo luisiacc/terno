@@ -1689,6 +1689,7 @@ export class BackendCore {
         requestRun: { markDispatched: () => { remoteDispatched = true; } },
         submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
         recipientOutcomes: (outcomes) => { if (sendAccepted) sendAccepted = { ...sendAccepted, outcomes }; },
+        submissionWarning: (warning) => { if (sendAccepted) sendAccepted = { ...sendAccepted, warning: warning ? encodeText(warning) : null }; },
         ...(recovery && { recovery }),
         ...(sending && { beforeSubmission: async () => {
           // Receipt-first, then fresh op: retirement transfers proof atomically before deleting a receipt.
@@ -1705,7 +1706,7 @@ export class BackendCore {
           this.assertCurrent(life);
           if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true);
         } }),
-        ...(receipt && { sentCopy: {
+        ...(receipt && { sentCopyRequested: receipt.copyRequested, sentCopy: {
           prepare: (raw) => this.accountWrite(life, () => prepareCopyWire(this.store, op.id, raw, () => this.platform.yield(), () => { this.assertCurrent(life); if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true); })),
           accepted: (warning) => { sendAccepted = { ...sendAccepted, warning: warning ? encodeText(warning) : null }; return this.accountWrite(life, () => this.store.sendCopies.accepted(op.id, sendAccepted!.warning)); },
           record: (copy, identity) => this.accountWrite(life, () => this.store.sendCopies.record(op.id, copy, identity)),

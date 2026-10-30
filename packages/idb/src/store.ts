@@ -1045,7 +1045,7 @@ export class IdbMailStore implements MailStore {
         const deltas: ModelDelta[] = [];
         if (!op) return { touched, deltas };
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
-        if (op.kind === "send" && result?.sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, result.sendAccepted.outcomes); }
+        if (op.kind === "send" && result?.sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, result.sendAccepted.outcomes, result.sendAccepted.warning); }
         const receipt = idbSendCopies(this.db).get(id);
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
@@ -1078,7 +1078,7 @@ export class IdbMailStore implements MailStore {
       }),
     markUnknown: (id, error, now, sendAccepted) => this.preparedFlagOutcome(id, () => {
       const op = getOp(this.c, id);
-      if (op?.kind === "send" && op.state === "running" && sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, sendAccepted.outcomes); }
+      if (op?.kind === "send" && op.state === "running" && sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, sendAccepted.outcomes, sendAccepted.warning); }
       const receipt = idbSendCopies(this.db).get(id);
       if (op?.state === "running" && sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.c, id, error, now);
@@ -1173,6 +1173,9 @@ export class IdbMailStore implements MailStore {
     if (!op || op.kind !== "send") return op;
     const receipt = idbSendCopies(this.db).get(op.id);
     const flags = sendWarningFlags(receipt?.warning ?? op.last_error);
+    const summary = JSON.parse(op.target_json) as { recipientPartial?: boolean; recipientOutcomeUnknown?: boolean };
+    flags.partial ||= summary.recipientPartial === true;
+    flags.unknown ||= summary.recipientOutcomeUnknown === true;
     if (!receipt && !flags.partial && !flags.unknown) return op;
     return { ...op, ...(receipt && receipt.copyRequested && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
   }
