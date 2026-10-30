@@ -207,3 +207,11 @@ Codex reviewed `5548ae9..a4cf60c` and made 4 findings; each is fixed with a regr
 - `pnpm test:web`: 31 of 31.
 - `pnpm test:ui-perf`: the "2 MB draft of short lines" gate fails on this machine on `main` too (interleaved runs: main 104.8 and 57.4 ms, this branch 49.7 and 54.7 ms, against 50), as plan 16 records. The "10 MB draft" autocomplete gate failed once under load and passed alone. One run had a 66.7 ms dropped frame in the sender-icons scroll gate with no long animation frame behind it; interleaved with `main` the two were the same (max 16.8 ms, 4 of 4 each). No gate file was touched.
 - `pnpm dist:mac` and `pnpm --filter @terno/desktop test:smoke`: 52 of 52.
+
+## W12 / S53 Settings and add-account presentation follow-up (2026-10-29)
+
+The Settings connection row now uses the existing stacked variant and Settings scroller for complete multiline/unbroken status and attempt details; the explicitly sized account header no longer contributes its compact status's intrinsic width to the sheet. Pending password verification retains the same read-only field, focus and selection. Pending action buttons use the shared focusable-disabled option, with Settings reconnect explicitly exposing its busy disabled state.
+
+Add-account failures now remain in an inline alert beside the attempted action, using the existing localized summary/detail formatter and a height-limited scrollable dialog. Complete published details, form values and retry/Close/Escape remain available; the missing-Google-client-ID route still opens Settings → Accounts and keeps its existing snack. No locale copy or authentication/provider machinery changed. Sidebar containment `e0b2fda9` remains exact.
+
+[Plan53's Settings/add-account follow-up](53-mail-landmarks.md#w12--s53-settings-and-add-account-recovery-2026-10-29) records fail-first evidence,22targeted UI cases/5helper tests, the R1 correction and5affected UI reruns,2native code rounds (final Standards/Spec PASS, zero backlog), inspected screenshots, scope deviation and finite coverage limits. This is renderer presentation qualification; root owns integration and overall S53/provider closure.
