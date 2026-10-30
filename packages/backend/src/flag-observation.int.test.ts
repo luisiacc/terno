@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { IDBFactory } from "fake-indexeddb";
 import { IdbMailStore } from "@terno/idb";
@@ -10,10 +11,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.restoreAllMocks(); });
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
 
 async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
+  let timeAdvance = 0;
+  const elapsedNow = performance.now.bind(performance);
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
   const captured = gate(), response = gate(), freshResponse = gate();
   let hold = false, blockFresh = false, authoritative = true, emptyHistory = false, requests = 0, history = 10;
@@ -25,16 +28,14 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const labels = new Set(["INBOX", "UNREAD"]);
   const mutations: unknown[] = [];
   const raw = Buffer.from("From: sender@example.test\r\nTo: synthetic@example.test\r\nSubject: Synthetic\r\n\r\nExact body\r\n").toString("base64url");
-  const providers: ProviderRegistry = {
-    create(ctx) {
-      const provider = createGmailApiProvider({ ...ctx, fetch: async (input, init) => {
+  const respond = async (input: string, init?: RequestInit): Promise<Response> => {
       requests++;
       const url = new URL(String(input));
       if (url.pathname.endsWith("/messages/send")) {
         if (heldSend) { heldSend.captured.release(); await heldSend.response.promise; }
         return Response.json({ id: "sent-synthetic" });
       }
-      if (url.pathname.endsWith("/profile")) return Response.json({ historyId: String(history) });
+      if (url.pathname.endsWith("/profile")) return Response.json({ emailAddress: decodeURIComponent(url.pathname.split("/")[1]!), historyId: String(history) });
       if (url.pathname.endsWith("/history")) {
         const held = heldHistory;
         heldHistory = undefined;
@@ -52,14 +53,31 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
         history++;
         return new Response(null, { status: 204 });
       }
-      const snapshot = { id: "m", threadId: "t", labelIds: [...labels], ...(url.searchParams.get("format") === "raw" ? { raw } : {}) };
+      const snapshot = { id: "m", threadId: "t", historyId: String(history), labelIds: [...labels], ...(url.searchParams.get("format") === "raw" ? { raw } : {}) };
       if (url.searchParams.get("format") === "minimal") {
         minimalRequests++;
         if (hold) { hold = false; captured.release(); await response.promise; }
         else if (blockFresh) await freshResponse.promise;
       }
       return Response.json(snapshot);
-    } }, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
+  };
+  const server = createServer(async (req, res) => {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const reply = await respond(`http://127.0.0.1${req.url}`, { method: req.method, body: Buffer.concat(chunks).toString() });
+      res.writeHead(reply.status, Object.fromEntries(reply.headers));
+      res.end(Buffer.from(await reply.arrayBuffer()));
+    } catch { res.writeHead(500).end(); }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing synthetic listener");
+  const origin = `http://127.0.0.1:${address.port}`;
+  const providers: ProviderRegistry = {
+    create(ctx) {
+      // Keep saved-Google admission and native request phases; only the remote endpoint is synthetic.
+      const provider = createGmailApiProvider(ctx, { endpoints: { api: `${origin}/${encodeURIComponent(ctx.account.email)}` }, tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
       if (!authoritative) delete provider.flagSnapshots;
       return provider;
     },
@@ -67,19 +85,25 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   };
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   const store = kind === "SQL" ? undefined : await IdbMailStore.open({ name: "synthetic-observation", factory: new IDBFactory(), platform, instantSearch: kind === "IDB instant" });
-  const backend = new Backend({ dbPath: join(dir, "synthetic.db"), store, platform: store ? platform : undefined, providers, cipher: plaintextCipher, version: "test", autoSync: automatic, instantSearch: false, iconTransport: null });
+  const backend = new Backend({ dbPath: join(dir, "synthetic.db"), store, platform: store ? platform : undefined, providers, cipher: plaintextCipher, version: "test", autoSync: automatic, instantSearch: false, iconTransport: null, now: () => Date.now() + timeAdvance });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "synthetic", origin: "renderer" });
   const client = new RpcClient(c);
-  cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); heldSend?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); heldSend?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
   await backend.syncAccount(account.id);
   expect((await backend.store.accounts.get(account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
   const threadId = (await backend.store.debug.snapshot()).messages[0]!.threadId;
+  minimalRequests = 0; // W03 full reconciliation includes an initial minimal snapshot.
   return { backend, account, threadId, client, captured, response, mutations,
     refuseHistory(status: number) { historyRefusal = status; heldHistory = { captured: gate(), response: gate() }; return heldHistory; },
-    allowHistory() { historyRefusal = undefined; },
+    allowHistory() {
+      historyRefusal = undefined;
+      // A genuine 429 now persists a cooldown. Advance both clocks past its finite wait.
+      timeAdvance += 360_000;
+      vi.spyOn(performance, "now").mockImplementation(() => elapsedNow() + timeAdvance);
+    },
     holdMutation(at: number) { heldMutation = { at, captured: gate(), response: gate() }; return heldMutation; },
     holdSend() { heldSend = { captured: gate(), response: gate() }; return heldSend; },
     minimalRequests: () => minimalRequests,
