@@ -42,7 +42,8 @@ export class AiAssist {
   }
 
   async enqueue(threadIds: readonly number[]): Promise<void> {
-    if (this.abort.signal.aborted || threadIds.length === 0 || !(await this.enabled())) return;
+    if (this.abort.signal.aborted || threadIds.length === 0) return;
+    if (!(await this.enabled()) || this.abort.signal.aborted) return;
     for (const id of threadIds) {
       if (this.seen.has(id)) continue;
       this.seen.add(id);
@@ -106,7 +107,7 @@ export class AiAssist {
   private async consider(threadId: number): Promise<"done" | "wait" | "stop"> {
     const { store } = this.host;
     const model = this.host.categorizer.model;
-    if (!(await this.enabled())) return "stop";
+    if (!(await this.enabled()) || this.abort.signal.aborted) return "stop";
     if (!model || !store.isOpen || !(await store.categorize.aiCandidate(threadId))) return "done";
     const set = (await store.categorize.threadFeatures([threadId])).get(threadId);
     if (!set || model.lookAlike(set.encoded)) return "done";
@@ -130,7 +131,7 @@ export class AiAssist {
       this.host.log("info", "categorization assist skipped", { aiKind: error instanceof AiError ? error.kind : "other" });
       return "stop";
     }
-    if (!(await this.enabled())) return "stop";
+    if (!(await this.enabled()) || this.abort.signal.aborted) return "stop";
     this.calls.push(Date.now());
     try {
       const { source } = set.root;

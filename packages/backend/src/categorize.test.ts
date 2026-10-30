@@ -566,6 +566,25 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(t.backend.aiAssist.pending).toBe(0);
   });
 
+  it("cannot admit queued IDs when shutdown follows enabled resolution before enqueue resumes", async () => {
+    let calls = 0;
+    const t = await assistMail(2, { aiFactory: (config) => createAi(config, { transport: { async complete(req) { calls++; return classification(req); } } }) });
+    setSetting(sqlDb(t.backend.store), "app", { aiCategorize: true, ai: { provider: "fake" } });
+    const has = t.backend.store.secrets.has.bind(t.backend.store.secrets);
+    const spy = vi.spyOn(t.backend.store.secrets, "has").mockImplementation(async (name) => {
+      const value = await has(name);
+      // Let the real settings read and enabled() resolve before stopping, ahead of enqueue's continuation.
+      if (name === "gmailClientSecret") queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => t.backend.aiAssist.stop())));
+      return value;
+    });
+    await t.backend.aiAssist.enqueue(t.threads);
+    spy.mockRestore();
+    await t.backend.aiAssist.drain();
+    expect(calls).toBe(0);
+    expect(t.backend.aiAssist.pending).toBe(0);
+    for (const id of t.threads) expect(t.decision(id)).toBeUndefined();
+  });
+
   it("retains completed non-decisions when later queued preparation is refused", async () => {
     let calls = 0;
     const t = await assistMail(3, { aiFactory: (config) => createAi(config, { transport: { async complete(req) {
