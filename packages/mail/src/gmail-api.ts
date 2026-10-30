@@ -609,7 +609,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
         if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();
-        if (responseMode === "json" && e instanceof ResponseBodyLimitError && path.startsWith("/messages")) throw new ProviderError(L("errors.gmail.invalidResponse"), false);
+        if (!sending && responseMode === "json" && e instanceof ResponseBodyLimitError && path.startsWith("/messages")) throw new ProviderError(L("errors.gmail.invalidResponse"), false);
         if (responseMode === "incoming" && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);

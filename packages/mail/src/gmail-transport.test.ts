@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createGmailApiProvider } from "./gmail-api";
-import { ProviderError, type ProviderContext } from "./types";
+import { buildRawPortable } from "./compose-portable";
+import { ProviderError, type SendPayload, type ProviderContext, type SyncSink } from "./types";
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 function provider(fetcher: typeof fetch, timeoutMs = 25) {
@@ -93,12 +94,134 @@ it("a stuck 401 cancellation cannot prevent the single fresh-token attempt", asy
   expect(calls).toBe(2);
 });
 
-it("an oversized successful send response stays uncertain after exactly one submission", async () => {
-  let calls = 0;
-  const p = provider(async () => { calls++; return Response.json({ id: "sent", ignored: "x".repeat(128 * 1024) }); }, 1000);
+const sendPayload: SendPayload = {
+  from: { name: "Sender", email: "sender@example.test" },
+  to: [{ name: "Recipient", email: "recipient@example.test" }], cc: [],
+  bcc: [{ name: "Hidden", email: "hidden@example.test" }],
+  subject: "Synthetic send", text: "Exact body", messageId: "send@example.test",
+  references: [], inReplyTo: null, providerThreadId: "thread-original",
+};
+
+function sendProvider(response: Response) {
+  const requests: { url: string; init?: RequestInit }[] = [];
+  const ctx = { account: { id: 1 }, store: {}, fetch: async (url, init) => {
+    requests.push({ url: String(url), init });
+    return response;
+  } } as ProviderContext;
+  const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: buildRawPortable, sendTimeoutMs: 1000 });
+  return { p, requests, send: (payload = sendPayload) => p.execute({ id: "send", kind: "send", target: {}, payload }) };
+}
+
+function expectSendRequest(requests: { url: string; init?: RequestInit }[]) {
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.url).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
+  expect(requests[0]!.init).toMatchObject({ method: "POST", headers: { authorization: "Bearer synthetic", "content-type": "application/json" } });
+  expect(typeof requests[0]!.init!.body).toBe("string");
+  const envelope = JSON.parse(requests[0]!.init!.body as string);
+  expect(Object.keys(envelope).sort()).toEqual(["raw", "threadId"]);
+  expect(envelope.threadId).toBe(sendPayload.providerThreadId);
+  expect(envelope.raw).toMatch(/^[A-Za-z0-9_-]+$/);
+  const mime = Buffer.from(envelope.raw, "base64url").toString();
+  expect(mime).toContain("From: Sender <sender@example.test>\r\n");
+  expect(mime).toContain("To: Recipient <recipient@example.test>\r\n");
+  expect(mime).toContain("Bcc: Hidden <hidden@example.test>\r\n");
+  expect(mime).toContain("Subject: Synthetic send\r\n");
+  expect(mime).toContain("Message-ID: <send@example.test>\r\n");
+  expect(mime).toContain(Buffer.from(sendPayload.text).toString("base64"));
+}
+
+it.each([undefined, "1"])("an oversized successful send response stays uncertain after exactly one submission (Content-Length %s)", async (length) => {
+  const bytes = new TextEncoder().encode(JSON.stringify({ id: "sent", ignored: "x".repeat(128 * 1024) }));
+  let offset = 0, pulls = 0;
+  let cancellation: unknown;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls++;
+      if (offset === bytes.length) return controller.close();
+      const end = Math.min(bytes.length, offset + 8192);
+      controller.enqueue(bytes.slice(offset, end)); offset = end;
+    },
+    cancel(reason) { cancellation = reason; },
+  }, { highWaterMark: 0 });
+  const reader = vi.spyOn(body, "getReader");
+  const { p, send, requests } = sendProvider(new Response(body, { headers: length ? { "content-length": length } : undefined }));
   try {
-    await expect(p.execute({ id: "send", kind: "send", target: {}, payload: {} })).rejects.toMatchObject({ retryable: false, ambiguous: true });
-    expect(calls).toBe(1);
+    const error = await send().catch((error: unknown) => error);
+    expectSendRequest(requests);
+    expect(reader).toHaveBeenCalledOnce();
+    expect(pulls).toBe(9);
+    expect(offset).toBe(65_536 + 8192);
+    expect(cancellation).toMatchObject({ name: "ResponseBodyLimitError", limit: 65_536 });
+    expect(body.locked).toBe(false);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ retryable: false, ambiguous: true, network: false });
+  } finally { await p.close(); }
+});
+
+it.each(["invalid JSON", "invalid UTF-8", "stream failure", "incomplete result"])("an accepted send with %s remains uncertain without resubmission", async (failure) => {
+  let reads = 0;
+  const body = new ReadableStream<Uint8Array>({ pull(controller) {
+    reads++;
+    if (failure === "stream failure") return controller.error(new TypeError("synthetic body failure"));
+    controller.enqueue(failure === "invalid UTF-8" ? new Uint8Array([255]) : new TextEncoder().encode(failure === "invalid JSON" ? "{" : "{}"));
+    controller.close();
+  } }, { highWaterMark: 0 });
+  const { p, send, requests } = sendProvider(new Response(body));
+  try {
+    const error = await send().catch((error: unknown) => error);
+    expectSendRequest(requests);
+    expect(reads).toBe(1);
+    expect(body.locked).toBe(false);
+    expect(error).toMatchObject({ retryable: false, ambiguous: true, network: false });
+  } finally { await p.close(); }
+});
+
+it("a complete successful send preserves the provider IDs after one submission", async () => {
+  const { p, send, requests } = sendProvider(Response.json({ id: "sent", threadId: "thread-sent" }));
+  try {
+    await expect(send()).resolves.toEqual({ providerMsgId: "sent", providerThreadId: "thread-sent" });
+    expectSendRequest(requests);
+  } finally { await p.close(); }
+});
+
+it("invalid prepared attachment input is refused before submission or response consumption", async () => {
+  const response = Response.json({ id: "sent" });
+  const reader = vi.spyOn(response.body!, "getReader");
+  const { p, send, requests } = sendProvider(response);
+  try {
+    await expect(send({ ...sendPayload, attachments: [{ assetId: "missing", filename: "missing.txt", mime: "text/plain", size: 1 }] })).rejects.toMatchObject({ retryable: false, ambiguous: false });
+    expect(requests).toEqual([]);
+    expect(reader).not.toHaveBeenCalled();
+  } finally { await p.close(); }
+});
+
+it.each([400, 403, 429, 503])("send status %i preserves its classification even if its body exceeds the limit", async (status) => {
+  const { p, send, requests } = sendProvider(new Response("x".repeat(128 * 1024), { status }));
+  try {
+    const error = await send().catch((error: unknown) => error);
+    expectSendRequest(requests);
+    expect(error).toMatchObject({ status, retryable: status === 429 || status >= 500, ambiguous: status >= 500 });
+  } finally { await p.close(); }
+});
+
+it("an oversized message listing remains a definitive read refusal without completing enumeration", async () => {
+  const paths: string[] = [];
+  const saveCursor = vi.fn();
+  const effect = vi.fn();
+  const ctx = { account: { id: 1 }, store: {}, loadCursor: async () => null, saveCursor,
+    fetch: async (url: Parameters<typeof fetch>[0]) => {
+      const path = new URL(String(url)).pathname;
+      paths.push(path);
+      return path.endsWith("/profile") ? Response.json({ historyId: "10" }) : Response.json({ messages: [], ignored: "x".repeat(300 * 1024) });
+    },
+  } as unknown as ProviderContext;
+  const sink: SyncSink = { signal: new AbortController().signal, windowStart: 0, ingest: effect, updateFlags: effect, removeMessages: effect, setBody: effect, setSyncState: async () => {}, pendingMessageIds: async () => new Set() };
+  const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: buildRawPortable });
+  try {
+    await expect(p.sync(sink)).rejects.toMatchObject({ retryable: false, ambiguous: false, network: false });
+    expect(paths.map((path) => path.split("/").at(-1))).toEqual(["profile", "messages"]);
+    expect(saveCursor).toHaveBeenCalledExactlyOnceWith({ reconciliation: expect.objectContaining({ stage: "enumerate", baseline: "10", pages: 0 }) }, expect.any(Function));
+    expect(effect).not.toHaveBeenCalled();
   } finally { await p.close(); }
 });
 
