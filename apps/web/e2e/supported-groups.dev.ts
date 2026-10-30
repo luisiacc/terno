@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import type { Node as PMNode } from "prosemirror-model";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, focusOn, readerShown, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -44,7 +45,7 @@ for (const scheme of ["light", "dark"] as const) test(`supported huge sibling gr
   const authored = await body.evaluate(async root => {
     // @ts-expect-error Vite resolves the application module in the browser.
     const { serialize } = await import("/src/components/composer/editor.ts");
-    const doc = (root as unknown as { pmViewDesc: { node: Parameters<typeof serialize>[0] } }).pmViewDesc.node;
+    const doc = (root as unknown as { pmViewDesc: { node: PMNode } }).pmViewDesc.node;
     return { ...serialize(doc), count: doc.childCount, domText: [...root.querySelectorAll("p")].map(p => p.textContent).join("\n") };
   });
   expect(authored.count).toBe(27028);
@@ -93,7 +94,7 @@ for (const scheme of ["light", "dark"] as const) test(`supported huge sibling gr
   const mixed = await body.evaluate(async root => {
     // @ts-expect-error Vite resolves the application module in the browser.
     const { serialize } = await import("/src/components/composer/editor.ts");
-    return serialize((root as unknown as { pmViewDesc: { node: Parameters<typeof serialize>[0] } }).pmViewDesc.node);
+    return serialize((root as unknown as { pmViewDesc: { node: PMNode } }).pmViewDesc.node);
   });
   const mixedSaved = await server.backend.server.invoke("drafts.list", {}, { clientId: "groups", origin: "dev" });
   expect(mixedSaved[0]!.bodyText).toBe(mixed.text); expect(mixedSaved[0]!.bodyHtml).toBe(mixed.html);
