@@ -144,7 +144,7 @@ export class GmailResponseFixture {
     };
     const ctx = {
       account: { id: options.accountId ?? 1 }, config: {}, incoming, incomingProcessor: this.pool.processor,
-      store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+      store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
       loadCursor: async () => null,
       saveCursor: async (cursor: unknown) => { this.counts.checkpoints++; this.checkpoints.push(cursor); },
       fetch: async (input: string | URL | Request) => {

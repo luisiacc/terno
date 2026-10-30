@@ -16,7 +16,7 @@ function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSign
   const ctx = {
     account: { id: 1 }, config: {}, incoming: { acquire: pipeline.acquire.bind(pipeline), promote: promote ? (_id: number, signal: AbortSignal) => promote(signal) : pipeline.promote.bind(pipeline) },
     incomingProcessor: { run: (_input: unknown, signal: AbortSignal) => process(signal) },
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

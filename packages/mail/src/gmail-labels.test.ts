@@ -21,7 +21,7 @@ function setup(o: { labels: () => unknown; messageLabels?: string[]; labelsBody?
   const ctx = {
     incoming, incomingProcessor: processor,
     account: { id: 1 }, config: {},
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => cursor, saveCursor: async (next: unknown) => { cursor = next; },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

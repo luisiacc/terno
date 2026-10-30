@@ -1011,6 +1011,7 @@ export class BackendCore {
     const locations = store.locations;
     return {
       messageByProviderId: (id) => read(() => store.messageByProviderId(id)),
+      syncedMessagePage: (after) => read(() => store.syncedMessagePage(after)),
       syncedMessages: () => read(() => store.syncedMessages()),
       pendingAttachmentBodies: (limit) => read(() => store.pendingAttachmentBodies(limit)),
       pendingFlagSnapshots: (request) => read(() => store.pendingFlagSnapshots(request)),

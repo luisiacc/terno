@@ -19,7 +19,7 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
   const ctx = {
     incoming, incomingProcessor: processor,
     account: { id: 1 }, config: {},
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

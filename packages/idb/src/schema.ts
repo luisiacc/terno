@@ -255,6 +255,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
+      if (event.oldVersion < 19) tx.objectStore("messages").createIndex("cached_provider", ["account_id", "provider_msg_id"]);
       if (event.oldVersion < OP_STORAGE_VERSION) for (const name of OP_PART_STORES) db.createObjectStore(name);
       if (event.oldVersion >= 1) {
         if (event.oldVersion < 8) for (const name of ["flag_clocks", "message_flag_intents", "flag_op_effects"]) db.createObjectStore(name);

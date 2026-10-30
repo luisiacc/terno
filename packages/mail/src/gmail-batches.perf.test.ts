@@ -15,7 +15,7 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   const ctx = {
     incoming: new IncomingReads(),
     account: { id: 1 }, config: {},
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (value: unknown) => { saved = value; cursorWrites++; maxCursorBytes = Math.max(maxCursorBytes, JSON.stringify(value).length); },
     fetch: async (input: string | URL) => {
       requests++;

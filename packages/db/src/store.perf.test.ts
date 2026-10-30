@@ -189,3 +189,10 @@ describe("People and Waiting (plan 17)", () => {
     });
   });
 });
+
+it("cached refresh keyset queries stay within the 50k store read budget", async () => {
+  await gate("cached refresh page (50)", 5, async (i) => {
+    const page = await store.providerStore(accountIds[i % accountIds.length]!).syncedMessagePage(i % 2 ? "m" : undefined);
+    expect(page.items.length).toBeLessThanOrEqual(50);
+  });
+});

@@ -555,3 +555,22 @@ it("People and Waiting (plan 17) page from their own orders: every page, counts 
   expect(sparse.n).toBeLessThanOrEqual(20);
   rewrite((t) => ({ person: keep.get(t.id as number)![0], waiting_since: keep.get(t.id as number)![1] }));
 }, 900_000);
+
+it("cached refresh keyset traversal at 50k never stalls a frame", async () => {
+  const accounts = await store.accounts.list();
+  let count = 0;
+  const result = await stalls(FRAME, async () => {
+    for (const account of accounts) {
+      let after: string | undefined;
+      while (true) {
+        const page = await store.providerStore(account.id).syncedMessagePage(after);
+        expect(page.items.length).toBeLessThanOrEqual(50);
+        count += page.items.length;
+        if (!page.next) break;
+        after = page.next;
+      }
+    }
+  });
+  expect(count).toBeGreaterThanOrEqual(50_000);
+  expect(result.maxStall).toBeLessThanOrEqual(FRAME * MULT);
+});

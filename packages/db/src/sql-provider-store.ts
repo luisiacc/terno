@@ -27,6 +27,14 @@ export class SqlProviderStore implements ProviderStore {
     return r ? { id: r.id, subject: r.subject, fromEmail: r.from_email } : null;
   }
 
+  async syncedMessagePage(after = "") {
+    const rows = this.db.all<{ id: number; providerMsgId: string }>(
+      "SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND provider_msg_id > ? ORDER BY provider_msg_id LIMIT 50",
+      this.accountId, after,
+    );
+    return { items: rows.filter((r) => !r.providerMsgId.startsWith("local:")), next: rows.at(-1)?.providerMsgId };
+  }
+
   async syncedMessages() {
     return this.db
       .all<{ id: number; provider_msg_id: string; date: number }>(

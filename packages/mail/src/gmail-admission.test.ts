@@ -16,7 +16,7 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\n\r\nExact body"));
   const ctx = {
     account: { id: 1 }, config: {}, incoming,
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
@@ -67,7 +67,7 @@ it("does not dispatch queued siblings after a systemic raw failure", async () =>
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\n\r\nExact body"));
   const ctx = {
     account: { id: 1 }, config: {}, incoming,
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

@@ -55,6 +55,7 @@ describe("Gmail requests and the network (plan 20)", () => {
       store: {
         setting: async () => ({ gmailClientId: "client" }),
         syncedMessages: async () => [{ id: 7, providerMsgId: "g7" }],
+        syncedMessagePage: async (after?: string) => after ? { items: [] } : { items: [{ id: 7, providerMsgId: "g7" }], next: "g7" },
         messageByProviderId: async () => phase === "new raw" ? null : { id: 7 },
       },
       loadCursor: async () => phase === "cached full" ? null : { historyId: "10" },

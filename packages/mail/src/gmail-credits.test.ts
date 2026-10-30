@@ -29,7 +29,7 @@ function setup(fail = false) {
           return () => { expect(done).toBe(false); done = true; held -= bytes; release(); };
         },
       },
-      store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+      store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
       loadCursor: async () => null, saveCursor: async (value: unknown) => { checkpoints.push(value); },
       fetch: async (input: string | URL) => {
         const url = new URL(String(input));

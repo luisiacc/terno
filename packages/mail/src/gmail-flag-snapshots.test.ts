@@ -23,7 +23,7 @@ function setup(count = 3, bad: "shape" | "quota" | "gone" | null = null, tokens?
         const end = Math.min(through, after + Math.min(2, p.limit));
         return { items: Array.from({ length: Math.max(0, end - after) }, (_, i) => ({ id: after + i + 1, providerMsgId: `m${after + i + 1}` })), throughMessageId: through, hasMore: end < through };
       },
-      async messageByProviderId() { return null; }, async syncedMessages() { return []; }, async pendingAttachmentBodies() { return []; },
+      async messageByProviderId() { return null; }, async syncedMessages() { return []; }, async syncedMessagePage() { return { items: [] }; }, async pendingAttachmentBodies() { return []; },
     },
     loadCursor: async () => ({ historyId: "10" }), saveCursor: async (cursor: unknown) => { cursors.push(cursor); },
     fetch: async (input: string | URL) => {

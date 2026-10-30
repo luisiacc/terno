@@ -151,6 +151,38 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up", (kind) => {
+  it.each(["before", "after"] as const)("resumes bounded cached pages after %s checkpoint failure", async (failure) => {
+    const t = await mailbox(kind);
+    for (let i = 0; i < 55; i++) t.add(`cached-${String(i).padStart(3, "0")}`);
+    await t.backend.syncAccount(t.account.id);
+    const before = (await t.backend.store.debug.snapshot()).messages;
+    const store = t.backend.store.providerStore(t.account.id);
+    vi.spyOn(store, "syncedMessages").mockImplementation(async () => { throw new Error("whole-account read forbidden"); });
+    await t.backend.store.accounts.setCursor(t.account.id, { historyId: "1" });
+    const save = t.context.saveCursor.bind(t.context);
+    let failed = false;
+    t.context.saveCursor = async (value, check) => {
+      const phase = (value as { reconciliation?: { refreshAfter?: string } }).reconciliation;
+      if (!failed && phase?.refreshAfter) {
+        failed = true;
+        if (failure === "after") await save(value, check);
+        throw new Error("checkpoint failure");
+      }
+      await save(value, check);
+    };
+    await t.backend.syncAccount(t.account.id);
+    expect(failed).toBe(true);
+    const phase = (await t.cursor() as { reconciliation: { baseline: string; refreshAfter?: string } }).reconciliation;
+    expect(phase.baseline).toBe(t.baseline);
+    expect(phase.refreshAfter).toBe(failure === "after" ? "cached-049" : undefined);
+    await t.reopen(); t.requests.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    const minimal = t.requests.filter((url) => url.searchParams.get("format") === "minimal");
+    expect(minimal).toHaveLength(failure === "after" ? 5 : 55);
+    expect(await t.cursor()).toEqual({ historyId: t.baseline });
+    expect((await t.backend.store.debug.snapshot()).messages).toEqual(before);
+  });
+
   it("retains automatic outage retries for an ordinary minimal GET 503", async () => {
     const t = await mailbox(kind, true); t.seed(); await t.backend.syncAccount(t.account.id);
     const old = await t.cursor();

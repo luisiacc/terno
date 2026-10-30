@@ -152,7 +152,7 @@ import {
   type R,
 } from "./mail";
 import type { Key, MemDb } from "./mem";
-import { IdbProviderStore } from "./provider-store";
+import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
@@ -1790,7 +1790,7 @@ export class IdbMailStore implements MailStore {
 
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
-    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
+    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn), (after) => this.exclusive(() => idbCachedPage(this.idb, this.c, accountId, after)), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
     if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
       const read = s.setting.bind(s);
       s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);

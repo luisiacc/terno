@@ -108,6 +108,7 @@ export class IdbProviderStore implements ProviderStore {
     private readonly accountId: number,
     command: Command,
     private readonly read: Command,
+    private readonly cachedPage: (after?: string) => ReturnType<ProviderStore["syncedMessagePage"]>,
     private readonly flagSnapshots: (request: FlagSnapshotRequest) => Promise<FlagSnapshotPage>,
   ) {
     this.locations = new IdbImapLocations(c, accountId, command, read);
@@ -121,6 +122,8 @@ export class IdbProviderStore implements ProviderStore {
       return r ? { id: r.id as number, subject: r.subject as string, fromEmail: r.from_email as string } : null;
     });
   }
+
+  syncedMessagePage(after?: string) { return this.cachedPage(after); }
 
   syncedMessages() {
     return this.read(() =>
@@ -530,4 +533,27 @@ class IdbImapLocations implements ImapLocationStore {
       return hit ? { id: hit.id as number } : null;
     });
   }
+}
+
+/** Native index seek: never materialize the account bucket or load message payloads. */
+export function idbCachedPage(idb: IDBDatabase, c: Ctx, accountId: number, after = ""): ReturnType<ProviderStore["syncedMessagePage"]> {
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction("messages", "readonly");
+    const range = IDBKeyRange.bound([accountId, after], [accountId + 1], true, true);
+    const request = tx.objectStore("messages").index("cached_provider").openKeyCursor(range);
+    const items: { id: number; providerMsgId: string }[] = [];
+    let scanned = 0, next: string | undefined;
+    tx.onabort = () => reject(tx.error ?? new Error("Cached refresh cursor aborted"));
+    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => resolve({ items, next });
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const key = (cursor.key as [number, string])[1];
+      next = key; scanned++;
+      const row = T(c, "messages").get(cursor.primaryKey as number);
+      if (row?.account_id === accountId && row.provider_msg_id === key && !key.startsWith("local:")) items.push({ id: row.id, providerMsgId: key });
+      if (scanned < 50) cursor.continue();
+    };
+  });
 }

@@ -64,6 +64,7 @@ interface Reconciliation {
   stage: "enumerate" | "refresh" | "catchup";
   next?: string;
   pages: number;
+  refreshAfter?: string;
 }
 interface ReconcileCursor {
   historyId?: string;
@@ -91,12 +92,13 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
     || (completed !== undefined && earlierHistory(value.baseline, completed))
     || !Number.isSafeInteger(value.pages) || (value.pages as number) < 0 || (value.pages as number) > LIST_PAGES_MAX
     || !["enumerate", "refresh", "catchup"].includes(value.stage as string)
+    || (value.refreshAfter !== undefined && (value.stage === "enumerate" || !nonempty(value.refreshAfter) || value.refreshAfter.length > LIST_TOKEN_MAX))
     || (value.next !== undefined && (!nonempty(value.next) || value.next.length > LIST_TOKEN_MAX))
     || (value.stage !== "enumerate" && (value.next !== undefined || value.pages === 0))
     || (value.stage === "enumerate" && ((value.pages === 0) !== (value.next === undefined)))) return;
   // Pick only bounded known fields; a malformed/foreign cursor is never rewritten wholesale.
   return { version: 1, email, intent: value.intent as string, after: value.after as number, baseline: value.baseline,
-    stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.next !== undefined && { next: value.next as string }) };
+    stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.refreshAfter !== undefined && { refreshAfter: value.refreshAfter as string }), ...(value.next !== undefined && { next: value.next as string }) };
 }
 
 /** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
@@ -871,11 +873,14 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
     if (state.stage === "refresh") {
       sink.check();
-      const cached = await store.syncedMessages();
-      // Only one 50-message group retains minimal responses at a time.
-      for (let offset = 0; offset < cached.length; offset += 50) {
+      while (state.stage === "refresh") {
+        sink.check();
+        const page = await store.syncedMessagePage(state.refreshAfter);
+        sink.check();
+        if (page.next === undefined) break;
+        if (!nonempty(page.next) || page.next.length > LIST_TOKEN_MAX || page.next <= (state.refreshAfter ?? "") || page.items.length > 50) throw invalidResponse();
         const updates: FlagUpdate[] = [], gone: number[] = [];
-        await download(cached.slice(offset, offset + 50), async (m) => {
+        await download(page.items, async (m) => {
           try {
             const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
             updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
@@ -888,6 +893,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (updates.length) await sink.updateFlags(updates);
         sink.check();
         if (gone.length) await sink.removeMessages(gone);
+        await save({ ...state, refreshAfter: page.next });
       }
       await save({ ...state, stage: "catchup" });
     }

@@ -28,7 +28,7 @@ it.each(["token failure", "raw failure", "401 retry", "reset", "caller"] as cons
       signals.add(args[1]); if (args[2]) signals.add(args[2]);
       return incoming.acquire(...args);
     } },
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
@@ -98,7 +98,7 @@ it("lets an already-dispatched read settle while canceling later preparation", a
   let activeSignal: AbortSignal | null | undefined;
   const ctx = {
     account: { id: 1 }, config: {}, incoming,
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL, init?: RequestInit) => {
       const url = new URL(String(input));

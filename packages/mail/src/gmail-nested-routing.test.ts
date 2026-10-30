@@ -28,7 +28,7 @@ async function collect(bytes: Uint8Array, processor: IncomingProcessor) {
   const writes: IncomingMessage[][] = [], checkpoints: unknown[] = [], removals: unknown[] = [];
   const ctx = {
     account: { id: 1 }, config: {}, incoming: pipeline, incomingProcessor: processor,
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
+    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));

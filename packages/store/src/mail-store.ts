@@ -191,6 +191,8 @@ export interface SendCommand {
 export interface ProviderStore {
   pendingFlagSnapshots(request: FlagSnapshotRequest): Promise<FlagSnapshotPage>;
   messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string } | null>;
+  /** Scan at most 50 account/provider keys, then exclude local rows. next is the last scanned key; absent only on an empty scan. */
+  syncedMessagePage(after?: string): Promise<{ items: { id: number; providerMsgId: string }[]; next?: string }>;
   /** synced (non-local) messages of the account */
   syncedMessages(): Promise<{ id: number; providerMsgId: string; date: number }[]>;
   /** messages whose body hasn't been downloaded, newest first, with one IMAP location each */

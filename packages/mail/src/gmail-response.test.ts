@@ -47,6 +47,10 @@ function mailbox(options: { cursor?: unknown; cached?: boolean | number; respond
     store: {
       messageByProviderId: async (id: string) => cached.find((m) => m.providerMsgId === id),
       syncedMessages: async () => cached,
+      syncedMessagePage: async (after = "") => {
+        const items = cached.filter((m) => m.providerMsgId > after).sort((a, b) => a.providerMsgId.localeCompare(b.providerMsgId, "en", { numeric: false })).slice(0, 50);
+        return { items, next: items.at(-1)?.providerMsgId };
+      },
       pendingAttachmentBodies: async () => [],
     },
     loadCursor: async () => cursor,
