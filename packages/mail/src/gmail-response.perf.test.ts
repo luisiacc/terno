@@ -46,7 +46,7 @@ it.each([25, 35])("validates six %i MiB raw responses within the backend slice b
     expect(timing.stall, `raw validation stall (${mib} MiB, six reader entries, one full bad worker): ${JSON.stringify(timing)}`).toBeLessThanOrEqual(budget);
     expect(error).toBeInstanceOf(ProviderError);
     expect(downloaded).toBe(6);
-    expect(checkpoints).toBe(0);
+    expect(checkpoints).toBe(1);
     expect(effects).toBe(0);
   } catch (error) { failure = { error }; }
   await fixture.finish(failure);
@@ -76,8 +76,13 @@ it("admits a valid promoted Gmail body through the actual worker and sink", asyn
     expect(fixture.pool.jobs[0]).toMatchObject({ id: "valid", bytes: fixture.wireBytes("valid"), settled: true, succeeded: true });
     expect(fixture.pool.active).toBe(0);
     expect(fixture.counts.ingested).toBe(1);
-    expect(fixture.counts.checkpoints).toBe(2);
-    expect(fixture.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(fixture.counts.checkpoints).toBe(4);
+    expect(fixture.checkpoints).toMatchObject([
+      { reconciliation: { stage: "enumerate", pages: 0, baseline: "10" } },
+      { reconciliation: { stage: "refresh", pages: 1, baseline: "10" } },
+      { reconciliation: { stage: "catchup", baseline: "10" } },
+      { historyId: "10" },
+    ]);
     expect(fixture.historyStarts).toEqual(["10"]);
     expect(fixture.lastBodyText).toBe(`${text}\n`);
     expect(fixture.timingReport().stall).toBeLessThanOrEqual(15 * BUDGET_MULTIPLIER);
@@ -100,7 +105,7 @@ it("refuses the empty json-only Gmail fixture before granting a timing witness",
     expect(fixture.counts.jsonCalls).toBe(0);
     expect(fixture.pool.jobs).toHaveLength(0);
     expect(() => fixture.timingReport()).toThrow(GmailFixtureEntryError);
-    expect(fixture.counts.checkpoints).toBe(0);
+    expect(fixture.counts.checkpoints).toBe(1);
     expect(fixture.counts.effects).toBe(0);
   } catch (error) { failure = { error }; }
   await fixture.finish(failure);
@@ -134,7 +139,7 @@ it.each([25, 35])("joins six independent %i MiB bad Gmail validations on one rea
       expect(fixture.counts.promotionReleaseCalls).toBe(1);
       expect(fixture.readers[0]).toMatchObject({ readerObtained: true, readerClosed: true, produced: fixture.wireBytes(`m${i}`) });
       expect(pool.jobs.find((job) => job.id === `m${i}`)).toMatchObject({ bytes: fixture.wireBytes(`m${i}`), settled: true, succeeded: false, code: "malformed-base64" });
-      expect(fixture.counts.checkpoints).toBe(0);
+      expect(fixture.counts.checkpoints).toBe(1);
       expect(fixture.counts.effects).toBe(0);
       expect(fixture.timingReport().stall).toBeLessThanOrEqual(budget);
     }

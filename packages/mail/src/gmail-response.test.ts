@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { IncomingPipeline } from "./incoming";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -86,7 +87,7 @@ async function rejectedRead(box: ReturnType<typeof mailbox>) {
   const error = await box.sync().catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ProviderError);
   expect(error).toMatchObject({ retryable: true, ambiguous: false });
-  expect(box.checkpoints).toEqual([]);
+  expect(completedGmailCursors(box.checkpoints)).toEqual([]);
   expect(box.removed).toEqual([]);
   return box;
 }
@@ -149,9 +150,9 @@ describe("Gmail successful response validation", () => {
       if (url.searchParams.get("format") === "minimal") return { id: "m1" };
     } });
     await box.sync();
-    expect(box.checkpoints).toEqual([{ historyId: "90071992547409931234" }, { historyId: "90071992547409931234" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "90071992547409931234" }]);
     expect(box.flags[0]).toMatchObject({ gmailLabels: [], flags: { inInbox: false, isRead: true } });
-    const delta = mailbox({ cursor: box.checkpoints[0], respond: (url) => url.pathname.endsWith("/history") ? { historyId: "90071992547409931235" } : undefined });
+    const delta = mailbox({ cursor: completedGmailCursors(box.checkpoints)[0], respond: (url) => url.pathname.endsWith("/history") ? { historyId: "90071992547409931235" } : undefined });
     await delta.sync();
     expect(delta.requests[0]?.searchParams.get("startHistoryId")).toBe("90071992547409931234");
     expect(delta.checkpoints).toEqual([{ historyId: "90071992547409931235" }]);
@@ -175,7 +176,7 @@ describe("Gmail successful response validation", () => {
     const box = mailbox({ respond: (url) => url.searchParams.get("format") === "raw" ? { ...message, raw: source, internalDate: "0", sizeEstimate: 1 } : undefined });
     await box.sync();
     expect(box.ingested[0]).toMatchObject({ providerMsgId: "m1", date: 0, size: 1 });
-    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
   });
 
   it("rejects a decreasing history checkpoint without Number precision loss", async () => {
@@ -198,20 +199,20 @@ describe("Gmail successful response validation", () => {
   it.each(["9007199254740995", "9007199254740999"])("accepts unchanged or noncontiguous increasing history checkpoint %s", async (checkpoint) => {
     const box = mailbox({ cursor: { historyId: "9007199254740995" }, respond: (url) => url.pathname.endsWith("/history") ? { historyId: checkpoint } : undefined });
     await box.sync();
-    expect(box.checkpoints).toEqual([{ historyId: checkpoint }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: checkpoint }]);
   });
 
   it.each([{}, { historyId: 10 }, { historyId: "invalid" }])("reconciles a malformed persisted cursor instead of using it: %j", async (cursor) => {
     const box = mailbox({ cursor });
     await box.sync();
     expect(box.requests[0]?.pathname.endsWith("/profile")).toBe(true);
-    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
   });
 
   it.each(["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"])("accepts sparse %s references and extra provider fields", async (kind) => {
     const box = mailbox({ cached: true, cursor: { historyId: "10" }, respond: (url) => url.pathname.endsWith("/history") ? { historyId: "11", history: [{ [kind]: [{ message: { id: "m1", futureField: true } }] }], futureField: [] } : undefined });
     await box.sync();
-    expect(box.checkpoints).toEqual([{ historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
     if (kind === "messagesDeleted") expect(box.removed).toEqual([1]);
     if (kind.startsWith("labels")) expect(box.flags[0]).toMatchObject({ flags: { inInbox: true, isRead: false } });
   });
@@ -228,7 +229,7 @@ describe("Gmail successful response validation", () => {
     broken = false;
     await box.sync();
     expect(box.ingested.map((m) => m.providerMsgId)).toEqual(["m1", "m2"]);
-    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
   });
 
   it.each(["raw", "minimal"] as const)("stops queued %s downloads and settles existing workers before rejecting a malformed batch", async (format) => {
@@ -256,7 +257,7 @@ describe("Gmail successful response validation", () => {
     expect(box.requests.filter((u) => u.searchParams.get("format") === format)).toHaveLength(6);
     expect(box.ingested).toEqual([]);
     expect(box.flags).toEqual([]);
-    expect(box.checkpoints).toEqual([]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([]);
   });
 
   it("ingests a large raw body in its single download", async () => {
@@ -282,7 +283,7 @@ describe("Gmail successful response validation", () => {
     } finally {
       clearTimeout(timer);
     }
-    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
   });
 
   it("retains an oversized message's bounded headers and unavailable state while a neighbor is captured", async () => {
@@ -297,7 +298,7 @@ describe("Gmail successful response validation", () => {
     expect(box.ingested.find((m) => m.providerMsgId === "large")).toMatchObject({ subject: "Oversized", from: { email: "sender@example.com" }, bodyState: "partial", captureUnavailable: "size", bodyText: null, bodyHtml: null });
     expect(box.ingested.find((m) => m.providerMsgId === "large")?.attachments).toBeUndefined();
     expect(box.ingested.find((m) => m.providerMsgId === "m1")?.bodyText).toContain("Original body");
-    expect(box.checkpoints).toEqual([{ historyId: "10" }, { historyId: "11" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);
   });
 
   it("refuses invalid trailing padding even when oversized raw capture decodes only headers", async () => {
@@ -318,7 +319,7 @@ it("cancels catch-up token preparation without a later history dispatch or termi
   const waiting = new Promise<void>((resolve) => { entered = resolve; });
   const token = new Promise<string>((resolve) => { release = resolve; });
   const box = mailbox({ signal: abort.signal, token: async () => {
-    if (box.checkpoints.length) { entered(); return token; }
+    if (box.checkpoints.some((value) => (value as { reconciliation?: { stage: string } }).reconciliation?.stage === "catchup")) { entered(); return token; }
     return "token";
   } });
   const sync = box.sync();
@@ -326,7 +327,8 @@ it("cancels catch-up token preparation without a later history dispatch or termi
     await waiting; abort.abort(new Error("Synthetic cancellation"));
     await expect(sync).rejects.toBe(abort.signal.reason);
     expect(box.requests.some((u) => u.pathname.endsWith("/history"))).toBe(false);
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([]);
+    expect(box.checkpoints.at(-1)).toMatchObject({ reconciliation: { stage: "catchup", baseline: "10" } });
   } finally { release("token"); await sync.catch(() => {}); }
 });
 
@@ -347,7 +349,8 @@ it("cancels a pending catch-up history body without advancing beyond its baselin
   try {
     await waiting; const before = box.requests.length; abort.abort(new Error("Synthetic cancellation"));
     await expect(sync).rejects.toMatchObject({ retryable: true });
-    expect(box.checkpoints).toEqual([{ historyId: "10" }]);
+    expect(completedGmailCursors(box.checkpoints)).toEqual([]);
+    expect(box.checkpoints.at(-1)).toMatchObject({ reconciliation: { stage: "catchup", baseline: "10" } });
     expect(box.requests).toHaveLength(before);
   } finally { if (!canceled) finish(); await sync.catch(() => {}); }
 });

@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { expect, it, vi } from "vitest";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import { IncomingReads } from "./incoming";
@@ -44,7 +45,7 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
     if (action === "caller") expect(error).toBe(sinkAbort.signal.reason);
     else expect(error).toMatchObject({ name: "ProviderError", retryable: true, ambiguous: false, network: false });
     expect(downloads).toBe(0);
-    expect(checkpoints).toEqual([]);
+    expect(completedGmailCursors(checkpoints)).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
     release(); spy.mockRestore();
@@ -52,7 +53,7 @@ it.each(["reset", "close", "caller"] as const)("cancels queued raw preparation o
     if (action === "reset") {
       await provider.sync(sink);
       expect(downloads).toBe(1);
-      expect(checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+      expect(completedGmailCursors(checkpoints)).toEqual([{ historyId: "10" }]);
     }
   } finally {
     vi.useRealTimers(); sinkAbort.abort(); release(); incoming.close(); spy.mockRestore();
@@ -86,7 +87,7 @@ it("does not dispatch queued siblings after a systemic raw failure", async () =>
   try {
     await expect(provider.sync(sink)).rejects.toMatchObject({ name: "ProviderError", retryable: true });
     expect(downloads).toEqual(["bad"]);
-    expect(checkpoints).toEqual([]);
+    expect(completedGmailCursors(checkpoints)).toEqual([]);
     (await incoming.acquire(2, new AbortController().signal))();
   } finally { incoming.close(); await provider.close(); }
 });

@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { afterEach, expect, it } from "vitest";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import { IncomingPipeline } from "./incoming";
@@ -61,7 +62,7 @@ it("charges completed metadata across accounts and makes progress before count b
     expect(t.firstWrite).toBeLessThan(100);
     expect(t.batches.flat()).toHaveLength(100);
     expect(t.held).toBe(0);
-    expect(t.checkpoints).toEqual(Array.from({ length: 4 }, () => ({ historyId: "10" })));
+    expect(completedGmailCursors(t.checkpoints)).toEqual(Array.from({ length: 2 }, () => ({ historyId: "10" })));
   } finally { t.pipeline.close(); }
 });
 
@@ -72,7 +73,7 @@ it("releases detached and discarded credits after durable failure without checkp
     expect(outcomes).toEqual([{ status: "rejected", reason: t.failure }, { status: "rejected", reason: t.failure }]);
     expect(t.charges).toBeGreaterThan(0);
     expect(t.held).toBe(0);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
     expect(t.pipeline.retainCompleted(4 * 1024 * 1024)).toBeTypeOf("function");
   } finally { t.pipeline.close(); }
 });

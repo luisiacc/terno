@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import { IncomingPipeline } from "./incoming";
@@ -59,7 +60,7 @@ it("excludes promotion waiting from the remaining network budget without resetti
     expect(await work).toMatchObject({ retryable: true });
     expect(canceled).toBe(true);
     expect(source.locked).toBe(false);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
   } finally { resume(); await t.close(); await vi.runOnlyPendingTimersAsync(); await work; }
 });
@@ -84,9 +85,9 @@ it.each(["complete", "reset", "caller", "timeout"] as const)("stops the network 
     if (action === "caller") t.abort.abort();
     finish();
     const error = await work;
-    if (action === "complete") { expect(error).toBeUndefined(); expect(t.writes).toHaveLength(1); expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]); }
+    if (action === "complete") { expect(error).toBeUndefined(); expect(t.writes).toHaveLength(1); expect(completedGmailCursors(t.checkpoints)).toEqual([{ historyId: "10" }]); }
     else {
-      expect(error).toBeDefined(); expect(t.writes).toEqual([]); expect(t.checkpoints).toEqual([]);
+      expect(error).toBeDefined(); expect(t.writes).toEqual([]); expect(completedGmailCursors(t.checkpoints)).toEqual([]);
       if (action === "caller") expect(error).toBe(t.abort.signal.reason);
       if (action === "timeout") expect(error).toMatchObject({ code: "worker-timeout", retryable: false, network: false, ambiguous: false });
     }
@@ -106,7 +107,7 @@ it.each(["input-limit", "result-limit", "mime-limit-parts", "envelope-unavailabl
     expect(error).not.toHaveProperty("status");
     expect(t.writes).toEqual([]);
     expect(t.removed).toEqual([]);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { await t.close(); }
 });
 
@@ -123,7 +124,7 @@ it("rejects an oversized delivered backing allocation before processing and canc
     expect(calls).toBe(0);
     expect(canceled).toBe(true);
     expect(response.body!.locked).toBe(false);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { await t.close(); }
 });
 
@@ -137,7 +138,7 @@ it.each(["base64", "quoted-printable"] as const)("never falls back inline when e
     await expect(t.sync()).rejects.toMatchObject({ code: "worker-unavailable", retryable: false, network: false });
     expect(calls).toBe(1);
     expect(t.writes).toEqual([]);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { await t.close(); }
 });
 
@@ -158,7 +159,7 @@ it.each(["caller", "reset", "close"] as const)("cancels a tiny MIME-triggered qu
     if (action === "caller") expect(error).toBe(t.abort.signal.reason);
     else expect(error).toMatchObject({ retryable: true, network: false });
     expect(calls).toBe(0);
-    expect(t.writes).toEqual([]); expect(t.checkpoints).toEqual([]);
+    expect(t.writes).toEqual([]); expect(completedGmailCursors(t.checkpoints)).toEqual([]);
     active();
     (await pipeline.promote(2, new AbortController().signal))();
   } finally { active(); await t.close(); await work; pipeline.close(); }

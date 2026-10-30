@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { IncomingPipeline } from "./incoming";
 import { createNodeIncomingProcessor } from "../../backend/src/incoming-worker";
 import { expect, it } from "vitest";
@@ -53,7 +54,7 @@ it("flushes completed message bytes before retaining the whole count batch", asy
     expect(t.batches.flatMap((batch) => batch.map((m) => m.providerMsgId)).sort()).toEqual(Array.from({ length: 20 }, (_, i) => `m${i}`).sort());
     for (const batch of t.batches) expect(batch.reduce((n, m) => n + (m.bodyText?.length ?? 0) * 2 + (m.bodyHtml?.length ?? 0) * 2, 0)).toBeLessThanOrEqual(4 * 1024 * 1024);
     expect(t.maxSink).toBe(1);
-    expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([{ historyId: "10" }]);
   } finally { await t.close(); }
 });
 
@@ -82,7 +83,7 @@ it("durable sink failure settles producers without a checkpoint or concurrent st
     expect(t.downloads).toBe(settledDownloads);
     expect(t.firstIngestAt).toBeLessThan(20);
     expect(t.maxSink).toBe(1);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
     expect(t.batches).toEqual([]);
   } finally { await t.close(); }
 });
@@ -98,10 +99,10 @@ it("a blocked durable flush applies backpressure and prevents checkpoint promoti
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(t.downloads).toBeLessThan(20);
     expect(t.maxSink).toBe(1);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
     release(); await work;
     expect(t.batches.flat()).toHaveLength(20);
-    expect(t.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([{ historyId: "10" }]);
   } finally { release(); await work.catch(() => {}); await t.close(); }
 });
 
@@ -116,7 +117,7 @@ it.each([1, 49, 50])("cancellation during the last admitted write of %i messages
     t.abort(); release();
     expect((await result)[0]).toMatchObject({ status: "rejected", reason: { name: "AbortError" } });
     expect(t.batches.flat()).toHaveLength(count);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { release(); await result; await t.close(); }
 });
 
@@ -131,6 +132,6 @@ it.each([1, 49, 50])("reset during the last admitted write of %i messages finish
     t.p.reset?.(); release();
     expect((await result)[0]).toMatchObject({ status: "rejected" });
     expect(t.batches.flat()).toHaveLength(count);
-    expect(t.checkpoints).toEqual([]);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { release(); await result; await t.close(); }
 });

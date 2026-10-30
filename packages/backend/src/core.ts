@@ -1212,13 +1212,15 @@ export class BackendCore {
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
       let observation: FlagObservation | null = null;
+      const windowDays = (await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
       const sink: SyncSink = {
         signal: life.abort.signal,
         ingest: async (messages, o) => {
           await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, observation ?? undefined);
         },
         // the account's own window, else the general one
-        windowStart: this.now() - ((await this.store.accounts.get(accountId))?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays) * 86_400_000,
+        windowDays,
+        windowStart: this.now() - windowDays * 86_400_000,
         updateFlags: async (updates) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
@@ -1266,6 +1268,7 @@ export class BackendCore {
           observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
           this.assertCurrent(life);
           await provider.sync(sink);
+          if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
           // plan 68: the account's own folders (Gmail's labels), only when they may have changed; a failure waits for the next pass
           try {
             await provider.folders?.(sink);
@@ -1274,7 +1277,7 @@ export class BackendCore {
             if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError) throw error;
           }
         } finally { arrivals.end(); }
-        if (!this.current(life)) return;
+        if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.attention.prime(accountId);
         this.connectivity.succeeded(accountId);
@@ -1286,6 +1289,7 @@ export class BackendCore {
         }
         // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
         const sendOnly = (await this.accountRead(life, () => this.store.accounts.get(accountId)))?.syncState.authScope === "send";
+        if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) return;
         await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
         if (!this.current(life)) return;
         this.connectivity.waitForSignIn(accountId, false);
@@ -1300,7 +1304,7 @@ export class BackendCore {
           this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
         });
       } catch (caught) {
-        if (!this.current(life)) return;
+        if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;

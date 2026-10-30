@@ -54,8 +54,41 @@ interface GmailMessage {
   raw?: string;
 }
 
-interface Cursor {
-  historyId: string;
+interface Cursor { historyId: string }
+interface Reconciliation {
+  version: 1;
+  email: string;
+  intent: string;
+  after: number;
+  baseline: string;
+  stage: "enumerate" | "refresh" | "catchup";
+  next?: string;
+  pages: number;
+}
+interface ReconcileCursor {
+  historyId?: string;
+  reconciliation: Reconciliation | { version: 1; stage: "restart" };
+}
+interface SyncPass extends SyncSink { check(): void }
+const LIST_TOKEN_MAX = 4096;
+const LIST_PAGES_MAX = 10_000;
+
+function windowIntent(sink: SyncSink): string {
+  return sink.windowDays === undefined ? `start:${sink.windowStart}` : `days:${sink.windowDays}`;
+}
+
+function readReconciliation(value: unknown, sink: SyncSink, email: string, completed?: string): Reconciliation | undefined {
+  if (!isRecord(value) || value.version !== 1 || value.email !== email || value.intent !== windowIntent(sink)
+    || !Number.isSafeInteger(value.after) || (value.after as number) < 0 || !historyId(value.baseline)
+    || (completed !== undefined && earlierHistory(value.baseline, completed))
+    || !Number.isSafeInteger(value.pages) || (value.pages as number) < 0 || (value.pages as number) > LIST_PAGES_MAX
+    || !["enumerate", "refresh", "catchup"].includes(value.stage as string)
+    || (value.next !== undefined && (!nonempty(value.next) || value.next.length > LIST_TOKEN_MAX))
+    || (value.stage !== "enumerate" && (value.next !== undefined || value.pages === 0))
+    || (value.stage === "enumerate" && ((value.pages === 0) !== (value.next === undefined)))) return;
+  // Pick only bounded known fields; a malformed/foreign cursor is never rewritten wholesale.
+  return { version: 1, email, intent: value.intent as string, after: value.after as number, baseline: value.baseline,
+    stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.next !== undefined && { next: value.next as string }) };
 }
 
 /** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
@@ -544,7 +577,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
   }
 
-  async function fetchFull(ids: string[], sink: SyncSink, captured?: (id: string) => void): Promise<Set<string>> {
+  async function fetchFull(ids: string[], sink: SyncPass): Promise<Set<string>> {
     ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
     const gone = new Set<string>();
     let batch: { message: IncomingMessage; release?: () => void }[] = [];
@@ -553,17 +586,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     let admissionBusy = false;
     const flush = async () => {
       if (!batch.length) return;
-      sink.signal.throwIfAborted();
+      sink.check();
       const ready = batch;
       batch = [];
       batchBytes = 0;
       try {
         await sink.ingest(ready.map((entry) => entry.message));
-        for (const { message } of ready) captured?.(message.providerMsgId!);
       } finally { for (const entry of ready) entry.release?.(); }
     };
     const enqueue = (message: IncomingMessage, force = false) => {
-      sink.signal.throwIfAborted();
+      sink.check();
       const bytes = retainedIncomingBytes(message);
       let credit = !force ? ctx.incoming?.retainCompleted?.(bytes) : undefined;
       // Credit refusal flushes this producer instead of waiting on another account's partial batch.
@@ -576,7 +608,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       // Admission serializes staging without making six producers await an unfilled 50-item batch.
       admissionBusy = true;
       admission = admission.then(async () => {
-        sink.signal.throwIfAborted();
+        sink.check();
         if (force || batchBytes + bytes > 4 * 1024 * 1024) await flush();
         batch.push({ message, release: credit });
         credit = undefined;
@@ -599,7 +631,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     try {
       await download(ids, async (id) => {
         const check = () => {
-          sink.signal.throwIfAborted();
+          sink.check();
           if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
           if (failure) throw failure.error;
         };
@@ -671,10 +703,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     try {
       await admission;
       if (!failure) {
-        sink.signal.throwIfAborted();
+        sink.check();
         if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
         await flush();
-        sink.signal.throwIfAborted();
+        sink.check();
         if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
       }
     } catch (error) {
@@ -685,7 +717,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return gone;
   }
 
-  async function reconcileFlags(sink: SyncSink): Promise<ProviderError | undefined> {
+  async function reconcileFlags(sink: SyncPass): Promise<ProviderError | undefined> {
     if (!ctx.flagObservation) return;
     const reset = reads.signal;
     const pass = new AbortController();
@@ -693,7 +725,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     let failure: { error: unknown } | undefined, malformed: ProviderError | undefined;
     let after: number | undefined, through: number | undefined;
     const check = () => {
-      sink.signal.throwIfAborted();
+      sink.check();
       if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
       if (failure) throw failure.error;
     };
@@ -718,7 +750,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           }
         });
       } catch (error) { failure ??= { error }; }
-      sink.signal.throwIfAborted();
+      sink.check();
       if (reset.aborted) throw new ProviderError(L("errors.gmail.requestOffline"), true);
       if (updates.length) await sink.updateFlags(updates);
       if (gone.length) await sink.removeMessages(gone);
@@ -729,69 +761,95 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return malformed;
   }
 
-  async function syncRead(path: string, sink: SyncSink): Promise<unknown> {
-    sink.signal.throwIfAborted();
+  async function syncRead(path: string, sink: SyncPass): Promise<unknown> {
+    sink.check();
     const value = await api<unknown>(path, { signal: sink.signal, preparationSignal: sink.signal });
-    sink.signal.throwIfAborted();
+    sink.check();
     return value;
   }
 
-  async function checkpoint(sink: SyncSink, value: string) {
-    sink.signal.throwIfAborted();
-    await ctx.saveCursor({ historyId: value } satisfies Cursor);
-    sink.signal.throwIfAborted();
+  async function saveProgress(sink: SyncPass, value: Cursor | ReconcileCursor) {
+    sink.check();
+    await ctx.saveCursor(value);
+    sink.check();
   }
 
-  async function fullSync(sink: SyncSink, previousHistory?: string): Promise<Cursor> {
-    const baseline = readBaseline(await syncRead("/profile", sink));
-    if (previousHistory && earlierHistory(baseline, previousHistory)) throw invalidResponse();
-    const after = Math.floor(sink.windowStart / 1000);
-    const freshlyIngested = new Set<string>();
-    let pageToken: string | undefined;
+  async function restart(sink: SyncPass, completed?: string) {
+    await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: { version: 1, stage: "restart" } });
+  }
+
+  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation): Promise<Cursor> {
+    let state: Reconciliation;
+    const save = async (value: Reconciliation) => {
+      await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: value });
+      state = value;
+    };
+    if (resume) state = resume;
+    else {
+      const baseline = readBaseline(await syncRead("/profile", sink));
+      if (completed && earlierHistory(baseline, completed)) throw invalidResponse();
+      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0 };
+      await save(state);
+    }
     const pages = new Set<string>();
-    do {
-      const q = new URLSearchParams({ q: `after:${after}`, maxResults: "500", includeSpamTrash: "true" });
-      if (pageToken) q.set("pageToken", pageToken);
-      const page = readList(await syncRead(`/messages?${q}`, sink));
-      pageToken = continuation(page.nextPageToken, pages);
-      const pageIds = (page.messages ?? []).map((m) => m.id);
+    if (state.next) pages.add(state.next);
+    while (state.stage === "enumerate") {
+      const current = state;
+      if (current.pages >= LIST_PAGES_MAX) { await restart(sink, completed); throw invalidResponse(); }
+      const q = new URLSearchParams({ q: `after:${current.after}`, maxResults: "500", includeSpamTrash: "true" });
+      if (current.next) q.set("pageToken", current.next);
+      let page: MessagePage;
+      try {
+        page = readList(await syncRead(`/messages?${q}`, sink));
+      } catch (error) {
+        // Only this list resource can invalidate its continuation, never a message GET or token exchange.
+        if (current.next && error instanceof GmailApiError && (error.status === 400 || error.status === 404)) {
+          await restart(sink, completed);
+          throw invalidResponse();
+        }
+        throw error;
+      }
+      let next: string | undefined;
+      try {
+        if (page.nextPageToken !== undefined && (typeof page.nextPageToken !== "string" || page.nextPageToken.length > LIST_TOKEN_MAX)) throw invalidResponse();
+        next = continuation(page.nextPageToken, pages);
+      } catch (error) { await restart(sink, completed); throw error; }
       const ids: string[] = [];
-      for (const id of pageIds) {
-        sink.signal.throwIfAborted();
-        if (!(await store.messageByProviderId(id))) ids.push(id);
+      for (const m of page.messages ?? []) {
+        sink.check();
+        if (!(await store.messageByProviderId(m.id))) ids.push(m.id);
       }
       for (let i = 0; i < ids.length; i += 50) {
-        sink.signal.throwIfAborted();
-        const batch = ids.slice(i, i + 50);
-        await fetchFull(batch, sink, (id) => freshlyIngested.add(id));
+        sink.check();
+        await fetchFull(ids.slice(i, i + 50), sink);
       }
-    } while (pageToken);
-    sink.signal.throwIfAborted();
-    // A resync (history expired) must also refresh what we already had: labels may have
-    // changed and messages may have been deleted during the gap.
-    const cached = await store.syncedMessages();
-    // Every cached message is checked (also ones older than the window): explicit 404s are
-    // deletions; any other failure aborts before the cursor advances, so nothing is skipped.
-    const updates: FlagUpdate[] = [];
-    const gone: number[] = [];
-    await download(cached.filter((m) => !freshlyIngested.has(m.providerMsgId)), async (m) => {
-      try {
-        const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
-        updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
-      } catch (e) {
-        if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
-        else throw e;
-      }
-    });
-    sink.signal.throwIfAborted();
-    if (updates.length) await sink.updateFlags(updates);
-    sink.signal.throwIfAborted();
-    if (gone.length) await sink.removeMessages(gone);
-    await checkpoint(sink, baseline);
-    return { historyId: baseline };
+      // All effects precede this independent durable command. A rejected write is resolved by reopening.
+      await save({ ...current, stage: next ? "enumerate" : "refresh", next, pages: current.pages + 1 });
+    }
+    if (state.stage === "refresh") {
+      sink.check();
+      const cached = await store.syncedMessages();
+      const updates: FlagUpdate[] = [], gone: number[] = [];
+      // List absence has no deletion authority, including outside its window. Only explicit GET 404s do.
+      await download(cached, async (m) => {
+        try {
+          const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
+          updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
+        } catch (e) {
+          if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
+          else throw e;
+        }
+      });
+      sink.check();
+      if (updates.length) await sink.updateFlags(updates);
+      sink.check();
+      if (gone.length) await sink.removeMessages(gone);
+      await save({ ...state, stage: "catchup" });
+    }
+    return { historyId: state.baseline };
   }
 
-  async function incremental(sink: SyncSink, cursor: Cursor) {
+  async function incremental(sink: SyncPass, cursor: Cursor) {
     const added = new Set<string>();
     const changed = new Set<string>();
     const deleted = new Set<string>();
@@ -817,13 +875,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     } while (pageToken);
 
     const known = async (id: string) => {
-      sink.signal.throwIfAborted();
+      sink.check();
       return (await store.messageByProviderId(id))?.id;
     };
     const toFetch: string[] = [];
     for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
-    const live: SyncSink = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
+    const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
 
     const updates: FlagUpdate[] = [];
@@ -839,24 +897,24 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         else throw e;
       }
     }
-    sink.signal.throwIfAborted();
+    sink.check();
     if (updates.length) await sink.updateFlags(updates);
-    sink.signal.throwIfAborted();
+    sink.check();
     const removals: number[] = [];
     for (const gid of deleted) {
       const id = await known(gid);
       if (id !== undefined) removals.push(id);
     }
-    sink.signal.throwIfAborted();
+    sink.check();
     if (removals.length) await sink.removeMessages(removals);
-    await checkpoint(sink, latest);
+    await saveProgress(sink, { historyId: latest });
   }
 
   /** plan 68: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
   let catalog: { at: number; known: Set<string> } | null = null;
   let unknownLabel = false;
 
-  async function captureAttachments(sink: SyncSink) {
+  async function captureAttachments(sink: SyncPass) {
     if (sink.signal.aborted) return;
     const pending = await store.pendingAttachmentBodies(50);
     if (!pending.length || sink.signal.aborted) return;
@@ -881,33 +939,49 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const meet = (labels: readonly string[] | null | undefined) => {
         for (const l of labels ?? []) if (l.startsWith("Label_") && !catalog?.known.has(l)) unknownLabel = true;
       };
-      const sink: SyncSink = {
-        ...outer,
-        ingest: (messages, o) => (messages.forEach((m) => meet(m.gmailLabels)), outer.ingest(messages, o)),
-        updateFlags: (updates) => (updates.forEach((u) => meet(u.gmailLabels)), outer.updateFlags(updates)),
+      const generation = ctx.google?.generation();
+      const check = () => {
+        outer.signal.throwIfAborted();
+        if (generation !== ctx.google?.generation()) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
       };
-      sink.signal.throwIfAborted();
+      const effect = async (run: () => Promise<void>) => { check(); await run(); check(); };
+      const sink: SyncPass = {
+        ...outer, check,
+        ingest: (messages, o) => effect(() => { messages.forEach((m) => meet(m.gmailLabels)); return outer.ingest(messages, o); }),
+        updateFlags: (updates) => effect(() => { updates.forEach((u) => meet(u.gmailLabels)); return outer.updateFlags(updates); }),
+        removeMessages: (ids) => effect(() => outer.removeMessages(ids)),
+        setBody: (...args) => effect(() => outer.setBody(...args)),
+      };
+      sink.check();
       const malformed = await reconcileFlags(sink);
-      sink.signal.throwIfAborted();
-      const cursor = await ctx.loadCursor<Cursor>();
-      sink.signal.throwIfAborted();
+      sink.check();
+      const cursor = await ctx.loadCursor<unknown>();
+      sink.check();
+      const completed = isRecord(cursor) && historyId(cursor.historyId) ? cursor.historyId : undefined;
+      const pending = isRecord(cursor) && Object.hasOwn(cursor, "reconciliation");
+      const resume = pending ? readReconciliation(cursor.reconciliation, sink, ctx.account.email, completed) : undefined;
       let reconciled: Cursor | undefined;
-      if (!isRecord(cursor) || !historyId(cursor.historyId)) {
-        reconciled = await fullSync(sink);
+      if (pending || completed === undefined) {
+        reconciled = await fullSync(sink, completed, resume);
       } else {
         try {
-          await incremental(sink, cursor);
+          await incremental(sink, { historyId: completed });
         } catch (e) {
-          // History records expire (~1 week): Google answers 404 and a full resync is required.
-          if (e instanceof ExpiredHistory) reconciled = await fullSync(sink, cursor.historyId);
+          if (e instanceof ExpiredHistory) reconciled = await fullSync(sink, completed);
           else throw e;
         }
       }
-      // Catch-up is outside the reset catch: another expiry fails this call and waits for a later reset.
-      if (reconciled) await incremental(sink, reconciled);
-      sink.signal.throwIfAborted();
+      // No recursive reset: a catch-up expiry records a fresh-enumeration obligation for a later invocation.
+      if (reconciled) {
+        try { await incremental(sink, reconciled); }
+        catch (error) {
+          if (error instanceof ExpiredHistory) await restart(sink, completed);
+          throw error;
+        }
+      }
+      sink.check();
       await captureAttachments(sink);
-      sink.signal.throwIfAborted();
+      sink.check();
       if (malformed) throw malformed;
     },
 

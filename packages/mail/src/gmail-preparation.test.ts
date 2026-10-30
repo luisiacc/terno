@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { getEventListeners } from "node:events";
 import { expect, it } from "vitest";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
@@ -72,7 +73,7 @@ it.each(["token failure", "raw failure", "401 retry", "reset", "caller"] as cons
     else expect(error).toMatchObject({ name: "ProviderError", retryable: true });
     const expected = action === "raw failure" ? ["bad"] : action === "401 retry" ? ["bad", "later"] : [];
     expect(downloads).toEqual(expected);
-    expect(checkpoints).toEqual([]);
+    expect(completedGmailCursors(checkpoints)).toEqual([]);
     for (const signal of signals) expect(getEventListeners(signal, "abort")).toEqual([]);
     const leases = await Promise.all(Array.from({ length: capacity }, () => incoming.acquire(9, new AbortController().signal)));
     for (const release of leases) release();
@@ -82,7 +83,7 @@ it.each(["token failure", "raw failure", "401 retry", "reset", "caller"] as cons
     if (action === "reset") {
       await provider.sync(sink);
       expect(downloads).toEqual(["later"]);
-      expect(checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+      expect(completedGmailCursors(checkpoints)).toEqual([{ historyId: "10" }]);
     }
   } finally {
     bad.release(); token.release(); caller.abort();
@@ -124,7 +125,7 @@ it("lets an already-dispatched read settle while canceling later preparation", a
     good.release();
     expect(await result).toMatchObject({ name: "ProviderError", retryable: true });
     expect(downloads).toEqual(["bad", "active"]);
-    expect(checkpoints).toEqual([]);
+    expect(completedGmailCursors(checkpoints)).toEqual([]);
     expect(getEventListeners(sink.signal, "abort")).toEqual([]);
   } finally { bad.release(); good.release(); await result; incoming.close(); await provider.close(); }
 });

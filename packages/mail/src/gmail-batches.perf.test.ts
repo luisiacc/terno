@@ -9,14 +9,14 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   const count = 50_000;
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\nContent-Type: text/plain\r\n\r\nOrdinary small mail"));
   const checkpoint = { historyId: "9007199254740995" };
-  let requests = 0, historyReads = 0, ingested = 0, transactions = 0, saved: unknown;
+  let requests = 0, historyReads = 0, ingested = 0, transactions = 0, cursorWrites = 0, maxCursorBytes = 0, saved: unknown;
   const ids = new Set<string>();
   new Response();
   const ctx = {
     incoming: new IncomingReads(),
     account: { id: 1 }, config: {},
     store: { messageByProviderId: async () => null, syncedMessages: async () => [], pendingAttachmentBodies: async () => [] },
-    loadCursor: async () => null, saveCursor: async (value: unknown) => { saved = value; },
+    loadCursor: async () => null, saveCursor: async (value: unknown) => { saved = value; cursorWrites++; maxCursorBytes = Math.max(maxCursorBytes, JSON.stringify(value).length); },
     fetch: async (input: string | URL) => {
       requests++;
       const url = new URL(String(input));
@@ -54,4 +54,6 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   expect(ids.size).toBe(count);
   expect(transactions).toBe(1000);
   expect(saved).toEqual(checkpoint);
+  expect(cursorWrites).toBe(Math.ceil(count / 500) + 3);
+  expect(maxCursorBytes).toBeLessThan(512);
 });

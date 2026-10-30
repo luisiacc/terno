@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 import { expect, it, vi } from "vitest";
 import { createGmailApiProvider } from "./gmail-api";
 import { IncomingPipeline } from "./incoming";
@@ -62,7 +63,7 @@ it.each(["digest", "explicit", "comment"] as const)("requires the worker for nes
       const result = await collect(bytes, processor);
       expect(calls).toHaveBeenCalledOnce();
       expect(result.error).toMatchObject({ code: available ? "mime-limit-addresses" : "worker-unavailable", retryable: false, network: false, ambiguous: false });
-      expect(result.writes).toEqual([]); expect(result.removals).toEqual([]); expect(result.checkpoints).toEqual([]);
+      expect(result.writes).toEqual([]); expect(result.removals).toEqual([]); expect(completedGmailCursors(result.checkpoints)).toEqual([]);
     } finally { await processor.close(); await processor.whenIdle(); }
   }
 });
@@ -77,7 +78,7 @@ it.each(["digest", "explicit", "comment"] as const)("captures supported nested %
     expect(result.writes.flat()).toHaveLength(1);
     expect(result.writes[0]![0]!.bodyText).toContain("Exact nested body");
     expect(result.writes[0]![0]!.bodyState).toBe("full");
-    expect(result.checkpoints).toEqual([{ historyId: "10" }, { historyId: "10" }]);
+    expect(completedGmailCursors(result.checkpoints)).toEqual([{ historyId: "10" }]);
   } finally { await processor.close(); await processor.whenIdle(); }
 });
 
@@ -96,5 +97,5 @@ it.each([
   const result = await collect(new TextEncoder().encode(JSON.stringify({ id: "m", threadId: "t", raw })), processor);
   expect(calls).toHaveBeenCalledTimes(inline ? 0 : 1);
   if (inline) { expect(result.error).toBeUndefined(); expect(result.writes).toHaveLength(1); }
-  else { expect(result.error).toMatchObject({ code: "worker-unavailable" }); expect(result.writes).toEqual([]); expect(result.checkpoints).toEqual([]); }
+  else { expect(result.error).toMatchObject({ code: "worker-unavailable" }); expect(result.writes).toEqual([]); expect(completedGmailCursors(result.checkpoints)).toEqual([]); }
 });

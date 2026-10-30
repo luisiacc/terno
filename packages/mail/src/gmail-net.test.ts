@@ -1,3 +1,4 @@
+import { completedGmailCursors } from "./test/gmail-cursor.fixture";
 /**
  * Plan 20: Gmail requests across network changes. A read never hangs on a dead socket (its deadline,
  * reset()), a send is never cut short by a reset and never retried once it may have left.
@@ -75,7 +76,7 @@ describe("Gmail requests and the network (plan 20)", () => {
     };
     await expect(createGmailProvider(ctx).sync(sink)).rejects.toMatchObject({ status: 404 });
     expect(removed).toEqual([]);
-    expect(saved).toEqual([]);
+    expect(completedGmailCursors(saved)).toEqual([]);
   });
 
   it.each([

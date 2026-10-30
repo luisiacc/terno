@@ -125,6 +125,8 @@ export interface SyncSink {
   updateFlags(updates: FlagUpdate[]): Promise<void>;
   /** Sync window start (ms): only mail newer than this is downloaded initially. */
   windowStart: number;
+  /** Effective configured window; stable across retries even as windowStart advances with the clock. */
+  windowDays?: number;
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
