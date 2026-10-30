@@ -60,7 +60,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
   };
   await backend!.store.sync.ingest([message], { applyFilters: false, now: NOW, classifier: null });
   return {
-    get backend() { return backend; }, get client() { return client; }, script, category,
+    get backend() { return backend; }, get client() { return client; }, script, category, account,
     generate: () => client.call("filters.generate", { prompt: "Mark receipts read and categorize them" }),
     async reopen() { client.close(); await backend.stop(); await open(); },
     async applicationState(id: number) {
@@ -94,6 +94,85 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`AI filter targets ($
     expect(await t.client.call("filters.list", {})).toEqual([]);
     expect((await t.backend.store.debug.snapshot()).messages[0]!.isRead).toBe(false);
     expect((await t.backend.store.debug.snapshot()).ops).toEqual([]);
+  });
+
+  it.each([false, true])("rejects a referenced account deleted and replaced during model work (negate=%s)", async (negate) => {
+    const t = await setup(kind);
+    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "indigo", now: NOW });
+    t.script.wire!.match = "any";
+    t.script.wire!.conditions.push({ field: "account", op: "is", value: String(other.id), negate });
+    const started = gate(); const answer = gate();
+    t.script.beforeReply = async () => { started.release(); await answer.promise; };
+    const result = t.generate().then(() => null, (error: unknown) => error);
+    await started.promise;
+    await t.client.call("accounts.remove", { id: other.id });
+    const { account: replacement } = await t.backend.store.accounts.create({ kind: "imap", email: other.email, displayName: "Replacement", color: "indigo", now: NOW });
+    expect(replacement.id).not.toBe(other.id);
+    answer.release();
+    expect(await result).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "invalid_output" }, i18n: { key: "errors.accountGone" } });
+    expect(t.script.calls).toBe(1); // valid structured output, stale post-model context
+    expect(await t.client.call("filters.list", {})).toEqual([]);
+    expect((await t.backend.store.debug.snapshot()).messages[0]!.isRead).toBe(false);
+    expect((await t.backend.store.debug.snapshot()).ops).toEqual([]);
+  });
+
+  it.each(["all", "any"] as const)("preserves %s mixed account conditions, negation and normal no-match effects", async (match) => {
+    const t = await setup(kind);
+    for (const negate of [true, false]) {
+      t.script.wire!.match = match;
+      t.script.wire!.conditions = [
+        { field: "subject", op: "contains", value: match === "all" ? "Synthetic receipt" : "No such subject", negate: false },
+        { field: "account", op: "is", value: String(t.account.id), negate },
+      ];
+      const generated = await t.generate();
+      expect(generated.rule).toMatchObject({ match, conditions: [
+        { field: "subject", op: "contains", value: t.script.wire!.conditions[0]!.value },
+        { field: "account", op: "is", value: t.account.id, ...(negate ? { negate: true } : {}) },
+      ] });
+      expect(generated.rule.conditions).toHaveLength(2);
+      const saved = await t.client.call("filters.save", { name: generated.name, rule: generated.rule, enabled: true, source: "ai" });
+      expect(await t.client.call("filters.apply", { id: saved.id })).toEqual({ matchedMessages: negate ? 0 : 1, affectedThreads: negate ? 0 : 1 });
+      expect(await t.applicationState(saved.id)).toEqual({ claims: negate ? 0 : 1, at: negate ? null : NOW });
+      if (negate) {
+        expect((await t.backend.store.debug.snapshot()).messages[0]!.isRead).toBe(false);
+        expect((await t.backend.store.debug.snapshot()).memberships).toEqual([]);
+      }
+    }
+  });
+
+  it("keeps a valid draft when an unreferenced account disappears during model work", async () => {
+    const t = await setup(kind);
+    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "indigo", now: NOW });
+    t.script.wire!.conditions.push({ field: "account", op: "is", value: String(t.account.id), negate: false });
+    const started = gate(); const answer = gate();
+    t.script.beforeReply = async () => { started.release(); await answer.promise; };
+    const result = t.generate();
+    await started.promise;
+    await t.client.call("accounts.remove", { id: other.id });
+    answer.release();
+    await expect(result).resolves.toMatchObject({ rule: { conditions: [expect.anything(), { field: "account", value: t.account.id }] } });
+  });
+
+  it.each(["supersession", "shutdown"] as const)("preserves %s cancellation while the fresh account read waits", async (mode) => {
+    const t = await setup(kind);
+    const started = gate(); const read = gate();
+    const list = t.backend.store.accounts.list.bind(t.backend.store.accounts);
+    let reads = 0;
+    t.backend.store.accounts.list = async () => {
+      const accounts = await list();
+      if (++reads === 2) { started.release(); await read.promise; }
+      return accounts;
+    };
+    const first = t.generate().then(() => null, (error: unknown) => error);
+    // Before this fix there is no post-model accounts read. Avoid waiting on a nonexistent await.
+    const reached = await Promise.race([started.promise.then(() => true), first.then(() => false)]);
+    expect(reached).toBe(true);
+    try {
+      if (mode === "supersession") await expect(t.generate()).resolves.toMatchObject({ name: t.script.wire!.name });
+      else t.backend.abort.abort();
+    } finally { read.release(); }
+    expect(await first).toMatchObject({ code: "CANCELLED", details: { aiErrorKind: "cancelled" } });
+    expect(await t.client.call("filters.list", {})).toEqual([]);
   });
 
   it("keeps superseded generation cancelled while the current-category read waits", async () => {

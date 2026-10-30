@@ -167,10 +167,15 @@ export class AiService {
         },
         signal,
       );
-      const categories = new Set((await store.categories.list()).map((c) => c.id));
+      const [currentCategories, currentAccounts] = await Promise.all([store.categories.list(), store.accounts.list()]);
+      const categories = new Set(currentCategories.map((c) => c.id));
+      const accounts = new Set(currentAccounts.map((a) => a.id));
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       if (generated.rule.actions.some((a) => a.type === "addCategory" && !categories.has(a.categoryId))) {
         throw new AiError(L("errors.categoryGone"), "invalid_output");
+      }
+      if (generated.rule.conditions.some((c) => c.field === "account" && !accounts.has(c.value))) {
+        throw new AiError(L("errors.accountGone"), "invalid_output");
       }
       return generated;
     } catch (error) {
