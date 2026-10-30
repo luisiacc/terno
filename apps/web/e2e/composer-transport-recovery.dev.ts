@@ -164,7 +164,8 @@ for (const theme of ["light", "dark"] as const) {
       expect(recovered).toMatchObject({ ...baseline, revision: baseline.revision + 1, bodyText: text, bodyHtml: `<div>${text}</div>`, subject: `${subject} unsaved`, to: [...baseline.to, { email: "unfinished@", name: "" }] });
       const afterLocal = await local(page);
       expect(afterLocal).toMatchObject({ id: baseline.id, generation: baseline.generation, revision: recovered.revision, status: "saved" });
-      expect(afterLocal.savedRev).toBe(afterLocal.localRev);
+      expect(afterLocal.localRev).toBe(beforeLocal.localRev);
+      expect(afterLocal.savedRev).toBe(beforeLocal.localRev);
       const records = await page.evaluate(() => window.__transport.records);
       expect(records.some((r) => r.kind === "request" && r.frame?.id === blocked.frame?.id)).toBe(false);
       expect(records.filter((r) => r.kind === "delivered").map((r) => r.epoch)).toEqual([1, 2]);
