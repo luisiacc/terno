@@ -21,20 +21,47 @@ interface Row {
   held: number;
 }
 
+/** A message held by its own columns: exactly `messages_held`'s predicate (v26), so a re-check is one index probe. */
+const HELD = "m.is_draft = 1 OR m.is_starred = 1 OR m.provider_msg_id IS NULL OR substr(m.provider_msg_id, 1, 6) = 'local:'";
+
 /**
- * What every row needs, one indexed aggregate per thread: its messages and their size, and whether one is held
- * (a star, even in Trash where the thread's own flag ignores it; a draft, local or unsent, an op not settled, a flag not yet confirmed: Codex R4).
+ * The report's row, one indexed aggregate per thread: its messages, what they take here (measured: headers, bodies
+ * and attachments as stored, base64; `octet_length` reads a value's size, never the value), and whether one of them
+ * is held by its own columns (a star, even in Trash where the thread's flag ignores it; a draft, local or unsent).
  */
 const SELECT = /* sql */ `
 SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has_sent, t.is_starred,
-  count(m.id) AS messages, coalesce(sum(m.size), 0) AS bytes,
-  coalesce(max(
-    m.is_draft = 1 OR m.is_starred = 1 OR m.provider_msg_id IS NULL OR m.provider_msg_id LIKE 'local:%'
-    OR EXISTS (SELECT 1 FROM op_targets ot INDEXED BY op_targets_msg JOIN ops o ON o.id = ot.op_id WHERE ot.message_id = m.id AND o.state IN ('queued', 'running', 'unknown'))
-    OR EXISTS (SELECT 1 FROM message_flag_intents fi WHERE fi.message_id = m.id AND (fi.pending_count > 0 OR fi.needs_snapshot = 1))
-  ), 0) AS held
+  count(m.id) AS messages,
+  coalesce(sum(
+    octet_length(m.subject) + octet_length(m.snippet) + octet_length(m.to_json) + octet_length(m.cc_json) + octet_length(m.references_json)
+    + coalesce((SELECT coalesce(octet_length(b.body_text), 0) + coalesce(octet_length(b.body_html), 0) FROM message_bodies b WHERE b.message_id = m.id), 0)
+    + coalesce((SELECT sum((a.size + 2) / 3 * 4) FROM attachment_links l JOIN attachment_assets a ON a.id = l.asset_id WHERE l.message_id = m.id), 0)
+  ), 0) AS bytes,
+  coalesce(max(${HELD}), 0) AS held
 FROM %THREADS% t LEFT JOIN messages m ON m.thread_id = t.id
 GROUP BY t.id ORDER BY t.id`;
+
+/** What a removal re-checks in its unit: the same, without measuring anything (a large thread is read once, cheaply). */
+const CHECK = /* sql */ `
+SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.in_trash, t.in_spam, t.has_sent, t.is_starred,
+  (SELECT count(*) FROM messages m WHERE m.thread_id = t.id) AS messages, 0 AS bytes,
+  EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND (${HELD})) AS held
+FROM threads t WHERE t.id IN (%IDS%) ORDER BY t.id`;
+
+/**
+ * Threads with a change still on its way to the server: an op not settled (queued, running, or unknown until the
+ * user decides), or a flag the server took but hasn't confirmed (Codex R4). Few at any time: read once a call.
+ */
+function unsettled(db: Db): Set<number> {
+  return new Set(
+    db
+      .all<{ thread_id: number }>(
+        `SELECT m.thread_id FROM ops o JOIN op_targets ot ON ot.op_id = o.id JOIN messages m ON m.id = ot.message_id WHERE o.state IN ('queued', 'running', 'unknown')
+         UNION SELECT m.thread_id FROM message_flag_intents fi JOIN messages m ON m.id = fi.message_id WHERE fi.pending_count > 0 OR fi.needs_snapshot = 1`,
+      )
+      .map((r) => r.thread_id),
+  );
+}
 
 /** Threads a draft is on: its own, or the one of the message it answers or forwards (drafts are few). */
 function drafted(db: Db): Set<number> {
@@ -66,12 +93,13 @@ function toRows(db: Db, rows: Row[]): StorageThreadRow[] {
   if (!rows.length) return [];
   const drafts = drafted(db);
   const out = signedOut(db);
+  const pending = unsettled(db);
   return rows.map((r) => ({
     id: r.id,
     accountId: r.account_id,
     bucket: storageBucket({ inInbox: r.in_inbox === 1, inTrash: r.in_trash === 1, inSpam: r.in_spam === 1, hasSent: r.has_sent === 1 }),
     lastDate: r.last_date,
-    kept: r.is_starred === 1 || r.has_sent === 1 || r.held === 1 || drafts.has(r.id) || out.has(r.account_id),
+    kept: r.is_starred === 1 || r.has_sent === 1 || r.held === 1 || drafts.has(r.id) || pending.has(r.id) || out.has(r.account_id),
     messages: r.messages,
     bytes: r.bytes,
   }));
@@ -86,7 +114,7 @@ export function removeStorage(db: Db, r: { threadIds: readonly number[]; buckets
   return db.tx(() => {
     const ids = [...new Set(r.threadIds)];
     const eligible = ids.length
-      ? toRows(db, db.all<Row>(SELECT.replace("%THREADS%", `(SELECT * FROM threads WHERE id IN (${placeholders(ids.length)}))`), ...ids)).filter((t) => removable(t, r.buckets, r.cutoff))
+      ? toRows(db, db.all<Row>(CHECK.replace("%IDS%", placeholders(ids.length)), ...ids)).filter((t) => removable(t, r.buckets, r.cutoff))
       : [];
     const total = eligible.reduce((n, t) => n + t.messages, 0);
     if (!eligible.length || r.maxMessages <= 0) return { touched: [], threads: 0, messages: 0, remaining: total, removed: [] };

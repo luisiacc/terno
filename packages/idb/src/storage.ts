@@ -56,6 +56,7 @@ function row(c: Ctx, id: number, drafts: Set<number>, out: Set<number>): Storage
     const m = messages.rows.get(key);
     if (!m) continue;
     count++;
+    // its bodies are on disk only (lazy): the provider's size stands for them
     bytes += (m.size as number) || 0;
     if (!keep && held(c, m)) keep = true;
   }

@@ -47,20 +47,27 @@ export function defineStorageConformance(name: string, h: StoreHarness): void {
   describe(`storage (plan 69): ${name}`, () => {
     it("reads every conversation once, ascending, with its view, age, messages and size", async () => {
       const [a] = await fresh();
+      // what a message takes grows with what it holds, measured or the provider's word for it (both scale here)
+      const big = "x".repeat(50_000);
       await ingest(store, [
-        msg({ accountId: a!, providerMsgId: "inbox", date: OLD, size: 1000 }),
-        msg({ accountId: a!, providerMsgId: "archive", inInbox: false, date: OLD, size: 2000 }),
-        msg({ accountId: a!, providerMsgId: "spam", inInbox: false, isSpam: true, date: OLD, size: 300 }),
-        msg({ accountId: a!, providerMsgId: "trash", inInbox: false, isTrash: true, isSpam: true, date: OLD, size: 400 }),
-        msg({ accountId: a!, providerMsgId: "sent", inInbox: false, isSent: true, from: { name: "Me", email: "me0@example.com" }, date: OLD, size: 50 }),
-        msg({ accountId: a!, providerMsgId: "young", isSpam: true, inInbox: false, date: NOW - 3 * DAY, size: 70 }),
+        msg({ accountId: a!, providerMsgId: "inbox", date: OLD, size: 100, bodyText: "short" }),
+        msg({ accountId: a!, providerMsgId: "archive", inInbox: false, date: OLD, size: 50_000, bodyText: big }),
+        msg({ accountId: a!, providerMsgId: "spam", inInbox: false, isSpam: true, date: OLD }),
+        msg({ accountId: a!, providerMsgId: "trash", inInbox: false, isTrash: true, isSpam: true, date: OLD }),
+        msg({ accountId: a!, providerMsgId: "sent", inInbox: false, isSent: true, from: { name: "Me", email: "me0@example.com" }, date: OLD }),
+        msg({ accountId: a!, providerMsgId: "young", isSpam: true, inInbox: false, date: NOW - 3 * DAY }),
       ]);
       const all = await rows();
-      expect(all.map((r) => r.id)).toEqual([...all.map((r) => r.id)].sort((x, y) => x - y));
+      expect(all.map((r) => r.id)).toEqual(all.map((r) => r.id).sort((x, y) => x - y));
       expect(new Set(all.map((r) => r.id)).size).toBe(6);
-      expect(await rowOf("inbox")).toMatchObject({ accountId: a, bucket: "inbox", lastDate: OLD, kept: false, messages: 1, bytes: 1000 });
-      expect(await rowOf("archive")).toMatchObject({ bucket: "archive", bytes: 2000 });
-      expect(await rowOf("spam")).toMatchObject({ bucket: "spam", bytes: 300 });
+      const inbox = await rowOf("inbox");
+      expect(inbox).toMatchObject({ accountId: a, bucket: "inbox", lastDate: OLD, kept: false, messages: 1 });
+      const archive = await rowOf("archive");
+      expect(archive).toMatchObject({ bucket: "archive" });
+      expect(inbox.bytes).toBeGreaterThan(0);
+      expect(archive.bytes).toBeGreaterThan(40_000);
+      expect(archive.bytes).toBeGreaterThan(50 * inbox.bytes);
+      expect(await rowOf("spam")).toMatchObject({ bucket: "spam" });
       // trash wins over spam; a conversation you wrote in is Sent, and kept
       expect(await rowOf("trash")).toMatchObject({ bucket: "trash" });
       expect(await rowOf("sent")).toMatchObject({ bucket: "sent", kept: true });

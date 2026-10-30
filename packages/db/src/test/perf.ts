@@ -62,13 +62,17 @@ export function report(file: string, title: string, meta: Record<string, unknown
   console.log(lines.join("\n"));
 }
 
-/** measure() for async commands (store boundary): each sample awaits the command. */
-export async function measureAsync(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations = 60, warmup = 5): Promise<Stat> {
-  for (let i = 0; i < warmup; i++) await fn(i);
+/** measure() for async commands (store boundary): each sample awaits the command; `before` runs untimed ahead of each (what the caller does between commands). */
+export async function measureAsync(name: string, budgetMs: number, fn: (i: number) => Promise<unknown>, iterations = 60, warmup = 5, before?: () => Promise<unknown>): Promise<Stat> {
+  for (let i = 0; i < warmup; i++) {
+    await before?.();
+    await fn(i);
+  }
   let best: Stat | null = null;
   for (let attempt = 1; attempt <= ATTEMPTS && !(best && best.p95 <= budgetMs * BUDGET_MULTIPLIER); attempt++) {
     const samples: number[] = [];
     for (let i = 0; i < iterations; i++) {
+      await before?.();
       const start = performance.now();
       await fn((attempt - 1) * iterations + i);
       samples.push(performance.now() - start);

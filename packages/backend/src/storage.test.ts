@@ -64,17 +64,20 @@ describe("storage.report", () => {
   it("tallies every view and what each age would remove, with what the file takes", async () => {
     const { backend, client, acct } = await setup();
     await ingest(backend.store, [
-      msg({ accountId: acct, providerMsgId: "spam-old", inInbox: false, isSpam: true, date: OLD, size: 1000 }),
+      msg({ accountId: acct, providerMsgId: "spam-old", inInbox: false, isSpam: true, date: OLD, size: 30_000, bodyText: "x".repeat(30_000) }),
       msg({ accountId: acct, providerMsgId: "spam-month", inInbox: false, isSpam: true, date: NOW - 60 * DAY, size: 10 }),
       msg({ accountId: acct, providerMsgId: "starred", inInbox: false, isSpam: true, isStarred: true, date: OLD, size: 7 }),
       msg({ accountId: acct, providerMsgId: "inbox", date: OLD, size: 3 }),
     ]);
     const r = await client.call("storage.report", {});
     const spam = r.buckets.find((b) => b.bucket === "spam")!;
-    expect(spam).toMatchObject({ threads: 3, messages: 3, bytes: 1017 });
+    expect(spam).toMatchObject({ threads: 3, messages: 3 });
+    expect(spam.bytes).toBeGreaterThan(30_000);
+    // what older than a year would remove is the old one, nearly all of the view's size
+    expect(spam.removable[3]!.bytes).toBeGreaterThan(30_000);
     // older than a month: both unstarred; older than three months: only the old one
     expect(spam.removable.map((a) => a.threads)).toEqual([2, 1, 1, 1, 0]);
-    expect(r.buckets.find((b) => b.bucket === "inbox")).toMatchObject({ threads: 1, bytes: 3 });
+    expect(r.buckets.find((b) => b.bucket === "inbox")).toMatchObject({ threads: 1 });
     expect(r.disk).toEqual({ bytes: expect.any(Number), free: expect.any(Number) });
     expect(r.disk!.bytes).toBeGreaterThan(0);
     expect(r).toMatchObject({ compactPending: false, at: NOW });

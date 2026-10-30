@@ -38,7 +38,11 @@ export interface StorageThreadRow {
    */
   kept: boolean;
   messages: number;
-  /** the provider's size of its messages (an estimate of the mail, not of the disk) */
+  /**
+   * what its messages take in the store: measured where the store can (SQLite: headers, bodies and attachments as
+   * stored), else the provider's size of them (IndexedDB keeps bodies on disk only: reading them all to measure is
+   * out of the question). Indexes and the search index aren't in it.
+   */
   bytes: number;
 }
 
