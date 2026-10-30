@@ -19,4 +19,3 @@ export async function filledAndEmptied(path: string, open: (path: string) => Db,
   for (;;) if (!(await store.storage.remove({ threadIds: ids, buckets: ["trash"], cutoff: Date.now(), maxMessages: 500 })).remaining) break;
   return store;
 }
-
