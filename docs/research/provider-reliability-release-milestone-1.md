@@ -250,3 +250,7 @@ The ingestion optimization is NOT landed: Root's660functional checks pass, but t
 ## Landed repair: standalone CID encoding
 
 `92bbfec2` makes fixture HTML/JavaScript UTF-8 and asserts literal Unicode before timing. Root also regression-fixed an application-port collision by keeping the fixture on an independent ephemeral port. All four original maximum-size cases pass under occupied E2E_PORT; final-serialization gaps9.10/11.90/8.00/7.70ms remain below15ms with exact reads/data/output bounds. Production source and timing policy unchanged. One review: no findings; no extra review after Root's small port fix. Web package types/lint pass; a pre-existing optional-assetId E2E-only type issue stays backlogged. [Details](../plans/drafts/release-cid-browser-gate.md).
+
+## Landed repair: remaining navigation/print/visual cluster
+
+`e67b69cc` fixes the print fixture's focus/dismissal sequencing and updates only the two light search/category-picker baselines to independently verified approved production ACTUALs. No production changes or screenshot-policy relaxation. Root's 5 targeted browser cases, 2 dark captures/axe checks, web types, lint and whitespace pass after rebase; one review: zero findings. The live design-switch case passes unchanged, with no new product-fix claim. [Exact scope/provenance](../plans/drafts/release-navigation-visual.md). Full release gates remain open.
