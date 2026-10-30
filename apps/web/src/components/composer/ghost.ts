@@ -198,11 +198,12 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
   }
   const box = block.getBoundingClientRect();
   const origin = parent.getBoundingClientRect();
-  const style = getComputedStyle(el);
+  // Computed styles are live: read typography before layer writes invalidate style.
+  const { fontFamily, fontSize, fontWeight, fontStyle, letterSpacing, lineHeight: lineHeightStyle } = getComputedStyle(el);
   const indent = caret.left - box.left;
   if (indent < 0 || indent >= box.width) return null;
   // the caret's rect is its glyph box: the line box starts half the leading above it
-  const lineHeight = parseFloat(style.lineHeight);
+  const lineHeight = parseFloat(lineHeightStyle);
   const glyph = caret.bottom - caret.top;
   const leading = Number.isFinite(lineHeight) && lineHeight > glyph ? (lineHeight - glyph) / 2 : 0;
   // snapped to the block's own line grid (exact for lines of one size)
@@ -212,12 +213,12 @@ function place(view: EditorView, layer: HTMLElement, g: { text: string; pos: num
   layer.style.width = `${box.width}px`;
   layer.style.textIndent = `${indent}px`;
   // the caret's own type (marks included: bold, size, serif)
-  layer.style.fontFamily = style.fontFamily;
-  layer.style.fontSize = style.fontSize;
-  layer.style.fontWeight = style.fontWeight;
-  layer.style.fontStyle = style.fontStyle;
-  layer.style.letterSpacing = style.letterSpacing;
-  layer.style.lineHeight = style.lineHeight;
+  layer.style.fontFamily = fontFamily;
+  layer.style.fontSize = fontSize;
+  layer.style.fontWeight = fontWeight;
+  layer.style.fontStyle = fontStyle;
+  layer.style.letterSpacing = letterSpacing;
+  layer.style.lineHeight = lineHeightStyle;
   const line = Math.max(glyph, Number.isFinite(lineHeight) ? lineHeight : glyph);
   const parts = pieces(g.text);
   // measured laid out but unseen (a hidden element measures 0 high: everything would seem to fit)
