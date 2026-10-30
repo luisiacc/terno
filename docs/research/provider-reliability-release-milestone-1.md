@@ -17,7 +17,7 @@ The complete release gates ran once, serially, on clean main `2ac773241eca16e092
 | macOS package | PASS | Command exit 0; ad-hoc signature only | 29.7 |
 | Fresh packaged smoke | FAIL | 62 passed; 2 failed; 7 existing skips; one additional teardown error | 689.8 |
 
-The backend performance worker was CPU-bound with no output for approximately 29 minutes, beyond the configured ten-minute test timeout. Only captured owned PIDs were signalled and reaped. Extending the timeout is not a correction. The last completed file was `packages/db/src/perf.perf.test.ts` (33 passed, one account-folder navigation failure). Later unfinished files have no passing verdict.
+The backend performance run was interrupted after a CPU-bound process and approximately29minutes without console output. Only captured owned PIDs were signalled and reaped. Later artifact inspection found reports progressing through05:28 local time despite the silent reporter; some cases explicitly allow1,200–3,600seconds. Therefore the interruption is an incomplete gate, not proof of a hung loop or an exceeded timeout for the active case. The only console-reported completed file was `packages/db/src/perf.perf.test.ts` (33passed, one account-folder navigation failure); intermediate reports are not test pass verdicts. Remaining counts are unknown.
 
 Full argv, timestamps, exit status, captured PIDs, before/after HEAD, logs, traces and individual failure names are preserved in `/tmp/terno-release-milestone-b8pxg8w6/report.md` and `results.json`. External network traffic was blocked with `/tmp/terno-network-guard.cjs`; guard rejections are failures to investigate, not permission to contact real endpoints. Existing package/stage/test artifacts were restored. The fresh package is retained under that evidence directory's `milestone/apps/desktop/release/`. No signed-update or notarization clearance is claimed.
 
@@ -202,3 +202,9 @@ OPFS remains unverified after worker timeouts. Native IDB's unintentionally expa
 ## Landed repair: renderer admission
 
 `4a945b1b` normalizes new draft representation and permits read-only pending-Send reopening while retaining strict edit/Send admission. Root's rebased266unit/direct cases,8affected perf cases and18selected browser cases pass; web types/lint and light/dark visual inspection pass. One code-review P2 dev-port finding received a failing regression and fix. See [the renderer repair record](../plans/drafts/release-renderer-admission.md). Immediate-typing and lazy-browser interception failures remain open, and the original full milestone remains failed.
+
+## Performance interruption investigation
+
+Evidence-only `c74cda0b` records bounded probes and external lifecycle reporting. No hung loop or production cause was reproduced, so no speculative correction or code-review clearance is claimed. Silent console output did not mean execution stopped: preserved load/facts/categorization artifacts postdate the last log line. The original gate remains incomplete. See [the exact investigation](../plans/drafts/release-perf-hang.md).
+
+Separate actual failures were observed: database account-folder membership, ingestion throughput, categorization throughput and one Forward CPU sample. Overlapping diagnostic runs are not serial timing qualification. No threshold/input/scheduling change or full-gate replay occurred. Future milestone supervision must observe test/hook progress and respect each actual declared timeout; a longer unobserved run is not itself a correctness fix.
