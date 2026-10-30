@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/desktop.d.ts", "e2e-web/w12-lost-ack/recovery.dev.spec.ts", "playwright.w12-lost-ack.config.ts"]
+}
