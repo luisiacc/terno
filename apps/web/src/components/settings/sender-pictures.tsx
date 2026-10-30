@@ -12,9 +12,9 @@ import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 const WEB = import.meta.env.VITE_TARGET === "web";
 
 /** What a Gmail account's photos state says, in a sentence. */
-function photoHint(account: Account, state: GooglePhotoState | undefined, busy: boolean): string {
+function photoHint(account: Account, state: GooglePhotoState | undefined, pending: boolean, busy: boolean): string {
   if (busy) return t("settings.appearance.googlePhotos.waiting");
-  if (!state) return t("settings.appearance.googlePhotos.hint", { email: account.email });
+  if (!state) return t(pending ? "settings.appearance.googlePhotos.pending" : "settings.appearance.googlePhotos.hint", { email: account.email });
   if (state.apiDisabled) return t("settings.appearance.googlePhotos.apiDisabled");
   if (state.connections && state.otherContacts) return t("settings.appearance.googlePhotos.on", { email: account.email });
   if (state.connections) return t("settings.appearance.googlePhotos.onContacts", { email: account.email });
@@ -22,22 +22,49 @@ function photoHint(account: Account, state: GooglePhotoState | undefined, busy: 
   return t("settings.appearance.googlePhotos.onOwn", { email: account.email });
 }
 
-function GooglePhotosRow({ account, state }: { account: Account; state: GooglePhotoState | undefined }) {
+/**
+ * Plan 71: switching photos on asks Google nothing now: they come with the account's next sign-in with Google, when
+ * Google asks. "Sign in now" is today's consent, for anyone who wants them at once.
+ */
+function GooglePhotosRow({ account, state, pending }: { account: Account; state: GooglePhotoState | undefined; pending: boolean }) {
   const [busy, setBusy] = useState(false);
-  const toggle = async (on: boolean) => {
+  const run = async (step: () => Promise<void>) => {
     setBusy(true);
     try {
-      if (on && WEB) await (await import("~/web/google")).authorizeGooglePhotosWeb(account);
-      else setApp({ settings: await client.call("icons.googlePhotos", { accountId: account.id, on }) });
+      await step();
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
   };
+  const toggle = (on: boolean) => run(async () => setApp({ settings: await client.call("icons.googlePhotos", { accountId: account.id, on, later: on }) }));
+  const signInNow = () =>
+    run(async () => {
+      if (WEB) await (await import("~/web/google")).authorizeGooglePhotosWeb(account);
+      else setApp({ settings: await client.call("icons.googlePhotos", { accountId: account.id, on: true }) });
+    });
   return (
-    <SettingsRow testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, busy)}>
-      {(a) => <Switch {...a} data-testid={`google-photos-switch-${account.id}`} disabled={busy} checked={!!state} onCheckedChange={(on) => void toggle(on)} />}
+    <SettingsRow testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, pending, busy)}>
+      {(a) => (
+        <div className="flex items-center gap-3">
+          {pending && !state && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              data-testid={`google-photos-now-${account.id}`}
+              // the web's popup must open in the click itself: Google's script is loaded before it
+              onPointerEnter={() => WEB && void import("~/web/google").then((g) => g.preloadGoogle())}
+              onFocus={() => WEB && void import("~/web/google").then((g) => g.preloadGoogle())}
+              onClick={() => void signInNow()}
+            >
+              {t("settings.appearance.googlePhotos.signInNow")}
+            </Button>
+          )}
+          <Switch {...a} data-testid={`google-photos-switch-${account.id}`} disabled={busy} checked={!!state || pending} onCheckedChange={(on) => void toggle(on)} />
+        </div>
+      )}
     </SettingsRow>
   );
 }
@@ -57,7 +84,7 @@ export function SenderPictures({ settings, update }: { settings: AppSettings; up
         {(a) => <Switch {...a} data-testid="site-icons-switch" disabled={!canFetch} checked={canFetch && settings.senderIcons} onCheckedChange={(on) => void update({ senderIcons: on })} />}
       </SettingsRow>
       {gmail.map((account) => (
-        <GooglePhotosRow key={account.id} account={account} state={settings.googlePhotos[String(account.id)]} />
+        <GooglePhotosRow key={account.id} account={account} state={settings.googlePhotos[String(account.id)]} pending={(settings.googlePhotosPending ?? []).includes(account.id)} />
       ))}
       <div className="py-2.5">
         <Button

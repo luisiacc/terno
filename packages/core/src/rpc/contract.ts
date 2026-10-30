@@ -140,6 +140,8 @@ export interface AppSettings {
   senderIcons: boolean;
   /** plan 22: Gmail accounts showing photos from Google, by account id (set through icons.googlePhotos, never settings.update) */
   googlePhotos: Record<string, GooglePhotoState>;
+  /** plan 71: Gmail accounts whose photos are switched on but wait for the account's next sign-in with Google (Google asks then) */
+  googlePhotosPending: number[];
   /** plan 41: the Inbox's unread count on the Dock icon (the web: the installed app's icon) */
   dockBadge: boolean;
   /** plan 41: system notifications for important new mail while Terno runs */
@@ -863,7 +865,8 @@ export const contract = {
   /** plan 22: "Forget saved icons" */
   "icons.forget": m<{ ok: true }>()(empty),
   /** plan 22: photos from Google for a Gmail account, on (desktop: Google's consent in the browser) or off */
-  "icons.googlePhotos": m<AppSettings>()(z.object({ accountId: id, on: z.boolean() }), { timeoutMs: 300_000 }),
+  // plan 71: `later` turns them on without a Google window now: they come with the account's next sign-in
+  "icons.googlePhotos": m<AppSettings>()(z.object({ accountId: id, on: z.boolean(), later: z.boolean().optional() }), { timeoutMs: 300_000 }),
   /** plan 22, web: the token Google's consent gave for that account's photos (refused unless it opens the same mailbox) */
   "icons.authorizeGoogle": m<AppSettings>()(
     z.object({ accountId: id, accessToken: z.string().min(1).max(4096), expiresIn: z.number().int().min(60).max(86_400), scope: z.string().max(2000) }),

@@ -258,3 +258,67 @@ describe("photos from Google (plan 22)", () => {
     expect((await client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
   });
 });
+
+describe("photos from Google, on without signing in now (plan 71)", () => {
+  it("turning on with `later` asks Google nothing and fetches nothing: the account waits for its next sign-in", async () => {
+    const { client, f, gmail, fetchSpy } = await setup();
+    const settings = await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    expect(settings.googlePhotosPending).toEqual([gmail.id]);
+    expect(settings.googlePhotos[String(gmail.id)]).toBeUndefined();
+    expect(f.connectCalls).toEqual([]);
+    expect(f.photoWants).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("the next sign-in asks for the contacts scopes too; what Google grants turns photos on and ends the wait", async () => {
+    const { client, f, gmail } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("accounts.reconnect", { id: gmail.id });
+    expect(f.connectCalls).toEqual([{ loginHint: gmail.email, scopes: expect.arrayContaining([MAIL, CONTACTS, OTHER]) }]);
+    const settings = await client.call("settings.update", {});
+    expect(settings.googlePhotos[String(gmail.id)]).toEqual({ connections: true, otherContacts: false, apiDisabled: false });
+    expect(settings.googlePhotosPending).toEqual([]);
+  });
+
+  it("unticked on Google's screen: mail signs in, photos stay off and stop waiting", async () => {
+    const { client, f, gmail } = await setup();
+    f.connect = { grantedScopes: [MAIL] };
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("accounts.reconnect", { id: gmail.id });
+    const settings = await client.call("settings.update", {});
+    expect(settings.googlePhotos[String(gmail.id)]).toBeUndefined();
+    expect(settings.googlePhotosPending).toEqual([]);
+  });
+
+  it("an account that isn't waiting signs in with mail's scopes only", async () => {
+    const { client, f, gmail } = await setup();
+    await client.call("accounts.reconnect", { id: gmail.id });
+    expect(f.connectCalls).toHaveLength(1);
+    expect(f.connectCalls[0]!.scopes).toBeUndefined();
+  });
+
+  it("off while waiting clears it; removing the account clears it", async () => {
+    const { client, gmail, backend } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    expect((await client.call("icons.googlePhotos", { accountId: gmail.id, on: false })).googlePhotosPending).toEqual([]);
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await client.call("accounts.remove", { id: gmail.id });
+    expect((await client.call("settings.update", {})).googlePhotosPending).toEqual([]);
+    expect(await backend.store.accounts.get(gmail.id)).toBeNull();
+  });
+
+  it("the icon service's own updates don't end the wait", async () => {
+    const { client, gmail, backend } = await setup();
+    await client.call("icons.googlePhotos", { accountId: gmail.id, on: true, later: true });
+    await setGooglePhotoState(backend.store, gmail.id + 999, { connections: true, otherContacts: false, apiDisabled: true }, false);
+    await setGooglePhotoState(backend.store, gmail.id, null, false);
+    expect((await client.call("settings.update", {})).googlePhotosPending).toEqual([gmail.id]);
+  });
+
+  it("an IMAP account can't wait for Google", async () => {
+    const { client, backend } = await setup();
+    const imap = (await backend.store.accounts.list()).find((a) => a.kind !== "gmail");
+    if (!imap) return;
+    expect((await errorOf(client.call("icons.googlePhotos", { accountId: imap.id, on: true, later: true })))?.code).toBe("BAD_REQUEST");
+  });
+});

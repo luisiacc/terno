@@ -99,6 +99,7 @@ export const DEFAULT_SETTINGS: General = {
   // plan 22: website icons are on in either mode until turned off
   senderIcons: true,
   googlePhotos: {},
+  googlePhotosPending: [],
   // plan 41: like Mail, the count and the notifications are on until turned off
   dockBadge: true,
   notifications: true,
@@ -222,14 +223,31 @@ export async function readGooglePhotos(store: SettingsStore): Promise<AppSetting
 }
 
 /** Plan 22: an account's photo state (null: off), written only by the icons service. */
-export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null): Promise<void> {
+/** `clearPending`: a consent or the user's off ends any wait (plan 71); the icon service's own updates leave it alone. */
+export async function setGooglePhotoState(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string] | null, clearPending = true): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
     const s = migrate(raw);
     const next = { ...s.googlePhotos };
     if (state) next[String(accountId)] = state;
     else delete next[String(accountId)];
-    return { value: { ...s, googlePhotos: next }, result: undefined };
+    // plan 71: on (through any flow) or off, it no longer waits for a sign-in
+    const pending = clearPending ? (s.googlePhotosPending ?? []).filter((id) => id !== accountId) : (s.googlePhotosPending ?? []);
+    return { value: { ...s, googlePhotos: next, googlePhotosPending: pending }, result: undefined };
   });
+}
+
+/** Plan 71: an account's photos switched on to come with its next sign-in with Google (or no longer waiting). */
+export async function setGooglePhotosPending(store: SettingsStore, accountId: number, on: boolean): Promise<void> {
+  await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const rest = (s.googlePhotosPending ?? []).filter((id) => id !== accountId);
+    return { value: { ...s, googlePhotosPending: on ? [...rest, accountId] : rest }, result: undefined };
+  });
+}
+
+/** Plan 71: whether an account's next sign-in with Google should ask for the contacts scopes too. */
+export async function googlePhotosPending(store: SettingsStore, accountId: number): Promise<boolean> {
+  return ((await stored(store)).googlePhotosPending ?? []).includes(accountId);
 }
 
 /** What the host enforces outside the backend: the network fence and whether error reports may go. */

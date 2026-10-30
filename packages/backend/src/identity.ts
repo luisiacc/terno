@@ -4,7 +4,8 @@ import { L } from "@terno/i18n";
 import type { OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
-import { readSettings } from "./settings";
+import { googlePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "./settings";
+import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 
 /**
  * A failed live login: the provider's own words when they are Terno's (they
@@ -198,6 +199,7 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
     let result: GmailConnectResult | undefined;
     let blob: Uint8Array | undefined;
+    let photos = false;
     if (account.kind === "imap") {
       if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
       if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordRequired"));
@@ -206,7 +208,10 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       b.assertSignIn(accountId, flow);
       blob = await encryptCredential(b, password);
     } else {
-      result = await connectExistingGoogle(b, account, flow);
+      // plan 71: photos switched on to come with this sign-in: Google asks for the contacts scopes too
+      photos = await googlePhotosPending(b.store, accountId);
+      b.assertSignIn(accountId, flow);
+      result = await connectExistingGoogle(b, account, flow, photos ? [...GMAIL_SCOPES, CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE] : undefined);
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
     }
     b.assertSignIn(accountId, flow);
@@ -222,6 +227,32 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       b.assertSignIn(accountId, flow);
       if (!current) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       b.startAccount(current);
+      // still wanted (not turned off while Google's window was open)?
+      if (photos && result && (await googlePhotosPending(b.store, accountId))) {
+        b.assertSignIn(accountId, flow);
+        // what Google granted is the photo state, as for a new account; unticked, it stops waiting (no asking every sign-in)
+        const granted = result.grantedScopes ?? [];
+        const wanted = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE].filter((scope) => granted.includes(scope));
+        // Google kept the old grant (no new refresh token): the contacts scopes must be proven on it, as the switch's consent does
+        let proven = true;
+        if (prepared.pending && wanted.length) {
+          try {
+            const proved = await prepared.pending.proof.provePhotos(wanted, AbortSignal.any([b.abort.signal, flow.signal]));
+            proven = wanted.every((scope) => proved.includes(scope));
+          } catch { proven = false; }
+          b.assertSignIn(accountId, flow);
+        }
+        const state = { connections: granted.includes(CONTACTS_SCOPE), otherContacts: granted.includes(OTHER_CONTACTS_SCOPE), apiDisabled: false };
+        // unproven: mail is signed in all the same; photos keep waiting for the next sign-in
+        if (!proven) {
+          /* nothing: still pending */
+        } else if (state.connections || state.otherContacts) {
+          await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, state));
+          b.assertSignIn(accountId, flow);
+          void b.icons.syncPeople(accountId, state).catch(() => {});
+        } else await b.credentialWrite(accountId, flow, () => setGooglePhotosPending(b.store, accountId, false));
+        b.assertSignIn(accountId, flow);
+      }
       return current;
     });
   } finally { await endSignIn(b, accountId, flow); }

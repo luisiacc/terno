@@ -13,7 +13,7 @@ import { L } from "@terno/i18n";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "../core";
 import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential } from "../identity";
-import { readSettings, setGooglePhotoState } from "../settings";
+import { readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
 
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 export const PHOTO_SCOPES = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE];
@@ -35,7 +35,14 @@ async function turnOn(b: Backend, accountId: number, state: GooglePhotoState): P
 }
 
 /** icons.googlePhotos: off anywhere; on through Google's consent on desktop (the web uses authorizeGooglePhotos). */
-export async function setGooglePhotos(b: Backend, accountId: number, on: boolean): Promise<AppSettings> {
+export async function setGooglePhotos(b: Backend, accountId: number, on: boolean, later = false): Promise<AppSettings> {
+  // plan 71: on without a Google window now; the account's next sign-in asks for the contacts scopes
+  if (on && later) {
+    await gmailAccount(b, accountId);
+    const settings = await readSettings(b.store);
+    if (!settings.googlePhotos[String(accountId)]) await setGooglePhotosPending(b.store, accountId, true);
+    return readSettings(b.store);
+  }
   const flow = beginSignIn(b, accountId);
   try {
     const account = await gmailAccount(b, accountId);

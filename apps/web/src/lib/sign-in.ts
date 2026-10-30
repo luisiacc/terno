@@ -16,6 +16,7 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { snack, withdrawSnack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
+import { getApp, setApp } from "~/state/app";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -148,6 +149,8 @@ export async function signInAgain(account: Account, password?: string): Promise<
       await google.connectGmailWeb(account.email, account.id);
     } else {
       await client.call("accounts.reconnect", { id: account.id, password: account.kind === "imap" ? password : undefined });
+      // plan 71: photos waiting for this sign-in may have come on: Settings shows the state now (an empty update reads it)
+      if ((getApp().settings?.googlePhotosPending ?? []).includes(account.id)) setApp({ settings: await client.call("settings.update", {}) });
     }
     if (!latest(account.id, mine)) return false;
     setAttempt(account.id, null);

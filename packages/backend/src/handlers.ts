@@ -818,7 +818,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.icons.forget();
       return { ok: true as const };
     },
-    "icons.googlePhotos": ({ accountId, on }) => setGooglePhotos(b, accountId, on),
+    "icons.googlePhotos": ({ accountId, on, later }) => setGooglePhotos(b, accountId, on, later),
     "icons.authorizeGoogle": (p) => authorizeGooglePhotos(b, p),
 
     "sync.network": ({ online }) => {

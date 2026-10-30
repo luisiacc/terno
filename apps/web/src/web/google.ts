@@ -107,13 +107,20 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number): P
   await preloadGoogle();
   // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
   const adding = loginHint === undefined && accountId === undefined;
-  const token = await accessToken(clientId, loginHint, adding ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
+  // plan 71: an account whose photos wait for this sign-in asks for them too
+  const pending = accountId !== undefined && (getApp().settings?.googlePhotosPending ?? []).includes(accountId);
+  const token = await accessToken(clientId, loginHint, adding || pending ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
   const granted = token.scope.split(/\s+/);
   const expiresIn = token.expires_in;
   const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }) });
-  if (adding && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
+  // still wanted after Google's popup (not turned off meanwhile)
+  const stillPending = pending && (getApp().settings?.googlePhotosPending ?? []).includes(account.id);
+  if ((adding || stillPending) && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
     // photos are extra: the account is connected even if this fails
     await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn, scope: token.scope }).then((settings) => setApp({ settings }), () => {});
+  } else if (stillPending) {
+    // unticked on Google's screen: it stops waiting (no asking at every sign-in)
+    await client.call("icons.googlePhotos", { accountId: account.id, on: false }).then((settings) => setApp({ settings }), () => {});
   }
   return account;
 }
