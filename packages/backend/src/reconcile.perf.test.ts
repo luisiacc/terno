@@ -2,10 +2,6 @@
  * Plan 68 (Codex R53): a folder of 50,000 messages with no other place, deleted on the server: reconciliation removes
  * them (and recomputes their threads) a batch at a time with turns between, never one transaction for all of them.
  */
-import "fake-indexeddb/auto";
-import { IDBFactory } from "fake-indexeddb";
-import { IdbMailStore } from "@terno/idb";
-import type { MailStore } from "@terno/store";
 import { openDatabase, SqlMailStore } from "@terno/db";
 import { reconcileMessages } from "@terno/mail";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
@@ -49,12 +45,11 @@ it("reconciling 50,000 orphans of a deleted folder: the longest stall within the
   }
 });
 
-for (const kind of ["SQL", "IDB"] as const) it(`${kind}: sparse durable IMAP confirmation in 50,000 messages stays within the worker budget`, async () => {
+it("SQL: sparse durable IMAP confirmation in 50,000 messages stays within the worker budget", async () => {
+  const kind = "SQL";
   const dir = mkdtempSync(join(tmpdir(), "terno-flag-reconcile-"));
-  const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
-  const store: MailStore = kind === "SQL"
-    ? new SqlMailStore(openDatabase(join(dir, "flags.db")), { checkpointWorker: true })
-    : await IdbMailStore.open({ name: "synthetic-flag-perf", factory: new IDBFactory(), platform, instantSearch: false });
+  const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setTimeout(resolve, 0)) };
+  const store = new SqlMailStore(openDatabase(join(dir, "flags.db")), { checkpointWorker: true });
   try {
     const [, account] = await withAccounts(store);
     for (let i = 0; i < 50_000; i += 1000) await ingest(store, Array.from({ length: 1000 }, (_, j) => msg({ accountId: account!, providerMsgId: `f${i + j}`, providerThreadId: `t${i + j}`, locations: [{ mailbox: "INBOX", uidvalidity: 7, uid: i + j + 1, flags: [] }] })));

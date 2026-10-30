@@ -85,7 +85,7 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
 
     it("an incomplete derived change records durable targeted work without retiring observed intent", async () => {
       let store = await harness.open(); stores.push(store);
-      const [, a] = await withAccounts(store);
+      const [other, a] = await withAccounts(store);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "partial", locations: [{ mailbox: "INBOX", uidvalidity: 1, uid: 1, flags: [] }] })]);
       await observe(store, a!);
       await store.threads.act({ threadIds: [await threadOf(store, "partial")], action: "star", signal: null, now: 1 });
@@ -93,6 +93,10 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       await store.ops.complete(op!.id, undefined, 3);
       const id = (await store.debug.snapshot()).messages[0]!.id;
       await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "partial", flags: { isStarred: true } }], (await observe(store, a!))!);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      const foreign = await store.sync.updateFlags(other!, [{ messageId: id, flags: { isStarred: false, isRead: true } }]);
+      expect(foreign.touched).toEqual([]);
+      expect(foreign.flagReconcileAccounts).toBeUndefined();
       expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
       const mismatch = await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "replacement", flags: { isStarred: false, isRead: true } }]);
       expect(mismatch.touched).toEqual([]);

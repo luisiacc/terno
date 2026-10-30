@@ -957,15 +957,15 @@ export class IdbMailStore implements MailStore {
         () => {
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
-          let needsSnapshot = false;
+          const reconciliation: { flagReconcileAccounts?: number[] } = {};
           for (const u of updates) {
             const identity = messages.get(u.messageId);
             if (observation && (!flagObservationValid(idbFlags(this.c), accountId, observation) || !u.expectedProviderMsgId)) continue;
-            if (u.expectedProviderMsgId !== undefined && (identity?.account_id !== accountId || identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
+            if (identity?.account_id !== accountId || (u.expectedProviderMsgId !== undefined && identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
             if (u.expectedImapLocations && !sameImapLocations(u.expectedImapLocations, T(this.c, "message_locations").by("fk_message_id", u.messageId).map((row) => ({ mailbox: row.mailbox as string, uidvalidity: row.uidvalidity as number, uid: row.uid as number })))) continue;
             const pending = pendingFlagFields(this.c, accountId, u.messageId);
             const sets: [string, number | string][] = Object.entries(u.flags)
-              .filter(([k, v]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { needsSnapshot = true; }))
+              .filter(([k, v]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { reconciliation.flagReconcileAccounts ??= [accountId]; }))
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
             // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
             if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
@@ -978,7 +978,7 @@ export class IdbMailStore implements MailStore {
             if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
-          return { touched: [...threads], ...(needsSnapshot && { flagReconcileAccounts: [accountId] }) };
+          return { touched: [...threads], ...reconciliation };
         },
         { durability: "relaxed" },
       ),

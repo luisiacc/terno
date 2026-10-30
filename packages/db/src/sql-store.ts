@@ -464,14 +464,15 @@ export class SqlMailStore implements MailStore {
         // read inside this unit: a user action committed just before is honoured
         const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
-          let needsSnapshot = false;
+        const reconciliation: { flagReconcileAccounts?: number[] } = {};
         for (const u of updates) {
           if (observation && (!flagObservationValid(sqlFlags(this.db), accountId, observation) || !u.expectedProviderMsgId)) continue;
-          if (u.expectedProviderMsgId !== undefined && !this.db.get("SELECT id FROM messages WHERE id=? AND account_id=? AND provider_msg_id=?", u.messageId, accountId, u.expectedProviderMsgId)) continue;
-          if (u.expectedImapLocations && !sameImapLocations(u.expectedImapLocations, this.db.all<{ mailbox: string; uidvalidity: number; uid: number }>("SELECT mailbox,uidvalidity,uid FROM message_locations WHERE account_id=? AND message_id=?", accountId, u.messageId))) continue;
+          const identity = this.db.get<{ account_id: number; provider_msg_id: string | null }>("SELECT account_id,provider_msg_id FROM messages WHERE id=?", u.messageId);
+          if (identity?.account_id !== accountId || (u.expectedProviderMsgId !== undefined && identity.provider_msg_id !== u.expectedProviderMsgId)) continue;
+          if (u.expectedImapLocations && !sameImapLocations(u.expectedImapLocations, this.db.all<{ mailbox: string; uidvalidity: number; uid: number }>("SELECT mailbox,uidvalidity,uid FROM message_locations WHERE message_id=?", u.messageId))) continue;
           const owned = pending.get(u.messageId);
           const sets: [string, number | string][] = Object.entries(u.flags)
-            .filter(([k, v]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { needsSnapshot = true; }))
+            .filter(([k, v]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { reconciliation.flagReconcileAccounts ??= [accountId]; }))
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
           // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
           if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
@@ -490,7 +491,7 @@ export class SqlMailStore implements MailStore {
           if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
-        return { touched: [...threads], ...(needsSnapshot && { flagReconcileAccounts: [accountId] }) };
+        return { touched: [...threads], ...reconciliation };
       }),
     remove: async (ids) => ({ touched: [...deleteMessages(this.db, ids)] }),
     pendingMessageIds: async (accountId) => messagesWithPendingOps(this.db, accountId),
