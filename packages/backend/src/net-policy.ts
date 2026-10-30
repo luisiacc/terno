@@ -110,6 +110,8 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   const browser = !options.lookup;
   const lookup = options.lookup ?? literalLookup;
   const baseFetch = options.fetch ?? globalThis.fetch;
+  const NativeRequest = globalThis.Request;
+  const NativeResponse = globalThis.Response;
 
   let googlePending = 0;
   const physical = (request: Request, release: () => void) => (response: Response): Response => {
@@ -134,7 +136,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         return reader.cancel(reason);
       },
     }, { highWaterMark: 0 });
-    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+    return new NativeResponse(body, { status: response.status, statusText: response.statusText, headers: response.headers });
   };
 
   /** The IP to connect to when every address of the host is loopback, else null. */
@@ -175,7 +177,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
     fetchGoogle(policy, descriptor) {
       return (input, init) => {
         // Snapshot mutable init/Headers/body before the first asynchronous policy step.
-        const request = new Request(input, { ...init, redirect: "error" });
+        const request = new NativeRequest(input, { ...init, redirect: "error" });
         const run = async () => {
           await assert("mail", new URL(request.url));
           let release: (() => void) | undefined;
@@ -243,7 +245,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
       const policed = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         // Request objects carry a one-shot body: normalise to url + init so a redirect can be re-sent.
         let url = requestUrl(input);
-        let request: RequestInit = input instanceof Request ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
+        let request: RequestInit = input instanceof NativeRequest ? { method: input.method, headers: input.headers, body: input.body, signal: input.signal, duplex: "half", ...init } as RequestInit : { ...init };
         // the SDKs' own redirect mode is never trusted: an AI key doesn't follow any redirect, here or in a browser
         const keyed = purpose === "ai" && carriesCredential(request.headers);
         for (let hop = 0; ; hop++) {

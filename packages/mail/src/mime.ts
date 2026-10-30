@@ -1,4 +1,5 @@
 import PostalMime, { type PostalMimeOptions } from "postal-mime";
+import { htmlToText } from "./visible-mail-text";
 import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, parseAddressHeader, repairAddresses, type Address } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
@@ -149,7 +150,7 @@ export async function parseRaw(raw: Uint8Array | string, options: { captureUnava
     listId: parseListId(header("list-id")),
     bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
     ...(unavailable ? { captureUnavailable: "size" as const } : {}),
-    text: unavailable ? null : email.text ?? (email.html ? await (await import("./visible-mail-text")).htmlToText(email.html) : null),
+    text: unavailable ? null : email.text ?? (email.html ? await htmlToText(email.html) : null),
     html: unavailable ? null : email.html ?? null,
     attachments: (unavailable ? [] : email.attachments).map((a) => {
       const bytes = typeof a.content === "string" ? new TextEncoder().encode(a.content) : new Uint8Array(a.content);
