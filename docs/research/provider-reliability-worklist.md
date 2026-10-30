@@ -843,3 +843,23 @@ The large-editor series remains unlanded on `t3/large-editor-typing-performance`
 A separate trace of the actual2MBworkload showed17root-index rebuilds/459,476entries; disabling index construction retained dominant native selection/intersection/layout work. All17caret synchronizations required genuine moves. No further cache or selection-skipping change was justified. Evidence `/tmp/terno-pm-causal`; earlier worker GREEN and Root RED results remain unwaived. Each prior series consumed its one review; later corrections are explicitly without independent re-review.
 
 The next isolated repair starts from current main and owns the editor's rendering/containment boundary. It must preserve complete PM/DOM/saved text and HTML, navigation, accessibility, caret/scroll, Undo, images/drop and the original gate. The user's current compose changes remain intact. No candidate is landed, removed or declared green; report dispositions/counts and held feature backlog are unchanged.
+
+
+## Release repair: supported huge-editor view groups landed — 2026-10-30
+
+Landed `aebe27a9..fb016e9a` after rebasing onto the user's current main. ProseMirror now supports opt-in transparent view-owned sibling groups; the composer enables128-block groups above2,000root children. Containment applies to group ancestors. Document nodes, schema, plain text/HTML serialization and image/drop hooks are unchanged. The earlier local-wrapper, index and unsupported-group experiments remain parked and are not imported.
+
+Root verification passes90unit tests with1inherited skip, Web types, strict owned lint, frozen offline setup and2extended actual-app light/dark cases with keyboard, exact authored model/DOM/saved values, paste, wrapped content, lists/quotes, Chromium engine composition, image drop, Undo/Redo, native find and scoped axe. Root inspected both screenshots. The unchanged original2MBgate passes once: frame p50=20.4ms/50ms, transaction p95=11.4ms/30ms, opening136ms/2000ms, serialization29.5ms/150ms, toolbar p95=1.3ms/16ms, indent1406.1ms/1500ms. All original content, Enter, save and focus assertions passed. No workload, timing-window, threshold or sample changes. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-supported-groups-w097wnic`; [spec and review](../plans/drafts/release3-supported-view-groups.md).
+
+Exactly one production review returned Standards FAIL/Spec FAIL with2P1+2P2findings. All four received ordinary regression RED/GREEN fixes covering detached decoration rendering, composing ancestor ownership, deferred topology and source/runtime parity. Fixes have no independent rereview; no second round or clean reviewer verdict is claimed. The earlier autolink timing-ratio failure remains recorded; Root's current direct suite passes without a waiver or repeated unchanged sampling.
+
+Review-cap coverage backlog (no demonstrated remaining product defect):
+
+| Follow-up | Disposition |
+| --- | --- |
+| Exhaustive native cross-group deletion | Low-priority grouping qualification |
+| Comprehensive coords/nodeDOM comparisons | Low-priority grouping qualification |
+| Spanning block-mark combinations | Low-priority grouping qualification |
+| Internal native drag plus full prior-byte comparison after mixed paste/IME/drop | Low-priority grouping qualification; OS IME is also unqualified |
+
+Report dispositions/counts and previously held feature backlog remain unchanged. This is scoped qualification, not release-green. Next: fourth full release milestone on main, all required gates once, including a fresh macOS package and default packaged smoke. Historical failed gates and parked branches stay preserved.

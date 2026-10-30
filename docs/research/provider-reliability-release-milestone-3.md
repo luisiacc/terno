@@ -113,3 +113,8 @@ AssertionError: expected 12.574916999999914 to be less than 10
 ## Landed repair: WAL settlement for reset and expunge
 
 `403ebe94` brings bounded SQL location and membership removals into the owning store's existing settlement policy, preserving committed identity fences and cleaning temporary watches before rejection. Root321native+321WASM tests, types/lint and all38cases in the three unchanged affected perf files pass. Everyone counts p95is4.536458ms/5ms; its query is unchanged. The single review's two findings were regression-fixed; no second review. [Evidence and limits](../plans/drafts/release3-sql-lifecycle.md). Historical timing failures remain unreproduced; no universal resource ceiling or release-wide clearance is claimed. The large-editor gate remains open.
+
+
+## Landed repair: supported view grouping
+
+`aebe27a9..fb016e9a` adds opt-in transparent view groups and huge-composer containment without changing the document or serializer. Root90unit/1inherited skip,2extended light/dark browser cases, types/lint and original2MBgate pass: frame20.4ms/50ms, transaction11.4ms/30ms, serialization29.5ms/150ms, toolbar1.3ms/16ms, indent1406.1ms/1500ms. All original content/save/Enter/focus assertions reached. The single review's four findings were regression-fixed without rereview; coverage gaps and retained autolink timing failure are in the worklist. [Spec/evidence](../plans/drafts/release3-supported-view-groups.md). Fourth full milestone is next; no release-wide clearance yet.
