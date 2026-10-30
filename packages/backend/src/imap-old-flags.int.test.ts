@@ -477,17 +477,20 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     expect((await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]))[0]).toMatchObject({ uid: t.target.uid, uidvalidity: t.target.uidvalidity });
   });
 
-  it("an omitted reset remapping UID cannot certify a surviving location's contradictory flags", async () => {
+  it.each(["UID", "ENVELOPE"] as const)("omitted reset remapping %s cannot certify a surviving location's contradictory flags", async (missing) => {
     const t = await setup(true, "INBOX");
     t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
     await bounded(t.backend.syncAccount(t.account.id), "discover reset copy");
-    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toHaveLength(2);
+    const placed = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
+    expect(placed).toHaveLength(2);
+    const copy = placed.find((location) => location.mailbox === "Projects")!;
     t.advance();
     await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
     expect(await t.backend.runWorker()).toBe(1);
     t.ctl.setFlags("INBOX", [t.target.uid], [], "set");
     const epoch = t.ctl.resetUidValidity("Projects", { uids: "keep" });
-    const omitted = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: "Projects", match: /ENVELOPE/, times: 1, send: "$TAG OK Synthetic omitted remap UID\r\n" });
+    const omitted = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: "Projects", match: /ENVELOPE/, times: 1,
+      send: missing === "UID" ? "$TAG OK Synthetic omitted remap UID\r\n" : `* 1 FETCH (UID ${copy.uid} FLAGS (\\Flagged) INTERNALDATE "19-Jan-2026 12:00:00 +0000" RFC822.SIZE ${Buffer.byteLength(t.targetRaw)})\r\n$TAG OK Synthetic omitted ENVELOPE\r\n` });
     await bounded(t.backend.syncAccount(t.account.id), "partial reset remapping");
     expect(omitted.hits).toBe(1);
     expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });

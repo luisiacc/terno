@@ -888,6 +888,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             resetOrphans.delete(atLocation);
             continue;
           }
+          if (!env) throw new ProviderError(L("errors.imap.listRefused"), false);
           // Without a Message-ID, identify by content (date, sender, subject, size): stable across
           // moves and UIDVALIDITY resets, unlike a mailbox/UID-based key.
           const fingerprint = () =>
