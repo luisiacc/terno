@@ -26,7 +26,6 @@ import { loadThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MessageMenu } from "./message-menu";
-import { MessageCode } from "./message-code";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -140,7 +139,6 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
         <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
           {!headless && <div className="hairline-t ml-[calc(var(--avatar-message)+0.75rem)]" />}
           <div className={cn("pb-5", headless ? "pt-5" : "pt-3.5")}>
-            <MessageCode m={m} />
             {m.bodyHtml ? (
               <HtmlBody html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} appearance={mailAppearance} />
             ) : m.bodyText !== null ? (

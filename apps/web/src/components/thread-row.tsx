@@ -12,6 +12,8 @@ import { useApp, type AppState } from "~/state/app";
 import { accountLabels } from "~/lib/account-labels";
 import type { DesignVariants } from "@terno/ui/designs/index";
 import { SenderAvatar } from "./sender-avatar";
+import { CodeChip } from "./code-chip";
+import { useThreadCode } from "~/lib/codes";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
@@ -60,6 +62,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const categories = useApp((s) => s.categories);
   /** a draft with something written in it (one boolean: only this row renders when it changes) */
   const hasDraft = useHasDraft(thread.id);
+  /** plan 69: a verification code in fresh mail, one click from the clipboard */
+  const code = useThreadCode(thread);
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -130,6 +134,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       {thread.snippet}
     </span>
   );
+  const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const avatar = !classic && (
     <span className={cn("relative shrink-0", !line && !big && "self-start mt-0.5")}>
       <SenderAvatar
@@ -198,6 +203,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             {thread.subject} {draft} <span className="text-muted-foreground">— {thread.snippet}</span>
           </span>
           {accountTag}
+          {chip}
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {marks}
             {date}
@@ -209,6 +215,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             {from}
             {count}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              {chip}
               {marks}
               {date}
             </span>
@@ -230,6 +237,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
               {from}
               {count}
               <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {chip}
                 {!big && marks}
                 {date}
               </span>
@@ -250,6 +258,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       )}
       {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
+      {code && <span className="sr-only">{t("codes.sr", { code })}</span>}
     </div>
   );
 });

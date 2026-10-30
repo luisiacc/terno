@@ -112,3 +112,17 @@ Codex's second review found nine more, each now covered by a failing-without-the
 2. **Hiding was matched as text, not resolved** (`display:none;display:block` is shown). Hiding now reads the browser's resolved inline style (`el.style`), where the last declaration wins.
 
 The perf gates: `pnpm test:ui-perf` passes except "a 2 MB draft of short lines", which fails the same way on the base commit (109–119 ms against 100 ms).
+
+## Moved to the thread list
+
+> they should show in the thread list , not in the email body
+
+The chip now lives in the list row, not the message body.
+
+- **What it reads:** the row's subject and snippet (`findCode(subject, snippet)`), for threads whose newest message is at most 2 hours old. The snippet is the newest message's first 200 visible characters, made by the backend from the body's visible text (`htmlToText`: hidden elements, styles and scripts left out) with quoted lines removed. So the list needs no new data, and the renderer parses no HTML: `mail-text.ts` and the reader's chip are gone. A code past the first 200 characters isn't offered; codes sit near the top in practice.
+- **Where:** on the row's top line, just before the date (and the marks), in every layout. There the subject and snippet keep their room. `-my-0.5` keeps the row's line height.
+- **What it is:** a row is an `option` of the list, which can't contain a button (axe `nested-interactive`). So the chip is a pointer target (`aria-hidden`, `data-row-control`). Pressing it neither selects the row nor moves focus (mouse down is stopped and its default prevented), and it never starts a drag (`drag-install` ignores presses on `[data-row-control]`). Keyboards and screen readers get the code in the row's name ("Verification code 048291") and copy it from the thread menu ("Copy verification code 048291"; a snack confirms).
+- **State:** copying lives in `apps/web/src/lib/codes.ts`, keyed by thread and code (a newer code in the same thread is a new one), with the 5 s timer in the store. Rows come and go as the list scrolls, and the chip and the menu share one state. The earlier unmount and late-answer races can't happen: no row owns a timer or a promise. Each fresh row with a code has one timer, to its expiry.
+- **Perf:** an older thread costs one subtraction per row render; a fresh one, one memoized regex pass over at most ~1.2 kB. No extra row renders, except the one at expiry.
+
+Tests: `lib/codes.test.tsx` covers copy, check, outlined, restart, shared state across remounts, a new code in the same thread, clipboard refusal, the 2-hour window and the single expiry timer. `codes.spec.ts` (`@design`) covers the chip on a plain and a selected row, copying without opening the thread, the 5 s settle, axe on the list in light and dark, the thread menu's copy, no drag from the chip (fails without the `drag-install` guard), and nothing for 3-hour-old mail.

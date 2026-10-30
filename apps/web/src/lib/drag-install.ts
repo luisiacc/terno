@@ -259,6 +259,8 @@ export function installDragController(list: HTMLElement): () => void {
   const onDown = (e: PointerEvent) => {
     const el = (e.target as Element | null)?.closest<HTMLElement>("[data-thread-id]");
     if (!el || !list.contains(el) || ctl.pressed) return;
+    // a control inside the row (the code chip, plan 69) is pressed, not dragged
+    if ((e.target as Element).closest("[data-row-control]")) return;
     // "all N of the view": only the loaded rows could travel, as with "Mover a…" (disabled there too)
     if (getApp().scope) return;
     if (!ctl.down(Number(el.dataset.threadId), point(e))) return;

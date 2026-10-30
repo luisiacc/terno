@@ -54,6 +54,7 @@ import { actionView, placeActions } from "~/lib/places";
 import { applyScope, formatCount } from "./category-snackbar";
 import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
 import { client } from "~/rpc/connection";
+import { codeKey, copyCode, threadCode } from "~/lib/codes";
 import { listScroller } from "./thread-list";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -348,6 +349,8 @@ function MenuItems() {
     setApp({ dialog: "categoryPicker", pickerMode: mode });
   };
   const count = scope ? scope.count : ids.length;
+  // plan 69: the keyboard's (and screen readers') way to the code a row's chip copies
+  const code = single ? threadCode(single, Date.now()) : null;
 
   return (
     <>
@@ -355,6 +358,17 @@ function MenuItems() {
         <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground" data-testid="menu-count">
           {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
         </div>
+      )}
+      {single && code && (
+        <>
+          <Item
+            icon={<Copy />}
+            label={t("codes.copy", { code })}
+            testId="menu-copy-code"
+            onClick={() => void copyCode(codeKey(single.id, code), code).then((ok) => ok && snack(t("codes.copied", { code }), { duration: 2000 }))}
+          />
+          <ContextMenuSeparator />
+        </>
       )}
       {single && (
         <>
