@@ -198,9 +198,20 @@ export function defineAttachmentConformance(name: string, h: StoreHarness): void
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
       await store.ops.markUnknown(queued.opId, "acceptance unknown", 1);
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      if (resolution === "complete") {
+        await store.ops.complete(queued.opId, {}, 2);
+        store = await h.reopen(store);
+        expect((await store.ops.get(queued.opId))!.state).toBe("unknown");
+        await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
+      }
       const independent = (await store.drafts.save(draft(a!, [ref]), 1))!;
       if (resolution === "markSent") await store.ops.resolveUnknown(queued.opId, "markSent", 2);
-      else await store.ops.complete(queued.opId, {}, 2);
+      else {
+        await store.ops.resolveUnknown(queued.opId, "retry", 3);
+        expect((await store.ops.claimReady(3, 10)).map((op) => op.id)).toContain(queued.opId);
+        await store.ops.complete(queued.opId, {}, 4);
+      }
+      expect((await store.ops.get(queued.opId))!.state).toBe("succeeded");
       store = await h.reopen(store);
       await expect(store.attachments.discard(a!, ref.assetId)).rejects.toThrow();
       await store.drafts.delete(independent.id);
