@@ -6,7 +6,10 @@ const email = "synthetic@example.test";
 const longEmail = `${"other".repeat(12)}@example.test`;
 const secret = "rawprovidersecret";
 
-type Control = Window & { gis: { outcome: string; count: number; release?: () => void }; authCalls: number };
+declare global {
+  interface Window { gis: { outcome: string; count: number; release?: () => void }; authCalls: number }
+}
+type ErrorKey = "web.google.popupClosed" | "web.google.popupBlocked" | "errors.google.adminPolicy" | "errors.google.unavailable" | "errors.google.denied";
 async function tabTo(page: Page, target: Locator) {
   for (let i = 0; i < 60; i++) {
     if (await target.evaluate((el) => el === document.activeElement)) return;
@@ -38,7 +41,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     });
     await page.addInitScript(({ language, secret }) => {
       localStorage.setItem("terno:language", language);
-      const w = window as Control;
+      const w = window;
       w.gis = { outcome: "valid", count: 0 };
       w.google = { accounts: { oauth2: { initTokenClient: (config) => ({ requestAccessToken: () => {
         w.gis.count++;
@@ -61,25 +64,25 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
     await expect(page.getByTestId("sign-in-notice")).toBeVisible({ timeout: 60_000 });
     await page.evaluate(() => {
-      const w = window as Control, client = window.__ternoWeb!.client, call = client.call.bind(client);
+      const w = window, client = window.__ternoWeb!.client, call = client.call.bind(client);
       w.authCalls = 0;
       Object.defineProperty(client, "call", { value: (...args: Parameters<typeof call>) => { if (args[0] === "accounts.connectGmailToken") w.authCalls++; return call(...args); } });
     });
-    const release = async (outcome: string) => page.evaluate((outcome) => { const w = window as Control; w.gis.outcome = outcome; w.gis.release!(); }, outcome);
-    const attempt = async (button: Locator, error: Locator, outcome: string, key: Parameters<typeof t>[0]) => {
+    const release = async (outcome: string) => page.evaluate((outcome) => { const w = window; w.gis.outcome = outcome; w.gis.release!(); }, outcome);
+    const attempt = async (button: Locator, error: Locator, outcome: string, key: ErrorKey) => {
       await expect(button).not.toHaveAttribute("aria-disabled", "true");
       await button.focus();
-      const count = await page.evaluate(() => (window as Control).gis.count);
+      const count = await page.evaluate(() => (window).gis.count);
       await page.keyboard.press("Enter");
-      await expect.poll(() => page.evaluate(() => (window as Control).gis.count)).toBe(count + 1);
+      await expect.poll(() => page.evaluate(() => (window).gis.count)).toBe(count + 1);
       await expect(button).toHaveAttribute("aria-disabled", "true");
       await page.keyboard.press("Enter"); await page.keyboard.press("Space");
-      expect(await page.evaluate(() => (window as Control).gis.count)).toBe(count + 1);
+      expect(await page.evaluate(() => (window).gis.count)).toBe(count + 1);
       await release(outcome);
       await expect(error).toHaveText(t(key));
       await expect(button).toBeFocused();
       await expect(error).not.toContainText(secret);
-      expect(await page.evaluate(() => (window as Control).authCalls)).toBe(0);
+      expect(await page.evaluate(() => (window).authCalls)).toBe(0);
     };
     const trigger = page.getByTestId("sign-in-open");
     await trigger.focus(); await page.keyboard.press("Enter");
@@ -117,12 +120,12 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     await signIn.click(); await release("valid");
     await expect(pop.getByTestId("sign-in-error")).toHaveText(t("errors.googleConnectedOther", { got: longEmail, expected: email }));
     await page.screenshot({ path: `/tmp/terno-w12-s53/${language}-${theme}-long.png` });
-    expect(await page.evaluate(() => (window as Control).authCalls)).toBe(1);
+    expect(await page.evaluate(() => (window).authCalls)).toBe(1);
     identity = email;
     await signIn.click(); await release("valid");
     await expect(page.getByTestId("sign-in-notice")).toHaveCount(0);
     await expect(page.getByTestId(`nav-account-${account.id}`)).toBeFocused();
-    expect(await page.evaluate(() => (window as Control).authCalls)).toBe(2);
+    expect(await page.evaluate(() => (window).authCalls)).toBe(2);
     const accounts = await page.evaluate(() => window.__ternoWeb!.client.call("app.bootstrap", {}));
     expect(accounts.accounts.map(({ id, email }) => ({ id, email }))).toEqual([{ id: account.id, email }]);
     expect(unexpected).toEqual([]);
