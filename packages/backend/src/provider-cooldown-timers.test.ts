@@ -80,7 +80,7 @@ it("observer deadlines retain the physical writer until close joins it", async (
     setTimeout: (fn: () => void, ms: number) => { const id = ++next; timers.set(id, { at: now + ms, fn }); return id as unknown as ReturnType<typeof setTimeout>; },
     clearTimeout: (id: ReturnType<typeof setTimeout>) => { timers.delete(id as unknown as number); },
   };
-  const advance = (time: number) => { now = time; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); } };
+  const advance = (time: number) => { now = time; for (const [id, timer] of Array.from(timers)) if (timer.at <= now) { timers.delete(id); timer.fn(); } };
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   const port: CooldownPersistence = { read: async () => null, update: async (fn) => { writes++; await held; return fn(null).result; } };

@@ -572,3 +572,7 @@ Native read-only Standards+Spec review of `8a189280` found no Standards issue an
 ### W12 code review round 2
 
 Native read-only Standards+Spec review of `aab6d731..bd28bee9` returned zero findings and confirmed both R1 test-oracle corrections. Static review only; the remaining browser and S53 qualification limits above stay open.
+
+### Root rebase verification
+
+After rebasing onto local main, Root passed193cooldown/timer/store cases,64Google identity/reconnect/helper cases, backend main/lifecycle and web main/worker types, and the real OPFS worker/GIS callback browser case. Strict owned-file lint initially found no-useless-spread in the new deterministic timer test; Array.from keeps the same Map snapshot semantics and clears that warning. The four-case timer file and strict lint then passed, followed by browser and whitespace checks. This is a mechanical test-only lint correction after the two completed reviews, not a new production behavior or third review. Original failed lint evidence is retained. No real GIS popup, UI-triggered consent, list keyboard focus, draft reopen/restart or S53 locale/theme/accessibility coverage is claimed. Evidence: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-w12-worker-timer-landing-pp7ay7at`.
