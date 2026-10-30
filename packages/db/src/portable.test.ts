@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -12,9 +14,9 @@ function nodeImports(entry: string): string[] {
   const visit = (file: string) => {
     if (seen.has(file)) return;
     seen.add(file);
-    const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(/^\s*(?:import|export)(?!\s+type\b)[^"';]*?from\s+"([^"]+)"|import\("([^"]+)"\)/gm)) {
-      const spec = (m[1] ?? m[2])!;
+    const src = stripTypeScriptTypes(readFileSync(file, "utf8"), { mode: "transform" });
+    for (const m of src.matchAll(/\b(?:import|export)\s+[^"';]*?from\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\bimport\s*["']([^"']+)["']/g)) {
+      const spec = (m[1] ?? m[2] ?? m[3])!;
       if (spec.startsWith("node:")) found.push(`${file.slice(packages.length + 1)} → ${spec}`);
       else if (spec.startsWith(".")) visit(resolveFile(join(dirname(file), spec)));
       else if (spec.startsWith("@terno/")) {
@@ -46,4 +48,26 @@ it("the portable layers (core, store contracts, db without the node driver, the 
 it("the scan sees through to the node driver", () => {
   expect(nodeImports(join(packages, "db/src/index.ts"))).toContain("db/src/node-driver.ts → node:sqlite");
   expect(nodeImports(join(packages, "backend/src/index.ts"))).toContain("backend/src/backend.ts → node:dns/promises");
+});
+
+it("follows runtime imports but not erased inline import types", () => {
+  const root = mkdtempSync(join(tmpdir(), "terno-portable-"));
+  const entry = join(root, "entry.ts");
+  const scan = (source: string) => { writeFileSync(entry, source); return nodeImports(entry); };
+  try {
+    writeFileSync(join(root, "native.ts"), 'import { Readable } from "node:stream"; export { Readable };');
+    expect.soft(scan('type P = import("./native").Readable; export interface Q { p: import("./native").Readable }')).toEqual([]);
+    expect.soft(scan('import type { Readable } from "./native"; export type { Readable } from "./native";')).toEqual([]);
+    expect.soft(scan('export { ProviderError } from "@terno/mail/portable";')).toEqual([]);
+    expect.soft(scan('export { ProviderError } from "@terno/mail";')).toContain("mail/src/compose.ts → node:stream");
+    for (const source of [
+      'import { Readable } from "./native"; void Readable;',
+      'import { Readable } from "./native"; type T = Readable;',
+      'export { Readable } from "./native";',
+      'export * from "./native";',
+      'void import("./native");',
+      'import "./native";',
+      'import { type Readable } from "./native";',
+    ]) expect.soft(scan(source), source).toHaveLength(1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
