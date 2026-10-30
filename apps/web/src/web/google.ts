@@ -6,10 +6,8 @@ import { getApp, setApp } from "~/state/app";
 /** Google Identity Services' token model: the subset Terno uses. */
 interface TokenResponse {
   access_token: string;
-  expires_in: number | string;
+  expires_in: number;
   scope: string;
-  error?: string;
-  error_description?: string;
 }
 interface TokenClient {
   requestAccessToken(o?: { prompt?: string; login_hint?: string }): void;
@@ -24,8 +22,8 @@ declare global {
             scope: string;
             login_hint?: string;
             include_granted_scopes?: boolean;
-            callback: (r: TokenResponse) => void;
-            error_callback?: (e: { type: string; message?: string }) => void;
+            callback: (r: unknown) => void;
+            error_callback?: (e: unknown) => void;
           }): TokenClient;
         };
       };
@@ -57,17 +55,42 @@ export function preloadGoogle(): Promise<void> {
   return loading;
 }
 
-function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES): Promise<TokenResponse> {
+function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES, photo = false): Promise<TokenResponse> {
   return new Promise((resolve, reject) => {
-    const tokens = window.google!.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: scopes.join(" "),
-      login_hint: loginHint,
-      include_granted_scopes: true,
-      callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
-      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? t("web.google.popupClosed") : e.type === "popup_failed_to_open" ? t("web.google.popupBlocked") : (e.message ?? e.type))),
-    });
-    tokens.requestAccessToken({ prompt: loginHint ? "" : "consent" });
+    const invalid = () => new Error(t("errors.google.invalidResponse"));
+    try {
+      const tokens = window.google!.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: scopes.join(" "),
+        login_hint: loginHint,
+        include_granted_scopes: true,
+        callback: (value) => {
+          try {
+            if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid();
+            const r = value as Record<string, unknown>;
+            if (r.error !== undefined) {
+              if (typeof r.error !== "string" || !r.error) throw invalid();
+              throw new Error(t(r.error === "access_denied" ? "errors.google.denied" : r.error === "admin_policy_enforced" ? "errors.google.adminPolicy" : "errors.google.unavailable"));
+            }
+            const expiresIn = typeof r.expires_in === "number" ? r.expires_in : typeof r.expires_in === "string" && /^\d+$/.test(r.expires_in) ? Number(r.expires_in) : NaN;
+            if (typeof r.access_token !== "string" || r.access_token.length > 4096 || !/^[\x21-\x7e]+$/.test(r.access_token) ||
+              !Number.isInteger(expiresIn) || expiresIn < 60 || expiresIn > 86_400 ||
+              typeof r.scope !== "string" || !r.scope.trim() || (photo && r.scope.length > 2000)) throw invalid();
+            if (!r.scope.split(/\s+/).includes(GMAIL_SCOPES[3]!)) throw new Error(t("web.google.noGmailScope"));
+            resolve({ access_token: r.access_token, expires_in: expiresIn, scope: r.scope });
+          } catch (error) {
+            reject(error instanceof Error && [t("errors.google.invalidResponse"), t("errors.google.denied"), t("errors.google.adminPolicy"), t("errors.google.unavailable"), t("web.google.noGmailScope")].includes(error.message) ? error : invalid());
+          }
+        },
+        error_callback: (value) => {
+          try {
+            const type = value && typeof value === "object" ? (value as { type?: unknown }).type : undefined;
+            reject(new Error(t(type === "popup_closed" ? "web.google.popupClosed" : type === "popup_failed_to_open" ? "web.google.popupBlocked" : "errors.google.unavailable")));
+          } catch { reject(new Error(t("errors.google.unavailable"))); }
+        },
+      });
+      tokens.requestAccessToken(photo ? { prompt: "consent", login_hint: loginHint } : { prompt: loginHint ? "" : "consent" });
+    } catch { reject(new Error(t("errors.google.unavailable"))); }
   });
 }
 
@@ -85,11 +108,10 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number): P
   // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
   const adding = loginHint === undefined && accountId === undefined;
   const token = await accessToken(clientId, loginHint, adding ? [...GMAIL_SCOPES, ...PHOTO_SCOPES] : GMAIL_SCOPES);
-  const granted = token.scope.split(" ");
-  if (!granted.includes("https://www.googleapis.com/auth/gmail.modify")) throw new Error(t("web.google.noGmailScope"));
-  const expiresIn = Number(token.expires_in) || 3600;
+  const granted = token.scope.split(/\s+/);
+  const expiresIn = token.expires_in;
   const account = await client.call("accounts.connectGmailToken", { accessToken: token.access_token, expiresIn, ...(accountId !== undefined && { accountId }) });
-  if (adding && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
+  if (adding && token.scope.length <= 2000 && PHOTO_SCOPES.some((scope) => granted.includes(scope)) && !getApp().settings?.googlePhotos[String(account.id)]) {
     // photos are extra: the account is connected even if this fails
     await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn, scope: token.scope }).then((settings) => setApp({ settings }), () => {});
   }
@@ -105,16 +127,6 @@ export async function authorizeGooglePhotosWeb(account: Account): Promise<void> 
   const clientId = getApp().settings?.gmailClientId;
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
-  const token = await new Promise<TokenResponse>((resolve, reject) => {
-    const tokens = window.google!.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: [...GMAIL_SCOPES, ...PHOTO_SCOPES].join(" "),
-      login_hint: account.email,
-      include_granted_scopes: true,
-      callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
-      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? t("web.google.popupClosed") : e.type === "popup_failed_to_open" ? t("web.google.popupBlocked") : (e.message ?? e.type))),
-    });
-    tokens.requestAccessToken({ prompt: "consent", login_hint: account.email });
-  });
-  setApp({ settings: await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn: Number(token.expires_in) || 3600, scope: token.scope }) });
+  const token = await accessToken(clientId, account.email, [...GMAIL_SCOPES, ...PHOTO_SCOPES], true);
+  setApp({ settings: await client.call("icons.authorizeGoogle", { accountId: account.id, accessToken: token.access_token, expiresIn: token.expires_in, scope: token.scope }) });
 }
