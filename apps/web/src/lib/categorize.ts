@@ -6,7 +6,7 @@ import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
-import { getApp, setApp, type ScopeSelection } from "~/state/app";
+import { getApp, inPlainInbox, setApp, setCategories, type ScopeSelection } from "~/state/app";
 import { deferred, trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack } from "~/lib/snack";
@@ -41,6 +41,12 @@ function patch(threadIds: readonly number[], categoryId: number, on: boolean): v
   }));
 }
 
+/** Plan 80: filing into this category takes rows out of the list on screen (a category hidden from the Inbox you're in). */
+function leavesInbox(categoryId: number): boolean {
+  const s = getApp();
+  return inPlainInbox(s) && s.categories.some((c) => c.id === categoryId && !c.showInInbox);
+}
+
 function refreshReader(threadIds: readonly number[]): void {
   invalidateThreads(threadIds);
   const selected = getApp().selectedId;
@@ -58,7 +64,8 @@ export async function addToCategory(categoryId: number, threadIds: readonly numb
   if (ids.length === 0) return null;
   const { items, index } = useList.getState();
   const fresh = ids.filter((id) => !items[index.get(id) ?? -1]?.categoryIds.includes(categoryId));
-  patch(fresh, categoryId, true);
+  if (leavesInbox(categoryId)) leaveView(ids.filter((id) => index.has(id)));
+  else patch(fresh, categoryId, true);
   // the sidebar count moves in the same frame; the backend's counts event confirms it
   const unread = fresh.filter((id) => items[index.get(id) ?? -1]?.unread).length;
   const bumped = unread ? bumpUnread({ [categoryId]: unread }) : null;
@@ -102,7 +109,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
   }
   const s = getApp();
   const viewing = s.reviewCategoryId === null ? s.categoryId : null;
-  if (viewing !== null && viewing !== categoryId) leaveView(ids.filter((id) => index.has(id)));
+  if ((viewing !== null && viewing !== categoryId) || leavesInbox(categoryId)) leaveView(ids.filter((id) => index.has(id)));
   else patchRows(ids, (t) => ({ ...t, categoryIds: [categoryId] }));
   const bumped = Object.keys(delta).length ? bumpUnread(delta) : null;
   const source = options.source ?? "dnd";
@@ -128,7 +135,8 @@ export async function addScopeToCategory(categoryId: number, sel: ScopeSelection
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
   // the scope's loaded rows (with the unread filter, not a read row it kept)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
-  patch(loaded, categoryId, true);
+  if (leavesInbox(categoryId)) leaveView(loaded);
+  else patch(loaded, categoryId, true);
   setApp({ checked: new Set(), scope: null });
   const progress = trackJob(t("category.addingScope", { count: sel.count, category: name }));
   try {
@@ -383,4 +391,40 @@ export async function fileAlways(categoryId: number, scope: FilterableScope, thr
   } finally {
     void reloadList({ keepSelection: true });
   }
+}
+
+/**
+ * Plan 80: a category's mail in the Inbox, or not. Applied once the backend
+ * has it (a local call), so a list refresh meanwhile never brings rows back:
+ * then the category list follows, and hiding it from the Inbox on screen
+ * takes its loaded rows out with the archive's fade and slide (the reload
+ * the backend's change event brings agrees). Undo (and z) sets the value it
+ * had, so a retry or a repeat does no harm. False when nothing changed.
+ */
+export async function setShowInInbox(categoryId: number, show: boolean): Promise<boolean> {
+  const before = getApp().categories.find((c) => c.id === categoryId);
+  if (!before) return false;
+  try {
+    await applyShowInInbox(categoryId, show);
+  } catch (error) {
+    snack.error(t("category.inboxFailed", { error: errorText(error) }));
+    return false;
+  }
+  if (before.showInInbox === show) return true;
+  const name = before.name;
+  const undo = registerUndo(() => applyShowInInbox(categoryId, before.showInInbox));
+  snack.success(t(show ? "category.shownInInbox" : "category.hiddenFromInbox", { category: name }), {
+    duration: 6000,
+    action: undoAction(undo, t(show ? "category.undoShowInInbox" : "category.undoHideFromInbox", { category: name })),
+  });
+  return true;
+}
+
+/** Sets it (throws when the backend refuses: an undo stays ready to retry). */
+async function applyShowInInbox(categoryId: number, show: boolean): Promise<void> {
+  const next = await client.call("categories.update", { id: categoryId, showInInbox: show });
+  setCategories(getApp().categories.map((c) => (c.id === next.id ? next : c)));
+  if (show || !inPlainInbox(getApp())) return;
+  const leaving = useList.getState().items.filter((row) => row.categoryIds.includes(categoryId)).map((row) => row.id);
+  if (leaving.length) leaveView(leaving);
 }

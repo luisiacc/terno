@@ -190,13 +190,21 @@ export function setFolders(folders: Folder[]): void {
   if (folder !== null && !folders.some((f) => f.accountId === accountId && f.key === folder && f.selectable)) navigate({ view: "inbox", accountId });
 }
 
+/** Plan 80: the Inbox itself (not a category's tab of it, a folder, Revisar or a search): what hidden categories leave. */
+export function inPlainInbox(s: Pick<AppState, "view" | "categoryId" | "reviewCategoryId" | "folder" | "query">): boolean {
+  return s.view === "inbox" && s.categoryId === null && s.reviewCategoryId === null && s.folder === null && s.query.trim() === "";
+}
+
 /**
  * The category list changed (an edit here, an event from the backend): a
  * view of a category that is gone (its list or its Revisar) goes back to the
  * inbox instead of querying nothing.
  */
 export function setCategories(categories: Category[]): void {
-  setApp({ categories });
+  const hidden = (list: readonly Category[]) => list.filter((c) => !c.showInInbox).map((c) => c.id).join();
+  // plan 80: what the Inbox shows changed (here or in another window): a "select all N" of it counted other threads
+  const regrouped = hidden(getApp().categories) !== hidden(categories) && inPlainInbox(getApp()) && getApp().scope !== null;
+  setApp({ categories, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });
   const { categoryId, reviewCategoryId } = getApp();
   const gone = (id: number | null) => id !== null && !categories.some((c) => c.id === id);
   if (gone(categoryId) || gone(reviewCategoryId)) navigate({ view: "inbox", categoryId: null, reviewCategoryId: null });

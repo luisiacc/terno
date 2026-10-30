@@ -30,7 +30,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { addToCategory, answerReview, fileAlways, filterNameOf, removeSenderFromCategory } = await import("./categorize");
+const { addToCategory, answerReview, fileAlways, filterNameOf, removeSenderFromCategory, setShowInInbox } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 const { registerUndo, undoLast, undoNow, useSnack } = await import("~/lib/snack");
@@ -299,5 +299,68 @@ describe("plan 80: the filter's name", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fake.calls).toContain("similar.undo");
     expect(fake.calls).not.toContain("categorize.undo");
+  });
+});
+
+describe("plan 80: a category hidden from the Inbox", () => {
+  const LINKEDIN = 9;
+  const cat = (showInInbox: boolean) => ({ id: LINKEDIN, name: "LinkedIn", color: "cyan" as const, position: 0, autoApply: true, showInInbox });
+  const inbox = { view: "inbox" as const, categoryId: null, reviewCategoryId: null, folder: null, query: "", selectedId: null, scope: null, checked: new Set<number>() };
+  const ids = () => useList.getState().items.map((t) => t.id);
+  beforeEach(() => {
+    const items = [row(1, true), { ...row(2, true), categoryIds: [LINKEDIN] }, row(3, false)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+    setApp({ ...inbox, categories: [cat(true)] });
+    fake.handlers["categories.update"] = async (p) => cat((p as { showInInbox: boolean }).showInInbox);
+  });
+
+  it("hiding it takes its loaded rows out of the Inbox once the backend has it; Undo shows it again", async () => {
+    let answer!: () => void;
+    const gate = new Promise<void>((r) => (answer = r));
+    fake.handlers["categories.update"] = async (p) => (await gate, cat((p as { showInInbox: boolean }).showInInbox));
+    const done = setShowInInbox(LINKEDIN, false);
+    // nothing leaves before the backend says so (a refresh meanwhile would bring it back)
+    expect(ids()).toEqual([1, 2, 3]);
+    answer();
+    expect(await done).toBe(true);
+    expect(ids()).toEqual([1, 3]);
+    expect(getApp().categories[0]!.showInInbox).toBe(false);
+    expect(useSnack.getState().current?.message).toBe("LinkedIn is hidden from the Inbox");
+    undoLast();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getApp().categories[0]!.showInInbox).toBe(true);
+  });
+
+  it("anywhere but the plain Inbox (a category, a search) the rows stay", async () => {
+    setApp({ query: "linkedin" });
+    await setShowInInbox(LINKEDIN, false);
+    expect(ids()).toEqual([1, 2, 3]);
+    setApp({ ...inbox, categoryId: LINKEDIN, categories: [cat(true)] });
+    await setShowInInbox(LINKEDIN, false);
+    expect(ids()).toEqual([1, 2, 3]);
+  });
+
+  it("a refusal changes nothing and says why", async () => {
+    fake.handlers["categories.update"] = async () => {
+      throw new Error("gone");
+    };
+    expect(await setShowInInbox(LINKEDIN, false)).toBe(false);
+    expect(ids()).toEqual([1, 2, 3]);
+    expect(getApp().categories[0]!.showInInbox).toBe(true);
+    expect(useSnack.getState().current?.message).toBe("Couldn’t change what the Inbox shows: gone");
+  });
+
+  it("a change of what the Inbox shows ends a select-all of it (its count was of other threads)", async () => {
+    setApp({ scope: { scope: { kind: "view", view: "inbox" }, count: 3 } as never, checked: new Set([1]) });
+    await setShowInInbox(LINKEDIN, false);
+    expect(getApp().scope).toBeNull();
+    expect(getApp().checked.size).toBe(0);
+  });
+
+  it("filing into a hidden category from the Inbox takes the rows out", async () => {
+    setApp({ categories: [cat(false)] });
+    fake.handlers["categories.addThreads"] = async () => ({ added: 1, addedIds: [1], batchId: 1 });
+    await addToCategory(LINKEDIN, [1]);
+    expect(ids()).toEqual([2, 3]);
   });
 });

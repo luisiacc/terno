@@ -45,3 +45,62 @@ test.describe("categories", { tag: "@design" }, () => {
     await expect(target.locator("[data-slot=category-dot]")).toHaveCount(0);
   });
 });
+
+test.describe("a category hidden from the Inbox (plan 80)", { tag: "@design" }, () => {
+  test("right-click → Show in Inbox off: its rows leave the Inbox and its count; the category keeps them; Undo brings them back", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    // the category with the most Inbox threads in the seed
+    const { id: cat, name } = db.get<{ id: number; name: string }>(
+      `SELECT c.id, c.name FROM categories c JOIN thread_categories tc ON tc.category_id = c.id JOIN threads t ON t.id = tc.thread_id
+       WHERE t.in_inbox = 1 GROUP BY c.id ORDER BY count(*) DESC LIMIT 1`,
+    )!;
+    const hiddenUnread = () =>
+      db.get<{ c: number }>(
+        "SELECT count(*) AS c FROM threads t WHERE t.in_inbox = 1 AND t.unread_count > 0 AND NOT EXISTS (SELECT 1 FROM thread_categories h JOIN categories k ON k.id = h.category_id WHERE h.thread_id = t.id AND k.show_in_inbox = 0)",
+      )!.c;
+    const inboxCount = page.getByTestId("nav-inbox").locator("[data-slot=nav-count]");
+    await expect(inboxCount).toHaveText(String(hiddenUnread()));
+    const inCat = page.locator(`[data-testid=thread-row]:has([data-cat-dot="${cat}"])`);
+    await expect(inCat.first()).toBeVisible();
+
+    await page.getByTestId(`nav-category-${cat}`).click({ button: "right" });
+    const item = page.getByTestId("category-menu-show-in-inbox");
+    await expect(item).toHaveAttribute("aria-checked", "true");
+    await item.click();
+    await expect(page.getByTestId("snack").filter({ hasText: `${name} is hidden from the Inbox` })).toBeVisible();
+    await expect(inCat).toHaveCount(0);
+    await expect(page.getByTestId(`nav-category-hidden-${cat}`)).toBeVisible();
+    expect(db.get("SELECT show_in_inbox FROM categories WHERE id = ?", cat)).toEqual({ show_in_inbox: 0 });
+    await expect(inboxCount).toHaveText(String(hiddenUnread()));
+    await expect(rows(page).first()).toBeVisible();
+
+    // where the mail is now: the category's own list
+    await page.getByTestId(`nav-category-${cat}`).click();
+    await expect(page.getByTestId("list-title")).toHaveText(name);
+    await expect(inCat.first()).toBeVisible();
+    await page.getByTestId("nav-inbox").click();
+    await expect(inCat).toHaveCount(0);
+
+    await page.keyboard.press("z");
+    await expect(inCat.first()).toBeVisible();
+    await expect(page.getByTestId(`nav-category-hidden-${cat}`)).toHaveCount(0);
+    expect(db.get("SELECT show_in_inbox FROM categories WHERE id = ?", cat)).toEqual({ show_in_inbox: 1 });
+  });
+
+  test("Settings → Categories: the Show in Inbox switch hides it, and says so in the row", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-categories").click();
+    const item = page.getByTestId(`category-stats-${facturas}`);
+    await item.getByTestId("category-toggle").click();
+    const toggle = item.getByRole("switch", { name: "Show in Inbox" });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect.poll(() => db.get("SELECT show_in_inbox FROM categories WHERE id = ?", facturas)).toEqual({ show_in_inbox: 0 });
+    await expect(item.getByTestId("category-toggle")).toContainText("Hidden from the Inbox");
+    await toggle.click();
+    await expect.poll(() => db.get("SELECT show_in_inbox FROM categories WHERE id = ?", facturas)).toEqual({ show_in_inbox: 1 });
+  });
+});

@@ -10,6 +10,7 @@ import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
+import { setShowInInbox } from "~/lib/categorize";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, setCategories, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
@@ -81,7 +82,10 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
             <span className="block truncate text-sm font-medium" data-testid="category-name">
               {category.name}
             </span>
-            <span className="block truncate text-xs text-muted-foreground">{statsLine(stats)}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {statsLine(stats)}
+              {!category.showInInbox && ` · ${t("category.hiddenFromInboxBadge")}`}
+            </span>
           </span>
           <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
         </button>
@@ -112,6 +116,9 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                   onCommit={(v) => updateCategory(category.id, { name: v.trim() })}
                 />
               )}
+            </SettingsRow>
+            <SettingsRow label={t("settings.categories.showInInbox")} hint={t("settings.categories.showInInbox.hint")}>
+              {(a) => <Switch {...a} data-testid="category-show-in-inbox" checked={category.showInInbox} onCheckedChange={(on) => void setShowInInbox(category.id, on)} />}
             </SettingsRow>
             <SettingsRow label={t("settings.categories.order")} hint={t("settings.categories.order.hint", { position: index + 1, total: count })}>
               {() => (

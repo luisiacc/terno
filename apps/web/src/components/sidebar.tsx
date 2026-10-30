@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, ChevronDown, ChevronRight, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -23,6 +23,7 @@ import { ConnectionPill } from "./connection-pill";
 import { SignInMarker, SignInNotice } from "./sign-in-notice";
 import { UpdatePill } from "./update-pill";
 import { preloadComposer } from "./composer/lazy";
+import { CategoryMenu } from "./category-menu";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -84,6 +85,7 @@ function NavItem({
   countHelp,
   countHelpDisabled,
   shortcut,
+  note,
 }: {
   active: boolean;
   onClick: () => void;
@@ -108,6 +110,8 @@ function NavItem({
   countHelp?: "general" | "account" | { id: string; text: string };
   countHelpDisabled?: boolean;
   shortcut?: string;
+  /** a quiet mark after the name (plan 80: a category hidden from the Inbox) */
+  note?: React.ReactNode;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -141,7 +145,14 @@ function NavItem({
     >
       <span className="flex size-4 items-center justify-center text-sidebar-glyph transition-transform group-data-[drop-state=over]:scale-125">{icon}</span>
       {expanded === undefined ? (
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        note ? (
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate">{label}</span>
+            {note}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+        )
       ) : (
         // the disclosure's mark beside the name: shown while open, and on hover or focus while closed
         <span className="flex min-w-0 flex-1 items-center gap-1">
@@ -774,7 +785,8 @@ export function Sidebar() {
           {categories.map((c) => {
             const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
             return (
-              <div key={c.id} className="relative">
+              <CategoryMenu key={c.id} category={c}>
+              <div className="relative">
                 {help && <span id={`sidebar-count-category-${c.id}`} className="sr-only">{help}</span>}
                 <NavItem
                   testId={`nav-category-${c.id}`}
@@ -787,6 +799,16 @@ export function Sidebar() {
                   count={counts.categoryUnread[c.id] || undefined}
                   countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
                   reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
+                  note={
+                    !c.showInInbox && (
+                      <EyeOff
+                        role="img"
+                        aria-label={t("category.hiddenFromInboxBadge")}
+                        data-testid={`nav-category-hidden-${c.id}`}
+                        className="size-3 shrink-0 text-muted-foreground animate-in fade-in zoom-in-75"
+                      />
+                    )
+                  }
                 />
                 {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
                   <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
@@ -805,6 +827,7 @@ export function Sidebar() {
                   </button>
                 )}
               </div>
+              </CategoryMenu>
             );
           })}
           {creating && (
