@@ -179,7 +179,7 @@ test("recovery holds storage switching and mailbox handover while the current wo
   await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before opening this mailbox in another tab.");
   await expect(page.getByTestId("web-taken")).toHaveCount(0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
   await page.getByTestId("storage-switch-dialog-confirm").click();
   await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before switching storage. Your work is still here.");
@@ -206,7 +206,7 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
     } });
   });
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
   await page.getByTestId("storage-switch-dialog-confirm").click();
   await expect.poll(() => page.evaluate(() => "releaseExport" in window)).toBe(true);
@@ -227,7 +227,7 @@ test("slow storage export cannot commit an earlier snapshot over later recovery"
   await page.getByTestId("draft-save-copy").click(); await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   const latest = await page.evaluate(async () => (await window.__ternoWeb!.client.call("drafts.list", {}))[0]!);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
   await page.getByTestId("storage-switch-dialog-confirm").click();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "exportCalls"))).toBe(2);

@@ -1,15 +1,14 @@
 import { Button } from "@terno/ui/components/button";
 import { Download, Upload } from "lucide-react";
 import { t } from "@terno/i18n";
-import { Suspense, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { downloadExport, importFile, importSummary } from "~/lib/backup";
-import { StorageSection } from "~/lib/web-parts";
 import { SettingsGroup, SettingsRow } from "./parts";
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** Ajustes → Datos: a copy of what can't be re-synced, bringing one back, and (web) where the mailbox lives. */
+/** Ajustes → Datos: a copy of what can't be re-synced, and bringing one back (where the mailbox lives: Storage). */
 export function DataTab() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
@@ -73,11 +72,6 @@ export function DataTab() {
           )}
         </SettingsRow>
       </SettingsGroup>
-      {StorageSection && (
-        <Suspense>
-          <StorageSection />
-        </Suspense>
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
+import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
@@ -11,6 +11,7 @@ const LABEL_KEYS = {
   ai: "settings.tab.ai",
   agents: "settings.tab.agents",
   data: "settings.tab.data",
+  storage: "settings.tab.storage",
 } as const satisfies Record<SettingsTab, string>;
 
 /** A section's name in the current language. */
@@ -37,4 +38,5 @@ export const SETTINGS_TABS: readonly { readonly value: SettingsTab; readonly lab
   tab("ai", Sparkles),
   tab("agents", Bot),
   tab("data", Database),
+  tab("storage", HardDrive),
 ];

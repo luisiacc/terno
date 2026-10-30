@@ -14,6 +14,7 @@ import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { GeneralTab } from "./settings/general-tab";
+import { StorageTab } from "./settings/storage-tab";
 import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
 import { t } from "@terno/i18n";
 import { reconcileSettings } from "~/lib/appearance";
@@ -93,6 +94,10 @@ export function SettingsDialog() {
 
               <TabsContent value="data">
                 <DataTab />
+              </TabsContent>
+
+              <TabsContent value="storage">
+                <StorageTab />
               </TabsContent>
 
               <TabsContent value="agents">

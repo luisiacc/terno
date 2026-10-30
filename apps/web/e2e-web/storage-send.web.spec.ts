@@ -24,7 +24,7 @@ test("actual pending Send refuses Settings storage switching before export and p
   const pin = await page.evaluate(() => localStorage.getItem("terno:storage:terno"));
   let navigations = 0; page.on("framenavigated", (f) => { if (f === page.mainFrame()) navigations++; });
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
   await page.getByTestId("storage-switch-dialog-confirm").click();
   await expect(page.getByTestId("snack-message")).toContainText("Save or discard your unsaved drafts before switching storage");
@@ -40,7 +40,7 @@ test("actual pending Send refuses Settings storage switching before export and p
   expect(copy.to).toEqual([{ name: "Pérez, Ana", email: "ana@example.test" }]);
   expect(await page.evaluate((d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), copy)).toEqual({ dataBase64: "AP+A" });
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data"); await page.keyboard.press("Enter");
+  await page.getByTestId("palette-input").fill("settings storage"); await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click(); await page.getByTestId("storage-engine-idb").click();
   await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.getByTestId("storage-switch-dialog-confirm").click()]);
   await page.getByTestId("thread-row").first().waitFor(); expect(await page.evaluate(() => window.__ternoWeb!.storage)).toBe("idb");

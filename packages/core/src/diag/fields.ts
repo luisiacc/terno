@@ -71,7 +71,7 @@ export const FIELD_TYPES = {
   stage: enumOf("check", "download", "verify", "install", "other"),
   source: enumOf("backend", "store", "search", "categorizer", "keychain", "main", "renderer", "worker", "mcp", "other"),
   status: int(0, 999),
-  tab: enumOf("general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data", "other"),
+  tab: enumOf("general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data", "storage", "other"),
   threadId: int(0, Number.MAX_SAFE_INTEGER),
   tool: id,
   toVersion: id,

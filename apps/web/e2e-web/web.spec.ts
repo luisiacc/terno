@@ -433,15 +433,18 @@ test("blocking screens take focus, make the app behind them inert and suspend it
   await expect(page.getByTestId("web-take-back")).toBeFocused();
 });
 
-test("storage: persistence is requested and shown in Settings → Data, and the mailbox's own data exports as JSON", async ({ page }) => {
+test("storage: persistence is requested and shown in Settings → Storage, and the mailbox's own data exports as JSON from Data", async ({ page }) => {
   await boot(page);
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-data").click();
+  await page.getByTestId("tab-storage").click();
   const section = page.getByTestId("storage-section");
   await expect(section).toBeVisible();
   await expect(section.getByTestId("storage-persistence")).toHaveAttribute("data-persisted", /^(granted|denied)$/);
   await expect(section).toContainText(/won’t clear your mailbox|may clear your mailbox/);
   await expect(page.getByRole("combobox", { name: "Engine" })).toContainText("SQLite (OPFS)");
+  // plan 69: what the mailbox takes, measured by the OPFS SQLite store, above it
+  await expect(page.getByTestId("storage-total")).toBeVisible();
+  await page.getByTestId("tab-data").click();
   const download = page.waitForEvent("download");
   await page.getByTestId("data-export").click();
   const file = await download;
@@ -453,7 +456,7 @@ test("storage: persistence is requested and shown in Settings → Data, and the 
   expect(dump.settings).toBeTruthy();
 });
 
-test("Settings → Data: switching the engine to IndexedDB carries settings and categories, stays pinned, and can switch back", async ({ page }) => {
+test("Settings → Storage: switching the engine to IndexedDB carries settings and categories, stays pinned, and can switch back", async ({ page }) => {
   await boot(page, "/?demo=200&mailbox=switch");
   expect((await web(page)).storage).toBe("opfs-sqlite");
   await page.evaluate(async () => {
@@ -464,7 +467,7 @@ test("Settings → Data: switching the engine to IndexedDB carries settings and 
   await page.reload();
   await rows(page).first().waitFor({ timeout: 60_000 });
   await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data");
+  await page.getByTestId("palette-input").fill("settings storage");
   await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-idb").click();
@@ -483,7 +486,7 @@ test("Settings → Data: switching the engine to IndexedDB carries settings and 
   expect((await web(page)).storage).toBe("idb");
   // and back: the SQLite mailbox was left where it was
   await page.keyboard.press("Meta+Comma");
-  await page.getByTestId("tab-data").click();
+  await page.getByTestId("tab-storage").click();
   await expect(page.getByRole("combobox", { name: "Engine" })).toContainText("IndexedDB");
   await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-opfs-sqlite").click();
@@ -524,7 +527,7 @@ test("switching into a fresh, empty engine: drafts and account filters wait for 
   await page.goto("/?demo=0&mailbox=fresh-switch");
   await rows(page).first().waitFor({ timeout: 60_000 });
   await page.keyboard.press("Meta+k");
-  await page.getByTestId("palette-input").fill("settings data");
+  await page.getByTestId("palette-input").fill("settings storage");
   await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Engine" }).click();
   await page.getByTestId("storage-engine-idb").click();
