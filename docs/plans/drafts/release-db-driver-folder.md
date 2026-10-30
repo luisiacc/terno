@@ -23,3 +23,22 @@ Storage GREEN: unit + db-wasm scoped storage/project/image run passes **9/9** (`
 Perf RED→GREEN: original fails Convo 0 vs 1; old held-row fixture at the new preflight also fails unresolved identity (`fixture-oracle-red.log`, exit 1). Fresh ingestion through ingestMessages creates all 5,000 provider IDs in one provider conversation with trusted source locations; full-source dispatch succeeds without fencing, old reset identities stay held, Convo is absent before timing. Original scoped perf passes **1/1** (`perf-green.log`, 33 other tests unselected); no workload, timing window or limit change. Exact destination UID/epoch mappings are additionally asserted outside timing. All reset/relist/rebuild/scopes/removal controls remain.
 
 Direct callers pass **82/82** (unit/db-wasm IMAP identity plus storage/folder conformance; 534 unrelated cases unselected, `callers.log`). db typecheck and scoped oxlint pass (`types.log`, `lint.log`). Every test process inherits NODE_OPTIONS with --require=/tmp/terno-network-guard.cjs, including discovery subprocesses. Temporary synthetic files only. No production files changed; no broader interface dependency. No builds/full suites, throughput or unrelated perf runs.
+
+Final commands (prefix every test launch with `NODE_OPTIONS="${NODE_OPTIONS:-} --require=/tmp/terno-network-guard.cjs"`):
+
+```sh
+pnpm exec vitest run --project unit --project db-wasm packages/db/src/storage.test.ts packages/db/src/storage-images.test.ts packages/db/src/storage-project.test.ts
+pnpm exec vitest run --project unit --project db-wasm packages/db/src/imap-identity.test.ts packages/db/src/store.conformance.test.ts -t 'identity:|identity review:|storage|folders'
+pnpm exec vitest run --project perf packages/db/src/perf.perf.test.ts -t "lists an account's own folders"
+pnpm --filter @terno/db typecheck
+pnpm exec oxlint --deny-warnings packages/db/src/storage.test.ts packages/db/src/storage-images.test.ts packages/db/src/storage-project.test.ts packages/db/src/test/storage.ts packages/db/src/perf.perf.test.ts vitest.config.ts
+git diff --check
+```
+
+The final perf run after adding exact UID/epoch witnesses passes (`perf-final.log`; report copied to `perf-final.json`, multiplier 1). Final db typecheck and lint exit 0 (`types-final.log`, `lint-final.log`). The first pnpm test invocation materialized the offline cached workspace dependencies and ran the repository's normal postinstall; no app/package build command was run. Synthetic images, no real profiles, providers or secrets. No pushes, landing, other children, worktrees, worklist/main or Plans64–68 edits. No review-driven source changes yet; final code review disposition follows.
+
+## Final native Standards + Spec review
+
+Exactly **one** completed native code review, separate from the single plan critique: `codex exec -s read-only -C "$PWD" --ephemeral -o /tmp/terno-db-driver-folder/code-review.txt -`, reviewing `dadc7f46b8b9a94aeff2b34a9259ce3309d07cde..0304f95b`. Actual exit 0. **Standards PASS, Spec PASS, zero actionable findings** (`code-review.txt`, full transcript `code-review.log`). No findings to fix or backlog from this round; no second review. No source change after review. Final evidence/documentation only is committed afterward.
+
+Final result: both failures were fixture/driver-contract mismatches, corrected without production edits or weaker identity trust. Storage new-image reclamation and legacy reusable-space behavior are qualified; native restart compaction/fault coverage is preserved. OPFS remains unverified separately. Full release gates, other perf cases and throughput were deliberately not run under this assignment. Root owns integration/landing and inventory updates.
