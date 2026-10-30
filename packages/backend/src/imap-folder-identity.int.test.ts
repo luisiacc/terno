@@ -52,16 +52,16 @@ it("follows a renamed localized role and retains exact custom-folder identity th
   const thread = (await t.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Proyectos" })).items[0]!;
   const message = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
   t.server.control.createMailbox("Clientes");
-  t.server.control.renameMailbox("Proyectos", "Clientes/Proyectos");
+  t.server.control.renameMailbox("Proyectos", "Clientes/Contratos &AOk-");
   t.server.control.renameMailbox("Enviados", "Enviados nuevos");
   await t.backend.syncAccount(t.account.id);
   const reopened = await t.reopen();
   await reopened.backend.syncAccount(t.account.id);
   const folders = (await reopened.client.call("app.bootstrap", {})).folders.filter((f) => f.accountId === t.account.id);
-  expect(folders.find((f) => f.key === "Clientes/Proyectos")).toMatchObject({ path: ["Clientes", "Proyectos"], selectable: true });
-  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Proyectos" })).items.map((x) => x.id)).toEqual([thread.id]);
-  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "Clientes/Proyectos", uidvalidity: old.uidvalidity, uid: old.uid })]);
-  expect(t.server.control.getMessage("Clientes/Proyectos", old.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
+  expect(folders.find((f) => f.key === "Clientes/Contratos é")).toMatchObject({ path: ["Clientes", "Contratos é"], selectable: true });
+  expect((await reopened.client.call("threads.list", { view: "all", accountId: t.account.id, folder: "Clientes/Contratos é" })).items.map((x) => x.id)).toEqual([thread.id]);
+  expect(await reopened.backend.store.providerStore(t.account.id).locations!.of([message.id])).toEqual([expect.objectContaining({ mailbox: "Clientes/Contratos é", uidvalidity: old.uidvalidity, uid: old.uid })]);
+  expect(t.server.control.getMessage("Clientes/Contratos &AOk-", old.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
   expect(t.server.control.getMessage("INBOX", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
 
@@ -119,9 +119,10 @@ it("reconciles unchanged mail when a mailbox gains or loses a role", async () =>
   t.server.control.setSpecialUse("Projects", ["\\Trash"]);
   await t.backend.syncAccount(t.account.id);
   expect((await t.client.call("threads.get", { threadId: thread.id })).thread.inTrash).toBe(true);
+  const reopened = await t.reopen();
   t.server.control.setSpecialUse("Projects", []);
-  await t.backend.syncAccount(t.account.id);
-  expect((await t.client.call("threads.get", { threadId: thread.id })).thread.inTrash).toBe(false);
+  await reopened.backend.syncAccount(t.account.id);
+  expect((await reopened.client.call("threads.get", { threadId: thread.id })).thread.inTrash).toBe(false);
 });
 
 it("does not dispatch or cache a destination when CREATE is refused", async () => {
