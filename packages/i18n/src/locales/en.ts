@@ -309,7 +309,7 @@ const en = {
   "settings.appearance.motion.hint": "How long animations take. If the system asks for reduced motion, nothing animates.",
   "settings.appearance.motion.reduced": "Your computer asks for reduced motion: nothing animates.",
   "settings.appearance.motion.none": "No animation",
-  "settings.appearance.tryMotion": "Try the animation",
+  "settings.appearance.tryMotion": "Preview",
   "settings.appearance.htmlMail": "HTML mail",
   "settings.appearance.htmlMail.hint": "“Match theme” uses the theme’s colors in mail that has none of its own; designed mail is shown on light paper.",
   "settings.appearance.htmlMail.auto": "Match theme",

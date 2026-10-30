@@ -21,3 +21,11 @@ The settings' option buttons (Appearance's mode, animations and HTML mail; Gener
 `settings-toggles.spec.ts` (`@design`, light and dark): a fresh profile has 75 ms chosen; the chosen button's border and fill differ from the others and the fill isn't transparent; axe passes on the mode and animation groups. Contrast suite: the new pair in every palette.
 
 The suite's "tokens only" scan also caught `0s` literals in `code-chip.css` (plan 69), now `step-end`, `initial` and a visibility transition over the settle's own duration.
+
+## Round 2
+
+> why is the dev:demo command opening with the animations turnedoff if 75ms should be the default. … also when changing from no animation to an animation, the entire screen flashes, fix that, it should not flash … also i don't know what this is … is a toggle but what is it? clarify that ui
+
+- **The demo profile's motion:** a fresh demo profile stores no `motionMs` and opens at 75 ms (checked on a temp profile's database; the e2e test checks a fresh profile). No code writes 0 (only tests). A profile showing "No animation" has it saved, likely clicked while the chosen option couldn't be told apart. Saved choices aren't overridden.
+- **The flash:** "No animation" sets `animation: none` everywhere. Lifting it restarted every element's entrance animation (the open Settings dialog and its backdrop faded in anew). `applyAppearance` now finishes the finite CSS animations that restart when motion turns back on, before the frame paints (`getAnimations()` updates the styles first). Loops keep running. `motion-switch.spec.ts` records what's running in the frame the setting flips; it listed `enter on dialog-overlay` and `enter on dialog-content` before the fix and nothing after.
+- **The preview:** the unlabeled dot in a pill read as a switch. It's now a button saying "▶ Preview" (`es`: "Vista previa"), with the dot on a thin line. It plays when pressed and whenever a speed is picked (once the new speed is in place). The e2e test checks its name and both triggers.

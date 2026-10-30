@@ -124,7 +124,9 @@ export function applyAppearance(a: Appearance): void {
     html.style.colorScheme = mode;
     applyCustomTheme(html.style, custom ? theme : null);
     for (const [k, v] of Object.entries(motionVars(ms))) html.style.setProperty(k, v);
+    const wasOff = html.dataset.motion === "off";
     html.dataset.motion = motionOff(ms, reduced) ? "off" : "on";
+    if (wasOff && html.dataset.motion === "on") settleReplays();
     if (vibrancy) html.setAttribute("data-vibrancy", "");
     else html.removeAttribute("data-vibrancy");
     if (restore) {
@@ -154,6 +156,18 @@ export function applyAppearance(a: Appearance): void {
     /* private mode / quota: theme.js falls back to defaults */
   }
   window.ternoDesktop?.setAppearance?.({ themeSource: a.theme, background: opaqueBackground(theme), vibrancy });
+}
+
+/**
+ * Motion coming back on lifts `animation: none`, and every element with an entrance animation (an open dialog, its
+ * backdrop) would play it again: the screen flashes. Those are finished before the frame paints (getAnimations()
+ * brings the styles up to date first); loops (spinners) keep running.
+ */
+function settleReplays(): void {
+  if (typeof document.getAnimations !== "function" || typeof CSSAnimation === "undefined") return;
+  for (const anim of document.getAnimations()) {
+    if (anim instanceof CSSAnimation && Number.isFinite(anim.effect?.getComputedTiming().iterations ?? Infinity)) anim.finish();
+  }
 }
 
 /** Re-applies when the OS switches light/dark (only matters in system mode) or toggles reduced motion. */

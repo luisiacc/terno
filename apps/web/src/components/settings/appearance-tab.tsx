@@ -6,7 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group"
 import { contrastFailures } from "@terno/ui/themes/contrast";
 import { builtinTheme, resolveCustomTheme, themeName, themesFor, type Theme } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Copy, Pencil, Trash2, Upload } from "lucide-react";
+import { Check, Copy, Pencil, Play, Trash2, Upload } from "lucide-react";
 import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -164,15 +164,32 @@ export function parseThemeFile(text: string, existing: readonly CustomTheme[], e
   return { theme: r.data, warnings };
 }
 
-function MotionDemo({ ms }: { ms: number }) {
-  const [right, setRight] = useState(false);
+/**
+ * Shows the chosen speed: the dot crosses its track when pressed and whenever a speed is picked (`plays` counts
+ * those), at the speed the app now uses. A labeled button, so it says what it is.
+ */
+function MotionDemo({ ms, plays }: { ms: number; plays: number }) {
+  const [presses, setPresses] = useState(0);
+  const right = (presses + plays) % 2 === 1;
   return (
-    <button type="button" onClick={() => setRight((r) => !r)} aria-label={t("settings.appearance.tryMotion")} data-testid="motion-demo" className="relative h-5 w-16 rounded-full bg-muted">
-      <span
-        className="absolute top-1 left-1 size-3 rounded-full bg-primary transition-transform duration-slow ease-motion"
-        style={{ transform: right ? "translateX(44px)" : undefined }}
-        data-ms={ms}
-      />
+    <button
+      type="button"
+      onClick={() => setPresses((p) => p + 1)}
+      data-testid="motion-demo"
+      data-side={right ? "right" : "left"}
+      className="flex h-7 items-center gap-2 rounded-md pr-2.5 pl-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <Play aria-hidden className="size-3 fill-current" />
+      {t("settings.appearance.tryMotion")}
+      {/* a dot on a line (not a pill: that reads as a switch) */}
+      <span aria-hidden className="relative ml-1 h-3 w-12">
+        <span className="absolute inset-x-1.5 top-1/2 h-px -translate-y-1/2 bg-border" />
+        <span
+          className="absolute top-0 left-0 size-3 rounded-full bg-primary transition-transform duration-slow ease-motion"
+          style={{ transform: right ? "translateX(36px)" : undefined }}
+          data-ms={ms}
+        />
+      </span>
     </button>
   );
 }
@@ -267,6 +284,8 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
   const fileRef = useRef<HTMLInputElement>(null);
   const [imported, setImported] = useState<{ error?: string; warnings?: string[]; name?: string } | null>(null);
   const active = resolvedMode(settings.theme);
+  /** speeds picked here: each plays the preview once */
+  const [motionPlays, setMotionPlays] = useState(0);
 
   const pick = (m: ThemeMode, id: string) => void updateAppearance(m === "light" ? { lightTheme: id } : { darkTheme: id });
 
@@ -356,13 +375,25 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
         <SettingsRow stacked label={t("settings.appearance.motion")} hint={reduced ? t("settings.appearance.motion.reduced") : t("settings.appearance.motion.hint")}>
           {(a) => (
             <div className="flex items-center gap-4">
-              <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="outline" size="sm" value={[String(settings.motionMs)]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ motionMs: Number(v[0]) as AppSettings["motionMs"] })} data-testid="motion-toggle">
+              <ToggleGroup
+                aria-labelledby={a["aria-labelledby"]}
+                aria-describedby={a["aria-describedby"]}
+                variant="outline"
+                size="sm"
+                value={[String(settings.motionMs)]}
+                onValueChange={(v: string[]) => {
+                  if (!v[0]) return;
+                  // the preview plays once the new speed is in place
+                  void updateAppearance({ motionMs: Number(v[0]) as AppSettings["motionMs"] }).then(() => requestAnimationFrame(() => setMotionPlays((n) => n + 1)));
+                }}
+                data-testid="motion-toggle"
+              >
                 <ToggleGroupItem value="0" data-testid="motion-0">{t("settings.appearance.motion.none")}</ToggleGroupItem>
                 <ToggleGroupItem value="50" data-testid="motion-50">50 ms</ToggleGroupItem>
                 <ToggleGroupItem value="75" data-testid="motion-75">75 ms</ToggleGroupItem>
                 <ToggleGroupItem value="100" data-testid="motion-100">100 ms</ToggleGroupItem>
               </ToggleGroup>
-              <MotionDemo ms={settings.motionMs} />
+              <MotionDemo ms={settings.motionMs} plays={motionPlays} />
             </div>
           )}
         </SettingsRow>

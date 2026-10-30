@@ -303,7 +303,7 @@ const es = {
   "settings.appearance.motion.hint": "Duración de las animaciones. Si el sistema pide reducir el movimiento, no se anima nada.",
   "settings.appearance.motion.reduced": "Tu equipo pide reducir el movimiento: no se anima nada.",
   "settings.appearance.motion.none": "Sin animación",
-  "settings.appearance.tryMotion": "Probar la animación",
+  "settings.appearance.tryMotion": "Vista previa",
   "settings.appearance.htmlMail": "Correo HTML",
   "settings.appearance.htmlMail.hint": "«Según el tema» usa los colores del tema en correos sin colores propios; los correos diseñados se muestran sobre papel claro.",
   "settings.appearance.htmlMail.auto": "Según el tema",
