@@ -1,3 +1,4 @@
+import { nativeLifecycle } from "./native-lifecycle";
 import { execFileSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
@@ -37,7 +38,7 @@ async function joinOwned(child: ChildProcess, owned: OwnedProcess[]): Promise<vo
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     for (const ownedProcess of owned) {
       if (!alive(ownedProcess)) continue;
-      try { process.kill(ownedProcess.pid, signal); } catch (error) {
+      try { nativeLifecycle("cleanup-signal", { ...ownedProcess, signal }); process.kill(ownedProcess.pid, signal); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
       }
     }
@@ -53,7 +54,8 @@ export async function closePackaged(app: ElectronApplication | undefined): Promi
   if (!app) return;
   const child = app.process();
   const owned = child.pid ? descendants(child.pid) : [];
-  try { await within(app.close(), 5000, "Electron close"); }
+  nativeLifecycle("closePackaged-entry", { pid: child.pid, owned, code: child.exitCode, signal: child.signalCode });
+  try { nativeLifecycle("app.close-call", { pid: child.pid }); await within(app.close(), 5000, "Electron close"); nativeLifecycle("app.close-resolved", { pid: child.pid }); }
   finally { await joinOwned(child, owned); }
 }
 

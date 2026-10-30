@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from "@playwright/test";
+import { nativeDeadline, nativeLifecycle, preserveNativeProfile, traceNative } from "./native-lifecycle";
 import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
 import { openDatabase, SqlMailStore } from "../../../packages/db/src/index";
 
@@ -138,12 +139,15 @@ for (const [design, state] of stoppedCases) test(`real stopped-engine modal perm
   expect(navigations).toBe(1);
 });
 test.beforeEach(async () => {
+  const info = test.info();
+  nativeDeadline("beforeEach-entry", info);
   profile = join(work, `profile-${++sequence}`);
   execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
   const env: Record<string, string> = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, TERNO_TEST_APP_DATA: join(work, "appdata"), TERNO_TEST_APP_NAME: "TernoNativeReloadTest", TERNO_TEST_LANGUAGES: "en-US" };
   delete env.ELECTRON_RUN_AS_NODE; delete env.TERNO_DEV_URL; delete env.TERNO_SMOKE_SCREENSHOT;
   app = await electron.launch({ executablePath: DEV ? join(work, "Electron.app/Contents/MacOS/Electron") : join(work, "Terno.app/Contents/MacOS/Terno"), ...(DEV ? { args: [join(here, "../dist/main.cjs")] } : {}), env });
   console.info("captured synthetic native app PID", app.process().pid);
+  await traceNative(app);
   await blockExternal(app);
   page = await app.firstWindow(); await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
   await page.addInitScript(() => {
@@ -175,9 +179,15 @@ test.beforeEach(async () => {
     });
   });
   await page.reload(); await page.getByTestId("thread-row").first().waitFor(); await page.bringToFront();
+  nativeDeadline("beforeEach-complete", info);
 });
-test.afterEach(async () => { await closePackaged(app); });
-test.afterAll(() => { if (work) rmSync(work, { recursive: true, force: true }); });
+test.afterEach(async () => {
+  const info = test.info();
+  nativeDeadline("afterEach-cleanup-entry", info);
+  nativeLifecycle("pre-cleanup-state", { pageClosed: page?.isClosed(), code: app?.process().exitCode, signal: app?.process().signalCode });
+  try { await closePackaged(app); } finally { preserveNativeProfile(profile, info); nativeDeadline("afterEach-cleanup-complete", info); }
+});
+test.afterAll(() => { nativeLifecycle("afterAll-remove-work", { work }); if (work) rmSync(work, { recursive: true, force: true }); });
 
 for (const dialog of ["settings", "shortcuts"] as const) for (const state of ["missing", "unknown"] as const) test(`healthy ${dialog} exposes native ${state} Review and preserves intent`, async () => {
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");

@@ -58,3 +58,33 @@ Commands/checks:
 All test/check launches append inherited NODE_OPTIONS with --require=/tmp/terno-network-guard.cjs. No full/global gates, perf, production builds or retries.
 
 Artifacts: /tmp/terno-release2-native-print/{red,diagnostic,phase,green,final}.log; plan-review.md; code-review.md; both review-helper RED/GREEN logs; identity.json; owned/cleanup manifests; final-error-contexts/;56app-only screenshots;36PDFs. Personally inspected app-only light/dark stopped/refusal/recovery captures, with passing keyboard/axe checkpoints; no desktop capture. Original archive executable and asar hashes rechecked unchanged; ignored local release copy removed. Temporary app/profile directories were already removed by fixture cleanup. All captured runner/owned processes joined; final cleanup manifest actions[]/remaining[]. No user ports, real profiles, keychain or secrets touched; no pushes/landing.
+
+## Same-series continuation: identify the close boundary
+
+Root requested a bounded diagnosis of the two remaining native failures, retaining a436f15d, all earlier errors/assets and the consumed review cap. No additional review, production change, new build or unchanged qualification run was performed.
+
+Added opt-in TERNO_NATIVE_TRACE_DIR diagnostics in the directly owned native smoke/local fixture helper: timestamps, captured app PID/birth, bounded stderr, app exit code/signal, page/context close/crash, native window close/destroy, app quit callers/events, render/utility exit events, effective test timeout and cleanup entry/signals. A small external reporter records every test/hook/API boundary and effective120000ms test budget. Synthetic crash/diag/log/database evidence is retained before fixture removal. Normal runs without the trace variable acquire no listeners or output. Quit/window wrappers only forward original calls; no event is prevented or policy changed. A one-off own-PID native sample was used only in continuation-4; it is not part of the retained helper.
+
+All diagnostic launches append the inherited Node guard and unset all three prohibited Electron/screenshot variables, using the unchanged120000ms test/35000ms unknown-status budgets and ports57000/57010. They select only the two failed native cases, then narrow the quit-caller/native-stack probes to healthy-settings unknown; no print/full smoke/full gates/retries to obtain a green summary.
+
+Artifacts under /tmp/terno-release2-native-print/:
+- continuation-1: diagnostic setup error, dynamic import is unsupported in Electron's evaluation VM. Both apps cleaned up/exited0; target paths never ran. Error retained; probe corrected to process.getBuiltinModule.
+- continuation-2: actual path reproduction,1failed/1passed in28.8s. Healthy Settings unknown closes early; complete native missing-work retention/disclosed-override case passes. Main22566/worker22267/reporter JSONL identify the boundary below.
+- continuation-3: added pass-through quit/window caller and modified-key tracing. Healthy Settings unknown completes its complete original assertions,1pass40.5s; only quit is the recorded expected cleanup app.quit call afterward.
+- continuation-4: one additional own-PID native-stack probe,1pass41.2s; no unexpected quit captured. Its sample is explicitly the expected cleanup/inspector quit control, not evidence of the earlier quit's native caller. No repeat qualification follows these diagnostics.
+
+### Causal boundary and concrete native-action handoff
+
+The reproduced healthy unknown failure enters native app quit before the Playwright deadline and fixture teardown. Final exit is code0/signalnull, with no observed render crash:
+
+1. Reporter shows the test waiting for unknown status; no keyboard/API close command is active. Test timeout is120000ms; failure occurs at15.7s.
+2. Owned-PID22566 macOS unified log records AppKit performKeyEquivalent at16:04:05.043Z and sendAction at05.044Z. Main emits first before-quit at05.062Z, then hides its window. This sequence supports a native action-dispatch route; it does NOT identify an actual key or sender.
+3. Product's existing forced explicit-quit shutdown runs. Second before-quit at09.099Z has the packaged main.cjs shutdown-finally stack; contents/window destroyed09.102Z; quit09.104Z; page-close09.106Z.
+4. Only afterward does afterEach-cleanup-entry run09.110Z. closePackaged/app.close starts09.182Z. Captured app exits code0/signalnull09.223Z. No cleanup signal was sent. Thus this reproduced closure was initiated before helper cleanup and long before either test or assertion deadline.
+5. Frozen synthetic DB independently verifies one committed copy, generation/revision1, exact healthy rich body/recipients/ref and AP+A attachment bytes after quit (post-quit-copy-witness.json). The original ACK remains withheld; no false acknowledgement/retry/discard was introduced.
+
+Original missing-work PID70464's own unified log also has AppKit performKeyEquivalent09:56:26.783local/sendAction26.784, followed by proc_exit27.161. Original unknown PID64782 shows sendAction09:54:12.960/proc_exit13.095; there was no equivalent detailed lifecycle probe then, so its initial native action is not retrospectively asserted. Both original logs are retained alongside the reproduced proof. No process/user/controller is blamed, and the unknown request's sender remains unproven.
+
+Concrete root integration boundary: correlate the native application Quit/action dispatcher while these owned app windows are foreground. The proven reproduced failure enters that native Quit interface before fixture cleanup; it is not evidence authorizing a renderer/store fix, different identity, disabled Quit, quiet-window requirement or changed retention/deadline. No in-scope readiness/cleanup defect causing this native dispatch was demonstrated, therefore no speculative behavioral fix was made. The complete original assertions succeed in instrumented controls, but the prior integrated21pass/2fail result is not overwritten or relabeled green. Branch remains unlanded pending integration's native-action attribution/current-source packaged qualification.
+
+Validation after continuation: four cleanup helper tests pass; scoped strict lint/whitespace pass; scoped smoke/helper types have only the already disclosed imported print-pdf.ts:31 isEvalSupported mismatch. No second review. App-only light/dark unknown-modal captures personally inspected with passing keyboard/axe checks. Previous36PDFs/56screenshots/error logs untouched. All diagnostic app-process exits are joined with code0/no signal, temporary live app/profile copies removed, and archive executable/asar hashes rechecked unchanged. Frozen synthetic evidence is intentionally retained under continuation directories.
