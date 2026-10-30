@@ -14,7 +14,7 @@ import { answered, convertFields, forwardAccountMismatch, newFields, replyFields
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
-import { prepareInlineFocusMove } from "./compose-focus-move";
+import { prepareEarlyComposeInput, prepareInlineFocusMove, type EarlyComposeInput } from "./compose-focus-move";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -39,7 +39,7 @@ let seq = 0;
  */
 let intent = 0;
 type ReaderDestination = { token: object; active: boolean; generation: number };
-type FocusLease = { selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean; sending: boolean }; destination?: ReaderDestination };
+type FocusLease = { earlyInput?: EarlyComposeInput; selectionRevision: number; ackRead?: DraftAckRead; stopSelection?: () => void; stopContext?: () => void; intent: number; threadId: number | null; composeSeq?: number; accountId?: number; key?: string; seq?: number; valid: boolean; dispose: () => void; view?: { id: LocalDraft["id"]; generation: LocalDraft["generation"]; revision: number; localRev: number; uiState: LocalDraft["uiState"]; recovery: LocalDraft["recovery"]; missingAccount: boolean; sending: boolean }; destination?: ReaderDestination };
 const readerDestinations = new Map<number, ReaderDestination>();
 const failedReaderHosts = new Map<object, { threadId: number }>();
 const readerFailed = (threadId: number): boolean => {
@@ -135,7 +135,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   const viewed = standalone ? useDrafts.getState().drafts[standalone.key] : undefined;
   const lease: FocusLease = { intent: owner, threadId, selectionRevision: getSelectionWriteRevision(), valid: true, dispose: () => {}, destination, ...(viewed ? { view: { id: viewed.id, generation: viewed.generation, revision: viewed.revision, localRev: viewed.localRev, uiState: viewed.uiState, recovery: viewed.recovery, sending: viewed.sending, missingAccount: !getApp().accounts.some((a) => a.id === viewed.accountId) } } : {}), ...(standalone ? { key: standalone.key, composeSeq: standalone.seq, accountId: useDrafts.getState().drafts[standalone.key]?.accountId } : {}) };
   const moved = (event: FocusEvent) => {
-    if (event.target !== active && event.target !== document.body) releaseFocusLease(lease, false);
+    if (event.target !== active && event.target !== document.body && !lease.earlyInput?.owns(event.target as Element)) releaseFocusLease(lease, false);
   };
   if (typeof document !== "undefined") document.addEventListener?.("focusin", moved, true);
   const unsubApp = useApp.subscribe((state, previous) => {
@@ -149,6 +149,7 @@ function beginFocusLease(owner: number, threadId: number | null, standalone?: { 
   });
   lease.dispose = () => {
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", moved, true);
+    lease.earlyInput?.cancel();
     unsubApp(); unsubDrafts();
   };
   focusLease = lease;
@@ -203,7 +204,7 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
     if (intent !== current || seq !== previousSeq || (!originalLease && (!valid() || (move && !move.active()))) || (originalLease && (focusLease !== originalLease || !originalLease.valid))) return;
     const focusSeq = ++seq;
     expectedSeq = focusSeq;
-    if (originalLease) { originalLease.key = key; originalLease.seq = focusSeq; }
+    if (originalLease) { originalLease.key = key; originalLease.seq = focusSeq; originalLease.earlyInput?.arm(key, target); }
     published = { key, target, seq: focusSeq, ...(originalLease ? { leased: true as const } : { move }) };
     setApp({ draftFocus: published });
     committed = true;
@@ -447,6 +448,10 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   const unsubSelection = !lease && mode !== "new" && threadId !== null ? useApp.subscribe((current) => {
     if (mine === intent && (current.scope !== null || current.checked.size >= 2)) supersedeCompose();
   }) : undefined;
+  if (lease && typeof document !== "undefined") lease.earlyInput = prepareEarlyComposeInput(
+    () => lease.valid && focusLease === lease && mine === intent && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease) && !draftEditsHeld(),
+    () => { if (focusLease === lease) supersedeCompose(); }, t("compose.body"),
+  );
   let outcome: OpenOutcome;
   openingNow++;
   try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
@@ -474,7 +479,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   let takeFocus = true;
   const active = typeof document === "undefined" ? null : document.activeElement;
-  const focusUnchanged = () => typeof document === "undefined" || document.activeElement === active || Boolean(lease?.valid && active && !active.isConnected && document.activeElement === document.body);
+  const focusUnchanged = () => typeof document === "undefined" || document.activeElement === active || Boolean(lease?.earlyInput?.owns(document.activeElement)) || Boolean(lease?.valid && active && !active.isConnected && document.activeElement === document.body);
   const s = getApp();
   const defaultAccount = s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {

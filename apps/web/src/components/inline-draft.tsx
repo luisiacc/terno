@@ -395,6 +395,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
           <form
             aria-label={label}
             data-testid="composer"
+            data-draft-key={d.key}
             data-mode={d.mode}
             onSubmit={(e) => {
               e.preventDefault();

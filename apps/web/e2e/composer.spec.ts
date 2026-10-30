@@ -327,7 +327,7 @@ test.describe("before the editor has loaded", () => {
   test("what is typed into the stand-in is saved and sent, and the editor takes it over", async ({ app: page, server }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -350,7 +350,7 @@ test.describe("before the editor has loaded", () => {
   test("Codex review 2: one keystroke (or one paste) into the stand-in is saved", async ({ app: page, server }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -368,7 +368,7 @@ test.describe("before the editor has loaded", () => {
   test("Codex review 2: collapsed and reopened while loading, the stand-in still has what was typed, and the editor gets all of it", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -395,7 +395,7 @@ test.describe("before the editor has loaded", () => {
   test("Codex review 3: under a send in flight the stand-in is read-only too (nothing typed then is lost)", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -419,7 +419,7 @@ test.describe("before the editor has loaded", () => {
   test("the editor arriving under a focused, untouched stand-in takes the focus", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -436,7 +436,7 @@ test.describe("before the editor has loaded", () => {
   test("the editor takes over the stand-in's text, once, and keeps the focus", async ({ app: page }) => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    await page.route(/\/assets\/rich-[^/]+\.js$/, async (route) => {
+    await page.route(/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/, async (route) => {
       await gate;
       await route.continue();
     });
@@ -682,7 +682,7 @@ test.describe("an install with nothing open", () => {
   test("doesn't load the editor (no conversation, no composer: no work)", async ({ app: page }) => {
     const loaded: string[] = [];
     page.on("request", (r) => {
-      if (/\/assets\/rich-[^/]+\.js$/.test(r.url())) loaded.push(r.url());
+      if (/\/(?:assets\/rich-[^/]+\.js|src\/components\/composer\/rich\.tsx)(?:\?.*)?$/.test(r.url())) loaded.push(r.url());
     });
     await page.reload();
     await page.locator("[data-ready]").waitFor();

@@ -60,3 +60,22 @@ it("gives the latest draft move ownership and releases an ineligible target afte
   } finally { first.remove(); second.remove(); outside.remove(); raf.mockRestore(); cancel.mockRestore(); }
 });
 
+
+it("a rejected completion or a newer move cannot focus the old draft", async () => {
+  const { focusSoon } = await import("~/lib/compose-focus-move");
+  const frames = new Map<number, FrameRequestCallback>(); let next = 0;
+  const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => { frames.set(++next, cb); return next; });
+  const cancel = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { frames.delete(id); });
+  const host = document.createElement("div"); host.innerHTML = '<textarea data-testid="old"></textarea><textarea data-testid="new"></textarea>';
+  document.body.append(host);
+  const old = host.firstElementChild as HTMLTextAreaElement;
+  const focus = vi.spyOn(old, "focus");
+  const flush = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach((cb) => cb(0)); };
+  try {
+    focusSoon('[data-testid="old"]', host, 1, () => false, () => true);
+    flush(); expect(focus).not.toHaveBeenCalled();
+    focusSoon('[data-testid="old"]', host, 1, () => { focusSoon('[data-testid="new"]', host); return true; }, () => true);
+    flush(); expect(focus).not.toHaveBeenCalled();
+    flush(); expect(document.activeElement).toBe(host.lastElementChild);
+  } finally { host.remove(); raf.mockRestore(); cancel.mockRestore(); }
+});
