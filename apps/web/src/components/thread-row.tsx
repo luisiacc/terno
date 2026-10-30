@@ -189,9 +189,11 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           {avatar}
           {wide ? (
             // the senders line up in a column, so the subjects do too
+            // the full-width list's code sits with the sender, out of the subject's way (plan 69)
             <span className="flex w-[clamp(9rem,18%,14rem)] shrink-0 items-center gap-1.5">
               {from}
               {count}
+              {chip}
             </span>
           ) : (
             <>
@@ -203,7 +205,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             {thread.subject} {draft} <span className="text-muted-foreground">— {thread.snippet}</span>
           </span>
           {accountTag}
-          {chip}
+          {!wide && chip}
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {marks}
             {date}

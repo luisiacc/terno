@@ -134,3 +134,7 @@ Tests: `lib/codes.test.tsx` covers copy, check, outlined, restart, shared state 
 3. **A snippet runs the body's lines together,** so "On … wrote:" no longer started a line and a quoted code came through. The quote header is now found anywhere in a line (`codes.ts` keeps its own pattern; the categorizer's is untouched).
 
 Each has a test that fails without the fix. The list e2e (codes, layout, drag and drop, selection, triage: 183) and the list perf gates (`j` at key repeat, scrolling, render counts: 36) pass.
+
+### Placement, decided
+
+Shown in the inbox with ordinary rows around it, the chip stays on the top line before the date (option A). A line of its own below the preview (B, prototyped) kept the subject's room but made that row taller and the list jump when the code expired. In the full-width list (one-line rows) the chip sits right after the sender, in the sender column, so the subject and preview keep their room; a long name truncates first. An e2e test checks it sits between the sender and the subject.

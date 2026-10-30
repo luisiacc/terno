@@ -96,3 +96,18 @@ test("a code older than two hours is not offered", async ({ app: page, server })
   await expect(rowOf(page, id)).toBeVisible();
   await expect(rowOf(page, id).getByTestId("row-code")).toHaveCount(0);
 });
+
+test.describe("the full-width list", () => {
+  test.use({ layout: "list" });
+  test("puts the code next to the sender, before the subject", async ({ app: page, server }) => {
+    const id = await ingestCode(server, { id: "code-wide", subject: "Your Acme wide code", ageMs: 60_000 });
+    await search(page, '"Acme wide code"');
+    const row = rowOf(page, id);
+    await expect(row).toHaveAttribute("data-wide", "true");
+    const chip = (await row.getByTestId("row-code").boundingBox())!;
+    const from = (await row.getByTestId("row-from").boundingBox())!;
+    const subject = (await row.getByText("Your Acme wide code").boundingBox())!;
+    expect(chip.x).toBeGreaterThan(from.x + from.width);
+    expect(chip.x + chip.width).toBeLessThan(subject.x);
+  });
+});
