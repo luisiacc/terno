@@ -240,3 +240,9 @@ The missing direct OPFS verification is now complete on unchanged conformance/ru
 ## Landed repair: browser Gmail wire fixture
 
 `34132a97` replaces the Unicode-corrupted classic-script fixture with an isolated dev module server and strengthens exact wire/SMTP witnesses. Root passed 93 direct and 13 browser cases, types/lint/whitespace. Seven direct conversion controls now provide native event targets rather than an incomplete document stub. One review config-discovery P2 was fixed; no second review. The named Forward failures did not reproduce before strengthening, so no production Forward correction is claimed. [Details](../plans/drafts/release-browser-wire-forward.md).
+
+## Landed repair: sender-icon reset generations and approved retention
+
+`d0a977ae` prevents stale renderer RPC/retry work crossing reset generations. Root also corrected the old perf oracle to Plan75's intentional retained-image revalidation, with a clear-on-reset inverse failing the exact image assertion. New held requests, zero row rerenders, positive icon renders, network/DOM/frame bounds and real Settings-off clearing remain asserted. After rebase58direct checks/types/lint pass and the exact dev browser case passes. No shared reset-policy change, budget relaxation, production build or38-successor qualification. [Evidence and review limits](../plans/drafts/release-sender-icon-clear.md).
+
+The ingestion optimization is NOT landed: Root's660functional checks pass, but the same paired perf gate fails0.96513versus0.97. Further measured source work is pending; original and later failures remain recorded.
