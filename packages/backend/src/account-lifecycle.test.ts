@@ -191,29 +191,105 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     expect(t.instances).toHaveLength(0);
   });
 
-  it("row deletion waits for a durable ingestion already admitted, and active store errors remain visible", async () => {
+  it.each(["before transaction", "after commit"] as const)("row deletion joins ingestion held %s and preserves active store errors", async (boundary) => {
     const t = await setup(kind);
     const p = await t.start();
-    const waiting = t.gate();
-    const entered = t.gate();
-    const real = t.backend.store.sync.ingest.bind(t.backend.store.sync);
-    const ingest = vi.spyOn(t.backend.store.sync, "ingest").mockImplementationOnce(async (...args) => { entered.release(); await waiting.promise; return real(...args); });
-    const writing = p.sink.ingest([incoming(t.ids[0]!)]);
-    await entered.promise;
-    let removed = false;
-    const removing = t.backend.dropAccount(t.ids[0]!).then(() => t.backend.store.accounts.remove(t.ids[0]!)).then(() => { removed = true; });
-    await turn(); await turn();
-    const deletedBeforeCommit = removed;
-    waiting.release();
-    const outcomes = await Promise.allSettled([writing, removing]);
-    expect(outcomes.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
-    expect(deletedBeforeCommit).toBe(false);
-    expect(await t.backend.store.accounts.get(t.ids[0]!)).toBeNull();
-    ingest.mockRestore();
     const sibling = await t.start(t.ids[1]);
-    const broken = vi.spyOn(t.backend.store.sync, "ingest").mockRejectedValueOnce(new Error("synthetic durable failure"));
-    await expect(sibling.sink.ingest([incoming(t.ids[1]!)])).rejects.toThrow("synthetic durable failure");
-    broken.mockRestore();
+    await sibling.sink.ingest([{ ...incoming(t.ids[1]!), subject: "Sibling mail", bodyText: "Sibling body", isRead: true }]);
+    const baseline = await t.backend.store.debug.snapshot();
+    const siblingAccount = await t.backend.store.accounts.get(t.ids[1]!);
+    const waiting = t.gate(), entered = t.gate();
+    const events: string[] = [];
+    const real = t.backend.store.sync.ingest.bind(t.backend.store.sync);
+    const remove = t.backend.store.accounts.remove.bind(t.backend.store.accounts);
+    const deletion = vi.spyOn(t.backend.store.accounts, "remove").mockImplementation(async (...args) => {
+      events.push("delete");
+      return remove(...args);
+    });
+    const ingest = vi.spyOn(t.backend.store.sync, "ingest").mockImplementationOnce(async (...args) => {
+      try {
+        if (boundary === "before transaction") {
+          entered.release();
+          await waiting.promise;
+          try { return await real(...args); }
+          catch (error) {
+            // Observe before account deletion can hide an illicit insert through cascading cleanup.
+            expect(await t.backend.store.debug.snapshot()).toEqual(baseline);
+            expect(await t.backend.store.accounts.get(t.ids[0]!)).not.toBeNull();
+            throw error;
+          }
+        }
+        const result = await real(...args);
+        expect(result.inserted).toHaveLength(1);
+        const committed = await t.backend.store.debug.snapshot();
+        expect(committed.messages.filter((m) => m.accountId === t.ids[0])).toEqual([
+          expect.objectContaining({ id: result.inserted[0], providerMsgId: "late", subject: "Late mail", bodyText: "Synthetic", isRead: false }),
+        ]);
+        entered.release();
+        await waiting.promise;
+        return result;
+      } finally { events.push("terminal"); }
+    });
+    const writing = p.sink.ingest([incoming(t.ids[0]!)]);
+    const written = Promise.allSettled([writing]);
+    let removing: Promise<void> | undefined;
+    try {
+      await Promise.race([entered.promise, writing.then(() => { throw new Error("Ingestion settled before boundary entry"); })]);
+      removing = t.backend.dropAccount(t.ids[0]!, { remove: true }).then(() => t.backend.store.accounts.remove(t.ids[0]!));
+      expect(p.sink.signal.aborted).toBe(true);
+      await turn(); await turn();
+      expect(deletion).not.toHaveBeenCalled();
+      expect(events).toEqual([]);
+      expect(await t.backend.store.accounts.get(t.ids[0]!)).not.toBeNull();
+      waiting.release();
+      const [outcome] = await written;
+      await removing;
+      if (boundary === "before transaction") {
+        expect(outcome?.status).toBe("rejected");
+        if (outcome?.status === "rejected") expect(outcome.reason).toBe(p.sink.signal.reason);
+      } else expect(outcome?.status).toBe("fulfilled");
+      expect(events).toEqual(["terminal", "delete"]);
+      expect(await t.backend.store.accounts.get(t.ids[0]!)).toBeNull();
+      expect(await t.backend.store.debug.snapshot()).toEqual({ ...baseline, accounts: baseline.accounts.filter((a) => a.id !== t.ids[0]) });
+      expect(await t.backend.store.accounts.get(t.ids[1]!)).toEqual(siblingAccount);
+    } finally {
+      waiting.release();
+      await Promise.allSettled([writing, ...(removing ? [removing] : [])]);
+      ingest.mockRestore();
+      deletion.mockRestore();
+    }
+    const failure = new Error("synthetic durable failure");
+    const broken = vi.spyOn(t.backend.store.sync, "ingest").mockRejectedValueOnce(failure);
+    try { await expect(sibling.sink.ingest([incoming(t.ids[1]!)])).rejects.toBe(failure); }
+    finally { broken.mockRestore(); }
+
+    // A different AbortError is a store failure, even when it looks exactly like retirement.
+    const failed = t.gate(), fail = t.gate();
+    const distinctAbort = new DOMException("Account closed", "AbortError");
+    const pendingFailure = vi.spyOn(t.backend.store.sync, "ingest").mockImplementationOnce(async () => {
+      failed.release(); await fail.promise; throw distinctAbort;
+    });
+    const failing = sibling.sink.ingest([incoming(t.ids[1]!)]);
+    const failures = Promise.allSettled([failing]);
+    let dropping: Promise<void> | undefined;
+    try {
+      await failed.promise;
+      expect(sibling.sink.signal.aborted).toBe(false);
+      dropping = t.backend.dropAccount(t.ids[1]!, { remove: true });
+      const dropped = Promise.allSettled([dropping]);
+      expect(distinctAbort).not.toBe(sibling.sink.signal.reason);
+      fail.release();
+      for (const outcome of [...await failures, ...await dropped]) {
+        expect(outcome.status).toBe("rejected");
+        if (outcome.status === "rejected") expect(outcome.reason).toBe(distinctAbort);
+      }
+      expect(await t.backend.store.accounts.get(t.ids[1]!)).toEqual(siblingAccount);
+      expect(await t.backend.store.debug.snapshot()).toEqual({ ...baseline, accounts: baseline.accounts.filter((a) => a.id !== t.ids[0]) });
+    } finally {
+      fail.release();
+      await Promise.allSettled([failing, ...(dropping ? [dropping] : [])]);
+      pendingFailure.mockRestore();
+    }
   });
 
   it("removal does not wait for an uncooperative provider close", async () => {
