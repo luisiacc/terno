@@ -1,4 +1,4 @@
-import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice } from "@terno/store";
+import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, requireRecoverySource } from "@terno/store";
 import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
@@ -593,7 +593,7 @@ export class SqlMailStore implements MailStore {
           return { touched: [] };
         }
         if (resolution === "retry") {
-          if (submissionAccepted(op) || sqlSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
+          if (submissionAccepted(op) || (op.kind === "send" && typeof (JSON.parse(op.target_json) as { recoveryParentId?: unknown }).recoveryParentId === "string") || sqlSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
           if (op.kind !== "send" && sqlFlags(this.db).clock(op.account_id)) {
             const ids = rearmFlagEffects(sqlFlags(this.db), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
@@ -656,6 +656,18 @@ export class SqlMailStore implements MailStore {
   }
 
   readonly recipientReceipts: MailStore["recipientReceipts"] = {
+    claimRecovery: async (id, expected, now) => this.db.tx(() => {
+      const op = this.db.get<Pick<import("@terno/store").OpRow, "kind" | "account_id" | "target_json">>("SELECT kind,account_id,target_json FROM ops WHERE id=?", id);
+      if (!op || !submissionAccepted(op)) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const target = JSON.parse(op.target_json) as Record<string, unknown>;
+      if (typeof target.recipientRecoveryChild === "string") return target.recipientRecoveryChild;
+      const receipts = sqlRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, sqlSendCopies(this.db).get(id));
+      if (row.accountId !== op.account_id) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const child = enqueueOp(this.db, { accountId: row.accountId, kind: "send", target: { messageIds: [], recoveryParentId: id }, payload: { recoveryParentId: id } }, now)!;
+      receipts.put({ ...row, childOpId: child });
+      this.db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...target, recipientRecoveryChild: child }), id);
+      return child;
+    }),
     get: async (id) => sqlRecipientReceipts(this.db).get(id),
     list: async (accountId) => sqlRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId),
     readPart: async (id, kind, index) => {

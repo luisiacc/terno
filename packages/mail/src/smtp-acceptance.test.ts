@@ -81,3 +81,15 @@ it("fails closed on incomplete, overlapping, foreign and case-colliding reports"
     { email: "a@example.test", outcome: "accepted" }, { email: "a@example.test", outcome: "accepted" }, { email: "b@example.test", outcome: "rejected" },
   ]);
 });
+
+it("submits a sealed source with only the explicitly selected recovery envelope", async () => {
+  const envelopes: string[][] = [], messages: Buffer[] = [];
+  const server = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }), onData(stream, session, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { envelopes.push(session.envelope.rcptTo.map((entry) => entry.address)); messages.push(Buffer.concat(chunks)); cb(); }); } });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)); closes.push(() => new Promise<void>((resolve) => server.close(resolve)));
+  const config = { host: "127.0.0.1", port: (server.server.address() as { port: number }).port, secure: false, user: "synthetic", password: "synthetic", allowInsecure: true };
+  const payload = { from: { name: "", email: "sender@example.test" }, to: [{ name: "", email: "first@example.test" }, { name: "", email: "second@example.test" }], cc: [], bcc: [], subject: "Original", text: "Original body", messageId: "sealed@example.test", inReplyTo: null, references: [], providerThreadId: null };
+  const first = await sendViaSmtp(config, payload);
+  await sendViaSmtp(config, { ...payload, text: "Changed body" }, { recovery: { raw: first.raw, envelope: { from: "sender@example.test", to: ["second@example.test"] } } });
+  expect(envelopes).toEqual([["first@example.test", "second@example.test"], ["second@example.test"]]);
+  expect(messages).toHaveLength(2); expect(messages[1]).toEqual(messages[0]);
+});

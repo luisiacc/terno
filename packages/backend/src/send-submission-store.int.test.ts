@@ -18,7 +18,7 @@ const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { 
 const terminal = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => { tx.addEventListener("complete", () => resolve()); tx.addEventListener("abort", () => reject(tx.error)); });
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) };
 
-async function setup(adapter: "SQL" | "IDB", appendToSent = false) {
+async function setup(adapter: "SQL" | "IDB", appendToSent = false, recipients = [{ email: "recipient@example.test", name: "" }]) {
   const dir = mkdtempSync(join(tmpdir(), "terno-submission-")), name = crypto.randomUUID(), factory = new IDBFactory();
   const opened: MailStore[] = [];
   const open = async () => {
@@ -28,7 +28,7 @@ async function setup(adapter: "SQL" | "IDB", appendToSent = false) {
   cleanup.push(async () => { for (const store of opened) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
   let store = await open();
   const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent }, now: 1 });
-  const command = { accountId: account.id, to: [{ email: "recipient@example.test", name: "" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Original captured body", recordReply: false, now: 2 };
+  const command = { accountId: account.id, to: recipients, cc: [], bcc: [], subject: "Synthetic", bodyText: "Original captured body", recordReply: false, now: 2 };
   const { opId } = await store.compose.queueSend(command);
   const messageId = (JSON.parse((await store.ops.get(opId))!.target_json) as { messageIds: number[] }).messageIds[0]!;
   const mutate = async (patch: Partial<Pick<OpRow, "target_json" | "state">>) => {
@@ -346,4 +346,96 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} keeps a claimed re
   expect((await store.sendCopies.get(t.opId))?.ready).toBe(true);
   await set(true);
   expect(await store.sendCopies.pruneSavedSlice(t.opId)).toBe(false);
+});
+
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} atomically claims one recovery child and requires a sealed source`, async () => {
+  const t = await setup(adapter, true, [{ email: "yes@example.test", name: "" }, { email: "no@example.test", name: "" }]); let store = t.store;
+  await store.ops.claimReady(2, 1);
+  await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+  await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "local completion failed", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
+  await store.sync.remove([t.messageId]);
+  const receipt = (await store.recipientReceipts.get(t.opId))!;
+  const [first, second] = await Promise.all([store.recipientReceipts.claimRecovery(t.opId, receipt, 4), store.recipientReceipts.claimRecovery(t.opId, receipt, 4)]);
+  expect(second).toBe(first);
+  expect((await store.ops.get(first))?.kind).toBe("send");
+  expect((await store.recipientReceipts.get(t.opId))?.childOpId).toBe(first);
+  await expect(store.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await store.close(); store = await t.open();
+  expect(await store.recipientReceipts.claimRecovery(t.opId, receipt, 5)).toBe(first);
+  expect((await store.ops.sendSubmission(t.opId))?.accepted).toBe(true);
+  expect(JSON.parse((await store.ops.get(t.opId))!.target_json)).toMatchObject({ messageIds: [], submissionAccepted: true, recipientRecoveryChild: first });
+  expect((await store.ops.claimReady(6, 10)).map((op) => op.id)).toContain(first);
+  await store.ops.markUnknown(first, "Synthetic ambiguous recovery", 7);
+  await expect(store.ops.resolveUnknown(first, "retry", 8)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await expect(store.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} refuses recovery claim when its immutable source was removed`, async () => {
+  const t = await setup(adapter, true); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "local failure", 3, { warning: null });
+  const receipt = (await store.recipientReceipts.get(t.opId))!;
+  while (await store.sendCopies.forgetSlice(t.opId)) { /* bounded */ }
+  await expect(store.recipientReceipts.claimRecovery(t.opId, receipt, 4)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.recipientReceipts.get(t.opId))?.childOpId).toBeNull();
+});
+
+
+it.each(["rollback", "committed rejection"] as const)("SQL recovery claim %s reopens with its actual atomic outcome", async (fault) => {
+  const t = await setup("SQL", true); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null });
+  const receipt = (await store.recipientReceipts.get(t.opId))!, db = sqlDb(store); let armed = true;
+  const inject = () => { if (armed) { armed = false; throw new Error("Synthetic claim acknowledgement"); } };
+  if (fault === "rollback") db.onBeforeCommit(inject); else db.onCommit(inject);
+  await expect(store.recipientReceipts.claimRecovery(t.opId, receipt, 4)).rejects.toThrow("acknowledgement");
+  await store.close(); const reopened = await t.open();
+  const actual = await reopened.recipientReceipts.get(t.opId);
+  if (fault === "rollback") expect(actual?.childOpId).toBeNull();
+  else { expect(actual?.childOpId).toBeTruthy(); expect(await reopened.recipientReceipts.claimRecovery(t.opId, receipt, 5)).toBe(actual?.childOpId); await expect(reopened.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" }); }
+});
+
+it.each([false, true])("IDB recovery claim native %s distinguishes abort from hidden commit", async (hidden) => {
+  const t = await setup("IDB", true); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null });
+  const receipt = (await store.recipientReceipts.get(t.opId))!, put = IDBObjectStore.prototype.put; let hits = 0, actual: string | null = null;
+  const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+    const result = Reflect.apply(put, this, args) as IDBRequest;
+    if (this.name === "recipient_receipts" && this.transaction.db.name === `terno-${t.name}` && args[1] === t.opId) {
+      hits++; this.transaction.addEventListener("complete", () => { actual = "complete"; }); this.transaction.addEventListener("abort", () => { actual = "abort"; });
+      result.addEventListener("success", (event) => { if (hidden) event.stopImmediatePropagation(); else this.transaction.abort(); });
+    }
+    return result;
+  });
+  await expect(store.recipientReceipts.claimRecovery(t.opId, receipt, 4)).rejects.toThrow();
+  expect(hits).toBe(1); expect(actual).toBe(hidden ? "complete" : "abort"); spy.mockRestore(); await store.close();
+  if (hidden) await expect(t.open()).rejects.toMatchObject({ name: "UncertainWriteError" });
+  else { const reopened = await t.open(); expect((await reopened.recipientReceipts.get(t.opId))?.childOpId).toBeNull(); expect(JSON.parse((await reopened.ops.get(t.opId))!.target_json).recipientRecoveryChild).toBeUndefined(); }
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} deliberately recovers only rejected RCPT with exact sealed SMTP bytes after reopen`, async () => {
+  const commands: string[] = [], bodies: Buffer[] = []; let refusal = true;
+  const smtp = new SMTPServer({ disabledCommands: ["STARTTLS"], authOptional: true, onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }),
+    onRcptTo(address, _s, cb) { commands.push(address.address); if (address.address === "no@example.test" && refusal) { refusal = false; cb(Object.assign(new Error("Synthetic refusal"), { responseCode: 550 })); } else cb(); },
+    onData(stream, _session, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { bodies.push(Buffer.concat(chunks)); cb(); }); },
+  });
+  await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve)); cleanup.push(() => new Promise<void>((resolve) => smtp.close(resolve)));
+  const dir = mkdtempSync(join(tmpdir(), "terno-recipient-recovery-")), name = crypto.randomUUID(), factory = new IDBFactory(), stores: MailStore[] = [];
+  const open = async () => { const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "s.db"))) : await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.push(store); return store; };
+  cleanup.push(async () => { for (const store of stores) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
+  const store = await open();
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: true } });
+  const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-recovery", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
+  const first = connect(store);
+  const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }], bcc: [{ name: "", email: "hidden@example.test" }], subject: "Original synthetic", bodyText: "Exact wire body" });
+  await first.backend.runWorker(); expect(bodies).toHaveLength(1); await first.backend.stop();
+  const second = connect(await open()); await second.backend.ready;
+  const [child, sameChild] = await Promise.all([second.backend.recoverRejectedRecipients(opId), second.backend.recoverRejectedRecipients(opId)]);
+  expect(sameChild).toBe(child);
+  await second.backend.runWorker();
+  expect(commands).toEqual(["yes@example.test", "no@example.test", "hidden@example.test", "no@example.test"]);
+  expect(bodies).toHaveLength(2); expect(bodies[1]).toEqual(bodies[0]);
+  expect((await second.backend.store.ops.sendSubmission(opId))?.accepted).toBe(true);
+  expect((await second.backend.store.ops.get(child))?.state).toBe("succeeded");
 });

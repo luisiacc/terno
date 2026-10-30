@@ -32,6 +32,7 @@ export interface ProviderOp {
   requestRun?: RequestRun;
   submissionAccepted?(): void;
   recipientOutcomes?(outcomes: import("./smtp").RecipientOutcome[]): void;
+  recovery?: { raw: Uint8Array; envelope: { from: string; to: string[] } };
   beforeSubmission?(): Promise<void>;
   sentCopy?: import("./sent-copy").SentCopyHooks;
 }

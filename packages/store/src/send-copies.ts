@@ -57,20 +57,20 @@ export function requireSendCopy(db: SendCopyDb, id: string): SendCopyRow {
 
 export function startCopyWire(db: SendCopyDb, id: string, size: number): void {
   const row = requireSendCopy(db, id);
-  if (row.submission !== "pending" || row.ready || row.chunks || !Number.isSafeInteger(size) || size <= 0 || size > MAX_MIME_BYTES) throw copyUnavailable();
+  if (db.wirePinned(id) || row.submission !== "pending" || row.ready || row.chunks || !Number.isSafeInteger(size) || size <= 0 || size > MAX_MIME_BYTES) throw copyUnavailable();
   db.put({ ...row, size });
 }
 
 export function appendCopyWire(db: SendCopyDb, id: string, index: number, data: string): void {
   const row = requireSendCopy(db, id);
-  if (row.submission !== "pending" || row.ready || index !== row.chunks || base64Bytes(data).length !== Math.min(ATTACHMENT_CHUNK, row.size - index * ATTACHMENT_CHUNK) || row.size === 0 || index * ATTACHMENT_CHUNK >= row.size) throw copyUnavailable();
+  if (db.wirePinned(id) || row.submission !== "pending" || row.ready || index !== row.chunks || base64Bytes(data).length !== Math.min(ATTACHMENT_CHUNK, row.size - index * ATTACHMENT_CHUNK) || row.size === 0 || index * ATTACHMENT_CHUNK >= row.size) throw copyUnavailable();
   db.putChunk(id, index, data);
   db.put({ ...row, chunks: row.chunks + 1 });
 }
 
 export function sealCopyWire(db: SendCopyDb, id: string): void {
   const row = requireSendCopy(db, id);
-  if (row.size <= 0 || row.chunks !== Math.ceil(row.size / ATTACHMENT_CHUNK)) throw copyUnavailable();
+  if (db.wirePinned(id) || row.size <= 0 || row.chunks !== Math.ceil(row.size / ATTACHMENT_CHUNK)) throw copyUnavailable();
   db.put({ ...row, ready: true, reserved: Math.min(MAX_MIME_BYTES, row.size + 1024) });
 }
 
@@ -110,7 +110,7 @@ export function pruneSavedCopySlice(db: SendCopyDb, id: string): boolean {
 
 export function resetCopyWireSlice(db: SendCopyDb, id: string): boolean {
   const row = requireSendCopy(db, id);
-  if (row.submission !== "pending" || row.ready) throw copyUnavailable();
+  if (db.wirePinned(id) || row.submission !== "pending" || row.ready) throw copyUnavailable();
   if (db.removeChunks(id, 8) === 8) return true;
   db.put({ ...row, chunks: 0, size: 0, deleteAfter: 0 });
   return false;

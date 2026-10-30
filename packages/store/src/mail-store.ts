@@ -367,6 +367,7 @@ export interface MailStore {
 
   recipientReceipts: {
     get(id: string): Promise<import("./recipient-receipts").RecipientReceiptHeader | null>;
+    claimRecovery(id: string, expected: import("./recipient-receipts").RecipientReceiptHeader, now: number): Promise<string>;
     list(accountId: number): Promise<import("./recipient-receipts").RecipientReceiptHeader[]>;
     readPart(id: string, kind: "envelope" | "outcomes", index: number): Promise<string | null>;
     retireSlice(id: string, force?: boolean): Promise<boolean>;

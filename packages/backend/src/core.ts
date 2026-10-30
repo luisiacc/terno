@@ -1,10 +1,10 @@
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
-import { copyOpAdmission, type CooldownStamp, type OpAdmission } from "@terno/store";
+import { copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -1626,7 +1626,7 @@ export class BackendCore {
     // A send owns its drain slot while its immutable attachments are prepared.
     const sending = op.kind === "send";
     if (sending) this.sendsInFlight.add(op.id);
-    let target = JSON.parse(op.target_json) as { messageIds?: number[] };
+    let target = JSON.parse(op.target_json) as { messageIds?: number[]; recoveryParentId?: string };
     const started = performance.now();
     let accepted = false, transportStarted = false, remoteDispatched = false;
     let sendAccepted: import("@terno/store").AcceptedRecipientEvidence | undefined;
@@ -1638,7 +1638,7 @@ export class BackendCore {
         const current = await this.store.ops.get(op.id);
         if (!current || current.state !== "running") return void this.undispatched.delete(op.id);
         op = current;
-        target = JSON.parse(op.target_json) as { messageIds?: number[] };
+        target = JSON.parse(op.target_json) as { messageIds?: number[]; recoveryParentId?: string };
         if (hold() || this.providers.get(op.account_id) !== opening || credentials !== this.credentialsOf(op.account_id)) {
           this.undispatched.delete(op.id);
           await this.store.ops.release(op.id, this.now());
@@ -1646,9 +1646,22 @@ export class BackendCore {
         }
       }
       let payload: unknown;
+      let recovery: import("@terno/mail").ProviderOp["recovery"];
       try {
         payload = JSON.parse(op.payload_json);
-        if (sending) {
+        if (sending && target.recoveryParentId) {
+          const parentId = target.recoveryParentId;
+          const header = await this.store.recipientReceipts.get(parentId);
+          const parent = await this.store.ops.get(parentId);
+          if (!header || header.retired || header.childOpId !== op.id || header.accountId !== op.account_id || !parent || parent.account_id !== op.account_id || !(await this.store.ops.sendSubmission(parentId))?.accepted) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
+          const to = await rejectedRecipients(header, (kind, index) => this.store.recipientReceipts.readPart(parentId, kind, index), () => this.platform.yield());
+          if (!to.length) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
+          const raw = await readCopyWire(this.store, parentId, () => this.platform.yield(), () => this.assertCurrent(life));
+          payload = JSON.parse(parent.payload_json);
+          const original = payload as SendPayload;
+          if (!original || typeof original !== "object" || typeof original.from?.email !== "string" || !original.from.email || typeof original.messageId !== "string") throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
+          recovery = { raw, envelope: { from: asciiEmail(original.from.email), to } };
+        } else if (sending) {
           if (!payload || typeof payload !== "object" || Array.isArray(payload) || !("text" in payload) || typeof payload.text !== "string" || ("html" in payload && payload.html !== undefined && typeof payload.html !== "string") || ("attachments" in payload && payload.attachments !== undefined && !Array.isArray(payload.attachments))) throw new ProviderError(L("attachments.unavailable"), false);
           payload = await hydrateSendAttachments(this.store, op.account_id, payload as SendPayload, () => this.platform.yield());
         }
@@ -1673,10 +1686,17 @@ export class BackendCore {
         requestRun: { markDispatched: () => { remoteDispatched = true; } },
         submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
         recipientOutcomes: (outcomes) => { if (sendAccepted) sendAccepted = { ...sendAccepted, outcomes }; },
+        ...(recovery && { recovery }),
         ...(sending && { beforeSubmission: async () => {
           // Receipt-first, then fresh op: retirement transfers proof atomically before deleting a receipt.
           const copy = await this.store.sendCopies.get(op.id);
           const current = await this.store.ops.sendSubmission(op.id);
+          if (target.recoveryParentId) {
+            const parent = await this.store.recipientReceipts.get(target.recoveryParentId);
+            const source = await this.store.sendCopies.get(target.recoveryParentId);
+            const proof = await this.store.ops.sendSubmission(target.recoveryParentId);
+            if (!parent || parent.retired || parent.childOpId !== op.id || parent.accountId !== op.account_id || !source?.ready || source.retiring || !source.size || !proof?.accepted) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
+          }
           if (copy?.submission === "accepted" || current?.accepted) throw new ProviderError(L("errors.send.alreadyAccepted"), false, true);
           if (!current || current.state !== "running") throw new ProviderError(L("errors.sentCopy.unavailable"), false);
           this.assertCurrent(life);
@@ -1814,6 +1834,27 @@ export class BackendCore {
         }
       });
     } finally { this.copyActions.delete(id); }
+  }
+
+  async recoverRejectedRecipients(id: string): Promise<string> {
+    if (this.stopped || this.draining) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+    const op = await this.store.ops.get(id);
+    if (!op || op.kind !== "send") throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+    const target = JSON.parse(op.target_json) as { recipientRecoveryChild?: unknown };
+    if (typeof target.recipientRecoveryChild === "string") return target.recipientRecoveryChild;
+    const header = await this.store.recipientReceipts.get(id);
+    if (!header || header.accountId !== op.account_id) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+    const life = this.lifetime(op.account_id);
+    return this.accountWrite(life, async () => {
+      this.assertCurrent(life);
+      const rejected = await rejectedRecipients(header, (kind, index) => this.store.recipientReceipts.readPart(id, kind, index), () => this.platform.yield());
+      if (!rejected.length) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      this.assertCurrent(life);
+      const child = await this.store.recipientReceipts.claimRecovery(id, header, this.now());
+      this.assertCurrent(life);
+      this.kickWorker();
+      return child;
+    });
   }
 
   async forgetSentCopy(id: string): Promise<void> {

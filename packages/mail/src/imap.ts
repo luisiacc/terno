@@ -1322,10 +1322,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   async function send(payload: SendPayload, op: ProviderOp): Promise<{ providerMsgId: string; warning?: Localized }> {
     const password = await ctx.getSecret("password");
     if (!password) throw new ProviderAuthError(L("errors.imap.noPassword"));
-    const { raw, rejected, outcomes, recipientOutcomeUnknown } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload, { prepare: op.sentCopy?.prepare, accepted: op.submissionAccepted, beforeSubmission: op.beforeSubmission });
+    const { raw, rejected, outcomes, recipientOutcomeUnknown } = await sendViaSmtp({ ...config.smtp, password, allowInsecure: options.allowInsecure, socketTimeoutMs: timeouts.smtpSocketMs }, payload, { prepare: op.sentCopy?.prepare, accepted: op.submissionAccepted, beforeSubmission: op.beforeSubmission, recovery: op.recovery });
     if (outcomes) op.recipientOutcomes?.(outcomes);
     const warning = recipientOutcomeUnknown ? L("errors.smtp.recipientOutcomeUnknown") : rejected.length ? L("errors.smtp.notDeliveredTo", { recipients: rejected.join(", ") }) : undefined;
-    if (config.appendToSent) {
+    if (config.appendToSent && !op.recovery) {
       try {
         await op.sentCopy?.accepted(warning);
       } catch {

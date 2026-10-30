@@ -1,4 +1,4 @@
-import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice } from "@terno/store";
+import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, requireRecoverySource } from "@terno/store";
 import { idbRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
@@ -1113,7 +1113,7 @@ export class IdbMailStore implements MailStore {
           return { touched: [] };
         }
         if (resolution === "retry") {
-          if (submissionAccepted(op) || idbSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
+          if (submissionAccepted(op) || (op.kind === "send" && typeof (JSON.parse(op.target_json) as { recoveryParentId?: unknown }).recoveryParentId === "string") || idbSendCopies(this.db).get(id)?.submission === "accepted") throw new RpcError("BAD_REQUEST", L("errors.send.alreadyAccepted"));
           if (op.kind !== "send" && idbFlags(this.c).clock(op.account_id)) {
             const ids = rearmFlagEffects(idbFlags(this.c), op);
             if (ids === null) throw new RpcError("STALE", L("errors.opResolved"));
@@ -1178,6 +1178,18 @@ export class IdbMailStore implements MailStore {
   }
 
   readonly recipientReceipts: MailStore["recipientReceipts"] = {
+    claimRecovery: async (id, expected, now) => this.command(() => {
+      const ops = T(this.c, "ops"), op = ops.get(id);
+      if (!op || typeof op.target_json !== "string" || !submissionAccepted({ kind: String(op.kind), target_json: op.target_json })) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const target = JSON.parse(op.target_json) as Record<string, unknown>;
+      if (typeof target.recipientRecoveryChild === "string") return target.recipientRecoveryChild;
+      const receipts = idbRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, idbSendCopies(this.db).get(id));
+      if (row.accountId !== op.account_id) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const child = enqueueOp(this.c, { accountId: row.accountId, kind: "send", target: { messageIds: [], recoveryParentId: id }, payload: { recoveryParentId: id } }, now)!;
+      receipts.put({ ...row, childOpId: child });
+      ops.update(op, { target_json: JSON.stringify({ ...target, recipientRecoveryChild: child }) });
+      return child;
+    }),
     get: (id) => this.early(() => idbRecipientReceipts(this.db).get(id)),
     list: (accountId) => this.early(() => idbRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId)),
     readPart: async (id, kind, index) => this.exclusive(async () => { const header = idbRecipientReceipts(this.db).get(id); if (!header || header.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? header.parts : Math.ceil(header.count / 128))) return null; const tx = this.idb.transaction("recipient_receipt_parts", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Recipient read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("recipient_receipt_parts").get(`${id}:${kind}:${index}`); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),

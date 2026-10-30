@@ -76,8 +76,9 @@ export function smtpRecipientOutcomes(envelope: readonly string[], accepted: unk
 }
 
 /** Sends a message; returns the raw source so the caller can APPEND it to Sent. */
-export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void; beforeSubmission?(): Promise<void> }): Promise<{ raw: Buffer; rejected: string[]; outcomes?: RecipientOutcome[]; recipientOutcomeUnknown?: true }> {
-  let raw = await buildRaw(payload, { smtp: true });
+export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hooks?: { prepare?(raw: Uint8Array): Promise<Uint8Array>; accepted?(): void; beforeSubmission?(): Promise<void>; recovery?: { raw: Uint8Array; envelope: { from: string; to: string[] } } }): Promise<{ raw: Buffer; rejected: string[]; outcomes?: RecipientOutcome[]; recipientOutcomeUnknown?: true }> {
+  let raw = hooks?.recovery ? Buffer.from(hooks.recovery.raw) : await buildRaw(payload, { smtp: true });
+  if (hooks?.recovery) await checkSmtpWire(raw);
   if (hooks?.prepare) {
     const prepared = await hooks.prepare(raw);
     raw = Buffer.from(prepared.buffer, prepared.byteOffset, prepared.byteLength);
@@ -116,7 +117,7 @@ export async function sendViaSmtp(config: SmtpConfig, payload: SendPayload, hook
     tls: config.allowInsecure ? { rejectUnauthorized: false } : undefined,
   });
   try {
-    const envelope = envelopeOf(payload);
+    const envelope = hooks?.recovery?.envelope ?? envelopeOf(payload);
     const info = (await transport.sendMail({ envelope, raw })) as { accepted?: unknown; rejected?: unknown };
     accepted = true;
     hooks?.accepted?.();

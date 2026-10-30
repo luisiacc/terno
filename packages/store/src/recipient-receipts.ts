@@ -1,4 +1,4 @@
-import { asciiEmail, isValidEmail, normalizeEmail, type Address } from "@terno/core";
+import { ATTACHMENT_CHUNK, asciiEmail, isValidEmail, normalizeEmail, type Address } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 
@@ -109,4 +109,10 @@ export async function rejectedRecipients(header: RecipientReceiptHeader, read: (
     if (error instanceof RpcError) throw error;
     throw unavailable();
   }
+}
+
+export function requireRecoverySource(row: RecipientReceiptHeader | null, expected: RecipientReceiptHeader, source: import("./send-copies").SendCopyRow | null): RecipientReceiptHeader {
+  const unavailable = () => new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+  if (!row || row.retired || row.state !== "accepted" || row.childOpId || row.opId !== expected.opId || row.accountId !== expected.accountId || row.createdAt !== expected.createdAt || row.count !== expected.count || row.parts !== expected.parts || row.charge !== expected.charge || expected.retired || expected.state !== "accepted" || expected.childOpId || !source || source.accountId !== row.accountId || source.retiring || !source.ready || !source.size || source.chunks !== Math.ceil(source.size / ATTACHMENT_CHUNK)) throw unavailable();
+  return row;
 }
