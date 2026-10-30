@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from "@playwright/test";
+import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
 import { openDatabase, SqlMailStore } from "../../../packages/db/src/index";
 
 const here = dirname(fileURLToPath(import.meta.url)), repo = join(here, "../../..");
@@ -12,23 +13,31 @@ const requireWeb = createRequire(join(repo, "apps/web/package.json"));
 const axeSource = readFileSync(requireWeb.resolve("axe-core/axe.min.js"), "utf8");
 const shots = process.env.TERNO_RELOAD_SMOKE_SHOTS ?? mkdtempSync("/tmp/terno-native-reload-shots-");
 let work: string, profile: string, app: ElectronApplication, page: Page, sequence = 0;
-declare global { interface Window { nativeReloadProbe: { nonce: string; pagehides: number; dropCopy: boolean; copyCommitted: boolean; gateSave: boolean; reached: boolean; release?: () => void } } }
+declare global { interface Window { nativeReloadProbe: { nonce: string; pagehides: number; dropCopy: boolean; copyCommitted: boolean; copyIdentity?: { id: number; generation: string; revision: number }; gateSave: boolean; reached: boolean; release?: () => void } } }
 
 async function store<T>(run: (store: SqlMailStore) => Promise<T>): Promise<T> {
   const local = new SqlMailStore(openDatabase(join(profile, "terno.db")));
   try { return await run(local); } finally { await local.close(); }
 }
+async function committedCopy() {
+  await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+  const identity = await page.evaluate(() => window.nativeReloadProbe.copyIdentity!);
+  const saved = (await store((s) => s.drafts.list())).find((draft) => draft.id === identity.id);
+  expect(saved).toMatchObject({ id: identity.id, generation: identity.generation, revision: identity.revision });
+}
 async function menu(id = "native-reload") {
   await app.evaluate(({ app: a, Menu, BrowserWindow }, id) => {
     const owner = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!;
-    a.focus({ steal: true }); owner.show(); owner.focus(); owner.webContents.focus(); Menu.getApplicationMenu()!.getMenuItemById(id)!.click();
+    a.focus({ steal: true }); owner.show(); owner.focus(); owner.webContents.focus(); const item = Menu.getApplicationMenu()!.getMenuItemById(id)!;
+    // Electron supplies this window when the OS invokes the menu callback.
+    item.click(item, owner, undefined);
   }, id);
 }
 async function shortcut(ignoreCache = false) {
   await app.evaluate(({ app: a, BrowserWindow }, ignoreCache) => {
     const owner = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === "app://terno/")!;
     a.focus({ steal: true }); owner.show(); owner.focus(); owner.webContents.focus();
-    const modifiers = ignoreCache ? ["meta", "shift"] : ["meta"];
+    const modifiers: ("meta" | "shift")[] = ignoreCache ? ["meta", "shift"] : ["meta"];
     owner.webContents.sendInputEvent({ type: "keyDown", keyCode: "R", modifiers });
     owner.webContents.sendInputEvent({ type: "keyUp", keyCode: "R", modifiers });
   }, ignoreCache);
@@ -74,7 +83,7 @@ for (const [design, state] of stoppedCases) test(`real stopped-engine modal perm
   await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   if (state === "unknown") {
     await page.evaluate(() => { window.nativeReloadProbe.dropCopy = true; }); await page.getByTestId("draft-save-copy").click();
-    await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+    await committedCopy();
     await expect(page.getByTestId("draft-status")).toContainText("may already exist", { timeout: 35_000 });
   }
   await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
@@ -85,7 +94,9 @@ for (const [design, state] of stoppedCases) test(`real stopped-engine modal perm
   const killed: number[] = [];
   for (let i = 0; i < 6 && !(await page.getByTestId("engine-stopped").isVisible()); i++) {
     await expect.poll(backendPid, { timeout: 20_000 }).not.toBeNull(); const pid = (await backendPid())!;
-    console.info("captured own backend PID", pid); killed.push(pid); process.kill(pid, "SIGKILL");
+    const birth = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf8" }).trim();
+    console.info("captured own backend PID/birth", pid, birth); killed.push(pid);
+    if (birth && execFileSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf8" }).trim() === birth) process.kill(pid, "SIGKILL");
     await expect.poll(async () => (await backendPid()) !== pid || await page.getByTestId("engine-stopped").isVisible(), { timeout: 20_000 }).toBe(true);
     if (!(await page.getByTestId("engine-stopped").isVisible())) await expect.poll(async () => (await backendPid()) !== null || await page.getByTestId("engine-stopped").isVisible(), { timeout: 20_000 }).toBe(true);
   }
@@ -97,6 +108,10 @@ for (const [design, state] of stoppedCases) test(`real stopped-engine modal perm
   await menu(); await shortcut(); await shortcut(true);
   await expect(dialog.getByTestId("native-reload-notice")).toBeVisible();
   await expect(page.getByTestId("native-reload-notice")).toHaveCount(1); expect(navigations).toBe(0);
+  for (const command of [() => menu(), () => shortcut(), () => shortcut(true)]) {
+    await dialog.getByTestId("native-reload-close").click(); await command();
+    await expect(dialog.getByTestId("native-reload-notice")).toBeVisible(); expect(navigations).toBe(0);
+  }
   await page.getByTestId("engine-retry").focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Tab"); await expect(page.getByTestId("native-reload-review")).toBeFocused();
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
@@ -125,10 +140,11 @@ for (const [design, state] of stoppedCases) test(`real stopped-engine modal perm
 test.beforeEach(async () => {
   profile = join(work, `profile-${++sequence}`);
   execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300"], { cwd: repo, stdio: "ignore" });
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, TERNO_TEST_APP_DATA: join(work, "appdata"), TERNO_TEST_APP_NAME: "TernoNativeReloadTest", TERNO_TEST_LANGUAGES: "en-US" };
-  delete env.ELECTRON_RUN_AS_NODE; delete env.TERNO_DEV_URL;
+  const env: Record<string, string> = { ...process.env, TERNO_DEMO: "1", TERNO_USER_DATA: profile, TERNO_TEST_APP_DATA: join(work, "appdata"), TERNO_TEST_APP_NAME: "TernoNativeReloadTest", TERNO_TEST_LANGUAGES: "en-US" };
+  delete env.ELECTRON_RUN_AS_NODE; delete env.TERNO_DEV_URL; delete env.TERNO_SMOKE_SCREENSHOT;
   app = await electron.launch({ executablePath: DEV ? join(work, "Electron.app/Contents/MacOS/Electron") : join(work, "Terno.app/Contents/MacOS/Terno"), ...(DEV ? { args: [join(here, "../dist/main.cjs")] } : {}), env });
   console.info("captured synthetic native app PID", app.process().pid);
+  await blockExternal(app);
   page = await app.firstWindow(); await page.getByTestId("thread-row").first().waitFor({ timeout: 60_000 });
   await page.addInitScript(() => {
     window.nativeReloadProbe = { nonce: crypto.randomUUID(), pagehides: 0, dropCopy: false, copyCommitted: false, gateSave: false, reached: false };
@@ -148,7 +164,9 @@ test.beforeEach(async () => {
       port.addEventListener("message", (event) => {
         const response = event.data;
         if (response?.t !== "res") return;
-        if (response.id === copy) { event.stopImmediatePropagation(); copy = null; window.nativeReloadProbe.copyCommitted = response.ok === true; }
+        if (response.id === copy) { event.stopImmediatePropagation(); copy = null; const saved = response.r;
+          window.nativeReloadProbe.copyCommitted = response.ok === true && Number.isSafeInteger(saved?.id) && typeof saved?.generation === "string" && saved?.revision === 1;
+          if (window.nativeReloadProbe.copyCommitted) window.nativeReloadProbe.copyIdentity = { id: saved.id, generation: saved.generation, revision: saved.revision }; }
         if (response.id === save) {
           event.stopImmediatePropagation(); save = null; window.nativeReloadProbe.reached = true;
           window.nativeReloadProbe.release = () => port.dispatchEvent(new MessageEvent("message", { data: response }));
@@ -158,7 +176,7 @@ test.beforeEach(async () => {
   });
   await page.reload(); await page.getByTestId("thread-row").first().waitFor(); await page.bringToFront();
 });
-test.afterEach(async () => { await app?.close(); });
+test.afterEach(async () => { await closePackaged(app); });
 test.afterAll(() => { if (work) rmSync(work, { recursive: true, force: true }); });
 
 for (const dialog of ["settings", "shortcuts"] as const) for (const state of ["missing", "unknown"] as const) test(`healthy ${dialog} exposes native ${state} Review and preserves intent`, async () => {
@@ -171,7 +189,7 @@ for (const dialog of ["settings", "shortcuts"] as const) for (const state of ["m
   await endOfBody(body); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   if (state === "unknown") {
     await page.evaluate(() => { window.nativeReloadProbe.dropCopy = true; }); await page.getByTestId("draft-save-copy").click();
-    await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+    await committedCopy();
     await expect(page.getByTestId("draft-status")).toContainText("may already exist", { timeout: 35_000 });
   }
   await endOfBody(body); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
@@ -211,7 +229,7 @@ for (const state of ["missing", "unknown"] as const) test(`native menu and CmdR/
   await expect(body).toHaveText("native exact work latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   if (state === "unknown") {
     await page.evaluate(() => { window.nativeReloadProbe.dropCopy = true; }); await page.getByTestId("draft-save-copy").click();
-    await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.copyCommitted)).toBe(true);
+    await committedCopy();
     await expect(page.getByTestId("draft-status")).toContainText("may already exist", { timeout: 35_000 });
   }
   await body.click(); await body.press("ArrowRight"); await body.press("Meta+ArrowRight"); await body.press("ArrowLeft"); await page.getByTestId("format-italic").click();
@@ -246,30 +264,38 @@ for (const state of ["missing", "unknown"] as const) test(`native menu and CmdR/
   expect(copy.body_text).toBe("native exact work latest"); expect(copy.body_html).toBe("<div><b>native exact work latest</b></div>");
   expect(JSON.parse(copy.to_json)).toEqual([{ name: "Pérez, Ana", email: "ana@example.test" }, { name: "", email: "bob@" }]);
   const ref = JSON.parse(copy.attachments_json)[0]; expect(await store((s) => s.attachments.read(copy.account_id, ref.assetId, 0))).toBe("AP+A");
-  await menu(); await page.getByTestId("thread-row").first().waitFor(); expect(navigations).toBe(1);
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), menu()]); await page.getByTestId("thread-row").first().waitFor(); expect(navigations).toBe(1);
   await page.getByTestId("compose-button").click(); await body.fill("explicitly discard only");
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   const target = (await store((s) => s.drafts.list())).find((d) => d.body_text === "explicitly discard only")!; await store((s) => s.drafts.delete(target.id, target.generation));
   await body.click(); await body.press("ArrowRight"); await page.keyboard.type(" latest"); await expect(page.getByTestId("draft-save-copy")).toBeVisible();
   await menu(); await expect(page.getByTestId("native-reload-anyway")).toHaveAccessibleName("Reload anyway and discard unsaved changes and pending files");
-  await page.getByTestId("native-reload-anyway").click(); await page.getByTestId("thread-row").first().waitFor(); expect(navigations).toBe(2);
+  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.getByTestId("native-reload-anyway").click()]); await page.getByTestId("thread-row").first().waitFor(); expect(navigations).toBe(2);
 });
 
 test("native reload holds the exact saved ACK through changed focus and document commit", async () => {
   await page.getByTestId("compose-button").click(); const body = page.getByTestId("compose-body");
   await page.evaluate(() => { window.nativeReloadProbe.gateSave = true; }); await body.fill("latest before native ACK");
-  await menu(); await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.reached)).toBe(true);
-  await expect(page.getByTestId("draft-status")).toContainText("Draft editing is paused");
+  await menu(); await expect(page.getByTestId("draft-status")).toContainText("Draft editing is paused");
+  await expect.poll(() => page.evaluate(() => window.nativeReloadProbe.reached)).toBe(true);
   await shortcut(); await shortcut(true);
   await body.focus(); await page.keyboard.type(" must not be admitted"); await expect(body).toHaveText("latest before native ACK");
-  const other = await app.evaluate(async ({ BrowserWindow }) => {
-    const other = new BrowserWindow({ show: true, webPreferences: { sandbox: true } });
-    await other.loadURL("data:text/html,<title>Synthetic focus control</title>"); other.focus(); other.webContents.focus(); return other.webContents.id;
-  });
-  await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.getFocusedWebContents()?.id === id, other)).toBe(true);
-  await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.evaluate(() => window.nativeReloadProbe.release!())]); await page.getByTestId("thread-row").first().waitFor();
-  await expect.poll(() => store(async (s) => (await s.drafts.list())[0]?.body_text)).toBe("latest before native ACK");
-  await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.getOwnerBrowserWindow()?.destroy(), other);
+  const nonce = await page.evaluate(() => window.nativeReloadProbe.nonce);
+  let other: number | undefined;
+  try {
+    other = await app.evaluate(async ({ app: a, BrowserWindow }) => {
+      const other = new BrowserWindow({ show: true, webPreferences: { sandbox: true } });
+      await other.loadURL("data:text/html,<title>Synthetic focus control</title>"); a.focus({ steal: true }); other.show(); other.focus(); other.webContents.focus(); return other.webContents.id;
+    });
+    await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.getFocusedWebContents()?.id === id, other)).toBe(true);
+    await Promise.all([page.waitForEvent("framenavigated", { predicate: (f) => f === page.mainFrame() }), page.evaluate(() => window.nativeReloadProbe.release!())]); await page.getByTestId("thread-row").first().waitFor();
+    await expect.poll(() => store(async (s) => (await s.drafts.list())[0]?.body_text)).toBe("latest before native ACK");
+  } finally {
+    await cleanupOwned([
+      () => page.evaluate((nonce) => { if (window.nativeReloadProbe.nonce === nonce) { window.nativeReloadProbe.release?.(); window.nativeReloadProbe.release = undefined; } }, nonce),
+      async () => { if (other !== undefined) await app.evaluate(({ webContents, BrowserWindow }, id) => { const contents = webContents.fromId(id); if (contents) BrowserWindow.fromWebContents(contents)?.destroy(); }, other); },
+    ]);
+  }
 });
 
 test("the exact owned detached DevTools frontend reload admits its inspected page", async () => {
@@ -288,7 +314,8 @@ test("the exact owned detached DevTools frontend reload admits its inspected pag
     const trace: string[] = []; Reflect.set(owner, "nativeTrace", trace);
     const send = owner.webContents.send.bind(owner.webContents);
     owner.webContents.send = (...args: Parameters<typeof send>) => { if (trace.length < 32) trace.push(`send:${args[0]}:${args[1]}`); send(...args); };
-    for (const name of ["devtools-reload-page", "did-start-navigation", "did-navigate", "did-stop-loading", "did-fail-load", "did-fail-provisional-load"] as const) owner.webContents.on(name, () => { if (trace.length < 32) trace.push(`${name}:${owner.webContents.isLoadingMainFrame()}`); });
+    const events: NodeJS.EventEmitter = owner.webContents;
+    for (const name of ["devtools-reload-page", "did-start-navigation", "did-navigate", "did-stop-loading", "did-fail-load", "did-fail-provisional-load"] as const) events.on(name, () => { if (trace.length < 32) trace.push(`${name}:${owner.webContents.isLoadingMainFrame()}`); });
     ipcMain.on("terno:flush-done", (_e, _id, saved) => { if (trace.length < 32) trace.push(`flush-done:${saved}`); });
   });
   await app.evaluate(async ({ BrowserWindow }) => {

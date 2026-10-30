@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { PRINT_FIXTURE_KEYS, printFixtures, type PrintFixtureKey } from "@terno/mock-data";
+import { cleanupOwned, closePackaged } from "./packaged-fixture";
 import { pdfProblems, QUERY, readPdf } from "../../web/e2e/print-pdf";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,9 +41,10 @@ test.beforeAll(async () => {
   const profile = join(workdir, "profile");
   // a small demo mailbox plus the print fixtures, seeded before the app opens it
   execFileSync("pnpm", ["--filter", "@terno/backend-dev", "exec", "tsx", "src/seed.ts", "--out", profile, "--accounts", "2", "--threads", "300", "--print-fixtures"], { cwd: repo, stdio: "ignore" });
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile, TERNO_TEST_PDF_DIR: pdfDir };
+  const env: Record<string, string> = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: profile, TERNO_TEST_PDF_DIR: pdfDir };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
+  delete env.TERNO_SMOKE_SCREENSHOT;
   if (DEV) {
     app = await electron.launch({ executablePath: join(here, "../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [join(here, "../dist/main.cjs")], env });
   } else {
@@ -50,13 +52,21 @@ test.beforeAll(async () => {
     execFileSync("ditto", [SOURCE_APP, appPath]);
     app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
   }
+  // Cancel after the product request fence so the allowlist witness stays observable.
+  await app.evaluate(({ session }) => {
+    for (const target of [session.defaultSession, session.fromPartition("terno-print")]) {
+      target.webRequest.onBeforeSendHeaders({ urls: ["https://*/*", "http://*/*"] }, (request, callback) => {
+        const host = new URL(request.url).hostname;
+        callback({ cancel: !["127.0.0.1", "localhost", "[::1]"].includes(host) });
+      });
+    }
+  });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
 });
 
 test.afterAll(async () => {
-  await app?.close();
-  if (workdir) rmSync(workdir, { recursive: true, force: true });
+  await cleanupOwned([() => closePackaged(app), () => { if (workdir) rmSync(workdir, { recursive: true, force: true }); }]);
 });
 
 /** The search field; a new profile opens in Lumen (plan 15), whose field "/" opens. */
@@ -71,7 +81,12 @@ async function searchBox() {
 
 async function openThread(key: PrintFixtureKey) {
   await (await searchBox()).fill(QUERY[key]);
+  await expect.poll(async () => {
+    const key = await page.getByTestId("thread-list").getAttribute("data-results-for");
+    return key ? JSON.parse(key).at(-1) : null;
+  }).toBe(QUERY[key]);
   await expect(page.locator("[data-testid=thread-row]")).toHaveCount(1);
+  await expect(page.getByTestId("thread-row")).toContainText(fixtures.get(key)!.subject);
   await page.locator("[data-testid=thread-row]").first().dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toHaveText(fixtures.get(key)!.subject);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
