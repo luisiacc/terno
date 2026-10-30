@@ -53,17 +53,29 @@ test("browser GIS callbacks retain an authored draft in the actual worker store"
   expect(draft.attachments).toHaveLength(1);
   expect(await page.evaluate((d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), draft)).toEqual({ dataBase64: "AP+A" });
   const account = await page.evaluate(async () => (await window.__ternoWeb!.client.call("app.bootstrap", {})).accounts[0]!);
+  const identities = await page.evaluate(async () => (await window.__ternoWeb!.client.call("app.bootstrap", {})).accounts.map(({ id, email }) => ({ id, email })));
+  await page.evaluate(() => {
+    const c = window.__ternoWeb!.client, call = c.call.bind(c);
+    (window as Window & { authCalls: number }).authCalls = 0;
+    Object.defineProperty(c, "call", { value: (...args: Parameters<typeof call>) => {
+      if (args[0] === "accounts.connectGmailToken") (window as Window & { authCalls: number }).authCalls++;
+      return call(...args);
+    } });
+  });
   const invoke = async (outcome: string) => page.evaluate(async ({ outcome, account }) => {
     (window as Window & { outcome: string }).outcome = outcome;
     const { connectGmailWeb } = await import("/src/web/google.ts");
-    return connectGmailWeb(account.email, account.id).then(() => "success", (e: Error) => e.message);
+    return connectGmailWeb(account.email, account.id).then((result) => ({ id: result.id, email: result.email }), (e: Error) => e.message);
   }, { outcome, account });
   for (const outcome of ["popup_closed", "popup_failed_to_open", "access_denied", "admin_policy_enforced"]) {
-    expect(await invoke(outcome)).not.toBe("success");
+    expect(typeof await invoke(outcome)).toBe("string");
     expect(await snapshot()).toEqual(before);
   }
   expect(provider).toEqual([]);
-  expect(await invoke("valid")).toBe("success");
+  expect(await page.evaluate(() => (window as Window & { authCalls: number }).authCalls)).toBe(0);
+  expect(await invoke("valid")).toEqual({ id: account.id, email: account.email });
+  expect(await page.evaluate(() => (window as Window & { authCalls: number }).authCalls)).toBe(1);
+  expect(await page.evaluate(async () => (await window.__ternoWeb!.client.call("app.bootstrap", {})).accounts.map(({ id, email }) => ({ id, email })))).toEqual(identities);
   expect(await page.evaluate(() => (window as Window & { submissions: number }).submissions)).toBe(5);
   expect(provider).toContain("gmail.googleapis.com/gmail/v1/users/me/profile");
   expect(await snapshot()).toEqual(before);
