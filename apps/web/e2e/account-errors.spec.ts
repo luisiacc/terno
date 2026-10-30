@@ -215,6 +215,8 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
     const verified: string[] = [];
     let server: DevServer | undefined;
     let refuse = true;
+    let releaseGoogle: (() => void) | undefined;
+    const heldGoogle = new Promise<void>((resolve) => { releaseGoogle = resolve; });
     await loadLocale(language);
     await page.setViewportSize({ width: 800, height: 650 });
     await page.route("**/*", async (route) => {
@@ -233,6 +235,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
           },
           async connectGmail(options) {
             googleCalls.push(options.loginHint);
+            if (options.loginHint) await heldGoogle;
             throw new ProviderAuthError(L("errors.couldNotConnect", { detail }));
           },
         },
@@ -274,7 +277,17 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       // Reconnect publishes a fixed safe Google failure; it must not reintroduce raw provider details.
       const googleItem = page.locator(`[data-testid="settings-account"][data-account-id="${gmail.id}"]`);
       await googleItem.getByTestId("account-toggle").click();
-      await googleItem.getByTestId("account-reconnect").click();
+      const reconnect = googleItem.getByTestId("account-reconnect");
+      await reconnect.focus();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => googleCalls.length).toBe(1);
+      await expect(reconnect).toHaveAttribute("aria-disabled", "true");
+      await expect(reconnect).toBeDisabled();
+      await expect(reconnect).toBeFocused();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Space");
+      expect(googleCalls).toEqual([gmail.email]);
+      releaseGoogle!();
       await expect(googleItem.getByTestId("account-reconnect-error")).toHaveText(t("errors.google.invalidResponse"));
       expect(googleCalls).toEqual([gmail.email]);
       expect((await new AxeBuilder({ page }).include('[data-testid="settings-dialog"]').analyze()).violations).toEqual([]);
@@ -332,6 +345,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await expect.poll(async () => (await backend.store.accounts.list()).map((a) => a.email)).toContain("synthetic@icloud.com");
       expect(external).toEqual([]);
     } finally {
+      releaseGoogle?.();
       try { await server?.close(); } finally { rmSync(dir, { recursive: true, force: true }); }
     }
   });

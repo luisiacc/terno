@@ -131,7 +131,7 @@ function Reconnect({ account }: { account: Account }) {
         size="sm"
         focusableWhenDisabled
         disabled={busy}
-        aria-disabled={(!ready && !failed) || undefined}
+        aria-disabled={busy || (!ready && !failed) || undefined}
         data-testid="account-reconnect"
         onClick={() => {
           if (account.kind === "imap") setAsking(true);
