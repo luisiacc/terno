@@ -236,3 +236,7 @@ The missing direct OPFS verification is now complete on unchanged conformance/ru
 ## Landed repair: oversized successful Gmail send response
 
 `a0453d81` excludes sends from the generic message-read overflow classification, preserving uncertain/no-retry semantics after the real dispatch and bounded reader. Original and valid portable-MIME regressions reproduce the actual defect. Root's 153 mail tests, 7 backend caller controls, mail types, lint and whitespace pass after rebase; one native review found zero findings. No limits, replay fences or hot-path behavior changed. [Details](../plans/drafts/release-gmail-send-response.md).
+
+## Landed repair: browser Gmail wire fixture
+
+`34132a97` replaces the Unicode-corrupted classic-script fixture with an isolated dev module server and strengthens exact wire/SMTP witnesses. Root passed 93 direct and 13 browser cases, types/lint/whitespace. Seven direct conversion controls now provide native event targets rather than an incomplete document stub. One review config-discovery P2 was fixed; no second review. The named Forward failures did not reproduce before strengthening, so no production Forward correction is claimed. [Details](../plans/drafts/release-browser-wire-forward.md).
