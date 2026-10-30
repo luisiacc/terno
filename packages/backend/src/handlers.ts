@@ -386,14 +386,16 @@ export function createHandlers(b: Backend): Handlers {
       // the set is fixed once, by the same search as "Search mail from X", inside the category
       const { ids, capped } = await resolveThreadScope(b, { kind: "search", query: `from:${email}`, categoryId });
       if (capped) throw new RpcError("BAD_REQUEST", L("errors.tooManyThreads"));
-      const removed: number[] = [];
-      await sliced(ids, async (chunk) => {
-        const r = await store.categories.remove({ categoryId, threadIds: chunk, reason: "user", now: b.now() });
-        b.categorizer.apply(r.deltas);
-        removed.push(...r.removed);
-        b.notifyChanged(chunk);
-      });
-      return { removed };
+      // a move that only leaves: every row, example and decision journaled, so categorize.undo is exact
+      const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds: ids, addedBy: "user", now: b.now(), source: "sender", leave: true });
+      try {
+        await b.finishMove(batchId);
+      } catch (error) {
+        // what was applied stays journaled (and resumes at the next start): the renderer can still undo it
+        throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { batchId }, { expected: false, cause: error });
+      }
+      const { moved } = await store.categories.moveOutcome(batchId);
+      return { batchId: moved.length ? batchId : null, removed: moved };
     },
     "categorize.quickActions": async ({ categoryId, threadIds }) => {
       await requireCategory(categoryId);

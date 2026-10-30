@@ -30,10 +30,10 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { addToCategory } = await import("./categorize");
+const { addToCategory, removeSenderFromCategory } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
-const { useSnack } = await import("~/lib/snack");
+const { registerUndo, undoLast, undoNow, useSnack } = await import("~/lib/snack");
 
 const CAT = 7;
 const row = (id: number, unread: boolean): ThreadSummary => ({ id, unread, categoryIds: [] }) as unknown as ThreadSummary;
@@ -99,5 +99,61 @@ describe("addToCategory: unread counts", () => {
     } finally {
       setLocale("en", en);
     }
+  });
+});
+
+describe("removeSenderFromCategory (plan 76): undo", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const undoCalls = () => fake.calls.filter((m) => m === "categorize.undo").length;
+  const answer = () => {
+    let release!: (v: unknown) => void;
+    fake.handlers["categories.removeSender"] = () => new Promise((r) => (release = r));
+    return (v: unknown) => release(v);
+  };
+  beforeEach(() => {
+    setApp({ categories: [{ id: CAT, name: "Facturas" }] as never });
+    const items = [1, 2, 3].map((id) => ({ ...row(id, false), fromEmail: id < 3 ? "recibos@rappi.com" : "x@y.com", categoryIds: [CAT] }));
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+    fake.handlers["categorize.undo"] = async () => ({ removed: 0, restored: 2 });
+    fake.handlers["threads.list"] = async () => ({ items: [], nextCursor: null });
+  });
+
+  it("z right after the click undoes the removal once the backend names its batch", async () => {
+    const release = answer();
+    const done = removeSenderFromCategory(CAT, "recibos@rappi.com");
+    undoLast();
+    await settle();
+    expect(undoCalls()).toBe(0);
+    release({ batchId: 5, removed: [1, 2] });
+    await done;
+    await settle();
+    expect(undoCalls()).toBe(1);
+    // nothing left to offer: the progress snack went, no Undo button stayed
+    expect(useSnack.getState().current?.action).toBeUndefined();
+  });
+
+  it("an action taken while it runs keeps z: the later answer doesn't take it over", async () => {
+    const release = answer();
+    const done = removeSenderFromCategory(CAT, "recibos@rappi.com");
+    const later = vi.fn();
+    registerUndo(later);
+    release({ batchId: 5, removed: [1, 2] });
+    await done;
+    undoLast();
+    await settle();
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(undoCalls()).toBe(0);
+  });
+
+  it("a failure partway still offers Undo for what was done", async () => {
+    fake.handlers["categories.removeSender"] = async () => {
+      throw Object.assign(new Error("boom"), { details: { batchId: 9 } });
+    };
+    await removeSenderFromCategory(CAT, "recibos@rappi.com");
+    const snack = useSnack.getState().current!;
+    expect(snack.message).toBe("Couldn’t remove: boom");
+    undoNow(snack.action!.undo!);
+    await settle();
+    expect(undoCalls()).toBe(1);
   });
 });

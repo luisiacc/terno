@@ -491,12 +491,14 @@ function touched(table: string, batchId: number, to: number, ids: string | null,
 /**
  * Records a move: its threads (those that exist), nothing more, so 5,000 of
  * them cost a few ms. Nothing moves yet: applyMoveSlice does, in slices, and
- * finds out then what each thread leaves and joins.
+ * finds out then what each thread leaves and joins. `leave` (plan 76) turns
+ * it around: the threads only leave `to`, journaled the same way, so
+ * categorize.undo puts every row, example and decision back exactly.
  */
-export function beginMove(db: Db, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number } {
+export function beginMove(db: Db, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string; leave?: boolean }): { batchId: number } {
   return db.tx(() => {
     pruneMoveJournals(db, m.now);
-    const batchId = createBatch(db, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
+    const batchId = createBatch(db, m.to, m.source, { kind: "move", exclusive: !m.leave, ...(m.leave ? { leave: true } : {}), addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
     db.run(
       `INSERT INTO cat_move_threads (batch_id, thread_id, added, moved)
        SELECT ?, j.value, 0, 0 FROM (SELECT DISTINCT value FROM json_each(?)) j WHERE EXISTS (SELECT 1 FROM threads WHERE id = j.value)`,
@@ -525,11 +527,13 @@ export function moveOutcome(db: Db, batchId: number): { added: number[]; moved: 
  */
 export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly number[], now: number): { deltas: ModelDelta[]; touched: number[] } {
   return db.tx(() => {
-    const meta = db.get<{ to: number; addedBy: AddedBy; phase: MovePhase }>(
-      "SELECT category_id AS 'to', scope_json ->> '$.addedBy' AS addedBy, scope_json ->> '$.phase' AS phase FROM cat_batches WHERE id = ?",
+    const meta = db.get<{ to: number; addedBy: AddedBy; phase: MovePhase; leave: number | null }>(
+      "SELECT category_id AS 'to', scope_json ->> '$.addedBy' AS addedBy, scope_json ->> '$.phase' AS phase, scope_json ->> '$.leave' AS leave FROM cat_batches WHERE id = ?",
       batchId,
     );
     if (!meta || meta.phase !== "moving") return { deltas: [], touched: [] };
+    // the rows a slice takes out: every other category's, or (leaving) the one category's
+    const left = meta.leave ? "=" : "!=";
     const ids = JSON.stringify(
       db
         .all<{ thread_id: number }>("SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND done = 0 AND thread_id IN (SELECT value FROM json_each(?))", batchId, JSON.stringify(threadIds))
@@ -538,10 +542,10 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
     const slice = "SELECT value FROM json_each(?)";
     db.run(
       `UPDATE cat_move_threads SET
-         added = NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id = ?),
-         moved = EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id != ?)
+         added = ${meta.leave ? "0" : "NOT EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id = ?)"},
+         moved = EXISTS (SELECT 1 FROM thread_categories tc WHERE tc.thread_id = cat_move_threads.thread_id AND tc.category_id ${left} ?)
        WHERE batch_id = ? AND thread_id IN (${slice})`,
-      meta.to,
+      ...(meta.leave ? [] : [meta.to]),
       meta.to,
       batchId,
       ids,
@@ -549,7 +553,7 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
     // every row the slice removes, with its category, origin and batch (undo puts each back exactly)
     db.run(
       `INSERT OR IGNORE INTO cat_move_rows (batch_id, thread_id, category_id, added_by, added_at, prev_batch_id)
-       SELECT ?, thread_id, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id IN (${slice}) AND category_id != ?`,
+       SELECT ?, thread_id, category_id, added_by, added_at, batch_id FROM thread_categories WHERE thread_id IN (${slice}) AND category_id ${left} ?`,
       batchId,
       ids,
       meta.to,
@@ -561,7 +565,7 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
       batchId,
       ...decisions.params,
     );
-    db.run(`DELETE FROM thread_categories WHERE thread_id IN (${slice}) AND category_id != ?`, ids, meta.to);
+    db.run(`DELETE FROM thread_categories WHERE thread_id IN (${slice}) AND category_id ${left} ?`, ids, meta.to);
     const added = db
       .all<{ thread_id: number }>(
         `INSERT INTO thread_categories (thread_id, category_id, added_by, added_at, batch_id)
@@ -595,7 +599,14 @@ export function applyMoveSlice(db: Db, batchId: number, threadIds: readonly numb
     if (nextPhaseWhenDone(db, batchId, "training")) {
       finishBatch(db, batchId, db.get<{ c: number }>("SELECT count(*) AS c FROM cat_move_threads WHERE batch_id = ? AND added = 1", batchId)!.c);
     }
-    return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: JSON.parse(ids) as number[] };
+    const sliceIds = JSON.parse(ids) as number[];
+    const deltas: ModelDelta[] = added.map((threadId) => ({ op: "unbackground", threadId }));
+    // leaving can take a thread's last category: it may go back to the background
+    if (meta.leave) {
+      const out = db.all<{ thread_id: number }>(`SELECT thread_id FROM cat_move_threads WHERE batch_id = ? AND moved = 1 AND thread_id IN (${slice})`, batchId, ids).map((r) => r.thread_id);
+      deltas.push(...backgroundDeltas(db, out, now));
+    }
+    return { deltas, touched: sliceIds };
   });
 }
 

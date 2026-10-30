@@ -283,7 +283,7 @@ export function finishUndo(c: Ctx, batchId: number, now: number): void {
 
 // ───────────────────────────── moves ─────────────────────────────
 
-const scopeOf = (b: R) => JSON.parse(b.scope_json) as { kind?: string; phase?: MovePhase; from?: number; addedBy?: AddedBy };
+const scopeOf = (b: R) => JSON.parse(b.scope_json) as { kind?: string; phase?: MovePhase; from?: number; addedBy?: AddedBy; leave?: boolean };
 const JOURNAL = ["cat_move_threads", "cat_move_rows", "cat_move_examples", "cat_move_decisions"];
 
 function setPhase(c: Ctx, batchId: number, phase: MovePhase): void {
@@ -371,11 +371,14 @@ const touchedCategories = (to: number, left: readonly R[] | undefined, legacyFro
   ...new Set([to, ...(legacyFrom === undefined ? [] : [legacyFrom]), ...(left ?? []).map((r) => r.category_id as number)]),
 ];
 
-/** Records an exclusive move (its threads, nothing more); applyMoveSlice moves them in slices. */
-export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string }): { batchId: number } {
+/**
+ * Records an exclusive move (its threads, nothing more); applyMoveSlice moves them in slices.
+ * `leave` (plan 76): the threads only leave `to`, journaled alike, so categorize.undo is exact.
+ */
+export function beginMove(c: Ctx, m: { to: number; threadIds: readonly number[]; addedBy: AddedBy; now: number; source: string; leave?: boolean }): { batchId: number } {
   return c.db.tx(() => {
     pruneMoveJournals(c, m.now);
-    const batchId = createBatch(c, m.to, m.source, { kind: "move", exclusive: true, addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
+    const batchId = createBatch(c, m.to, m.source, { kind: "move", exclusive: !m.leave, ...(m.leave ? { leave: true } : {}), addedBy: m.addedBy, phase: "moving" satisfies MovePhase }, m.now);
     const threads = T(c, "threads");
     const journal = T(c, "cat_move_threads");
     for (const t of [...new Set(m.threadIds)].sort((x, y) => x - y)) if (threads.has(t)) journal.insert({ batch_id: batchId, thread_id: t, added: 0, moved: 0, done: 0 });
@@ -404,10 +407,13 @@ export function applyMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     const wanted = new Set(threadIds);
     const mine = journal.by("fk_batch_id", batchId).filter((r) => r.done === 0 && wanted.has(r.thread_id)).sort((x, y) => x.thread_id - y.thread_id);
     const added: number[] = [];
+    const out: number[] = [];
     for (const r of mine) {
       const rows = memberships.by("fk_thread_id", r.thread_id);
-      const others = rows.filter((x) => x.category_id !== to).sort((x, y) => x.category_id - y.category_id);
-      const isAdded = !rows.some((x) => x.category_id === to);
+      // the rows a slice takes out: every other category's, or (leaving) the one category's
+      const others = rows.filter((x) => (s.leave ? x.category_id === to : x.category_id !== to)).sort((x, y) => x.category_id - y.category_id);
+      const isAdded = !s.leave && !rows.some((x) => x.category_id === to);
+      if (others.length) out.push(r.thread_id as number);
       for (const src of others) T(c, "cat_move_rows").insert({ batch_id: batchId, thread_id: r.thread_id, category_id: src.category_id, added_by: src.added_by, added_at: src.added_at, prev_batch_id: src.batch_id });
       for (const cat of touchedCategories(to, others, s.from)) {
         const d = decisions.get(r.thread_id, cat);
@@ -428,7 +434,10 @@ export function applyMoveSlice(c: Ctx, batchId: number, threadIds: readonly numb
     settleSuggestions(c, to, added, "accepted");
     if (!journal.by("fk_batch_id", batchId).some((r) => r.done === 0)) finishBatch(c, batchId, journal.by("fk_batch_id", batchId).filter((r) => r.added === 1).length);
     nextPhaseWhenDone(c, batchId, "training");
-    return { deltas: added.map((threadId): ModelDelta => ({ op: "unbackground", threadId })), touched: mine.map((r) => r.thread_id as number) };
+    const deltas: ModelDelta[] = added.map((threadId) => ({ op: "unbackground", threadId }));
+    // leaving can take a thread's last category: it may go back to the background
+    if (s.leave) deltas.push(...backgroundDeltas(c, out, now));
+    return { deltas, touched: mine.map((r) => r.thread_id as number) };
   });
 }
 

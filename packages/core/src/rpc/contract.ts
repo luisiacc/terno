@@ -639,10 +639,12 @@ export const contract = {
 
   /**
    * Plan 76: "Everything from X → Out of C". Every thread from the sender in
-   * the category leaves it (a user removal each: the model learns it); the
-   * ids come back so Undo can file them again.
+   * the category leaves it (as a user removal: the model learns it), as a
+   * journaled move; categorize.undo on the batch puts back every row,
+   * example and decision. A failure partway carries `{ batchId }` in its
+   * details, so what was done can still be undone.
    */
-  "categories.removeSender": m<{ removed: number[] }>()(
+  "categories.removeSender": m<{ batchId: number | null; removed: number[] }>()(
     z.object({ categoryId: id, email: z.string().trim().email().max(320) }),
     { timeoutMs: 300_000 },
   ),

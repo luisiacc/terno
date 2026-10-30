@@ -1061,6 +1061,38 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await store.categories.undoBatchPart(bulk, await store.categories.batchThreads(bulk), NOW + 2)).removed.sort()).toEqual([t1, t3].sort());
       });
 
+      it("plan 76: a leave takes threads out of one category only (a removal example each); its undo restores rows and examples exactly", async () => {
+        const { store, cat, other, thread, examples } = await setup();
+        // t1 in cat (a bulk batch) and other, t2 in cat (filed by a filter: no example), t3 in neither
+        const [t1, t2, t3] = [await thread(), await thread(), await thread()];
+        const bulk = await store.categories.createBatch(cat, "snackbar", { kind: "sender", email: "uber.receipts@uber.com" }, NOW - DAY);
+        await store.categories.add({ categoryId: cat, threadIds: [t1], addedBy: "bulk", now: NOW - DAY, batchId: bulk });
+        await store.categories.add({ categoryId: cat, threadIds: [t2], addedBy: "filter", now: NOW - DAY });
+        await store.categories.add({ categoryId: other, threadIds: [t1], addedBy: "user", now: NOW - 2 * DAY });
+        const before = await store.debug.snapshot();
+        const m = await store.categories.beginMove({ to: cat, threadIds: [t1, t2, t3], addedBy: "user", now: NOW, source: "sender", leave: true });
+        await applyAll(store, m.batchId);
+        expect(await store.categories.moveOutcome(m.batchId)).toEqual({ added: [], moved: [t1, t2].sort((a, b) => a - b) });
+        expect((await store.debug.snapshot()).memberships.map((x) => [x.threadId, x.categoryId])).toEqual([[t1, other]]);
+        await store.categories.trainMoveSlice(m.batchId, await store.categories.movePending(m.batchId), NOW);
+        expect((await examples()).map((e) => [e.threadId, e.categoryId, e.label]).sort()).toEqual(
+          [
+            [t1, cat, -1],
+            [t1, other, 1],
+            [t2, cat, -1],
+          ].sort(),
+        );
+        const undo = await undoAll(store, m.batchId);
+        expect([undo.removed, undo.restored]).toEqual([[], [t1, t2].sort((a, b) => a - b)]);
+        await store.categories.restoreMoveSlice(m.batchId, await store.categories.movePending(m.batchId));
+        const back = await store.debug.snapshot();
+        const key = (x: { threadId: number; categoryId: number }) => `${x.threadId}:${x.categoryId}`;
+        // the filter's row is a filter's again, the bulk row still in its batch, the examples as they were
+        expect([...back.memberships].sort((a, b) => key(a).localeCompare(key(b)))).toEqual([...before.memberships].sort((a, b) => key(a).localeCompare(key(b))));
+        expect([...back.examples].sort((a, b) => key(a).localeCompare(key(b)))).toEqual([...before.examples].sort((a, b) => key(a).localeCompare(key(b))));
+        expect((await store.categories.undoBatchPart(bulk, await store.categories.batchThreads(bulk), NOW + 2)).removed).toEqual([t1]);
+      });
+
       it("a move older than a day can't be undone any more", async () => {
         const { store, cat, other, thread } = await setup();
         const t = await thread();

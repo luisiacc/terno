@@ -12,12 +12,15 @@
 ## Design
 
 - Below the "To C" items, after a separator: "Out of C" for each category the right-clicked thread(s) are in (test id `menu-sender-out-<id>`).
-- New RPC `categories.removeSender { categoryId, email } → { removed: number[] }`. The backend fixes the set once, with the same search as "Search mail from X" (`from:<email>`, inside the category, through `resolveThreadScope`'s keyset pages), refuses a capped scope, and removes in budgeted slices as `categories.removeThreads` does (reason "user", so the engine learns it).
-- The renderer patches the loaded rows from that sender at once, shows "Removing from C…" → "N removed from C · Undo". Undo (button or z) files the returned ids back as the user's own add (`categories.addThreads`, picker), in chunks of 5,000.
+- New RPC `categories.removeSender { categoryId, email } → { batchId, removed }`. The backend fixes the set once, with the same search as "Search mail from X" (`from:<email>`, inside the category, through `resolveThreadScope`'s keyset pages), and refuses a capped scope.
+- The removal is a *leave move* (`beginMove({ …, leave: true })`, both stores): the move journal machinery, with the slice taking out only the rows of `to` and adding nothing. Each row (origin, time, batch), example and decision is journaled, training records a removal example per thread (as a user removal), threads left with no category go back to the background, and `categorize.undo` on the batch restores everything exactly. It is crash-resumable like any move.
+- The renderer patches the loaded rows from that sender at once and shows "Removing from C…" → "N removed from C · Undo". The z token is registered at the click (it waits for the batch), so a later action keeps z.
 
 ## Tests
 
-- Backend (`categorize.test.ts`): only that sender's threads leave that category; other categories and senders stay; negatives recorded; an empty second run; a gone category is NOT_FOUND.
+- Store conformance (SQLite and IndexedDB): a leave takes rows out of one category only, records removal examples, and its undo restores memberships (filter and bulk origins, batch) and examples exactly.
+- Backend (`categorize.test.ts`): only that sender's threads leave that category; other categories and senders stay; the undo gives back the exact rows, examples and model; an empty second run has no batch; a gone category is NOT_FOUND; a failure partway still names its batch and its undo restores everything.
+- Web unit (`categorize.test.ts`): z right after the click undoes it once the batch is known; an action taken meanwhile keeps z; a partial failure's snack offers Undo.
 - e2e (`categorize.spec.ts`): the item appears only for categories the mail is in; removal, the reader's badge goes, Undo restores every membership.
 
 ## Perf
@@ -27,4 +30,9 @@ The search is the existing indexed `from:` search (exact-sender index) and the r
 ## Out of scope
 
 - Domain and list scopes ("Everything from @domain → Out of").
-- An exact undo: the re-add records the threads as the user's own filing (positive examples) even when they had been filed by a filter or auto. A removal batch journal would make it exact; not worth it for this action yet.
+
+## Revisions after the Codex review
+
+1. *A failure partway lost Undo for the slices already done.* The removal is now a journaled move: the error carries `{ batchId }`, the snack offers Undo, and `categorize.undo` finishes the move, then takes it all back (backend regression with a failing training trigger).
+2. *Undo re-filed the threads as the user's own (changed origins, examples and decisions).* Replaced by the leave move's exact undo (conformance test in both stores, backend test comparing rows, examples and the model).
+3. *The z token was registered only after the RPC, so a slow removal took z from a newer action.* It is now registered at the click on a deferred batch, as `act` does (web unit tests).

@@ -1464,7 +1464,8 @@ export class IdbMailStore implements MailStore {
     movePending: (batchId) => this.read(() => movePending(this.c, batchId)),
     unfinishedMoves: () => this.early(() => unfinishedMoves(this.c)),
     trainMoveSlice: (batchId, threadIds, now) => this.command(() => trainMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
-    applyMoveSlice: (batchId, threadIds, now) => this.command(() => applyMoveSlice(this.c, batchId, threadIds, now)),
+    // a leave (plan 76) can send threads back to the background, which reads their roots (trainMoveSlice reads them next anyway)
+    applyMoveSlice: (batchId, threadIds, now) => this.command(() => applyMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     undoMoveBegin: (batchId, now) => this.command(() => undoMoveBegin(this.c, batchId, now)),
     undoMoveSlice: (batchId, threadIds, now) => this.command(() => undoMoveSlice(this.c, batchId, threadIds, now), { prefetch: () => this.prefetchRoots(threadIds) }),
     restoreMoveSlice: (batchId, threadIds) => this.command(() => restoreMoveSlice(this.c, batchId, threadIds)),

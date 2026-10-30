@@ -157,7 +157,7 @@ describe("categorizer: training hooks", () => {
     await expect(client.call("categories.addThreads", { categoryId: 999, threadIds: [t!] })).rejects.toThrow(/no longer exists/);
   });
 
-  it("plan 76: everything from a sender leaves a category (a user removal each); other senders and categories stay", async () => {
+  it("plan 76: everything from a sender leaves a category (a user removal each); other senders and categories stay; undo is exact", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
@@ -165,17 +165,54 @@ describe("categorizer: training hooks", () => {
     const rappi = { name: "Rappi", email: "recibos@rappi.com" };
     const mine = [...ingestMessages(sqlDb(backend.store), [incoming(acct, { from: rappi }), incoming(acct, { from: rappi }), incoming(acct, { from: rappi })]).touchedThreads];
     const [uber] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
-    await client.call("categories.addThreads", { categoryId: cat, threadIds: [...mine.slice(0, 2), uber!] });
+    await backend.categorizer.rebuildNow();
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [mine[0]!, uber!] });
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: [mine[1]!], source: "snackbar" });
     await client.call("categories.addThreads", { categoryId: other, threadIds: [mine[0]!] });
-    const { removed } = await client.call("categories.removeSender", { categoryId: cat, email: "Recibos@Rappi.com" });
-    expect(removed.sort()).toEqual(mine.slice(0, 2).sort());
+    const state = () => ({
+      rows: sqlDb(backend.store).all("SELECT thread_id, category_id, added_by, added_at, batch_id FROM thread_categories ORDER BY thread_id, category_id"),
+      examples: sqlDb(backend.store).all("SELECT thread_id, category_id, label, weight, source, batch_id FROM cls_examples ORDER BY thread_id, category_id"),
+    });
+    const before = state();
+    const positives = backend.categorizer.model!.positives(cat);
+
+    const { batchId, removed } = await client.call("categories.removeSender", { categoryId: cat, email: "Recibos@Rappi.com" });
+    expect(removed).toEqual(mine.slice(0, 2).sort((a, b) => a - b));
     const members = (c: number) => sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_categories WHERE category_id = ? ORDER BY thread_id", c).map((r) => r.thread_id);
     expect(members(cat)).toEqual([uber]);
     expect(members(other)).toEqual([mine[0]]);
-    expect(sqlDb(backend.store).get("SELECT label FROM cls_examples WHERE thread_id = ? AND category_id = ?", mine[1]!, cat)).toEqual({ label: -1 });
-    // nothing left to take out: an empty answer, not an error
-    expect(await client.call("categories.removeSender", { categoryId: cat, email: rappi.email })).toEqual({ removed: [] });
+    expect(sqlDb(backend.store).get("SELECT label, source FROM cls_examples WHERE thread_id = ? AND category_id = ?", mine[1]!, cat)).toEqual({ label: -1, source: "removal" });
+    expect(backend.categorizer.model!.positives(cat)).toBe(positives - 2);
+
+    // every row back with its origin and batch, every example as it was, the model too
+    expect(await client.call("categorize.undo", { batchId: batchId! })).toEqual({ removed: 0, restored: 2 });
+    expect(state()).toEqual(before);
+    expect(backend.categorizer.model!.positives(cat)).toBe(positives);
+
+    // nothing left to take out: an empty answer without an undo, not an error
+    await client.call("categories.removeSender", { categoryId: other, email: rappi.email });
+    expect(await client.call("categories.removeSender", { categoryId: other, email: rappi.email })).toEqual({ batchId: null, removed: [] });
     await expect(client.call("categories.removeSender", { categoryId: 999, email: rappi.email })).rejects.toThrow(/no longer exists/);
+  });
+
+  it("plan 76: a removal that fails partway still names its batch, and its undo takes back what was done", async () => {
+    const { backend, client } = setup();
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+    const rappi = { name: "Rappi", email: "recibos@rappi.com" };
+    const mine = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 4 }, () => incoming(acct, { from: rappi }))).touchedThreads];
+    await client.call("categories.addThreads", { categoryId: cat, threadIds: mine });
+    const before = sqlDb(backend.store).all("SELECT thread_id, category_id, added_by, added_at, batch_id FROM thread_categories ORDER BY thread_id");
+    // the training phase fails after every membership already left
+    sqlDb(backend.store).exec("CREATE TRIGGER fail_training BEFORE INSERT ON cls_examples BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    const error = await client.call("categories.removeSender", { categoryId: cat, email: rappi.email }).catch((e: unknown) => e as { details?: { batchId?: number } });
+    const batchId = (error as { details?: { batchId?: number } }).details?.batchId;
+    expect(batchId).toEqual(expect.any(Number));
+    expect(sqlDb(backend.store).get<{ c: number }>("SELECT count(*) c FROM thread_categories")!.c).toBe(0);
+    sqlDb(backend.store).exec("DROP TRIGGER fail_training");
+    // the undo finishes what was started, then takes all of it back
+    expect(await client.call("categorize.undo", { batchId: batchId! })).toEqual({ removed: 0, restored: 4 });
+    expect(sqlDb(backend.store).all("SELECT thread_id, category_id, added_by, added_at, batch_id FROM thread_categories ORDER BY thread_id")).toEqual(before);
   });
 
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {

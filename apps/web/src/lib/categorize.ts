@@ -6,9 +6,9 @@ import { reflowRemoval } from "~/lib/flash";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
-import { trackJob, undoAction } from "~/lib/actions";
+import { deferred, trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
-import { registerUndo, snack } from "~/lib/snack";
+import { dismissSnack, registerUndo, snack } from "~/lib/snack";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -202,33 +202,37 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 
 /**
  * Plan 76: everything from a sender out of a category. The loaded rows lose
- * it in this frame; the backend finds the rest. Undo (button or z) files the
- * same threads back.
+ * it in this frame; the backend finds the rest. z undoes it from the start
+ * (it waits for the backend's batch); the undo puts back every membership
+ * exactly, including after a failure partway.
  */
 export async function removeSenderFromCategory(categoryId: number, email: string): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
   const lower = email.toLowerCase();
-  patch(useList.getState().items.filter((t) => t.fromEmail.toLowerCase() === lower && t.categoryIds.includes(categoryId)).map((t) => t.id), categoryId, false);
+  const loaded = useList.getState().items.filter((t) => t.fromEmail.toLowerCase() === lower && t.categoryIds.includes(categoryId)).map((t) => t.id);
+  patch(loaded, categoryId, false);
+  // what the reader refreshes after an undo: every thread that left (only the loaded ones after a failure)
+  let left = loaded;
+  const batch = deferred<number | null>();
+  const undo = registerUndo(() =>
+    batch.promise.then((batchId) =>
+      batchId === null ? undefined : undoFiled({ categoryId, addedIds: [], threadIds: left, batchId, moved: true }).then(() => void snack(t("category.undone", { category: name }), { background: true })),
+    ),
+  );
   const id = snack.loading(t("category.removing", { category: name }));
   try {
-    const { removed } = await client.call("categories.removeSender", { categoryId, email });
+    const { batchId, removed } = await client.call("categories.removeSender", { categoryId, email });
+    left = removed;
+    batch.resolve(batchId);
     refreshReader(removed);
-    const undo = removed.length ? registerUndo(() => refile(categoryId, removed, name)) : null;
-    snack.success(t("category.removed", { count: removed.length, category: name }), { id, duration: 8000, action: undo ? undoAction(undo, t("category.undoRemove", { category: name })) : undefined });
+    // undone with z before the answer came: nothing to say
+    if (undo.state !== "ready") return dismissSnack(id);
+    snack.success(t("category.removed", { count: removed.length, category: name }), { id, duration: 8000, action: batchId === null ? undefined : undoAction(undo, t("category.undoRemove", { category: name })) });
   } catch (error) {
-    snack.error(t("category.removeFailed", { error: errorText(error) }), { id });
-  } finally {
-    void reloadList({ keepSelection: true });
-  }
-}
-
-/** The undo of a sender's removal: the same threads back, as the user's own filing. */
-async function refile(categoryId: number, threadIds: readonly number[], name: string): Promise<void> {
-  patch(threadIds, categoryId, true);
-  try {
-    for (let i = 0; i < threadIds.length; i += 5000) await client.call("categories.addThreads", { categoryId, threadIds: threadIds.slice(i, i + 5000), source: "picker" });
-    refreshReader(threadIds);
-    snack(t("category.undone", { category: name }), { background: true });
+    // part of it may be done (the backend says which batch): Undo still takes that back
+    const batchId = (error as { details?: { batchId?: unknown } }).details?.batchId;
+    batch.resolve(typeof batchId === "number" ? batchId : null);
+    snack.error(t("category.removeFailed", { error: errorText(error) }), { id, action: typeof batchId === "number" ? undoAction(undo, t("category.undoRemove", { category: name })) : undefined });
   } finally {
     void reloadList({ keepSelection: true });
   }
