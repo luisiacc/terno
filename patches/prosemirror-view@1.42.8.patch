@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d541046ded1 100644
+index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c4e972667f3bb24ff3363e85be465fc36983b4a6 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -426,6 +426,7 @@ function posFromCaret(view, node, offset, coords) {
@@ -46,7 +46,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
      }
    }, {
      key: "setSelection",
-@@ -1289,6 +1294,176 @@ var MarkViewDesc = function (_ViewDesc3) {
+@@ -1289,6 +1294,187 @@ var MarkViewDesc = function (_ViewDesc3) {
    }]);
    return MarkViewDesc;
  }(ViewDesc);
@@ -148,6 +148,11 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
 +      desc.parent = group;
 +    } else result.push(desc);
 +  };
++  const compositionNode = view.composing && view.input.compositionNode;
++  const compositionIndex = compositionNode ? flat.findIndex((desc) => desc.dom.contains(compositionNode)) : -1;
++  const compositionOwner = compositionIndex < 0 ? void 0 : owners.get(flat[compositionIndex]);
++  let compositionStart = compositionIndex;
++  while (compositionStart > 0 && flat[compositionStart - 1].size && owners.get(flat[compositionStart - 1]) == compositionOwner) compositionStart--;
 +  const oldChildren = new Map(previous.map((g) => [g, g.children]));
 +  for (const g of previous) g.children = [];
 +  for (let i = 0; i < flat.length; i++) {
@@ -165,9 +170,9 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
 +      append(desc);
 +      continue;
 +    }
-+    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing) {
++    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing && group != compositionOwner) {
 +      finish();
-+      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root);
++      group = owner && !used.has(owner) && (owner != compositionOwner || i >= compositionStart) ? owner : new SiblingGroupViewDesc(root);
 +      used.add(group);
 +      result.push(group);
 +    }
@@ -219,11 +224,17 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
 +  root.groupSize = size;
 +  return changed;
 +}
++function invalidateSiblingGroup(desc) {
++  var _a;
++  const parent = desc.parent;
++  const group = parent instanceof SiblingGroupViewDesc ? parent : parent instanceof NodeViewDesc ? (_a = parent.reconcilingGroups) == null ? void 0 : _a.get(desc) : null;
++  if (group) group.dirty = CONTENT_DIRTY;
++}
 +
  var NodeViewDesc = function (_ViewDesc4) {
    _inherits(NodeViewDesc, _ViewDesc4);
    var _super4 = _createSuper(NodeViewDesc);
-@@ -1296,6 +1471,17 @@ var NodeViewDesc = function (_ViewDesc4) {
+@@ -1296,6 +1482,17 @@ var NodeViewDesc = function (_ViewDesc4) {
      var _this5;
      _classCallCheck(this, NodeViewDesc);
      _this5 = _super4.call(this, parent, [], dom, contentDOM);
@@ -241,7 +252,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
      _this5.node = node;
      _this5.outerDeco = outerDeco;
      _this5.innerDeco = innerDeco;
-@@ -1355,6 +1541,7 @@ var NodeViewDesc = function (_ViewDesc4) {
+@@ -1355,6 +1552,7 @@ var NodeViewDesc = function (_ViewDesc4) {
    }, {
      key: "updateChildren",
      value: function updateChildren(view, pos) {
@@ -249,7 +260,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
        var _this7 = this;
        var inline = this.node.inlineContent,
          off = pos;
-@@ -1380,7 +1567,8 @@ var NodeViewDesc = function (_ViewDesc4) {
+@@ -1380,7 +1578,8 @@ var NodeViewDesc = function (_ViewDesc4) {
        updater.syncToMarks([], inline, view, 0);
        if (this.node.isTextblock) updater.addTextblockHacks();
        updater.destroyRest();
@@ -259,7 +270,15 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
          if (localComposition) this.protectLocalComposition(view, localComposition);
          renderDescs(this.contentDOM, this.children, view);
          if (ios) iosHacks(this.dom);
-@@ -1701,7 +1889,8 @@ function renderDescs(parentDOM, descs, view) {
+@@ -1453,6 +1652,7 @@ var NodeViewDesc = function (_ViewDesc4) {
+       var oldDOM = this.dom;
+       this.dom = patchOuterDeco(this.dom, this.nodeDOM, computeOuterDeco(this.outerDeco, this.node, needsWrap), computeOuterDeco(outerDeco, this.node, needsWrap));
+       if (this.dom != oldDOM) {
++        invalidateSiblingGroup(this);
+         oldDOM.pmViewDesc = undefined;
+         this.dom.pmViewDesc = this;
+       }
+@@ -1701,7 +1901,8 @@ function renderDescs(parentDOM, descs, view) {
        written = true;
        parentDOM.insertBefore(childDOM, dom);
      }
@@ -269,7 +288,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
        var pos = dom ? dom.previousSibling : parentDOM.lastChild;
        renderDescs(desc.contentDOM, desc.children, view);
        dom = pos ? pos.nextSibling : parentDOM.firstChild;
-@@ -1900,8 +2089,9 @@ var ViewTreeUpdater = function () {
+@@ -1900,8 +2101,9 @@ var ViewTreeUpdater = function () {
        for (;;) {
          var parent = domNode.parentNode;
          if (!parent) return -1;
@@ -281,7 +300,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
            if (desc) for (var i = this.index; i < this.top.children.length; i++) {
              if (this.top.children[i] == desc) return i;
            }
-@@ -3500,7 +3690,7 @@ function endComposition(view) {
+@@ -3500,7 +3702,7 @@ function endComposition(view) {
    if (android && view.domObserver.flushingSoon >= 0) return;
    view.domObserver.forceFlush();
    clearComposition(view);
@@ -290,7 +309,7 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
      var sel = selectionFromDOM(view),
        cur = view.state.selection;
      if (sel && !sel.eq(cur)) view.dispatch(view.state.tr.setSelection(sel));else if ((view.markCursor || restarting) && !cur.$from.node(cur.$from.sharedDepth(cur.to)).inlineContent) view.dispatch(view.state.tr.deleteSelection());else view.updateState(view.state);
-@@ -4635,7 +4825,7 @@ var DOMObserver = function () {
+@@ -4635,7 +4837,7 @@ var DOMObserver = function () {
            fixUpBadSafariComposition(view, added);
          }
          this.handleDOMChange(from, to, typeOver, added);
@@ -299,12 +318,12 @@ index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d54
          if (selRange) this.currentSelection.set(selRange);
        }
      }
-@@ -5225,7 +5415,7 @@ var EditorView = function () {
+@@ -5225,7 +5427,7 @@ var EditorView = function () {
        var innerDeco = viewDecorations(this),
          outerDeco = computeDocDeco(this);
        var scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset" : state.scrollToSelection > prev.scrollToSelection ? "to selection" : "preserve";
 -      var updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
-+      var updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
++      var updateDoc = (!this.composing && (this.docView.groupsDeferred || this.docView.groupSize != siblingGroupSize(this))) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
        if (updateDoc || !state.selection.eq(prev.selection)) updateSel = true;
        var oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this);
        if (updateSel) {
@@ -341,7 +360,7 @@ index f738f6876f3fae6b4f055e0c9e8532404f793f73..b0c7e5b1952aada8ad396015cc6de7af
      Can be an object mapping DOM event type names to functions that
      handle them. Such functions will be called before any handling
 diff --git a/dist/index.js b/dist/index.js
-index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ffd45d52e4 100644
+index 37521100e6800b065f48f551ceddfae2f9b48386..89d044079ba2d52945ef1499252d06650fef0e4c 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -440,7 +440,9 @@ function posFromCaret(view, node, offset, coords) {
@@ -391,7 +410,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
      }
      // View descs are responsible for setting any selection that falls
      // entirely inside of them, so that custom implementations can do
-@@ -1290,7 +1296,180 @@ class MarkViewDesc extends ViewDesc {
+@@ -1290,7 +1296,191 @@ class MarkViewDesc extends ViewDesc {
  // Node view descs are the main, most common type of view desc, and
  // correspond to an actual node in the document. Unlike mark descs,
  // they populate their child array themselves.
@@ -493,6 +512,11 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
 +      desc.parent = group;
 +    } else result.push(desc);
 +  };
++  const compositionNode = view.composing && view.input.compositionNode;
++  const compositionIndex = compositionNode ? flat.findIndex((desc) => desc.dom.contains(compositionNode)) : -1;
++  const compositionOwner = compositionIndex < 0 ? void 0 : owners.get(flat[compositionIndex]);
++  let compositionStart = compositionIndex;
++  while (compositionStart > 0 && flat[compositionStart - 1].size && owners.get(flat[compositionStart - 1]) == compositionOwner) compositionStart--;
 +  const oldChildren = new Map(previous.map((g) => [g, g.children]));
 +  for (const g of previous) g.children = [];
 +  for (let i = 0; i < flat.length; i++) {
@@ -510,9 +534,9 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
 +      append(desc);
 +      continue;
 +    }
-+    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing) {
++    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing && group != compositionOwner) {
 +      finish();
-+      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root);
++      group = owner && !used.has(owner) && (owner != compositionOwner || i >= compositionStart) ? owner : new SiblingGroupViewDesc(root);
 +      used.add(group);
 +      result.push(group);
 +    }
@@ -564,6 +588,12 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
 +  root.groupSize = size;
 +  return changed;
 +}
++function invalidateSiblingGroup(desc) {
++  var _a;
++  const parent = desc.parent;
++  const group = parent instanceof SiblingGroupViewDesc ? parent : parent instanceof NodeViewDesc ? (_a = parent.reconcilingGroups) == null ? void 0 : _a.get(desc) : null;
++  if (group) group.dirty = CONTENT_DIRTY;
++}
 +
  class NodeViewDesc extends ViewDesc {
 +    reconcilingGroups = null;
@@ -572,7 +602,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
      constructor(parent, node, outerDeco, innerDeco, dom, contentDOM, nodeDOM) {
          super(parent, [], dom, contentDOM);
          this.node = node;
-@@ -1393,6 +1572,7 @@ class NodeViewDesc extends ViewDesc {
+@@ -1393,6 +1583,7 @@ class NodeViewDesc extends ViewDesc {
      // separate step, syncs the DOM inside `this.contentDOM` to
      // `this.children`.
      updateChildren(view, pos) {
@@ -580,7 +610,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
          let inline = this.node.inlineContent, off = pos;
          let composition = view.composing ? this.localCompositionInfo(view, pos) : null;
          let localComposition = composition && composition.pos > -1 ? composition : null;
-@@ -1433,8 +1613,9 @@ class NodeViewDesc extends ViewDesc {
+@@ -1433,8 +1624,9 @@ class NodeViewDesc extends ViewDesc {
          if (this.node.isTextblock)
              updater.addTextblockHacks();
          updater.destroyRest();
@@ -591,7 +621,17 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
              // May have to protect focused DOM from being changed if a composition is active
              if (localComposition)
                  this.protectLocalComposition(view, localComposition);
-@@ -1670,7 +1851,8 @@ function renderDescs(parentDOM, descs, view) {
+@@ -1509,7 +1701,8 @@ class NodeViewDesc extends ViewDesc {
+         let oldDOM = this.dom;
+         this.dom = patchOuterDeco(this.dom, this.nodeDOM, computeOuterDeco(this.outerDeco, this.node, needsWrap), computeOuterDeco(outerDeco, this.node, needsWrap));
+         if (this.dom != oldDOM) {
+-            oldDOM.pmViewDesc = undefined;
++            invalidateSiblingGroup(this);
++        oldDOM.pmViewDesc = undefined;
+             this.dom.pmViewDesc = this;
+         }
+         this.outerDeco = outerDeco;
+@@ -1670,7 +1863,8 @@ function renderDescs(parentDOM, descs, view) {
              written = true;
              parentDOM.insertBefore(childDOM, dom);
          }
@@ -601,7 +641,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
              let pos = dom ? dom.previousSibling : parentDOM.lastChild;
              renderDescs(desc.contentDOM, desc.children, view);
              dom = pos ? pos.nextSibling : parentDOM.firstChild;
-@@ -1914,8 +2096,9 @@ class ViewTreeUpdater {
+@@ -1914,8 +2108,9 @@ class ViewTreeUpdater {
              let parent = domNode.parentNode;
              if (!parent)
                  return -1;
@@ -613,7 +653,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
                  if (desc)
                      for (let i = this.index; i < this.top.children.length; i++) {
                          if (this.top.children[i] == desc)
-@@ -3699,7 +3882,7 @@ function endComposition(view, restarting = false) {
+@@ -3699,7 +3894,7 @@ function endComposition(view, restarting = false) {
          return;
      view.domObserver.forceFlush();
      clearComposition(view);
@@ -622,7 +662,7 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
          let sel = selectionFromDOM(view), cur = view.state.selection;
          if (sel && !sel.eq(cur))
              view.dispatch(view.state.tr.setSelection(sel));
-@@ -4935,7 +5118,7 @@ class DOMObserver {
+@@ -4935,7 +5130,7 @@ class DOMObserver {
                  fixUpBadSafariComposition(view, added);
              }
              this.handleDOMChange(from, to, typeOver, added);
@@ -631,12 +671,12 @@ index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ff
                  view.updateState(view.state);
              else if (selRange && !this.currentSelection.eq(selRange))
                  selectionToDOM(view);
-@@ -5633,7 +5816,7 @@ class EditorView {
+@@ -5633,7 +5828,7 @@ class EditorView {
          let innerDeco = viewDecorations(this), outerDeco = computeDocDeco(this);
          let scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset"
              : state.scrollToSelection > prev.scrollToSelection ? "to selection" : "preserve";
 -        let updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
-+        let updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
++        let updateDoc = (!this.composing && (this.docView.groupsDeferred || this.docView.groupSize != siblingGroupSize(this))) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
          if (updateDoc || !state.selection.eq(prev.selection))
              updateSel = true;
          let oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this);
@@ -652,8 +692,26 @@ index df7fdc7405da454cb3c4347d4e3ad502be06ef60..c22cd51e0a0539a40e7c201990aba6e9
      cur = desc.dom.parentNode!
    }
    return outsideBlock > -1 ? outsideBlock : view.docView.posFromDOM(node, offset, -1)
+diff --git a/src/domobserver.ts b/src/domobserver.ts
+index 618f2cff6ad02951fe80bd4f4c4c113ac22142d1..597044fe23ff043585f86ba1da6b2112f95c2f8f 100644
+--- a/src/domobserver.ts
++++ b/src/domobserver.ts
+@@ -1,3 +1,4 @@
++import {siblingGroupSize} from "./viewdesc"
+ import {Selection} from "prosemirror-state"
+ import * as browser from "./browser"
+ import {domIndex, isEquivalentPosition, selectionCollapsed, parentNode, DOMSelectionRange, DOMNode, DOMSelection, isText, isElt} from "./dom"
+@@ -249,7 +250,7 @@ export class DOMObserver {
+         fixUpBadSafariComposition(view, added)
+       }
+       this.handleDOMChange(from, to, typeOver, added)
+-      if (view.docView && view.docView.dirty) view.updateState(view.state)
++      if (view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view))) view.updateState(view.state)
+       else if (selRange && !this.currentSelection.eq(selRange)) selectionToDOM(view)
+       if (selRange) this.currentSelection.set(selRange)
+     }
 diff --git a/src/index.ts b/src/index.ts
-index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..659added2a7d606baf1d64d1aa82a1e3a41c6ff0 100644
+index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..2b370defa0efae4854dc017ec33bc97a15db6d9f 100644
 --- a/src/index.ts
 +++ b/src/index.ts
 @@ -3,7 +3,7 @@ import {Slice, ResolvedPos, DOMParser, DOMSerializer, Node, Mark} from "prosemir
@@ -670,7 +728,7 @@ index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..659added2a7d606baf1d64d1aa82a1e3
      let scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset"
          : (state as any).scrollToSelection > (prev as any).scrollToSelection ? "to selection" : "preserve"
 -    let updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco)
-+    let updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco)
++    let updateDoc = (!this.composing && (this.docView.groupsDeferred || this.docView.groupSize != siblingGroupSize(this))) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco)
      if (updateDoc || !state.selection.eq(prev.selection)) updateSel = true
      let oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this)
  
@@ -709,7 +767,7 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..086663e6b679072aee50b42e3884732b
      if (sel && !sel.eq(cur)) view.dispatch(view.state.tr.setSelection(sel))
      else if ((view.markCursor || restarting) && !cur.$from.node(cur.$from.sharedDepth(cur.to)).inlineContent) view.dispatch(view.state.tr.deleteSelection())
 diff --git a/src/viewdesc.ts b/src/viewdesc.ts
-index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8fffd8405 100644
+index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..966cc31a4dbf58bace559332ad09ccd527a0afe4 100644
 --- a/src/viewdesc.ts
 +++ b/src/viewdesc.ts
 @@ -216,6 +216,8 @@ export class ViewDesc {
@@ -749,7 +807,7 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
    }
  
    // View descs are responsible for setting any selection that falls
-@@ -677,7 +682,168 @@ class MarkViewDesc extends ViewDesc {
+@@ -677,7 +682,181 @@ class MarkViewDesc extends ViewDesc {
  // Node view descs are the main, most common type of view desc, and
  // correspond to an actual node in the document. Unlike mark descs,
  // they populate their child array themselves.
@@ -848,6 +906,12 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
 +    if (group) { group.children.push(desc); desc.parent = group }
 +    else result.push(desc)
 +  }
++  const compositionNode = view.composing && view.input.compositionNode
++  const compositionIndex = compositionNode ? flat.findIndex(desc => desc.dom.contains(compositionNode)) : -1
++  const compositionOwner = compositionIndex < 0 ? undefined : owners.get(flat[compositionIndex])
++  let compositionStart = compositionIndex
++  while (compositionStart > 0 && flat[compositionStart - 1].size &&
++         owners.get(flat[compositionStart - 1]) == compositionOwner) compositionStart--
 +  const oldChildren = new Map(previous.map(g => [g, g.children]))
 +  for (const g of previous) g.children = []
 +  for (let i = 0; i < flat.length; i++) {
@@ -861,9 +925,9 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
 +      append(desc)
 +      continue
 +    }
-+    if (!group || (owner && owner != group && !used.has(owner)) || (count >= size * 2 && !composing)) {
++    if (!group || (owner && owner != group && !used.has(owner)) || (count >= size * 2 && !composing && group != compositionOwner)) {
 +      finish()
-+      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root)
++      group = owner && !used.has(owner) && (owner != compositionOwner || i >= compositionStart) ? owner : new SiblingGroupViewDesc(root)
 +      used.add(group)
 +      result.push(group)
 +    }
@@ -911,6 +975,13 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
 +  return changed
 +}
 +
++function invalidateSiblingGroup(desc: ViewDesc) {
++  const parent = desc.parent
++  const group = parent instanceof SiblingGroupViewDesc ? parent
++    : parent instanceof NodeViewDesc ? parent.reconcilingGroups?.get(desc) : null
++  if (group) group.dirty = CONTENT_DIRTY
++}
++
  export class NodeViewDesc extends ViewDesc {
 +  reconcilingGroups: Map<ViewDesc, SiblingGroupViewDesc> | null = null
 +  groupsDeferred = false
@@ -918,7 +989,7 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
    constructor(
      parent: ViewDesc | undefined,
      public node: Node,
-@@ -784,6 +950,7 @@ export class NodeViewDesc extends ViewDesc {
+@@ -784,6 +963,7 @@ export class NodeViewDesc extends ViewDesc {
    // separate step, syncs the DOM inside `this.contentDOM` to
    // `this.children`.
    updateChildren(view: EditorView, pos: number) {
@@ -926,7 +997,7 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
      let inline = this.node.inlineContent, off = pos
      let composition = view.composing ? this.localCompositionInfo(view, pos) : null
      let localComposition = composition && composition.pos > -1 ? composition : null
-@@ -825,8 +992,10 @@ export class NodeViewDesc extends ViewDesc {
+@@ -825,8 +1005,10 @@ export class NodeViewDesc extends ViewDesc {
      if (this.node.isTextblock) updater.addTextblockHacks()
      updater.destroyRest()
  
@@ -938,7 +1009,15 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
        // May have to protect focused DOM from being changed if a composition is active
        if (localComposition) this.protectLocalComposition(view, localComposition)
        renderDescs(this.contentDOM!, this.children, view)
-@@ -1068,7 +1237,8 @@ function renderDescs(parentDOM: HTMLElement, descs: readonly ViewDesc[], view: E
+@@ -898,6 +1080,7 @@ export class NodeViewDesc extends ViewDesc {
+                               computeOuterDeco(this.outerDeco, this.node, needsWrap),
+                               computeOuterDeco(outerDeco, this.node, needsWrap))
+     if (this.dom != oldDOM) {
++      invalidateSiblingGroup(this)
+       oldDOM.pmViewDesc = undefined
+       this.dom.pmViewDesc = this
+     }
+@@ -1068,7 +1251,8 @@ function renderDescs(parentDOM: HTMLElement, descs: readonly ViewDesc[], view: E
        written = true
        parentDOM.insertBefore(childDOM, dom)
      }
@@ -948,7 +1027,7 @@ index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8
        let pos = dom ? dom.previousSibling : parentDOM.lastChild
        renderDescs(desc.contentDOM!, desc.children, view)
        dom = pos ? pos.nextSibling : parentDOM.firstChild
-@@ -1307,8 +1477,9 @@ class ViewTreeUpdater {
+@@ -1307,8 +1491,9 @@ class ViewTreeUpdater {
      for (;;) {
        let parent = domNode.parentNode
        if (!parent) return -1

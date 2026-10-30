@@ -187,7 +187,7 @@ patchedDependencies:
   '@base-ui/react@1.9.0': 57cd3032dc5edaa9f538a057c350e3655ed26a7566c65223bc4b3393384e82c2
   fake-indexeddb@6.2.6: 8b4caf795decf70010b7d43a878dd05627e18b4ea60ad033a876c12fe3f26b2f
   postal-mime@4.1.3: 7edae6a8972b96bd6d1b59e13f6528a0b5f3ec19e455e0ddc6cddcfc9102fd9d
-  prosemirror-view@1.42.8: 3d0b87643954349e1065bcacd97d9721c55f1ad2563d578f329831c23945e1da
+  prosemirror-view@1.42.8: 221e2e86e6d9f0ea8cc134ce6b36bb92641270e20cc3ef4b7869759d6e11422e
 
 importers:
 
@@ -371,7 +371,7 @@ importers:
         version: 1.12.4
       prosemirror-view:
         specifier: ^1.42.8
-        version: 1.42.8(patch_hash=3d0b87643954349e1065bcacd97d9721c55f1ad2563d578f329831c23945e1da)
+        version: 1.42.8(patch_hash=221e2e86e6d9f0ea8cc134ce6b36bb92641270e20cc3ef4b7869759d6e11422e)
       react:
         specifier: 'catalog:'
         version: 19.3.1
@@ -7833,7 +7833,7 @@ snapshots:
     dependencies:
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.12.4
-      prosemirror-view: 1.42.8(patch_hash=3d0b87643954349e1065bcacd97d9721c55f1ad2563d578f329831c23945e1da)
+      prosemirror-view: 1.42.8(patch_hash=221e2e86e6d9f0ea8cc134ce6b36bb92641270e20cc3ef4b7869759d6e11422e)
       rope-sequence: 1.3.4
 
   prosemirror-inputrules@1.5.1:
@@ -7860,13 +7860,13 @@ snapshots:
     dependencies:
       prosemirror-model: 1.25.12
       prosemirror-transform: 1.12.4
-      prosemirror-view: 1.42.8(patch_hash=3d0b87643954349e1065bcacd97d9721c55f1ad2563d578f329831c23945e1da)
+      prosemirror-view: 1.42.8(patch_hash=221e2e86e6d9f0ea8cc134ce6b36bb92641270e20cc3ef4b7869759d6e11422e)
 
   prosemirror-transform@1.12.4:
     dependencies:
       prosemirror-model: 1.25.12
 
-  prosemirror-view@1.42.8(patch_hash=3d0b87643954349e1065bcacd97d9721c55f1ad2563d578f329831c23945e1da):
+  prosemirror-view@1.42.8(patch_hash=221e2e86e6d9f0ea8cc134ce6b36bb92641270e20cc3ef4b7869759d6e11422e):
     dependencies:
       prosemirror-model: 1.25.12
       prosemirror-state: 1.4.4

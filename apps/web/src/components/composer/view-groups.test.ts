@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { fromPlainText, toEmailHtml, toPlainText } from "@terno/richtext";
 import { EditorState, TextSelection, AllSelection } from "prosemirror-state";
@@ -183,4 +185,65 @@ it("keeps mixed nested blocks, inline atoms and marks exact across grouping and 
     expect(undo(view.state, view.dispatch)).toBe(true);
     expect(view.state.doc.eq(doc)).toBe(true);
   } finally { close(); }
+});
+for (const View of [EditorView, cjs.EditorView]) {
+it("renders a changed outer node-decoration wrapper without losing visible content", () => {
+  const { view, close } = setup(2, View);
+  try {
+    const before = view.state.doc;
+    const decoration = DecorationSet.create(before, [Decoration.node(7, 15, { nodeName: "div", class: "node-decoration" })]);
+    view.setProps({ decorations: () => decoration });
+    expect(view.dom.querySelector(".node-decoration p")?.textContent).toBe("second");
+    expect(view.dom.textContent).toBe(before.textContent);
+    matrix(view);
+    view.setProps({ decorations: () => DecorationSet.empty });
+    expect(view.dom.querySelector(".node-decoration")).toBeNull();
+    expect(view.dom.textContent).toBe(before.textContent);
+    matrix(view);
+  } finally { close(); }
+});
+it("keeps the active composition ancestor when a root widget divides its sibling range", () => {
+  const { view, close } = setup(2, View);
+  try {
+    view.focus();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 27)));
+    const text = view.dom.querySelectorAll("p")[4]!.firstChild!;
+    const ancestor = text.parentElement!.parentElement;
+    view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    const decorations = DecorationSet.create(view.state.doc, [Decoration.widget(25, () => document.createElement("span"))]);
+    view.setProps({ decorations: () => decorations });
+    expect(text.parentElement!.parentElement).toBe(ancestor);
+    matrix(view);
+  } finally { close(); }
+});
+it("restores direct root boundaries after a same-target composition ends", async () => {
+  const { view, close } = setup(2, View);
+  try {
+    view.focus();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 9)));
+    const paragraph = view.dom.querySelectorAll("p")[1]!;
+    const ancestor = paragraph.parentElement;
+    view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    view.dispatch(view.state.tr.delete(0, 7));
+    expect(paragraph.parentElement).toBe(ancestor);
+    view.dom.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(view.dom.firstElementChild).toBe(paragraph);
+    matrix(view);
+  } finally { close(); }
+});
+
+}
+it("ships the same observer invalidation in source, ESM and CJS", () => {
+  const require = createRequire(import.meta.url);
+  const dist = dirname(require.resolve("prosemirror-view"));
+  const files = [join(dist, "../src/domobserver.ts"), join(dist, "index.js"), join(dist, "index.cjs")];
+  const predicates = files.map(file => {
+    const code = readFileSync(file, "utf8");
+    const match = code.match(/if \((view\.docView && [^\n]+?)\)\s*view\.updateState\(view\.state\)/);
+    expect(match, file).not.toBeNull();
+    return match![1]!.replace(/\s/g, "");
+  });
+  expect(predicates[0]).toBe(predicates[1]);
+  expect(predicates[0]).toBe(predicates[2]);
 });
