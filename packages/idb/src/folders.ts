@@ -247,22 +247,24 @@ export function folderPage(c: Ctx, p: ListParams): Page {
   // (Codex R48, R49)
   if (byDate === null || (unreadOnly && unread === null)) return selectFolderPage(c, p, unreadOnly ? "unread" : "folder");
   const size = unread ? unread.length : byDate.length;
-  const idAt = unread ? (i: number) => unread[i]!.id : (i: number) => byDate[i]!.id;
+  const order = unread ?? byDate;
   const pass = keeps(p);
   const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   let lo = 0;
   let hi = size;
   while (p.cursor && lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (before(threads.get(idAt(mid))!)) hi = mid;
+    const at = order[mid]!;
+    if (at.date < p.cursor.lastDate || (at.date === p.cursor.lastDate && at.id < p.cursor.id)) hi = mid;
     else lo = mid + 1;
   }
   const rows: R[] = [];
   // newest first: "Waiting" stops at its window's start (Codex R26: an expired folder walked whole)
   const floor = listFilterOf(p) === "waiting" ? waitingCutoff(p.now!) : -Infinity;
   for (let i = lo; i < size && rows.length <= p.limit; i++) {
-    const t = threads.get(idAt(i));
-    if (t && t.last_date < floor) break;
+    const at = order[i]!;
+    if (at.date < floor) break;
+    const t = threads.get(at.id);
     if (pass(t)) rows.push(t);
   }
   const hasMore = rows.length > p.limit;
