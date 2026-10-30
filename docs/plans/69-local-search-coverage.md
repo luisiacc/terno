@@ -44,3 +44,30 @@ Test-only corrections during qualification: await the actual scroll event before
 The new UI cases observe real WebSocket requests/responses against isolated synthetic backends: the default query has only `query`/`limit`, even after setting both account and category; explicit `in:all account:… subject:…` plus `filter: unread` arrive unchanged. An absent provider-only token has zero local results with `complete: true`; saved header-only mail remains in the database and is found by subject, while its absent body token does not match and actual response `complete: false` retains the existing localized indexing text. No provider sync/execute, external browser request, sync.now, thread mutation or body-load RPC is observed in the coverage cases. No deletion or provider-parity inference is made.
 
 Scoped header axe passes in en/es, light/dark, macOS/Lumen; existing Plan64 populated-list axe and spam icon transition tests also run. Personally inspected all eight generated coverage screenshots, including 980px Spanish. The paragraph wraps without clipping and keeps the input name/description, selected row, scroll offset and keyboard flow. Existing empty-list `aria-required-children` outside the header was observed during an initially broader axe check; that unchanged listbox has no option children. It remains a separate accessibility limit; this slice claims scoped header coverage, not empty-list axe cleanliness.
+
+R2 (final, `9831549d..b5c6c0a4`) returned **Standards PASS / Spec PASS, zero findings**, confirming R1's discovery fix. Review output: `/tmp/terno-s58/code-review-r2.txt`. No R3, unresolved review objections, shared-file dependency or post-R2 code change. The separate empty-list accessibility limit above is outside this slice, not an R2 finding.
+
+## Final targeted verification
+
+All executed final checks passed (53 tests total; no skipped UI cases):
+
+```sh
+pnpm exec vitest run --project unit apps/web/src/lib/search-coverage-config.test.ts apps/web/src/state/list.test.ts apps/web/src/lib/sender-icons.test.ts packages/i18n/src/i18n.test.ts
+# 4 files, 34/34 tests; /tmp/terno-s58/unit-final.log
+
+E2E_PORT=54660 WEB_PORT=54670 pnpm --filter @terno/web exec playwright test -c playwright.search-coverage.config.ts
+# 19/19 tests, 31.8s; /tmp/terno-s58/e2e-final-green.log
+
+pnpm --filter @terno/web --filter @terno/i18n typecheck
+# Both packages pass (including web worker types); /tmp/terno-s58/typecheck-final.log
+
+pnpm exec oxlint --deny-warnings apps/web/src/components/thread-list.tsx apps/web/src/lib/search-coverage-config.test.ts apps/web/e2e/search-coverage.dev.ts apps/web/e2e/search-coverage.setup.ts apps/web/playwright.search-coverage.config.ts packages/i18n/src/locales/en.ts packages/i18n/src/locales/es.ts
+# Pass, no warnings; /tmp/terno-s58/lint-final.log
+
+git diff --check
+# Pass
+```
+
+Eight inspected screenshots are retained independently of this checkout in `/tmp/terno-s58/screenshots/search-coverage-{macos,lumen}-{en,es}-{light,dark}.png`. The focused setup removes only its own synthetic template after each run; each coverage case closes its backend and removes its own temp data. Playwright owns its dev server/browser lifecycle. The earlier interrupted failing harness run was stopped by its captured owned runner PID only.
+
+Installation used `pnpm install --offline --frozen-lockfile --ignore-scripts` (no downloads). No app/Vite production build, packaged path, full suite, perf suite, live provider, real profile/secret, main/worklist edit, fetch, push or landing was performed. No new latency/render-count measurement is claimed: search/list algorithms and row rendering are unchanged, and existing targeted controls were qualified. Remote Gmail UI parity, full historical/body coverage and durable reconciliation remain unclaimed; there is no shared-file dependency for this clarification.
