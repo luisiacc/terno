@@ -208,3 +208,9 @@ OPFS remains unverified after worker timeouts. Native IDB's unintentionally expa
 Evidence-only `c74cda0b` records bounded probes and external lifecycle reporting. No hung loop or production cause was reproduced, so no speculative correction or code-review clearance is claimed. Silent console output did not mean execution stopped: preserved load/facts/categorization artifacts postdate the last log line. The original gate remains incomplete. See [the exact investigation](../plans/drafts/release-perf-hang.md).
 
 Separate actual failures were observed: database account-folder membership, ingestion throughput, categorization throughput and one Forward CPU sample. Overlapping diagnostic runs are not serial timing qualification. No threshold/input/scheduling change or full-gate replay occurred. Future milestone supervision must observe test/hook progress and respect each actual declared timeout; a longer unobserved run is not itself a correctness fix.
+
+## Landed repair: isolated network fixtures
+
+`c5c950ad` repairs four IMAP session fixture/API mismatches and ten icon fixture/guard mismatches. Root passed29targeted tests and backend types/lint after rebase. Production is unchanged; valid synced source identity, guarded original-host DNS, TLS policy and external isolation remain asserted. One review P2 lifetime finding received a failing regression and fix. [Details](../plans/drafts/release-network-repair.md).
+
+The archive-unknown observation remains unexplained. Stronger exact source/destination and stable local identity witnesses pass, but repeated passing attempts do not count as its correction.
