@@ -26,6 +26,7 @@ export class Db {
   private readonly cache = new Map<string, SqliteStatement>();
   private readonly cacheSize: number;
   private txDepth = 0;
+  private readonly closeListeners: (() => void)[] = [];
   private readonly beforeCommit: (() => void)[] = [];
   private readonly afterCommit: (() => void)[] = [];
 
@@ -110,6 +111,15 @@ export class Db {
     return result;
   }
 
+  /** False also means the driver cannot establish autocommit. */
+  get autocommit(): boolean {
+    return this.isOpen && this.conn.inTransaction === false;
+  }
+
+  onClose(fn: () => void): void {
+    this.closeListeners.push(fn);
+  }
+
   get inTransaction(): boolean {
     return this.txDepth > 0;
   }
@@ -129,6 +139,7 @@ export class Db {
   }
 
   close(): void {
+    for (const listener of this.closeListeners.splice(0)) listener();
     for (const stmt of this.cache.values()) stmt.finalize();
     this.cache.clear();
     this.conn.close();

@@ -1,0 +1,35 @@
+# Release 2: SQL navigation
+
+## Request
+
+Act as the implementation sub-agent for provider-reliability release-green, base main c9b935f8. Own SQL navigation failure in packages/db/src/perf.perf.test.ts: navigation > opens threads, longest 5000-message thread p95 25.9066ms against unchanged 5ms. Preserve workload, actual public reader, exact returned data/order/identity/byte/resource bounds, samples/warmup/timing/budget/multiplier. SQL navigation/direct tests only; no children, other-store/backend/renderer production, gate relaxation, full suites, pushes or landing. One native read-only plan critique and exactly one native gpt-6.1-sol/high Standards+Spec code review; atomic commits with meaningful fail-first tests. All tests inherit the network guard. Root integrates and retests.
+
+## Evidence and causal paths
+
+Read milestone-2 evidence, plans 04/58 and release-perf-hang. No schema/version allocation changes. `getThread` in queries.ts is the actual synchronous reader called by SqlMailStore.threads.get. `messages_thread(thread_id,date,id)` already bounds and orders its message read. A preceding folder test creates 5000 synthetic messages in one conversation; that remains intact. Baseline whole affected file: 31 pass/3 fail, 62.80s. Navigation p95 19.365874999999505 > 5; unrelated quick-filter search prefix and People category failures also observed. Original milestone evidence untouched. Log /tmp/terno-sql-navigation-baseline.log; JSON /tmp/terno-sql-navigation-baseline.json.
+
+Temporary actual-reader diagnostic (removed) ingested 5000 messages in memory. Warm reads cost 23.7–27.3 ms, SQL materialization 8.8–11.7ms; remaining address/JSON/result decoding also material. No missing-index or fixture-size explanation. No more unchanged runs seeking green.
+
+## Design
+
+Cache only the last decoded thread per Db (WeakMap), up to 5000 messages and 2 MiB of encoded result bytes; larger reads still return everything without retaining it. Retain a private result; return fresh message/thread/address/attachment/reference/category containers on every read, including the first. No public return reference becomes the cache. Bound retention by encoding size plus message count; no idle timers or network. Cache serves the actual reader, never the test alone. This specifically accelerates repeated navigation without dropping bodies or messages. Cold reads keep existing SQL.
+
+Validate a fingerprint of SQLite total_changes(), PRAGMA data_version and schema_version before reuse. Local writes (including rolled-back writes) increment total_changes; external writes change data_version; local DDL changes schema_version. Bypass and clear cache inside transactions to avoid uncommitted/rolled-back images and savepoints. Clear stale entry before loading replacement; do not retain oversized replacements. Reads always check the real Db, including closed handles. No SqlMailStore, ingestion, correspondent, receipt or operation behavior changes.
+
+## Tests and checks
+
+Ordinary fail-first regression uses actual Db SQL and public reader, counts actual message queries via pass-through spy: second unchanged read must avoid a repeat materialization while remaining deeply equal and mutation-isolated. Check local body/header/attachment/category edits, deletes, transaction and nested rollback, external writer, schema changes, thread switching, missing IDs, oversized images and closed Db. Include varying dates/tied ids, body/identity fields and Unicode. Native + WASM applicable cases. Types @terno/db and strict touched lint. Re-run only affected perf FILE after source change, unchanged timing contract (60 samples/5 warmups/5ms/multiplier1), preserving preceding 5000 fixture. Respect 600s test and hook timeouts plus finite setup reserve. No other gates or UI.
+
+## Out of scope and limits
+
+No cold-read 5000-message speed claim; cache misses remain full SQL materialization. No main/worklist/Plans64–68 edits. No release-green claim for unrelated failing gates. Root serially rebases/retests/lands/cleans up.
+
+## Revisions after the Codex review
+
+Sole plan critique completed native Sol/high, nine points (/tmp/terno-sql-navigation/plan-review.log), all accepted. The exact seam must expose actual SQLite autocommit (node isTransaction / WASM sqlite3_get_autocommit), including raw BEGIN/SAVEPOINT, with unsupported drivers declining caching. Register cache disposal on Db close. Bracket population with before/after fingerprints and decline retention on a race. Preserve own undefined/absent keys with explicit container copies. Test external commits on native connections only. Avoid serialization: use early-exit conservative accounting of UTF-16 strings, property slots and containers; retain no serialized image. Final bounds: one entry, 8192 messages and 16 MiB estimated retained data (64 bytes/container, 16/property slot, 2/string code unit); this is an admission bound, not an exact V8 heap promise. The initial 2 MiB proposal lacked fixture-fit evidence and is superseded before implementation; no existing resource gate or fixture changes. Reject oversized data before cloning. Random navigation gate remains required. Cold and warm performance remain distinct.
+
+## Implementation and ordinary RED/GREEN
+
+Added only the SQL reader cache and its necessary SQL connection/autocommit/close seams, with direct navigation tests. Before production edits `navigation.test.ts`: 3 fail /4 pass, reuse assertions received 3 vs1, 2 vs1, 1 vs0 (/tmp/terno-sql-navigation/red-final.log). Those failures are ordinary assertions, not expected failures. Initial combined native/WASM verification exposed an incorrect test assumption that openDatabase accepted a driver option; corrected tests to use existing openDatabaseWith for actual two-native-connection controls (no production workaround). Final targeted native/WASM navigation + direct callers/body capture/migrations + native wrapper: 90/90 pass, seven project-files, 5.24s (/tmp/terno-sql-navigation/green-final.log). Includes raw BEGIN/SAVEPOINT rollback, racing native external writer, exact Unicode bodies/ids/order/attachment bytes and mutation isolation, 8193-message uncached control and oversized body control. Scoped DB types and touched strict lint pass.
+
+Commands: test prefix appends inherited NODE_OPTIONS with --require=/tmp/terno-network-guard.cjs. Final ordinary command: pnpm exec vitest run --project unit --project db-wasm packages/db/src/navigation.test.ts packages/db/src/sqlite.test.ts packages/db/src/body-capture.test.ts packages/db/src/migrations.test.ts. Types: pnpm --filter @terno/db typecheck. Lint: pnpm exec oxlint --deny-warnings on seven touched SQL files. Lifecycle helper /tmp/terno-sql-navigation/run.py records owned PID/birth, finite bounds and reap; perf allows 34*600s +600s setup +120s reserve (21120s); ordinary checks 240s. No process was signalled. Earlier baseline and small diagnostic calls finished naturally; their captured baseline PID/birth is /tmp/terno-sql-diag-note.txt. No quiet window imposed.

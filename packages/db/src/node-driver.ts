@@ -55,6 +55,10 @@ class NodeConnection implements SqliteConnection {
     this.db.function(name, options, fn as (...args: unknown[]) => SqlValue);
   }
 
+  get inTransaction(): boolean {
+    return this.db.isTransaction;
+  }
+
   get isOpen(): boolean {
     return this.db.isOpen;
   }

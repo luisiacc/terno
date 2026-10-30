@@ -26,6 +26,8 @@ export interface SqliteConnection {
   prepare(sql: string): SqliteStatement;
   function(name: string, options: { deterministic?: boolean }, fn: (...args: SqlValue[]) => SqlValue): void;
   readonly isOpen: boolean;
+  /** Actual engine state, including raw SQL BEGIN/SAVEPOINT; absent drivers cannot cache reads. */
+  readonly inTransaction?: boolean;
   close(): void;
   /** drivers that can read their page cache counters */
   cacheStatus?(): CacheStatus;

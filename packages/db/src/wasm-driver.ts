@@ -126,6 +126,10 @@ class WasmConnection implements SqliteConnection {
     }
   }
 
+  get inTransaction(): boolean {
+    return this.sqlite3.capi.sqlite3_get_autocommit(this.db) === 0;
+  }
+
   get isOpen(): boolean {
     return this.db.isOpen();
   }

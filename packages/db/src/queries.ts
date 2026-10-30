@@ -12,6 +12,7 @@ import type {
 import { keepInPage, type ListParams, type Page, type ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 import { factsReady } from "./facts";
+import { readThread } from "./thread-read-cache";
 
 export type { Cursor, ListParams, Page } from "@terno/store";
 
@@ -289,6 +290,10 @@ interface MessageRow {
 }
 
 export function getThread(db: Db, threadId: number): ThreadDetail | null {
+  return readThread(db, threadId, () => loadThread(db, threadId));
+}
+
+function loadThread(db: Db, threadId: number): ThreadDetail | null {
   // the summary's columns carry the place (plan 64)
   const row = db.get<SummaryRow>(
     `SELECT ${SUMMARY_COLUMNS} FROM threads t WHERE t.id = ?`,
