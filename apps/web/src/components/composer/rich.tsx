@@ -33,6 +33,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { TextSelection, type EditorState } from "prosemirror-state";
+import { undoDepth, redoDepth } from "prosemirror-history";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -189,17 +190,25 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
       const listeners = new Set<() => void>();
       let frame = 0;
       let focusedOnce = false;
+      let formatted: { state: EditorState; editable: boolean; undo: number; redo: number } | undefined;
       // the toolbar's state, once per frame at most (a long selection is walked once, not per transaction)
       const publish = () => {
         frame = 0;
         const view = viewRef.current;
         if (!view) return;
-        const t0 = performance.now();
-        const next = formatState(view.state, !sendingRef.current && !draftEditsHeld());
-        if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
-        if (!sameFormat(next, format)) {
-          format = next;
-          for (const l of listeners) l();
+        const state = view.state;
+        const editable = !sendingRef.current && !draftEditsHeld();
+        const undo = undoDepth(state), redo = redoDepth(state);
+        // Ghost metadata changes no toolbar input. Keep its repeated huge-selection scans off this path.
+        if (!formatted || state.doc !== formatted.state.doc || !state.selection.eq(formatted.state.selection) || state.storedMarks !== formatted.state.storedMarks || editable !== formatted.editable || undo !== formatted.undo || redo !== formatted.redo) {
+          const t0 = performance.now();
+          const next = formatState(state, editable);
+          if (import.meta.env.VITE_RENDER_PROBE) probe("format", performance.now() - t0);
+          formatted = { state, editable, undo, redo };
+          if (!sameFormat(next, format)) {
+            format = next;
+            for (const l of listeners) l();
+          }
         }
         updateBubble(view);
       };
