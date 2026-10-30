@@ -1,4 +1,4 @@
-import { L, setLocale } from "@terno/i18n";
+import { L, setLocale, translate } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
@@ -26,7 +26,13 @@ describe("catalog messages from the backend", () => {
   it("a catalog message survives a free-text column; plain text, and text that only looks like JSON, stays as it is", () => {
     const m = L("errors.smtp.notDeliveredTo", { recipients: "a@b.mx" });
     const stored = encodeText(m);
-    expect(decodeText(stored)).toEqual({ message: "Not delivered to: a@b.mx", i18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "a@b.mx" } } });
+    expect(stored).toBe('{"key":"errors.smtp.notDeliveredTo","params":{"recipients":"a@b.mx"},"message":"Mail server refused: a@b.mx"}');
+    expect(decodeText(stored)).toEqual({ message: "Mail server refused: a@b.mx", i18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "a@b.mx" } } });
+    const legacy = decodeText('{"key":"errors.smtp.notDeliveredTo","params":{"recipients":"a@b.mx"},"message":"Not delivered to: a@b.mx"}');
+    expect(legacy).toEqual({ message: "Not delivered to: a@b.mx", i18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "a@b.mx" } } });
+    setLocale("es", es);
+    expect(translate({ ...legacy.i18n!, message: legacy.message })).toBe("El servidor de correo rechazó: a@b.mx");
+    expect(translate({ ...decodeText(stored).i18n!, message: decodeText(stored).message })).toBe("El servidor de correo rechazó: a@b.mx");
     expect(decodeText(encodeText(L("errors.gmail.revoked")))).toEqual({ message: "Google’s sign-in for this account expired or was revoked.", i18n: { key: "errors.gmail.revoked" } });
     expect(encodeText("IMAP: Mailbox is full")).toBe("IMAP: Mailbox is full");
     expect(decodeText("IMAP: Mailbox is full")).toEqual({ message: "IMAP: Mailbox is full" });
