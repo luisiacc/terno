@@ -638,7 +638,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const e = toProviderError(error);
         // ImapFlow can return false after losing an ACK. Keep the boundary across sources and
         // local writes too: even a later SELECT failure must not repeat an earlier COPY.
-        if (mutated && (e.retryable || !session.usable)) {
+        if (mutated && (e.retryable || e instanceof ProviderIdentityError || !session.usable)) {
           if (client === session) client = null;
           session.close();
           throw new ProviderError(L("errors.imap.changeUnknown"), false, true);
@@ -1038,7 +1038,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         await assertValidity(c, mailbox, items);
         if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
-        const res = await locations.dispatch(admission.ids, admission.expected, async () => {
+        let holdOwner: string | undefined;
+        const res = await locations.dispatch(admission.ids, admission.expected, async (owner) => {
+          holdOwner = owner;
           beforeMutation();
           return mode === "move" ? c.messageMove(uids, target, { uid: true }) : c.messageCopy(uids, target, { uid: true });
         }, items.map((l) => l.message_id));
@@ -1049,7 +1051,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const targetEpoch = Number(targetStatus && targetStatus.uidValidity);
         const valid = epoch === targetEpoch && Number.isSafeInteger(epoch) && epoch > 0 && epoch <= 0xffff_ffff && mapping.every((m) => Number.isSafeInteger(m.uid) && m.uid > 0 && m.uid <= 0xffff_ffff) && new Set(mapping.map((m) => m.uid)).size === items.length && res.uidMap?.size === items.length;
         if (valid) {
-          await locations.mappedMove(items, target, epoch, mapping, mode === "copy", admission.expected);
+          await locations.mappedMove(items, target, epoch, mapping, mode === "copy", admission.expected, holdOwner!);
           const moved = new Set(items.map((l) => l.message_id));
           admission.expected = admission.expected.filter((l) => !(moved.has(l.message_id) && (l.mailbox === target || (mode === "move" && l.mailbox === mailbox))));
           for (const item of items) admission.expected.push({ ...item, mailbox: target, uidvalidity: epoch, uid: mapping.find((m) => m.messageId === item.message_id)!.uid });
@@ -1331,6 +1333,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);
+        if (authoritative) await locations.resumeResolved();
       });
     },
 

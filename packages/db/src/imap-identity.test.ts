@@ -53,3 +53,26 @@ it("identity: schema29 guessed or absent locators cannot authorize dispatch afte
   expect(await locations.unresolved(ids)).toEqual(ids);
 
 });
+
+it("identity review: a concurrent fence survives cleanup of an undispatched SQL admission", async () => {
+  const store = open();
+  const [, account] = await withAccounts(store);
+  const { inserted: ids } = await ingest(store, Array.from({ length: 257 }, (_, i) => msg({ accountId: account!, locations: [{ ...location, uid: i + 1 }] })));
+  const locations = store.providerStore(account!).locations;
+  const before = await locations.of(ids);
+  let fenced: Promise<void> | undefined, issued = false, changed = false;
+  store.db.onBeforeCommit(() => {
+    if (!changed && store.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", ids[0]!)) {
+      changed = true;
+      fenced = locations.fence([ids[0]!]);
+    }
+  });
+  await expect(locations.dispatch(ids, before, async () => { issued = true; }, ids)).rejects.toThrow("IMAP identity unavailable");
+  await fenced;
+  expect(changed).toBe(true);
+  expect(issued).toBe(false);
+  const file = store.db.path; await store.close();
+  const reopened = open(file), current = reopened.providerStore(account!).locations;
+  expect(await current.unresolved(ids)).toEqual([ids[0]]);
+  await expect(current.dispatch(ids.slice(1), before.filter((l) => l.message_id !== ids[0]), async () => "still usable")).resolves.toBe("still usable");
+});

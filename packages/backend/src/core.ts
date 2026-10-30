@@ -1021,6 +1021,7 @@ export class BackendCore {
       locations: {
         fence: (...args) => write(() => locations.fence(...args)),
         unresolved: (...args) => read(() => locations.unresolved(...args)),
+        resumeResolved: () => write(() => locations.resumeResolved()),
         dispatch: (ids, expected, start, fenceIds) => write(() => locations.dispatch(ids, expected, start, fenceIds)),
         mappedMove: (...args) => write(() => locations.mappedMove(...args)),
         upsert: (...args) => write(() => locations.upsert(...args)),

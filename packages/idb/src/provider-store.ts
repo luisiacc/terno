@@ -10,7 +10,10 @@ function identityVersion(c: Ctx) {
     version = { value: 0 };
     identityVersions.set(c.db, version);
     const observed = version;
-    c.db.onRow(() => { observed.value++; });
+    c.db.onRow((table, row, prev) => {
+      if (table === "imap_identity_holds" && (!row || !prev || row.owner !== prev.owner)) observed.value++;
+      if (table === "message_locations" && (!row || !prev || ["message_id", "account_id", "mailbox", "uid", "uidvalidity"].some((key) => row[key] !== prev[key]))) observed.value++;
+    });
   }
   return version;
 }
@@ -180,7 +183,7 @@ class IdbImapLocations implements ImapLocationStore {
 
   async fence(ids: readonly number[]) {
     for (let i = 0; i < ids.length; i += 1000) await this.command(() => {
-      for (const id of ids.slice(i, i + 1000)) if (T(this.c, "messages").get(id)?.account_id === this.accountId) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
+      for (const id of ids.slice(i, i + 1000)) if (T(this.c, "messages").get(id)?.account_id === this.accountId) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId, owner: null });
     });
   }
 
@@ -188,7 +191,7 @@ class IdbImapLocations implements ImapLocationStore {
     return this.read(() => ids.filter((id) => T(this.c, "imap_identity_holds").get(id)?.account_id === this.accountId));
   }
 
-  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>, fenceIds?: readonly number[]): Promise<T> {
+  async dispatch<T>(ids: readonly number[], expected: readonly ImapLocation[], start: (holdOwner?: string) => Promise<T>, fenceIds?: readonly number[]): Promise<T> {
     const wanted = new Map<number, Map<string, ImapLocation>>();
     for (const row of expected) {
       const group = wanted.get(row.message_id) ?? new Map();
@@ -197,26 +200,41 @@ class IdbImapLocations implements ImapLocationStore {
     }
     const targetSet = new Set(ids), targets = [...targetSet], fencing = new Set(fenceIds);
     if ([...wanted.keys(), ...fencing].some((id) => !targetSet.has(id))) throw new ImapIdentityError();
+    const owner = fencing.size ? crypto.randomUUID() : undefined;
     const revision = identityVersion(this.c);
     let version = await this.read(() => revision.value);
-    for (let i = 0; i < targets.length; i += 128) {
-      const validate = () => {
+    let started = false;
+    try {
+      for (let i = 0; i < targets.length; i += 128) {
+        const validate = () => {
+          if (revision.value !== version) throw new ImapIdentityError();
+          for (const id of targets.slice(i, i + 128)) {
+            const rows = this.t.by("fk_message_id", id).filter((l) => l.account_id === this.accountId);
+            const want = wanted.get(id);
+            if (T(this.c, "imap_identity_holds").has(id) || !rows.length || rows.length !== want?.size || rows.some((l) => { const e = want.get(l.mailbox); return !e || e.uid !== l.uid || e.uidvalidity !== l.uidvalidity; })) throw new ImapIdentityError();
+          }
+          if (owner) for (const id of targets.slice(i, i + 128)) if (fencing.has(id)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId, owner });
+          if (owner) version += targets.slice(i, i + 128).filter((id) => fencing.has(id)).length;
+        };
+        if (owner) await this.command(validate);
+        else await this.read(validate);
+      }
+      return await this.read(() => {
         if (revision.value !== version) throw new ImapIdentityError();
-        for (const id of targets.slice(i, i + 128)) {
-          const rows = this.t.by("fk_message_id", id).filter((l) => l.account_id === this.accountId);
-          const want = wanted.get(id);
-          if (T(this.c, "imap_identity_holds").has(id) || !rows.length || rows.length !== want?.size || rows.some((l) => { const e = want.get(l.mailbox); return !e || e.uid !== l.uid || e.uidvalidity !== l.uidvalidity; })) throw new ImapIdentityError();
-        }
-        if (fenceIds) for (const id of targets.slice(i, i + 128)) if (fencing.has(id)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
-        if (fenceIds) version += targets.slice(i, i + 128).filter((id) => fencing.has(id)).length;
-      };
-      if (fenceIds) await this.command(validate);
-      else await this.read(validate);
+        started = true;
+        return start(owner);
+      });
+    } catch (error) {
+      if (!started && owner) for (let i = 0; i < targets.length; i += 128) await this.command(() => {
+        const holds = T(this.c, "imap_identity_holds");
+        for (const id of targets.slice(i, i + 128)) if (holds.get(id)?.owner === owner) holds.delete(id);
+      });
+      throw error;
     }
-    return await this.read(() => { if (revision.value !== version) throw new ImapIdentityError(); return start(); });
   }
 
-  async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[]) {
+  async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string) {
+    if (!holdOwner) throw new ImapIdentityError();
     const expectedById = new Map<number, ImapLocation[]>();
     for (const row of expected) {
       const group = expectedById.get(row.message_id) ?? [];
@@ -227,6 +245,7 @@ class IdbImapLocations implements ImapLocationStore {
     for (let i = 0; i < source.length; i += 128) {
       await this.command(() => {
         for (const item of source.slice(i, i + 128)) {
+          if (T(this.c, "imap_identity_holds").get(item.message_id)?.owner !== holdOwner) throw new ImapIdentityError();
           const current = this.t.by("fk_message_id", item.message_id).filter((l) => l.account_id === this.accountId) as unknown as ImapLocation[];
           if (!sameImapLocations(expectedById.get(item.message_id) ?? [], current)) throw new ImapIdentityError();
           const mapped = mappedById.get(item.message_id);
@@ -241,6 +260,10 @@ class IdbImapLocations implements ImapLocationStore {
         }
       });
     }
+    await this.resumeResolved();
+  }
+
+  async resumeResolved() {
     await this.command(() => {
       for (const op of T(this.c, "ops").by("fk_account_id", this.accountId)) {
         if (op.state !== "queued" || op.next_attempt_at !== AWAITING_IDENTITY) continue;
@@ -285,7 +308,7 @@ class IdbImapLocations implements ImapLocationStore {
 
   remove(messageId: number, mailbox: string) {
     return this.command(() => {
-      if (this.t.has(messageId, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: messageId, account_id: this.accountId });
+      if (this.t.has(messageId, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: messageId, account_id: this.accountId, owner: null });
       this.t.delete(messageId, mailbox);
       this.located([messageId], mailbox, false);
     });
@@ -298,7 +321,7 @@ class IdbImapLocations implements ImapLocationStore {
       await this.command(() => {
         const messages = T(this.c, "messages");
         for (const id of chunk) {
-          if (this.t.has(id, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId });
+          if (this.t.has(id, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId, owner: null });
           this.t.delete(id, mailbox);
           const m = messages.get(id);
           if (m) threads.add(m.thread_id as number);
@@ -401,7 +424,7 @@ class IdbImapLocations implements ImapLocationStore {
   resetMailbox(mailbox: string) {
     return this.command(() => {
       const rows: R[] = this.t.by("mailbox", this.accountId, mailbox);
-      for (const r of rows) { T(this.c, "imap_identity_holds").put({ message_id: r.message_id, account_id: this.accountId }); this.t.deleteRow(r); }
+      for (const r of rows) { T(this.c, "imap_identity_holds").put({ message_id: r.message_id, account_id: this.accountId, owner: null }); this.t.deleteRow(r); }
       // membership in an IMAP folder is its locations there: with every one gone its rows go, no thread refolded (Codex R2)
       for (const r of T(this.c, "thread_folders").by("folder", this.accountId, mailbox)) T(this.c, "thread_folders").deleteRow(r);
       return rows.map((r) => r.message_id as number);

@@ -397,7 +397,8 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const source = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     const copied = t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
     expect(t.ctl.getMessage("Projects", copied.uids[0]!.targetUid, { raw: true }).raw).toEqual(Buffer.from(t.targetRaw));
-    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true, source);
+    const holdOwner = await t.backend.store.providerStore(t.account.id).locations.dispatch([t.message.id], source, async (token) => token!, [t.message.id]);
+    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true, source, holdOwner);
     await bounded(t.backend.syncAccount(t.account.id), "discover second location");
     const locations = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     expect(locations).toHaveLength(2);
@@ -490,7 +491,8 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     const source = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     const copied = t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
     expect(t.ctl.getMessage("Projects", copied.uids[0]!.targetUid, { raw: true }).raw).toEqual(Buffer.from(t.targetRaw));
-    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true, source);
+    const holdOwner = await t.backend.store.providerStore(t.account.id).locations.dispatch([t.message.id], source, async (token) => token!, [t.message.id]);
+    await t.backend.store.providerStore(t.account.id).locations.mappedMove(source, "Projects", t.ctl.getMailbox("Projects").uidvalidity, [{ messageId: t.message.id, uid: copied.uids[0]!.targetUid }], true, source, holdOwner);
     await bounded(t.backend.syncAccount(t.account.id), "discover reset copy");
     const placed = await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]);
     expect(placed).toHaveLength(2);

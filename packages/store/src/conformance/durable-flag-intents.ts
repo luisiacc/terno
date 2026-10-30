@@ -69,8 +69,8 @@ export function defineDurableFlagIntentConformance(name: string, harness: StoreH
       if (change === "reset") await store.providerStore(a!).locations.upsert(id, "INBOX", 11, 1, ["\\Flagged"]);
       else {
         const locations = store.providerStore(a!).locations;
-        await locations.dispatch([id], captured, async () => {}, [id]);
-        await locations.mappedMove(captured, "Projects", 20, [{ messageId: id, uid: 2 }], change === "copy", captured);
+        const owner = await locations.dispatch([id], captured, async (token) => token!, [id]);
+        await locations.mappedMove(captured, "Projects", 20, [{ messageId: id, uid: 2 }], change === "copy", captured, owner);
       }
       store = await harness.reopen(store); stores.push(store);
       const stale = { messageId: id, expectedProviderMsgId: "locator", expectedImapLocations: captured, flags: { isStarred: false, isRead: true, isSent: true } };

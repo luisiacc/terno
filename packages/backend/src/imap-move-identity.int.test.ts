@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail";
-import { AWAITING_IDENTITY } from "@terno/store";
+import { AWAITING_IDENTITY, ImapIdentityError } from "@terno/store";
 import { sqlDb } from "@terno/db";
 import imapkit from "imapkit";
 import { afterEach, expect, it, vi } from "vitest";
@@ -310,4 +310,58 @@ it.each(["markRead", "markUnread", "star", "unstar", "archive", "trash", "spam",
   expect(t.commands.slice(start).filter((command) => /^(?:UID )?(?:STORE|MOVE|COPY|EXPUNGE)$/.test(command))).toEqual([]);
   expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY, target_json: target });
   for (const [i, message] of remote.entries()) expect(t.server.control.getMessage(mailbox, message.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes[i]!), flags });
+});
+
+it("keeps a partially issued multi-mailbox MOVE unknown after a later identity refusal", async () => {
+  const { ImapFlow } = await import("imapflow");
+  const t = await setup({ A: {}, Z: {}, Trash: { "special-use": "\\Trash" } });
+  const bytes = [rawIdleMail("First move", "first bytes"), rawIdleMail("Second move", "second bytes")];
+  t.server.control.addMessage("A", { raw: bytes[0]! });
+  const second = t.server.control.addMessage("Z", { raw: bytes[1]! });
+  await t.backend.syncAccount(t.account.id);
+  const threads = (await t.client.call("threads.list", { view: "all", accountId: t.account.id })).items;
+  const locations = t.backend.store.providerStore(t.account.id).locations;
+  const secondId = (await locations.at("Z", second.uidvalidity, second.uid))!;
+  await t.client.call("threads.act", { threadIds: threads.map((thread) => thread.id), action: "trash" });
+  const op = (await t.client.call("ops.list", {})).find((item) => item.kind === "trash")!;
+  const target = (await t.backend.store.ops.get(op.id))!.target_json;
+  const original = ImapFlow.prototype.getMailboxLock;
+  let fenced = false;
+  const lock = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    if (!fenced && String(args[0]) === "Z") {
+      fenced = true;
+      expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(1);
+      await locations.fence([secondId]);
+    }
+    return original.apply(this, args);
+  });
+  try { await t.backend.runWorker(); } finally { lock.mockRestore(); }
+  expect(fenced).toBe(true);
+  expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "unknown", attempts: 1, target_json: target });
+  const reopened = await t.reopen();
+  await reopened.backend.runWorker();
+  expect(t.commands.filter((command) => command === "UID MOVE")).toHaveLength(1);
+  expect(t.server.control.listMessages("Trash", { raw: true }).map((m) => m.raw)).toEqual([Buffer.from(bytes[0]!)]);
+  expect(t.server.control.getMessage("Z", second.uid, { raw: true })).toMatchObject({ raw: Buffer.from(bytes[1]!), flags: [] });
+});
+
+
+it("resumes a changed admission on completed sync only when every target is still trusted", async () => {
+  const t = await setup({});
+  const raw = rawIdleMail("Trusted after admission race", "trusted bytes");
+  const remote = t.server.control.addMessage("INBOX", { raw });
+  await t.backend.syncAccount(t.account.id);
+  const thread = (await t.client.call("threads.list", { view: "inbox" })).items[0]!;
+  await t.client.call("threads.act", { threadIds: [thread.id], action: "markRead" });
+  const op = (await t.client.call("ops.list", {})).find((item) => item.kind === "markRead")!;
+  const proto = Object.getPrototypeOf(t.backend.store.providerStore(t.account.id).locations);
+  const race = vi.spyOn(proto, "dispatch").mockRejectedValueOnce(new ImapIdentityError());
+  try { await t.backend.runWorker(); } finally { race.mockRestore(); }
+  expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "queued", attempts: 0, next_attempt_at: AWAITING_IDENTITY });
+  await t.backend.runWorker();
+  expect(t.server.control.getMessage("INBOX", remote.uid).flags).toEqual([]);
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.runWorker();
+  expect(await t.backend.store.ops.get(op.id)).toMatchObject({ state: "succeeded", attempts: 1 });
+  expect(t.server.control.getMessage("INBOX", remote.uid, { raw: true })).toMatchObject({ raw: Buffer.from(raw), flags: ["\\Seen"] });
 });

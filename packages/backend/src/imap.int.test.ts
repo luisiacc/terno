@@ -347,7 +347,8 @@ describe("IMAP provider against ImapKit", () => {
     ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
+    const holdOwner = await locations.dispatch([message.id], [sourceProof], async (token) => token!, [message.id]);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof], holdOwner);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
@@ -392,7 +393,8 @@ describe("IMAP provider against ImapKit", () => {
     ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
+    const holdOwner = await locations.dispatch([message.id], [sourceProof], async (token) => token!, [message.id]);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof], holdOwner);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     ctl.setFlags("INBOX", [other.uid], ["\\Deleted"], "add");
@@ -468,7 +470,8 @@ describe("IMAP provider against ImapKit", () => {
     ctl.copyMessages("INBOX", [sourceProof.uid], "All");
     const copyProof = ctl.listMessages("All", { raw: true }).find((m) => m.raw!.equals(ctl.getMessage("INBOX", sourceProof.uid, { raw: true }).raw!))!;
     expect(copyProof).toBeDefined();
-    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof]);
+    const holdOwner = await locations.dispatch([message.id], [sourceProof], async (token) => token!, [message.id]);
+    await locations.mappedMove([sourceProof], "All", ctl.getMailbox("All").uidvalidity, [{ messageId: message.id, uid: copyProof.uid }], true, [sourceProof], holdOwner);
     const before = await locations.of([message.id]);
     expect(before.map((l) => l.mailbox).sort()).toEqual(["All", "INBOX"]);
     expect(ctl.sessions().some((session) => session.mailbox === "INBOX" && session.readOnly)).toBe(true);

@@ -726,6 +726,7 @@ export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId"
   const messages = T(c, "messages");
   const byProvider = msg.providerMsgId === null ? undefined : messages.by("provider", msg.accountId, msg.providerMsgId)[0];
   if (byProvider) return byProvider;
+  if (T(c, "accounts").get(msg.accountId)?.kind === "imap") return undefined;
   const rfcLookup = normalizeMessageId(msg.rfcMessageId);
   return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
 }

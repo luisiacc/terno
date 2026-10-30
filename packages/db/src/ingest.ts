@@ -213,7 +213,7 @@ function nextMessageIdAllocator(db: Db): { next(): number; persist(): void } {
 export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId" | "providerMsgId" | "rfcMessageId">): { id: number; thread_id: number; by_provider: number } | undefined {
   return db.get(
     `SELECT id, thread_id, provider_msg_id IS ?2 AS by_provider FROM messages
-     WHERE account_id = ?1 AND (provider_msg_id = ?2 OR (rfc_message_id = ?3 AND provider_msg_id LIKE 'local:%'))
+     WHERE account_id = ?1 AND (provider_msg_id = ?2 OR (rfc_message_id = ?3 AND provider_msg_id LIKE 'local:%' AND (SELECT kind FROM accounts WHERE id=?1) <> 'imap'))
      ORDER BY by_provider DESC, id LIMIT 1`,
     msg.accountId, msg.providerMsgId, normalizeMessageId(msg.rfcMessageId),
   );

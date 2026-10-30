@@ -993,7 +993,8 @@ END;
   { version: 30, name: "durable IMAP identity holds", sql: `
 CREATE TABLE imap_identity_holds (
   message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
-  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  owner TEXT
 );
 CREATE INDEX imap_identity_holds_account ON imap_identity_holds(account_id, message_id);
 INSERT INTO imap_identity_holds (message_id, account_id) SELECT m.id, m.account_id FROM messages m JOIN accounts a ON a.id=m.account_id

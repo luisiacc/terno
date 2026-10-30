@@ -216,12 +216,14 @@ export class ImapIdentityError extends Error {
 }
 
 export interface ImapLocationStore {
-  /** Durable holds survive journal truncation. Only a validated wire mapping may release one. */
+  /** Durable identity holds survive journal truncation; a new fence invalidates any older admission owner. */
   fence(messageIds: readonly number[]): Promise<void>;
   unresolved(messageIds: readonly number[]): Promise<number[]>;
-  /** Validate every logical target and the entire captured locator set, then invoke start without an async gap. */
-  dispatch<T>(messageIds: readonly number[], expected: readonly ImapLocation[], start: () => Promise<T>, fenceIds?: readonly number[]): Promise<T>;
-  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[]): Promise<void>;
+  /** A completed sync may resume parked work whose targets are all already trusted; never releases holds. */
+  resumeResolved(): Promise<void>;
+  /** Validate every target and locator, then start without an async gap. Undispatched failure releases only its owned holds. */
+  dispatch<T>(messageIds: readonly number[], expected: readonly ImapLocation[], start: (holdOwner?: string) => Promise<T>, fenceIds?: readonly number[]): Promise<T>;
+  mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
   /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */

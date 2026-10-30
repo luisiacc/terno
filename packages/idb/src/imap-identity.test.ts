@@ -68,3 +68,31 @@ it("identity: physical17 upgrade holds legacy locators before the first provider
   expect(await locations.unresolved(ids)).toEqual(ids);
 
 });
+
+it("identity review: a concurrent fence survives cleanup of an undispatched IDB admission", async () => {
+  const factory = new IDBFactory();
+  let store = await open(factory);
+  const [, account] = await withAccounts(store);
+  const { inserted: ids } = await ingest(store, Array.from({ length: 257 }, (_, i) => msg({ accountId: account!, locations: [{ ...location, uid: i + 1 }] })));
+  const locations = store.providerStore(account!).locations;
+  const before = await locations.of(ids);
+  const transaction = IDBDatabase.prototype.transaction;
+  let fenced: Promise<void> | undefined, issued = false, changed = false;
+  const spy = vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(function (this: IDBDatabase, ...args) {
+    const tx = transaction.call(this, ...args);
+    if (args[1] === "readwrite" && [...tx.objectStoreNames].includes("imap_identity_holds")) tx.addEventListener("complete", () => {
+      if (!changed) { changed = true; fenced = locations.fence([ids[0]!]); }
+    });
+    return tx;
+  });
+  try {
+    await expect(locations.dispatch(ids, before, async () => { issued = true; }, ids)).rejects.toThrow("IMAP identity unavailable");
+    await fenced;
+  } finally { spy.mockRestore(); }
+  expect(changed).toBe(true);
+  expect(issued).toBe(false);
+  const name = store.name; await store.close(); store = await open(factory, name);
+  const current = store.providerStore(account!).locations;
+  expect(await current.unresolved(ids)).toEqual([ids[0]]);
+  await expect(current.dispatch(ids.slice(1), before.filter((l) => l.message_id !== ids[0]), async () => "still usable")).resolves.toBe("still usable");
+});

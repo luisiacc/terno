@@ -37,6 +37,57 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   };
 
   describe(`folders (plan 68): ${name}`, () => {
+    it("IMAP identity review: local sent Message-ID never adopts unrelated remote bytes", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const local = msg({ accountId: account!, providerMsgId: "local:sent", rfcMessageId: "collision@test", subject: "Our sent mail", bodyText: "our exact bytes", isSent: true, locations: [] });
+      const { inserted: [id] } = await ingest(store, [local]);
+      const thread = await threadOf(store, "local:sent");
+      const action = await store.threads.act({ threadIds: [thread], action: "star", signal: null, now: NOW });
+      expect(action.opIds).toHaveLength(1);
+      const target = (await store.ops.get(action.opIds[0]!))!.target_json;
+      const incoming = msg({ accountId: account!, providerMsgId: "collision@test", rfcMessageId: "collision@test", subject: "Unrelated incoming", bodyText: "different exact bytes", locations: [loc("INBOX", 17)] });
+      const result = await ingest(store, [incoming]);
+      expect(result.inserted).toHaveLength(1);
+      expect(result.inserted[0]).not.toBe(id);
+      store = await harness.reopen(store); open.push(store);
+      expect((await store.threads.get(thread))!.messages.find((m) => m.id === id)).toMatchObject({ bodyText: local.bodyText });
+      expect(await store.providerStore(account!).locations.of([id!])).toEqual([]);
+      expect((await store.ops.get(action.opIds[0]!))!.target_json).toBe(target);
+      let issued = false;
+      await expect(store.providerStore(account!).locations.dispatch([id!], [], async () => { issued = true; })).rejects.toThrow("IMAP identity unavailable");
+      expect(issued).toBe(false);
+    });
+
+    it("IMAP identity review: a newer same-locator fence survives mapped completion", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: [id] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1), loc("C", 2)] })]);
+      const locations = store.providerStore(account!).locations;
+      const before = await locations.of([id!]);
+      const owner = await locations.dispatch([id!], before, async (token) => token!, [id!]);
+      await locations.fence([id!]);
+      await expect(locations.mappedMove(before.filter((l) => l.mailbox === "A"), "B", 2, [{ messageId: id!, uid: 10 }], false, before, owner)).rejects.toThrow("IMAP identity unavailable");
+      store = await harness.reopen(store); open.push(store);
+      expect(await store.providerStore(account!).locations.unresolved([id!])).toEqual([id!]);
+      expect(await store.providerStore(account!).locations.of([id!])).toEqual(before);
+    });
+
+    it("IMAP identity review: failed later admission releases only its own undispatched holds", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: ids } = await ingest(store, Array.from({ length: 129 }, (_, i) => msg({ accountId: account!, locations: [loc("A", i + 1)] })));
+      const locations = store.providerStore(account!).locations;
+      const before = await locations.of(ids);
+      const stale = before.map((l, i) => i === 128 ? { ...l, uid: 999 } : l);
+      let issued = false;
+      await expect(locations.dispatch(ids, stale, async () => { issued = true; }, ids)).rejects.toThrow("IMAP identity unavailable");
+      expect(issued).toBe(false);
+      store = await harness.reopen(store); open.push(store);
+      expect(await store.providerStore(account!).locations.unresolved(ids)).toEqual([]);
+      await expect(store.providerStore(account!).locations.dispatch(ids, before, async () => "usable")).resolves.toBe("usable");
+    });
+
     it("IMAP identity: holds reject stale adoption, hydration, flags and automatic asset deletion", async () => {
       let store = await fresh();
       const [, account] = await withAccounts(store);
@@ -88,6 +139,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       await store.ops.recover(NOW + 1);
       await store.ops.resumeNetwork(account!, NOW + 2);
       await store.ops.resumeAuth(account!, NOW + 3);
+      await store.providerStore(account!).locations.resumeResolved();
       expect(await store.ops.claimReady(NOW + 86400000, 20)).toEqual([]);
       expect(await store.ops.nextAttemptAt()).toBeNull();
       const op = await store.ops.get(action.opIds[0]!);
@@ -103,9 +155,9 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       const { inserted: [id] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1), loc("C", 2)] })]);
       const locations = store.providerStore(account!).locations;
       const before = await locations.of([id!]);
-      await locations.dispatch([id!], before, async () => {}, [id!]);
+      const owner = await locations.dispatch([id!], before, async (token) => token!, [id!]);
       await locations.remove(id!, "C");
-      await expect(locations.mappedMove(before.filter((l) => l.mailbox === "A"), "B", 2, [{ messageId: id!, uid: 10 }], false, before)).rejects.toThrow("IMAP identity unavailable");
+      await expect(locations.mappedMove(before.filter((l) => l.mailbox === "A"), "B", 2, [{ messageId: id!, uid: 10 }], false, before, owner)).rejects.toThrow("IMAP identity unavailable");
       store = await harness.reopen(store); open.push(store);
       expect(await store.providerStore(account!).locations.unresolved([id!])).toEqual([id!]);
       expect(await store.providerStore(account!).locations.of([id!])).toEqual(before.filter((l) => l.mailbox === "A"));
@@ -117,12 +169,12 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       const { inserted: [first, second] } = await ingest(store, [msg({ accountId: account!, locations: [loc("A", 1)] }), msg({ accountId: account!, locations: [loc("A", 2)] })]);
       let locations = store.providerStore(account!).locations;
       const before = await locations.of([first!, second!]);
-      await locations.dispatch([first!, second!], before, async () => {}, [first!, second!]);
-      await expect(locations.mappedMove([before[0]!, { ...before[1]!, uid: 999 }], "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before)).rejects.toThrow();
+      const owner = await locations.dispatch([first!, second!], before, async (token) => token!, [first!, second!]);
+      await expect(locations.mappedMove([before[0]!, { ...before[1]!, uid: 999 }], "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before, owner)).rejects.toThrow();
       store = await harness.reopen(store); open.push(store); locations = store.providerStore(account!).locations;
       expect(await locations.of([first!, second!])).toEqual(before);
       expect(await locations.unresolved([first!, second!])).toEqual([first!, second!]);
-      await locations.mappedMove(before, "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before);
+      await locations.mappedMove(before, "B", 2, [{ messageId: first!, uid: 10 }, { messageId: second!, uid: 11 }], false, before, owner);
       expect(await locations.unresolved([first!, second!])).toEqual([]);
       await expect(locations.dispatch([first!, second!], await locations.of([first!, second!]), async () => "mapped")).resolves.toBe("mapped");
     });
