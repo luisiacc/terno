@@ -123,6 +123,15 @@ describe("Google identity authority evidence", () => {
     await expect(desktop({ info: () => json(claims) }).result).rejects.toThrow("invalid sign-in response");
   });
 
+  it("uses one browser inspection deadline across profile and userinfo", async () => {
+    const netFetch = vi.fn<typeof fetch>(async (url) => {
+      await new Promise((resolve) => setTimeout(resolve, 70));
+      return json(String(url).endsWith("/profile") ? profile : info);
+    });
+    await expect(inspectGmailToken("synthetic-token", netFetch, { endpoints, timeoutMs: 110 })).rejects.toThrow("Google sign-in timed out.");
+    expect(netFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("times out userinfo headers and cleans up its caller abort listener", async () => {
     const caller = new AbortController();
     const remove = vi.spyOn(caller.signal, "removeEventListener");
