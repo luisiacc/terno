@@ -6,7 +6,7 @@ const port = Number(process.env.E2E_PORT ?? 54660);
 export default defineConfig<{ design: "lumen" }>({
   testDir: "e2e",
   projects: [
-    { name: "coverage", testMatch: "search-coverage.spec.ts" },
+    { name: "coverage", testMatch: "search-coverage.dev.ts" },
     { name: "existing-search", testMatch: ["search.spec.ts", "search-everywhere.spec.ts"], use: { design: "lumen" } },
   ],
   globalSetup: "./e2e/search-coverage.setup.ts",

@@ -66,7 +66,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
         (["inbox", "archive", "spam", "trash"] as const).map((place, i) => msg({
           accountId: accounts[i % accounts.length]!.id,
           providerMsgId: `coverage-${place}`, providerThreadId: `coverage-${place}`, rfcMessageId: `<coverage-${place}@example.test>`, date: E2E_NOW - i * 1000,
-          subject: "Coverageneedle", bodyText: "Saved searchable body", isRead: false,
+          subject: "Coverageneedle", bodyText: "Saved searchable body", isRead: true,
           inInbox: place === "inbox", isSpam: place === "spam", isTrash: place === "trash",
         })),
         { applyFilters: false, now: E2E_NOW, classifier: null },
@@ -113,7 +113,7 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
       await page.screenshot({ path: testInfo.outputPath(`search-coverage-${design}-${language}-${theme}.png`) });
       expect(responses.at(-1)?.complete).toBe(true);
       await server.backend.store.sync.ingest([
-        msg({ accountId: accounts[0]!.id, providerMsgId: "headers-only", subject: "Headeronlyneedle", bodyState: "none", bodyText: null, bodyHtml: null }),
+        msg({ accountId: accounts[0]!.id, providerMsgId: "headers-only", subject: "Headeronlyneedle", isRead: true, bodyState: "none", bodyText: null, bodyHtml: null }),
       ], { applyFilters: false, now: E2E_NOW, classifier: null });
       await input.fill("subject:headeronlyneedle");
       await expect(page.getByTestId("thread-row")).toHaveCount(1);
