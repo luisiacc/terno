@@ -853,11 +853,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // 1) messages we haven't seen
       // After a UIDVALIDITY reset every message must be re-identified, including ones older
       // than the sync window that we already have (otherwise they'd be dropped as orphans).
-      const found = state
-        ? ((await c.search({ uid: `${state.uidnext}:*` }, { uid: true })) || []).filter((u) => u >= state!.uidnext)
-        : reidentify
-          ? (await c.search({ all: true }, { uid: true })) || []
-          : (await c.search({ since: new Date(sink.windowStart) }, { uid: true })) || [];
+      const searched = await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
+      if (!searched) throw new ProviderError(L("errors.imap.listRefused"), false);
+      const found = state ? searched.filter((uid) => uid >= state!.uidnext) : searched;
       const fresh: IncomingMessage[] = [];
       /** each fresh message's twin key: once written, it joins its envelope's group if one is kept (Codex R34) */
       const freshTwins: string[] = [];
@@ -868,9 +866,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       const claimed = new Map<string, number>();
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
+        const expected = new Set(batch);
         for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
           const m = msg as FetchMessageObject;
-          const flags = [...(m.flags ?? new Set<string>())];
+          if (!expected.delete(m.uid) || !(m.flags instanceof Set)) throw new ProviderError(L("errors.imap.listRefused"), false);
+          const flags = [...m.flags];
           /** an ID-less message whose stored twins are still placed: a copy, or one of them moved since its sweep */
           let ambiguousOf: number[] | null = null;
           /** a Message-ID held back: as a copy, the same message (this one) in one more folder (Codex R26) */
@@ -1047,6 +1047,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             freshTwins.push(twinKey({ ...envelope, rfcMessageId: messageKey(env?.messageId) }));
           }
         }
+        if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
       if (fresh.length) await sink.ingest(fresh, { live });
 
@@ -1171,9 +1172,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       await locations.removeMany(gone.map((k) => k.message_id), path);
       await addAll(touched, gone.map((k) => k.message_id));
       for (let i = 0; i < stillThere.length; i += 1000) {
-        for await (const msg of c.fetch(stillThere.slice(i, i + 1000), { uid: true, flags: true }, { uid: true })) {
+        const batch = stillThere.slice(i, i + 1000);
+        const expected = new Set(batch);
+        for await (const msg of c.fetch(batch, { uid: true, flags: true }, { uid: true })) {
           const k = byUid.get(msg.uid);
-          if (!k) continue;
+          if (!k || !expected.delete(msg.uid) || !(msg.flags instanceof Set)) throw new ProviderError(L("errors.imap.listRefused"), false);
           remember(k.message_id, path, uidvalidity, msg.uid, msg.flags);
           const flags = JSON.stringify([...(msg.flags ?? new Set<string>())]);
           if (flags !== k.flags) {
@@ -1181,6 +1184,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             touched.add(k.message_id);
           }
         }
+        if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
       return seen;
     } finally {

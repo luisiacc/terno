@@ -371,16 +371,16 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     await witness(durable, t, ["\\Seen"]);
   });
 
-  it.each(["UID", "FLAGS"] as const)("incomplete final %s evidence cannot retire acknowledged intent", async (missing) => {
+  it.each(["UID", "FLAGS"] as const)("incomplete sweep %s evidence cannot retire acknowledged intent", async (missing) => {
     const t = await setup(true, "INBOX");
     t.advance();
     await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
     expect(await t.backend.runWorker()).toBe(1);
-    const ctl = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: t.path, times: 2,
+    const ctl = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: t.path, times: 1,
       match: /\(UID FLAGS(?: MODSEQ)?\)/i,
       send: missing === "UID" ? "$TAG OK Synthetic omitted UID\r\n" : `* 1 FETCH (UID ${t.target.uid})\r\n$TAG OK Synthetic omitted FLAGS\r\n` });
     await bounded(t.backend.syncAccount(t.account.id), "incomplete final evidence");
-    expect(ctl.hits).toBe(2);
+    expect(ctl.hits).toBe(1);
     expect((await detail(t)).messages[0]).toMatchObject({ isStarred: true, bodyText: t.message.bodyText });
     expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
     await pass(t, t);
@@ -475,6 +475,90 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
     expect((await t.backend.store.debug.snapshot()).messages.filter((message) => message.isStarred)).toHaveLength(124);
     expect(t.ctl.getMessage(t.path, t.target.uid).raw).toEqual(Buffer.from(t.targetRaw));
     expect((await t.backend.store.providerStore(t.account.id).locations.of([t.message.id]))[0]).toMatchObject({ uid: t.target.uid, uidvalidity: t.target.uidvalidity });
+  });
+
+  it("an omitted reset remapping UID cannot certify a surviving location's contradictory flags", async () => {
+    const t = await setup(true, "INBOX");
+    t.ctl.copyMessages("INBOX", [t.target.uid], "Projects");
+    await bounded(t.backend.syncAccount(t.account.id), "discover reset copy");
+    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toHaveLength(2);
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    t.ctl.setFlags("INBOX", [t.target.uid], [], "set");
+    const epoch = t.ctl.resetUidValidity("Projects", { uids: "keep" });
+    const omitted = t.w.server.script.add({ on: "command", command: "UID FETCH", mailbox: "Projects", match: /ENVELOPE/, times: 1, send: "$TAG OK Synthetic omitted remap UID\r\n" });
+    await bounded(t.backend.syncAccount(t.account.id), "partial reset remapping");
+    expect(omitted.hits).toBe(1);
+    expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(1);
+    await bounded(t.backend.syncAccount(t.account.id), "complete reset remapping");
+    expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mailbox: "Projects", uidvalidity: epoch.uidvalidity }),
+      expect.objectContaining({ mailbox: "INBOX", uidvalidity: t.target.uidvalidity }),
+    ]));
+    expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });
+    await t.stop(); const durable = await t.open();
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, isStarred: true, bodyText: t.message.bodyText });
+  });
+
+  it("a MOVE after destination coverage verifies synthetic COPYUID flags before confirming independent intent", async () => {
+    const t = await setup(true, "INBOX");
+    t.advance();
+    for (const action of ["star", "markRead"] as const) await t.client.call("threads.act", { threadIds: [t.thread.id], action });
+    expect(await t.backend.runWorker()).toBe(2);
+    const original = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
+    const captured = deferred<void>(), release = deferred<void>();
+    vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementationOnce(async (...args) => {
+      captured.resolve(); await bounded(release.promise, "release pre-MOVE observation"); return original(...args);
+    });
+    const running = t.backend.syncAccount(t.account.id);
+    try {
+      await bounded(captured.promise, "mailbox coverage complete before MOVE");
+      await t.client.call("threads.act", { threadIds: [t.thread.id], action: "archive" });
+      expect(await t.backend.runWorker()).toBe(1);
+      expect(await t.backend.store.providerStore(t.account.id).locations.of([t.message.id])).toEqual([
+        expect.objectContaining({ mailbox: "Archive", flags: "[]" }),
+      ]);
+    } finally { release.resolve(); await bounded(running, "post-MOVE reconciliation"); }
+    expect((await detail(t)).messages[0]).toMatchObject({ id: t.message.id, isRead: true, isStarred: true, bodyText: t.message.bodyText });
+    expect(t.ctl.listMessages("Archive")[0]!.flags.sort()).toEqual(FLAGS);
+    const moved = t.ctl.listMessages("Archive")[0]!;
+    expect(t.ctl.getMessage("Archive", moved.uid).raw).toEqual(Buffer.from(t.targetRaw));
+    expect(sqlDb(t.backend.store).get("SELECT in_inbox FROM messages WHERE id=?", t.message.id)).toEqual({ in_inbox: 0 });
+    await bounded(t.backend.syncAccount(t.account.id), "confirm moved intent");
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    await t.stop(); const durable = await t.open();
+    expect((await detail(durable)).messages[0]).toMatchObject({ id: t.message.id, isRead: true, isStarred: true, bodyText: t.message.bodyText });
+  });
+
+  it("a provider reset after swept FLAGS discards that generation before final delivery", async () => {
+    const t = await setup(true, "INBOX");
+    t.advance();
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "star" });
+    expect(await t.backend.runWorker()).toBe(1);
+    const store = t.backend.store.providerStore(t.account.id);
+    const readLocations = store.locations.of.bind(store.locations);
+    const captured = deferred<void>(), release = deferred<void>();
+    vi.spyOn(store.locations, "of").mockImplementationOnce(async (ids) => {
+      const result = await readLocations(ids);
+      captured.resolve(); await bounded(release.promise, "release retired generation"); return result;
+    });
+    const updates = t.backend.store.sync.updateFlags.bind(t.backend.store.sync);
+    const confirmed: boolean[] = [];
+    vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementation(async (...args) => {
+      for (const update of args[1]) if (update.messageId === t.message.id && update.expectedImapLocations) confirmed.push(update.flags.isStarred!);
+      return updates(...args);
+    });
+    const running = t.backend.syncAccount(t.account.id);
+    try {
+      await bounded(captured.promise, "swept FLAGS before reset");
+      (await t.backend.provider(t.account.id))!.reset!();
+      t.ctl.setFlags(t.path, [t.target.uid], [], "set");
+    } finally { release.resolve(); await bounded(running, "fresh generation retry"); }
+    expect(confirmed).toEqual([false]);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    await witness(t, t, []);
   });
 
 });
