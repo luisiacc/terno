@@ -68,7 +68,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
       if (historyStatus !== 200) return json({}, historyStatus);
       const entries = history.filter((h) => BigInt(h.id) > BigInt(url.searchParams.get("startHistoryId")!));
       const next = url.searchParams.get("pageToken");
-      if (next !== null && next !== "history/+?=next") return json({}, 400);
+      if (!historyPayload && next !== null && next !== "history/+?=next") return json({}, 400);
       const original = { historyId: String(historyId), history: entries.slice(next ? 2 : 0, next ? undefined : 2), ...(!next && entries.length > 2 && { nextPageToken: "history/+?=next" }) };
       const payload = historyPayload ? historyPayload(original) : original;
       const hold = holdHistory; holdHistory = undefined;
@@ -92,7 +92,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const providers: ProviderRegistry = {
     create(ctx) {
       context = ctx;
-      const provider = createGmailApiProvider({ ...ctx, saveCursor: async (value) => { await ctx.saveCursor(value); await afterCheckpoint?.(value); } }, {
+      const provider = createGmailApiProvider({ ...ctx, saveCursor: async (value, check) => { await ctx.saveCursor(value, check); await afterCheckpoint?.(value); } }, {
         endpoints: { api }, tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(),
       });
       return { ...provider, sync: (sink) => provider.sync({ ...sink, signal: AbortSignal.any([sink.signal, abort.signal]), ingest: async (batch, options) => {
@@ -145,6 +145,92 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up", (kind) => {
+  it("does not reinsert a message evicted while overlapping history is being read", async () => {
+    const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id);
+    const archived = (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "archive")!;
+    t.historyPayload(() => ({ historyId: String(BigInt(t.baseline) + 1n), history: [{ messagesAdded: [{ message: { id: "archive" } }] }] }));
+    let release = () => {}, entered!: () => void;
+    const held = new Promise<void>((resolve) => { entered = resolve; });
+    cleanup.push(async () => { release(); });
+    t.holdHistory((send) => { release = send; entered(); });
+    const running = t.backend.syncAccount(t.account.id); await held;
+    t.backend.evictions.begin();
+    await t.backend.evictions.unit(async () => {
+      await t.backend.store.sync.remove([archived.id]);
+      t.backend.evictions.record([{ accountId: t.account.id, providerMsgIds: ["archive"] }]);
+    });
+    t.backend.evictions.end(); release(); release = () => {}; await running;
+    expect((await t.backend.store.debug.snapshot()).messages.some((m) => m.providerMsgId === "archive")).toBe(false);
+    await t.reopen();
+    expect((await t.backend.store.debug.snapshot()).messages.some((m) => m.providerMsgId === "archive")).toBe(false);
+  });
+
+  it("replays committed 50-item flag batches after a late failure without changing identity or assets", async () => {
+    const t = await mailbox(kind);
+    const ids = Array.from({ length: 101 }, (_, i) => `bulk${i}`);
+    for (const id of ids) t.add(id);
+    await t.backend.syncAccount(t.account.id);
+    const before = await t.backend.store.debug.snapshot(), old = await t.cursor();
+    for (const message of t.messages.values()) message.labelIds = ["STARRED"];
+    t.historyPayload(() => ({ historyId: String(BigInt(t.baseline) + 1n), history: [{ labelsRemoved: ids.map((id) => ({ message: { id } })) }] }));
+    t.getStatus("bulk100", 503);
+    const update = t.backend.store.sync.updateFlags;
+    const writes = vi.spyOn(t.backend.store.sync, "updateFlags");
+    await t.backend.syncAccount(t.account.id);
+    expect(writes.mock.calls.map((c) => c[1].length)).toEqual([50, 50]);
+    expect(await t.cursor()).toEqual(old);
+    expect((await t.backend.store.debug.snapshot()).messages.filter((m) => m.isStarred)).toHaveLength(100);
+    writes.mockRestore(); expect(t.backend.store.sync.updateFlags).toBe(update);
+    t.getStatus("bulk100", 200); await t.reopen();
+    await t.backend.syncAccount(t.account.id);
+    const after = await t.backend.store.debug.snapshot();
+    expect(after.messages.map((m) => [m.id, m.providerMsgId, m.bodyText])).toEqual(before.messages.map((m) => [m.id, m.providerMsgId, m.bodyText]));
+    expect(after.messages.every((m) => m.isStarred && m.isRead && !m.inInbox)).toBe(true);
+    expect(after.ops).toEqual([]);
+    for (const message of after.messages) {
+      const attachments = await t.backend.store.attachments.current(t.account.id, { id: message.id });
+      expect(attachments).toHaveLength(1);
+      expect(await t.backend.store.attachments.read(t.account.id, attachments[0]!.assetId!, 0)).toBe("AP+ADQo=");
+    }
+    expect(await t.cursor()).toEqual({ historyId: String(BigInt(t.baseline) + 1n) });
+  });
+
+  it.each(["lateGET", "cursorAck"] as const)("replays three overlapping pages after %s with one automation and exact durable state", async (failure) => {
+    const t = await mailbox(kind); t.seed(); await t.backend.syncAccount(t.account.id);
+    const category = await t.backend.store.categories.create("Synthetic", "violet");
+    const filter = await t.backend.store.filters.save({ name: "Arrival", enabled: true, source: "manual",
+      rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "arrival" }], actions: [{ type: "addCategory", categoryId: category.id }] } }, 1);
+    t.mutate();
+    const old = await t.cursor();
+    let page = 0;
+    t.historyPayload(() => {
+      const index = page++ % 3;
+      return { historyId: t.terminal, ...(index < 2 && { nextPageToken: `overlap${index}` }), history: [{
+        messagesAdded: [{ message: { id: "arrival" } }],
+        labelsRemoved: ["read", "archive", "arrival"].map((id) => ({ message: { id } })),
+        ...(index === 2 && { messagesDeleted: [{ message: { id: "deleted" } }] }),
+      }] };
+    });
+    if (failure === "lateGET") t.getStatus("archive", 503);
+    else {
+      const set = t.backend.store.accounts.setCursor;
+      vi.spyOn(t.backend.store.accounts, "setCursor").mockImplementation(async (...args) => { await set(...args); throw new Error("Lost cursor acknowledgement"); });
+    }
+    await t.backend.syncAccount(t.account.id);
+    expect(await t.cursor()).toEqual(failure === "lateGET" ? old : { historyId: t.terminal });
+    const arrival = (await t.backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "arrival")!;
+    expect(arrival).toBeDefined();
+    expect((await t.backend.store.filters.get(filter.id))?.hits).toBe(1);
+    vi.restoreAllMocks(); t.getStatus("archive", 200); page = 0;
+    await t.reopen(); await t.backend.syncAccount(t.account.id); await t.assertFinal();
+    const final = await t.backend.store.debug.snapshot();
+    expect(final.messages.find((m) => m.providerMsgId === "arrival")?.id).toBe(arrival.id);
+    expect((await t.backend.store.filters.get(filter.id))?.hits).toBe(1);
+    expect(final.memberships.filter((m) => m.categoryId === category.id)).toHaveLength(1);
+    expect(final.ops).toHaveLength(0);
+    expect(t.ingested.filter((m) => m.id === "arrival")).toHaveLength(1);
+  });
+
   it.each(["ingest", "flags", "remove", "cursor"] as const)("checks credential generation inside the %s store command", async (effect) => {
     const t = await mailbox(kind);
     t.seed(); await t.backend.syncAccount(t.account.id);
@@ -176,7 +262,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     await t.backend.syncAccount(t.account.id); await t.assertFinal();
   });
 
-  it.each(["references", "bytes", "summary", "cycle", "pages"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
+  it.each(["references", "bytes", "summary", "cycle", "pages", "traversal", "records", "token"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
     const t = await mailbox(kind);
     t.seed();
     await t.backend.syncAccount(t.account.id);
@@ -185,6 +271,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     let calls = 0;
     t.historyPayload(() => {
       calls++;
+      if (mode === "token") return { historyId: t.terminal, nextPageToken: "x".repeat(4097) };
+      if (mode === "records") return { historyId: t.terminal, history: Array.from({ length: 501 }, () => ({})) };
+      if (mode === "traversal") return { historyId: t.terminal, nextPageToken: `page${calls}`, history: [{ labelsRemoved: Array.from({ length: 2000 }, () => ({ message: { id: "archive" } })) }] };
       if (mode === "bytes") return { historyId: t.terminal, ignored: "é".repeat(140_000) };
       if (mode === "summary") return { historyId: t.terminal, history: [{ messages: [{ id: "arrival" }] }] };
       if (mode === "cycle" || mode === "pages") return { historyId: t.terminal, nextPageToken: mode === "cycle" ? "repeat" : `page${calls}` };
@@ -197,11 +286,12 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     await t.backend.syncAccount(t.account.id);
     expect(phaseOf(await t.cursor())?.stage).toBe("enumerate");
     expect(await t.cursor()).toMatchObject(old!);
-    expect(calls).toBeLessThanOrEqual(mode === "pages" ? 100 : 2);
+    expect(calls).toBeLessThanOrEqual(mode === "pages" ? 100 : mode === "traversal" ? 6 : 2);
     expect(t.requests.filter((r) => r.pathname.startsWith("/messages/"))).toHaveLength(0);
     t.historyPayload(); t.afterCheckpoint(() => {});
     await t.reopen();
     await t.backend.syncAccount(t.account.id);
+    expect(t.requests.find((r) => r.pathname === "/messages")?.searchParams.get("q")).toBeNull();
     await t.assertFinal();
     const inserted = [...t.ingested];
     await t.backend.syncAccount(t.account.id);
@@ -627,7 +717,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     });
     await t.backend.syncAccount(t.account.id);
     expect(writes).toHaveBeenCalledTimes(1);
-    expect(writes.mock.calls[0]![1]).toHaveLength(200);
+    expect(writes.mock.calls[0]![1]).toHaveLength(50);
     expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "refresh", baseline: t.baseline } });
     expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(0);
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastSyncAt).toBeNull();

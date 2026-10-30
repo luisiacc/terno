@@ -341,11 +341,11 @@ export interface MailStore {
   sync: {
     beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
-    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation }): Promise<IngestOutcome>;
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
-    updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation): Promise<{ touched: number[] } & FlagReconciliation>;
-    remove(messageIds: readonly number[]): Promise<{ touched: number[] }>;
+    updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
+    remove(messageIds: readonly number[], check?: () => void): Promise<{ touched: number[] }>;
     pendingMessageIds(accountId: number): Promise<Set<number>>;
     /** plan 41: newly inserted messages as they are now (missing ids left out), for the notification rule; bounded by the caller */
     arrivals(messageIds: readonly number[]): Promise<import("@terno/core").ArrivalRow[]>;
@@ -564,7 +564,7 @@ export interface MailStore {
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;
     setProviderConfig(id: number, config: unknown): Promise<void>;
     /** the provider's sync cursor, merged into the latest stored config in one unit (preferences beside it are kept) */
-    setCursor(id: number, cursor: unknown): Promise<void>;
+    setCursor(id: number, cursor: unknown, check?: () => void): Promise<void>;
   };
 
   owner: {

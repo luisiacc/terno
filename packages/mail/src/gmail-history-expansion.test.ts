@@ -47,15 +47,16 @@ it("characterizes expanded overlapping history and retains the checkpoint on a l
   try {
     await expect(provider.sync(sink)).rejects.toThrow();
     expect(checkpoints).toEqual([]);
-    expect(batches).toEqual([]);
+    expect(batches.every((batch) => batch.length <= 50)).toBe(true);
+    batches.length = 0;
     expect(requests).toEqual(["history:10:first", "history:10:next", ...ids]);
     fail = false;
     requests.length = 0;
     await provider.sync(sink);
     expect(requests).toEqual(["history:10:first", "history:10:next", ...ids]);
     expect(payloadBytes).toEqual([12989, 100]);
-    expect(batches).toHaveLength(1);
-    expect(batches[0]).toEqual(ids.map((id, i) => ({
+    expect(batches.every((batch) => batch.length <= 50)).toBe(true);
+    expect(batches.flat()).toEqual(ids.map((id, i) => ({
       messageId: i + 1, expectedProviderMsgId: id,
       flags: { inInbox: i !== 0, isRead: i === 0, isStarred: i === 0, isSent: false, isDraft: false, isTrash: false, isSpam: false },
       gmailLabels: i === 0 ? ["STARRED"] : ["INBOX", "UNREAD"],

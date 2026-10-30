@@ -72,6 +72,14 @@ interface ReconcileCursor {
 interface SyncPass extends SyncSink { check(): void }
 const LIST_TOKEN_MAX = 4096;
 const LIST_PAGES_MAX = 10_000;
+const HISTORY_BYTES = 256 * 1024;
+const HISTORY_PAGE_REFS = 2000;
+const HISTORY_TOTAL_REFS = 10_000;
+const HISTORY_PAGES = 100;
+
+class HistoryOverflow extends ProviderError {
+  constructor() { super(L("errors.gmail.invalidResponse"), true); }
+}
 
 function windowIntent(sink: SyncSink): string {
   return sink.windowDays === undefined ? `start:${sink.windowStart}` : `days:${sink.windowDays}`;
@@ -131,6 +139,7 @@ export function labelFolders(labels: readonly GmailLabel[]): ProviderFolder[] {
 interface MessageRef { id: string }
 interface MessagePage { messages?: MessageRef[]; nextPageToken?: string }
 interface HistoryEntry {
+  messages?: MessageRef[];
   messagesAdded?: { message: MessageRef }[];
   messagesDeleted?: { message: MessageRef }[];
   labelsAdded?: { message: MessageRef }[];
@@ -175,7 +184,7 @@ async function validateRaw(raw: string): Promise<void> {
 }
 
 function historyId(value: unknown): value is string {
-  return typeof value === "string" && /^\d+$/.test(value);
+  return typeof value === "string" && value.length <= 128 && /^\d+$/.test(value);
 }
 
 function earlierHistory(next: string, previous: string): boolean {
@@ -193,19 +202,48 @@ function optionalArray(value: unknown, valid: (item: unknown) => boolean): boole
 }
 
 function messageRef(value: unknown): boolean {
-  return isRecord(value) && nonempty(value.id);
+  return isRecord(value) && nonempty(value.id) && value.id.length <= 1000;
 }
 
 function readList(value: unknown): MessagePage {
-  if (!isRecord(value) || !optionalArray(value.messages, messageRef)) throw invalidResponse();
+  if (!isRecord(value) || !optionalArray(value.messages, messageRef) || (Array.isArray(value.messages) && value.messages.length > 500)) throw invalidResponse();
   return value as MessagePage;
 }
 
 function readHistory(value: unknown): HistoryPage {
-  const change = (item: unknown) => isRecord(item) && messageRef(item.message);
-  const entry = (item: unknown) => isRecord(item) && [item.messagesAdded, item.messagesDeleted, item.labelsAdded, item.labelsRemoved].every((changes) => optionalArray(changes, change));
-  if (!isRecord(value) || !historyId(value.historyId) || !optionalArray(value.history, entry)) throw invalidResponse();
+  if (!isRecord(value) || !historyId(value.historyId) || (value.history !== undefined && !Array.isArray(value.history))) throw invalidResponse();
+  const entries = (value.history ?? []) as unknown[];
+  if (entries.length > 500) throw new HistoryOverflow();
+  let refs = 0;
+  for (const h of entries) {
+    if (!isRecord(h)) throw invalidResponse();
+    let typed = false;
+    for (const key of ["messagesAdded", "messagesDeleted", "labelsAdded", "labelsRemoved"]) {
+      const changes = h[key];
+      if (changes === undefined) continue;
+      if (!Array.isArray(changes)) throw invalidResponse();
+      refs += changes.length;
+      if (refs > HISTORY_PAGE_REFS) throw new HistoryOverflow();
+      typed ||= changes.length > 0;
+      for (const change of changes) if (!isRecord(change) || !messageRef(change.message)) throw invalidResponse();
+    }
+    if (h.messages !== undefined) {
+      if (!Array.isArray(h.messages)) throw invalidResponse();
+      refs += h.messages.length;
+      if (refs > HISTORY_PAGE_REFS) throw new HistoryOverflow();
+      if (!h.messages.every(messageRef)) throw invalidResponse();
+      // Summary-only records don't identify the effect. Re-enumeration owns their coverage.
+      if (h.messages.length && !typed) throw new HistoryOverflow();
+    }
+  }
   return value as unknown as HistoryPage;
+}
+
+function historyReferences(page: HistoryPage): number {
+  let count = 0;
+  for (const h of page.history ?? []) count += (h.messages?.length ?? 0) + (h.messagesAdded?.length ?? 0)
+    + (h.messagesDeleted?.length ?? 0) + (h.labelsAdded?.length ?? 0) + (h.labelsRemoved?.length ?? 0);
+  return count;
 }
 
 function continuation(value: unknown, seen: Set<string>): string | undefined {
@@ -563,8 +601,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal) as T;
         if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
         if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal)) as T;
+        if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal)) as T;
+        if (path.startsWith("/messages/") && path.endsWith("?format=minimal")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
+        if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();
         if (responseMode === "incoming" && (e instanceof IncomingProcessingError || e instanceof ResponseBodyLimitError)) throw processingError(e);
         // The request was accepted; a send whose answer can't be read has an unknown outcome (no resend).
         if (sending) throw invalidResponse(true);
@@ -770,7 +811,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   async function saveProgress(sink: SyncPass, value: Cursor | ReconcileCursor) {
     sink.check();
-    await ctx.saveCursor(value);
+    await ctx.saveCursor(value, sink.check);
     sink.check();
   }
 
@@ -778,7 +819,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: { version: 1, stage: "restart" } });
   }
 
-  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation): Promise<Cursor> {
+  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation, allMail = false): Promise<Cursor> {
     let state: Reconciliation;
     const save = async (value: Reconciliation) => {
       await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: value });
@@ -788,7 +829,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     else {
       const baseline = readBaseline(await syncRead("/profile", sink));
       if (completed && earlierHistory(baseline, completed)) throw invalidResponse();
-      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0 };
+      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: allMail ? 0 : Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0 };
       await save(state);
     }
     const pages = new Set<string>();
@@ -796,7 +837,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     while (state.stage === "enumerate") {
       const current = state;
       if (current.pages >= LIST_PAGES_MAX) { await restart(sink, completed); throw invalidResponse(); }
-      const q = new URLSearchParams({ q: `after:${current.after}`, maxResults: "500", includeSpamTrash: "true" });
+      const q = new URLSearchParams({ ...(current.after > 0 && { q: `after:${current.after}` }), maxResults: "500", includeSpamTrash: "true" });
       if (current.next) q.set("pageToken", current.next);
       let page: MessagePage;
       try {
@@ -829,21 +870,23 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     if (state.stage === "refresh") {
       sink.check();
       const cached = await store.syncedMessages();
-      const updates: FlagUpdate[] = [], gone: number[] = [];
-      // List absence has no deletion authority, including outside its window. Only explicit GET 404s do.
-      await download(cached, async (m) => {
-        try {
-          const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
-          updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
-        } catch (e) {
-          if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
-          else throw e;
-        }
-      });
-      sink.check();
-      if (updates.length) await sink.updateFlags(updates);
-      sink.check();
-      if (gone.length) await sink.removeMessages(gone);
+      // Only one 50-message group retains minimal responses at a time.
+      for (let offset = 0; offset < cached.length; offset += 50) {
+        const updates: FlagUpdate[] = [], gone: number[] = [];
+        await download(cached.slice(offset, offset + 50), async (m) => {
+          try {
+            const full = readMessage(await syncRead(`/messages/${m.providerMsgId}?format=minimal`, sink), m.providerMsgId);
+            updates.push({ messageId: m.id, expectedProviderMsgId: m.providerMsgId, flags: labelState(full.labelIds ?? []), gmailLabels: full.labelIds ?? [] });
+          } catch (e) {
+            if (e instanceof GmailApiError && e.status === 404) gone.push(m.id);
+            else throw e;
+          }
+        });
+        sink.check();
+        if (updates.length) await sink.updateFlags(updates);
+        sink.check();
+        if (gone.length) await sink.removeMessages(gone);
+      }
       await save({ ...state, stage: "catchup" });
     }
     return { historyId: state.baseline };
@@ -855,8 +898,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const deleted = new Set<string>();
     let pageToken: string | undefined;
     const pages = new Set<string>();
-    let latest = cursor.historyId;
+    let latest = cursor.historyId, references = 0, pageCount = 0;
     do {
+      if (++pageCount > HISTORY_PAGES) throw new HistoryOverflow();
       const q = new URLSearchParams({ startHistoryId: cursor.historyId, maxResults: "500" });
       for (const t of ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]) q.append("historyTypes", t);
       if (pageToken) q.set("pageToken", pageToken);
@@ -864,17 +908,25 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (error instanceof GmailApiError && error.status === 404) throw new ExpiredHistory();
         throw error;
       }));
+      references += historyReferences(page);
+      if (references > HISTORY_TOTAL_REFS) throw new HistoryOverflow();
+      if (page.nextPageToken !== undefined && !nonempty(page.nextPageToken)) throw invalidResponse();
+      if (page.nextPageToken !== undefined && (page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) throw new HistoryOverflow();
       pageToken = continuation(page.nextPageToken, pages);
       if (earlierHistory(page.historyId, latest)) throw invalidResponse();
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) added.add(a.message.id);
         for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
-        for (const l of [...(h.labelsAdded ?? []), ...(h.labelsRemoved ?? [])]) changed.add(l.message.id);
+        for (const l of h.labelsAdded ?? []) changed.add(l.message.id);
+        for (const l of h.labelsRemoved ?? []) changed.add(l.message.id);
       }
       latest = page.historyId;
+      if (pageToken) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
     } while (pageToken);
 
+    let examined = 0;
     const known = async (id: string) => {
+      if (++examined % 50 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
       sink.check();
       return (await store.messageByProviderId(id))?.id;
     };
@@ -884,7 +936,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
     for (let i = 0; i < toFetch.length; i += 50) await fetchFull(toFetch.slice(i, i + 50), live);
 
-    const updates: FlagUpdate[] = [];
+    let updates: FlagUpdate[] = [];
     for (const gid of changed) {
       if (deleted.has(gid)) continue;
       const local = await known(gid);
@@ -892,6 +944,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       try {
         const m = readMessage(await syncRead(`/messages/${gid}?format=minimal`, sink), gid);
         updates.push({ messageId: local, expectedProviderMsgId: gid, flags: labelState(m.labelIds ?? []), gmailLabels: m.labelIds ?? [] });
+        if (updates.length === 50) { sink.check(); await sink.updateFlags(updates); updates = []; }
       } catch (e) {
         if (e instanceof GmailApiError && e.status === 404) deleted.add(gid);
         else throw e;
@@ -900,10 +953,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     sink.check();
     if (updates.length) await sink.updateFlags(updates);
     sink.check();
-    const removals: number[] = [];
+    let removals: number[] = [];
     for (const gid of deleted) {
       const id = await known(gid);
       if (id !== undefined) removals.push(id);
+      if (removals.length === 50) { sink.check(); await sink.removeMessages(removals); removals = []; }
     }
     sink.check();
     if (removals.length) await sink.removeMessages(removals);
@@ -962,12 +1016,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       const resume = pending ? readReconciliation(cursor.reconciliation, sink, ctx.account.email, completed) : undefined;
       let reconciled: Cursor | undefined;
       if (pending || completed === undefined) {
-        reconciled = await fullSync(sink, completed, resume);
+        reconciled = await fullSync(sink, completed, resume, pending && !resume);
       } else {
         try {
           await incremental(sink, { historyId: completed });
         } catch (e) {
-          if (e instanceof ExpiredHistory) reconciled = await fullSync(sink, completed);
+          if (e instanceof ExpiredHistory || e instanceof HistoryOverflow) reconciled = await fullSync(sink, completed, undefined, e instanceof HistoryOverflow);
           else throw e;
         }
       }
@@ -975,7 +1029,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (reconciled) {
         try { await incremental(sink, reconciled); }
         catch (error) {
-          if (error instanceof ExpiredHistory) await restart(sink, completed);
+          if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) await restart(sink, completed);
           throw error;
         }
       }

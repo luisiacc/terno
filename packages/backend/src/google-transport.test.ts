@@ -106,3 +106,24 @@ it("releases a retired response with no native body", async () => {
   await expect(result).rejects.toMatchObject({ name: "AbortError" });
   expect(net.googlePending()).toBe(0);
 });
+
+it("bounds overflow disposal and releases only a proven native terminal before repeated recovery", async () => {
+  const { readResponseText } = await import("../../mail/src/http-body");
+  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => {
+    expect(input).toBeInstanceOf(Request);
+    let sent = 0;
+    return new Response(new ReadableStream<Uint8Array>({ pull(c) {
+      if (++sent > 20) c.close();
+      else c.enqueue(new Uint8Array(16_384));
+    } }));
+  } });
+  const request = net.fetchGoogle(await policy(), descriptor);
+  for (let i = 0; i < 65; i++) {
+    const response = await request("https://gmail.googleapis.com/history");
+    await expect(readResponseText(response, 256 * 1024, new AbortController().signal)).rejects.toMatchObject({ name: "ResponseBodyLimitError" });
+    await expect.poll(() => net.googlePending()).toBe(0);
+  }
+  const response = await request("https://gmail.googleapis.com/recovered");
+  await response.arrayBuffer();
+  expect(net.googlePending()).toBe(0);
+});

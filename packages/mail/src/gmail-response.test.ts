@@ -163,7 +163,7 @@ describe("Gmail successful response validation", () => {
     const box = await rejectedRead(mailbox({ cursor: kind === "history" ? { historyId: "10" } : null, respond: (url) => {
       if (url.pathname.endsWith(`/${kind}`)) return kind === "history" ? { historyId: "11", nextPageToken: token } : { nextPageToken: token };
     } }));
-    expect(box.requests.filter((url) => url.pathname.endsWith(`/${kind}`))).toHaveLength(2);
+    expect(box.requests.filter((url) => url.pathname.endsWith(`/${kind}`))).toHaveLength(kind === "history" ? 4 : 2);
     expect(box.requests.at(-1)?.searchParams.get("pageToken")).toBe(token);
   });
 
@@ -291,7 +291,7 @@ describe("Gmail successful response validation", () => {
     const box = mailbox({ respond: (url) => {
       if (url.pathname.endsWith("/messages")) return { messages: [{ id: "m1" }, { id: "large" }] };
       if (url.pathname.endsWith("/messages/large")) {
-        return wireResponse({ id: "large", threadId: "large-thread", raw: source, labelIds: ["INBOX"] });
+        return wireResponse({ id: "large", threadId: "large-thread", ...(url.searchParams.get("format") === "raw" && { raw: source }), labelIds: ["INBOX"] });
       }
     } });
     await box.sync();

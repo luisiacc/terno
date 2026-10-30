@@ -915,7 +915,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? await this.read(() => findIngestMessage(this.c, m)) : undefined;
@@ -923,6 +923,7 @@ export class IdbMailStore implements MailStore {
       }
       return this.command(
         () => {
+          check?.();
           const flagBefore = flagEpochs(idbFlags(this.c));
           const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
           const touched = new Set(result.touchedThreads);
@@ -961,9 +962,10 @@ export class IdbMailStore implements MailStore {
         { durability: "relaxed" },
       );
     },
-    updateFlags: (accountId, updates, observation) =>
+    updateFlags: (accountId, updates, observation, check) =>
       this.command(
         () => {
+          check?.();
           const messages = T(this.c, "messages");
           const threads = new Set<number>();
           const reconciliation: { flagReconcileAccounts?: number[] } = {};
@@ -992,7 +994,7 @@ export class IdbMailStore implements MailStore {
         },
         { durability: "relaxed" },
       ),
-    remove: (ids) => this.command(() => ({ touched: [...deleteMessages(this.c, ids)] }), { durability: "relaxed" }),
+    remove: (ids, check) => this.command(() => { check?.(); return { touched: [...deleteMessages(this.c, ids)] }; }, { durability: "relaxed" }),
     pendingMessageIds: (accountId) => this.read(() => messagesWithPendingOps(this.c, accountId)),
     arrivals: (ids) => this.read(() => arrivalRows(this.db, ids)),
   };
@@ -1625,8 +1627,9 @@ export class IdbMailStore implements MailStore {
         if (r) accounts.update(r, { provider_config: JSON.stringify(config) });
       }),
     // merged into the latest stored config in one command: preferences saved meanwhile stay
-    setCursor: (id, cursor) =>
+    setCursor: (id, cursor, check) =>
       this.command(() => {
+        check?.();
         const accounts = T(this.c, "accounts");
         const r = accounts.get(id);
         if (r) accounts.update(r, { provider_config: JSON.stringify({ ...(JSON.parse(r.provider_config) as object), cursor }) });

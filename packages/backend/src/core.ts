@@ -769,7 +769,7 @@ export class BackendCore {
       if (life) this.assertCurrent(life);
       const classifier = await this.classifier();
       checkCurrent?.();
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation }) : null);
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
@@ -1091,7 +1091,7 @@ export class BackendCore {
           if (this.current(life)) breadcrumb("sync", code, { accountKind: accountKindOf(account.kind), ...(fields?.durationMs !== undefined && { durationMs: fields.durationMs }) });
         },
         loadCursor: async <T,>() => this.accountRead(life, async () => ((await this.store.accounts.config<{ cursor?: T }>(accountId))?.config.cursor ?? null) as T | null),
-        saveCursor: (cursor) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor)),
+        saveCursor: (cursor, check) => this.accountWrite(life, () => this.store.accounts.setCursor(accountId, cursor, check)),
         // Providers cancel their reads on reset/close. Sends retain their own acceptance/ambiguity signal.
         fetch: (input, init) => {
           if (!this.current(life) || google) throw new RequestNotDispatchedError(L("errors.accountGone"));
@@ -1250,7 +1250,7 @@ export class BackendCore {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
             checkCurrent();
-            const result = await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, o?.authoritative === false ? undefined : observation ?? undefined));
+            const result = await this.accountWrite(life, () => this.store.sync.updateFlags(accountId, chunk, o?.authoritative === false ? undefined : observation ?? undefined, checkCurrent));
             for (const t of result.touched) touched.add(t);
             this.reconcileFlags(result.flagReconcileAccounts);
           });
@@ -1269,7 +1269,7 @@ export class BackendCore {
         },
         removeMessages: async (ids) => {
           checkCurrent();
-          this.notifyChanged((await this.accountWrite(life, () => this.store.sync.remove(ids))).touched);
+          this.notifyChanged((await this.accountWrite(life, () => this.store.sync.remove(ids, checkCurrent))).touched);
         },
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),

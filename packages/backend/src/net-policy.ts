@@ -133,6 +133,21 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
       },
       cancel(reason) {
         cancelled = true;
+        // A control-body limit may leave a small tail. Only native EOF/error proves termination;
+        // ordinary cancellation (including abort) still retains the physical capacity slot.
+        if (reason instanceof Error && reason.name === "ResponseBodyLimitError") {
+          return (async () => {
+            let bytes = 0;
+            try {
+              for (let chunks = 0; chunks < 32 && bytes <= 256 * 1024 && !request.signal.aborted; chunks++) {
+                const chunk = await reader.read();
+                if (chunk.done) { if (!request.signal.aborted) release(); return; }
+                bytes += chunk.value.byteLength;
+              }
+            } catch { if (!request.signal.aborted) release(); return; }
+            await reader.cancel(reason);
+          })();
+        }
         return reader.cancel(reason);
       },
     }, { highWaterMark: 0 });

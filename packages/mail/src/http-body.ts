@@ -33,6 +33,7 @@ export async function readResponseText(response: Response, limit: number, signal
   const cancel = () => { void reader.cancel().catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   let complete = false;
+  let overflow: ResponseBodyLimitError | undefined;
   try {
     const decoder = new TextDecoder("utf-8", { fatal: true });
     const parts: string[] = [];
@@ -49,7 +50,7 @@ export async function readResponseText(response: Response, limit: number, signal
       signal.throwIfAborted();
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
-      if (bytes > limit) throw new ResponseBodyLimitError(limit);
+      if (bytes > limit) { overflow = new ResponseBodyLimitError(limit); throw overflow; }
       for (let offset = 0; offset < chunk.value.byteLength;) {
         const count = Math.min(buffer.length - filled, chunk.value.byteLength - offset);
         buffer.set(chunk.value.subarray(offset, offset + count), filled);
@@ -69,7 +70,7 @@ export async function readResponseText(response: Response, limit: number, signal
     return parts.join("");
   } finally {
     signal.removeEventListener("abort", cancel);
-    if (!complete) cancel();
+    if (!complete) { void reader.cancel(overflow).catch(() => {}); }
     reader.releaseLock();
   }
 }

@@ -423,13 +423,14 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
         staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
       }
       return this.db.tx(() => {
+        check?.();
         const flagBefore = flagEpochs(sqlFlags(this.db));
         const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
         const touched = new Set(result.touchedThreads);
@@ -465,8 +466,9 @@ export class SqlMailStore implements MailStore {
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       });
     },
-    updateFlags: async (accountId, updates, observation) =>
+    updateFlags: async (accountId, updates, observation, check) =>
       this.db.tx(() => {
+        check?.();
         // read inside this unit: a user action committed just before is honoured
         const pending = pendingFlagFields(this.db, accountId, updates.map((u) => u.messageId));
         const threads = new Set<number>();
@@ -500,7 +502,7 @@ export class SqlMailStore implements MailStore {
         recomputeThreads(this.db, threads);
         return { touched: [...threads], ...reconciliation };
       }),
-    remove: async (ids) => ({ touched: [...deleteMessages(this.db, ids)] }),
+    remove: async (ids, check) => { check?.(); return { touched: [...deleteMessages(this.db, ids)] }; },
     pendingMessageIds: async (accountId) => messagesWithPendingOps(this.db, accountId),
     arrivals: async (ids) => arrivalRows(this.db, ids),
   };
@@ -1000,7 +1002,7 @@ export class SqlMailStore implements MailStore {
     },
     setSyncState: async (id, patch) => setAccountSyncState(this.db, id, patch),
     setProviderConfig: async (id, config) => setAccountProviderConfig(this.db, id, config),
-    setCursor: async (id, cursor) => setAccountCursor(this.db, id, cursor),
+    setCursor: async (id, cursor, check) => { check?.(); setAccountCursor(this.db, id, cursor); },
   };
 
   readonly owner: MailStore["owner"] = {

@@ -179,7 +179,7 @@ export interface ProviderContext {
   getAppSecret(name: string): Promise<string | null>;
   /** persistent provider sync cursor (stored on the account) */
   loadCursor<T>(): Promise<T | null>;
-  saveCursor(cursor: unknown): Promise<void>;
+  saveCursor(cursor: unknown, check?: () => void): Promise<void>;
   /** every HTTP request a provider makes goes through this (the backend's network policy, purpose "mail") */
   fetch: typeof fetch;
   /** plan 20: push stopped or came back (diagnostics; counts and durations only) */
