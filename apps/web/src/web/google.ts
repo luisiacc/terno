@@ -100,7 +100,7 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
  * without a server: the token goes to the worker's memory and is never stored.
  * With `accountId` (signing that account in again, plan 25) the token must be
  * that account's: another Google account picked in the popup changes nothing.
- * `syncWindowDays` (plan 76, Add account): the days a new mailbox downloads.
+ * `syncWindowDays` (plan 79, Add account): the days a new mailbox downloads.
  */
 export async function connectGmailWeb(loginHint?: string, accountId?: number, o: { syncWindowDays?: number } = {}): Promise<Account> {
   const clientId = getApp().settings?.gmailClientId;

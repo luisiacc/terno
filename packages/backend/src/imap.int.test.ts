@@ -1052,7 +1052,7 @@ describe("IMAP provider against ImapKit", () => {
   });
 });
 
-describe("a new account's first sync (plan 76)", () => {
+describe("a new account's first sync (plan 79)", () => {
   /** each ingest's subjects and each body set, in order, through the backend's own sink */
   const record = (backend: Backend) => {
     const events: string[] = [];
@@ -1161,11 +1161,12 @@ describe("a new account's first sync (plan 76)", () => {
     await backend.syncAccount(account.id);
     await backend.syncAccount(account.id);
     expect(before).toBeGreaterThan(0);
+    // a reset like any other: the preview's 250 lose their places and wait for proof of identity (never matched by
+    // envelope), nothing stays placed under the old validity, and nothing is written twice
     const rows = placed(backend);
-    expect(rows).toHaveLength(259);
-    expect(count(backend, "SELECT 1 FROM messages")).toBe(259);
-    expect(rows.some((r) => r.subject === "msg 260")).toBe(false);
+    expect(rows).toHaveLength(10);
     expect(rows.every((r) => r.uidvalidity !== before && r.uid > 1000)).toBe(true);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(260);
   });
 
   it("a preview body the server won't give doesn't hold back the rest of the first sync", async () => {

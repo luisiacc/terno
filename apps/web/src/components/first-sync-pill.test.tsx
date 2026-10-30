@@ -18,7 +18,7 @@ document.body.append(host);
 const root = createRoot(host);
 afterEach(() => act(() => setApp({ accounts: [] })));
 
-it("plan 76: only an account's first pass, and not while it's offline, signed out or failed", () => {
+it("plan 79: only an account's first pass, and not while it's offline, signed out or failed", () => {
   expect(firstSyncing(account(1, {}))).toBe(true);
   expect(firstSyncing(account(1, { lastSyncAt: 5 }))).toBe(false);
   expect(firstSyncing(account(1, { status: "idle" }))).toBe(false);
@@ -27,7 +27,7 @@ it("plan 76: only an account's first pass, and not while it's offline, signed ou
   expect(firstSyncing(account(1, { authRequired: true }))).toBe(false);
 });
 
-it("plan 76: says the account's window, the General one when it has none, and counts several", async () => {
+it("plan 79: says the account's window, the General one when it has none, and counts several", async () => {
   await act(async () => root.render(<FirstSyncPill />));
   expect(host.querySelector('[data-testid="first-sync-pill"]')).toBeNull();
   act(() => setApp({ accounts: [account(1, {}, 30), account(2, { lastSyncAt: 5 })] }));

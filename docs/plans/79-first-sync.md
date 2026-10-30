@@ -1,4 +1,4 @@
-# 76 · A calm first sync
+# 79 · A calm first sync
 
 ## Request
 
@@ -92,3 +92,9 @@ Also: `settings-edits.test.ts` expected the old 90-day default.
 
 1. **The pill said the window in other words than the dialog.** "The last year" read "the last 365 days". The pill now uses the dialog's label: "The last year, newest first". Test: the pill unit test for 365 and 730 days.
 2. **A refused login during the preview's bodies was taken for a refused body.** The check looked at the raw error before reading it as the server meant it, so a raw `authenticationFailed` was skipped. It's now read first, like `tolerate` does, and stops the pass with a sign-in to redo. Test: a raw refused login on the first preview body asks for a sign-in (fails before the fix).
+
+## Rebased onto main
+
+Numbered 79 (main took 76 and 77; 78 is in progress elsewhere). Main had rewritten the folder read (unknown locators never take an identity from an envelope; one `introduced` set per pass). The preview is the same on top of it: it skips a folder with state, takes the highest 250 UIDs of the window, passes the pass's `introduced` set (so a twin of a previewed message is told apart as in a plain read), returns its UIDVALIDITY before any cursor write, and the full read clears the mark.
+
+Main also no longer re-places a reset folder's mail by envelope (it waits for proof of identity), so round 1's reset test now checks main's rule: after a reset between the preview and the full read, nothing stays placed under the old validity, the preview's messages wait like any reset's, and nothing is written twice. It still fails without the preview's mark.

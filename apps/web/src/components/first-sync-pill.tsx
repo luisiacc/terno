@@ -5,7 +5,7 @@ import { windowLabel } from "~/lib/settings-values";
 import { useApp } from "~/state/app";
 
 /**
- * Plan 76: an account's first pass is running (it never finished one). Not while it can't reach its server, needs a
+ * Plan 79: an account's first pass is running (it never finished one). Not while it can't reach its server, needs a
  * sign-in or failed: the connection pill and the sign-in notice speak then, and this comes back with the retry.
  */
 export function firstSyncing(a: Account): boolean {
@@ -13,7 +13,7 @@ export function firstSyncing(a: Account): boolean {
   return s.status === "syncing" && s.lastSyncAt === null && !s.connection && !s.authRequired;
 }
 
-/** Plan 76: the sidebar says, quietly, that a new account's mail is still coming in; nothing otherwise. */
+/** Plan 79: the sidebar says, quietly, that a new account's mail is still coming in; nothing otherwise. */
 export function FirstSyncPill() {
   const syncing = useApp((s) => s.accounts).filter(firstSyncing);
   const general = useApp((s) => s.settings?.syncWindowDays ?? 180);

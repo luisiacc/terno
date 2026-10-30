@@ -281,7 +281,7 @@ const en = {
   "account.ownerFirst": "The first email address you connect becomes your Terno account: you’ll use it to sign in, and we’ll bill it.",
   "account.continueGoogle": "Continue with Google",
   "account.orImap": "or with IMAP/SMTP",
-  // plan 76: how far back a new account downloads, asked when connecting
+  // plan 79: how far back a new account downloads, asked when connecting
   "account.window.label": "Download mail from",
   "account.window.days": "The last {days} days",
   "account.window.year": "The last year",
@@ -583,7 +583,7 @@ const en = {
   "connection.retryingIn": "Retrying in {time}",
   "connection.reconnecting": "Reconnecting…",
   "connection.retryNow": "Retry now",
-  // plan 76: the sidebar's pill while an account's first sync runs
+  // plan 79: the sidebar's pill while an account's first sync runs
   "firstSync.title": "Downloading your mail",
   "firstSync.detail": "{window}, newest first",
   "firstSync.accounts": { one: "# account, newest first", other: "# accounts, newest first" },

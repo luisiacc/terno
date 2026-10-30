@@ -788,7 +788,7 @@ export const contract = {
       smtp: imapServer,
       password: z.string().min(1).max(1000),
       verify: z.boolean().default(true),
-      /** plan 76: the days of mail asked for when connecting; absent: the General setting */
+      /** plan 79: the days of mail asked for when connecting; absent: the General setting */
       syncWindowDays: syncWindow.optional(),
     }),
     { timeoutMs: 60_000 },

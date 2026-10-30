@@ -57,7 +57,7 @@ describe("Google connection RPC validation", () => {
     expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(account.id)]).toEqual({ connections: true, otherContacts: false, apiDisabled: false });
   });
 
-  it("plan 76: the days chosen when connecting are the new account's window, on desktop and the web; a reconnect keeps its own", async () => {
+  it("plan 79: the days chosen when connecting are the new account's window, on desktop and the web; a reconnect keeps its own", async () => {
     const desktop = await setup(false);
     expect(await desktop.client.call("accounts.connectGmail", { syncWindowDays: 365 })).toMatchObject({ syncWindowDays: 365 });
     const web = await setup();

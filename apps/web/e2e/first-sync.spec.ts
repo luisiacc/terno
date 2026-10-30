@@ -9,7 +9,7 @@ import { startDevServer, type DevServer } from "../../backend-dev/src/server";
 const ctx = { clientId: "synthetic", origin: "dev" as const };
 const NEW = "new-account@example.test";
 
-// plan 76: the window is asked for when connecting, the account downloads that, and the sidebar says so while it does
+// plan 79: the window is asked for when connecting, the account downloads that, and the sidebar says so while it does
 for (const theme of ["light", "dark"] as const) {
   test(`a new account: the window asked for, a quiet pill while its first sync runs (${theme}) @design`, async ({ page }, info) => {
     const dir = mkdtempSync(join(tmpdir(), "terno-first-sync-"));
