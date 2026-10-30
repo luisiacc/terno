@@ -264,54 +264,96 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     expect((await t.client.call("ops.list", {})).find((op) => op.id === queued.opId)?.state).toBe("succeeded");
   });
 
-  it.each(["MIME preparation", "request dispatch"] as const)("Gmail cancellation after %s across reconnect preserves the dispatch boundary", async (phase) => {
-    const t = await setup(kind, "gmail");
-    const entered = t.gate();
-    const waiting = t.gate();
+  it.each(["MIME preparation", "request dispatch", "request dispatch late success"] as const)("Gmail cancellation after %s across reconnect preserves the dispatch boundary", async (phase) => {
+    const entered = gate();
+    const waiting = gate();
+    const routes: string[] = [];
+    const unexpected: string[] = [];
     let builds = 0;
-    let requests = 0;
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
-      requests++;
-      if (phase === "request dispatch") {
-        entered.release();
-        await waiting.promise;
-        throw new DOMException("Synthetic cancellation after dispatch", "AbortError");
+    let sends = 0;
+    let physicalSettled = false;
+    let sendSignal: AbortSignal | undefined;
+    const guardedFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const request = input as Request;
+      const route = `${request.method} ${request.url}`;
+      routes.push(route);
+      if (route === "GET https://gmail.googleapis.com/gmail/v1/users/me/profile") {
+        return Response.json({ emailAddress: "first@example.test", historyId: "1" });
       }
-      return new Response(JSON.stringify({ id: "accepted-once", threadId: "accepted-thread" }), { status: 200 });
+      if (route === "POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send") {
+        sends++;
+        sendSignal = request.signal;
+        expect(request.headers.get("authorization")).toBe("Bearer synthetic-access");
+        expect(await request.json()).toEqual({ raw: "c3ludGhldGljIHJhdw" });
+        if (phase !== "MIME preparation") {
+          entered.release();
+          await waiting.promise;
+          physicalSettled = true;
+          if (phase === "request dispatch") throw new DOMException("Synthetic cancellation after dispatch", "AbortError");
+        }
+        physicalSettled = true;
+        return Response.json({ id: "accepted-once", threadId: "accepted-thread" });
+      }
+      unexpected.push(route);
+      throw new Error(`Unexpected synthetic transport route: ${route}`);
     });
-    const transport = vi.spyOn(t.backend.net, "fetchFor").mockReturnValue(fetch);
-    t.registry.create = (ctx) => ({
-      ...createGmailApiProvider(ctx, {
-        tokens: { get: async () => "synthetic-access", invalidate() {} },
-        buildRaw: async () => {
-          if (++builds === 1 && phase === "MIME preparation") { entered.release(); await waiting.promise; }
-          return new TextEncoder().encode("synthetic raw");
-        },
-      }),
-      // The test drives real Gmail execution; no mailbox enumeration is needed (nor plan 68's label list).
-      async sync() {},
-      async folders() {},
-    });
+    vi.stubGlobal("fetch", guardedFetch);
+    cleanup.push(async () => { waiting.release(); vi.unstubAllGlobals(); });
+    const t = await setup(kind, "gmail");
+    cleanup.push(async () => { waiting.release(); });
+    const managed = vi.spyOn(t.backend.net, "fetchGoogle");
+    const contexts: ProviderContext[] = [];
+    t.registry.create = (ctx) => {
+      contexts.push(ctx);
+      return {
+        ...createGmailApiProvider(ctx, {
+          tokens: { get: async () => "synthetic-access", invalidate() {} },
+          buildRaw: async () => {
+            if (++builds === 1 && phase === "MIME preparation") { entered.release(); await waiting.promise; }
+            return new TextEncoder().encode("synthetic raw");
+          },
+        }),
+        // The test drives real Gmail execution; no mailbox enumeration is needed (nor plan 68's label list).
+        async sync() {},
+        async folders() {},
+      };
+    };
     t.registry.connectGmail = async (o) => ({ email: o.loginHint!, name: "Synthetic", sub: "synthetic-subject", emailVerified: true, refreshToken: "synthetic-refresh", grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] });
     await t.client.call("settings.update", { gmailClientId: "synthetic-client" });
     t.backend.startAccount((await t.backend.store.accounts.get(t.ids[0]!))!);
     await t.backend.syncAccount(t.ids[0]!);
     const queued = await t.client.call("compose.send", { accountId: t.ids[0]!, to: [{ name: "", email: "receiver@example.test" }], subject: "once", bodyText: "synthetic" });
+    const old = contexts[0]!;
     const worker = t.backend.runWorker();
-    await entered.promise;
-    expect(requests).toBe(phase === "MIME preparation" ? 0 : 1);
+    await Promise.race([entered.promise, worker.then(() => { throw new Error("Worker settled before the expected cancellation boundary"); })]);
+    expect(sends).toBe(phase === "MIME preparation" ? 0 : 1);
+    expect(physicalSettled).toBe(false);
+    old.google!.check({ endpoint: "gmail-api", purpose: "mail" });
     try {
       await t.client.call("accounts.reconnect", { id: t.ids[0]! });
+      expect(() => old.google!.check({ endpoint: "gmail-api", purpose: "mail" })).toThrow();
+      if (phase !== "MIME preparation") expect(sendSignal?.aborted).toBe(false);
+      expect(await t.backend.getSecret(`account:${t.ids[0]}:refreshToken`)).toBe("synthetic-refresh");
     } finally {
       waiting.release();
     }
     await worker;
     await t.backend.runWorker();
-    expect(requests).toBe(1);
-    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/messages\/send$/), expect.objectContaining({ method: "POST" }));
+    expect(sends).toBe(1);
+    expect(physicalSettled).toBe(true);
+    await expect.poll(() => t.backend.net.googlePending()).toBe(0);
+    expect(unexpected).toEqual([]);
+    expect(routes).toEqual(["GET https://gmail.googleapis.com/gmail/v1/users/me/profile", "POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send"]);
+    expect(managed).toHaveBeenCalledTimes(2);
+    expect(guardedFetch).toHaveBeenCalledTimes(2);
     expect(builds).toBe(phase === "MIME preparation" ? 2 : 1);
-    expect((await t.client.call("ops.list", {})).find((op) => op.id === queued.opId)?.state).toBe(phase === "MIME preparation" ? "succeeded" : "unknown");
-    transport.mockRestore();
+    const op = (await t.client.call("ops.list", {})).find((item) => item.id === queued.opId);
+    expect(op?.state).toBe(phase === "MIME preparation" ? "succeeded" : "unknown");
+    expect(op?.awaitingAuth).not.toBe(true);
+    await t.backend.runWorker();
+    expect((await t.client.call("ops.list", {})).find((item) => item.id === queued.opId)).toEqual(op);
+    expect(sends).toBe(1);
+    managed.mockRestore();
   });
 
   it("an admitted store failure rejects both its caller and removal without deleting the account", async () => {
