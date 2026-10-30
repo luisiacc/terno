@@ -1,0 +1,5 @@
+# Fifth provider-reliability release milestone
+
+Announced 2026-10-30 after print Escape, autocomplete measurement, recipient paint and huge-suggestion runtime repairs landed. Run each required gate once, serially, on the recorded clean main: typecheck, lint, unit plus normal WASM, E2E, standalone Web, UI performance, backend performance, macOS build and fresh default packaged smoke. Preserve original workloads, thresholds, windows, samples, timeouts and existing skip policy. Report failures and not-run cases separately; no retries seeking green.
+
+Use inherited network isolation, synthetic providers/temp profiles, distinct ports and captured owned process identities. Record stage source/index identities and fresh package hashes. Preserve earlier archives and restore preexisting generated outputs. Stop safely on source drift. No source edits during verification; repair failures afterward in isolated worktrees. Previous fourth-milestone passes apply only to their recorded source, and its interrupted/unrun stages remain unqualified.

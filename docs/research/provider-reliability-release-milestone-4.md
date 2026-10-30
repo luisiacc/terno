@@ -35,3 +35,8 @@ Complete logs, exact stage identities, cleanup and dependency checks: `/tmp/tern
 ## Landed recipient paint repair
 
 `f325f4ee` removes400unnecessary chip-element allocations while keeping delegated handlers current. Root23unit+12browser/types/lint pass; both unchanged paint gates pass at12.8ms(chips) and15.3ms(suggestions),16.7mscap/multiplier1. One runtime reviewPASS/0findings. [Evidence and limits](../plans/drafts/release4-recipient-paint.md). The separate10MBsuggestion paired gate remains open; no full-release clearance yet.
+
+
+## Landed huge-suggestion runtime repair
+
+`eede9b7b` avoids repeated toolbar eligibility scans on ghost-only updates while retaining all format inputs and bubble positioning. Root29unit/1inherited skip,2light/dark browser controls/types/lint and original10MBpaired+placement test pass at every position. One reviewPASS/0findings. [Evidence and limits](../plans/drafts/release4-huge-suggestion-runtime.md). Fifth full milestone follows; this does not retrospectively complete the fourth run or supply its unrun backend/build/smoke results.
