@@ -58,6 +58,7 @@ export function createHandlers(b: Backend): Handlers {
   const store = b.store;
   const storage = new StorageMaintenance(b);
   let attachmentCalls = 0;
+  let settingsUpdates = Promise.resolve();
   const attachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
     if (origin !== "renderer" || attachmentCalls >= 2) throw new RpcError("UNAVAILABLE", L("attachments.busy"));
     attachmentCalls++;
@@ -743,24 +744,29 @@ export function createHandlers(b: Backend): Handlers {
     "storage.report": () => storage.report(),
     "storage.remove": ({ buckets, olderThanDays, jobId }) => storage.remove({ buckets, olderThanDays, jobId }),
 
-    "settings.update": async (patch) => {
-      const endpoint = patch.ai?.baseURL ?? (await readSettings(store)).ai.profiles.compatible?.baseURL;
-      const endpointIsLocal = endpoint ? await b.net.isLoopbackEndpoint(endpoint) : false;
-      try {
-        const was = await readSettings(store);
-        const next = await updateSettings(store, patch, { endpointIsLocal });
-        b.aiAssist.settingsChanged(patch);
-        if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
-        if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
-        // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
-        if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
-        // plan 41: the badge follows at once; notifications turned off drop what was pending
-        if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
-        return next;
-      } catch (error) {
-        if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));
-        throw error;
-      }
+    "settings.update": (patch) => {
+      // Keep committed settings and their notifications in the same order.
+      const updating = settingsUpdates.then(async () => {
+        const endpoint = patch.ai?.baseURL ?? (await readSettings(store)).ai.profiles.compatible?.baseURL;
+        const endpointIsLocal = endpoint ? await b.net.isLoopbackEndpoint(endpoint) : false;
+        try {
+          const was = await readSettings(store);
+          const next = await updateSettings(store, patch, { endpointIsLocal });
+          b.aiAssist.settingsChanged(patch);
+          if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
+          if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
+          // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
+          if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
+          // plan 41: the badge follows at once; notifications turned off drop what was pending
+          if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
+          return next;
+        } catch (error) {
+          if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));
+          throw error;
+        }
+      });
+      settingsUpdates = updating.then(() => {}, () => {});
+      return updating;
     },
     "settings.setSecret": async ({ name, value }) => {
       if (value) await b.setSecret(name, value);

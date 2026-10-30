@@ -170,7 +170,10 @@ export class AiAssist {
         instructions: "The labels are the user's mail categories. Answer null unless the message clearly belongs to one.",
       }, generation.signal);
       if (!this.current(generation)) return "stop";
-      if (!r?.label || r.confidence < AI_MIN_CONFIDENCE) return "done";
+      if (!r?.label || r.confidence < AI_MIN_CONFIDENCE) {
+        this.active = null;
+        return "done";
+      }
       const score = band.find((s) => names.get(s.categoryId) === r.label);
       if (!score || !store.isOpen) return "done";
       // the provider took a while: the user, the settings or the model may have spoken since

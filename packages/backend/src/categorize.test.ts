@@ -799,11 +799,15 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(t.decision(t.threads[0]!)).toBeUndefined();
   });
 
-  it("cancels a committed disable even when its readback sees a concurrent reenable", async () => {
+  it("does not discard fresh work when a committed disable notification is delayed", async () => {
     const started = gate(); const answer = gate(); const committed = gate(); const returned = gate();
     const requests: CompletionRequest[] = [];
-    const t = await publicAssist(1, async (req) => { requests.push(req); started.release(); await answer.promise; return { stop: "end", text: "{}" }; });
-    await t.backend.aiAssist.enqueue(t.threads);
+    const t = await publicAssist(2, async (req) => {
+      requests.push(req);
+      if (requests.length === 1) { started.release(); await answer.promise; return { stop: "end", text: "{}" }; }
+      return classification(req);
+    });
+    await t.backend.aiAssist.enqueue([t.threads[0]!]);
     const running = t.backend.aiAssist.drain();
     await started.promise;
     const update = t.backend.store.settings.update.bind(t.backend.store.settings);
@@ -815,15 +819,54 @@ describe("categorizer: auto-apply at ingestion", () => {
     });
     const disabling = t.client.call("settings.update", { aiCategorize: false });
     await committed.promise;
-    await t.client.call("settings.update", { aiCategorize: true });
+    let enabled = false;
+    const enabling = t.client.call("settings.update", { aiCategorize: true }).then((settings) => { enabled = true; return settings; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect.soft(enabled).toBe(false);
     returned.release();
-    expect((await disabling).aiCategorize).toBe(true); // readback coalesces the two committed updates
+    expect.soft((await disabling).aiCategorize).toBe(false);
+    await enabling;
     spy.mockRestore();
-    expect.soft(requests[0]!.signal.aborted).toBe(true);
+    await t.backend.aiAssist.enqueue([t.threads[1]!]);
+    expect(t.backend.aiAssist.pending).toBe(1);
     answer.release();
     await running;
-    expect(requests).toHaveLength(1);
+    await t.backend.aiAssist.drain();
+    expect(requests).toHaveLength(2);
     expect(t.decision(t.threads[0]!)).toBeUndefined();
+    expect(t.decision(t.threads[1]!)?.kind).toBe("suggest");
+  });
+
+  it.each([{ label: null, confidence: 0.95 }, { label: "Facturas", confidence: 0.2 }])("retains accepted $label/$confidence admission before drain resumes", async (result) => {
+    let calls = 0;
+    const t = await publicAssist(1, async (req) => {
+      calls++;
+      const completion = classification(req);
+      const parsed = JSON.parse(completion.text);
+      Object.assign(parsed.results[0], result);
+      return { ...completion, text: JSON.stringify(parsed) };
+    });
+    const assist = t.backend.aiAssist;
+    const consider = Reflect.get(assist, "consider") as (id: number, generation: AbortController) => Promise<"done" | "wait" | "stop">;
+    let first = true;
+    // Pause after real task acceptance and before the awaiting drain can clean up.
+    Reflect.set(assist, "consider", async (id: number, generation: AbortController) => {
+      const outcome = await consider.call(assist, id, generation);
+      if (first) {
+        first = false;
+        await t.client.call("settings.update", { aiCategorize: false });
+        await t.client.call("settings.update", { aiCategorize: true });
+      }
+      return outcome;
+    });
+    await assist.enqueue(t.threads);
+    await assist.drain();
+    Reflect.set(assist, "consider", consider);
+    await assist.enqueue(t.threads);
+    await assist.drain();
+    expect(calls).toBe(1);
+    expect(t.decision(t.threads[0]!)).toBeUndefined();
+    expect(t.inCategory(t.threads[0]!)).toBeNull();
   });
 
   it("does not cancel active work when a disabling settings patch is rejected", async () => {
