@@ -58,7 +58,7 @@ test.describe("local mode and AI providers", () => {
     // it is the first row of General
     await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
     const toggle = page.getByRole("switch", { name: "Local mode" });
-    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers and the remote images you load/);
+    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers, the remote images you load and the error reports you choose to send/);
     await expect(toggle).toBeChecked();
 
     await toggle.click();

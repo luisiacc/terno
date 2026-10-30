@@ -81,7 +81,7 @@ test.describe("a fresh install's default", () => {
     await focusList(page);
     await page.keyboard.press("Meta+,");
     await page.getByTestId("tab-general").click();
-    await expect(page.getByTestId("local-mode-row")).toContainText("and website icons (Appearance)");
+    await expect(page.getByTestId("local-mode-row")).toContainText("website icons (Appearance) and the error reports you choose to send");
     await page.getByTestId("tab-appearance").click();
     const row = page.getByTestId("site-icons-row");
     await row.scrollIntoViewIfNeeded();
