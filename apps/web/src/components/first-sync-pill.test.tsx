@@ -32,9 +32,14 @@ it("plan 76: says the account's window, the General one when it has none, and co
   expect(host.querySelector('[data-testid="first-sync-pill"]')).toBeNull();
   act(() => setApp({ accounts: [account(1, {}, 30), account(2, { lastSyncAt: 5 })] }));
   expect(host.querySelector('[role="status"]')?.textContent).toBe("Downloading your mail");
-  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("Newest first, the last 30 days");
+  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("The last 30 days, newest first");
   act(() => setApp({ accounts: [account(1, {})] }));
-  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("Newest first, the last 180 days");
+  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("The last 180 days, newest first");
+  // in the words the dialog chose it with ("The last year", never "365 days")
+  act(() => setApp({ accounts: [account(1, {}, 365)] }));
+  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("The last year, newest first");
+  act(() => setApp({ accounts: [account(1, {}, 730)] }));
+  expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("The last 2 years, newest first");
   act(() => setApp({ accounts: [account(1, {}), account(2, {})] }));
   expect(host.querySelector('[data-testid="first-sync-detail"]')?.textContent).toBe("2 accounts, newest first");
   act(() => setApp({ accounts: [account(1, { status: "idle", lastSyncAt: 9 })] }));

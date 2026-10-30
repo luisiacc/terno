@@ -1,6 +1,7 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Loader2 } from "lucide-react";
+import { windowLabel } from "~/lib/settings-values";
 import { useApp } from "~/state/app";
 
 /**
@@ -17,7 +18,7 @@ export function FirstSyncPill() {
   const syncing = useApp((s) => s.accounts).filter(firstSyncing);
   const general = useApp((s) => s.settings?.syncWindowDays ?? 180);
   if (!syncing.length) return null;
-  const detail = syncing.length === 1 ? t("firstSync.detail", { days: syncing[0]!.syncWindowDays ?? general }) : t("firstSync.accounts", { count: syncing.length });
+  const detail = syncing.length === 1 ? t("firstSync.detail", { window: windowLabel(syncing[0]!.syncWindowDays ?? general) }) : t("firstSync.accounts", { count: syncing.length });
   return (
     <div className="flex shrink-0 px-2 pt-1" data-testid="first-sync-pill">
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-sidebar-border py-1.5 pr-2 pl-2.5 text-xs">

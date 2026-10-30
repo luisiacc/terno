@@ -585,7 +585,7 @@ const en = {
   "connection.retryNow": "Retry now",
   // plan 76: the sidebar's pill while an account's first sync runs
   "firstSync.title": "Downloading your mail",
-  "firstSync.detail": "Newest first, the last {days} days",
+  "firstSync.detail": "{window}, newest first",
   "firstSync.accounts": { one: "# account, newest first", other: "# accounts, newest first" },
   // plan 25: an account that needs you to sign in again (the sidebar's notice, the row's key, the panel)
   "signIn.notice.one": "{name} needs a sign-in",

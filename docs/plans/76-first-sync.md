@@ -33,7 +33,7 @@
 ### The indicator
 
 - **First sync** = an account that has never completed a pass (`syncState.lastSyncAt === null`) and isn't offline, signed out or in error.
-- A quiet pill in the sidebar, where the connection and update pills live: a small spinner (none when motion is reduced or off), **"Downloading your mail"** and, below, **"Newest first · last 180 days"** (several accounts: "2 accounts"; one of several: its name). `role="status"` on the title only. It disappears when the pass completes. Lazy cost: none; it reads the accounts already in the store.
+- A quiet pill in the sidebar, where the connection and update pills live: a small spinner (none when motion is reduced or off), **"Downloading your mail"** and, below, **"The last 180 days, newest first"** (the window in the dialog's words: "The last year", never "365 days") (several accounts: "2 accounts"; one of several: its name). `role="status"` on the title only. It disappears when the pass completes. Lazy cost: none; it reads the accounts already in the store.
 - The dot's ping stays as is (any pass).
 
 ### Ports
@@ -87,3 +87,8 @@ All three tests fail on the code before these fixes.
 1. **`previewed` came back from JSON with a prototype.** A folder named `constructor` read an inherited function as the preview's validity, took it for a reset, and failed every later pass. It's now rebuilt with no prototype on load, like `mailboxes` and `resetPending`, and dropped once empty. Test: a `constructor` folder read on the retry after the preview stops (it fails before the fix).
 
 Also: `settings-edits.test.ts` expected the old 90-day default.
+
+## Own review after round 2
+
+1. **The pill said the window in other words than the dialog.** "The last year" read "the last 365 days". The pill now uses the dialog's label: "The last year, newest first". Test: the pill unit test for 365 and 730 days.
+2. **A refused login during the preview's bodies was taken for a refused body.** The check looked at the raw error before reading it as the server meant it, so a raw `authenticationFailed` was skipped. It's now read first, like `tolerate` does, and stops the pass with a sign-in to redo. Test: a raw refused login on the first preview body asks for a sign-in (fails before the fix).

@@ -62,7 +62,7 @@ for (const theme of ["light", "dark"] as const) {
       const pill = page.getByTestId("first-sync-pill");
       await expect(pill).toBeVisible();
       await expect(pill.getByRole("status")).toHaveText("Downloading your mail");
-      await expect(pill.getByTestId("first-sync-detail")).toHaveText("Newest first, the last 30 days");
+      await expect(pill.getByTestId("first-sync-detail")).toHaveText("The last 30 days, newest first");
       expect((await new AxeBuilder({ page }).include('[data-testid="first-sync-pill"]').analyze()).violations).toEqual([]);
       await page.getByTestId("sidebar").screenshot({ path: info.outputPath(`first-sync-pill-${theme}.png`) });
 

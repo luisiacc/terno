@@ -1187,6 +1187,27 @@ describe("a new account's first sync (plan 76)", () => {
     expect(count(backend, "SELECT 1 FROM message_locations")).toBe(260);
   });
 
+  it("a refused login while the preview's bodies come in stops the pass: a sign-in to redo, not a body to skip", async () => {
+    const { imap, backend, addAccount } = await setup();
+    for (let i = 1; i <= 260; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    const account = await addAccount(imap.port);
+    const core = backend as unknown as { store: { sync: { setBody: (...a: unknown[]) => Promise<unknown> } } };
+    const setBody = core.store.sync.setBody.bind(core.store.sync);
+    // the first body meets the server's refusal as the IMAP client reports it (raw, not yet a ProviderAuthError)
+    let once = false;
+    vi.spyOn(core.store.sync, "setBody").mockImplementation((...a) => {
+      if (!once) {
+        once = true;
+        throw Object.assign(new Error("AUTHENTICATIONFAILED"), { authenticationFailed: true });
+      }
+      return setBody(...a);
+    });
+    const states = vi.spyOn(backend.store.accounts, "setSyncState");
+    await backend.syncAccount(account.id);
+    // the pass stopped there and asked for a sign-in (the server lets the next one in: it completes)
+    expect(states.mock.calls.some(([, patch]) => patch.authRequired === true)).toBe(true);
+  });
+
   it("downloads the window chosen when connecting, kept as the account's own", async () => {
     const { imap, smtp, backend, client } = await setup();
     const DAY = 86_400_000;

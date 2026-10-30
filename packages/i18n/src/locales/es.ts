@@ -577,7 +577,7 @@ const es = {
   "connection.reconnecting": "Reconectando…",
   "connection.retryNow": "Reintentar ahora",
   "firstSync.title": "Descargando tu correo",
-  "firstSync.detail": "Lo más reciente primero, los últimos {days} días",
+  "firstSync.detail": "{window}, lo más reciente primero",
   "firstSync.accounts": { one: "# cuenta, lo más reciente primero", other: "# cuentas, lo más reciente primero" },
   // plan 25: una cuenta que necesita que vuelvas a iniciar sesión (el aviso de la barra lateral, la llave de la fila, el panel)
   "signIn.notice.one": "{name} pide iniciar sesión",
