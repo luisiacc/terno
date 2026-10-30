@@ -377,8 +377,10 @@ it.each(["body", "recipients", "account", "recovery", "signature", "navigation",
   expect(useDrafts.getState().drafts[key]!.mode).toBe("reply");
 });
 
-it("upload final budget cannot overwrite newer coalesced editor content or publish stale files", async () => {
-  expectedTrace = () => uploadTrace(true);
+// plan 76: content changing during the final budget no longer refuses the files (typing while a drop staged lost it):
+// the budget runs again on the newer content, which stays, and the files are adopted only on that check
+it("upload final budget cannot overwrite newer coalesced editor content or publish files on a stale check", async () => {
+  expectedTrace = () => uploadTrace();
   setup(); const key = createDraft(newFields(1));
   let text = "";
   const reader = attachBody(key, () => ({ text, html: `<div>${text}</div>` }));
@@ -390,8 +392,9 @@ it("upload final budget cannot overwrite newer coalesced editor content or publi
   u.release(); try { await u.work; } finally { settled = true; }
   await callback.pending; callback.assert();
   expect(useDrafts.getState().drafts[key]!.bodyText).toBe(text);
-  expect(useDrafts.getState().drafts[key]!.attachments).toBeUndefined();
-  expect(rpc).toHaveBeenCalledWith("attachments.discard", { accountId: 1, assetId: "staged" });
+  expect(text).toBe("b".repeat(40_000));
+  expect(useDrafts.getState().drafts[key]!.attachments).toEqual([u.staged]);
+  expect(rpc).not.toHaveBeenCalledWith("attachments.discard", expect.anything());
   reader.dispose();
 });
 
