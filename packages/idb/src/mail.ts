@@ -1518,7 +1518,13 @@ function locationBlockers(c: Ctx): (o: R) => boolean {
     oldest.set(messageId, seq);
     return seq;
   };
-  return (o) => targets.by("fk_op_id", o.id).some((mine) => mine.grp === "location" && oldestOn(mine.message_id as number) < o.seq);
+  return (o) => {
+    for (const key of targets.keysBy("fk_op_id", o.id)) {
+      const mine = targets.get(key)!;
+      if (mine.grp === "location" && oldestOn(mine.message_id as number) < o.seq) return true;
+    }
+    return false;
+  };
 }
 
 function admittedOps(c: Ctx, input?: OpAdmission): (o: R) => boolean {
