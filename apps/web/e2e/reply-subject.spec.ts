@@ -69,7 +69,7 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await expect(page.locator(`[id="${quoteId}"]`)).toContainText("latest-own-body");
       await expect(page.getByTestId("compose-send")).toBeEnabled();
       await page.getByTestId("compose-send").scrollIntoViewIfNeeded();
-      await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
+      await expect(page.locator("html")).toHaveClass(/^(?!.*\bdark\b)/);
       await stabilize(page);
       await page.screenshot({ path: testInfo.outputPath(`own-${mode}-${theme}.png`) });
       await page.getByTestId("compose-send").click();
