@@ -119,3 +119,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: revealed-field focus intent
 
 `3e800534` cancels a pending Cc/Bcc/Subject reveal move when newer focus/pointer/Tab/draft/compose intent wins, with bounded frame/listener cleanup and ordinary keyboard positive controls. Root71unit/56browser cases/types/lint/axe pass; four en/es light/dark captures inspected. One review0findings. [Exact controls and limits](../plans/drafts/release2-revealed-field-focus.md). Held stored-open P2 unchanged; no full or packaged clearance.
+
+
+## Landed repair: fake IndexedDB maintenance/traversal
+
+`f0157cbb` patches exact index deletion, iterative traversal allocation and cursor-range intersection in the locked simulator; no production schema or original gate changes. Root688caller checks/types/lint, frozen offline installs and complete12-case original IDB/storage perf run pass. Both independent50kaccess/allocation controls remain. One review covered deletion; later cursor/iterator runtime changes have tests but no independent re-review. Original41.37mscached failure remains unattributed and recorded. [Evidence and limits](../plans/drafts/release2-fake-idb-index-deletion.md). No browser/native/global release clearance.
