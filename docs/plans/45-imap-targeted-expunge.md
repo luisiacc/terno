@@ -184,3 +184,33 @@ The complete existing real IMAP/SMTP integration file passes52/52 with no global
 ## Fresh whole-slice review dispositions
 
 Independent Standards and Spec R1 reviews at exact d08771a48b40dee43eab63ef0f180e0bf7630fb8 each report zero actionable findings in this finite slice. Both fresh read-only Codex subprocesses completed actual0 with substantive verdicts independently checked. All eight owned immediate-parent diffs/files/ancestry/footers and archive bytes/modes were audited; reviewers made no source or validation changes. Full verdicts, transcripts, command and integrity audits are `/tmp/terno-provider-hardening.x0emTS/imap-targeted-expunge-review-r1-{standards,spec}-*`. Their source review does not rerun tests or independently manufacture exit evidence from empty lint logs; root's actual tool-completed validation return codes are separately recorded. The Spec reviewer also clarified the read-only fallback wire: two COPYs, no STORE; the earlier shorthand above is corrected without changing the retained RED logs. All original exclusions and broader report/global/performance gates remain open. No general IMAP reliability or release approval.
+
+
+## W06 A26/S14 follow-up: cached flags outside the recent window
+
+### Request
+
+> Scenario S14: "A read/unread change on an old message appears after sleep; the sync window does not hide it forever." A26: bounded IMAP backfill is a product limit and capability fallbacks can leave old flags stale.
+
+Qualify this on committed local main `71c92858`, retaining Plan68 arbitrary folders, STATUS skipping, fourth-pass no-MODSEQ checking and retention. This isolated slice owns dedicated backend protocol tests/small fixtures and, only on reproduced need, `packages/mail/src/imap.ts`. Preserve Plan38 intent ownership. No Gmail, core, store, schema, renderer, worklist or main edits.
+
+### Current behavior and design
+
+`syncMailbox` initially searches SINCE the window; existing mailboxes discover new UIDs. `sweepMailbox` separately searches ALL and reads flags only for cached current-epoch UIDs, in batches of 1,000, using paged location reads and existing breathers. A sweep checkpoint is captured before FETCH, preventing a later MODSEQ from acknowledging unseen flags. Custom folders compare UIDVALIDITY/UIDNEXT/MESSAGES/HIGHESTMODSEQ; absent MODSEQ forces every fourth explicit pass. Ordinary folders always sweep. Thus cached old-mail freshness appears protected; history never downloaded remains outside the product promise.
+
+Add a dedicated real ImapFlow/ImapKit + temporary Backend SQL suite. Establish remote raw bytes, body and UID/epoch inside an initial 30-day window. Close the account/backend, advance only Date to move that same mail beyond the unchanged window, mutate exact Seen/Flagged remotely, reopen and explicitly sync. Match unchanged STATUS with/without CONDSTORE, assert skip cadence and bounded requests with zero body hydration. Persist/reopen witnesses check identity, body, flags, cursor and unrelated bytes. Test reset/reused UID and genuine current-identity recovery, plus Plan38 late observation/newer local intent at the existing public seam. Server error must remain distinct from missing capability.
+
+### Failure map and tests
+
+- Window applied to cached flags: old cached row remains stale; ordinary/custom and capability matrix catches it.
+- Fake capability fallback: require actual CAPABILITY/SELECT/STATUS wire witnesses, not a monkey-patched status result.
+- Premature checkpoint: change flags after an observed sweep; a later explicit pass must repair.
+- UID reuse: old bytes must never become a new message's flags/location; current epoch and same-message recovery controls.
+- Late observation: captured old flags must not overwrite newer queued/acknowledged local intent; defer any store/core correction as an exact serial dependency.
+- Retention boundary: never-downloaded older message stays absent; cached message/body survives. No retention widening to pass.
+
+Run only dedicated and directly relevant existing tests, backend/mail types as touched, scoped oxlint. No UI/build/global gates. No product hot-path change means no perf rerun or new 50k throughput claim; if changed, run its affected perf file with existing budgets. No polling, whole-mailbox body downloads, real profiles/secrets, nested delegation, or unrelated file staging. Native read-only plan critique precedes tests; at most two native Standards+Spec code reviews follow. All commits carry the required coauthor footer.
+
+### S14 revisions after the Codex review
+
+Native read-only gpt-6.1-sol/high plan critique returned ten points; accept all. Use injected Backend `now`, fixed Date/INTERNALDATE and real timers. Witness persisted modulo-four pass numbers; automatic work is disabled. Restart/explicit-sync catch-up is not host-sleep automation; add retained-provider control. IMAP is Plan38 pending-only: any post-ACK race remains a separate unmarked reproducer/serial dependency, not grounds to activate authoritative flags here. Checkpoint control must mutate within a CONDSTORE custom-folder pass and require a later non-fourth repair. Add tagged SEARCH NO/BAD versus successful-empty controls and separate STATUS refusal. Seed never-downloaded old UIDs before initial sync. Require both flag directions, one target location, public state/counts and durable witnesses. Keep epoch coverage small and reuse A25 adjacency. Bound fixture transcripts and observed requests; SEARCH ALL still materializes server UIDs, so do not claim bounded total sweep work or new throughput qualification.
