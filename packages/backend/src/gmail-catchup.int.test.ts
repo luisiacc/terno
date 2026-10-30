@@ -614,16 +614,20 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public
     const held = new Promise<void>((resolve) => { entered = resolve; });
     cleanup.push(async () => { release(); rpc.close(); });
     t.holdHistory((send) => { release = send; entered(); });
+    const sync = vi.spyOn(t.backend, "syncAccount");
     const first = t.backend.syncAccount(t.account.id); await held;
     t.mutate(); await rpc.call("sync.now", { accountId: t.account.id });
     t.historyStatus(503); release(); release = () => {}; await first;
-    await expect.poll(() => t.requests.filter((u) => u.pathname === "/history").length).toBe(2);
-    await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.lastError).toBeTruthy();
-    for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+    await Promise.all(sync.mock.results.map((result) => result.value));
+    expect(sync).toHaveBeenCalledTimes(3);
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastError).toBeTruthy();
     expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(2);
     expect(await t.cursor()).toEqual({ historyId: t.baseline });
     t.historyStatus(200);
-    await t.backend.syncAccount(t.account.id);
+    await rpc.call("sync.now", { accountId: t.account.id });
+    expect(sync).toHaveBeenCalledTimes(4);
+    await sync.mock.results[3]!.value;
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
     await t.assertFinal();
     await t.reopen(); await t.assertFinal();
   });
@@ -637,6 +641,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public
     const secondEntered = new Promise<void>((resolve) => { enterSecond = resolve; });
     cleanup.push(async () => { releaseFirst(); releaseSecond(); rpc.close(); });
     t.holdHistory((send) => { releaseFirst = send; enterFirst(); });
+    const sync = vi.spyOn(t.backend, "syncAccount");
     const first = t.backend.syncAccount(t.account.id); await firstEntered;
     t.add("middle", true);
     await rpc.call("sync.now", { accountId: t.account.id });
@@ -646,8 +651,12 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public
     await rpc.call("sync.now", { accountId: t.account.id });
     expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(2);
     releaseSecond(); releaseSecond = () => {};
-    await expect.poll(async () => (await t.cursor() as { historyId?: string })?.historyId).toBe(t.terminal);
-    await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
+    await sync.mock.results[2]!.value;
+    expect(sync).toHaveBeenCalledTimes(5);
+    await sync.mock.results[4]!.value;
+    expect(sync).toHaveBeenCalledTimes(5);
+    expect(await t.cursor()).toEqual({ historyId: t.terminal });
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
     expect(t.requests.filter((u) => u.pathname === "/history").map((u) => u.searchParams.get("startHistoryId"))).toEqual([t.baseline, t.baseline, (BigInt(t.baseline) + 1n).toString()]);
     const rows = (await t.backend.store.debug.snapshot()).messages;
     expect(rows.find((m) => m.providerMsgId === "last")?.bodyText).toContain("Body last");
@@ -669,6 +678,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public
     const [local, remote] = createMemoryTransportPair();
     t.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
     const rpc = new RpcClient(local); cleanup.push(async () => { release?.(); rpc.close(); });
+    const sync = vi.spyOn(t.backend, "syncAccount");
     const first = t.backend.syncAccount(t.account.id);
     await held;
     t.mutate();
@@ -677,9 +687,11 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail concurrent public
       expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(1);
     }
     release(); release = () => {}; await first;
+    await Promise.all(sync.mock.results.map((result) => result.value));
+    expect(sync).toHaveBeenCalledTimes(trigger ? 4 : 1);
     if (trigger) {
-      await expect.poll(async () => (await t.cursor() as { historyId?: string })?.historyId).toBe(t.terminal);
-      await expect.poll(async () => (await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
+      expect(await t.cursor()).toEqual({ historyId: t.terminal });
+      expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).toBe("idle");
       expect(t.requests.filter((u) => u.pathname === "/history").map((u) => u.searchParams.get("pageToken"))).toEqual([null, null, "history/+?=next"]);
       await t.assertFinal();
     } else {
