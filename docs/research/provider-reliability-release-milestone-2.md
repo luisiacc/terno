@@ -129,3 +129,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: controlled slow-disk recovery fixture
 
 `1bd9b5d2` explicitly qualifies a real controller restart after200prefixthreads at initial20, preserving original20kworkload/costs/publicdeadline/budgets. It does not claim natural growth or continuation of prefix history. Root5load+7slicer tests/types/lint pass; exact18,792targets/18,216affected/zero duplicates and older/excluded state preserved. One review0/0; later assertion corrections tested without independent re-review. Root's mistaken50kbrief/probe remains separately unqualified; no production deadline or controller change. [Full commands and limits](../plans/drafts/release2-adaptive-load.md).
+
+
+## Landed repair: native reload and print fixtures
+
+`60e41af9` fixes owned native callback dispatch, ACK/native-hold and navigation readiness, print query identity, privacy-witness ordering and birth-checked cleanup. Root instrumented two-file integration passes23eligible/2existing skips,4helper tests, desktop/Web types and lint; app-only light/dark captures inspected and no owned process remains. One review's P1/P2 regression-fixed; later tracing not independently re-reviewed. Historical normal native Quit before teardown has no proven sender and remains recorded. Existing smoke-only PDF-helper option type mismatch is backlogged; no policy workaround or fresh build. [Evidence and full limits](../plans/drafts/release2-native-reload-print.md). A new complete release milestone is still required.
