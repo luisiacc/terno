@@ -4,7 +4,7 @@ import { createGmailApiProvider } from "../../../packages/mail/src/gmail-api";
 import { buildRaw } from "../../../packages/mail/src/compose";
 import type { SendPayload } from "../../../packages/mail/src/types";
 import type { IncomingMessage } from "@terno/store";
-import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./fixtures";
+import { addRecipients, chipsOf, expect, recipientEmails, selectThread, stabilize, test } from "./browser-forward-fixtures";
 import { E2E_NOW } from "./constants";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -37,6 +37,11 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       const detail = (await server.backend.store.threads.get(touched[0]!))!;
       expect(detail.messages.map((m) => m.rfcMessageId)).toEqual([first.rfcMessageId, latest.rfcMessageId]);
       await server.backend.server.invoke("settings.update", { theme }, ctx);
+      const submissions: { forwardOfMessageId?: number; inReplyToMessageId?: number }[] = [];
+      page.on("websocket", (socket) => socket.on("framesent", ({ payload }) => {
+        const frame = JSON.parse(String(payload));
+        if (frame.t === "req" && frame.m === "compose.send") submissions.push(frame.p);
+      }));
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"W09 own follow-up"');
@@ -71,6 +76,9 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await expect.poll(() => server.smtp.length).toBe(1);
       expect(server.smtp[0]!.rcpt).toEqual([...displayedTo, ...displayedCc]);
       const mail = await parseRaw(server.smtp[0]!.raw);
+      expect(server.smtp[0]!.from).toBe(account!.email);
+      expect(mail.subject).toBe(scenario === "changed" ? "New synthetic topic" : scenario === "normalized" ? "re: Re: W09 own follow-up" : "Re: W09 own follow-up");
+      expect(mail.text).toContain("Follow-up text.");
       expect(mail.to).toEqual(to);
       expect(mail.cc).toEqual(cc);
       expect(mail.bcc).toEqual([]);
@@ -82,6 +90,9 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       expect(sent).toHaveLength(1);
       const op = (await server.backend.store.ops.get(sent[0]!.id))!;
       const payload = JSON.parse(op.payload_json);
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]!.forwardOfMessageId).toBe(mode === "forward" ? detail.messages[1]!.id : undefined);
+      expect(submissions[0]!.inReplyToMessageId).toBe(mode === "forward" ? undefined : detail.messages[1]!.id);
       expect(payload.to).toEqual(to);
       expect(payload.cc).toEqual(cc);
       expect(payload.bcc).toEqual([]);
