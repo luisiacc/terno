@@ -126,3 +126,91 @@ for (const theme of ["light", "dark"] as const) {
     expect(unexpected).toEqual([]);
   });
 }
+
+for (const theme of ["light", "dark"] as const) for (const mode of ["predispatch", "loss"] as const) {
+  test(`${mode} and acknowledgement recovery with list focus ${theme}`, async ({ page, context }) => {
+    const unexpected: string[] = [];
+    await context.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.origin === new URL(test.info().project.use.baseURL!).origin) return route.continue();
+      unexpected.push(`${route.request().method()} ${url.origin}${url.pathname}`); return route.abort();
+    });
+    await page.goto(`/?demo=200&mailbox=w12-predispatch-${theme}`);
+    await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
+    await page.evaluate((theme) => window.__ternoWeb!.client.call("settings.update", { theme }), theme);
+    await page.reload(); await expect.poll(() => page.evaluate(() => window.__ternoWeb?.storage)).toBe("opfs-sqlite");
+    await expect(page.locator("html")).toHaveClass(theme === "dark" ? /\bdark\b/ : /^(?!.*\bdark\b)/);
+    await page.getByTestId("thread-row").first().click();
+    await page.getByTestId("compose-button").click();
+    await page.getByTestId("compose-to").fill("recipient@example.test"); await page.getByTestId("compose-to").press("Enter");
+    await page.getByTestId("compose-subject").fill("Predispatch proof");
+    await page.getByTestId("attachment-input").setInputFiles({ name: "evidence.bin", mimeType: "application/octet-stream", buffer: bytes });
+    const body = page.getByTestId("compose-body"); await body.fill(original);
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    const baseline = (await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!;
+    const gate = await page.evaluate((mode) => {
+      const client = window.__ternoWeb!.client, call = client.call.bind(client);
+      const state = { attempts: 0, dispatched: 0, sends: 0, committed: false, release: () => {} };
+      Object.defineProperty(window, "preDispatch", { value: state });
+      Object.defineProperty(client, "call", { value: (...args: Parameters<typeof call>) => {
+        if (args[0] === "compose.send") state.sends++;
+        if (args[0] !== "drafts.save") return call(...args);
+        state.attempts++;
+        if (state.attempts > 1) { state.dispatched++; return call(...args); }
+        if (mode === "predispatch") return new Promise((resolve, reject) => { state.release = () => { state.dispatched++; void call(...args).then(resolve, reject); }; });
+        state.dispatched++;
+        return call(...args).then(() => new Promise((_, reject) => { state.committed = true; state.release = () => reject(new Error("synthetic renderer delivery loss")); }));
+      } });
+      return true;
+    }, mode);
+    expect(gate).toBe(true);
+    await body.click(); await body.press("End"); await page.keyboard.type(" pending");
+    await expect.poll(() => page.evaluate(() => (window as unknown as { preDispatch: { attempts: number } }).preDispatch.attempts)).toBe(1);
+    if (mode === "loss") await expect.poll(() => page.evaluate(() => (window as unknown as { preDispatch: { committed: boolean } }).preDispatch.committed)).toBe(true);
+    expect(await page.evaluate(() => (window as unknown as { preDispatch: { attempts: number; dispatched: number; sends: number } }).preDispatch)).toMatchObject({ attempts: 1, dispatched: mode === "loss" ? 1 : 0, sends: 0 });
+    const observed = (await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {})))[0]!;
+    if (mode === "predispatch") expect(observed).toEqual(baseline);
+    else expect(observed).toEqual({ ...baseline, revision: baseline.revision + 1, bodyText: `${original} pending`, bodyHtml: baseline.bodyHtml!.replace(original, `${original} pending`), updatedAt: observed.updatedAt });
+    const proof = await page.evaluate(async () => {
+      const path = "/src/lib/drafts.ts"; const drafts = await import(/* @vite-ignore */ path) as typeof import("../../src/lib/drafts");
+      const d = Object.values(drafts.useDrafts.getState().drafts).find((item) => item.id !== null)!;
+      const admission = drafts.beginDraftAckRead(d);
+      if (admission.kind !== "proof") return { kind: admission.kind, handoff: await drafts.draftsSaved(10) };
+      Object.defineProperty(window, "preProof", { value: admission.proof, configurable: true });
+      return { kind: admission.kind, revision: drafts.readDraftAck(admission.proof)?.revision, handoff: await drafts.draftsSaved(10) };
+    });
+    expect(proof).toEqual({ kind: "proof", revision: baseline.revision, handoff: false });
+    const list = page.locator('[data-keep-scroll="list"]');
+    await list.hover(); await page.mouse.wheel(0, 700);
+    await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await page.getByTestId("strip-item").first().focus(); await page.keyboard.press("Tab"); await expect(list).toBeFocused();
+    const listState = () => list.evaluate((el) => ({ scroll: el.scrollTop, cursor: el.getAttribute("aria-activedescendant"), anchor: [...el.querySelectorAll<HTMLElement>('[data-testid="thread-row"]')].find((row) => row.getBoundingClientRect().bottom > el.getBoundingClientRect().top)?.dataset.threadId }));
+    const before = await listState(); expect(before.cursor).toBeTruthy(); expect(before.anchor).toBeTruthy();
+    await page.evaluate(() => (window as unknown as { preDispatch: { release: () => void } }).preDispatch.release());
+    await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+    await expect(list).toBeFocused(); expect(await listState()).toEqual(before);
+    const rows = await page.evaluate(() => window.__ternoWeb!.client.call("drafts.list", {}));
+    const final = mode === "loss" ? rows.find((d) => d.id !== baseline.id)! : rows[0]!;
+    if (mode === "loss") {
+      expect(rows).toHaveLength(2); expect(rows.find((d) => d.id === baseline.id)).toEqual(observed);
+      expect(final).toMatchObject({ revision: 1, bodyText: `${original} pending`, attachments: baseline.attachments });
+      expect(final.generation).not.toBe(baseline.generation);
+    } else expect(final).toEqual({ ...baseline, revision: baseline.revision + 1, bodyText: `${original} pending`, bodyHtml: baseline.bodyHtml!.replace(original, `${original} pending`), updatedAt: final.updatedAt });
+    const afterProof = await page.evaluate(async () => {
+      const path = "/src/lib/drafts.ts"; const drafts = await import(/* @vite-ignore */ path) as typeof import("../../src/lib/drafts");
+      const token = (window as unknown as { preProof: import("../../src/lib/drafts").DraftAckRead }).preProof;
+      const read = drafts.readDraftAck(token); const handoff = await drafts.draftsSaved(100);
+      drafts.endDraftAckRead(token);
+      return { id: read?.id, generation: read?.generation, revision: read?.revision, savedRev: read?.savedRev, localRev: read?.localRev, handoff };
+    });
+    if (mode === "loss") expect(afterProof).toEqual({ id: undefined, generation: undefined, revision: undefined, savedRev: undefined, localRev: undefined, handoff: true });
+    else { expect(afterProof).toMatchObject({ id: final.id, generation: final.generation, revision: final.revision, handoff: true }); expect(afterProof.savedRev).toBe(afterProof.localRev); }
+    expect(await page.evaluate(() => (window as unknown as { preDispatch: { attempts: number; dispatched: number; sends: number } }).preDispatch)).toMatchObject({ attempts: mode === "loss" ? 2 : 1, dispatched: mode === "loss" ? 2 : 1, sends: 0 });
+    if (mode === "loss") expect(await page.evaluate((d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), observed)).toEqual({ dataBase64: bytes.toString("base64") });
+    expect(await page.evaluate((d) => window.__ternoWeb!.client.call("attachments.read", { accountId: d.accountId, assetId: d.attachments![0]!.assetId, index: 0 }), final)).toEqual({ dataBase64: bytes.toString("base64") });
+    expect((await new AxeBuilder({ page }).include('[data-testid="thread-list"]').analyze()).violations).toEqual([]);
+    await page.screenshot({ path: `${artifactDir}/${mode}-list-${theme}.png` });
+    await page.keyboard.press("ArrowDown"); expect(await list.getAttribute("aria-activedescendant")).not.toBe(before.cursor);
+    expect(unexpected).toEqual([]);
+  });
+}
