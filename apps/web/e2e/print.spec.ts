@@ -72,6 +72,7 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await expect(sheet(page)).toBeVisible();
     await pressed(page, "print-scope-thread");
     await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
 
     // a message's own menu: just that message (the plain-text inline reply, unfolded and opened)
     await page.getByTestId("more-messages").click();
@@ -92,6 +93,7 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await expect(preview(page).locator(".msg")).toHaveCount(5);
     await pressed(page, "print-quoted-hide");
     await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
 
     // a right-click inside the last message's HTML frame (Outlook) opens that message's menu
     const frame = messages.nth(4).locator("iframe");
@@ -107,13 +109,17 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await ready(page);
     await expect(preview(page).locator("body")).toContainText("con eso lo firmamos el lunes");
     await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
 
     // ⌘P while focus is inside a mail's frame still opens the sheet (the frame passes the chord on)
     await page.frameLocator("[data-testid=reader] iframe >> nth=-1").locator("body").click();
     await page.keyboard.press("ControlOrMeta+p");
     await expect(sheet(page)).toBeVisible();
     await pressed(page, "print-scope-thread");
+    // The frame keeps keyboard focus until the sheet finishes its initial focus transfer.
+    await expect(page.getByTestId("print-submit")).toBeFocused();
     await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
 
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
@@ -121,6 +127,7 @@ test.describe("print sheet", { tag: "@design" }, () => {
     await page.getByTestId("palette-print").click();
     await expect(sheet(page)).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(sheet(page)).toHaveCount(0);
     // focus went back into the mail's frame (where it was before the palette): leave it
     await focusList(page);
     await page.keyboard.press("ControlOrMeta+k");
