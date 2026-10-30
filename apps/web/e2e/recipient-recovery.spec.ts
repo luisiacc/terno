@@ -1,0 +1,37 @@
+import { mkdirSync } from "node:fs";
+import AxeBuilder from "@axe-core/playwright";
+import { bytesBase64, encodeText } from "@terno/core";
+import { L } from "@terno/i18n";
+import { expect, test } from "./fixtures";
+
+for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) test(`recipient outcomes remain discoverable (${language}, ${theme})`, async ({ app: page, server }) => {
+  await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
+  const ctx = { clientId: "recipient-ui", origin: "dev" as const }, store = server.backend.store;
+  let recoveryCalls = 0;
+  server.backend.recoverRejectedRecipients = async () => { recoveryCalls++; return crypto.randomUUID(); };
+  const account = (await store.accounts.list()).find((entry) => entry.kind === "imap")!;
+  const config = (await store.accounts.config<Record<string, unknown>>(account.id))!;
+  await store.accounts.setProviderConfig(account.id, { ...config, appendToSent: false });
+  const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "accepted@example.test" }, { name: "", email: "refused@example.test" }], cc: [], bcc: [{ name: "", email: "unknown@example.test" }], subject: "Synthetic recipient receipt", bodyText: "Synthetic", recordReply: false, now: Date.now() });
+  expect((await store.ops.claimReady(Date.now(), 100)).some((op) => op.id === queued.opId)).toBe(true);
+  await store.sendCopies.startWire(queued.opId, 1); await store.sendCopies.appendWire(queued.opId, 0, bytesBase64(new Uint8Array([65]))); await store.sendCopies.sealWire(queued.opId);
+  const warning = encodeText(L("errors.smtp.notDeliveredTo", { recipients: "refused@example.test" }));
+  await store.ops.complete(queued.opId, { warning, sendAccepted: { warning, outcomes: [{ email: "accepted@example.test", outcome: "accepted" }, { email: "refused@example.test", outcome: "rejected" }, { email: "unknown@example.test", outcome: "unknown" }] } }, Date.now());
+  await server.backend.server.invoke("settings.update", { theme, language, senderIcons: false }, ctx);
+  await page.addInitScript((value) => localStorage.setItem("terno:language", value), language);
+  await page.reload(); await page.locator("[data-ready]").waitFor(); await page.getByTestId("open-settings").click(); await page.getByTestId("tab-accounts").click();
+  const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`); await editor.getByTestId("account-toggle").click();
+  const recovery = editor.getByTestId("recipient-recovery"); await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(1);
+  await recovery.getByRole("button", { name: language === "en" ? "Show recipients" : "Mostrar destinatarios" }).click();
+  await expect(recovery).toContainText("accepted@example.test"); await expect(recovery).toContainText("refused@example.test"); await expect(recovery).toContainText("unknown@example.test");
+  await expect(recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" })).toBeEnabled();
+  expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
+  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-recipient-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-recipient-ui/${language}-${theme}.png` });
+  await recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" }).focus(); await page.keyboard.press("Enter");
+  await expect.poll(() => recoveryCalls).toBe(1);
+  await recovery.getByRole("button", { name: language === "en" ? "Clear details" : "Borrar detalles" }).focus(); await page.keyboard.press("Enter");
+  await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(0);
+  expect((await store.ops.get(queued.opId))?.last_error).not.toContain("refused@example.test");
+  expect((await store.ops.sendSubmission(queued.opId))?.accepted).toBe(true);
+  expect(await store.sendCopies.list(account.id)).toEqual([]);
+});

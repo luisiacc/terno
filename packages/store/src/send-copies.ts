@@ -9,6 +9,7 @@ export const SEND_RECIPIENT_LIMIT = 3000;
 export interface SendCopyRow {
   opId: string;
   accountId: number;
+  copyRequested: boolean;
   submission: "pending" | "accepted";
   copy: SentCopyState;
   createdAt: number;
@@ -31,6 +32,7 @@ export interface SendCopyDb {
   remove(id: string): void;
   markSubmissionAccepted(id: string): void;
   wirePinned(id: string): boolean;
+  wireClaimed(id: string): boolean;
   chunk(id: string, index: number): string | null;
   putChunk(id: string, index: number, data: string): void;
   removeChunks(id: string, limit: number): number;
@@ -38,15 +40,15 @@ export interface SendCopyDb {
 }
 export const copyUnavailable = () => new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
 
-export function reserveSendCopy(db: SendCopyDb, opId: string, accountId: number, now: number, recipients: number): void {
+export function reserveSendCopy(db: SendCopyDb, opId: string, accountId: number, now: number, recipients: number, copyRequested = true): void {
   let rows = db.all();
-  for (const old of rows) if (old.copy === "saved" && old.chunks === 0) {
+  for (const old of rows) if (old.copy === "saved" && old.chunks === 0 && !db.wirePinned(old.opId)) {
     if (old.submission === "accepted") db.markSubmissionAccepted(old.opId);
     db.remove(old.opId);
   }
   rows = db.all();
-  if (recipients > SEND_RECIPIENT_LIMIT || rows.length >= SEND_COPY_LIMIT || rows.reduce((n, r) => n + r.reserved, 0) + MAX_MIME_BYTES > SEND_COPY_BYTES || db.accountBytes(accountId) + MAX_MIME_BYTES > ATTACHMENT_ACCOUNT_BYTES) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.capacity"));
-  db.put({ opId, accountId, submission: "pending", copy: "pending", createdAt: now, reserved: MAX_MIME_BYTES, size: 0, chunks: 0, ready: false, mailbox: null, uidValidity: null, uid: null, warning: null, retiring: false });
+  if (recipients > SEND_RECIPIENT_LIMIT || rows.length >= SEND_COPY_LIMIT || rows.reduce((n, r) => n + r.reserved, 0) + MAX_MIME_BYTES > SEND_COPY_BYTES || db.accountBytes(accountId) + MAX_MIME_BYTES > ATTACHMENT_ACCOUNT_BYTES) throw new RpcError("BAD_REQUEST", L(copyRequested ? "errors.sentCopy.capacity" : "errors.recipientReceipt.wireCapacity"));
+  db.put({ opId, accountId, copyRequested, submission: "pending", copy: "pending", createdAt: now, reserved: MAX_MIME_BYTES, size: 0, chunks: 0, ready: false, mailbox: null, uidValidity: null, uid: null, warning: null, retiring: false });
 }
 
 export function requireSendCopy(db: SendCopyDb, id: string): SendCopyRow {
@@ -91,7 +93,7 @@ export function recordCopy(db: SendCopyDb, id: string, copy: SentCopyState, iden
 export function forgetCopySlice(db: SendCopyDb, id: string, force = false): boolean {
   const row = db.get(id);
   if (!row) return false;
-  if (!force && db.wirePinned(id)) throw copyUnavailable();
+  if (!force && db.wireClaimed(id)) throw copyUnavailable();
   if (row.submission === "accepted") db.markSubmissionAccepted(id);
   if (!row.retiring) db.put({ ...row, retiring: true });
   const removed = db.removeChunks(id, 8);
@@ -116,10 +118,20 @@ export function resetCopyWireSlice(db: SendCopyDb, id: string): boolean {
   return false;
 }
 
+export function clearRecipientWarning(warning: string | null): string | null {
+  if (!warning) return warning;
+  const key = decodeText(warning).i18n?.key;
+  if (key === "errors.smtp.notDeliveredTo") return encodeText(L("errors.smtp.partialDetailsCleared"));
+  if (key === "errors.sentCopy.partialMissing") return encodeText(L("errors.sentCopy.partialClearedMissing"));
+  if (key === "errors.sentCopy.partialUnknown") return encodeText(L("errors.sentCopy.partialClearedUnknown"));
+  return warning;
+}
+
 export function copyWarningText(row: SendCopyRow): string | null {
-  if (row.copy === "saved") return row.warning;
+  if (!row.copyRequested || row.copy === "saved") return row.warning;
   const warning = row.warning ? decodeText(row.warning) : null;
   if (warning?.i18n?.key === "errors.smtp.recipientOutcomeUnknown") return encodeText(L(row.copy === "rejected" ? "errors.sentCopy.recipientUnknownMissing" : "errors.sentCopy.recipientUnknownCopy"));
+  if (warning?.i18n?.key === "errors.smtp.partialDetailsCleared") return encodeText(L(row.copy === "rejected" ? "errors.sentCopy.partialClearedMissing" : "errors.sentCopy.partialClearedUnknown"));
   const recipients = warning?.i18n?.key === "errors.smtp.notDeliveredTo" ? warning.i18n.params?.recipients : undefined;
   if (typeof recipients === "string") return encodeText(L(row.copy === "rejected" ? "errors.sentCopy.partialMissing" : "errors.sentCopy.partialUnknown", { recipients }));
   return encodeText(L(row.copy === "rejected" ? "errors.sentCopy.missing" : "errors.sentCopy.unknown"));
@@ -128,7 +140,7 @@ export function copyWarningText(row: SendCopyRow): string | null {
 export function sendWarningFlags(warning: string | null): { partial: boolean; unknown: boolean } {
   const key = warning ? decodeText(warning).i18n?.key : undefined;
   return {
-    partial: key === "errors.smtp.notDeliveredTo" || key === "errors.sentCopy.partialMissing" || key === "errors.sentCopy.partialUnknown",
+    partial: key === "errors.smtp.notDeliveredTo" || key === "errors.sentCopy.partialMissing" || key === "errors.sentCopy.partialUnknown" || key === "errors.smtp.partialDetailsCleared" || key === "errors.sentCopy.partialClearedMissing" || key === "errors.sentCopy.partialClearedUnknown",
     unknown: key === "errors.smtp.recipientOutcomeUnknown" || key === "errors.sentCopy.recipientUnknownMissing" || key === "errors.sentCopy.recipientUnknownCopy",
   };
 }

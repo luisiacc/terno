@@ -18,6 +18,7 @@ export interface RpcClientOptions {
 
 export class RpcClient {
   private nextId = 1;
+  connectionVersion = 0;
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Map<string, Set<(payload: unknown) => void>>();
   private transport: Transport | null = null;
@@ -37,10 +38,12 @@ export class RpcClient {
   /** (Re)attach to a transport, e.g. after the backend restarted. In-flight calls fail fast. */
   attach(transport: Transport): void {
     this.detachTransport(this.failure("UNAVAILABLE", "errors.rpc.restarted"));
+    this.connectionVersion++;
     this.transport = transport;
     this.detach = [
       transport.onMessage((msg) => this.receive(msg)),
       transport.onClose(() => {
+        this.connectionVersion++;
         this.detachTransport(this.failure("UNAVAILABLE", "errors.rpc.closed"));
         for (const l of this.closeListeners) l();
       }),

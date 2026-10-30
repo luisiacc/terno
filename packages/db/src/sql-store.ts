@@ -1,8 +1,8 @@
-import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, requireRecoverySource } from "@terno/store";
+import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
 import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
-import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -534,7 +534,7 @@ export class SqlMailStore implements MailStore {
         if (op.kind === "send") sqlAssets(this.db).unlink("op", id);
         if (op.kind === "send" && result?.sendAccepted) { sqlSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(sqlRecipientReceipts(this.db), id, result.sendAccepted.outcomes); }
         const receipt = sqlSendCopies(this.db).get(id);
-        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, result.sendAccepted.warning);
+        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(sqlSendCopies(this.db), id, result.sendAccepted.warning);
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         if (op.kind === "send" && result && localId) {
@@ -567,7 +567,7 @@ export class SqlMailStore implements MailStore {
       const op = getOp(this.db, id);
       if (op?.kind === "send" && op.state === "running" && sendAccepted) { sqlSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(sqlRecipientReceipts(this.db), id, sendAccepted.outcomes); }
       const receipt = sqlSendCopies(this.db).get(id);
-      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
+      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(sqlSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.db, id, error, now);
     })),
     awaitAuth: async (id, error, now) => awaitAuthOp(this.db, id, error, now),
@@ -652,22 +652,34 @@ export class SqlMailStore implements MailStore {
     const receipt = sqlSendCopies(this.db).get(op.id);
     const flags = sendWarningFlags(receipt?.warning ?? op.last_error);
     if (!receipt && !flags.partial && !flags.unknown) return op;
-    return { ...op, ...(receipt && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
+    return { ...op, ...(receipt && receipt.copyRequested && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
   }
 
   readonly recipientReceipts: MailStore["recipientReceipts"] = {
-    claimRecovery: async (id, expected, now) => this.db.tx(() => {
+    claimRecovery: async (id, expected, now, active) => {
+      const previous = this.db.get<{ target_json: string }>("SELECT target_json FROM ops WHERE id=? AND kind='send'", id);
+      const existing = previous ? (JSON.parse(previous.target_json) as { recipientRecoveryChild?: unknown }).recipientRecoveryChild : null;
+      if (typeof existing === "string") return existing;
+      const selected = await rejectedRecipientSelection(expected, (kind, index) => this.recipientReceipts.readPart(id, kind, index), this.yieldTo);
+      if (!selected.length) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const fields: { to: Address[]; cc: Address[]; bcc: Address[] } = { to: [], cc: [], bcc: [] };
+      for (const entry of selected) fields[entry.role].push({ name: entry.name, email: entry.original });
+      const prepared = await recipientReceiptParts(fields, this.yieldTo);
+      return this.db.tx(() => {
+      active?.();
       const op = this.db.get<Pick<import("@terno/store").OpRow, "kind" | "account_id" | "target_json">>("SELECT kind,account_id,target_json FROM ops WHERE id=?", id);
       if (!op || !submissionAccepted(op)) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
       const target = JSON.parse(op.target_json) as Record<string, unknown>;
       if (typeof target.recipientRecoveryChild === "string") return target.recipientRecoveryChild;
-      const receipts = sqlRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, sqlSendCopies(this.db).get(id));
+      const receipts = sqlRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, sqlSendCopies(this.db).get(expected.wireOwnerId ?? id));
       if (row.accountId !== op.account_id) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
       const child = enqueueOp(this.db, { accountId: row.accountId, kind: "send", target: { messageIds: [], recoveryParentId: id }, payload: { recoveryParentId: id } }, now)!;
+      reserveRecipientReceipt(receipts, child, row.accountId, now, prepared, row.wireOwnerId ?? id);
       receipts.put({ ...row, childOpId: child });
       this.db.run("UPDATE ops SET target_json=? WHERE id=?", JSON.stringify({ ...target, recipientRecoveryChild: child }), id);
       return child;
-    }),
+      });
+    },
     get: async (id) => sqlRecipientReceipts(this.db).get(id),
     list: async (accountId) => sqlRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId),
     readPart: async (id, kind, index) => {
@@ -675,12 +687,22 @@ export class SqlMailStore implements MailStore {
       if (!row || row.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? row.parts : Math.ceil(row.count / 128))) return null;
       return this.db.get<{ data: string }>("SELECT data FROM recipient_receipt_parts WHERE id=?", `${id}:${kind}:${index}`)?.data ?? null;
     },
-    retireSlice: async (id, force) => this.db.tx(() => retireRecipientSlice(sqlRecipientReceipts(this.db), id, force)),
+    finishRetire: async (id) => this.db.tx(() => finishRecipientRetirement(sqlRecipientReceipts(this.db), id, sqlSendCopies(this.db).get(sqlRecipientReceipts(this.db).get(id)?.wireOwnerId ?? id), sqlSendCopies(this.db).wirePinned(sqlRecipientReceipts(this.db).get(id)?.wireOwnerId ?? id))),
+    retireSlice: async (id, force) => this.db.tx(() => {
+      const receipt = sqlRecipientReceipts(this.db).get(id), copy = sqlSendCopies(this.db).get(id);
+      if (receipt && !receipt.retired) {
+        const op = this.db.get<{ last_error: string | null }>("SELECT last_error FROM ops WHERE id=?", id);
+        if (op) this.db.run("UPDATE ops SET last_error=? WHERE id=?", clearRecipientWarning(op.last_error), id);
+        if (copy) sqlSendCopies(this.db).put({ ...copy, warning: clearRecipientWarning(copy.warning) });
+      }
+      return retireRecipientSlice(sqlRecipientReceipts(this.db), id, force);
+    }),
   };
 
   readonly sendCopies: MailStore["sendCopies"] = {
+    pinned: async (id) => sqlSendCopies(this.db).wirePinned(id),
     get: (id) => Promise.resolve(sqlSendCopies(this.db).get(id)),
-    list: (accountId) => Promise.resolve(sqlSendCopies(this.db).all().filter((r) => r.accountId === accountId).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
+    list: (accountId) => Promise.resolve(sqlSendCopies(this.db).all().filter((r) => r.accountId === accountId && r.copyRequested).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
     resetWireSlice: async (id) => this.db.tx(() => resetCopyWireSlice(sqlSendCopies(this.db), id)),
     startWire: async (id, size) => this.db.tx(() => startCopyWire(sqlSendCopies(this.db), id, size)),
     appendWire: async (id, index, data) => this.db.tx(() => appendCopyWire(sqlSendCopies(this.db), id, index, data)),
@@ -767,11 +789,13 @@ export class SqlMailStore implements MailStore {
             },
           ],
           p.now,
+          undefined,
+          preparedRecipients ?? undefined,
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(sqlRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
-        if (account.kind === "imap" && (cfg.config as { appendToSent?: boolean }).appendToSent) reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length);
+        if (account.kind === "imap") reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);
         if (p.draftId) deleteDraft(this.db, p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
@@ -953,6 +977,7 @@ export class SqlMailStore implements MailStore {
     remove: async (id) => {
       for (const row of sqlRecipientReceipts(this.db).all().filter((r) => r.accountId === id)) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.yieldTo();
       for (const row of sqlSendCopies(this.db).all().filter((r) => r.accountId === id)) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.yieldTo();
+      for (const row of sqlRecipientReceipts(this.db).all().filter((r) => r.accountId === id)) await this.recipientReceipts.finishRetire(row.opId);
       return this.db.tx(() => {
         removeAccount(this.db, id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again

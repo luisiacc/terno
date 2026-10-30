@@ -220,7 +220,7 @@ export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId"
 }
 
 /** Upserts and threads one batch atomically; recomputes aggregates once per touched thread. */
-export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation): IngestResult {
+export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now = Date.now(), observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string }): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   let own: Set<string> | null = null;
   db.tx(() => {
@@ -249,7 +249,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       const refs = [...new Set([msg.inReplyTo, ...msg.references].map(normalizeMessageId).filter((r): r is string => !!r && r !== rfcId))];
       const threadId = resolveThread(db, msg, rfcId, refs, result);
       const fromEmail = normalizeText(msg.from.email.trim());
-      const recipients = recipientsText(msg.to, msg.cc, msg.bcc);
+      const recipients = preparedRecipients?.text ?? recipientsText(msg.to, msg.cc, msg.bcc);
       const allocated = ids.next();
       // the body goes in first: the message's insert trigger indexes it in the same write
       if (msg.bodyText !== null || msg.bodyHtml !== null) {
@@ -272,7 +272,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         JSON.stringify(msg.cc),
         JSON.stringify(msg.bcc),
         recipients,
-        normalizeText(recipients),
+        preparedRecipients?.normalized ?? normalizeText(recipients),
         msg.subject,
         normalizeText(msg.subject),
         msg.date,

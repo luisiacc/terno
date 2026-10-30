@@ -1656,8 +1656,11 @@ export class BackendCore {
           if (!header || header.retired || header.childOpId !== op.id || header.accountId !== op.account_id || !parent || parent.account_id !== op.account_id || !(await this.store.ops.sendSubmission(parentId))?.accepted) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
           const to = await rejectedRecipients(header, (kind, index) => this.store.recipientReceipts.readPart(parentId, kind, index), () => this.platform.yield());
           if (!to.length) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
-          const raw = await readCopyWire(this.store, parentId, () => this.platform.yield(), () => this.assertCurrent(life));
-          payload = JSON.parse(parent.payload_json);
+          const ownerId = header.wireOwnerId ?? parentId;
+          const owner = ownerId === parentId ? parent : await this.store.ops.get(ownerId);
+          if (!owner || owner.account_id !== op.account_id) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
+          const raw = await readCopyWire(this.store, ownerId, () => this.platform.yield(), () => this.assertCurrent(life));
+          payload = JSON.parse(owner.payload_json);
           const original = payload as SendPayload;
           if (!original || typeof original !== "object" || typeof original.from?.email !== "string" || !original.from.email || typeof original.messageId !== "string") throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
           recovery = { raw, envelope: { from: asciiEmail(original.from.email), to } };
@@ -1693,7 +1696,7 @@ export class BackendCore {
           const current = await this.store.ops.sendSubmission(op.id);
           if (target.recoveryParentId) {
             const parent = await this.store.recipientReceipts.get(target.recoveryParentId);
-            const source = await this.store.sendCopies.get(target.recoveryParentId);
+            const source = parent ? await this.store.sendCopies.get(parent.wireOwnerId ?? target.recoveryParentId) : null;
             const proof = await this.store.ops.sendSubmission(target.recoveryParentId);
             if (!parent || parent.retired || parent.childOpId !== op.id || parent.accountId !== op.account_id || !source?.ready || source.retiring || !source.size || !proof?.accepted) throw new ProviderError(L("errors.recipientReceipt.unavailable"), false);
           }
@@ -1717,7 +1720,9 @@ export class BackendCore {
       const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now());
       if (sending && receipt) {
         try {
-          if ((await this.store.sendCopies.get(op.id))?.copy === "saved") while (!this.stopped && await this.store.sendCopies.pruneSavedSlice(op.id)) await this.platform.yield();
+          const stored = await this.store.sendCopies.get(op.id);
+          if (stored && !stored.copyRequested && !(await this.store.recipientReceipts.get(op.id))?.hasRejected) { while (!this.stopped && await this.store.sendCopies.forgetSlice(op.id)) await this.platform.yield(); }
+          else if (stored?.copy === "saved") while (!this.stopped && await this.store.sendCopies.pruneSavedSlice(op.id)) await this.platform.yield();
         } catch { /* Saved wire remains charged for deliberate cleanup; submission is complete. */ }
       }
       this.categorizer.apply(done.deltas);
@@ -1803,7 +1808,7 @@ export class BackendCore {
     this.copyActions.add(id);
     try {
       const row = await this.store.sendCopies.get(id);
-      if (!row || row.retiring || row.submission !== "accepted" || row.copy === "saved") throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+      if (!row || !row.copyRequested || row.retiring || row.submission !== "accepted" || row.copy === "saved") throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
       const life = this.lifetime(row.accountId);
       return await this.accountWrite(life, async () => {
         this.sendsInFlight.add(id);
@@ -1850,11 +1855,41 @@ export class BackendCore {
       const rejected = await rejectedRecipients(header, (kind, index) => this.store.recipientReceipts.readPart(id, kind, index), () => this.platform.yield());
       if (!rejected.length) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
       this.assertCurrent(life);
-      const child = await this.store.recipientReceipts.claimRecovery(id, header, this.now());
+      const child = await this.store.recipientReceipts.claimRecovery(id, header, this.now(), () => this.assertCurrent(life));
       this.assertCurrent(life);
       this.kickWorker();
       return child;
     });
+  }
+
+  async forgetRecipientReceipt(id: string): Promise<void> {
+    if (this.copyActions.size >= 2 || this.copyActions.has(id) || this.sendsInFlight.has(id) || this.stopped || this.draining) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+    this.copyActions.add(id);
+    try {
+      const row = await this.store.recipientReceipts.get(id);
+      const op = await this.store.ops.get(id);
+      if (!row || !op || !["succeeded", "failed", "unknown"].includes(op.state)) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const life = this.lifetime(row.accountId);
+      await this.accountWrite(life, async () => {
+        this.assertCurrent(life);
+        let more: boolean;
+        try { more = await this.store.recipientReceipts.retireSlice(id); }
+        catch (error) { this.server.emit("recipientReceiptRetired", { opId: id }, { origins: ["renderer", "dev"] }); throw error; }
+        this.server.emit("recipientReceiptRetired", { opId: id }, { origins: ["renderer", "dev"] });
+        while (more) {
+          await this.platform.yield();
+          this.assertCurrent(life);
+          more = await this.store.recipientReceipts.retireSlice(id);
+        }
+        const sourceId = row.wireOwnerId ?? id;
+        const source = await this.store.sendCopies.get(sourceId);
+        const retained = await this.store.sendCopies.pinned(sourceId);
+        if (source && !retained && !source.copyRequested) while (await this.store.sendCopies.forgetSlice(sourceId)) { this.assertCurrent(life); await this.platform.yield(); }
+        else if (source && !retained && source.copy === "saved") while (await this.store.sendCopies.pruneSavedSlice(sourceId)) { this.assertCurrent(life); await this.platform.yield(); }
+        this.assertCurrent(life);
+        await this.store.recipientReceipts.finishRetire(id);
+      });
+    } finally { this.copyActions.delete(id); }
   }
 
   async forgetSentCopy(id: string): Promise<void> {
@@ -1863,7 +1898,7 @@ export class BackendCore {
     try {
       const row = await this.store.sendCopies.get(id);
       const op = await this.store.ops.get(id);
-      if (!row || !op || !["succeeded", "failed"].includes(op.state)) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
+      if (!row || !row.copyRequested || !op || !["succeeded", "failed"].includes(op.state)) throw new RpcError("BAD_REQUEST", L("errors.sentCopy.unavailable"));
       const life = this.lifetime(row.accountId);
       await this.accountWrite(life, async () => {
         while (true) {

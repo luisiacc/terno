@@ -782,6 +782,13 @@ export function createHandlers(b: Backend): Handlers {
       return b.agents.rotate();
     },
 
+    "ops.recipientReceipts": async ({ accountId }) => {
+      const rows = await store.recipientReceipts.list(accountId);
+      return Promise.all(rows.map(async (row) => { const [source, op] = await Promise.all([store.sendCopies.get(row.wireOwnerId ?? row.opId), store.ops.sendSubmission(row.opId)]); return { opId: row.opId, createdAt: row.createdAt, count: row.count, parts: row.parts, state: row.state, retired: row.retired, childOpId: row.childOpId, sourceAvailable: !!source?.ready && !source.retiring && source.size > 0 && source.chunks > 0, outcomeUncertain: op?.state === "unknown" && !op.accepted }; }));
+    },
+    "ops.recipientReceiptPart": ({ opId, kind, index }) => store.recipientReceipts.readPart(opId, kind, index),
+    "ops.recoverRejectedRecipients": async ({ opId }) => ({ opId: await b.recoverRejectedRecipients(opId) }),
+    "ops.forgetRecipientReceipt": async ({ opId }) => { await b.forgetRecipientReceipt(opId); return { ok: true as const }; },
     "ops.sentCopies": ({ accountId }) => store.sendCopies.list(accountId),
     "ops.repairSentCopy": async ({ opId }) => { return { copy: await b.repairSentCopy(opId) }; },
     "ops.forgetSentCopy": async ({ opId }) => { await b.forgetSentCopy(opId); return { ok: true as const }; },

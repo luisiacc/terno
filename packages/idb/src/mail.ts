@@ -730,7 +730,7 @@ export function findIngestMessage(c: Ctx, msg: Pick<IncomingMessage, "accountId"
   return rfcLookup ? messages.by("rfc", msg.accountId, rfcLookup).filter((m) => String(m.provider_msg_id ?? "").startsWith("local:")).sort((x, y) => x.id - y.id)[0] : undefined;
 }
 
-export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number, observation?: FlagObservation): IngestResult {
+export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: number, observation?: FlagObservation, preparedRecipients?: { text: string; normalized: string }): IngestResult {
   const result: IngestResult = { inserted: [], updated: [], touchedThreads: new Set(), mergedThreads: new Map(), bodyCompleted: [], deltas: [] };
   const messages = T(c, "messages");
   let own: Set<string> | null = null;
@@ -758,7 +758,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       const refs = [...new Set([msg.inReplyTo, ...msg.references].map(normalizeMessageId).filter((r): r is string => !!r && r !== rfcId))];
       const threadId = resolveThread(c, msg, rfcId, refs, result);
       const fromEmail = normalizeText(msg.from.email.trim());
-      const recipients = recipientsText(msg.to, msg.cc, msg.bcc);
+      const recipients = preparedRecipients?.text ?? recipientsText(msg.to, msg.cc, msg.bcc);
       const id = ids.next();
       messages.insert({
         id,
@@ -779,7 +779,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         reply_to_json: JSON.stringify(msg.replyTo ?? []),
         bcc_json: JSON.stringify(msg.bcc),
         recipients_text: recipients,
-        recipients_norm: normalizeText(recipients),
+        recipients_norm: preparedRecipients?.normalized ?? normalizeText(recipients),
         subject: msg.subject,
         subject_norm: normalizeText(msg.subject),
         date: msg.date,

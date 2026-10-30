@@ -6,9 +6,10 @@ import type { MemDb, Row } from "./mem";
 export function idbSendCopies(db: MemDb): SendCopyDb {
   const rows = db.table("send_copies"), bytes = db.table("send_copy_bytes");
   return {
-    get: (id) => rows.get(id) as unknown as SendCopyRow ?? null,
-    all: () => [...rows.all()] as unknown as SendCopyRow[],
-    wirePinned: (id) => { const child = db.table("recipient_receipts").get(id)?.childOpId; const state = typeof child === "string" ? db.table("ops").get(child)?.state : null; return typeof child === "string" && state !== "succeeded" && state !== "failed"; },
+    get: (id) => { const row = rows.get(id); return row ? { ...row, copyRequested: row.copyRequested !== false } as unknown as SendCopyRow : null; },
+    all: () => [...rows.all()].map((row) => ({ ...row, copyRequested: row.copyRequested !== false })) as unknown as SendCopyRow[],
+    wireClaimed: (id) => [...db.table("recipient_receipts").all()].some((receipt) => { const child = receipt.childOpId; const state = typeof child === "string" ? db.table("ops").get(child)?.state : null; return (receipt.wireOwnerId ?? receipt.opId) === id && typeof child === "string" && state !== "succeeded" && state !== "failed" && state !== "unknown"; }),
+    wirePinned: (id) => [...db.table("recipient_receipts").all()].some((receipt) => { const child = receipt.childOpId; const state = typeof child === "string" ? db.table("ops").get(child)?.state : null; return (receipt.wireOwnerId ?? receipt.opId) === id && (((receipt.hasRejected === true || (receipt.hasRejected === undefined && receipt.state === "accepted")) && !receipt.retired) || (typeof child === "string" && state !== "succeeded" && state !== "failed" && state !== "unknown")); }),
     put: (row) => { const prior = rows.get(row.opId); if (prior) rows.update(prior, row as unknown as Row); else rows.insert(row as unknown as Row); },
     markSubmissionAccepted: (id) => {
       const ops = db.table("ops"), op = ops.get(id);

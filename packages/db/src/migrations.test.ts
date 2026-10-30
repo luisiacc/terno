@@ -592,3 +592,15 @@ describe("migration v24: an account's own folders (plan 68)", () => {
     expect(db.all("SELECT * FROM folder_backfill")).toEqual([]);
   });
 });
+
+it("upgrades v27 pending and accepted recipient receipts conservatively", () => {
+  const db = new Db(nodeSqliteDriver, ":memory:"); dbs.push(db);
+  for (const migration of MIGRATIONS.filter((entry) => entry.version <= 27)) db.exec(migration.sql);
+  db.exec("PRAGMA user_version = 27"); account(db, { id: 1, kind: "imap", email: "synthetic@example.test", createdAt: 1 });
+  for (const [id, state] of [["pending", "pending"], ["accepted", "accepted"]] as const) {
+    db.run("INSERT INTO ops(id,seq,account_id,kind,target_json,payload_json,created_at,updated_at) VALUES(?,?,1,'send','{}','{}',1,1)", id, id === "pending" ? 1 : 2);
+    db.run("INSERT INTO recipient_receipts(opId,accountId,createdAt,charge,count,parts,state,retired,childOpId,deleteAfter) VALUES(?,1,1,1024,1,1,?,0,NULL,0)", id, state);
+  }
+  expect(migrate(db)).toEqual({ from: 27, to: SCHEMA_VERSION });
+  expect(db.all("SELECT opId,hasRejected FROM recipient_receipts ORDER BY opId")).toEqual([{ opId: "accepted", hasRejected: 1 }, { opId: "pending", hasRejected: 0 }]);
+});

@@ -1,8 +1,8 @@
-import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, requireRecoverySource } from "@terno/store";
+import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
 import { idbRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
-import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, sendWarningFlags, submissionAccepted } from "@terno/store";
+import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
@@ -1047,7 +1047,7 @@ export class IdbMailStore implements MailStore {
         if (op.kind === "send") idbAssets(this.db).unlink("op", id);
         if (op.kind === "send" && result?.sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, result.sendAccepted.outcomes); }
         const receipt = idbSendCopies(this.db).get(id);
-        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
+        if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
         if (result?.warning) ops.update(ops.get(id)!, { last_error: result.warning });
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
@@ -1080,7 +1080,7 @@ export class IdbMailStore implements MailStore {
       const op = getOp(this.c, id);
       if (op?.kind === "send" && op.state === "running" && sendAccepted) { idbSendCopies(this.db).markSubmissionAccepted(id); publishRecipientReceipt(idbRecipientReceipts(this.db), id, sendAccepted.outcomes); }
       const receipt = idbSendCopies(this.db).get(id);
-      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending") acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
+      if (op?.state === "running" && sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, sendAccepted.warning);
       markOpUnknown(this.c, id, error, now);
     }),
     awaitAuth: (id, error, now) => this.command(() => awaitAuthOp(this.c, id, error, now), { early: true }),
@@ -1174,31 +1174,52 @@ export class IdbMailStore implements MailStore {
     const receipt = idbSendCopies(this.db).get(op.id);
     const flags = sendWarningFlags(receipt?.warning ?? op.last_error);
     if (!receipt && !flags.partial && !flags.unknown) return op;
-    return { ...op, ...(receipt && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
+    return { ...op, ...(receipt && receipt.copyRequested && !receipt.retiring && { sent_copy: receipt.copy }), send_partial: flags.partial, send_recipient_unknown: flags.unknown };
   }
 
   readonly recipientReceipts: MailStore["recipientReceipts"] = {
-    claimRecovery: async (id, expected, now) => this.command(() => {
+    claimRecovery: async (id, expected, now, active) => {
+      const previous = await this.early(() => T(this.c, "ops").get(id));
+      const existing = previous?.kind === "send" && typeof previous.target_json === "string" ? (JSON.parse(previous.target_json) as { recipientRecoveryChild?: unknown }).recipientRecoveryChild : null;
+      if (typeof existing === "string") return existing;
+      const selected = await rejectedRecipientSelection(expected, (kind, index) => this.recipientReceipts.readPart(id, kind, index), this.o.platform.yield);
+      if (!selected.length) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
+      const fields: { to: Address[]; cc: Address[]; bcc: Address[] } = { to: [], cc: [], bcc: [] };
+      for (const entry of selected) fields[entry.role].push({ name: entry.name, email: entry.original });
+      const prepared = await recipientReceiptParts(fields, this.o.platform.yield);
+      return this.command(() => {
+      active?.();
       const ops = T(this.c, "ops"), op = ops.get(id);
       if (!op || typeof op.target_json !== "string" || !submissionAccepted({ kind: String(op.kind), target_json: op.target_json })) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
       const target = JSON.parse(op.target_json) as Record<string, unknown>;
       if (typeof target.recipientRecoveryChild === "string") return target.recipientRecoveryChild;
-      const receipts = idbRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, idbSendCopies(this.db).get(id));
+      const receipts = idbRecipientReceipts(this.db), row = requireRecoverySource(receipts.get(id), expected, idbSendCopies(this.db).get(expected.wireOwnerId ?? id));
       if (row.accountId !== op.account_id) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.unavailable"));
       const child = enqueueOp(this.c, { accountId: row.accountId, kind: "send", target: { messageIds: [], recoveryParentId: id }, payload: { recoveryParentId: id } }, now)!;
+      reserveRecipientReceipt(receipts, child, row.accountId, now, prepared, row.wireOwnerId ?? id);
       receipts.put({ ...row, childOpId: child });
       ops.update(op, { target_json: JSON.stringify({ ...target, recipientRecoveryChild: child }) });
       return child;
-    }),
+      });
+    },
     get: (id) => this.early(() => idbRecipientReceipts(this.db).get(id)),
     list: (accountId) => this.early(() => idbRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId)),
     readPart: async (id, kind, index) => this.exclusive(async () => { const header = idbRecipientReceipts(this.db).get(id); if (!header || header.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? header.parts : Math.ceil(header.count / 128))) return null; const tx = this.idb.transaction("recipient_receipt_parts", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Recipient read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("recipient_receipt_parts").get(`${id}:${kind}:${index}`); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),
-    retireSlice: async (id, force) => this.command(() => retireRecipientSlice(idbRecipientReceipts(this.db), id, force)),
+    finishRetire: async (id) => this.command(() => finishRecipientRetirement(idbRecipientReceipts(this.db), id, idbSendCopies(this.db).get(idbRecipientReceipts(this.db).get(id)?.wireOwnerId ?? id), idbSendCopies(this.db).wirePinned(idbRecipientReceipts(this.db).get(id)?.wireOwnerId ?? id))),
+    retireSlice: async (id, force) => this.command(() => {
+      const receipt = idbRecipientReceipts(this.db).get(id), copy = idbSendCopies(this.db).get(id), ops = T(this.c, "ops"), op = ops.get(id);
+      if (receipt && !receipt.retired) {
+        if (op) ops.update(op, { last_error: clearRecipientWarning(op.last_error as string | null) });
+        if (copy) idbSendCopies(this.db).put({ ...copy, warning: clearRecipientWarning(copy.warning) });
+      }
+      return retireRecipientSlice(idbRecipientReceipts(this.db), id, force);
+    }),
   };
 
   readonly sendCopies: MailStore["sendCopies"] = {
+    pinned: (id) => this.early(() => idbSendCopies(this.db).wirePinned(id)),
     get: (id) => this.early(() => idbSendCopies(this.db).get(id)),
-    list: (accountId) => this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === accountId).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
+    list: (accountId) => this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === accountId && r.copyRequested).map(({ opId, accountId, submission, copy, createdAt, retiring }) => ({ opId, accountId, submission, copy, createdAt, retiring }))),
     resetWireSlice: async (id) => this.command(() => resetCopyWireSlice(idbSendCopies(this.db), id)),
     startWire: async (id, size) => this.command(() => startCopyWire(idbSendCopies(this.db), id, size)),
     appendWire: async (id, index, data) => this.command(() => appendCopyWire(idbSendCopies(this.db), id, index, data)),
@@ -1279,11 +1300,13 @@ export class IdbMailStore implements MailStore {
             },
           ],
           p.now,
+          undefined,
+          preparedRecipients ?? undefined,
         );
         const localId = ingest.inserted[0]!;
         const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(idbRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
-        if (account.kind === "imap" && (cfg.config as { appendToSent?: boolean }).appendToSent) reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length);
+        if (account.kind === "imap") reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
@@ -1573,6 +1596,7 @@ export class IdbMailStore implements MailStore {
     remove: async (id) => {
       for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.o.platform.yield();
       for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.o.platform.yield();
+      for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) await this.recipientReceipts.finishRetire(row.opId);
       return this.command(() => {
         T(this.c, "accounts").delete(id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again

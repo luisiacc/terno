@@ -836,6 +836,10 @@ export const contract = {
   /** A new token in the token file; agents connected now are cut off and must read it again. */
   "agents.rotateToken": m<{ disconnected: number; tokenSince: number }>()(empty),
 
+  "ops.recipientReceipts": m<{ opId: string; createdAt: number; count: number; parts: number; state: "pending" | "accepted"; retired: boolean; childOpId: string | null; sourceAvailable: boolean; outcomeUncertain: boolean }[]>()(z.object({ accountId: id })),
+  "ops.recipientReceiptPart": m<string | null>()(z.object({ opId: z.string().uuid(), kind: z.enum(["envelope", "outcomes"]), index: z.number().int().min(0).max(3000) })),
+  "ops.recoverRejectedRecipients": m<{ opId: string }>()(z.object({ opId: z.string().uuid() })),
+  "ops.forgetRecipientReceipt": m<{ ok: true }>()(z.object({ opId: z.string().uuid() })),
   "ops.sentCopies": m<import("../send-copy").SentCopyInfo[]>()(z.object({ accountId: id })),
   "ops.repairSentCopy": m<{ copy: import("../send-copy").SentCopyState }>()(z.object({ opId: z.string().uuid() }), { timeoutMs: 120_000 }),
   "ops.forgetSentCopy": m<{ ok: true }>()(z.object({ opId: z.string().uuid() })),
@@ -882,6 +886,7 @@ export interface Events {
   /** plan 68: the folders of every account, when an account's list changed */
   folders: Folder[];
   op: OpInfo;
+  recipientReceiptRetired: { opId: string };
   owner: OwnerIdentity | null;
   /** progress of a scope action (threads.actScope / undoScope, categories.addScope), at most ~10 per second */
   bulkProgress: { jobId: string; done: number; total: number };

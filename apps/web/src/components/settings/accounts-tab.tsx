@@ -1,4 +1,5 @@
 import { SentCopies } from "./sent-copies";
+import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
 import type { Account, AccountPatch, CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
@@ -184,7 +185,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
-      {account.kind === "imap" && <SentCopies key={account.id} accountId={account.id} />}
+      {account.kind === "imap" && <><SentCopies key={`copy:${account.id}`} accountId={account.id} /><RecipientReceipts key={`recipients:${account.id}`} accountId={account.id} /></>}
       <SettingsRow label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>

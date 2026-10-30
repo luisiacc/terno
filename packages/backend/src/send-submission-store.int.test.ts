@@ -1,4 +1,6 @@
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { encodeText } from "@terno/core";
+import { L } from "@terno/i18n";
 import { createRegistry } from "@terno/mail";
 import { SMTPServer } from "smtp-server";
 import { Backend, plaintextCipher } from "./backend";
@@ -215,7 +217,8 @@ it("real SMTP plus IDB completion abort commits acceptance through fallback, reo
   await first.backend.runWorker(); injection.mockRestore();
   expect({ faults, aborted }).toEqual({ faults: 1, aborted: true });
   expect(received).toHaveLength(1); expect(received[0]!.recipients).toEqual(["yes@example.test", "hidden@example.test"]); expect(received[0]!.raw.toString()).not.toMatch(/^Bcc:/mi);
-  expect(await store.sendCopies.get(opId)).toBeNull();
+  expect((await store.sendCopies.get(opId))?.copyRequested).toBe(false);
+  expect(await store.sendCopies.list(account.id)).toEqual([]);
   await first.backend.stop();
   const second = connect(await open()); await second.backend.ready;
   const retried = await second.client.call("ops.resolveUnknown", { opId, resolution: "retry" }).then(() => true, () => false);
@@ -240,6 +243,8 @@ for (const adapter of ["SQL", "IDB"] as const) for (const appendToSent of [false
     expect(JSON.parse((await store.recipientReceipts.readPart(t.opId, "envelope", 0))!)).toEqual([{ role: "to", email: "recipient@example.test", name: "" }]);
     expect(JSON.parse((await store.recipientReceipts.readPart(t.opId, "outcomes", 0))!)).toEqual(["accepted"]);
     while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ }
+    if (appendToSent) { await store.sendCopies.record(t.opId, "rejected"); } else while (await store.sendCopies.forgetSlice(t.opId)) { /* bounded */ }
+    await store.recipientReceipts.finishRetire(t.opId);
     expect(await store.recipientReceipts.get(t.opId)).toBeNull();
     await store.close(); store = await t.open();
     expect(await store.ops.sendSubmission(t.opId)).toMatchObject({ accepted: true });
@@ -279,7 +284,14 @@ it("IDB recipient publication abort rolls back both receipt and acceptance marke
 
 for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} refuses the 129th independent receipt without consuming a draft`, async () => {
   const t = await setup(adapter); const store = t.store;
-  for (let i = 1; i < 128; i++) await store.compose.queueSend({ ...t.command, now: 2 + i });
+  const finish = async (id: string, now: number) => {
+    expect((await store.ops.claimReady(now, 1))[0]?.id).toBe(id);
+    await store.sendCopies.startWire(id, 1); await store.sendCopies.appendWire(id, 0, "YQ=="); await store.sendCopies.sealWire(id);
+    await store.ops.complete(id, { sendAccepted: { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] } }, now);
+    while (await store.sendCopies.forgetSlice(id)) { /* bounded */ }
+  };
+  await finish(t.opId, 2);
+  for (let i = 1; i < 128; i++) { const queued = await store.compose.queueSend({ ...t.command, now: 2 + i }); await finish(queued.opId, 2 + i); }
   expect(await store.recipientReceipts.list(t.command.accountId)).toHaveLength(128);
   const draft = (await store.drafts.save({ accountId: t.command.accountId, to: t.command.to, cc: [], bcc: [], subject: t.command.subject, bodyText: t.command.bodyText }, 200))!;
   await expect(store.compose.queueSend({ ...t.command, now: 201, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision })).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -369,7 +381,10 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} atomically claims 
   expect((await store.ops.claimReady(6, 10)).map((op) => op.id)).toContain(first);
   await store.ops.markUnknown(first, "Synthetic ambiguous recovery", 7);
   await expect(store.ops.resolveUnknown(first, "retry", 8)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  await expect(store.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ }
+  while (await store.sendCopies.forgetSlice(t.opId)) { /* bounded */ }
+  await store.recipientReceipts.finishRetire(t.opId);
+  expect(await store.recipientReceipts.claimRecovery(t.opId, receipt, 9)).toBe(first);
 });
 
 for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} refuses recovery claim when its immutable source was removed`, async () => {
@@ -384,8 +399,8 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} refuses recovery c
 
 
 it.each(["rollback", "committed rejection"] as const)("SQL recovery claim %s reopens with its actual atomic outcome", async (fault) => {
-  const t = await setup("SQL", true); const store = t.store;
-  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null });
+  const t = await setup("SQL", true, [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
   const receipt = (await store.recipientReceipts.get(t.opId))!, db = sqlDb(store); let armed = true;
   const inject = () => { if (armed) { armed = false; throw new Error("Synthetic claim acknowledgement"); } };
   if (fault === "rollback") db.onBeforeCommit(inject); else db.onCommit(inject);
@@ -397,8 +412,8 @@ it.each(["rollback", "committed rejection"] as const)("SQL recovery claim %s reo
 });
 
 it.each([false, true])("IDB recovery claim native %s distinguishes abort from hidden commit", async (hidden) => {
-  const t = await setup("IDB", true); const store = t.store;
-  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null });
+  const t = await setup("IDB", true, [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null); await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
   const receipt = (await store.recipientReceipts.get(t.opId))!, put = IDBObjectStore.prototype.put; let hits = 0, actual: string | null = null;
   const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
     const result = Reflect.apply(put, this, args) as IDBRequest;
@@ -414,28 +429,133 @@ it.each([false, true])("IDB recovery claim native %s distinguishes abort from hi
   else { const reopened = await t.open(); expect((await reopened.recipientReceipts.get(t.opId))?.childOpId).toBeNull(); expect(JSON.parse((await reopened.ops.get(t.opId))!.target_json).recipientRecoveryChild).toBeUndefined(); }
 });
 
-for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} deliberately recovers only rejected RCPT with exact sealed SMTP bytes after reopen`, async () => {
+for (const adapter of ["SQL", "IDB"] as const) for (const append of [false, true]) for (const dropAck of [false, true]) it(`${adapter} deliberately recovers only rejected RCPT with exact sealed SMTP bytes after reopen append=${append} lostAck=${dropAck}`, async () => {
   const commands: string[] = [], bodies: Buffer[] = []; let refusal = true;
+  const sockets = new Set<import("node:net").Socket>();
   const smtp = new SMTPServer({ disabledCommands: ["STARTTLS"], authOptional: true, onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }),
     onRcptTo(address, _s, cb) { commands.push(address.address); if (address.address === "no@example.test" && refusal) { refusal = false; cb(Object.assign(new Error("Synthetic refusal"), { responseCode: 550 })); } else cb(); },
-    onData(stream, _session, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { bodies.push(Buffer.concat(chunks)); cb(); }); },
+    onData(stream, _session, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { bodies.push(Buffer.concat(chunks)); if (dropAck && bodies.length === 2) { for (const socket of sockets) socket.destroy(); return; } cb(); }); },
   });
+  smtp.server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
   await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve)); cleanup.push(() => new Promise<void>((resolve) => smtp.close(resolve)));
   const dir = mkdtempSync(join(tmpdir(), "terno-recipient-recovery-")), name = crypto.randomUUID(), factory = new IDBFactory(), stores: MailStore[] = [];
   const open = async () => { const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "s.db"))) : await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.push(store); return store; };
   cleanup.push(async () => { for (const store of stores) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
   const store = await open();
-  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: true } });
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: append } });
   const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-recovery", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
   const first = connect(store);
   const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }], bcc: [{ name: "", email: "hidden@example.test" }], subject: "Original synthetic", bodyText: "Exact wire body" });
   await first.backend.runWorker(); expect(bodies).toHaveLength(1); await first.backend.stop();
   const second = connect(await open()); await second.backend.ready;
-  const [child, sameChild] = await Promise.all([second.backend.recoverRejectedRecipients(opId), second.backend.recoverRejectedRecipients(opId)]);
-  expect(sameChild).toBe(child);
+  if (!append) { await expect(second.client.call("ops.forgetSentCopy", { opId })).rejects.toMatchObject({ code: "BAD_REQUEST" }); await expect(second.client.call("ops.repairSentCopy", { opId })).rejects.toMatchObject({ code: "BAD_REQUEST" }); }
+  const [result, sameResult] = await Promise.all([second.client.call("ops.recoverRejectedRecipients", { opId }), second.client.call("ops.recoverRejectedRecipients", { opId })]);
+  const child = result.opId; expect(sameResult.opId).toBe(child);
   await second.backend.runWorker();
   expect(commands).toEqual(["yes@example.test", "no@example.test", "hidden@example.test", "no@example.test"]);
   expect(bodies).toHaveLength(2); expect(bodies[1]).toEqual(bodies[0]);
   expect((await second.backend.store.ops.sendSubmission(opId))?.accepted).toBe(true);
-  expect((await second.backend.store.ops.get(child))?.state).toBe("succeeded");
+  expect((await second.backend.store.ops.get(child))?.state).toBe(dropAck ? "unknown" : "succeeded");
+  expect((await second.backend.store.recipientReceipts.get(child))?.state).toBe(dropAck ? "pending" : "accepted");
+  if (!dropAck) expect(JSON.parse((await second.backend.store.recipientReceipts.readPart(child, "outcomes", 0))!)).toEqual(["accepted"]);
+  if (dropAck) {
+    await expect(second.client.call("ops.resolveUnknown", { opId: child, resolution: "retry" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await second.backend.stop(); const third = connect(await open()); await third.backend.ready; await third.backend.runWorker();
+    expect((await third.backend.store.ops.get(child))?.state).toBe("unknown");
+    expect((await third.client.call("ops.recipientReceipts", { accountId: account.id })).find((row) => row.opId === child)?.outcomeUncertain).toBe(true);
+    expect((await third.client.call("ops.recoverRejectedRecipients", { opId })).opId).toBe(child); expect(bodies).toHaveLength(2);
+  }
+});
+
+
+for (const adapter of ["SQL", "IDB"] as const) for (const append of [false, true]) it(`${adapter} retiring recipient details removes address-bearing recipient warnings with append=${append}`, async () => {
+  const t = await setup(adapter, append); let store = t.store;
+  await store.ops.claimReady(2, 1);
+  if (append) { await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); }
+  const warning = encodeText(L("errors.smtp.notDeliveredTo", { recipients: "private-rejection@example.test" }));
+  await store.ops.markUnknown(t.opId, warning, 3, { warning });
+  while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ }
+  await store.close(); store = await t.open();
+  expect((await store.ops.get(t.opId))?.last_error).not.toContain("private-rejection@example.test");
+  if (append) expect((await store.sendCopies.get(t.opId))?.warning).not.toContain("private-rejection@example.test");
+  expect((await store.ops.sendSubmission(t.opId))?.accepted).toBe(true);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} permits deliberate source removal before claim without granting recovery`, async () => {
+  const t = await setup(adapter, true, [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
+  const header = (await store.recipientReceipts.get(t.opId))!;
+  while (await store.sendCopies.forgetSlice(t.opId)) { /* explicit bounded source removal */ }
+  expect(await store.sendCopies.get(t.opId)).toBeNull(); expect((await store.recipientReceipts.get(t.opId))?.hasRejected).toBe(true);
+  await expect(store.recipientReceipts.claimRecovery(t.opId, header, 4)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.ops.sendSubmission(t.opId))?.accepted).toBe(true);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} retains retired ownership until wire cleanup has finished`, async () => {
+  const t = await setup(adapter, false); let store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.ops.complete(t.opId, { sendAccepted: { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] } }, 3);
+  while (await store.recipientReceipts.retireSlice(t.opId)) { /* bounded */ }
+  expect((await store.recipientReceipts.get(t.opId))?.retired).toBe(true);
+  await expect(store.recipientReceipts.finishRetire(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await store.close(); store = await t.open();
+  expect((await store.recipientReceipts.get(t.opId))?.retired).toBe(true);
+  while (await store.sendCopies.forgetSlice(t.opId)) { /* bounded */ }
+  await store.recipientReceipts.finishRetire(t.opId);
+  expect(await store.recipientReceipts.get(t.opId)).toBeNull();
+  expect((await store.ops.sendSubmission(t.opId))?.accepted).toBe(true);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) for (const retireFirst of [false, true]) it(`${adapter} serializes a recovery claim against recipient retirement, retirement first=${retireFirst}`, async () => {
+  const t = await setup(adapter, true, [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
+  const header = (await store.recipientReceipts.get(t.opId))!;
+  const operations = retireFirst ? [store.recipientReceipts.retireSlice(t.opId), store.recipientReceipts.claimRecovery(t.opId, header, 4)] as const : [store.recipientReceipts.claimRecovery(t.opId, header, 4), store.recipientReceipts.retireSlice(t.opId)] as const;
+  const results = await Promise.allSettled(operations);
+  const claim = results[retireFirst ? 1 : 0] as PromiseSettledResult<string>, retire = results[retireFirst ? 0 : 1];
+  expect([claim.status, retire.status].filter((status) => status === "fulfilled")).toHaveLength(1);
+  const current = (await store.recipientReceipts.get(t.opId))!;
+  if (claim.status === "fulfilled") { expect(current.childOpId).toBe(claim.value); expect(current.retired).toBe(false); await expect(store.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" }); }
+  else { expect(current.retired).toBe(true); expect(current.childOpId).toBeNull(); }
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} never claims a recovery child without proven rejection`, async () => {
+  const t = await setup(adapter, true); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "recipient@example.test", outcome: "accepted" }] });
+  const header = (await store.recipientReceipts.get(t.opId))!;
+  await expect(store.recipientReceipts.claimRecovery(t.opId, header, 4)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.recipientReceipts.get(t.opId))?.childOpId).toBeNull();
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} rechecks account lifetime in the atomic recovery claim`, async () => {
+  const t = await setup(adapter, true, [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }]); const store = t.store;
+  await store.ops.claimReady(2, 1); await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId); await store.sendCopies.accepted(t.opId, null);
+  await store.ops.markUnknown(t.opId, "synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
+  const header = (await store.recipientReceipts.get(t.opId))!;
+  await expect(store.recipientReceipts.claimRecovery(t.opId, header, 4, () => { throw new Error("Synthetic account closed"); })).rejects.toThrow("account closed");
+  expect((await store.recipientReceipts.get(t.opId))?.childOpId).toBeNull();
+  expect(JSON.parse((await store.ops.get(t.opId))!.target_json).recipientRecoveryChild).toBeUndefined();
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} preserves shared source and recipient outcomes for a partially refused recovery`, async () => {
+  const commands: string[] = [], bodies: Buffer[] = [], attempts = new Map<string, number>();
+  const smtp = new SMTPServer({ disabledCommands: ["STARTTLS"], authOptional: true, onAuth: (_a, _s, cb) => cb(null, { user: "synthetic" }), onRcptTo(address, _s, cb) { const count = (attempts.get(address.address) ?? 0) + 1; attempts.set(address.address, count); commands.push(address.address); const limit = address.address === "no1@example.test" ? 1 : address.address === "no2@example.test" ? 2 : 0; if (count <= limit) cb(Object.assign(new Error("Synthetic refusal"), { responseCode: 550 })); else cb(); }, onData(stream, _s, cb) { const chunks: Buffer[] = []; stream.on("data", (chunk: Buffer) => chunks.push(chunk)); stream.on("end", () => { bodies.push(Buffer.concat(chunks)); cb(); }); } });
+  await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve)); cleanup.push(() => new Promise<void>((resolve) => smtp.close(resolve)));
+  const dir = mkdtempSync(join(tmpdir(), "terno-recipient-chain-")), name = crypto.randomUUID(), factory = new IDBFactory(), stores: MailStore[] = [];
+  const open = async () => { const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "s.db"))) : await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.push(store); return store; };
+  cleanup.push(async () => { for (const store of stores) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
+  const store = await open(); const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false } });
+  const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-chain", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
+  const first = connect(store); const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no1@example.test" }], bcc: [{ name: "", email: "no2@example.test" }], subject: "Synthetic chain", bodyText: "Exact wire" });
+  await first.backend.runWorker(); const child = (await first.client.call("ops.recoverRejectedRecipients", { opId })).opId; await first.backend.runWorker();
+  expect(JSON.parse((await store.recipientReceipts.readPart(child, "outcomes", 0))!)).toEqual(["accepted", "rejected"]);
+  await first.client.call("ops.forgetRecipientReceipt", { opId });
+  expect(await store.recipientReceipts.get(opId)).toBeNull(); expect((await store.sendCopies.get(opId))?.ready).toBe(true);
+  await first.backend.stop(); const second = connect(await open()); await second.backend.ready;
+  const grandchild = (await second.client.call("ops.recoverRejectedRecipients", { opId: child })).opId; await second.backend.runWorker();
+  expect((await second.backend.store.ops.get(grandchild))?.state).toBe("succeeded");
+  expect(commands).toEqual(["yes@example.test", "no1@example.test", "no2@example.test", "no1@example.test", "no2@example.test", "no2@example.test"]);
+  expect(bodies).toHaveLength(3); expect(bodies[1]).toEqual(bodies[0]); expect(bodies[2]).toEqual(bodies[0]);
 });

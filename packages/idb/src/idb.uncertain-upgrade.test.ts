@@ -58,7 +58,7 @@ it("preserves a complete canonical physical9/logical23 fixture through the physi
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 15, logical: 27 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 16, logical: 28 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -101,7 +101,7 @@ it("preserves a complete canonical physical10/logical23 fixture through the phys
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 15, logical: 27 });
+    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 16, logical: 28 });
     const [account] = await withAccounts(seed, 1);
     await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
     await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);
@@ -474,5 +474,25 @@ it("upgrades populated physical14 reply context and folders without inventing re
     expect(await store.folders.list()).toEqual(before.folders);
     expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(before.draft);
     expect(await store.recipientReceipts.list(account!)).toEqual([]);
+  } finally { raw?.close(); if (store?.isOpen) await store.close(); if (seed.isOpen) await seed.close(); }
+});
+
+it("upgrades physical15 recipient evidence and copy ownership without losing its parts", async () => {
+  const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
+  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
+  try {
+    const { account } = await seed.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: true }, now: 1 });
+    const queued = await seed.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact", recordReply: false, now: 2 });
+    await seed.ops.claimReady(2, 1); await seed.sendCopies.startWire(queued.opId, 1); await seed.sendCopies.appendWire(queued.opId, 0, "YQ=="); await seed.sendCopies.sealWire(queued.opId); await seed.sendCopies.accepted(queued.opId, null);
+    await seed.ops.markUnknown(queued.opId, "Synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });
+    await seed.close(); raw = await request(factory.open(databaseName(sourceName))); const source = await image(raw); raw.close(); raw = undefined;
+    const legacy = factory.open(databaseName(name), 15);
+    legacy.onupgradeneeded = () => { for (const saved of source) { const target = legacy.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement }); for (const index of saved.indexes) target.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry }); saved.values.forEach((value, i) => { let row = value; if (saved.name === "meta" && saved.keys[i] === "logicalSchema") row = 27; if (saved.name === "recipient_receipts") { const { hasRejected: _r, wireOwnerId: _w, ...prior } = value as Record<string, unknown>; row = prior; } if (saved.name === "send_copies") { const { copyRequested: _c, ...prior } = value as Record<string, unknown>; row = prior; } target.put(row, saved.keys[i]!); }); } };
+    raw = await request(legacy); raw.close(); raw = undefined;
+    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    expect(await store.recipientReceipts.get(queued.opId)).toMatchObject({ state: "accepted", hasRejected: true, wireOwnerId: null });
+    expect(await store.sendCopies.get(queued.opId)).toMatchObject({ ready: true, copyRequested: true });
+    expect(await store.recipientReceipts.readPart(queued.opId, "outcomes", 0)).toBe('["accepted","rejected"]');
   } finally { raw?.close(); if (store?.isOpen) await store.close(); if (seed.isOpen) await seed.close(); }
 });

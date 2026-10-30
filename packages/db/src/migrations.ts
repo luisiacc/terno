@@ -974,6 +974,12 @@ CREATE TABLE recipient_receipts (opId TEXT PRIMARY KEY REFERENCES ops(id) ON DEL
 CREATE INDEX recipient_receipts_account ON recipient_receipts(accountId);
 CREATE TABLE recipient_receipt_parts (id TEXT PRIMARY KEY, opId TEXT NOT NULL REFERENCES recipient_receipts(opId) ON DELETE CASCADE, kind TEXT NOT NULL, position INTEGER NOT NULL, data TEXT NOT NULL);
 ` },
+  { version: 28, name: "recipient wire ownership", sql: `
+ALTER TABLE send_copies ADD COLUMN copyRequested INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE recipient_receipts ADD COLUMN hasRejected INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE recipient_receipts ADD COLUMN wireOwnerId TEXT;
+UPDATE recipient_receipts SET hasRejected=1 WHERE state='accepted';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

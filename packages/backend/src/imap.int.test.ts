@@ -2990,7 +2990,8 @@ describe("sending through SMTP", () => {
     expect(await reopened.store.sendCopies.get(opId)).toEqual(before);
     await rpc.call("ops.repairSentCopy", { opId });
     const after = await reopened.store.sendCopies.get(opId);
-    expect(after).toMatchObject({ submission: "accepted", copy: "saved", mailbox: "Sent", uid: expect.any(Number), uidValidity: expect.any(String), chunks: 0 });
+    expect(after).toMatchObject({ submission: "accepted", copy: "saved", mailbox: "Sent", uid: expect.any(Number), uidValidity: expect.any(String), chunks: 1 });
+    expect(await reopened.store.sendCopies.readWire(opId, 0)).not.toBeNull();
     const copies = t.imap.server.control.listMessages("Sent", { raw: true }) as { uid: number; raw: Buffer }[];
     expect(copies).toHaveLength(1);
     expect(copies[0]!.raw.toString()).toBe(t.smtp.received[0]!.raw);
@@ -3060,7 +3061,7 @@ describe("sending through SMTP", () => {
     expect(await reopened.store.sendCopies.get(opId)).toMatchObject({ submission: "accepted", copy: "unknown" });
   });
 
-  it("partial delivery succeeds but records which recipients were rejected", async () => {
+  it("partial SMTP submission records which recipients were rejected", async () => {
     const { imap, backend, client, addAccount } = await setup({ smtp: { rejectRcpt: "nadie@example.com" } });
     const account = await addAccount(imap.port);
     const { opId } = await client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "ana@example.com" }, { name: "", email: "nadie@example.com" }], subject: "x", bodyText: "y" });
@@ -3068,7 +3069,7 @@ describe("sending through SMTP", () => {
     expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE id = ?", opId)).toEqual({ state: "succeeded" });
     // kept as a catalog message: the renderer says it in the user's language
     expect((await client.call("ops.list", {})).find((o) => o.id === opId)).toMatchObject({
-      lastError: "Not delivered to: nadie@example.com",
+      lastError: "Mail server refused: nadie@example.com",
       lastErrorI18n: { key: "errors.smtp.notDeliveredTo", params: { recipients: "nadie@example.com" } },
       summary: "Send “x”",
       summaryI18n: { key: "backend.op.send", params: { subject: "x" } },
