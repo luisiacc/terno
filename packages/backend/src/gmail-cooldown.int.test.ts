@@ -16,7 +16,8 @@ const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); vi.restoreAllMocks(); });
 function latch() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
 
-async function setup(kind: "SQL" | "IndexedDB") {
+async function setup(kind: "SQL" | "IndexedDB", autoSync = false) {
+  let offset = 0;
   const requests: string[] = [];
   let answer: ((req: IncomingMessage, res: ServerResponse) => boolean) | undefined;
   const server = createServer(async (req, res) => {
@@ -39,7 +40,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
     create: (ctx) => { contexts.set(ctx.account.id, ctx); return createGmailProvider(ctx, { endpoints: { token: `${origin}/token`, api: `${origin}/gmail` } }); },
     async verifyImap() {}, async connectGmail() { throw new Error("Unused consent"); },
   };
-  const open = async () => new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined, platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  const open = async () => new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined, platform, providers, cipher: plaintextCipher, version: "test", autoSync, now: () => Date.now() + offset, instantSearch: false, iconTransport: null });
   let backend = await open();
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
   await backend.store.settings.set("app", { gmailClientId: "synthetic" });
@@ -48,7 +49,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
     try { await backend.stop(); }
     finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); }
   });
-  return { contexts, origin, answer(fn: typeof answer) { answer = fn; }, get backend() { return backend; }, account, requests, async reopen() { await backend.stop(); backend = await open(); } };
+  return { time(value: number) { offset = value - Date.now(); }, contexts, origin, answer(fn: typeof answer) { answer = fn; }, get backend() { return backend; }, account, requests, async reopen() { await backend.stop(); backend = await open(); } };
 }
 
 function healthyProfile(_req: IncomingMessage, res: ServerResponse) {
@@ -58,6 +59,140 @@ function healthyProfile(_req: IncomingMessage, res: ServerResponse) {
 }
 
 for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail cooldown`, () => {
+  it("W05 automatically retries token503 through the existing worker timer", async () => {
+    const h = await setup(kind, true);
+    let tokens = 0;
+    h.answer((req, res) => {
+      if (req.url === "/token" && ++tokens === 1) { res.writeHead(503).end("{}"); return true; }
+      if (req.url === "/gmail/messages/send") { res.writeHead(200).end(JSON.stringify({ id: "sent", threadId: "sent-thread" })); return true; }
+      return healthyProfile(req, res);
+    });
+    const [local, remote] = createMemoryTransportPair();
+    h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => rpc.close());
+    const { opId } = await rpc.call("compose.send", { accountId: h.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Synthetic", bodyText: "Synthetic" });
+    await vi.waitFor(async () => expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 2 }), { timeout: 8000 });
+    expect(h.requests).toEqual(["/token", "/token", "/gmail/profile", "/gmail/messages/send"]);
+  });
+
+  for (const status of [200, 503]) it(`W05 keeps optional malformed/503 labels failure optional (${status})`, async () => {
+    const h = await setup(kind);
+    h.answer((req, res) => {
+      if (healthyProfile(req, res)) return true;
+      if (req.url?.startsWith("/gmail/messages?") || req.url?.startsWith("/gmail/history?")) { res.writeHead(200).end(JSON.stringify({ messages: [], historyId: "1" })); return true; }
+      if (req.url === "/gmail/labels") { res.writeHead(status).end("{}"); return true; }
+      return false;
+    });
+    await h.backend.syncAccount(h.account.id);
+    expect(h.requests.at(-1)).toBe("/gmail/labels");
+    expect((await h.backend.store.accounts.get(h.account.id))!.syncState.status).toBe("idle");
+    expect(JSON.parse((await h.backend.store.providerCooldown.read()) ?? "{}").rows ?? []).toEqual([]);
+  });
+
+  for (const status of [400, 429]) it(`W05 retains real unverified OAuth constraints (${status})`, async () => {
+    const h = await setup(kind);
+    h.answer((req, res) => {
+      if (req.url !== "/token") return false;
+      res.writeHead(status, { "retry-after": "120" }).end(JSON.stringify({ error: "invalid_grant" })); return true;
+    });
+    const [local, remote] = createMemoryTransportPair();
+    h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => rpc.close());
+    const { opId } = await rpc.call("compose.send", { accountId: h.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Synthetic", bodyText: "Synthetic" });
+    expect(await h.backend.runWorker()).toBe(1);
+    const before = await h.backend.store.ops.get(opId);
+    const ledger = await h.backend.store.providerCooldown.read();
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(await h.backend.store.ops.get(opId)).toEqual(before);
+    expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+    expect(h.requests).toEqual(["/token"]);
+    expect((await h.backend.store.accounts.get(h.account.id))!.syncState.authRequired === true).toBe(status === 400);
+  });
+
+  it("W05 retries a token503 queued send on its existing backoff without an unrelated sync", async () => {
+    const h = await setup(kind);
+    let tokens = 0;
+    h.answer((req, res) => {
+      if (req.url === "/token" && ++tokens === 1) { res.writeHead(503).end("{}"); return true; }
+      if (req.url === "/gmail/messages/send") { res.writeHead(200).end(JSON.stringify({ id: "sent", threadId: "sent-thread" })); return true; }
+      return healthyProfile(req, res);
+    });
+    const [local, remote] = createMemoryTransportPair();
+    h.backend.connect(remote, { clientId: "synthetic", origin: "renderer" });
+    const rpc = new RpcClient(local); cleanup.push(async () => rpc.close());
+    const { opId } = await rpc.call("compose.send", { accountId: h.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Synthetic", bodyText: "Synthetic" });
+    const original = (await h.backend.store.ops.get(opId))!;
+    expect(await h.backend.runWorker()).toBe(1);
+    const failed = (await h.backend.store.ops.get(opId))!;
+    expect(failed).toMatchObject({ state: "queued", attempts: 1, payload_json: original.payload_json, target_json: original.target_json });
+    expect(failed.next_attempt_at).toBeGreaterThan(original.next_attempt_at);
+    expect((await h.backend.store.accounts.get(h.account.id))?.syncState.authRequired).not.toBe(true);
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(h.requests).toEqual(["/token"]);
+    h.time(failed.next_attempt_at);
+    expect(await h.backend.runWorker()).toBe(1);
+    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 2, payload_json: original.payload_json });
+    expect(JSON.parse((await h.backend.store.ops.get(opId))!.target_json)).toEqual({ ...JSON.parse(original.target_json), submissionAccepted: true });
+    expect(h.requests).toEqual(["/token", "/token", "/gmail/profile", "/gmail/messages/send"]);
+    expect(await h.backend.runWorker()).toBe(0);
+  });
+
+  it("W05 exposes labels429 as an account error while retaining its durable deadline", async () => {
+    const h = await setup(kind);
+    h.answer((req, res) => {
+      if (healthyProfile(req, res)) return true;
+      if (req.url?.startsWith("/gmail/messages?") || req.url?.startsWith("/gmail/history?")) { res.writeHead(200).end(JSON.stringify({ messages: [], historyId: "1" })); return true; }
+      return false;
+    });
+    await h.backend.syncAccount(h.account.id);
+    expect(h.requests.at(-1)).toBe("/gmail/labels");
+    const state = (await h.backend.store.accounts.get(h.account.id))!.syncState;
+    expect(state).toMatchObject({ status: "error", connection: null });
+    expect(state.lastErrorI18n).toMatchObject({ key: "errors.gmail.requestFailed", params: { status: 429 } });
+    expect(state.authRequired).not.toBe(true);
+    const ledger = (await h.backend.store.providerCooldown.read())!;
+    const row = JSON.parse(ledger).rows.find((r: { service: string }) => r.service === "gmail-api");
+    expect(BigInt(row.minimum)).toBeGreaterThan(0n);
+    const before = [...h.requests];
+    await h.backend.syncAccount(h.account.id);
+    expect(h.requests).toEqual(before);
+    expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+    expect((await h.backend.store.accounts.get(h.account.id))!.syncState.status).toBe("error");
+    // Both clocks must satisfy the durable floor/replay. A new explicit sync is the recovery event.
+    const elapsed = performance.now();
+    h.time(Number(row.minimum) + 180_000);
+    vi.spyOn(performance, "now").mockReturnValue(elapsed + 360_000);
+    h.answer((req, res) => {
+      if (req.url === "/gmail/labels") { res.writeHead(200).end(JSON.stringify({ labels: [] })); return true; }
+      if (req.url?.startsWith("/gmail/history?")) { res.writeHead(200).end(JSON.stringify({ historyId: "1" })); return true; }
+      return healthyProfile(req, res);
+    });
+    await h.backend.syncAccount(h.account.id);
+    expect(h.requests.at(-1)).toBe("/gmail/labels");
+    expect((await h.backend.store.accounts.get(h.account.id))!.syncState).toMatchObject({ status: "idle", lastError: null });
+  });
+
+  for (const retire of ["credentials", "lifetime"] as const) it(`W05 late labels429 cannot publish after retiring ${retire}`, async () => {
+    const h = await setup(kind);
+    const entered = latch(); let held: ServerResponse | undefined;
+    cleanup.push(async () => { if (held && !held.writableEnded) held.end("{}"); });
+    h.answer((req, res) => {
+      if (healthyProfile(req, res)) return true;
+      if (req.url?.startsWith("/gmail/messages?") || req.url?.startsWith("/gmail/history?")) { res.writeHead(200).end(JSON.stringify({ messages: [], historyId: "1" })); return true; }
+      if (req.url === "/gmail/labels") { held = res; entered.resolve(); return true; }
+      return false;
+    });
+    const syncing = h.backend.syncAccount(h.account.id);
+    await entered.promise;
+    if (retire === "credentials") await h.backend.signedIn(h.account.id);
+    const dropping = retire === "lifetime" ? h.backend.dropAccount(h.account.id) : Promise.resolve();
+    const before = (await h.backend.store.accounts.get(h.account.id))!.syncState;
+    held!.writeHead(429, { "retry-after": "120" }).end("{}");
+    await dropping;
+    await syncing;
+    expect((await h.backend.store.accounts.get(h.account.id))!.syncState).toEqual(before);
+  });
+
   it("denies repeated actual resource requests and remains paused after reopening", async () => {
     const h = await setup(kind);
     const provider = (await h.backend.provider(h.account.id))!;

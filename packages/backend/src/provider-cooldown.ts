@@ -469,7 +469,7 @@ export class ProviderCooldown {
     }
     try {
       const preproofDependency = [...this.dependencies.values()].some((d) => d.owner === "installation" && d.id === null);
-      return copyOpAdmission({ blockedAccountIds: blocked, verifiedAccountIds: verified, blockUnverifiedGoogle: this.state("installation", "gmail-api").kind !== "ready" || preproofDependency, blockAllGoogle: this.storageFault || this.ledger.overflow || this.closing || this.reservations.size + this.maintenance.size >= COOLDOWN_TICKETS });
+      return copyOpAdmission({ blockedAccountIds: blocked, verifiedAccountIds: verified, blockUnverifiedGoogle: this.state("installation", "gmail-api").kind !== "ready" || (preproofDependency && this.state("installation", "oauth-token").kind !== "ready"), blockAllGoogle: this.storageFault || this.ledger.overflow || this.closing || this.reservations.size + this.maintenance.size >= COOLDOWN_TICKETS });
     } catch {
       return copyOpAdmission({ blockedAccountIds: [], verifiedAccountIds: [], blockUnverifiedGoogle: false, blockAllGoogle: true });
     }

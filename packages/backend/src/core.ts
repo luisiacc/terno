@@ -1305,7 +1305,7 @@ export class BackendCore {
             await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
-            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError) throw error;
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && error.httpResponse?.status === 429)) throw error;
           }
         } finally { arrivals.end(); }
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
