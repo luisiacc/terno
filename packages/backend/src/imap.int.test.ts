@@ -1117,12 +1117,26 @@ describe("a new account's first sync (plan 76)", () => {
     expect(sizes).toEqual([250, 22, 22]);
     // the preview was written down when it was done, and the Inbox's full read took its place
     const cursor = JSON.parse(sqlDb(backend.store).get<{ c: string }>("SELECT provider_config AS c FROM accounts WHERE id = ?", account.id)!.c).cursor as { previewed?: object; mailboxes: object };
-    expect(cursor.previewed).toEqual({});
+    expect(cursor.previewed).toBeUndefined();
     expect(cursor.mailboxes).toHaveProperty("INBOX");
     const rows = placed(backend);
     expect(rows.map((r) => r.uid)).toEqual(Array.from({ length: 272 }, (_, i) => i + 1));
     expect(count(backend, "SELECT 1 FROM messages")).toBe(272);
     expect(count(backend, "SELECT 1 FROM messages WHERE rfc_message_id = 'twice@test.local'")).toBe(2);
+  });
+
+  it("a folder named constructor is a folder, not the preview's mark (Codex R2)", async () => {
+    const { imap, backend, addAccount } = await setup();
+    for (let i = 1; i <= 260; i++) imap.server.control.addMessage("INBOX", { raw: raw({ subject: `msg ${i}` }) });
+    imap.server.control.createMailbox("constructor");
+    imap.server.control.addMessage("constructor", { raw: raw({ subject: "in a folder called constructor" }) });
+    const account = await addAccount(imap.port);
+    // the retry reads a cursor with the preview's mark in it, back from JSON
+    stopAfterPreview(backend);
+    await backend.syncAccount(account.id);
+    await backend.syncAccount(account.id);
+    expect(count(backend, "SELECT 1 FROM messages")).toBe(261);
+    expect(count(backend, "SELECT 1 FROM message_locations WHERE mailbox = 'constructor'")).toBe(1);
   });
 
   it("a UIDVALIDITY reset between the preview and the full read is a reset: what the server dropped goes", async () => {

@@ -100,7 +100,7 @@ describe("accounts.update", () => {
     const { client, windows } = setup();
     const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
     await until(() => windows.length === 1);
-    expect(windows[0]).toEqual({ accountId: a.id, windowStart: NOW - 90 * DAY });
+    expect(windows[0]).toEqual({ accountId: a.id, windowStart: NOW - 180 * DAY });
     await client.call("accounts.update", { id: a.id, syncWindowDays: 14 });
     await client.call("sync.now", { accountId: a.id });
     await until(() => windows.length === 2);

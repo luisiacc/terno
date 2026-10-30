@@ -81,3 +81,9 @@ Also from the review:
 3. **The interruption test didn't test interruption.** It now stops the pass right after the preview, with one twin below the preview's edge (UID 1) and one inside it (UID 272). It checks the sizes ingested (250, then 22, never a second preview), the saved mark and the twins.
 
 All three tests fail on the code before these fixes.
+
+## Codex code review, round 2
+
+1. **`previewed` came back from JSON with a prototype.** A folder named `constructor` read an inherited function as the preview's validity, took it for a reset, and failed every later pass. It's now rebuilt with no prototype on load, like `mailboxes` and `resetPending`, and dropped once empty. Test: a `constructor` folder read on the retry after the preview stops (it fails before the fix).
+
+Also: `settings-edits.test.ts` expected the old 90-day default.
