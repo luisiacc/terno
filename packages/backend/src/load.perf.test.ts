@@ -38,6 +38,8 @@ import { Backend, plaintextCipher } from "./backend";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
 import { describeGap, HOLD_LIMIT_MS, holdsExcusable, loopActiveMs, machineBusy, sampleAsync, settle, threadCpuMs, watchLoop, type Gap } from "../../db/src/test/timing";
 
+import { loadFailureDetail } from "./load-failure-detail";
+
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
 /** each slowed command burns this many times its own CPU time (I/O waits aren't multiplied)… */
 const SLOWDOWN = 2;
@@ -223,6 +225,7 @@ async function underLoad(name: string, fn: () => Promise<unknown>) {
     p95: m.maxGap.busy,
     max: m.maxGap.busy,
     iterations: m.lists.length,
+    note: m.gaps.length ? JSON.stringify(loadFailureDetail(m.gaps, m.commands, m.descheduled)) : undefined,
   });
   for (const e of excused) {
     expect(e.by, `${name}: a ${describeGap(e.gap)} stall no single-item command explains`).not.toBeNull();
@@ -370,7 +373,7 @@ it("a disk that turns slow mid-job: a controlled controller restart overruns onc
       p95: m.maxGap.busy,
       max: m.maxGap.busy,
       iterations: after.length,
-      note: JSON.stringify({ result, expectedAffected, processed: processed.size, duplicates, prefixSlices: prefix.length, prefixItems: 200, first: after[0], recovery: after.slice(1, 9), recoverySlices: after.length - 1, injectedPerItemMin: Math.min(...after.map((r) => r.injected / r.n!)), maxWall: Math.max(...after.map((r) => r.end - r.start)), maxCpu: Math.max(...after.map((r) => r.spent)), publicState: "all rows exactly starred; Trash and Spam unchanged" }),
+      note: JSON.stringify({ gaps: loadFailureDetail(m.gaps, m.commands, m.descheduled), result, expectedAffected, processed: processed.size, duplicates, prefixSlices: prefix.length, prefixItems: 200, first: after[0], recovery: after.slice(1, 9), recoverySlices: after.length - 1, injectedPerItemMin: Math.min(...after.map((r) => r.injected / r.n!)), maxWall: Math.max(...after.map((r) => r.end - r.start)), maxCpu: Math.max(...after.map((r) => r.spent)), publicState: "all rows exactly starred; Trash and Spam unchanged" }),
     });
     expect(switchedAt, "the controlled restart reached the injection").toBeLessThan(Infinity);
     expect(after[0]!.n).toBe(20);

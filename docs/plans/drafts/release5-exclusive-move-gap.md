@@ -61,3 +61,9 @@ Exact completed plan-critique command (exit0; no fallback or second critique):
 ```sh
 python3 /tmp/terno-exclusive-move-evidence/run.py /tmp/terno-exclusive-move-evidence/plan-review 240 /tmp/terno-exclusive-move-evidence/plan-prompt.txt codex exec -m gpt-6.1-sol -c 'model_reasoning_effort="high"' -s read-only -C /Users/Luis/.t3/worktrees/emailclient/t3-14dc59c4 -o /tmp/terno-exclusive-move-evidence/plan-review.md -
 ```
+
+## Continued investigation: reporting improvement
+
+Root authorized the missing correlated trace and one diagnostic in original full-file order; no additional plan critique. Separate reporting change: `load-failure-detail.ts` retains the first16 over-budget intervals and first16 overlapping store commands per interval, stable stage-local array indices, exact numeric timing fields, descheduled membership, and explicit omitted counts. Names are capped64 characters; arbitrary properties are excluded. It executes after measure/loop.stop, is serialized only into the existing bounded per-stage report note, and never enters excusedBy/classification/list adjustments. Both ordinary underLoad stages and the adaptive stage retain it; no additional report file or hot-path collection is added.
+
+Fail-first: `/tmp/terno-exclusive-correlated/retention-red.log` has2 ordinary assertion failures on an empty-retention implementation (missing exact intervals and missing bound/truncation evidence). Implemented retention; identical2 tests passed in `retention-green.log`. Exact-file `oxlint --deny-warnings` on helper/test/load and `tsc -p packages/backend/tsconfig.json` passed; each command ran via the owned-PID supervisor with the appended network guard, native120s cap, natural exit and empty survivor audit. This is test observability only, no runtime correction or release-green claim. Production review remains unused, per Root's instruction against consuming it on unfinished diagnosis.
