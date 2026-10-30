@@ -12,6 +12,7 @@ import { defineSearchConformance } from "./search";
 import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
+import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 import { defineFolderConformance } from "./folders";
@@ -60,6 +61,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
 
   describe(`store conformance: ${name}`, () => {
     defineFactsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineHiddenInboxConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

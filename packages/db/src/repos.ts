@@ -152,25 +152,26 @@ export function removeAccount(db: Db, id: number): void {
 
 export function listCategories(db: Db): Category[] {
   return db
-    .all<Category & { auto_apply: number }>("SELECT id, name, color, position, auto_apply FROM categories ORDER BY position, id")
-    .map(({ auto_apply, ...c }) => ({ ...c, autoApply: auto_apply === 1 }));
+    .all<Category & { auto_apply: number; show_in_inbox: number }>("SELECT id, name, color, position, auto_apply, show_in_inbox FROM categories ORDER BY position, id")
+    .map(({ auto_apply, show_in_inbox, ...c }) => ({ ...c, autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1 }));
 }
 
 export function createCategory(db: Db, name: string, color: CategoryColor): Category {
   const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM categories")!.p;
   const id = db.run("INSERT INTO categories (name, color, position) VALUES (?, ?, ?)", name, color, position).lastInsertRowid;
-  return { id, name, color, position, autoApply: true };
+  return { id, name, color, position, autoApply: true, showInInbox: true };
 }
 
 export function updateCategory(
   db: Db,
   id: number,
-  patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean },
+  patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean },
 ): Category | null {
   if (patch.name !== undefined) db.run("UPDATE categories SET name = ? WHERE id = ?", patch.name, id);
   if (patch.color !== undefined) db.run("UPDATE categories SET color = ? WHERE id = ?", patch.color, id);
   if (patch.position !== undefined) db.run("UPDATE categories SET position = ? WHERE id = ?", patch.position, id);
   if (patch.autoApply !== undefined) db.run("UPDATE categories SET auto_apply = ? WHERE id = ?", patch.autoApply ? 1 : 0, id);
+  if (patch.showInInbox !== undefined) db.run("UPDATE categories SET show_in_inbox = ? WHERE id = ?", patch.showInInbox ? 1 : 0, id);
   return listCategories(db).find((c) => c.id === id) ?? null;
 }
 

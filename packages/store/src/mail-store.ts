@@ -454,7 +454,7 @@ export interface MailStore {
     list(): Promise<Category[]>;
     exists(id: number): Promise<boolean>;
     create(name: string, color: CategoryColor): Promise<Category>;
-    update(id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean }): Promise<Category | null>;
+    update(id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean }): Promise<Category | null>;
     /** positions in this order, in one unit (ids it leaves out keep their order after those); the new list */
     reorder(ids: readonly number[]): Promise<Category[]>;
     delete(id: number): Promise<void>;

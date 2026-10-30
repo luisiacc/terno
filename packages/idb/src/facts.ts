@@ -1,5 +1,6 @@
 import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
+import { hiddenCategories, hiddenFromInbox } from "./inbox-hidden";
 
 /**
  * Plan 17's thread facts on IndexedDB, mirroring packages/db's facts.ts on
@@ -514,6 +515,8 @@ export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
   const threads = t(db, "threads");
   const correspondents = t(db, "correspondents");
   let own: Set<string> | null = null;
+  // plan 80: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
+  const hidden = hiddenCategories(db);
   const out: ArrivalRow[] = [];
   for (const id of ids) {
     const m = messages.get(id);
@@ -533,7 +536,7 @@ export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
       isRead: m.is_read === 1,
       isSent: m.is_sent === 1,
       isDraft: m.is_draft === 1,
-      inInbox: m.in_inbox === 1 && thread.in_inbox === 1,
+      inInbox: m.in_inbox === 1 && thread.in_inbox === 1 && !hiddenFromInbox(db, hidden, m.thread_id),
       isTrash: m.is_trash === 1,
       isSpam: m.is_spam === 1,
       listId: m.list_id ?? null,

@@ -421,7 +421,7 @@ export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
 
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
-export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional() });
+export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional() });
 export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), rule: filterRuleSchema });
 export const exportedAttachmentSchema = z.object({
   filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(), chunks: z.array(z.string().max(65536)).max(384),
@@ -610,6 +610,7 @@ export const contract = {
       color: z.enum(CATEGORY_COLORS).optional(),
       position: z.number().int().min(0).optional(),
       autoApply: z.boolean().optional(),
+      showInInbox: z.boolean().optional(),
     }),
   ),
   /** The sidebar order: positions follow `ids` (one transaction); returns the new list. */

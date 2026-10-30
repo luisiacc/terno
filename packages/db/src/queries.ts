@@ -33,6 +33,22 @@ export const VIEW_WHERE: Record<View, string> = {
 /** Plan 64: a search looks everywhere unless it says in:… (Spam and Trash too). */
 export const SEARCH_VIEW_WHERE: Record<SearchView, string> = { ...VIEW_WHERE, anywhere: "1" };
 
+/**
+ * Plan 80: the categories whose mail the plain Inbox leaves out (a handful of
+ * rows, read per query). None: every Inbox query is the SQL it was.
+ */
+export function hiddenCategories(db: Db): number[] {
+  return db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 0 ORDER BY id").map((r) => r.id);
+}
+
+/** The thread (`alias`) is in no hidden category: a primary-key probe of its memberships. */
+export function shownInInbox(alias: string, hidden: readonly number[]): { where: string; params: Param[] } {
+  return { where: `NOT EXISTS (SELECT 1 FROM thread_categories h WHERE h.thread_id = ${alias}.id AND h.category_id IN (${placeholders(hidden.length)}))`, params: [...hidden] };
+}
+
+/** The Inbox itself, not a category's tab of it (plan 67) nor a folder: what hiding applies to. */
+export const plainInbox = (p: ScopeParams) => p.view === "inbox" && p.categoryId === undefined && p.folder === undefined;
+
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
   t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since, t.in_inbox, t.in_spam, t.in_trash,
   EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
@@ -126,16 +142,20 @@ function filterSql(filter: ListFilter, now: number | undefined): FilterSql {
 
 /** Keyset-paginated list of a view, optionally scoped to an account and/or category. */
 export function listThreads(db: Db, p: ListParams): Page {
-  const q = listSql(p);
+  const hidden = plainInbox(p) ? hiddenCategories(db) : [];
+  const q = listSql(p, undefined, hidden);
   const page = pageFrom(db.all<SummaryRow>(q.sql, ...q.params), p.limit);
   if (!listFilterOf(p) || !p.keepIds?.length) return page;
   // the kept threads, by key, against the view without the filter
-  const k = listSql({ ...p, unreadOnly: false, filter: undefined, limit: p.keepIds.length }, p.keepIds);
+  const k = listSql({ ...p, unreadOnly: false, filter: undefined, limit: p.keepIds.length }, p.keepIds, hidden);
   return keepInPage(page, db.all<SummaryRow>(k.sql, ...k.params).map(toSummary));
 }
 
-/** The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: those threads, the ones the page's view holds. */
-export function listSql(p: ListParams, only?: readonly number[]): { sql: string; params: Param[] } {
+/**
+ * The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: those threads, the ones
+ * the page's view holds; `hidden`: the plain Inbox's hidden categories (plan 80).
+ */
+export function listSql(p: ListParams, only?: readonly number[], hidden: readonly number[] = []): { sql: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // unread: pinned to the unread index, which tests view and account in the index (the planner
@@ -147,6 +167,11 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
   if (f) {
     where.push(f.where);
     params.push(...f.params);
+  }
+  if (hidden.length && plainInbox(p)) {
+    const h = shownInInbox("t", hidden);
+    where.push(h.where);
+    params.push(...h.params);
   }
   let from = threads;
   let order = "t.last_date DESC, t.id DESC";
@@ -196,7 +221,7 @@ export function listSql(p: ListParams, only?: readonly number[]): { sql: string;
 }
 
 /** What a view (account/category optional) is, for the id-only scope queries: index-backed, no display columns. */
-function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string; params: Param[] } {
+function scopeFrom(p: ScopeParams, paged = false, hidden: readonly number[] = []): { from: string; where: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // pages walk an index in id order and stop at the limit: the threads by key, an account's by (account_id, id),
@@ -228,6 +253,11 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
     where.push(f.where);
     params.push(...f.params);
   }
+  if (hidden.length && plainInbox(p)) {
+    const h = shownInInbox("t", hidden);
+    where.push(h.where);
+    params.push(...h.params);
+  }
   return { from, where: where.join(" AND "), params };
 }
 
@@ -237,20 +267,20 @@ function scopeFrom(p: ScopeParams, paged = false): { from: string; where: string
  * order, any other view the threads by key.
  */
 export function scopeThreadIds(db: Db, p: ScopeParams & { after?: number; limit: number }): number[] {
-  const q = scopeIdsSql(p);
+  const q = scopeIdsSql(p, plainInbox(p) ? hiddenCategories(db) : []);
   return db.all<{ id: number }>(q.sql, ...q.params).map((r) => r.id);
 }
 
 /** The SQL a scope page runs (query-plan tests: an index walk in key order, never a sort). */
-export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }): { sql: string; params: Param[] } {
-  const s = scopeFrom(p, true);
+export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }, hidden: readonly number[] = []): { sql: string; params: Param[] } {
+  const s = scopeFrom(p, true, hidden);
   const key = p.folder !== undefined ? "tf.thread_id" : p.categoryId !== undefined ? "tc.thread_id" : "t.id";
   return { sql: `SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, params: [...s.params, p.after ?? 0, p.limit] };
 }
 
 /** How many threads a view holds, counted (up to `limit`). */
 export function countScopeThreads(db: Db, p: ScopeParams & { limit: number }): number {
-  const s = scopeFrom(p);
+  const s = scopeFrom(p, false, plainInbox(p) ? hiddenCategories(db) : []);
   return db.get<{ c: number }>(`SELECT count(*) AS c FROM (SELECT 1 FROM ${s.from} WHERE ${s.where} LIMIT ?)`, ...s.params, p.limit)!.c;
 }
 
@@ -353,8 +383,10 @@ function loadThread(db: Db, threadId: number): ThreadDetail | null {
 export function getCounts(db: Db, now: number): Counts {
   const byAccount: Record<number, number> = {};
   let inboxUnread = 0;
+  const shown = inboxShown(db);
   for (const r of db.all<{ account_id: number; c: number }>(
-    "SELECT account_id, count(*) AS c FROM threads WHERE in_inbox = 1 AND unread_count > 0 GROUP BY account_id",
+    `SELECT account_id, count(*) AS c FROM threads WHERE in_inbox = 1 AND unread_count > 0${shown.where} GROUP BY account_id`,
+    ...shown.params,
   )) {
     byAccount[r.account_id] = r.c;
     inboxUnread += r.c;
@@ -370,6 +402,14 @@ export function getCounts(db: Db, now: number): Counts {
     categoryUnread[r.category_id] = r.unread;
   }
   return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
+}
+
+/** The Inbox counts' extra test (plan 80): none while no category is hidden. */
+function inboxShown(db: Db): { where: string; params: Param[] } {
+  const hidden = hiddenCategories(db);
+  if (!hidden.length) return { where: "", params: [] };
+  const h = shownInInbox("threads", hidden);
+  return { where: ` AND ${h.where}`, params: h.params };
 }
 
 /** plan 68: unread threads per listed folder ("accountId:key"). */
@@ -390,10 +430,12 @@ export function waitingCounts(db: Db, now: number): Pick<Counts, "inboxWaiting" 
   if (!factsReady(db)) return { inboxWaiting: null, inboxWaitingByAccount: {} };
   const byAccount: Record<number, number> = {};
   let total = 0;
+  const shown = inboxShown(db);
   // threads_waiting_inbox holds only the inbox's waiting threads: the window is its range (waiting_since <= last_date, so no date test)
   for (const r of db.all<{ account_id: number; c: number }>(
-    "SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ? GROUP BY account_id",
+    `SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ?${shown.where} GROUP BY account_id`,
     waitingCutoff(now),
+    ...shown.params,
   )) {
     byAccount[r.account_id] = r.c;
     total += r.c;

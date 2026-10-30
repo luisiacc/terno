@@ -51,6 +51,7 @@ import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagI
 import { idbFlags } from "./flag-intents";
 import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
+import { hiddenCategories } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 
 /**
@@ -1071,6 +1072,29 @@ export const VIEW_TEST: Record<View, (t: R) => boolean> = {
 /** Plan 64: a search looks everywhere unless it says in:… (Spam and Trash too). */
 export const SEARCH_VIEW_TEST: Record<SearchView, (t: R) => boolean> = { ...VIEW_TEST, anywhere: () => true };
 
+/**
+ * Plan 80: a test that a thread is in a category hidden from the Inbox, or
+ * null when none is. Allocation-free per thread: a thread in no category is
+ * one index lookup; else a binary search of each hidden category's members
+ * (kept ascending by the scope index until they change).
+ */
+export function inboxHiddenTest(c: Ctx): ((threadId: number) => boolean) | null {
+  const hidden = hiddenCategories(c.db);
+  if (!hidden) return null;
+  const members = [...hidden].map((id) => c.scopes.category(c, id));
+  const memberships = T(c, "thread_categories");
+  return (id) => {
+    if (memberships.count("fk_thread_id", id) === 0) return false;
+    for (const ids of members) if (ids[seekAfter(ids, id - 1)] === id) return true;
+    return false;
+  };
+}
+
+/** What the view leaves out: the plain Inbox's hidden threads (not a category's tab of it, plan 67, nor a folder), else nothing. */
+function hiddenFor(c: Ctx, p: ScopeParams): ((threadId: number) => boolean) | null {
+  return p.view === "inbox" && p.categoryId === undefined && p.folder === undefined ? inboxHiddenTest(c) : null;
+}
+
 export function categoryIdsOf(c: Ctx, threadId: number): number[] {
   return T(c, "thread_categories")
     .by("fk_thread_id", threadId)
@@ -1110,6 +1134,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const ids = order.current(threads);
   const test = VIEW_TEST[p.view];
   const inCategory = p.categoryId === undefined ? null : T(c, "thread_categories");
+  const hidden = hiddenFor(c, p);
   // waiting: the window at the caller's clock; its order is by date and waiting_since <= last_date, so the walk stops at the cutoff
   const cutoff = filter === "waiting" ? waitingFrom(p.now) : null;
   const rows: R[] = [];
@@ -1122,6 +1147,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
     if (!test(t)) continue;
     if (p.accountId !== undefined && t.account_id !== p.accountId) continue;
     if (inCategory && !inCategory.has(t.id, p.categoryId)) continue;
+    if (hidden?.(t.id)) continue;
     rows.push(t);
   }
   const hasMore = rows.length > p.limit;
@@ -1133,7 +1159,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
   const after = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
   const kept = [...new Set(p.keepIds)]
     .map((id) => threads.get(id))
-    .filter((k): k is R => !!k && test(k) && (p.accountId === undefined || k.account_id === p.accountId) && (!inCategory || inCategory.has(k.id, p.categoryId)) && after(k));
+    .filter((k): k is R => !!k && test(k) && (p.accountId === undefined || k.account_id === p.accountId) && (!inCategory || inCategory.has(k.id, p.categoryId)) && !hidden?.(k.id) && after(k));
   return keepInPage(page, kept.map((k) => toSummary(c, k)));
 }
 
@@ -1148,10 +1174,11 @@ export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit:
   if (filter === "waiting" && p.categoryId === undefined) return waitingScope(c, p);
   const cutoff = filter === "waiting" ? waitingFrom(p.now) : null;
   const ids = p.categoryId !== undefined ? c.scopes.category(c, p.categoryId) : filter ? c.scopes.matching(c, filter) : c.scopes.threads(c);
+  const hidden = hiddenFor(c, p);
   const out: number[] = [];
   for (let i = seekAfter(ids, p.after ?? 0); i < ids.length && out.length < p.limit; i++) {
     const t = threads.get(ids[i]!);
-    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff)) out.push(t.id as number);
+    if (t && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff) && !hidden?.(t.id)) out.push(t.id as number);
   }
   return out;
 }
@@ -1166,11 +1193,12 @@ function waitingScope(c: Ctx, p: ScopeParams & { after?: number; limit: number }
   const test = VIEW_TEST[p.view];
   const cutoff = waitingFrom(p.now);
   const after = p.after ?? 0;
+  const hidden = hiddenFor(c, p);
   const ids: number[] = [];
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
-    if (t.waiting_since >= cutoff && id > after && test(t) && (p.accountId === undefined || t.account_id === p.accountId)) ids.push(id);
+    if (t.waiting_since >= cutoff && id > after && test(t) && (p.accountId === undefined || t.account_id === p.accountId) && !hidden?.(id)) ids.push(id);
   }
   return ids.sort((x, y) => x - y).slice(0, p.limit);
 }
@@ -1244,8 +1272,9 @@ export function getCounts(c: Ctx, now: number): Counts {
   const byAccount: Record<number, number> = {};
   let inboxUnread = 0;
   const threads = T(c, "threads");
+  const hidden = inboxHiddenTest(c);
   for (const t of threads.all()) {
-    if (t.in_inbox === 1 && t.unread_count > 0) {
+    if (t.in_inbox === 1 && t.unread_count > 0 && !hidden?.(t.id)) {
       byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
       inboxUnread++;
     }
@@ -1268,10 +1297,11 @@ export function waitingCounts(c: Ctx, now: number): Pick<Counts, "inboxWaiting" 
   const cutoff = waitingCutoff(now);
   const byAccount: Record<number, number> = {};
   let total = 0;
+  const hidden = inboxHiddenTest(c);
   for (const id of c.filterOrders.waiting.current(threads)) {
     const t = threads.get(id)!;
     if (t.last_date < cutoff) break;
-    if (t.waiting_since < cutoff || t.in_inbox !== 1) continue;
+    if (t.waiting_since < cutoff || t.in_inbox !== 1 || hidden?.(id)) continue;
     byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
     total++;
   }
@@ -1334,19 +1364,19 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
 }
 
 export function listCategories(c: Ctx): Category[] {
-  return [...T(c, "categories").all()].sort(byPosition).map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1 }));
+  return [...T(c, "categories").all()].sort(byPosition).map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0 }));
 }
 
 export function createCategory(c: Ctx, name: string, color: CategoryColor): Category {
   const categories = T(c, "categories");
   let position = -1;
   for (const r of categories.all()) position = Math.max(position, r.position);
-  const row: R = { id: undefined, name, color, position: position + 1, auto_apply: 1 };
+  const row: R = { id: undefined, name, color, position: position + 1, auto_apply: 1, show_in_inbox: 1 };
   categories.insert(row);
-  return { id: row.id, name, color, position: position + 1, autoApply: true };
+  return { id: row.id, name, color, position: position + 1, autoApply: true, showInInbox: true };
 }
 
-export function updateCategory(c: Ctx, id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean }): Category | null {
+export function updateCategory(c: Ctx, id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean }): Category | null {
   const categories = T(c, "categories");
   const r = categories.get(id);
   if (r) {
@@ -1355,6 +1385,7 @@ export function updateCategory(c: Ctx, id: number, patch: { name?: string; color
       ...(patch.color !== undefined ? { color: patch.color } : {}),
       ...(patch.position !== undefined ? { position: patch.position } : {}),
       ...(patch.autoApply !== undefined ? { auto_apply: patch.autoApply ? 1 : 0 } : {}),
+      ...(patch.showInInbox !== undefined ? { show_in_inbox: patch.showInInbox ? 1 : 0 } : {}),
     });
   }
   return listCategories(c).find((x) => x.id === id) ?? null;

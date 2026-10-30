@@ -178,6 +178,8 @@ export interface Category {
   position: number;
   /** the engine may add new mail to it on its own (otherwise it only suggests) */
   autoApply: boolean;
+  /** plan 80: its mail shows in the Inbox (off: the Inbox, its counts and notifications leave it out) */
+  showInInbox: boolean;
 }
 
 /**
