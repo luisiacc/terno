@@ -80,11 +80,10 @@
 .rt-body[contenteditable="false"] {
   opacity: 0.7;
 }
-/* a huge draft (rt-huge: thousands of lines): lines off screen skip style, layout and paint (they keep their place
-   and their text); small drafts never get it, as it changes how the browser edits inside contained blocks */
-.rt-body.rt-huge > * {
+/* View-owned groups keep native editing, selection and find while bounding visibility ancestors. */
+.rt-body > .ProseMirror-sibling-group {
   content-visibility: auto;
-  contain-intrinsic-size: auto 1.6em;
+  contain-intrinsic-size: auto calc(var(--pm-group-blocks) * 1.6em);
 }
 
 /* plan 18: ghost text, the rest of a sentence the user often writes. A layer beside the editor (never in its DOM),

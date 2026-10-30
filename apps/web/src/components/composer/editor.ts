@@ -526,6 +526,7 @@ export function createEditor(
 ): RichEditor {
   const view: EditorView = new EditorView(mount, {
     state: o.state,
+    siblingGroups: (state) => state.doc.childCount > 2000 ? 128 : null,
     nodeViews: { paragraph: (node) => paragraphView(node), image: (node) => imageView(node, () => o.hooks.images) },
     attributes: o.attributes,
     editable: o.editable,

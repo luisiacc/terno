@@ -1,0 +1,962 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 8bc4db8b6eeb7ae01f4eba474228660e79ce2a3f..c26330f2718512bccde1000fb6f71d541046ded1 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -426,6 +426,7 @@ function posFromCaret(view, node, offset, coords) {
+         return before ? desc.posBefore : desc.posAfter;
+       }
+     }
++    if (desc == view.docView) break;
+     cur = desc.dom.parentNode;
+   }
+   return outsideBlock > -1 ? outsideBlock : view.docView.posFromDOM(node, offset, -1);
+@@ -754,6 +755,8 @@ var ViewDesc = function () {
+   }, {
+     key: "localPosFromDOM",
+     value: function localPosFromDOM(dom, offset, bias) {
++      const updating = reconcilingRoot(this);
++      if (updating && (this == updating || this instanceof SiblingGroupViewDesc)) return reconciliationPos(updating, dom, offset, bias);
+       var _this = this;
+       if (this.contentDOM && contains(this.contentDOM, dom)) {
+         if (bias < 0) {
+@@ -860,6 +863,7 @@ var ViewDesc = function () {
+   }, {
+     key: "domFromPos",
+     value: function domFromPos(pos, side) {
++      if (reconcilingRoot(this) == this) return reconciliationDOM(this, pos, side);
+       if (!this.contentDOM) return {
+         node: this.dom,
+         offset: 0,
+@@ -925,7 +929,7 @@ var ViewDesc = function () {
+           end = offset + child.size;
+         if (fromOffset == -1 && from <= end) {
+           var childBase = offset + child.border;
+-          if (from >= childBase && to <= end - child.border && child.node && child.contentDOM && this.contentDOM.contains(child.contentDOM)) return child.parseRange(from, to, childBase);
++          if (from >= childBase && to <= end - child.border && (child.node || child instanceof SiblingGroupViewDesc) && child.contentDOM && this.contentDOM.contains(child.contentDOM)) return child.parseRange(from, to, childBase);
+           from = offset;
+           for (var j = i; j > 0; j--) {
+             var prev = this.children[j - 1];
+@@ -974,7 +978,8 @@ var ViewDesc = function () {
+         node = _this$domFromPos.node,
+         offset = _this$domFromPos.offset;
+       if (!isElt(node) || offset == node.childNodes.length) throw new RangeError("No node after pos " + pos);
+-      return node.childNodes[offset];
++      const after = node.childNodes[offset], desc = after.pmViewDesc;
++      return desc instanceof SiblingGroupViewDesc ? desc.domAfterPos(0) : after;
+     }
+   }, {
+     key: "setSelection",
+@@ -1289,6 +1294,176 @@ var MarkViewDesc = function (_ViewDesc3) {
+   }]);
+   return MarkViewDesc;
+ }(ViewDesc);
++var __defProp = Object.defineProperty;
++var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
++var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
++function reconcilingRoot(desc) {
++  let root = desc;
++  while (root.parent) root = root.parent;
++  return root.reconcilingGroups ? root : null;
++}
++function reconciliationPos(root, dom, offset, bias) {
++  const range = document.createRange();
++  range.setStart(dom, offset);
++  range.collapse(true);
++  let pos = 0;
++  for (const child of root.children) {
++    if (child.dom == dom || child.dom.contains(dom)) return child.localPosFromDOM(dom, offset, bias);
++    const parent = child.dom.parentNode;
++    if (parent && range.comparePoint(parent, domIndex(child.dom)) >= 0) return pos;
++    pos += child.size;
++  }
++  return pos;
++}
++function reconciliationDOM(root, pos, side) {
++  let i = 0, at = 0;
++  for (; i < root.children.length; i++) {
++    const child2 = root.children[i], end = at + child2.size;
++    if (end > pos) {
++      if (pos > at) return child2.domFromPos(pos - at - child2.border, side);
++      break;
++    }
++    at = end;
++  }
++  for (; i > 0; i--) {
++    const prev = root.children[i - 1];
++    if (prev.size || !(prev instanceof WidgetViewDesc && prev.side >= 0)) break;
++  }
++  const before = i ? root.children[i - 1] : null, after = root.children[i];
++  const child = side <= 0 ? before : after;
++  if (child && child.dom.parentNode) return { node: child.dom.parentNode, offset: domIndex(child.dom) + (side <= 0 ? 1 : 0) };
++  return { node: root.contentDOM, offset: side <= 0 ? 0 : root.contentDOM.childNodes.length };
++}
++
++class SiblingGroupViewDesc extends ViewDesc {
++  constructor(parent) {
++    const dom = document.createElement("div");
++    dom.className = "ProseMirror-sibling-group";
++    super(parent, [], dom, dom);
++    __publicField(this, "totalSize", 0);
++    __publicField(this, "needsRender", true);
++    __publicField(this, "blockCount", 0);
++  }
++  get size() {
++    return this.totalSize;
++  }
++  parseRule() {
++    return { skip: true };
++  }
++}
++function siblingGroupSize(view) {
++  const value = view.someProp("siblingGroups", (f) => f(view.state));
++  return typeof value == "number" && Number.isFinite(value) && value >= 2 ? Math.min(1024, Math.floor(value)) : 0;
++}
++function flattenSiblingGroups(root, view) {
++  if (root.parent || root.node.inlineContent) return null;
++  const previous = [], owners = /* @__PURE__ */ new Map();
++  let size = siblingGroupSize(view);
++  if (view.composing) size = root.groupSize;
++  if (!size && !root.groupSize) return null;
++  const flat = [];
++  for (const desc of root.children) {
++    if (desc instanceof SiblingGroupViewDesc) {
++      previous.push(desc);
++      if (desc.dirty || desc.dom.parentNode != root.contentDOM) root.dirty = CONTENT_DIRTY;
++      for (const child of desc.children) {
++        owners.set(child, desc);
++        child.parent = root;
++        flat.push(child);
++      }
++    } else flat.push(desc);
++  }
++  root.reconcilingGroups = owners;
++  root.children = flat;
++  return { previous, owners, size };
++}
++function restoreSiblingGroups(root, groups, view) {
++  const { previous, owners, size } = groups, flat = root.children;
++  const result = [], used = /* @__PURE__ */ new Set();
++  let group = null, count = 0;
++  let changed = size != root.groupSize;
++  const finish = () => {
++    group = null;
++    count = 0;
++  };
++  const append = (desc) => {
++    if (group) {
++      group.children.push(desc);
++      desc.parent = group;
++    } else result.push(desc);
++  };
++  const oldChildren = new Map(previous.map((g) => [g, g.children]));
++  for (const g of previous) g.children = [];
++  for (let i = 0; i < flat.length; i++) {
++    const desc = flat[i];
++    if (!desc.size) {
++      finish();
++      result.push(desc);
++      continue;
++    }
++    const owner = owners.get(desc);
++    const composing = view.composing && view.input.compositionNode && desc.dom.contains(view.input.compositionNode);
++    const direct = !size || !composing && (i == 0 || i == flat.length - 1) || composing && !owner;
++    if (direct) {
++      finish();
++      append(desc);
++      continue;
++    }
++    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing) {
++      finish();
++      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root);
++      used.add(group);
++      result.push(group);
++    }
++    append(desc);
++    count++;
++    if (!owner && count >= size) finish();
++  }
++  finish();
++  if (!view.composing && size) {
++    for (let i = 1; i < result.length; i++) {
++      const left = result[i - 1], right = result[i];
++      if (!(left instanceof SiblingGroupViewDesc) || !(right instanceof SiblingGroupViewDesc)) continue;
++      const a = left.children.filter((d) => d.size).length, b = right.children.filter((d) => d.size).length;
++      if ((a < size / 2 || b < size / 2) && a + b <= size * 2) {
++        for (const child of right.children) {
++          child.parent = left;
++          left.children.push(child);
++        }
++        right.children = [];
++        right.destroy();
++        used.delete(right);
++        result.splice(i--, 1);
++        changed = true;
++      }
++    }
++  }
++  for (const g of used) {
++    const before = oldChildren.get(g);
++    g.needsRender = !!g.dirty || !before || before.length != g.children.length || g.children.some((d, i) => d != before[i]);
++    if (g.needsRender) changed = true;
++    g.totalSize = 0;
++    let blocks = 0;
++    for (const child of g.children) {
++      g.totalSize += child.size;
++      if (child.size) blocks++;
++    }
++    if (blocks != g.blockCount) g.dom.style.setProperty("--pm-group-blocks", String(blocks));
++    g.blockCount = blocks;
++    g.dirty = NOT_DIRTY;
++  }
++  for (const g of previous) if (!used.has(g)) {
++    g.children = [];
++    g.destroy();
++    changed = true;
++  }
++  root.reconcilingGroups = null;
++  root.children = result;
++  root.groupsDeferred = view.composing;
++  root.groupSize = size;
++  return changed;
++}
++
+ var NodeViewDesc = function (_ViewDesc4) {
+   _inherits(NodeViewDesc, _ViewDesc4);
+   var _super4 = _createSuper(NodeViewDesc);
+@@ -1296,6 +1471,17 @@ var NodeViewDesc = function (_ViewDesc4) {
+     var _this5;
+     _classCallCheck(this, NodeViewDesc);
+     _this5 = _super4.call(this, parent, [], dom, contentDOM);
++    _this5.reconcilingGroups = null;
++    _this5.groupsDeferred = false;
++    _this5.groupSize = 0;
++    _this5.reconcilingGroups = null;
++    _this5.groupsDeferred = false;
++    _this5.groupSize = 0;
++    _this5.reconcilingGroups = null;
++    _this5.groupsDeferred = false;
++    _this5.groupSize = 0;
++    _this5.groupsDeferred = false;
++    _this5.groupSize = 0;
+     _this5.node = node;
+     _this5.outerDeco = outerDeco;
+     _this5.innerDeco = innerDeco;
+@@ -1355,6 +1541,7 @@ var NodeViewDesc = function (_ViewDesc4) {
+   }, {
+     key: "updateChildren",
+     value: function updateChildren(view, pos) {
++      const groups = flattenSiblingGroups(this, view);
+       var _this7 = this;
+       var inline = this.node.inlineContent,
+         off = pos;
+@@ -1380,7 +1567,8 @@ var NodeViewDesc = function (_ViewDesc4) {
+       updater.syncToMarks([], inline, view, 0);
+       if (this.node.isTextblock) updater.addTextblockHacks();
+       updater.destroyRest();
+-      if (updater.changed || this.dirty == CONTENT_DIRTY) {
++      const regrouped = groups ? restoreSiblingGroups(this, groups, view) : false;
++      if (regrouped || updater.changed || this.dirty == CONTENT_DIRTY) {
+         if (localComposition) this.protectLocalComposition(view, localComposition);
+         renderDescs(this.contentDOM, this.children, view);
+         if (ios) iosHacks(this.dom);
+@@ -1701,7 +1889,8 @@ function renderDescs(parentDOM, descs, view) {
+       written = true;
+       parentDOM.insertBefore(childDOM, dom);
+     }
+-    if (desc instanceof MarkViewDesc) {
++    if (desc instanceof MarkViewDesc || desc instanceof SiblingGroupViewDesc && desc.needsRender) {
++      if (desc instanceof SiblingGroupViewDesc) desc.needsRender = false;
+       var pos = dom ? dom.previousSibling : parentDOM.lastChild;
+       renderDescs(desc.contentDOM, desc.children, view);
+       dom = pos ? pos.nextSibling : parentDOM.firstChild;
+@@ -1900,8 +2089,9 @@ var ViewTreeUpdater = function () {
+       for (;;) {
+         var parent = domNode.parentNode;
+         if (!parent) return -1;
+-        if (parent == this.top.contentDOM) {
+-          var desc = domNode.pmViewDesc;
++        const candidate = domNode.pmViewDesc;
++        if (parent == this.top.contentDOM || candidate && candidate.parent == this.top) {
++          var desc = candidate;
+           if (desc) for (var i = this.index; i < this.top.children.length; i++) {
+             if (this.top.children[i] == desc) return i;
+           }
+@@ -3500,7 +3690,7 @@ function endComposition(view) {
+   if (android && view.domObserver.flushingSoon >= 0) return;
+   view.domObserver.forceFlush();
+   clearComposition(view);
+-  if (restarting || view.docView && view.docView.dirty) {
++  if (restarting || view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view))) {
+     var sel = selectionFromDOM(view),
+       cur = view.state.selection;
+     if (sel && !sel.eq(cur)) view.dispatch(view.state.tr.setSelection(sel));else if ((view.markCursor || restarting) && !cur.$from.node(cur.$from.sharedDepth(cur.to)).inlineContent) view.dispatch(view.state.tr.deleteSelection());else view.updateState(view.state);
+@@ -4635,7 +4825,7 @@ var DOMObserver = function () {
+           fixUpBadSafariComposition(view, added);
+         }
+         this.handleDOMChange(from, to, typeOver, added);
+-        if (view.docView && view.docView.dirty) view.updateState(view.state);else if (selRange && !this.currentSelection.eq(selRange)) selectionToDOM(view);
++        if (view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view))) view.updateState(view.state);else if (selRange && !this.currentSelection.eq(selRange)) selectionToDOM(view);
+         if (selRange) this.currentSelection.set(selRange);
+       }
+     }
+@@ -5225,7 +5415,7 @@ var EditorView = function () {
+       var innerDeco = viewDecorations(this),
+         outerDeco = computeDocDeco(this);
+       var scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset" : state.scrollToSelection > prev.scrollToSelection ? "to selection" : "preserve";
+-      var updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
++      var updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
+       if (updateDoc || !state.selection.eq(prev.selection)) updateSel = true;
+       var oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this);
+       if (updateSel) {
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..b0c7e5b1952aada8ad396015cc6de7af61baa22b 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -648,6 +648,11 @@ functions, and is used to pass in the plugin type when defining a
+ [plugin](https://prosemirror.net/docs/ref/#state.Plugin).
+ */
+ interface EditorProps<P = any> {
++  /// Opt-in transparent root sibling ancestors (2–1024 rendered siblings per target).
++  /// Null/absent disables grouping. First/last root children remain direct.
++  /// Groups never change the model, clipboard or serialization. During composition
++  /// a changed target is deferred until the next non-composing view update.
++  siblingGroups?: (state: EditorState) => number | null
+     /**
+     Can be an object mapping DOM event type names to functions that
+     handle them. Such functions will be called before any handling
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index f738f6876f3fae6b4f055e0c9e8532404f793f73..b0c7e5b1952aada8ad396015cc6de7af61baa22b 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -648,6 +648,11 @@ functions, and is used to pass in the plugin type when defining a
+ [plugin](https://prosemirror.net/docs/ref/#state.Plugin).
+ */
+ interface EditorProps<P = any> {
++  /// Opt-in transparent root sibling ancestors (2–1024 rendered siblings per target).
++  /// Null/absent disables grouping. First/last root children remain direct.
++  /// Groups never change the model, clipboard or serialization. During composition
++  /// a changed target is deferred until the next non-composing view update.
++  siblingGroups?: (state: EditorState) => number | null
+     /**
+     Can be an object mapping DOM event type names to functions that
+     handle them. Such functions will be called before any handling
+diff --git a/dist/index.js b/dist/index.js
+index 37521100e6800b065f48f551ceddfae2f9b48386..405d28ad9ec42fa4d13e566f985087ffd45d52e4 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -440,7 +440,9 @@ function posFromCaret(view, node, offset, coords) {
+                 return before ? desc.posBefore : desc.posAfter;
+             }
+         }
+-        cur = desc.dom.parentNode;
++        if (desc == view.docView) break;
++        if (desc == view.docView) break;
++    cur = desc.dom.parentNode;
+     }
+     return outsideBlock > -1 ? outsideBlock : view.docView.posFromDOM(node, offset, -1);
+ }
+@@ -810,6 +812,8 @@ class ViewDesc {
+         return this.posAtStart + this.size - 2 * this.border;
+     }
+     localPosFromDOM(dom, offset, bias) {
++        const updating = reconcilingRoot(this);
++        if (updating && (this == updating || this instanceof SiblingGroupViewDesc)) return reconciliationPos(updating, dom, offset, bias);
+         // If the DOM position is in the content, use the child desc after
+         // it to figure out a position.
+         if (this.contentDOM && contains(this.contentDOM, dom)) {
+@@ -930,6 +934,7 @@ class ViewDesc {
+         }
+     }
+     domFromPos(pos, side) {
++        if (reconcilingRoot(this) == this) return reconciliationDOM(this, pos, side);
+         if (!this.contentDOM)
+             return { node: this.dom, offset: 0, atom: pos + 1 };
+         // First find the position in the child array
+@@ -986,7 +991,7 @@ class ViewDesc {
+             if (fromOffset == -1 && from <= end) {
+                 let childBase = offset + child.border;
+                 // FIXME maybe descend mark views to parse a narrower range?
+-                if (from >= childBase && to <= end - child.border && child.node &&
++                if (from >= childBase && to <= end - child.border && (child.node || child instanceof SiblingGroupViewDesc) &&
+                     child.contentDOM && this.contentDOM.contains(child.contentDOM))
+                     return child.parseRange(from, to, childBase);
+                 from = offset;
+@@ -1029,7 +1034,8 @@ class ViewDesc {
+         let { node, offset } = this.domFromPos(pos, 0);
+         if (!isElt(node) || offset == node.childNodes.length)
+             throw new RangeError("No node after pos " + pos);
+-        return node.childNodes[offset];
++        const after = node.childNodes[offset], desc = after.pmViewDesc;
++        return desc instanceof SiblingGroupViewDesc ? desc.domAfterPos(0) : after;
+     }
+     // View descs are responsible for setting any selection that falls
+     // entirely inside of them, so that custom implementations can do
+@@ -1290,7 +1296,180 @@ class MarkViewDesc extends ViewDesc {
+ // Node view descs are the main, most common type of view desc, and
+ // correspond to an actual node in the document. Unlike mark descs,
+ // they populate their child array themselves.
++var __defProp = Object.defineProperty;
++var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
++var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
++function reconcilingRoot(desc) {
++  let root = desc;
++  while (root.parent) root = root.parent;
++  return root.reconcilingGroups ? root : null;
++}
++function reconciliationPos(root, dom, offset, bias) {
++  const range = document.createRange();
++  range.setStart(dom, offset);
++  range.collapse(true);
++  let pos = 0;
++  for (const child of root.children) {
++    if (child.dom == dom || child.dom.contains(dom)) return child.localPosFromDOM(dom, offset, bias);
++    const parent = child.dom.parentNode;
++    if (parent && range.comparePoint(parent, domIndex(child.dom)) >= 0) return pos;
++    pos += child.size;
++  }
++  return pos;
++}
++function reconciliationDOM(root, pos, side) {
++  let i = 0, at = 0;
++  for (; i < root.children.length; i++) {
++    const child2 = root.children[i], end = at + child2.size;
++    if (end > pos) {
++      if (pos > at) return child2.domFromPos(pos - at - child2.border, side);
++      break;
++    }
++    at = end;
++  }
++  for (; i > 0; i--) {
++    const prev = root.children[i - 1];
++    if (prev.size || !(prev instanceof WidgetViewDesc && prev.side >= 0)) break;
++  }
++  const before = i ? root.children[i - 1] : null, after = root.children[i];
++  const child = side <= 0 ? before : after;
++  if (child && child.dom.parentNode) return { node: child.dom.parentNode, offset: domIndex(child.dom) + (side <= 0 ? 1 : 0) };
++  return { node: root.contentDOM, offset: side <= 0 ? 0 : root.contentDOM.childNodes.length };
++}
++
++class SiblingGroupViewDesc extends ViewDesc {
++  constructor(parent) {
++    const dom = document.createElement("div");
++    dom.className = "ProseMirror-sibling-group";
++    super(parent, [], dom, dom);
++    __publicField(this, "totalSize", 0);
++    __publicField(this, "needsRender", true);
++    __publicField(this, "blockCount", 0);
++  }
++  get size() {
++    return this.totalSize;
++  }
++  parseRule() {
++    return { skip: true };
++  }
++}
++function siblingGroupSize(view) {
++  const value = view.someProp("siblingGroups", (f) => f(view.state));
++  return typeof value == "number" && Number.isFinite(value) && value >= 2 ? Math.min(1024, Math.floor(value)) : 0;
++}
++function flattenSiblingGroups(root, view) {
++  if (root.parent || root.node.inlineContent) return null;
++  const previous = [], owners = /* @__PURE__ */ new Map();
++  let size = siblingGroupSize(view);
++  if (view.composing) size = root.groupSize;
++  if (!size && !root.groupSize) return null;
++  const flat = [];
++  for (const desc of root.children) {
++    if (desc instanceof SiblingGroupViewDesc) {
++      previous.push(desc);
++      if (desc.dirty || desc.dom.parentNode != root.contentDOM) root.dirty = CONTENT_DIRTY;
++      for (const child of desc.children) {
++        owners.set(child, desc);
++        child.parent = root;
++        flat.push(child);
++      }
++    } else flat.push(desc);
++  }
++  root.reconcilingGroups = owners;
++  root.children = flat;
++  return { previous, owners, size };
++}
++function restoreSiblingGroups(root, groups, view) {
++  const { previous, owners, size } = groups, flat = root.children;
++  const result = [], used = /* @__PURE__ */ new Set();
++  let group = null, count = 0;
++  let changed = size != root.groupSize;
++  const finish = () => {
++    group = null;
++    count = 0;
++  };
++  const append = (desc) => {
++    if (group) {
++      group.children.push(desc);
++      desc.parent = group;
++    } else result.push(desc);
++  };
++  const oldChildren = new Map(previous.map((g) => [g, g.children]));
++  for (const g of previous) g.children = [];
++  for (let i = 0; i < flat.length; i++) {
++    const desc = flat[i];
++    if (!desc.size) {
++      finish();
++      result.push(desc);
++      continue;
++    }
++    const owner = owners.get(desc);
++    const composing = view.composing && view.input.compositionNode && desc.dom.contains(view.input.compositionNode);
++    const direct = !size || !composing && (i == 0 || i == flat.length - 1) || composing && !owner;
++    if (direct) {
++      finish();
++      append(desc);
++      continue;
++    }
++    if (!group || owner && owner != group && !used.has(owner) || count >= size * 2 && !composing) {
++      finish();
++      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root);
++      used.add(group);
++      result.push(group);
++    }
++    append(desc);
++    count++;
++    if (!owner && count >= size) finish();
++  }
++  finish();
++  if (!view.composing && size) {
++    for (let i = 1; i < result.length; i++) {
++      const left = result[i - 1], right = result[i];
++      if (!(left instanceof SiblingGroupViewDesc) || !(right instanceof SiblingGroupViewDesc)) continue;
++      const a = left.children.filter((d) => d.size).length, b = right.children.filter((d) => d.size).length;
++      if ((a < size / 2 || b < size / 2) && a + b <= size * 2) {
++        for (const child of right.children) {
++          child.parent = left;
++          left.children.push(child);
++        }
++        right.children = [];
++        right.destroy();
++        used.delete(right);
++        result.splice(i--, 1);
++        changed = true;
++      }
++    }
++  }
++  for (const g of used) {
++    const before = oldChildren.get(g);
++    g.needsRender = !!g.dirty || !before || before.length != g.children.length || g.children.some((d, i) => d != before[i]);
++    if (g.needsRender) changed = true;
++    g.totalSize = 0;
++    let blocks = 0;
++    for (const child of g.children) {
++      g.totalSize += child.size;
++      if (child.size) blocks++;
++    }
++    if (blocks != g.blockCount) g.dom.style.setProperty("--pm-group-blocks", String(blocks));
++    g.blockCount = blocks;
++    g.dirty = NOT_DIRTY;
++  }
++  for (const g of previous) if (!used.has(g)) {
++    g.children = [];
++    g.destroy();
++    changed = true;
++  }
++  root.reconcilingGroups = null;
++  root.children = result;
++  root.groupsDeferred = view.composing;
++  root.groupSize = size;
++  return changed;
++}
++
+ class NodeViewDesc extends ViewDesc {
++    reconcilingGroups = null;
++    groupsDeferred = false;
++    groupSize = 0;
+     constructor(parent, node, outerDeco, innerDeco, dom, contentDOM, nodeDOM) {
+         super(parent, [], dom, contentDOM);
+         this.node = node;
+@@ -1393,6 +1572,7 @@ class NodeViewDesc extends ViewDesc {
+     // separate step, syncs the DOM inside `this.contentDOM` to
+     // `this.children`.
+     updateChildren(view, pos) {
++        const groups = flattenSiblingGroups(this, view);
+         let inline = this.node.inlineContent, off = pos;
+         let composition = view.composing ? this.localCompositionInfo(view, pos) : null;
+         let localComposition = composition && composition.pos > -1 ? composition : null;
+@@ -1433,8 +1613,9 @@ class NodeViewDesc extends ViewDesc {
+         if (this.node.isTextblock)
+             updater.addTextblockHacks();
+         updater.destroyRest();
++        const regrouped = groups ? restoreSiblingGroups(this, groups, view) : false;
+         // Sync the DOM if anything changed
+-        if (updater.changed || this.dirty == CONTENT_DIRTY) {
++        if (regrouped || updater.changed || this.dirty == CONTENT_DIRTY) {
+             // May have to protect focused DOM from being changed if a composition is active
+             if (localComposition)
+                 this.protectLocalComposition(view, localComposition);
+@@ -1670,7 +1851,8 @@ function renderDescs(parentDOM, descs, view) {
+             written = true;
+             parentDOM.insertBefore(childDOM, dom);
+         }
+-        if (desc instanceof MarkViewDesc) {
++        if (desc instanceof MarkViewDesc || desc instanceof SiblingGroupViewDesc && desc.needsRender) {
++            if (desc instanceof SiblingGroupViewDesc) desc.needsRender = false;
+             let pos = dom ? dom.previousSibling : parentDOM.lastChild;
+             renderDescs(desc.contentDOM, desc.children, view);
+             dom = pos ? pos.nextSibling : parentDOM.firstChild;
+@@ -1914,8 +2096,9 @@ class ViewTreeUpdater {
+             let parent = domNode.parentNode;
+             if (!parent)
+                 return -1;
+-            if (parent == this.top.contentDOM) {
+-                let desc = domNode.pmViewDesc;
++            const candidate = domNode.pmViewDesc;
++            if (parent == this.top.contentDOM || candidate && candidate.parent == this.top) {
++                let desc = candidate;
+                 if (desc)
+                     for (let i = this.index; i < this.top.children.length; i++) {
+                         if (this.top.children[i] == desc)
+@@ -3699,7 +3882,7 @@ function endComposition(view, restarting = false) {
+         return;
+     view.domObserver.forceFlush();
+     clearComposition(view);
+-    if (restarting || view.docView && view.docView.dirty) {
++    if (restarting || view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view))) {
+         let sel = selectionFromDOM(view), cur = view.state.selection;
+         if (sel && !sel.eq(cur))
+             view.dispatch(view.state.tr.setSelection(sel));
+@@ -4935,7 +5118,7 @@ class DOMObserver {
+                 fixUpBadSafariComposition(view, added);
+             }
+             this.handleDOMChange(from, to, typeOver, added);
+-            if (view.docView && view.docView.dirty)
++            if (view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view)))
+                 view.updateState(view.state);
+             else if (selRange && !this.currentSelection.eq(selRange))
+                 selectionToDOM(view);
+@@ -5633,7 +5816,7 @@ class EditorView {
+         let innerDeco = viewDecorations(this), outerDeco = computeDocDeco(this);
+         let scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset"
+             : state.scrollToSelection > prev.scrollToSelection ? "to selection" : "preserve";
+-        let updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
++        let updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
+         if (updateDoc || !state.selection.eq(prev.selection))
+             updateSel = true;
+         let oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this);
+diff --git a/src/domcoords.ts b/src/domcoords.ts
+index df7fdc7405da454cb3c4347d4e3ad502be06ef60..c22cd51e0a0539a40e7c201990aba6e91e5c00cd 100644
+--- a/src/domcoords.ts
++++ b/src/domcoords.ts
+@@ -251,6 +251,7 @@ function posFromCaret(view: EditorView, node: Node, offset: number, coords: {top
+         return before ? desc.posBefore : desc.posAfter
+       }
+     }
++    if (desc == view.docView) break
+     cur = desc.dom.parentNode!
+   }
+   return outsideBlock > -1 ? outsideBlock : view.docView.posFromDOM(node, offset, -1)
+diff --git a/src/index.ts b/src/index.ts
+index 7d4205736a5533b8c22b2ce9a8ea719f8f52f143..659added2a7d606baf1d64d1aa82a1e3a41c6ff0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,7 +3,7 @@ import {Slice, ResolvedPos, DOMParser, DOMSerializer, Node, Mark} from "prosemir
+ 
+ import {scrollRectIntoView, posAtCoords, coordsAtPos, endOfTextblock, storeScrollPos,
+         resetScrollPos, focusPreventScroll} from "./domcoords"
+-import {docViewDesc, ViewDesc, NodeView, NodeViewDesc, MarkView} from "./viewdesc"
++import {docViewDesc, siblingGroupSize, ViewDesc, NodeView, NodeViewDesc, MarkView} from "./viewdesc"
+ import {initInput, destroyInput, dispatchEvent, ensureListeners, clearComposition,
+         InputState, doPaste, Dragging, findCompositionNode} from "./input"
+ import {selectionToDOM, anchorInRightPlace, syncNodeSelection} from "./selection"
+@@ -177,7 +177,7 @@ export class EditorView {
+ 
+     let scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset"
+         : (state as any).scrollToSelection > (prev as any).scrollToSelection ? "to selection" : "preserve"
+-    let updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco)
++    let updateDoc = (!this.composing && this.docView.groupSize != siblingGroupSize(this)) || redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco)
+     if (updateDoc || !state.selection.eq(prev.selection)) updateSel = true
+     let oldScrollPos = scroll == "preserve" && updateSel && this.dom.style.overflowAnchor == null && storeScrollPos(this)
+ 
+@@ -619,6 +619,11 @@ export interface DOMEventMap extends HTMLElementEventMap {
+ /// functions, and is used to pass in the plugin type when defining a
+ /// [plugin](#state.Plugin).
+ export interface EditorProps<P = any> {
++  /// Opt-in transparent root sibling ancestors (2–1024 rendered siblings per target).
++  /// Null/absent disables grouping. First/last root children remain direct.
++  /// Groups never change the model, clipboard or serialization. During composition
++  /// a changed target is deferred until the next non-composing view update.
++  siblingGroups?: (state: EditorState) => number | null
+   /// Can be an object mapping DOM event type names to functions that
+   /// handle them. Such functions will be called before any handling
+   /// ProseMirror does of events fired on the editable DOM element.
+diff --git a/src/input.ts b/src/input.ts
+index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..086663e6b679072aee50b42e3884732bdd0db3a5 100644
+--- a/src/input.ts
++++ b/src/input.ts
+@@ -8,7 +8,7 @@ import {parseFromClipboard, serializeForClipboard} from "./clipboard"
+ import {selectionBetween, selectionToDOM, selectionFromDOM} from "./selection"
+ import {keyEvent, DOMNode, textNodeBefore, textNodeAfter, isElt, isText} from "./dom"
+ import {EditorView} from "./index"
+-import {ViewDesc} from "./viewdesc"
++import {ViewDesc, siblingGroupSize} from "./viewdesc"
+ 
+ // A collection of DOM events that occur within the editor, and callback functions
+ // to invoke when the event fires.
+@@ -609,7 +609,7 @@ export function endComposition(view: EditorView, restarting = false) {
+   if (browser.android && view.domObserver.flushingSoon >= 0) return
+   view.domObserver.forceFlush()
+   clearComposition(view)
+-  if (restarting || view.docView && view.docView.dirty) {
++  if (restarting || view.docView && (view.docView.dirty || view.docView.groupsDeferred || view.docView.groupSize != siblingGroupSize(view))) {
+     let sel = selectionFromDOM(view), cur = view.state.selection
+     if (sel && !sel.eq(cur)) view.dispatch(view.state.tr.setSelection(sel))
+     else if ((view.markCursor || restarting) && !cur.$from.node(cur.$from.sharedDepth(cur.to)).inlineContent) view.dispatch(view.state.tr.deleteSelection())
+diff --git a/src/viewdesc.ts b/src/viewdesc.ts
+index 461d16a4d05a2a17cc1ba41bc016c14c2f92a21d..0a63e6011f29b4cd93e7dfe1fdc532d8fffd8405 100644
+--- a/src/viewdesc.ts
++++ b/src/viewdesc.ts
+@@ -216,6 +216,8 @@ export class ViewDesc {
+   }
+ 
+   localPosFromDOM(dom: DOMNode, offset: number, bias: number): number {
++    const updating = reconcilingRoot(this)
++    if (updating && ((this as ViewDesc) == updating || this instanceof SiblingGroupViewDesc)) return reconciliationPos(updating, dom, offset, bias)
+     // If the DOM position is in the content, use the child desc after
+     // it to figure out a position.
+     if (this.contentDOM && contains(this.contentDOM, dom)) {
+@@ -318,6 +320,7 @@ export class ViewDesc {
+   }
+ 
+   domFromPos(pos: number, side: number): {node: DOMNode, offset: number, atom?: number} {
++    if (reconcilingRoot(this) == (this as ViewDesc)) return reconciliationDOM(this, pos, side)
+     if (!this.contentDOM) return {node: this.dom, offset: 0, atom: pos + 1}
+     // First find the position in the child array
+     let i = 0, offset = 0
+@@ -368,7 +371,7 @@ export class ViewDesc {
+       if (fromOffset == -1 && from <= end) {
+         let childBase = offset + child.border
+         // FIXME maybe descend mark views to parse a narrower range?
+-        if (from >= childBase && to <= end - child.border && child.node &&
++        if (from >= childBase && to <= end - child.border && (child.node || child instanceof SiblingGroupViewDesc) &&
+             child.contentDOM && this.contentDOM!.contains(child.contentDOM))
+           return child.parseRange(from, to, childBase)
+ 
+@@ -411,7 +414,9 @@ export class ViewDesc {
+     let {node, offset} = this.domFromPos(pos, 0)
+     if (!isElt(node) || offset == node.childNodes.length)
+       throw new RangeError("No node after pos " + pos)
+-    return node.childNodes[offset]
++    const after = node.childNodes[offset]
++    const desc = after.pmViewDesc
++    return desc instanceof SiblingGroupViewDesc ? desc.domAfterPos(0) : after
+   }
+ 
+   // View descs are responsible for setting any selection that falls
+@@ -677,7 +682,168 @@ class MarkViewDesc extends ViewDesc {
+ // Node view descs are the main, most common type of view desc, and
+ // correspond to an actual node in the document. Unlike mark descs,
+ // they populate their child array themselves.
++function reconcilingRoot(desc: ViewDesc): NodeViewDesc | null {
++  let root = desc
++  while (root.parent) root = root.parent
++  return (root as NodeViewDesc).reconcilingGroups ? root as NodeViewDesc : null
++}
++
++function reconciliationPos(root: NodeViewDesc, dom: DOMNode, offset: number, bias: number): number {
++  const range = document.createRange()
++  range.setStart(dom, offset)
++  range.collapse(true)
++  let pos = 0
++  for (const child of root.children) {
++    if (child.dom == dom || child.dom.contains(dom)) return child.localPosFromDOM(dom, offset, bias)
++    const parent = child.dom.parentNode
++    if (parent && range.comparePoint(parent, domIndex(child.dom)) >= 0) return pos
++    pos += child.size
++  }
++  return pos
++}
++
++function reconciliationDOM(root: ViewDesc, pos: number, side: number): {node: DOMNode, offset: number, atom?: number} {
++  let i = 0, at = 0
++  for (; i < root.children.length; i++) {
++    const child = root.children[i], end = at + child.size
++    if (end > pos) {
++      if (pos > at) return child.domFromPos(pos - at - child.border, side)
++      break
++    }
++    at = end
++  }
++  for (; i > 0; i--) {
++    const prev = root.children[i - 1]
++    if (prev.size || !(prev instanceof WidgetViewDesc && prev.side >= 0)) break
++  }
++  const before = i ? root.children[i - 1] : null, after = root.children[i]
++  const child = side <= 0 ? before : after
++  if (child && child.dom.parentNode) return {node: child.dom.parentNode, offset: domIndex(child.dom) + (side <= 0 ? 1 : 0)}
++  return {node: root.contentDOM!, offset: side <= 0 ? 0 : root.contentDOM!.childNodes.length}
++}
++
++// Transparent view owners for root sibling ranges, never document nodes.
++class SiblingGroupViewDesc extends ViewDesc {
++  totalSize = 0
++  needsRender = true
++  blockCount = 0
++  constructor(parent: ViewDesc) {
++    const dom = document.createElement("div")
++    dom.className = "ProseMirror-sibling-group"
++    super(parent, [], dom, dom)
++  }
++  get size() { return this.totalSize }
++  parseRule() { return {skip: true as const} }
++}
++
++export function siblingGroupSize(view: EditorView): number {
++  const value = view.someProp("siblingGroups", f => f(view.state))
++  return typeof value == "number" && Number.isFinite(value) && value >= 2
++    ? Math.min(1024, Math.floor(value)) : 0
++}
++
++type SiblingGroups = {previous: SiblingGroupViewDesc[], owners: Map<ViewDesc, SiblingGroupViewDesc>, size: number}
++
++function flattenSiblingGroups(root: NodeViewDesc, view: EditorView): SiblingGroups | null {
++  if (root.parent || root.node.inlineContent) return null
++  const previous: SiblingGroupViewDesc[] = [], owners = new Map<ViewDesc, SiblingGroupViewDesc>()
++  let size = siblingGroupSize(view)
++  if (view.composing) size = root.groupSize
++  if (!size && !root.groupSize) return null
++  const flat: ViewDesc[] = []
++  for (const desc of root.children) {
++    if (desc instanceof SiblingGroupViewDesc) {
++      previous.push(desc)
++      if (desc.dirty || desc.dom.parentNode != root.contentDOM) root.dirty = CONTENT_DIRTY
++      for (const child of desc.children) {
++        owners.set(child, desc)
++        child.parent = root
++        flat.push(child)
++      }
++    } else flat.push(desc)
++  }
++  root.reconcilingGroups = owners
++  root.children = flat
++  return {previous, owners, size}
++}
++
++function restoreSiblingGroups(root: NodeViewDesc, groups: SiblingGroups, view: EditorView): boolean {
++  const {previous, owners, size} = groups, flat = root.children
++  const result: ViewDesc[] = [], used = new Set<SiblingGroupViewDesc>()
++  let group: SiblingGroupViewDesc | null = null, count = 0
++  let changed = size != root.groupSize
++  const finish = () => { group = null; count = 0 }
++  const append = (desc: ViewDesc) => {
++    if (group) { group.children.push(desc); desc.parent = group }
++    else result.push(desc)
++  }
++  const oldChildren = new Map(previous.map(g => [g, g.children]))
++  for (const g of previous) g.children = []
++  for (let i = 0; i < flat.length; i++) {
++    const desc = flat[i]
++    if (!desc.size) { finish(); result.push(desc); continue }
++    const owner = owners.get(desc)
++    const composing = view.composing && view.input.compositionNode && desc.dom.contains(view.input.compositionNode)
++    const direct = !size || (!composing && (i == 0 || i == flat.length - 1)) || (composing && !owner)
++    if (direct) {
++      finish()
++      append(desc)
++      continue
++    }
++    if (!group || (owner && owner != group && !used.has(owner)) || (count >= size * 2 && !composing)) {
++      finish()
++      group = owner && !used.has(owner) ? owner : new SiblingGroupViewDesc(root)
++      used.add(group)
++      result.push(group)
++    }
++    append(desc)
++    count++
++    // New groups start at the target; existing groups absorb local insertions.
++    if (!owner && count >= size) finish()
++  }
++  finish()
++  if (!view.composing && size) {
++    for (let i = 1; i < result.length; i++) {
++      const left = result[i - 1], right = result[i]
++      if (!(left instanceof SiblingGroupViewDesc) || !(right instanceof SiblingGroupViewDesc)) continue
++      const a = left.children.filter(d => d.size).length, b = right.children.filter(d => d.size).length
++      if ((a < size / 2 || b < size / 2) && a + b <= size * 2) {
++        for (const child of right.children) { child.parent = left; left.children.push(child) }
++        right.children = []
++        right.destroy()
++        used.delete(right)
++        result.splice(i--, 1)
++        changed = true
++      }
++    }
++  }
++  for (const g of used) {
++    const before = oldChildren.get(g)
++    g.needsRender = !!g.dirty || !before || before.length != g.children.length || g.children.some((d, i) => d != before[i])
++    if (g.needsRender) changed = true
++    g.totalSize = 0
++    let blocks = 0
++    for (const child of g.children) { g.totalSize += child.size; if (child.size) blocks++ }
++    if (blocks != g.blockCount) (g.dom as HTMLElement).style.setProperty("--pm-group-blocks", String(blocks))
++    g.blockCount = blocks
++    g.dirty = NOT_DIRTY
++  }
++  for (const g of previous) if (!used.has(g)) {
++    g.children = []
++    g.destroy()
++    changed = true
++  }
++  root.reconcilingGroups = null
++  root.children = result
++  root.groupsDeferred = view.composing
++  root.groupSize = size
++  return changed
++}
++
+ export class NodeViewDesc extends ViewDesc {
++  reconcilingGroups: Map<ViewDesc, SiblingGroupViewDesc> | null = null
++  groupsDeferred = false
++  groupSize = 0
+   constructor(
+     parent: ViewDesc | undefined,
+     public node: Node,
+@@ -784,6 +950,7 @@ export class NodeViewDesc extends ViewDesc {
+   // separate step, syncs the DOM inside `this.contentDOM` to
+   // `this.children`.
+   updateChildren(view: EditorView, pos: number) {
++    const groups = flattenSiblingGroups(this, view)
+     let inline = this.node.inlineContent, off = pos
+     let composition = view.composing ? this.localCompositionInfo(view, pos) : null
+     let localComposition = composition && composition.pos > -1 ? composition : null
+@@ -825,8 +992,10 @@ export class NodeViewDesc extends ViewDesc {
+     if (this.node.isTextblock) updater.addTextblockHacks()
+     updater.destroyRest()
+ 
++    const regrouped = groups ? restoreSiblingGroups(this, groups, view) : false
++
+     // Sync the DOM if anything changed
+-    if (updater.changed || this.dirty == CONTENT_DIRTY) {
++    if (regrouped || updater.changed || this.dirty == CONTENT_DIRTY) {
+       // May have to protect focused DOM from being changed if a composition is active
+       if (localComposition) this.protectLocalComposition(view, localComposition)
+       renderDescs(this.contentDOM!, this.children, view)
+@@ -1068,7 +1237,8 @@ function renderDescs(parentDOM: HTMLElement, descs: readonly ViewDesc[], view: E
+       written = true
+       parentDOM.insertBefore(childDOM, dom)
+     }
+-    if (desc instanceof MarkViewDesc) {
++    if (desc instanceof MarkViewDesc || desc instanceof SiblingGroupViewDesc && desc.needsRender) {
++      if (desc instanceof SiblingGroupViewDesc) desc.needsRender = false
+       let pos = dom ? dom.previousSibling : parentDOM.lastChild
+       renderDescs(desc.contentDOM!, desc.children, view)
+       dom = pos ? pos.nextSibling : parentDOM.firstChild
+@@ -1307,8 +1477,9 @@ class ViewTreeUpdater {
+     for (;;) {
+       let parent = domNode.parentNode
+       if (!parent) return -1
+-      if (parent == this.top.contentDOM) {
+-        let desc = domNode.pmViewDesc
++      let candidate = domNode.pmViewDesc
++      if (parent == this.top.contentDOM || candidate && candidate.parent == this.top) {
++        let desc = candidate
+         if (desc) for (let i = this.index; i < this.top.children.length; i++) {
+           if (this.top.children[i] == desc) return i
+         }

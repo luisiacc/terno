@@ -44,3 +44,4 @@ patchedDependencies:
   '@base-ui/react@1.9.0': patches/@base-ui__react@1.9.0.patch
   fake-indexeddb@6.2.6: patches/fake-indexeddb@6.2.6.patch
   postal-mime@4.1.3: patches/postal-mime@4.1.3.patch
+  prosemirror-view@1.42.8: patches/prosemirror-view@1.42.8.patch
