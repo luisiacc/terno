@@ -179,25 +179,52 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         const run = async () => {
           await assert("mail", new URL(request.url));
           let release: (() => void) | undefined;
-          const response = await requestHttp(policy, descriptor, () => {
-            if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
-            if (googlePending >= 64) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
-            googlePending++;
-            if (googlePending === 64) options.googleChanged?.();
-            let released = false;
-            release = () => {
-              if (released) return;
-              released = true;
-              const wasFull = googlePending === 64;
-              googlePending--;
-              if (wasFull) options.googleChanged?.();
-            };
-            return baseFetch(request).catch((error: unknown) => {
-              if (!request.signal.aborted) release!();
-              throw error;
-            });
-          }, Date.now);
-          return physical(request, release!)(response);
+          let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+          let received = false;
+          let hasBody = false;
+          try {
+            const response = await requestHttp(policy, descriptor, () => {
+              if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
+              if (googlePending >= 64) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
+              googlePending++;
+              if (googlePending === 64) options.googleChanged?.();
+              let released = false;
+              release = () => {
+                if (released) return;
+                released = true;
+                const wasFull = googlePending === 64;
+                googlePending--;
+                if (wasFull) options.googleChanged?.();
+              };
+              return baseFetch(request).then((response) => {
+                received = true;
+                hasBody = response.body !== null;
+                // Hold the native body until admission publishes or rejects the response.
+                reader = response.body?.getReader();
+                return response;
+              }, (error: unknown) => {
+                if (!request.signal.aborted) release!();
+                throw error;
+              });
+            }, Date.now);
+            reader?.releaseLock();
+            return physical(request, release!)(response);
+          } catch (error) {
+            if (received) {
+              if (reader) {
+                const owned = reader;
+                void (async () => {
+                  try { while (!(await owned.read()).done) { /* discard without buffering */ } }
+                  catch { /* A non-aborted read failure is terminal. */ }
+                  finally {
+                    owned.releaseLock();
+                    if (!request.signal.aborted) release!();
+                  }
+                })();
+              } else if (!hasBody && !request.signal.aborted) release!();
+            }
+            throw error;
+          }
         };
         return run();
       };
