@@ -261,3 +261,24 @@ it.each(["missing", "duplicate", "epoch"] as const)("withholds an invalid %s COP
   expect(t.server.control.listMessages("Trash", { raw: true }).map((message) => message.raw!.toString()).sort()).toEqual([...bytes].sort());
   for (const thread of threads) expect((await reopened.client.call("threads.get", { threadId: thread.id })).messages[0]).toMatchObject({ bodyState: "full" });
 });
+
+it("imports distinct first-sync UIDs in different folders without merging equal envelopes", async () => {
+  const t = await setup({ A: {}, Z: {} });
+  const one = rawIdleMail("First sync twins", "AAAA").replace(/^Message-ID: .*\r\n/m, "");
+  const two = one.replace("AAAA", "BBBB");
+  const a = t.server.control.addMessage("A", { raw: one });
+  const z = t.server.control.addMessage("Z", { raw: two });
+  await t.backend.syncAccount(t.account.id);
+  const locations = t.backend.store.providerStore(t.account.id).locations;
+  const first = await locations.at("A", a.uidvalidity, a.uid);
+  const second = await locations.at("Z", z.uidvalidity, z.uid);
+  expect(first).not.toBeNull();
+  expect(second).not.toBeNull();
+  expect(first).not.toBe(second);
+  const thread = sqlDb(t.backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id=?", first)!;
+  expect((await t.client.call("threads.get", { threadId: thread.thread_id })).messages[0]).toMatchObject({ id: first, bodyText: "AAAA\n" });
+  await t.client.call("threads.act", { threadIds: [thread.thread_id], action: "markRead" });
+  await t.backend.runWorker();
+  expect(t.server.control.getMessage("A", a.uid, { raw: true })).toMatchObject({ raw: Buffer.from(one), flags: ["\\Seen"] });
+  expect(t.server.control.getMessage("Z", z.uid, { raw: true })).toMatchObject({ raw: Buffer.from(two), flags: [] });
+});

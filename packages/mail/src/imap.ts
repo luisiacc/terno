@@ -786,7 +786,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null } = {}) {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number> }) {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -837,9 +837,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           let uncertain = false;
           for (const id of candidates) {
             const here = await locations.get(id, path);
-            // Two distinct UIDs in the same live epoch can be stored separately. A new place
-            // elsewhere, or a missing/reset place, supplies no evidence of which body moved.
-            if (!here || here.uidvalidity !== uidvalidity || (await locations.unresolved([id])).length) { uncertain = true; break; }
+            // New imports have their own logical targets, including twins first seen in different folders.
+            // Never assign an older logical target to a new place from its envelope.
+            if ((await locations.unresolved([id])).length || (!opts.introduced.has(id) && (!here || here.uidvalidity !== uidvalidity))) { uncertain = true; break; }
           }
           if (uncertain) {
             held = Math.min(held, m.uid);
@@ -890,7 +890,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
       if (fresh.length) await sink.ingest(fresh, { live });
-      await addAll(touched, await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key)));
+      const inserted = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key));
+      await addAll(touched, inserted);
+      await addAll(opts.introduced, inserted);
 
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
@@ -1178,6 +1180,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
+        const introduced = new Set<number>();
         {
           const changed = new Set<string>(cursor.roles ? [] : Object.keys(cursor.mailboxes));
           for (const role of Object.keys(SPECIAL_USE).map((key) => SPECIAL_USE[key]!)) {
@@ -1277,12 +1280,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
+          await syncMailbox(c, path, cursor, sink, touched, { introduced, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, cursor.mailboxes[path] === undefined ? { reidentify: true } : { checkpoint: swept.get(path) ?? null });
+            await syncMailbox(c, path, cursor, sink, touched, { introduced, ...(cursor.mailboxes[path] === undefined ? { reidentify: true } : { checkpoint: swept.get(path) ?? null }) });
           } catch (error) {
             tolerate(error);
           }
