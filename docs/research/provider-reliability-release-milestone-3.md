@@ -98,3 +98,8 @@ AssertionError: expected 12.574916999999914 to be less than 10
        |                 ^
      77|   // oldest first: the late ones in their places among those still wai…
 ```
+
+
+## Landed repair: adoption ordered-input work
+
+`7985fd4d` bypasses redundant sorting/merge allocation for already ordered IDs, retaining owned copy, original yields and unsorted fallback. Root9unit+6unchanged perf cases/types/lint pass. One review0findings. Historical12.575msfailure is unreproduced and causally unproven; budgets/workloads unchanged. [Source evidence and limits](../plans/drafts/release3-mail-adoption.md). Other milestone failures remain open.
