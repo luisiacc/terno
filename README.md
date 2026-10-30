@@ -205,7 +205,12 @@ Every process logs structured lines (a dotted code plus typed, allowlisted field
 
 - Errors are recorded on the user's machine first. Terno then shows a row ("Terno ran into a problem") with **Send** and **What gets sent**.
 - By default (Ask), nothing leaves the machine until the user clicks Send. "Always" sends a report on its own only for someone who picks that setting, and "Never" sends nothing.
-- A report is the error's kind, code and stack frames, the app version, and anonymous breadcrumbs. It never includes mail content, addresses, names, subjects, file paths or tokens. "What gets sent" shows the exact event before it goes.
+- A report contains:
+  - the error: its class, its code (never its message), and stack frames (function, file inside the app, line and column);
+  - breadcrumbs: up to the last 100 things the app logged before the error, such as "opened settings", "sync started" or "connection refused". Each is a code with typed fields from a fixed list (a dialog's name, an error number, a count, a duration);
+  - context: the app version and release channel, the OS and its version, the CPU architecture and memory, the language, which part of the app failed, how long it had been running, how many IMAP and Gmail accounts there are, and a random install id kept on the machine.
+
+  A report never includes mail content, addresses, names, subjects, file paths, URLs or tokens. There is no free text in it, because only declared fields of known codes survive. "What gets sent" shows the exact event before it goes.
 - Terno does not use Sentry for session replays, performance tracing, usage analytics, or anything that runs in the background. No Sentry SDK ships, so nothing can start sending by itself.
 
 **Where things live (desktop, under the profile, `~/Library/Application Support/Terno`):**
