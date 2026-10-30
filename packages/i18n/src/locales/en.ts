@@ -551,6 +551,8 @@ const en = {
 
   // ── list, reader, sidebar, menus, categories
   // @list
+  "sidebar.countHelp": "Unread conversations saved in Terno. Coverage may be incomplete.",
+  "sidebar.countAccountHelp": "Unread Inbox conversations saved in Terno. Coverage may be incomplete.",
   "sidebar.categories": "Categories",
   "sidebar.newCategory": "New category",
   "sidebar.categoryName": "Category name",

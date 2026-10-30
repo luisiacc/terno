@@ -20,4 +20,4 @@ Native read-only Codex critique (`gpt-6.1-sol`, high; `/tmp/terno-a13/plan-revie
 
 ## Investigation status
 
-Investigation and plan critique only. No regression test, UI implementation, screenshots, code review or verification has been completed. The coverage clarification remains to be implemented; this document does not claim a backend dependency or completion.
+The first dev-only UI test failed on the missing Inbox accessible description (`/tmp/terno-a13/red.log`). The change associates a shared persistent description with eligible rows and renders the on-demand help through a trigger on the actual button. Account rows name Inbox; the expanded multi-account row delegates help to its Inbox child. The Inbox shortcut is retained. SQLite and IndexedDB public count API fixtures cover empty, older header-only, unread elsewhere in the conversation, spam and trash. Synthetic UI tests cover missing and positive badges, en/es, light/dark, keyboard, pointer, tooltip portal axe and no provider or external browser calls. Four screenshots were inspected in `/tmp/terno-a13/screenshots/`. Code review and final checks follow.
