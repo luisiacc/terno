@@ -20,3 +20,8 @@ NOT RELEASE GREEN. Initial clean main `ac4235f1`; main changed to `ec51bd3d` dur
 Print failure: `e2e/print.spec.ts:130`, print sheet remained after Escape when opened through the HTML-frame/palette path (expected0,actual1). UI perf completed two failures in `e2e/autocomplete-perf.spec.ts:166`:5MB start-suggestion latency352.7ms/120ms and10MB start typing paired gate false. The subsequent300-suggestion heap case was interrupted by source drift; its closed-channel artifacts are not a third established product failure. No timing/noise waiver, retry or root-cause attribution.
 
 Complete logs, exact stage identities, cleanup and dependency checks: `/tmp/terno-release-milestone4-ofu_bc1t/report.md`. Next repairs use isolated current-main worktrees: print Escape/focus and autocomplete latency. The main update belongs to the user's diagnostics work and is preserved. No completed stage on the older commit qualifies the changed main; remaining full-release qualification stays open.
+
+
+## Landed print repair
+
+`435b550c` closes the frame-focused print Escape gap through the existing bridge. Root67unit+42browser cases/types/lint pass after local rebase, including the original path and pinned deferred-focus regression. One review finding on port configuration was regression-fixed; no second round. [Spec/evidence/limits](../plans/drafts/release4-print-escape.md). This does not complete the interrupted release milestone; autocomplete and remaining full gates stay open.
