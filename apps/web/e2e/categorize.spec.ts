@@ -144,6 +144,8 @@ test.describe("everything from a sender, out of a category (plan 76)", () => {
 
     await selectThread(page, ids[0]!, "from:recibos@rappi.com");
     const row = page.locator(`[data-testid=thread-row][data-thread-id="${ids[0]}"]`);
+    // filed behind the list's back: the row shows it once the change arrives
+    await expect(row.locator("[data-cat-dot]")).toHaveCount(1);
     await row.click({ button: "right" });
     await page.getByTestId("menu-sender-file").hover();
     // only the categories this mail is in are offered to leave
