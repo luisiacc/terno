@@ -1,6 +1,7 @@
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Copy } from "lucide-react";
+import { Copy } from "lucide-react";
 import { codeKey, copyCode, useCodeState } from "~/lib/codes";
+import "./code-chip.css";
 
 /**
  * A row's verification code, one click from the clipboard (plan 69). A pointer target, not a control: a row is an
@@ -26,20 +27,32 @@ export function CodeChip({ threadId, code, className }: { threadId: number; code
         e.stopPropagation();
         void copyCode(key, code);
       }}
+      data-code={code}
       className={cn(
-        "group/code -my-0.5 inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-full border pr-1.5 pl-2 text-xs font-medium tracking-wide tabular",
-        "transition-[background-color,border-color,color] duration-slow ease-motion",
-        "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
-        "data-used:border-border data-used:bg-transparent data-used:text-foreground data-used:hover:bg-tint",
+        "code-chip -my-0.5 inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border pr-1.5 pl-2 text-xs font-medium tracking-wide text-foreground tabular",
         className,
       )}
     >
-      {code}
-      {/* the copy icon turns into a check: both stay mounted, one fades and grows as the other shrinks away */}
-      <span className="relative size-3 shrink-0">
-        <Copy className="absolute inset-0 size-3 transition-[opacity,scale] duration-base ease-spring group-data-copied/code:scale-50 group-data-copied/code:opacity-0" />
-        <Check strokeWidth={3} className="absolute inset-0 size-3 scale-50 opacity-0 transition-[opacity,scale] duration-base ease-spring group-data-copied/code:scale-100 group-data-copied/code:opacity-100" />
+      {/* outlined underneath; the accent above it, which shrinks away into the icon once copied (code-chip.css) */}
+      <Label code={code} />
+      <span aria-hidden className="code-chip-fill">
+        <Label code={code} />
       </span>
     </span>
+  );
+}
+
+function Label({ code }: { code: string }) {
+  return (
+    <>
+      {code}
+      {/* the copy icon makes way and the check draws itself in */}
+      <span className="relative size-3 shrink-0">
+        <Copy className="code-chip-copy size-3" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="code-chip-check size-3">
+          <path d="M4 12.5 9 17.5 20 6.5" pathLength={1} />
+        </svg>
+      </span>
+    </>
   );
 }

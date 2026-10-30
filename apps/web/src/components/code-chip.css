@@ -1,0 +1,113 @@
+/*
+ * The code chip (plan 69): the one place motion runs past the 100 ms cap, at the user's request. Every duration is a
+ * multiple of --motion (75 ms by default; 50 and 100 scale it), and Motion Off or the OS asking for reduced motion
+ * turns all of it off (globals.css), so the cap's purpose holds: quick by default, none when asked.
+ *
+ * In: the copy icon shrinks away, then the check springs in and draws itself.
+ * Out (5 s later): the check blurs away, the copy icon springs back, and the chip melts from the accent to an outline.
+ */
+.code-chip {
+  --chip-quick: calc(var(--motion) * 2);
+  --chip-in: calc(var(--motion) * 4);
+  --chip-draw: calc(var(--motion) * 3);
+  --chip-settle: calc(var(--motion) * 5);
+  /* where the accent shrinks to: the icon's center (padding-right plus half the icon) */
+  --chip-focus: calc(100% - 0.375rem - 0.375rem) 50%;
+  position: relative;
+  isolation: isolate;
+  transition: scale var(--chip-quick) var(--motion-ease-spring);
+}
+/*
+ * The accent: the same label, white on the primary, laid exactly over the outlined chip. Settling, it shrinks to the
+ * icon as a circle, so every frame shows crisp text on one surface or the other (a color fade passes through grey on
+ * half the accent, where the digits vanish).
+ */
+.code-chip-fill {
+  position: absolute;
+  inset: -1px;
+  display: inherit;
+  align-items: inherit;
+  gap: inherit;
+  padding: inherit;
+  border: 1px solid var(--color-primary);
+  border-radius: inherit;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  clip-path: circle(120% at var(--chip-focus));
+  transition: clip-path var(--chip-settle) cubic-bezier(0.65, 0, 0.35, 1) var(--motion);
+}
+.code-chip[data-used] .code-chip-fill {
+  /* hidden once the circle is gone: no sub-pixel speck stays behind */
+  clip-path: circle(0% at var(--chip-focus));
+  visibility: hidden;
+  transition:
+    clip-path var(--chip-settle) cubic-bezier(0.65, 0, 0.35, 1) var(--motion),
+    visibility 0s linear calc(var(--motion) + var(--chip-settle));
+}
+/* hover: a veil over both surfaces, with its own quick fade */
+.code-chip::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) ease-out;
+}
+.code-chip:hover::after {
+  opacity: 0.08;
+}
+.code-chip:active {
+  scale: 0.94;
+  transition-duration: var(--motion-fast);
+}
+
+.code-chip-copy,
+.code-chip-check {
+  position: absolute;
+  inset: 0;
+  transition-property: opacity, scale, filter;
+}
+/* resting: the copy icon is there; coming back, it springs in after the check has gone */
+.code-chip-copy {
+  transition-duration: var(--chip-in);
+  transition-timing-function: var(--motion-ease-spring);
+  transition-delay: calc(var(--motion) * 1.5);
+}
+.code-chip-check {
+  opacity: 0;
+  scale: 0.6;
+  filter: blur(1.5px);
+  transition-duration: var(--chip-quick);
+  transition-timing-function: var(--motion-ease-in);
+}
+.code-chip-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  /* undrawn only once it's out of sight */
+  transition: stroke-dashoffset 0s linear var(--chip-quick);
+}
+
+/* copied: the copy icon goes, the check springs in and draws, left to right */
+.code-chip[data-copied] .code-chip-copy {
+  opacity: 0;
+  scale: 0.4;
+  filter: blur(1.5px);
+  transition-duration: var(--chip-quick);
+  transition-timing-function: var(--motion-ease-in);
+  transition-delay: 0s;
+}
+.code-chip[data-copied] .code-chip-check {
+  opacity: 1;
+  scale: 1;
+  filter: blur(0);
+  transition-duration: var(--chip-in);
+  transition-timing-function: var(--motion-ease-spring);
+  /* as the copy icon is half gone: no empty beat between them */
+  transition-delay: calc(var(--motion) * 0.6);
+}
+.code-chip[data-copied] .code-chip-check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--chip-draw) cubic-bezier(0.33, 1, 0.68, 1) calc(var(--motion) * 0.6);
+}

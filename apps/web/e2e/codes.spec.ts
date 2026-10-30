@@ -38,8 +38,10 @@ for (const theme of ["light", "dark"] as const) {
     await rowOf(page, other).click();
     await expect(rowOf(page, other)).toHaveAttribute("data-cursor", "true");
     const chip = row.getByTestId("row-code");
-    await expect(chip).toHaveText("048291");
-    await expect(rowOf(page, other).getByTestId("row-code")).toHaveText("731406");
+    await expect(chip).toHaveAttribute("data-code", "048291");
+    // the outlined label underneath and the accent's over it
+    await expect(chip).toHaveText("048291048291");
+    await expect(rowOf(page, other).getByTestId("row-code")).toHaveAttribute("data-code", "731406");
     // screen readers hear it in the row
     await expect(row).toContainText("Verification code 048291");
     await stabilize(page);
@@ -60,7 +62,9 @@ for (const theme of ["light", "dark"] as const) {
     // five seconds later: the copy icon is back and the chip is outlined
     await expect(chip).not.toHaveAttribute("data-copied", "true", { timeout: 8000 });
     await expect(chip).toHaveAttribute("data-used", "true");
+    // the accent has shrunk away: the outline is all that shows
     expect(await chip.evaluate((el) => getComputedStyle(el).backgroundColor)).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    await expect(chip.locator(".code-chip-fill")).toBeHidden();
     await list.screenshot({ path: testInfo.outputPath(`code-used-${theme}.png`) });
     const outlined = await new AxeBuilder({ page }).include("[data-testid=thread-list]").withTags(AXE_TAGS).analyze();
     expect(outlined.violations.map((v) => v.id)).toEqual([]);

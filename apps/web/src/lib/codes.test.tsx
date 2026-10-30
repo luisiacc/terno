@@ -45,7 +45,7 @@ const click = () => act(async () => chip()!.click());
 
 it("a fresh thread's code copies: the check for five seconds, then outlined for good", async () => {
   await showRow(thread());
-  expect(chip()!.textContent).toBe("048291");
+  expect(chip()!.dataset.code).toBe("048291");
   await click();
   expect(writeText).toHaveBeenCalledWith("048291");
   expect(chip()!.hasAttribute("data-copied")).toBe(true);
@@ -134,14 +134,14 @@ it("a row on screen for a while still offers the code of mail arriving now", asy
   expect(chip()).toBeNull();
   await act(async () => vi.advanceTimersByTime(10 * 60_000));
   await showRow(thread({ snippet: "Your new code is 551234", subject: "Hi", lastDate: Date.now(), messageCount: 2 }));
-  expect(chip()!.textContent).toBe("551234");
+  expect(chip()!.dataset.code).toBe("551234");
 });
 
 it("a reply doesn't bring back the first message's code from the subject", async () => {
   await showRow(thread({ subject: "Your code 111111", snippet: "Thanks, that worked!", messageCount: 2 }));
   expect(chip()).toBeNull();
   await showRow(thread({ subject: "Your code 111111", snippet: "Your new code is 222222", messageCount: 2 }));
-  expect(chip()!.textContent).toBe("222222");
+  expect(chip()!.dataset.code).toBe("222222");
   const { threadCode } = await import("./codes");
   expect(threadCode(thread({ subject: "Your code 111111", snippet: "Thanks", messageCount: 2 }), NOW)).toBeNull();
 });

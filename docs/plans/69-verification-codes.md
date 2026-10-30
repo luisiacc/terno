@@ -142,3 +142,13 @@ Shown in the inbox with ordinary rows around it, the chip stays on the top line 
 ## Trying it: `pnpm dev:demo`
 
 The demo mailbox is seeded once and dated in the past, so it never has a code under 2 hours old. `seedDemoCode` (`packages/backend/src/demo.ts`) adds "Your Acme sign-in code" from Acme, dated now, unread, to the first account's inbox on every dev demo launch. Each launch adds a message with a new code to the same thread, so the inbox doesn't fill with copies. It runs only with `demo && dev` (`backend-entry.ts`), so the packaged demo smokes keep their mailbox. `demo-code.test.ts` checks two launches: one thread at the top of the inbox whose row offers the newest code. A real `dev:demo` launch on a temp profile seeded it (checked in its database).
+
+## Motion
+
+> we need really nice premium animations here that are smooth and simple
+
+Within the 100 ms cap, the swap and the color change read as cuts. At the user's request the chip is the one exception (`code-chip.css`). Every duration is a multiple of `--motion` (75 ms by default; the 50 and 100 settings scale it), and Motion Off or reduced motion turns all of it off through the global rules. `motion.spec.ts`'s flows never show a code, so its 100 ms gate stands for everything else.
+
+- **Copy (about 300 ms):** the copy icon shrinks, blurs and fades (2M, ease-in). As it's half gone (0.6M), the check springs in (4M) and draws itself left to right (3M, ease-out). The check is an inline path with `pathLength=1`, so `stroke-dashoffset` draws it.
+- **Settle, 5 s later (about 450 ms):** the check blurs away and the copy icon springs back. The accent shrinks into the icon as a circle (`clip-path`, 5M, ease-in-out). Captured frame by frame, a color fade passed through grey digits on half the accent, where they vanish. So the chip is two layers: the outlined label underneath, and the same label in white on the accent above it, clipped. Every frame shows crisp text on one surface or the other.
+- **Hover** is a veil over both layers with its own quick fade; it doesn't slow the settle. **Press** scales to 0.94 on a spring.
