@@ -180,3 +180,36 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+test("edited automatic recipient survives Undo, Forward conversion, reload and send", async ({ app: page, server }) => {
+  const [account] = await server.backend.store.accounts.list();
+  const source: IncomingMessage = {
+    accountId: account!.id, providerMsgId: "f2-source", providerThreadId: "f2-native", rfcMessageId: "f2@example.test", inReplyTo: null, references: [], from: client,
+    to: [{ name: "Me", email: account!.email }], cc: [], bcc: [], subject: "F2 subject", date: E2E_NOW, snippet: "source text", bodyText: "source text", bodyHtml: null, bodyState: "full", listId: null,
+    isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+  };
+  const result = await server.backend.store.sync.ingest([source], { applyFilters: false, now: E2E_NOW, classifier: null });
+  await page.reload(); await page.locator("[data-ready]").waitFor();
+  await selectThread(page, result.touched[0]!, 'in:inbox subject:"F2 subject"');
+  await page.getByTestId("action-reply").click();
+  const toInput = page.getByTestId("compose-to");
+  await toInput.focus(); await toInput.press("Home"); await toInput.press("Backspace");
+  await page.keyboard.press("F2"); await toInput.press("Enter");
+  await toInput.press("Meta+z"); await toInput.press("Meta+z");
+  await expect(chipsOf(page, "compose-to")).toHaveCount(1);
+  await page.getByTestId("compose-body").fill("Authored F2 body");
+  await page.getByTestId("action-forward").click();
+  await expect(chipsOf(page, "compose-to")).toHaveCount(1);
+  await expect.poll(async () => (await server.backend.store.drafts.list()).some((d) => d.mode === "forward" && d.body_text === "Authored F2 body")).toBe(true);
+  await page.reload(); await page.locator("[data-ready]").waitFor();
+  await selectThread(page, result.touched[0]!, 'in:inbox subject:"F2 subject"');
+  await page.getByTestId("action-forward").click();
+  expect(await recipientEmails(page, "compose-to")).toEqual([client.email]);
+  await expect(page.getByTestId("compose-body")).toContainText("Authored F2 body");
+  await page.getByTestId("compose-send").click();
+  await expect.poll(() => server.smtp.length).toBe(1);
+  expect(server.smtp[0]!.rcpt).toEqual([client.email]);
+  const mail = await parseRaw(server.smtp[0]!.raw);
+  expect(mail.inReplyTo).toBeNull(); expect(mail.references).toEqual([]);
+  expect(mail.text).toContain("Authored F2 body");
+});

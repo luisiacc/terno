@@ -62,7 +62,7 @@ function setup(size = 32, fault?: Fault) {
       accountId: p.accountId, threadId: p.threadId ?? null, mode: p.mode ?? "new", to: p.to, cc: p.cc, bcc: p.bcc,
       subject: p.subject, subjectEdited: p.subjectEdited ?? false, bodyText: p.bodyText, bodyHtml: p.bodyHtml,
       attachments: p.attachments ?? [], quotedText: p.quotedText ?? "", includeQuote: p.includeQuote ?? false,
-      inReplyToMessageId: p.inReplyToMessageId ?? null, forwardOfMessageId: p.forwardOfMessageId ?? null,
+      replyContext: p.replyContext ?? null, inReplyToMessageId: p.inReplyToMessageId ?? null, forwardOfMessageId: p.forwardOfMessageId ?? null,
       showSourceContext: p.showSourceContext ?? false, presentationThreadId: p.showSourceContext ? 7 : null,
       uiState: p.uiState ?? "open", updatedAt: 0,
     };
@@ -101,7 +101,7 @@ function setup(size = 32, fault?: Fault) {
         subject: fault === "fixed-revision" && index === 1 ? "authored subject" : fields.subject,
         subjectEdited: fault === "fixed-revision" && index === 1,
         bodyText: "preserved", bodyHtml: "<div>preserved</div>", attachments: mode === "forward" ? [{ ...ref, contentId: null }] : [],
-        inReplyToMessageId: fields.inReplyToMessageId, forwardOfMessageId: fields.forwardOfMessageId, showSourceContext: mode === "forward", uiState: "open",
+        replyContext: fields.replyContext ?? null, inReplyToMessageId: fields.inReplyToMessageId, forwardOfMessageId: fields.forwardOfMessageId, showSourceContext: mode === "forward", uiState: "open",
       };
       expect(p, "complete saved request").toMatchObject(expected);
       const omitted = allowFault && fault === "omitted-quote" && index === 1;

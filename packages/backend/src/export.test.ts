@@ -207,3 +207,15 @@ it("backs up cross-account reply baselines and retains distinct contexts on repe
     expect.objectContaining({ subject: "Another", sourceId: dst.original.id, sourceAccountId: dst.originalAccount }),
   ]));
 });
+
+it("retains unresolved reply context in a subsequent backup", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-pending-reply-export-"));
+  const backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  await backend.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "indigo", now: 0 });
+  const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "r", origin: "renderer" }); const client = new RpcClient(c);
+  const draft = { accountEmail: "send@example.test", mode: "reply" as const, to: [], cc: [], bcc: [], subject: "Re: Original", subjectEdited: false, bodyText: "keep", bodyHtml: "", quotedText: "> keep", includeQuote: true, inReplyTo: "original@example.test", forwardOf: null, replyContext: { subject: "Original", sourceAccountEmail: "missing@example.test", rfcMessageId: "original@example.test" }, uiState: "open" as const, updatedAt: 0 };
+  const data = { format: "terno-export" as const, version: 2 as const, exportedAt: 0, app: "test", accounts: [], categories: [], filters: [], settings: {}, ops: [], drafts: [draft] };
+  expect((await client.call("app.import", { data })).pending.drafts).toBe(1);
+  expect((await client.call("app.export", {})).drafts).toEqual([expect.objectContaining({ bodyText: "keep", quotedText: "> keep", replyContext: draft.replyContext })]);
+});

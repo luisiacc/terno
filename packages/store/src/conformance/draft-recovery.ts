@@ -52,6 +52,31 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       expect(await store.drafts.list()).toHaveLength(1);
     });
 
+    it("refuses a substituted source, unacknowledged subject or missing revision without consuming the draft", async () => {
+      const store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "source-a", subject: "Original" }), msg({ accountId: a!, providerMsgId: "source-b", subject: "Another" })]);
+      const messages = (await store.debug.snapshot()).messages;
+      const source = messages.find((m) => m.providerMsgId === "source-a")!, other = messages.find((m) => m.providerMsgId === "source-b")!;
+      const draft = (await store.drafts.save({ accountId: a!, mode: "reply", inReplyToMessageId: source.id, replyContext: { subject: "Original", sourceId: source.id, sourceAccountId: a! }, to: [], cc: [], subject: "Re: Original", bodyText: "keep" }, 0))!;
+      const command = { accountId: a!, to: [], cc: [], bcc: [], subject: "Re: Original", bodyText: "keep", inReplyToMessageId: source.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, recordReply: false, now: 1 };
+      for (const patch of [{ inReplyToMessageId: other.id }, { inReplyToMessageId: undefined }, { draftRevision: undefined }, { subject: "Different" }]) {
+        await expect(store.compose.queueSend({ ...command, ...patch })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      }
+      expect((await store.drafts.list())[0]).toMatchObject({ id: draft.id, body_text: "keep", in_reply_to_message_id: source.id });
+      expect((await store.debug.snapshot()).ops).toHaveLength(0);
+    });
+
+    it("keeps legacy reply linkage after a subject edit without inventing a baseline", async () => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "legacy-reply", rfcMessageId: "legacy-reply@example.test", providerThreadId: "legacy-native", subject: "Original" })]);
+      const original = (await store.debug.snapshot()).messages[0]!;
+      const draft = (await store.drafts.save({ accountId: a!, mode: "reply", inReplyToMessageId: original.id, to: [], cc: [], subject: "Edited legacy", subjectEdited: true, bodyText: "keep" }, 0))!;
+      store = await harness.reopen(store); opened.push(store);
+      expect((await store.drafts.list())[0]!.reply_context_json ?? null).toBeNull();
+      const sent = await store.compose.queueSend({ accountId: a!, to: [], cc: [], bcc: [], subject: "Edited legacy", bodyText: "keep", inReplyToMessageId: original.id, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, recordReply: false, now: 1 });
+      expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ inReplyTo: "legacy-reply@example.test", providerThreadId: "legacy-native" });
+    });
+
     it("never reuses deleted highest identity after reopen; stale saves and sends cannot target its copy", async () => {
       let store = await open();
       const [accountId] = await withAccounts(store);

@@ -104,6 +104,14 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
       updatedAt: d.updated_at,
     });
   }
+  for (const pending of (await pendingOf(store)).drafts) {
+    if (!pending.replyContext) continue;
+    const to = addresses.safeParse(pending.to), cc = addresses.safeParse(pending.cc), bcc = addresses.safeParse(pending.bcc ?? []);
+    if (!to.success || !cc.success || !bcc.success) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
+    for (const part of pending.attachments ?? []) attachmentBytes += part.size;
+    if (attachmentBytes > 32 * 1024 * 1024) throw new RpcError("BAD_REQUEST", L("attachments.backupTooLarge"));
+    drafts.push({ ...pending, to: to.data, cc: cc.data, bcc: bcc.data, updatedAt: 0 });
+  }
   const ops: MailboxExport["ops"] = [];
   for (const o of await store.ops.recent(100_000)) {
     if (o.state === "succeeded") continue;
