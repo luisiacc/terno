@@ -1019,7 +1019,9 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
     before.push(stateOf(m));
     messages.update(m, set);
     touched.add(m.thread_id);
-    byAccount.set(m.account_id, [...(byAccount.get(m.account_id) ?? []), id]);
+    let targets = byAccount.get(m.account_id);
+    if (!targets) byAccount.set(m.account_id, (targets = []));
+    targets.push(id);
   }
   recomputeThreads(c, touched);
   return { threadIds: [...touched], targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })), before };
