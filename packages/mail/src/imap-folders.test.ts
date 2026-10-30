@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { customFolders, heldUidnext, IMAP_JOURNAL_LIMITS, resetRoom } from "./imap";
 
 type Listed = Parameters<typeof customFolders>[0][number];
-const box = (path: string, o: { flags?: string[]; specialUse?: string; delimiter?: string } = {}) =>
-  ({ path, name: path.split(o.delimiter ?? "/").at(-1)!, delimiter: o.delimiter ?? "/", flags: new Set(o.flags ?? []), specialUse: o.specialUse, parentPath: "", parent: [], listed: true, subscribed: true }) as unknown as Listed;
+const box = (path: string, o: { flags?: string[]; specialUse?: string; delimiter?: string | null } = {}) =>
+  ({ path, name: path.split(o.delimiter ?? "/").at(-1)!, delimiter: o.delimiter === undefined ? "/" : o.delimiter, flags: new Set(o.flags ?? []), specialUse: o.specialUse, parentPath: "", parent: [], listed: true, subscribed: true }) as unknown as Listed;
 
 describe("customFolders", () => {
   it("leaves out roles (by special-use or by name), INBOX, server specials and what doesn't exist", () => {
@@ -30,6 +30,14 @@ describe("customFolders", () => {
       { key: "Lists", path: ["Lists"], selectable: false },
       { key: "Lists/News", path: ["Lists", "News"], selectable: true },
       { key: "INBOX.Clientes", path: ["Clientes"], selectable: true },
+    ]);
+  });
+
+  it("keeps a NIL delimiter literal and decodes dot-delimited Unicode paths", () => {
+    expect(customFolders([box("A/B", { delimiter: null }), box("INBOX.Proyectos.Clientes", { delimiter: "." }), box("日本語/契約")], {})).toEqual([
+      { key: "A/B", path: ["A/B"], selectable: true },
+      { key: "INBOX.Proyectos.Clientes", path: ["Proyectos", "Clientes"], selectable: true },
+      { key: "日本語/契約", path: ["日本語", "契約"], selectable: true },
     ]);
   });
 

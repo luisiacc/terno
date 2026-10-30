@@ -23,6 +23,7 @@ interface MailboxState {
 
 interface Cursor {
   mailboxes: Record<string, MailboxState>;
+  roles?: Partial<Record<Role, string>>;
   /** plan 68: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
   pass?: number;
   /** plan 68 (Codex R4): messages a failed pass left without a location; the next complete pass reconciles them */
@@ -445,12 +446,12 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const rolePaths = new Set(Object.values(roles) as string[]);
   // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
   const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse);
+  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name");
   const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
   const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
   const bounded = list.length > LISTED_MAX ? list.slice(0, LISTED_MAX) : list;
-  const candidates = bounded.filter((m) => !isRole(m) && !unusable(m) && m.path.length <= 1000);
+  const candidates = bounded.filter((m) => (!isRole(m) || (groupOnly(m) && !isInbox(m.path))) && !unusable(m) && m.path.length <= 1000);
   const names = (m: ListedMailbox) => {
     const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
     if (parts.length > 1 && isInbox(parts[0]!)) parts.shift();
@@ -685,16 +686,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   async function discoverRoles(c: ImapFlow, listed?: readonly ListedMailbox[]): Promise<Partial<Record<Role, string>>> {
-    if (roles) return roles;
+    if (roles && !listed) return roles;
     const found: Partial<Record<Role, string>> = { inbox: "INBOX" };
     const list = listed ?? (await c.list());
-    for (const mb of list) {
-      const role = mb.specialUse ? SPECIAL_USE[mb.specialUse] : undefined;
+    const selectable = list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent"));
+    for (const mb of selectable) {
+      const role = mb.specialUse && mb.specialUseSource !== "name" ? SPECIAL_USE[mb.specialUse] : undefined;
+      if (role && roles?.[role] === mb.path && role !== "inbox") found[role] = mb.path;
+    }
+    for (const mb of selectable) {
+      const role = mb.specialUse && mb.specialUseSource !== "name" ? SPECIAL_USE[mb.specialUse] : undefined;
       if (role && !found[role]) found[role] = mb.path;
     }
     for (const [role, re] of Object.entries(NAME_HINTS) as [Role, RegExp][]) {
       if (found[role]) continue;
-      const mb = list.find((m) => re.test(m.path) || re.test(m.name));
+      const mb = selectable.find((m) => re.test(m.path));
       if (mb) found[role] = mb.path;
     }
     roles = found;
@@ -1283,7 +1289,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   async function ensureMailbox(c: ImapFlow, role: Role, fallbackName: string): Promise<string> {
     const r = await discoverRoles(c);
     if (r[role]) return r[role]!;
-    await c.mailboxCreate(fallbackName).catch(() => {});
+    if (!(await c.mailboxCreate(fallbackName))) throw new ProviderError(L("errors.imap.changeRefused"), false);
     r[role] = fallbackName;
     return fallbackName;
   }
@@ -1394,6 +1400,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
+        if (cursor.roles) {
+          const changed = new Set<string>();
+          for (const role of Object.keys(SPECIAL_USE).map((key) => SPECIAL_USE[key]!)) {
+            if (cursor.roles[role] === r[role]) continue;
+            if (cursor.roles[role]) changed.add(cursor.roles[role]!);
+            if (r[role]) changed.add(r[role]!);
+          }
+          for (const path of changed) {
+            const state = cursor.mailboxes[path];
+            if (state) await addAll(touched, (await readMailbox(locations, path, state.uidvalidity)).map((l) => l.message_id));
+          }
+        }
         const folders = customFolders(list, r);
         // listed before they sync: a location in a listed folder is membership as it's written
         await sink.setFolders?.(folders);
@@ -1485,7 +1503,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const twins = new Map<string, number[]>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, recover, ambiguous, twins });
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && pending.size > 0, recover, ambiguous, twins });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
@@ -1545,6 +1563,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (!full && cursor.overflow) cursor.fullCheck = true;
         // reconciled, or kept above as orphans: the journal is done with
         delete cursor.unlocated;
+        cursor.roles = { ...r };
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);
