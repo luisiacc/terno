@@ -23,6 +23,10 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
 
+import type { Socket } from "node:net";
+import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
+
+const smtpSockets = new Set<Socket>();
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
 const SHOTS = "/tmp/unica-scratch/notify";
@@ -55,7 +59,7 @@ function raw(o: { from: string; to?: string; subject: string; body?: string; lis
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
-  test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
+  expect(existsSync(SOURCE_APP), "packaged app fixture must exist").toBe(true);
   imap = imapkit({
     plugins: ["IDLE", "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"],
     // the form signs in with the address as the user name
@@ -67,16 +71,28 @@ test.beforeAll(async () => {
   imap.control.addMessage("Sent", { raw: raw({ from: `Smoke <${ME}>`, to: "Valeria Núñez <valeria@studio.example>", subject: "Hola Valeria" }), flags: ["\\Seen"] });
   imap.control.addMessage("INBOX", { raw: raw({ from: "Valeria Núñez <valeria@studio.example>", subject: "Ya estaba aquí" }) });
   smtp = new SMTPServer({ authOptional: true, disabledCommands: ["STARTTLS"], logger: false, onAuth: (_a, _s, cb) => cb(null, { user: "smoke" }), onData: (s, _x, cb) => (s.resume(), s.on("end", () => cb())) });
+  smtp.server.on("connection", (socket) => {
+    smtpSockets.add(socket);
+    socket.once("close", () => smtpSockets.delete(socket));
+  });
   await new Promise<void>((r) => smtp!.listen(0, "127.0.0.1", r));
   smtpPort = (smtp.server.address() as { port: number }).port;
 
   workdir = mkdtempSync(join("/tmp", "terno-notify-smoke-"));
   const appPath = join(workdir, "Terno.app");
   execFileSync("ditto", [SOURCE_APP, appPath]);
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: join(workdir, "profile"), TERNO_TEST_IMAP_INSECURE: "1" };
+  const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: join(workdir, "profile"), TERNO_TEST_IMAP_INSECURE: "1" };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.TERNO_DEV_URL;
+  delete env.TERNO_SMOKE_SCREENSHOT;
   app = await electron.launch({ executablePath: join(appPath, "Contents/MacOS/Terno"), env });
+  await blockExternal(app);
+  // Only synthetic passwords in this temporary profile; never open the native Keychain.
+  await app.evaluate(({ safeStorage }) => {
+    safeStorage.isEncryptionAvailable = () => true;
+    safeStorage.encryptString = (value) => Buffer.from(value, "utf8");
+    safeStorage.decryptString = (value) => value.toString("utf8");
+  });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
   // every notification main shows, recorded (the real show still runs)
@@ -92,10 +108,16 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await app?.close();
-  await imap?.stop();
-  await new Promise<void>((r) => (smtp ? smtp.close(() => r()) : r()));
-  if (workdir) rmSync(workdir, { recursive: true, force: true });
+  await cleanupOwned([
+    () => closePackaged(app),
+    () => imap?.stop(),
+    () => new Promise<void>((resolve) => {
+      if (!smtp) return resolve();
+      smtp.close(() => resolve());
+      for (const socket of smtpSockets) socket.destroy();
+    }),
+    () => { if (workdir) rmSync(workdir, { recursive: true, force: true }); },
+  ]);
 });
 
 const dock = () => app.evaluate(({ app: a }) => a.dock?.getBadge() ?? "");
@@ -122,7 +144,13 @@ test("after an IMAP account's first sync, a person's mail through IDLE makes one
   await page.getByTestId("smtp-host").fill("127.0.0.1");
   await page.getByLabel("SMTP port").fill(String(smtpPort));
   await page.getByTestId("imap-submit").click();
-  await expect(page.getByTestId("add-account-dialog")).toHaveCount(0, { timeout: 30_000 });
+  try {
+    await expect(page.getByTestId("add-account-dialog")).toHaveCount(0, { timeout: 30_000 });
+  } catch (error) {
+    const detail = await page.getByTestId("add-account-error").textContent({ timeout: 1000 }).catch(() => "No account error rendered");
+    console.error("Synthetic account admission:", detail);
+    throw error;
+  }
   // the first sync brought the old message: no news
   await expect(page.getByTestId("thread-row").filter({ hasText: "Ya estaba aquí" })).toHaveCount(1, { timeout: 30_000 });
   await page.waitForTimeout(3000);
