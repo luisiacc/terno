@@ -6,6 +6,7 @@ const read = (row: RecipientReceiptHeader): RecipientReceiptHeader => ({ ...row,
 export function sqlRecipientReceipts(db: Db): RecipientReceiptDb {
   return {
     all: () => db.all<RecipientReceiptHeader>("SELECT * FROM recipient_receipts").map(read),
+    childActive: (id) => { const op = db.get<{ state: string }>("SELECT state FROM ops WHERE id=?", id); return !op || (op.state !== "succeeded" && op.state !== "failed"); },
     get: (id) => { const row = db.get<RecipientReceiptHeader>("SELECT * FROM recipient_receipts WHERE opId=?", id); return row ? read(row) : null; },
     put: (row) => { db.run(`INSERT INTO recipient_receipts (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(opId) DO UPDATE SET ${columns.slice(1).map((column) => `${column}=excluded.${column}`).join(",")}`, ...columns.map((column) => typeof row[column] === "boolean" ? Number(row[column]) : row[column])); },
     remove: (id) => { db.run("DELETE FROM recipient_receipts WHERE opId=?", id); },

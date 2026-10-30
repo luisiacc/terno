@@ -8,6 +8,7 @@ export function idbSendCopies(db: MemDb): SendCopyDb {
   return {
     get: (id) => rows.get(id) as unknown as SendCopyRow ?? null,
     all: () => [...rows.all()] as unknown as SendCopyRow[],
+    wirePinned: (id) => { const child = db.table("recipient_receipts").get(id)?.childOpId; const state = typeof child === "string" ? db.table("ops").get(child)?.state : null; return typeof child === "string" && state !== "succeeded" && state !== "failed"; },
     put: (row) => { const prior = rows.get(row.opId); if (prior) rows.update(prior, row as unknown as Row); else rows.insert(row as unknown as Row); },
     markSubmissionAccepted: (id) => {
       const ops = db.table("ops"), op = ops.get(id);

@@ -1181,7 +1181,7 @@ export class IdbMailStore implements MailStore {
     get: (id) => this.early(() => idbRecipientReceipts(this.db).get(id)),
     list: (accountId) => this.early(() => idbRecipientReceipts(this.db).all().filter((row) => row.accountId === accountId)),
     readPart: async (id, kind, index) => this.exclusive(async () => { const header = idbRecipientReceipts(this.db).get(id); if (!header || header.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? header.parts : Math.ceil(header.count / 128))) return null; const tx = this.idb.transaction("recipient_receipt_parts", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Recipient read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("recipient_receipt_parts").get(`${id}:${kind}:${index}`); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),
-    retireSlice: async (id) => this.command(() => retireRecipientSlice(idbRecipientReceipts(this.db), id)),
+    retireSlice: async (id, force) => this.command(() => retireRecipientSlice(idbRecipientReceipts(this.db), id, force)),
   };
 
   readonly sendCopies: MailStore["sendCopies"] = {
@@ -1194,7 +1194,7 @@ export class IdbMailStore implements MailStore {
     readWire: async (id, index) => this.exclusive(async () => { const key = `${id}:${index}`; const tx = this.idb.transaction("send_copy_bytes", "readonly"); const done = new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Sent-copy read aborted")); tx.onerror = () => {}; }); const request = tx.objectStore("send_copy_bytes").get(key); const value = new Promise<unknown>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); const [row] = await Promise.all([value, done]); return row && typeof row === "object" && "data" in row && typeof row.data === "string" ? row.data : null; }),
     accepted: async (id, warning) => this.command(() => acceptCopySubmission(idbSendCopies(this.db), id, warning)),
     record: async (id, copy, identity) => this.command(() => { recordCopy(idbSendCopies(this.db), id, copy, identity); const op = T(this.c, "ops").get(id); if (op?.state === "succeeded") T(this.c, "ops").update(op, { last_error: copyWarningText(idbSendCopies(this.db).get(id)!) }); }),
-    forgetSlice: async (id) => this.command(() => forgetCopySlice(idbSendCopies(this.db), id)),
+    forgetSlice: async (id, force) => this.command(() => forgetCopySlice(idbSendCopies(this.db), id, force)),
     pruneSavedSlice: async (id) => this.command(() => pruneSavedCopySlice(idbSendCopies(this.db), id)),
   };
 
@@ -1559,8 +1559,8 @@ export class IdbMailStore implements MailStore {
       }),
     update: (id, patch) => this.command(() => updateAccount(this.c, id, patch)),
     remove: async (id) => {
-      for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) while (await this.recipientReceipts.retireSlice(row.opId)) await this.o.platform.yield();
-      for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId)) await this.o.platform.yield();
+      for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.o.platform.yield();
+      for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.o.platform.yield();
       return this.command(() => {
         T(this.c, "accounts").delete(id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again

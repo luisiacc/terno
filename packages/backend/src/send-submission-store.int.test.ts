@@ -319,3 +319,31 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} enforces the aggre
   await expect(store.compose.queueSend({ ...large, draftId: draft.id, draftGeneration: draft.generation, draftRevision: draft.revision, now: 101 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(draft);
 });
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter} keeps a claimed recovery wire pinned until its child is terminal`, async () => {
+  const t = await setup(adapter, true); let store = t.store;
+  await store.sendCopies.startWire(t.opId, 1); await store.sendCopies.appendWire(t.opId, 0, "YQ=="); await store.sendCopies.sealWire(t.opId);
+  await store.sendCopies.accepted(t.opId, null); await store.sendCopies.record(t.opId, "saved");
+  const child = await store.compose.queueSend({ ...t.command, now: 3 });
+  const set = async (terminalChild: boolean) => {
+    if (adapter === "SQL") {
+      const db = sqlDb(store);
+      db.run("UPDATE recipient_receipts SET childOpId=? WHERE opId=?", child.opId, t.opId);
+      if (terminalChild) db.run("UPDATE ops SET state='succeeded' WHERE id=?", child.opId);
+    } else {
+      await store.close(); const raw = await request(t.factory.open(`terno-${t.name}`));
+      const tx = raw.transaction(["recipient_receipts", "op_control", "ops"], "readwrite"), done = terminal(tx);
+      const headers = tx.objectStore("recipient_receipts"), header = await request(headers.get(t.opId));
+      headers.put({ ...header, childOpId: child.opId }, t.opId);
+      if (terminalChild) { const controls = tx.objectStore("op_control"), prior = await request(controls.get(child.opId)); const base = await request(tx.objectStore("ops").get(child.opId)); controls.put({ state: "succeeded", attempts: prior?.attempts ?? base.attempts, next_attempt_at: prior?.next_attempt_at ?? base.next_attempt_at, updated_at: 4 }, child.opId); }
+      await done; raw.close(); store = await t.open();
+    }
+  };
+  await set(false);
+  await expect(store.sendCopies.pruneSavedSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await expect(store.sendCopies.forgetSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  await expect(store.recipientReceipts.retireSlice(t.opId)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  expect((await store.sendCopies.get(t.opId))?.ready).toBe(true);
+  await set(true);
+  expect(await store.sendCopies.pruneSavedSlice(t.opId)).toBe(false);
+});

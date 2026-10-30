@@ -1453,6 +1453,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.smtp.authFailed": "SMTP authentication failed: {detail}",
   "errors.smtp.recipientRejected": "Recipient rejected: {detail}",
   "errors.smtp.connectionLost": "Connection lost while sending: {detail}",
+  "errors.recipientReceipt.unavailable": "Recipient recovery is unavailable because the original details or message source are missing.",
   "errors.recipientReceipt.capacity": "Recipient outcome storage is full. Clear recipient details in account settings and try again. Your draft is unchanged.",
   "errors.sentCopy.capacity": "Sent-copy recovery storage is full. Clear saved copies in account settings, then try again. Your draft is unchanged.",
   "errors.sentCopy.unavailable": "Sent-copy recovery is unavailable. Reopen account settings and try again.",

@@ -663,7 +663,7 @@ export class SqlMailStore implements MailStore {
       if (!row || row.retired || !Number.isSafeInteger(index) || index < 0 || index >= (kind === "envelope" ? row.parts : Math.ceil(row.count / 128))) return null;
       return this.db.get<{ data: string }>("SELECT data FROM recipient_receipt_parts WHERE id=?", `${id}:${kind}:${index}`)?.data ?? null;
     },
-    retireSlice: async (id) => this.db.tx(() => retireRecipientSlice(sqlRecipientReceipts(this.db), id)),
+    retireSlice: async (id, force) => this.db.tx(() => retireRecipientSlice(sqlRecipientReceipts(this.db), id, force)),
   };
 
   readonly sendCopies: MailStore["sendCopies"] = {
@@ -676,7 +676,7 @@ export class SqlMailStore implements MailStore {
     readWire: async (id, index) => sqlSendCopies(this.db).chunk(id, index),
     accepted: async (id, warning) => this.db.tx(() => acceptCopySubmission(sqlSendCopies(this.db), id, warning)),
     record: async (id, copy, identity) => this.db.tx(() => { recordCopy(sqlSendCopies(this.db), id, copy, identity); this.db.run("UPDATE ops SET last_error=? WHERE id=? AND state='succeeded'", copyWarningText(sqlSendCopies(this.db).get(id)!), id); }),
-    forgetSlice: async (id) => this.db.tx(() => forgetCopySlice(sqlSendCopies(this.db), id)),
+    forgetSlice: async (id, force) => this.db.tx(() => forgetCopySlice(sqlSendCopies(this.db), id, force)),
     pruneSavedSlice: async (id) => this.db.tx(() => pruneSavedCopySlice(sqlSendCopies(this.db), id)),
   };
 
@@ -939,8 +939,8 @@ export class SqlMailStore implements MailStore {
       }),
     update: async (id, patch) => updateAccount(this.db, id, patch),
     remove: async (id) => {
-      for (const row of sqlRecipientReceipts(this.db).all().filter((r) => r.accountId === id)) while (await this.recipientReceipts.retireSlice(row.opId)) await this.yieldTo();
-      for (const row of sqlSendCopies(this.db).all().filter((r) => r.accountId === id)) while (await this.sendCopies.forgetSlice(row.opId)) await this.yieldTo();
+      for (const row of sqlRecipientReceipts(this.db).all().filter((r) => r.accountId === id)) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.yieldTo();
+      for (const row of sqlSendCopies(this.db).all().filter((r) => r.accountId === id)) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.yieldTo();
       return this.db.tx(() => {
         removeAccount(this.db, id);
         // plan 17 (Codex R3, R5): one address fewer, and its replies gone: every thread's facts are checked again

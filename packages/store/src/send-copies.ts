@@ -30,6 +30,7 @@ export interface SendCopyDb {
   put(row: SendCopyRow): void;
   remove(id: string): void;
   markSubmissionAccepted(id: string): void;
+  wirePinned(id: string): boolean;
   chunk(id: string, index: number): string | null;
   putChunk(id: string, index: number, data: string): void;
   removeChunks(id: string, limit: number): number;
@@ -87,9 +88,10 @@ export function recordCopy(db: SendCopyDb, id: string, copy: SentCopyState, iden
   db.put({ ...row, copy, ...(identity && { mailbox: identity.mailbox, uidValidity: identity.uidValidity ?? null, uid: identity.uid ?? null }) });
 }
 
-export function forgetCopySlice(db: SendCopyDb, id: string): boolean {
+export function forgetCopySlice(db: SendCopyDb, id: string, force = false): boolean {
   const row = db.get(id);
   if (!row) return false;
+  if (!force && db.wirePinned(id)) throw copyUnavailable();
   if (row.submission === "accepted") db.markSubmissionAccepted(id);
   if (!row.retiring) db.put({ ...row, retiring: true });
   const removed = db.removeChunks(id, 8);
@@ -99,7 +101,7 @@ export function forgetCopySlice(db: SendCopyDb, id: string): boolean {
 
 export function pruneSavedCopySlice(db: SendCopyDb, id: string): boolean {
   const row = requireSendCopy(db, id);
-  if (row.copy !== "saved") throw copyUnavailable();
+  if (row.copy !== "saved" || db.wirePinned(id)) throw copyUnavailable();
   if (row.submission === "accepted") db.markSubmissionAccepted(id);
   const removed = db.removeChunks(id, 8);
   if (removed < 8) { db.put({ ...row, reserved: 1024, chunks: 0 }); return false; }

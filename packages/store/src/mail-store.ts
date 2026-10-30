@@ -369,7 +369,7 @@ export interface MailStore {
     get(id: string): Promise<import("./recipient-receipts").RecipientReceiptHeader | null>;
     list(accountId: number): Promise<import("./recipient-receipts").RecipientReceiptHeader[]>;
     readPart(id: string, kind: "envelope" | "outcomes", index: number): Promise<string | null>;
-    retireSlice(id: string): Promise<boolean>;
+    retireSlice(id: string, force?: boolean): Promise<boolean>;
   };
 
   sendCopies: {
@@ -382,7 +382,7 @@ export interface MailStore {
     readWire(id: string, index: number): Promise<string | null>;
     accepted(id: string, warning: string | null): Promise<void>;
     record(id: string, copy: import("@terno/core").SentCopyState, identity?: { mailbox: string; uidValidity?: string; uid?: number }): Promise<void>;
-    forgetSlice(id: string): Promise<boolean>;
+    forgetSlice(id: string, force?: boolean): Promise<boolean>;
     pruneSavedSlice(id: string): Promise<boolean>;
   };
 

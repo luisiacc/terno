@@ -8,6 +8,7 @@ export function sqlSendCopies(db: Db): SendCopyDb {
   return {
     get: (id) => { const r = db.get<SendCopyRow>("SELECT * FROM send_copies WHERE opId=?", id); return r ? row(r) : null; },
     all: () => db.all<SendCopyRow>("SELECT * FROM send_copies").map(row),
+    wirePinned: (id) => !!db.get("SELECT 1 FROM recipient_receipts r LEFT JOIN ops c ON c.id=r.childOpId WHERE r.opId=? AND r.childOpId IS NOT NULL AND (c.state IS NULL OR c.state NOT IN ('succeeded','failed'))", id),
     put: (r) => { db.run(`INSERT INTO send_copies (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")}) ON CONFLICT(opId) DO UPDATE SET ${columns.slice(1).map((c) => `${c}=excluded.${c}`).join(",")}`, ...columns.map((c) => typeof r[c] === "boolean" ? Number(r[c]) : r[c])); },
     markSubmissionAccepted: (id) => {
       const op = db.get<Pick<OpRow, "kind" | "target_json">>("SELECT kind,target_json FROM ops WHERE id=?", id);

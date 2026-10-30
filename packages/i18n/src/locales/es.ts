@@ -1445,6 +1445,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.smtp.authFailed": "Falló la autenticación SMTP: {detail}",
   "errors.smtp.recipientRejected": "Destinatario rechazado: {detail}",
   "errors.smtp.connectionLost": "Se perdió la conexión durante el envío: {detail}",
+  "errors.recipientReceipt.unavailable": "La recuperación de destinatarios no está disponible porque faltan los detalles originales o el mensaje de origen.",
   "errors.recipientReceipt.capacity": "El almacenamiento de resultados de destinatarios está lleno. Borra los detalles de destinatarios en los ajustes de la cuenta e inténtalo de nuevo. Tu borrador no ha cambiado.",
   "errors.sentCopy.capacity": "El almacenamiento de recuperación de Enviados está lleno. Borra las copias guardadas en los ajustes de la cuenta e inténtalo de nuevo. Tu borrador no ha cambiado.",
   "errors.sentCopy.unavailable": "La recuperación de Enviados no está disponible. Abre de nuevo los ajustes de la cuenta e inténtalo de nuevo.",
