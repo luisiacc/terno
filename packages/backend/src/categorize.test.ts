@@ -451,7 +451,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     expect(inCategory(thread)).toBeNull();
   });
 
-  it.each(["label", "id"] as const)("releases a failed classification %s for a later enqueue after exhausting repairs", async (invalid) => {
+  it.each(["label", "id", "duplicate-null", "duplicate-low", "duplicate-claim", "duplicate-identical"] as const)("releases a failed classification %s for a later enqueue after exhausting repairs", async (invalid) => {
     const sentinel = "synthetic-private-model-id";
     let valid = false;
     let calls = 0;
@@ -460,7 +460,12 @@ describe("categorizer: auto-apply at ingestion", () => {
       async complete(req) {
         calls++;
         const input = JSON.parse(req.messages[0]!.content.split("\nItems: ")[1]!) as { id: string }[];
-        return { stop: "end", text: JSON.stringify({ results: [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : "Facturas", confidence: 0.95 }] }) };
+        const results: { id: string; label: string | null; confidence: number }[] = [{ id: !valid && invalid === "id" ? sentinel : input[0]!.id, label: !valid && invalid === "label" ? sentinel : "Facturas", confidence: 0.95 }];
+        if (!valid && invalid.startsWith("duplicate-")) {
+          if (invalid === "duplicate-claim") results[0]!.label = null;
+          results.push({ id: input[0]!.id, label: invalid === "duplicate-null" ? null : "Facturas", confidence: invalid === "duplicate-low" ? 0.2 : 0.95 });
+        }
+        return { stop: "end", text: JSON.stringify({ results }) };
       },
     };
     const { backend, acct, cat, arrive, decision, inCategory } = await trained({
@@ -471,10 +476,10 @@ describe("categorizer: auto-apply at ingestion", () => {
     setSetting(sqlDb(backend.store), "app", { ai: { provider: "fake" }, aiCategorize: true });
     const { thread } = await arrive(draft);
     await backend.aiAssist.drain();
-    expect(calls).toBe(2); // initial response and the failed repair
-    expect(decision(thread)).toBeUndefined();
+    expect.soft(calls).toBe(2); // initial response and the failed repair
+    expect.soft(decision(thread)).toBeUndefined();
     expect(inCategory(thread)).toBeNull();
-    expect(await backend.store.categorize.aiCandidate(thread)).toBe(true);
+    expect.soft(await backend.store.categorize.aiCandidate(thread)).toBe(true);
     expect(backend.aiAssist.pending).toBe(0);
     expect.soft(JSON.stringify(logs)).not.toContain(sentinel);
     valid = true;

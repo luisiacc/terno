@@ -369,3 +369,29 @@ Exact final validation commands (all pass):
 - `git diff --check` — passed.
 
 No main checkout access, fetch, push, worklist edits, hot-file changes, user baseline-file access, UI work, polling, new network calls, app builds or broad suites. Temporary synthetic stores were cleaned by test teardown. This section's final follow-up commit records review/validation only.
+
+## W10 follow-up: classification result identities
+
+### Request (verbatim excerpt)
+
+“Implement the finite duplicate-classification-result-ID follow-up recorded in Plan05 and the provider worklist, using this isolated worktree from local main837ba05f.” “Establish the actual supported batch contract before deciding whether duplicate, missing or extraneous IDs must be rejected/repaired. An invalid claimed result must not silently lose another input, be recorded as a legitimate no-decision, or cross-wire labels to a different message. Preserve valid one-result-per-item/null/low-confidence and legitimate batch semantics; don't change user expectations to accept malformed output.”
+
+### Current contract, design and failure map
+
+`ClassifyInput` accepts a batch; `createAi.classify` validates the shape and offered labels, then returns results in input order with confidence clamped to [0, 1]. Missing/unknown result IDs invalidate the entire response and enter the existing repair ladder. The fake provider returns one result per item. The sole production caller, `AiAssist`, sends one item and consumes the first validated result; valid null/low confidence is a once-per-thread non-decision. Its W10 failure catch releases admission for a later explicit enqueue and logs only `aiKind`. No partial batch acceptance is supported.
+
+The Map currently overwrites duplicate result IDs. Conflicting duplicates can manufacture a null/low-confidence success or a suggestion, even with every requested ID present. Require a bijection: each distinct input ID exactly once, no others. Keep response reordering, opaque string IDs, confidence clamping, mixed labels/null/low-confidence and empty batches. Reject ambiguous duplicate **input** IDs locally before transport, rather than invent positional semantics for repeated identities. Build an input Set and result Map in linear time; reject duplicate/unknown/missing IDs with constant, private-data-free domain errors and preserve the existing bounded repair budget. Do not change wire-schema vocabulary, transports or repair counts.
+
+### Tests, performance and exclusions
+
+Before fixing production, exercise deterministic synthetic replies through real `createAi` structured validation: duplicate-only, conflicting/identical duplicates with full coverage, missing/extraneous/mixed-invalid responses, safe errors/repair feedback, reordered valid batches, null/low confidence, empty batches, duplicate inputs and all three output modes' repair limits. Extend AI-only cases in `categorize.test.ts` to prove exhausted duplicates leave no store decision/category effect and permit an explicit enqueue to persist one suggestion. Preserve W10 filter/retry regressions by running direct caller files.
+
+Only changed/direct-caller tests, AI/backend package types and scoped lint; no UI or hot path changes, so no screenshots, perf, app builds or broad suites. No polling, durable retries, extra traffic beyond existing repairs, configuration-stop admission or account-condition freshness work. No BackendCore, handlers, core/store/schema/repository/provider/UI/i18n changes; no worklist/main or user baseline-file access. Native read-only plan critique is separate from at most two Standards+Spec code rounds; after R2 only high-severity correctness/data-loss fixes, lower findings backlogged, no R3.
+
+### Revisions after the Codex review
+
+Native read-only plan critique: no blockers; three test clarifications adopted. Prove successful repair to a reordered batch in the same call as well as exhaustion at exactly 2/3/3 completions for json_schema/json_object/text; duplicate input IDs use zero completions. Actual-store cases cover a last duplicate that is null, low confidence or a confident claim, and verify eligibility, queue and one persisted suggestion after explicit enqueue. Privacy assertions cover generated identity-error detail in repair feedback/terminal errors and sanitized backend logs; the prompt and prior assistant response intentionally remain in the provider's repair conversation. Reject wrong result counts before scanning identities, then check membership/uniqueness with Sets/Maps within the input batch size.
+
+### RED evidence
+
+Before production edits, `pnpm exec vitest run --project unit packages/ai/src/ai.test.ts packages/backend/src/categorize.test.ts`: **17 failed / 53 passed / 2 files**, no skips. Real structured tasks accepted full-coverage and single-item duplicates, accepted ambiguous duplicate inputs, and exposed synthetic IDs in existing missing/unknown-ID feedback. The actual Backend/SQLite cases proved false suggestions for duplicate claims/identical results, plus suppressed explicit retries for all four duplicate variants. Protection cases already passed for valid reordered label/null/low-confidence batches, opaque IDs and empty batches. Output captured in `/tmp/terno-classification-review.6oNJx4/red.log`; a second pre-fix run with soft initial store assertions retained the same test counts and exposed the false persisted suggestions directly.

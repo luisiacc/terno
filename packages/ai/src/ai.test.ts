@@ -230,6 +230,19 @@ describe("fake model", () => {
 });
 
 describe("classify", () => {
+  const identityError = "classification results must contain each input id exactly once and no other ids";
+  const input = {
+    items: [{ id: "synthetic-private-a", text: "synthetic-private-invoice" }, { id: "synthetic-private-b", text: "synthetic-private-trip" }, { id: "synthetic-private-c", text: "synthetic-private-note" }],
+    labels: ["Facturas", "Viajes"],
+    instructions: "Email triage.",
+  };
+  const valid = [
+    { id: input.items[0]!.id, label: "Facturas", confidence: 1.4 },
+    { id: input.items[1]!.id, label: "Viajes", confidence: 0.2 },
+    { id: input.items[2]!.id, label: null, confidence: -0.1 },
+  ];
+  const expected = valid.map((r) => ({ ...r, confidence: Math.max(0, Math.min(1, r.confidence)) }));
+
   it("labels items through the ladder and repairs missing or invented ids", async () => {
     const labels = ["Facturas", "Viajes"] as const;
     const t = scripted([
@@ -241,10 +254,89 @@ describe("classify", () => {
       { id: "a", label: "Facturas", confidence: 1 },
       { id: "b", label: null, confidence: 0.1 },
     ]);
-    expect(t.requests[1]!.messages.at(-1)!.content).toMatch(/missing ids b; unknown ids zz/);
+    expect(t.requests[1]!.messages.at(-1)!.content).toContain(identityError);
     // the label set is enforced by the schema, not trusted from the model
     const strict = scripted([JSON.stringify({ results: [{ id: "a", label: "Spam", confidence: 1 }] }), JSON.stringify({ results: [{ id: "a", label: "Viajes", confidence: 1 }] })]);
     await expect(createAi(config(), { transport: strict }).classify({ items: [{ id: "a", text: "x" }], labels, instructions: "" })).resolves.toEqual([{ id: "a", label: "Viajes", confidence: 1 }]);
+  });
+
+  it.each([
+    { name: "conflicting label", label: "Viajes", confidence: 0.95 },
+    { name: "null", label: null, confidence: 0.95 },
+    { name: "low confidence", label: "Facturas", confidence: 0.2 },
+    { name: "identical", label: "Facturas", confidence: 1.4 },
+  ])("repairs a full-coverage duplicate ending in $name without cross-wiring a reordered batch", async (duplicate) => {
+    const t = scripted([
+      JSON.stringify({ results: [...valid, { id: valid[0]!.id, label: duplicate.label, confidence: duplicate.confidence }] }),
+      JSON.stringify({ results: [...valid].reverse() }),
+    ]);
+    await expect(createAi(config(), { transport: t }).classify(input)).resolves.toEqual(expected);
+    expect(t.requests).toHaveLength(2);
+    expect(t.requests[1]!.messages.at(-1)!.content).toContain(identityError);
+  });
+
+  it.each([
+    { name: "duplicate replacing a missing item", results: [valid[0], valid[0], valid[2]] },
+    { name: "missing item", results: valid.slice(0, 2) },
+    { name: "unknown replacement", results: [valid[0], valid[1], { ...valid[2], id: "synthetic-private-unknown" }] },
+    { name: "extraneous item", results: [...valid, { ...valid[2], id: "synthetic-private-unknown" }] },
+  ])("rejects $name as a whole with safe repair and terminal errors", async ({ results }) => {
+    const bad = JSON.stringify({ results });
+    const t = scripted([bad, bad]);
+    const error = await createAi(config(), { transport: t }).classify(input).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AiError);
+    expect(error).toMatchObject({ kind: "invalid_output", i18n: { params: { detail: identityError } } });
+    expect(t.requests).toHaveLength(2);
+    const feedback = t.requests[1]!.messages.at(-1)!.content;
+    expect(feedback).toContain(identityError);
+    expect(feedback).not.toContain("synthetic-private");
+    expect(JSON.stringify(error)).not.toContain("synthetic-private");
+    expect((error as Error).message).not.toContain("synthetic-private");
+  });
+
+  it.each([
+    { output: "json_schema", calls: 2 },
+    { output: "json_object", calls: 3 },
+    { output: "text", calls: 3 },
+  ] as const)("exhausts only the existing $output repair budget for duplicate-only output", async ({ output, calls }) => {
+    const bad = JSON.stringify({ results: [valid[0], { ...valid[0], label: null }] });
+    const t = scripted(Array.from({ length: calls }, () => bad));
+    const ai = createAi(config({ capabilities: { output, contextTokens: null, embeddings: false, probedAt: null } }), { transport: t });
+    await expect(ai.classify({ ...input, items: input.items.slice(0, 1) })).rejects.toMatchObject({ kind: "invalid_output" });
+    expect(t.requests).toHaveLength(calls);
+    expect(t.requests.map((r) => r.output)).toEqual(Array.from({ length: calls }, () => output));
+  });
+
+  it("accepts reordered complete batches, null and low confidence without a repair", async () => {
+    const t = scripted([JSON.stringify({ results: [...valid].reverse() })]);
+    await expect(createAi(config(), { transport: t }).classify(input)).resolves.toEqual(expected);
+    expect(t.requests).toHaveLength(1);
+  });
+
+  it("preserves opaque IDs, including empty and prototype-like strings", async () => {
+    const items = ["", "__proto__", "constructor"].map((id) => ({ id, text: "synthetic text" }));
+    const results = items.map(({ id }) => ({ id, label: "Viajes", confidence: 0.9 }));
+    const t = scripted([JSON.stringify({ results: [...results].reverse() })]);
+    await expect(createAi(config(), { transport: t }).classify({ ...input, items })).resolves.toEqual(results);
+    expect(t.requests).toHaveLength(1);
+  });
+
+  it("accepts an empty result only for an empty batch", async () => {
+    const t = scripted([JSON.stringify({ results: [] })]);
+    await expect(createAi(config(), { transport: t }).classify({ ...input, items: [] })).resolves.toEqual([]);
+    expect(t.requests).toHaveLength(1);
+    const extra = JSON.stringify({ results: [valid[0]] });
+    const invalid = scripted([extra, extra]);
+    await expect(createAi(config(), { transport: invalid }).classify({ ...input, items: [] })).rejects.toMatchObject({ kind: "invalid_output" });
+    expect(invalid.requests).toHaveLength(2);
+  });
+
+  it("rejects ambiguous duplicate input IDs before provider traffic without private error detail", () => {
+    const t = scripted([JSON.stringify({ results: [valid[0]] })]);
+    const ai = createAi(config(), { transport: t });
+    const duplicated = { ...input, items: [input.items[0]!, { ...input.items[1]!, id: input.items[0]!.id }] };
+    expect(() => ai.classify(duplicated)).toThrow(expect.objectContaining({ kind: "invalid_output", message: "classify needs unique item ids" }));
+    expect(t.requests).toHaveLength(0);
   });
 });
 
