@@ -104,3 +104,8 @@ All repairs use isolated worktrees, fail-first tests, targeted checks, one compl
 ## Landed repair: renderer compose focus and readiness
 
 `49e8b822` prevents successful focus placement from triggering Reader fallback and preserves displayed sending-compose identity. Native EventTarget fixtures and revealed-field readiness checks preserve original scenarios. Root161direct+60three-design browser cases/types/lint/axe pass after rebase; light/dark captures inspected. One review leaves a P2 older-stored-open race backlogged; no second round or clean review claim. Separate rapid cross-field reveal-focus and native smoke dependencies remain. [Commands, counterexamples and limits](../plans/drafts/release2-renderer-focus.md). No full-renderer or release clearance.
+
+
+## Landed repair: bulk IDB grouping
+
+`8f520ff0` replaces repeated target-array copies with bounded per-account append. Root676direct checks/reopen/Undo, types/lint and3original selected perf cases pass after rebase. One review0findings. Original quick-filter timeout remains unqualified; storage removal still fails840.14ms/15ms, with fake-indexeddb index deletion scans identified as a concrete shared-dependency handoff. No index/safety/timing waiver or original all-four-green claim. [Exact attribution and limits](../plans/drafts/release2-idb-performance.md).
