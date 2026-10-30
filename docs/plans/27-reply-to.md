@@ -124,3 +124,21 @@ Native command: `codex exec -s read-only -C /Users/Luis/.t3/worktrees/emailclien
 7. MessageDetail has no Bcc. Real original Bcc privacy is checked from IncomingMessage ingest through empty composer Bcc, queue, MIME and SMTP rather than claiming the helper-only assertion proves storage behavior.
 8. Literal expected recipients per mode are checked independently against chips, queue and SMTP. Exact field equality, not just matching systems to one another.
 9. Tests-only GREEN is valid existing protection; any demonstrated production fix would require actual fail-first evidence and revised focused validation.
+
+### W09 implementation and qualification evidence
+
+Tests-only: product helpers, providers, stores, UI and strings are unchanged. New `reply-identity.test.ts` has 14 cases separating own continuation, known-alias received-source selection, no-witness alias control, three self-address fallbacks, and forward source/empty recipients. The browser matrix adds six reply/reply-all/forward × light/dark cases, independently comparing literal expected recipients with chips, durable queue, parsed MIME and real SMTP envelope. Original Bcc enters via synthetic ingestion and stays absent from all outgoing destinations. Reply headers exactly reference the latest own copy and its ancestor; forward has no reply headers.
+
+Actual first helper run: **14/14 GREEN on unchanged product code** (`/tmp/terno-w09/unit-first.log`). No product RED or production fix is claimed. First browser run had a harness timeout: `recipientEmails` waited for the deliberately hidden Cc field in reply mode. Open that control before reading it; corrected matrix **6/6 passed**. This is test setup evidence, not a fabricated product regression. Screenshot timing then waits for Send enabled and scrolls it into view; final matrix **6/6 passed** (`e2e-final.log`). Development Vite reported `ResizeObserver loop completed with undelivered notifications` in some cases; assertions passed, and no production change suppresses that diagnostic.
+
+Exact focused commands (run from this worktree):
+
+- `pnpm exec vitest run --project unit apps/web/src/lib/reply-identity.test.ts` — 14 passed.
+- `pnpm exec vitest run --project unit apps/web/src/lib/reply-identity.test.ts apps/web/src/lib/compose-fields.test.ts apps/web/src/lib/reply-all.test.ts apps/web/src/lib/reply-to.test.ts apps/web/src/lib/compose-conversion.test.ts` — 61 passed; `/tmp/terno-w09/unit-targeted.log`.
+- `E2E_PORT=55010 pnpm --filter @terno/web exec playwright test -c playwright.reply-identity.config.ts reply-identity.spec.ts` — 6 passed, final `/tmp/terno-w09/e2e-final.log`.
+- `E2E_PORT=55010 pnpm --filter @terno/web exec playwright test -c playwright.reply-identity.config.ts reply-to.spec.ts` — existing T10/B45 list/chip cases 4 passed, unchanged; `/tmp/terno-w09/e2e-reply-to.log`.
+- `pnpm --filter @terno/web typecheck` — passed; `/tmp/terno-w09/typecheck.log`.
+- `pnpm exec oxlint --deny-warnings apps/web/src/lib/reply-identity.test.ts apps/web/e2e/reply-identity.spec.ts apps/web/e2e/reply-identity.setup.ts apps/web/playwright.reply-identity.config.ts` — passed; `/tmp/terno-w09/lint.log`.
+- `git diff --check` — passed.
+
+Personally inspected all six screenshots in light/dark (macOS design): recipient rows fit, quoted comma name is one chip, empty Bcc is visible, and quote source agrees. Artifacts retained under `/tmp/terno-w09/screenshots/`. No product UI changed; no new copy, network requests, timers or hot-path work. Per assignment, no full gates, production app/Vite build, native-provider auth, performance, packaged smoke or distribution was run. `WEB_PORT=55020/55021` was reserved but unused; browser matrix uses the desktop development renderer and synthetic local SMTP. Native code review follows before handoff.
