@@ -220,3 +220,7 @@ The archive-unknown observation remains unexplained. Stronger exact source/desti
 `19e46fc4` preserves the three native disk/fault tests, routes them to the native project with actual discovery regression, and supplies explicit WASM image reclamation/reopen/legacy-space tests. No runtime skips or production changes. The 5,000-message folder recovery fixture now uses fresh trusted source identities while proving prior reset identities remain held; original timing and membership/removal gates remain. Root's 9 storage/discovery + 82 direct-caller + 1 affected perf cases, db types, lint and final whitespace pass after rebase. One native review: no findings. [Details](../plans/drafts/release-db-driver-folder.md).
 
 This resolves the identified native-disk/WASM image mismatch and account-folder fixture failure, not OPFS, throughput or the incomplete full perf gate.
+
+## Landed repair: source/catalog contracts
+
+The localized roundtrip, portable graph, fixture-label and selection-source failures now pass. The scanner ignores erased TypeScript import types but still follows runtime imports, including side effects; the test helper follows the existing test-directory convention with production-violation controls. Approved catalog copy is preserved. Root's 66 targeted tests, core/db/i18n/web types, lint and whitespace pass after rebase. One native review: zero findings. No production mail or scanner allowlist bypass. [Details](../plans/drafts/release-source-contracts.md).
