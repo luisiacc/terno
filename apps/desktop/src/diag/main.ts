@@ -366,8 +366,10 @@ class MainDiag implements DiagSink {
       if (decision === "send") {
         // one-time approval of this report; the reporter still checks the setting and the DSN
         this.approved.add(id);
-        if ((await this.send(record)).sent) sent++;
-        else failed.add(id);
+        const result = await this.send(record);
+        if (result.sent) sent++;
+        // refused by the setting ("never") is an answer; only a delivery that failed stays pending
+        else if (result.reason !== "policy") failed.add(id);
         this.approved.delete(id);
       }
     }

@@ -111,6 +111,16 @@ describe("sending (plan 78)", () => {
     expect(tab.view().pending.map((p) => p.id)).not.toContain(r.id);
   });
 
+  it("a send refused by Never is an answer: the report isn't kept pending", async () => {
+    const tab = new Sending();
+    tab.setPolicy({ localMode: true, errorReports: "never" });
+    const r = record();
+    tab.capture(r);
+    expect(await tab.decide([r.id], "send")).toEqual({ sent: 0 });
+    expect(requests).toHaveLength(0);
+    expect(tab.view().pending.map((p) => p.id)).not.toContain(r.id);
+  });
+
   it("Always plus the explicit send of the same reports posts each once (review finding 4)", async () => {
     const tab = new Sending();
     tab.setPolicy({ localMode: true, errorReports: "ask" });

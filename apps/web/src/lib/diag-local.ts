@@ -286,7 +286,8 @@ export class LocalDiag implements DiagSink {
       if (decision === "send") {
         this.approved.add(id);
         if (await this.send(r)) sent++;
-        else failed.add(id);
+        // refused by the setting ("never") is an answer; only a delivery that failed stays pending
+        else if (this.failed.has(id)) failed.add(id);
         this.approved.delete(id);
       }
     }

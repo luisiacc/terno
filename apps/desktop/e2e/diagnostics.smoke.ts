@@ -81,6 +81,8 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async () => {
   test.skip(!existsSync(SOURCE_APP), "run `pnpm dist:mac` first");
   sink = createServer((req, res) => {
+    // only envelopes count: something else on this machine may probe a listening loopback port
+    if (req.method !== "POST" || req.url !== "/api/1/envelope/") return void res.writeHead(404).end();
     requests++;
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
@@ -167,6 +169,9 @@ test("always: one scrubbed event per error, exactly what 'What gets sent' showed
 });
 
 test("never sends nothing, even when asked; ask sends exactly what was approved", async () => {
+  // "always" sends what earlier tests left pending (so the row is about this exit alone), then "never"
+  await setReports("always");
+  await page.waitForTimeout(1500);
   await setReports("never");
   const sent = envelopes.length;
   const refused = (await hooks((h) => h.counters())).refused;
@@ -267,6 +272,9 @@ test("the export is Terno's diagnostics only, scrubbed; native dumps only when a
 });
 
 test("killed outright: the next start finds the marker and says Terno quit unexpectedly; with Never nothing goes", async () => {
+  // "always" sends what earlier tests left pending (so the row is about this exit alone), then "never"
+  await setReports("always");
+  await page.waitForTimeout(1500);
   await setReports("never");
   const sent = envelopes.length;
   const pid = app.process().pid!;
