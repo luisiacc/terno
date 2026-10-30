@@ -104,7 +104,8 @@ function NavItem({
   /** an account: a disclosure of its folders (plan 67) */
   expanded?: boolean;
   controls?: string;
-  countHelp?: "general" | "account";
+  /** what the count means, as the row's tooltip and description; a category's is its own text, described by its element `id` */
+  countHelp?: "general" | "account" | { id: string; text: string };
   countHelpDisabled?: boolean;
   shortcut?: string;
 }) {
@@ -118,7 +119,7 @@ function NavItem({
   const button = (
     <button
       type="button"
-      aria-describedby={countHelp && !countHelpDisabled ? `sidebar-count-${countHelp}` : undefined}
+      aria-describedby={countHelp && !countHelpDisabled ? (typeof countHelp === "object" ? countHelp.id : `sidebar-count-${countHelp}`) : undefined}
       data-testid={testId}
       data-active={active || undefined}
       aria-current={active ? "page" : undefined}
@@ -167,7 +168,7 @@ function NavItem({
     <Tooltip disabled={countHelpDisabled}>
       <TooltipTrigger render={button} />
       <TooltipContent side="right">
-        {countHelp && t(countHelp === "account" ? "sidebar.countAccountHelp" : "sidebar.countHelp")}
+        {countHelp && (typeof countHelp === "object" ? countHelp.text : t(countHelp === "account" ? "sidebar.countAccountHelp" : "sidebar.countHelp"))}
         {shortcut && <Shortcut keys={shortcut} />}
       </TooltipContent>
     </Tooltip>
@@ -215,6 +216,13 @@ function ComposePill() {
       </Tooltip>
     </div>
   );
+}
+
+/** A category row's tooltip: "11 unread, 4 suggested for this category"; null with neither. */
+function categoryHelp(unread: number, suggested: number): string | null {
+  const u = unread ? t("sidebar.categoryHelp.unread", { count: unread }) : null;
+  const s = suggested ? t("sidebar.categoryHelp.suggested", { count: suggested }) : null;
+  return u && s ? t("sidebar.categoryHelp.both", { unread: u, suggested: s }) : u ?? s;
 }
 
 /** A category's pending suggestions as a badge in its row (Atelier, Lumen): its own control, drawn over the row's end. */
@@ -763,38 +771,42 @@ export function Sidebar() {
           >
             {t("sidebar.categories")}
           </SectionTitle>
-          {categories.map((c) => (
-            <div key={c.id} className="relative">
-              <NavItem
-                testId={`nav-category-${c.id}`}
-                dropTarget={c.id}
-                // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 67)
-                active={categoryId === c.id && reviewCategoryId === null && accountId === null}
-                onClick={() => navigate({ categoryId: c.id, accountId: null })}
-                icon={<CategoryDot color={c.color as CategoryColor} />}
-                label={c.name}
-                count={counts.categoryUnread[c.id] || undefined}
-                countHelp="general"
-                reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
-              />
-              {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-                <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
-              )}
-              {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
-                <button
-                  type="button"
-                  data-testid={`nav-review-${c.id}`}
-                  data-active={reviewCategoryId === c.id || undefined}
-                  onClick={() => navigate({ view: "all", reviewCategoryId: c.id, accountId: null })}
-                  className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
-                >
-                  <Sparkles className="size-3 text-sidebar-glyph" />
-                  <span className="flex-1">{t("sidebar.review")}</span>
-                  <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
-                </button>
-              )}
-            </div>
-          ))}
+          {categories.map((c) => {
+            const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
+            return (
+              <div key={c.id} className="relative">
+                {help && <span id={`sidebar-count-category-${c.id}`} className="sr-only">{help}</span>}
+                <NavItem
+                  testId={`nav-category-${c.id}`}
+                  dropTarget={c.id}
+                  // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 67)
+                  active={categoryId === c.id && reviewCategoryId === null && accountId === null}
+                  onClick={() => navigate({ categoryId: c.id, accountId: null })}
+                  icon={<CategoryDot color={c.color as CategoryColor} />}
+                  label={c.name}
+                  count={counts.categoryUnread[c.id] || undefined}
+                  countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
+                  reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
+                />
+                {inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
+                  <ReviewBadge id={c.id} name={c.name} n={counts.categorySuggestions[c.id]!} active={reviewCategoryId === c.id} />
+                )}
+                {!inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    data-testid={`nav-review-${c.id}`}
+                    data-active={reviewCategoryId === c.id || undefined}
+                    onClick={() => navigate({ view: "all", reviewCategoryId: c.id, accountId: null })}
+                    className={cn("flex h-6 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-xs text-muted-foreground tabular not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground", ROW_SEAM)}
+                  >
+                    <Sparkles className="size-3 text-sidebar-glyph" />
+                    <span className="flex-1">{t("sidebar.review")}</span>
+                    <span className="text-xs tabular">{formatNumber(counts.categorySuggestions[c.id]!)}</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {creating && (
             <input
               autoFocus

@@ -12,6 +12,11 @@ const copy = {
   en: { general: "Unread conversations saved in Terno. Coverage may be incomplete.", account: "Unread Inbox conversations saved in Terno. Coverage may be incomplete." },
   es: { general: "Conversaciones sin leer guardadas en Terno. La cobertura puede estar incompleta.", account: "Conversaciones sin leer de la bandeja de entrada guardadas en Terno. La cobertura puede estar incompleta." },
 };
+// a category's row says its own numbers: unread, then suggestions (the ✨ badge)
+const categoryCopy = {
+  en: { both: "11 unread, 4 suggested for this category", one: "1 suggested for this category" },
+  es: { both: "11 sin leer, 4 sugerencias para esta categoría", one: "1 sugerencia para esta categoría" },
+};
 for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) {
   test(`count coverage ${language} ${theme}`, async ({ page }) => {
     const dir = mkdtempSync(join(tmpdir(), "terno-count-coverage-"));
@@ -75,13 +80,22 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await expect(partial.locator("[data-slot=nav-count]")).toHaveText("1");
       await expect(partial).toHaveAccessibleDescription(copy[language].general);
       const category = page.locator('[data-testid^="nav-category-"]').first();
-      await expect(category).toHaveAccessibleDescription(copy[language].general);
       const categoryId = Number((await category.getAttribute("data-testid"))!.slice("nav-category-".length));
       await page.evaluate(async (id) => {
         const path = "/src/state/app.ts";
         const state = await import(/* @vite-ignore */ path);
-        state.setApp({ counts: { ...state.getApp().counts, categorySuggestions: { [id]: 1 } } });
+        state.setApp({ counts: { ...state.getApp().counts, categoryUnread: { [id]: 11 }, categorySuggestions: { [id]: 4 } } });
       }, categoryId);
+      await expect(category).toHaveAccessibleDescription(categoryCopy[language].both);
+      await category.hover();
+      await expect(page.locator("[data-slot=tooltip-content][data-open]")).toHaveText(categoryCopy[language].both);
+      await page.mouse.move(900, 50);
+      await page.evaluate(async (id) => {
+        const path = "/src/state/app.ts";
+        const state = await import(/* @vite-ignore */ path);
+        state.setApp({ counts: { ...state.getApp().counts, categoryUnread: {}, categorySuggestions: { [id]: 1 } } });
+      }, categoryId);
+      await expect(category).toHaveAccessibleDescription(categoryCopy[language].one);
       await expect(page.getByTestId(`nav-review-${categoryId}`)).not.toHaveAttribute("aria-describedby", /sidebar-count/);
       const folder = page.getByTestId(`nav-own-${account}-Label_21`);
       await expect(folder).toHaveAccessibleDescription(copy[language].general);

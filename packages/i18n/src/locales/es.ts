@@ -554,6 +554,9 @@ const es = {
   // @list
   "sidebar.countHelp": "Conversaciones sin leer guardadas en Terno. La cobertura puede estar incompleta.",
   "sidebar.countAccountHelp": "Conversaciones sin leer de la bandeja de entrada guardadas en Terno. La cobertura puede estar incompleta.",
+  "sidebar.categoryHelp.unread": { one: "# sin leer", other: "# sin leer" },
+  "sidebar.categoryHelp.suggested": { one: "# sugerencia para esta categoría", other: "# sugerencias para esta categoría" },
+  "sidebar.categoryHelp.both": "{unread}, {suggested}",
   "sidebar.categories": "Categorías",
   "sidebar.newCategory": "Nueva categoría",
   "sidebar.categoryName": "Nombre de la categoría",
