@@ -232,3 +232,7 @@ The missing direct OPFS verification is now complete on unchanged conformance/ru
 ## Landed repair: early Reply typing
 
 `6906b10c` preserves native text/caret/range across asynchronous source admission and the validated focus handoff. The original immediate-typing case is unchanged; 29 selected browser cases pass across macOS/Lumen/Atelier, including faithful deferred-editor controls. Root's direct, stored-view and reentrant-focus controls, types, lint and whitespace pass after rebase. All three findings from the single native code review were addressed; no extra round. [Exact scope and limits](../plans/drafts/release-early-compose-input.md). Full renderer/performance/release clearance remains open.
+
+## Landed repair: oversized successful Gmail send response
+
+`a0453d81` excludes sends from the generic message-read overflow classification, preserving uncertain/no-retry semantics after the real dispatch and bounded reader. Original and valid portable-MIME regressions reproduce the actual defect. Root's 153 mail tests, 7 backend caller controls, mail types, lint and whitespace pass after rebase; one native review found zero findings. No limits, replay fences or hot-path behavior changed. [Details](../plans/drafts/release-gmail-send-response.md).
