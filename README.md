@@ -201,6 +201,13 @@ A style is one file in [`packages/ui/src/designs/`](packages/ui/src/designs) (`l
 
 Every process logs structured lines (a dotted code plus typed, allowlisted fields; never free text, not even error messages), leaves breadcrumbs, and records unexpected errors and crashes. A report goes to Sentry (the `terno` project) only from a build given a DSN, and only as the user chose (Settings → General → Diagnostics: Ask, Always or Never), in local mode too: clicking Send is their choice ([plan 78](docs/plans/78-send-error-reports.md)). No Sentry SDK ships: the app posts its own envelope. [Plan 10](docs/plans/10-observability.md) has the design and the privacy rules.
 
+**How Sentry is used.** Terno uses Sentry only to receive the error reports a user chooses to send. Nothing is collected automatically:
+
+- Errors are recorded on the user's machine first. Terno then shows a row ("Terno ran into a problem") with **Send** and **What gets sent**.
+- By default (Ask), nothing leaves the machine until the user clicks Send. "Always" sends a report on its own only for someone who picks that setting, and "Never" sends nothing.
+- A report is the error's kind, code and stack frames, the app version, and anonymous breadcrumbs. It never includes mail content, addresses, names, subjects, file paths or tokens. "What gets sent" shows the exact event before it goes.
+- Terno does not use Sentry for session replays, performance tracing, usage analytics, or anything that runs in the background. No Sentry SDK ships, so nothing can start sending by itself.
+
 **Where things live (desktop, under the profile, `~/Library/Application Support/Terno`):**
 
 | Path | What |
