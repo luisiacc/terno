@@ -274,3 +274,8 @@ Evidence-only `7f2e2771`: the sole post-ingestion run passes13/13, CPUratios1.04
 ## Landed repair: packaged notification and legacy-profile fixtures
 
 `9f4e3376` repairs native-Keychain-dependent synthetic notification setup, faithful v13 schema reconstruction, exact data preservation and exhaustive owned cleanup. Root passed3affected packaged cases and4helper tests plus desktop/smoke types and lint after rebase. One review teardown finding fixed fail-first. The original2ac77324package hashes remain unchanged; no owned process remains. [Evidence and scope](../plans/drafts/release-packaged-smoke-fixtures.md). Native encryption and a fresh milestone binary remain unverified; no package/release clearance.
+
+
+## Landed repair: pending Send/storage switch fixture
+
+`0fe00824` gates the actual Send after its durable preparation instead of deleting the draft prematurely. Real missing refusal, zero export/no navigation, exact authored content/binary recovery and native OPFS→IDB switch/reload remain asserted. Root passed2theme cases, scoped axe, Web/test types and lint after rebase and inspected screenshots. One review: Standards0, two P2 oracle gaps backlogged, no second round. [Commands and limits](../plans/drafts/release-web-storage-send.md). No production change or full Web/release clearance.
