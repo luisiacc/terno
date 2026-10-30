@@ -32,6 +32,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   let now = Date.now();
   let snapshot: string[] = [];
   let context: ProviderContext | undefined;
+  let historyPayload: ((payload: unknown) => unknown) | undefined;
   let holdHistory: ((send: () => void) => void) | undefined;
   const add = (id: string, record = false) => {
     const raw = ["From: Synthetic <sender@example.test>", "To: me@example.test", `Subject: ${id}`, `Message-ID: <${id}@example.test>`,
@@ -68,7 +69,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
       const entries = history.filter((h) => BigInt(h.id) > BigInt(url.searchParams.get("startHistoryId")!));
       const next = url.searchParams.get("pageToken");
       if (next !== null && next !== "history/+?=next") return json({}, 400);
-      const payload = { historyId: String(historyId), history: entries.slice(next ? 2 : 0, next ? undefined : 2), ...(!next && entries.length > 2 && { nextPageToken: "history/+?=next" }) };
+      const original = { historyId: String(historyId), history: entries.slice(next ? 2 : 0, next ? undefined : 2), ...(!next && entries.length > 2 && { nextPageToken: "history/+?=next" }) };
+      const payload = historyPayload ? historyPayload(original) : original;
       const hold = holdHistory; holdHistory = undefined;
       if (hold) { hold(() => json(payload)); return; }
       return json(payload);
@@ -116,6 +118,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   return {
     baseline, account, requests, ingested, messages, add, mutate, cursor, get abort() { return abort; },
     get context() { return context!; },
+    historyPayload(hook?: (payload: unknown) => unknown) { historyPayload = hook; },
     holdHistory(hook: (send: () => void) => void) { holdHistory = hook; },
     get backend() { return backend; }, get terminal() { return String(historyId); },
     afterIngest(hook: () => void | Promise<void>) { afterIngest = hook; }, afterCheckpoint(hook: (value: unknown) => void | Promise<void>) { afterCheckpoint = hook; },
@@ -142,6 +145,71 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
 }
 
 describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up", (kind) => {
+  it.each(["ingest", "flags", "remove", "cursor"] as const)("checks credential generation inside the %s store command", async (effect) => {
+    const t = await mailbox(kind);
+    t.seed(); await t.backend.syncAccount(t.account.id);
+    const old = await t.cursor();
+    t.mutate();
+    let retired = false;
+    const retire = async () => { if (!retired) { retired = true; await t.backend.signedIn(t.account.id); } };
+    if (effect === "ingest") {
+      const original = t.backend.store.sync.ingest;
+      vi.spyOn(t.backend.store.sync, "ingest").mockImplementation(async (...args) => { await retire(); return original(...args); });
+    } else if (effect === "flags") {
+      const original = t.backend.store.sync.updateFlags;
+      vi.spyOn(t.backend.store.sync, "updateFlags").mockImplementation(async (...args) => { await retire(); return original(...args); });
+    } else if (effect === "remove") {
+      const original = t.backend.store.sync.remove;
+      vi.spyOn(t.backend.store.sync, "remove").mockImplementation(async (...args) => { await retire(); return original(...args); });
+    } else {
+      const original = t.backend.store.accounts.setCursor;
+      vi.spyOn(t.backend.store.accounts, "setCursor").mockImplementation(async (...args) => { await retire(); return original(...args); });
+    }
+    await t.backend.syncAccount(t.account.id);
+    expect(retired).toBe(true);
+    expect(await t.cursor()).toEqual(old);
+    const rows = (await t.backend.store.debug.snapshot()).messages;
+    if (effect === "ingest") expect(rows.some((m) => m.providerMsgId === "arrival")).toBe(false);
+    if (effect === "flags") expect(rows.find((m) => m.providerMsgId === "archive")?.inInbox).toBe(true);
+    if (effect === "remove") expect(rows.some((m) => m.providerMsgId === "deleted")).toBe(true);
+    vi.restoreAllMocks(); await t.reopen();
+    await t.backend.syncAccount(t.account.id); await t.assertFinal();
+  });
+
+  it.each(["references", "bytes", "summary", "cycle", "pages"] as const)("reconciles bounded history %s from a safe cursor across reopen", async (mode) => {
+    const t = await mailbox(kind);
+    t.seed();
+    await t.backend.syncAccount(t.account.id);
+    t.mutate();
+    const old = await t.cursor();
+    let calls = 0;
+    t.historyPayload(() => {
+      calls++;
+      if (mode === "bytes") return { historyId: t.terminal, ignored: "é".repeat(140_000) };
+      if (mode === "summary") return { historyId: t.terminal, history: [{ messages: [{ id: "arrival" }] }] };
+      if (mode === "cycle" || mode === "pages") return { historyId: t.terminal, nextPageToken: mode === "cycle" ? "repeat" : `page${calls}` };
+      return { historyId: t.terminal, history: [{ labelsRemoved: Array.from({ length: 2001 }, () => ({ message: { id: "archive" } })) }] };
+    });
+    t.afterCheckpoint((value) => {
+      if (phaseOf(value)?.stage === "enumerate") t.abort.abort(new Error("Pause durable fallback"));
+    });
+    t.requests.length = 0;
+    await t.backend.syncAccount(t.account.id);
+    expect(phaseOf(await t.cursor())?.stage).toBe("enumerate");
+    expect(await t.cursor()).toMatchObject(old!);
+    expect(calls).toBeLessThanOrEqual(mode === "pages" ? 100 : 2);
+    expect(t.requests.filter((r) => r.pathname.startsWith("/messages/"))).toHaveLength(0);
+    t.historyPayload(); t.afterCheckpoint(() => {});
+    await t.reopen();
+    await t.backend.syncAccount(t.account.id);
+    await t.assertFinal();
+    const inserted = [...t.ingested];
+    await t.backend.syncAccount(t.account.id);
+    expect(t.ingested).toEqual(inserted);
+    await t.reopen();
+    await t.assertFinal();
+  });
+
   it.each(["initial", "expired"] as const)("catches page-one arrival/archive/delete/read races in the same %s invocation and survives reopen", async (path) => {
     const t = await mailbox(kind);
     if (path === "expired") {
