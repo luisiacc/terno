@@ -108,3 +108,8 @@ AssertionError: expected 12.574916999999914 to be less than 10
 ## Landed repair: published-reply Escape ownership
 
 `1005ef7c` hands early Escape to a ready published reply while retaining pre-admission cancellation and later-focus supersession. Root61unit+13scoped browser cases/types/lint pass, including the original Atelier failure; light/dark captures inspected. One review0findings. [Evidence and limits](../plans/drafts/release3-compose-editor.md). The separate2MBeditor failure remains OPEN55.9ms/50ms in the worker's final unchanged run; no editor performance correction or release-wide clearance is claimed.
+
+
+## Landed repair: WAL settlement for reset and expunge
+
+`403ebe94` brings bounded SQL location and membership removals into the owning store's existing settlement policy, preserving committed identity fences and cleaning temporary watches before rejection. Root321native+321WASM tests, types/lint and all38cases in the three unchanged affected perf files pass. Everyone counts p95is4.536458ms/5ms; its query is unchanged. The single review's two findings were regression-fixed; no second review. [Evidence and limits](../plans/drafts/release3-sql-lifecycle.md). Historical timing failures remain unreproduced; no universal resource ceiling or release-wide clearance is claimed. The large-editor gate remains open.
