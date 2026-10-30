@@ -188,3 +188,39 @@ it("keeps a queued action away from a recreated folder's reused UID", async () =
   expect(t.server.control.getMessage("Work", replacement.uid, { raw: true }).raw).toEqual(Buffer.from(bytes));
   expect(t.server.control.getMessage("Other", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
+
+it("keeps the Sent location of old mail also present in Inbox after a role rename", async () => {
+  const t = await setup({ Enviados: { "special-use": "\\Sent" } }, 3650);
+  const date = new Date(Date.now() - 2 * 365 * 86_400_000);
+  const bytes = rawIdleMail("Old shared sent", "Exact shared bytes").replace(/^Date: .*$/m, `Date: ${date.toUTCString()}`);
+  const inbox = t.server.control.addMessage("INBOX", { raw: bytes, internaldate: date });
+  const sent = t.server.control.addMessage("Enviados", { raw: bytes, internaldate: date });
+  await t.backend.syncAccount(t.account.id);
+  const row = sqlDb(t.backend.store).get<{ id: number }>("SELECT id FROM messages WHERE subject = ?", "Old shared sent")!;
+  expect(row).toBeDefined();
+  expect(await t.backend.store.providerStore(t.account.id).locations!.of([row.id])).toHaveLength(2);
+  await t.client.call("settings.update", { syncWindowDays: 30 });
+  t.server.control.renameMailbox("Enviados", "Envoy&AOk-s");
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.backend.store.providerStore(t.account.id).locations!.of([row.id])).toEqual(expect.arrayContaining([
+    expect.objectContaining({ mailbox: "INBOX", uidvalidity: inbox.uidvalidity, uid: inbox.uid }),
+    expect.objectContaining({ mailbox: "Envoyés", uidvalidity: sent.uidvalidity, uid: sent.uid }),
+  ]));
+  expect(sqlDb(t.backend.store).get<{ is_sent: number }>("SELECT is_sent FROM messages WHERE id = ?", row.id)!.is_sent).toBe(1);
+});
+
+it("reconciles legacy cursors with no stored role mapping", async () => {
+  const t = await setup({ Projects: { folders: { Trash: { "special-use": "\\Trash" } } } });
+  t.server.control.addMessage("Projects/Trash", { raw: rawIdleMail("Legacy role") });
+  await t.backend.syncAccount(t.account.id);
+  const thread = (await t.client.call("threads.list", { view: "trash" })).items[0]!;
+  expect(thread).toBeDefined();
+  const db = sqlDb(t.backend.store);
+  const config = JSON.parse(db.get<{ provider_config: string }>("SELECT provider_config FROM accounts WHERE id = ?", t.account.id)!.provider_config) as { cursor: { roles?: unknown } };
+  delete config.cursor.roles;
+  db.run("UPDATE accounts SET provider_config = ? WHERE id = ?", JSON.stringify(config), t.account.id);
+  const reopened = await t.reopen();
+  t.server.control.setSpecialUse("Projects/Trash", []);
+  await reopened.backend.syncAccount(t.account.id);
+  expect((await reopened.client.call("threads.get", { threadId: thread.id })).thread.inTrash).toBe(false);
+});

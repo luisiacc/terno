@@ -1400,11 +1400,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         };
         cursor.pass = (cursor.pass ?? 0) + 1;
         const touched = new Set<number>();
-        if (cursor.roles) {
-          const changed = new Set<string>();
+        {
+          const changed = new Set<string>(cursor.roles ? [] : Object.keys(cursor.mailboxes));
           for (const role of Object.keys(SPECIAL_USE).map((key) => SPECIAL_USE[key]!)) {
-            if (cursor.roles[role] === r[role]) continue;
-            if (cursor.roles[role]) changed.add(cursor.roles[role]!);
+            if (cursor.roles?.[role] === r[role]) continue;
+            if (cursor.roles?.[role]) changed.add(cursor.roles[role]!);
             if (r[role]) changed.add(r[role]!);
           }
           for (const path of changed) {
@@ -1503,7 +1503,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const twins = new Map<string, number[]>();
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && pending.size > 0, recover, ambiguous, twins });
+          await syncMailbox(c, path, cursor, sink, touched, { checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0), recover, ambiguous, twins });
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
