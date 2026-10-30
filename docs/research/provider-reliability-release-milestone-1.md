@@ -224,3 +224,7 @@ This resolves the identified native-disk/WASM image mismatch and account-folder 
 ## Landed repair: source/catalog contracts
 
 The localized roundtrip, portable graph, fixture-label and selection-source failures now pass. The scanner ignores erased TypeScript import types but still follows runtime imports, including side effects; the test helper follows the existing test-directory convention with production-violation controls. Approved catalog copy is preserved. Root's 66 targeted tests, core/db/i18n/web types, lint and whitespace pass after rebase. One native review: zero findings. No production mail or scanner allowlist bypass. [Details](../plans/drafts/release-source-contracts.md).
+
+## OPFS terminal verification
+
+The missing direct OPFS verification is now complete on unchanged conformance/runtime source at `3e0beb36`: the original Chromium-worker SQLite-WASM sahpool case passes, with 304 nested passes, one existing legacy-schema skip, zero failures and done=true/error=null. Complete/markSent pin release and independent ownership/reopen/crash controls pass. No source edits or full gate replay. Evidence: `/tmp/terno-opfs-verification-43935e92/README.md` and `state.json`. Later source/catalog test-only changes do not alter this graph. Main still has other release failures.
