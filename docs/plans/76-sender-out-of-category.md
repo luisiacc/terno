@@ -11,7 +11,7 @@
 
 ## Design
 
-- Below the "To C" items, after a separator: "Out of C" for each category the right-clicked thread(s) are in (test id `menu-sender-out-<id>`).
+- Below the "To C" items, after a separator: "Out of C" for each category the right-clicked thread(s) are in (test id `menu-sender-out-<id>`). Those categories drop their "To C" item (the user's call, after a first look: filing into a category the mail is already in reads as doing nothing).
 - New RPC `categories.removeSender { categoryId, email } → { batchId, removed }`. The backend fixes the set once, with the same search as "Search mail from X" (`from:<email>`, inside the category, through `resolveThreadScope`'s keyset pages), and refuses a capped scope.
 - The removal is a *leave move* (`beginMove({ …, leave: true })`, both stores): the move journal machinery, with the slice taking out only the rows of `to` and adding nothing. Each row (origin, time, batch), example and decision is journaled, training records a removal example per thread (as a user removal), threads left with no category go back to the background, and `categorize.undo` on the batch restores everything exactly. It is crash-resumable like any move.
 - The renderer patches the loaded rows from that sender at once and shows "Removing from C…" → "N removed from C · Undo". The z token is registered at the click (it waits for the batch), so a later action keeps z.

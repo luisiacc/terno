@@ -325,6 +325,7 @@ function MenuItems() {
   const anyPlain = scope !== null || rows.some((t) => !t.starred);
   const sender = scope ? null : sharedSender(rows);
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
+  const fileTo = categories.filter((c) => !filedIn.includes(c));
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
     // the menu's own thread, passed explicitly (the selection follows, it isn't read back); the composer takes focus
@@ -441,14 +442,14 @@ function MenuItems() {
                 <span className="min-w-0 flex-1 truncate">{t("threadMenu.allFrom", { name: sender.name })}</span>
               </ContextMenuSubTrigger>
               <ContextMenuSubContent className="w-56" data-testid="menu-sender-file-list">
-                {categories.map((c) => (
+                {fileTo.map((c) => (
                   <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
                     <CategoryDot color={c.color as CategoryColor} />
                     <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
                   </ContextMenuItem>
                 ))}
-                {/* plan 76: and the way back out of the categories this mail is in */}
-                {filedIn.length > 0 && <ContextMenuSeparator />}
+                {/* plan 76: the categories this mail is in offer the way out instead */}
+                {fileTo.length > 0 && filedIn.length > 0 && <ContextMenuSeparator />}
                 {filedIn.map((c) => (
                   <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
                     <CategoryDot color={c.color as CategoryColor} />

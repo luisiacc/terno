@@ -151,6 +151,9 @@ test.describe("everything from a sender, out of a category (plan 76)", () => {
     // only the categories this mail is in are offered to leave
     await expect(page.getByTestId(`menu-sender-out-${facturas}`)).toHaveText("Out of Facturas");
     await expect(page.getByTestId(`menu-sender-out-${viajes}`)).toHaveCount(0);
+    // and only the others are offered to file into: "To Facturas" would do nothing
+    await expect(page.getByTestId(`menu-sender-file-${facturas}`)).toHaveCount(0);
+    await expect(page.getByTestId(`menu-sender-file-${viajes}`)).toHaveText("To Viajes");
     await page.getByTestId(`menu-sender-out-${facturas}`).click();
     await expect(toast(page, `${ids.length} removed from Facturas`)).toBeVisible();
     expect(inFacturas()).toBe(0);
