@@ -130,7 +130,7 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const s
       off(); offSaved(); acknowledge(); releaseHold?.();
       for (const k of keys) forgetDraft(k); source?.dispose(); vi.useRealTimers();
       try {
-        drainedReservations = await Promise.allSettled(reservation ? [reservation] : []); drainedRequests = await Promise.allSettled([...pending]);
+        drainedReservations = await Promise.allSettled(reservation ? [reservation] : []); drainedRequests = await Promise.allSettled(pending);
       } finally {
         setDraftTransport(async () => { throw new Error("No active UI writer fixture"); }); c.close();
         try {
