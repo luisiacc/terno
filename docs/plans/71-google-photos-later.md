@@ -59,3 +59,13 @@ Codex found five problems; each now has a test that fails without the fix.
 3. **Off cancelled a reconnect under way** (off starts its own sign-in flow, which supersedes). A reconnect asking for photos marks its flow (`photoReconnects`); off during it only ends the wait, and the reconnect, reading it again, turns nothing on. The check is synchronous: anything else supersedes older flows exactly as before (the renewal suite's ordering tests rely on it, and a first attempt that read settings first broke one under IndexedDB).
 4. **Web Add account reaching a waiting mailbox and declining the contacts** left it waiting. The wait is read for the account the sign-in returns (`google-pending.test.tsx`).
 5. **The reconnect answered before the people were listed**, so a People API that was off never showed. The listing runs inside the flow, as the switch's consent does (`google.test.ts`).
+
+### Round 2
+
+Three races, all "switched off at some moment": each has a test that fails without the fix (the reconnect ones in `explicit-renewal.test.ts`, under SQLite and IndexedDB).
+
+1. **Off during the reconnect's photo proof** (Google kept the old grant) was undone when the proof came back.
+2. **Off while the reconnect listed the people** cleared an already-empty wait and left photos on.
+3. **Web Add account for a waiting mailbox, switched off with the popup open**, sent the consent without `ifPending`.
+
+Fixes: a sign-in's consent turns photos on through `consumeGooglePhotosPending`, which reads the wait and writes the state in one settings transaction, so an earlier off always wins (the desktop reconnect and `icons.authorizeGoogle` with `ifPending` both use it). Off during a reconnect asking for photos now writes them off and drops their photos, wherever that reconnect has got to. The web remembers which accounts waited before Google's popup and sends `ifPending` for those, Add account included.

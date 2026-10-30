@@ -626,4 +626,36 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     const result = await t.backend.store.owner.change({ claim: { accountId: t.account.id, email: t.account.email, displayName: "Reader", provider: "gmail", verifiedBy: "google_oauth", evidence: { googleSub: who.sub, emailVerified: true } }, stamp, secret: { kind: "replace", name: t.name, expectedBlob: new TextEncoder().encode("stale"), blob: new TextEncoder().encode("newer") }, reason: "synthetic", now: 2 });
     expect(result).toBe(false); expect(await t.backend.store.owner.get()).toEqual(before); expect(await t.backend.getSecret(t.name)).toBe("old-refresh");
   });
+
+  // plan 71, Codex review round 2: switched off at any moment of a reconnect asking for waiting photos, they stay off
+  it("photos switched off during the reconnect's photo proof stay off; mail is signed in", async () => {
+    const t = await setup(kind); const entered = t.gate(), held = t.gate();
+    t.answer({ refreshToken: null, grantedScopes: [MAIL, PHOTO] }); t.rotate("rotated-refresh");
+    t.photos.mockImplementationOnce(async (scopes) => { entered.release(); await held.promise; return [...scopes]; });
+    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true, later: true });
+    const reconnect = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
+    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false });
+    held.release();
+    expect(await reconnect).toHaveProperty("value");
+    const settings = (await t.client.call("app.bootstrap", {})).settings;
+    expect(settings.googlePhotos).toEqual({}); expect(settings.googlePhotosPending).toEqual([]);
+  });
+
+  it("photos switched off while the reconnect lists the people go off and are forgotten", async () => {
+    const t = await setup(kind); const entered = t.gate(), held = t.gate();
+    t.answer({ refreshToken: "new-refresh", grantedScopes: [MAIL, PHOTO] });
+    const create = t.registry.create.bind(t.registry);
+    vi.spyOn(t.registry, "create").mockImplementation((ctx) => ({ ...create(ctx), photos: async () => {
+      entered.release(); await held.promise;
+      return { own: null, contacts: [], connections: "ok", otherContacts: "skipped" };
+    } }));
+    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: true, later: true });
+    const reconnect = outcome(t.client.call("accounts.reconnect", { id: t.account.id })); await entered.promise;
+    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos[String(t.account.id)]).toBeDefined();
+    const drop = vi.spyOn(t.backend.icons, "dropPhotos");
+    await t.client.call("icons.googlePhotos", { accountId: t.account.id, on: false });
+    held.release(); await reconnect;
+    expect((await t.client.call("app.bootstrap", {})).settings.googlePhotos).toEqual({});
+    expect(drop).toHaveBeenCalledWith(t.account.id);
+  });
 });

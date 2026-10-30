@@ -53,6 +53,29 @@ it("a waiting account's consent counts only if it still waits (the backend reads
   expect(calls.find((c) => c.method === "icons.authorizeGoogle")?.params).toMatchObject({ accountId: ACCOUNT.id, ifPending: true });
 });
 
+// Codex review round 2: Add account reaching a waiting mailbox, switched off while Google's popup is open
+it("Add account: a mailbox that waited before the popup is re-checked by the backend, even if switched off meanwhile", async () => {
+  granted = `${MAIL} ${CONTACTS}`;
+  const { setApp, getApp } = await import("~/state/app");
+  vi.stubGlobal("google", {
+    accounts: {
+      oauth2: {
+        initTokenClient: (o: { callback: (r: object) => void }) => ({
+          requestAccessToken: () => {
+            // the user switches photos off in Settings while the popup is open
+            setApp({ settings: { ...getApp().settings!, googlePhotosPending: [] } });
+            o.callback({ access_token: "tok", expires_in: "3600", scope: granted });
+          },
+        }),
+      },
+    },
+  });
+  const { connectGmailWeb } = await import("./google");
+  await connectGmailWeb();
+  const authorize = calls.find((c) => c.method === "icons.authorizeGoogle");
+  expect(authorize?.params).toMatchObject({ accountId: ACCOUNT.id, ifPending: true });
+});
+
 it("hovering or focusing Sign in now loads nothing from Google", async () => {
   vi.stubEnv("VITE_TARGET", "web");
   vi.resetModules();

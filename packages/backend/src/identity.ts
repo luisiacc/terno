@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 import type { OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
-import { googlePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "./settings";
+import { consumeGooglePhotosPending, googlePhotosPending, readSettings, setGooglePhotosPending } from "./settings";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 
 /**
@@ -251,10 +251,11 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
         if (!proven) {
           /* nothing: still pending */
         } else if (state.connections || state.otherContacts) {
-          await b.credentialWrite(accountId, flow, () => setGooglePhotoState(b.store, accountId, state));
+          // on only if still waiting at this instant (switched off during the proof, it stays off)
+          const on = await b.credentialWrite(accountId, flow, () => consumeGooglePhotosPending(b.store, accountId, state));
           b.assertSignIn(accountId, flow);
           // listed before the reconnect answers, as the switch's consent does: Settings then shows what Google said (People API off)
-          await b.icons.syncPeople(accountId, state, flow.signal).catch(() => {});
+          if (on) await b.icons.syncPeople(accountId, state, flow.signal).catch(() => {});
         } else await b.credentialWrite(accountId, flow, () => setGooglePhotosPending(b.store, accountId, false));
         b.assertSignIn(accountId, flow);
       }

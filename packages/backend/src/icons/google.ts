@@ -13,7 +13,7 @@ import { L } from "@terno/i18n";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 import type { BackendCore as Backend } from "../core";
 import { beginSignIn, endSignIn, encryptCredential, connectExistingGoogle, googleCredentialIntent, sameAccount, commitGoogleCredential, photoReconnects } from "../identity";
-import { googlePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
+import { consumeGooglePhotosPending, readSettings, setGooglePhotoState, setGooglePhotosPending } from "../settings";
 
 const MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 export const PHOTO_SCOPES = [CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE];
@@ -47,7 +47,9 @@ export async function setGooglePhotos(b: Backend, accountId: number, on: boolean
   // wait again before turning anything on). Decided synchronously, so anything else supersedes older flows as before.
   const running = b.signIns.get(accountId);
   if (!on && running && photoReconnects.has(running)) {
-    await setGooglePhotosPending(b.store, accountId, false);
+    // wherever that sign-in has got to: no longer waiting, and off if it already turned them on (their photos forgotten)
+    await setGooglePhotoState(b.store, accountId, null);
+    await b.icons.dropPhotos(accountId);
     return readSettings(b.store);
   }
   const flow = beginSignIn(b, accountId);
@@ -115,7 +117,11 @@ export async function authorizeGooglePhotos(b: Backend, p: { accountId: number; 
   if (!granted.includes(MAIL_SCOPE)) throw new RpcError("BAD_REQUEST", L("errors.icons.mailScopeLost"));
   tokens.set(account.id, p.accessToken, b.now() + p.expiresIn * 1000);
   await b.resumeAuth(account.id);
-  // plan 71: a sign-in's consent, read again now: turned off while Google's popup was open, it turns nothing on
-  if (p.ifPending && !(await googlePhotosPending(b.store, account.id))) return readSettings(b.store);
+  // plan 71: a sign-in's consent counts only if the account still waits, checked with the write (off meanwhile wins)
+  if (p.ifPending) {
+    const state = photoStateFrom(granted);
+    if (await consumeGooglePhotosPending(b.store, account.id, state)) await b.icons.syncPeople(account.id, state);
+    return readSettings(b.store);
+  }
   return turnOn(b, account.id, photoStateFrom(granted));
 }

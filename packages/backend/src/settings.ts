@@ -236,6 +236,19 @@ export async function setGooglePhotoState(store: SettingsStore, accountId: numbe
   });
 }
 
+/**
+ * Plan 71: a sign-in's consent turns photos on only if the account still waits, read in the same transaction as the
+ * write (off at any moment before it wins). True when it turned them on.
+ */
+export async function consumeGooglePhotosPending(store: SettingsStore, accountId: number, state: AppSettings["googlePhotos"][string]): Promise<boolean> {
+  return store.settings.update<StoredSettings, boolean>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const pending = s.googlePhotosPending ?? [];
+    if (!pending.includes(accountId)) return { value: s, result: false };
+    return { value: { ...s, googlePhotos: { ...s.googlePhotos, [String(accountId)]: state }, googlePhotosPending: pending.filter((id) => id !== accountId) }, result: true };
+  });
+}
+
 /** Plan 71: an account's photos switched on to come with its next sign-in with Google (or no longer waiting). */
 export async function setGooglePhotosPending(store: SettingsStore, accountId: number, on: boolean): Promise<void> {
   await store.settings.update<StoredSettings, void>("app", {}, (raw) => {
