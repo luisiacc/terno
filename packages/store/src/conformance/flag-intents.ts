@@ -20,6 +20,24 @@ export function defineFlagIntentConformance(name: string, harness: StoreHarness)
     { action: "moveToInbox", initial: { isTrash: true, isSpam: true, inInbox: false }, desired: { isTrash: false, isSpam: false, inInbox: true }, remote: { isRead: true, isStarred: true } },
   ];
   describe(`pending field intent: ${name}`, () => {
+    it("exact Trash Undo clears a secondary spam flag through reopen", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [accountId] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: accountId!, providerMsgId: "target", inInbox: false, isTrash: true }), msg({ accountId: accountId!, providerMsgId: "unrelated" })]);
+      const threadId = await threadOf(store, "target");
+      const before = await store.debug.snapshot();
+      const action = await store.threads.act({ threadIds: [threadId], action: "spam", signal: null, now: 1 });
+      const restore = await store.threads.restore({ messages: action.before, now: 2 });
+      expect(restore.threadIds).toEqual([threadId]);
+      expect((await store.threads.restore({ messages: action.before, now: 3 })).opIds).toEqual([]);
+      store = await harness.reopen(store); stores.push(store);
+      const after = await store.debug.snapshot();
+      expect(after.messages).toEqual(before.messages);
+      expect(after.ops.filter((op) => restore.opIds.includes(op.id)).map((op) => op.kind)).toEqual(["moveToInbox", "trash"]);
+      const claimed = await store.ops.claimReady(3, 20);
+      expect(claimed.every((op) => JSON.stringify(JSON.parse(op.target_json)) === JSON.stringify({ messageIds: [action.before[0]!.id] }))).toBe(true);
+    });
+
     for (const c of cases) it.each(["ingest", "flags"] as const)(`${c.action} preserves only its owned fields through %s and reopen`, async (source) => {
       let store = await harness.open(); stores.push(store);
       const [accountId] = await withAccounts(store);

@@ -14,7 +14,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.restoreAllMocks(); });
 function gate() { let release!: () => void; const promise = new Promise<void>((resolve) => { release = resolve; }); return { promise, release }; }
 
-async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
+async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false, messageCount = 1) {
   let timeAdvance = 0;
   const elapsedNow = performance.now.bind(performance);
   const dir = mkdtempSync(join(tmpdir(), "terno-observation-"));
@@ -26,6 +26,9 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   let heldSend: { captured: ReturnType<typeof gate>; response: ReturnType<typeof gate> } | undefined;
   let minimalRequests = 0;
   const labels = new Set(["INBOX", "UNREAD"]);
+  const mailIds = Array.from({ length: messageCount }, (_, i) => i ? `m${i}` : "m");
+  const mailLabels = new Map(mailIds.map((id) => [id, id === "m" ? labels : new Set(labels)]));
+  let refuseMutation: number | undefined;
   const mutations: unknown[] = [];
   const raw = Buffer.from("From: sender@example.test\r\nTo: synthetic@example.test\r\nSubject: Synthetic\r\n\r\nExact body\r\n").toString("base64url");
   const respond = async (input: string, init?: RequestInit): Promise<Response> => {
@@ -43,17 +46,31 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
         if (historyRefusal) return Response.json({ error: { message: "Synthetic refusal" } }, { status: historyRefusal });
         return Response.json({ historyId: String(history), history: emptyHistory || url.searchParams.get("startHistoryId") === String(history) ? [] : [{ labelsAdded: [{ message: { id: "m" } }] }] });
       }
-      if (url.pathname.endsWith("/messages")) return Response.json({ messages: [{ id: "m" }] });
+      if (url.pathname.endsWith("/messages")) return Response.json({ messages: mailIds.map((id) => ({ id })) });
       if (url.pathname.endsWith("/batchModify")) {
-        const change = JSON.parse(String(init?.body)) as { addLabelIds: string[]; removeLabelIds: string[] };
+        const change = JSON.parse(String(init?.body)) as { ids: string[]; addLabelIds: string[]; removeLabelIds: string[] };
         mutations.push(change);
         if (heldMutation?.at === mutations.length) { heldMutation.captured.release(); await heldMutation.response.promise; }
-        for (const label of change.addLabelIds) labels.add(label);
-        for (const label of change.removeLabelIds) labels.delete(label);
+        for (const id of change.ids) {
+          const target = mailLabels.get(id)!;
+          for (const label of change.addLabelIds) target.add(label);
+          for (const label of change.removeLabelIds) target.delete(label);
+        }
         history++;
         return new Response(null, { status: 204 });
       }
-      const snapshot = { id: "m", threadId: "t", historyId: String(history), labelIds: [...labels], ...(url.searchParams.get("format") === "raw" ? { raw } : {}) };
+      if (url.pathname.endsWith("/trash")) {
+        const id = url.pathname.split("/").at(-2)!;
+        const labels = mailLabels.get(id)!;
+        mutations.push({ trash: id });
+        if (refuseMutation === mutations.length) return Response.json({ error: { message: "Synthetic refusal" } }, { status: 400 });
+        labels.add("TRASH"); labels.delete("INBOX");
+        if (heldMutation?.at === mutations.length) { heldMutation.captured.release(); await heldMutation.response.promise; }
+        history++;
+        return Response.json({ id: "m", labelIds: [...labels], historyId: String(history) });
+      }
+      const id = url.pathname.split("/").at(-1)!;
+      const snapshot = { id, threadId: `t-${id}`, historyId: String(history), labelIds: [...(mailLabels.get(id) ?? labels)], ...(url.searchParams.get("format") === "raw" ? { raw } : {}) };
       if (url.searchParams.get("format") === "minimal") {
         minimalRequests++;
         if (hold) { hold = false; captured.release(); await response.promise; }
@@ -97,6 +114,8 @@ async function setup(kind: "SQL" | "IDB" | "IDB instant", automatic = false) {
   const threadId = (await backend.store.debug.snapshot()).messages[0]!.threadId;
   minimalRequests = 0; // W03 full reconciliation includes an initial minimal snapshot.
   return { backend, account, threadId, client, captured, response, mutations,
+    refuseMutation(at: number) { refuseMutation = at; },
+    remoteOf(id: string) { return [...mailLabels.get(id)!].sort(); },
     refuseHistory(status: number) { historyRefusal = status; heldHistory = { captured: gate(), response: gate() }; return heldHistory; },
     allowHistory() {
       historyRefusal = undefined;
@@ -389,4 +408,76 @@ it.each(["sign-in", "backoff"] as const)("committed reconciliation respects %s a
   else t.backend.connectivity.succeeded(t.account.id);
   await t.client.call("threads.act", { threadIds: [t.threadId], action: "star" });
   expect(sync).toHaveBeenCalledWith(t.account.id);
+});
+
+
+describe.each(["SQL", "IDB"] as const)("W02 exact Trash Undo: %s", (kind) => {
+  it("restores the secondary spam flag despite unchanged Trash display precedence", async () => {
+    const t = await setup(kind);
+    vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+    await t.client.call("threads.act", { threadIds: [t.threadId], action: "trash" });
+    expect(await t.backend.runWorker()).toBe(1);
+    const saved = (await t.backend.store.debug.snapshot()).messages[0]!;
+    const spam = await t.client.call("threads.act", { threadIds: [t.threadId], action: "spam" });
+    expect(await t.backend.runWorker()).toBe(1);
+    expect(t.remoteLabels().sort()).toEqual(["SPAM", "TRASH", "UNREAD"]);
+    expect(await t.client.call("threads.undo", { undoId: spam.undoId! })).toEqual({ restored: 1 });
+    expect(await t.backend.runWorker()).toBe(2);
+    await t.backend.syncAccount(t.account.id);
+    const snapshot = await t.backend.store.debug.snapshot();
+    expect(snapshot.messages[0]).toMatchObject({ id: saved.id, isRead: false, isStarred: false, inInbox: false, isTrash: true, isSpam: false });
+    expect(t.remoteLabels().sort()).toEqual(["TRASH", "UNREAD"]);
+    expect(snapshot.ops.map((op) => [op.kind, op.state, op.attempts])).toEqual([
+      ["trash", "succeeded", 1], ["spam", "succeeded", 1], ["moveToInbox", "succeeded", 1], ["trash", "succeeded", 1],
+    ]);
+    await expect(t.client.call("threads.undo", { undoId: spam.undoId! })).rejects.toThrow();
+  });
+
+  it.each(["Restore", "Undo"] as const)("a newer %s survives the withheld old Trash ACK and observation", async (newer) => {
+    const t = await setup(kind);
+    vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+    const trash = await t.client.call("threads.act", { threadIds: [t.threadId], action: "trash" });
+    const held = t.holdMutation(1);
+    const worker = t.backend.runWorker();
+    try {
+      await held.captured.promise;
+      if (newer === "Restore") await t.client.call("threads.act", { threadIds: [t.threadId], action: "moveToInbox" });
+      else await t.client.call("threads.undo", { undoId: trash.undoId! });
+      t.hold();
+      const observation = t.backend.syncAccount(t.account.id);
+      await t.captured.promise;
+      held.response.release();
+      await worker;
+      t.response.release(); t.releaseFresh();
+      await observation;
+      expect((await t.backend.store.debug.snapshot()).messages[0]).toMatchObject({ isRead: false, isStarred: false, inInbox: true, isTrash: false, isSpam: false });
+      await t.backend.runWorker();
+      await t.backend.syncAccount(t.account.id);
+      expect(t.remoteLabels().sort()).toEqual(["INBOX", "UNREAD"]);
+      expect((await t.backend.store.debug.snapshot()).ops.map((op) => [op.kind, op.state, op.attempts])).toEqual([["trash", "succeeded", 1], ["moveToInbox", "succeeded", 1]]);
+    } finally { held.response.release(); t.response.release(); t.releaseFresh(); await worker; }
+  });
+});
+
+
+describe.each(["SQL", "IDB"] as const)("W02 partial bulk Trash: %s", (kind) => {
+  it("reports a failed bulk operation after one target applied, without fabricating recovery", async () => {
+    const t = await setup(kind, false, 2);
+    vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
+    const before = await t.backend.store.debug.snapshot();
+    const threads = before.messages.map((m) => m.threadId);
+    const action = await t.client.call("threads.act", { threadIds: threads, action: "trash" });
+    t.refuseMutation(2);
+    expect(await t.backend.runWorker()).toBe(1);
+    const partial = await t.backend.store.debug.snapshot();
+    expect(partial.ops.map((op) => [op.kind, op.state, op.attempts])).toEqual([["trash", "failed", 1]]);
+    expect(t.remoteOf("m")).toEqual(["TRASH", "UNREAD"]);
+    expect(t.remoteOf("m1")).toEqual(["INBOX", "UNREAD"]);
+    expect(await t.client.call("threads.undo", { undoId: action.undoId! })).toEqual({ restored: 2 });
+    expect(await t.backend.runWorker()).toBe(1);
+    await t.backend.syncAccount(t.account.id);
+    expect(t.remoteOf("m")).toEqual(["INBOX", "UNREAD"]);
+    expect(t.remoteOf("m1")).toEqual(["INBOX", "UNREAD"]);
+    expect((await t.backend.store.debug.snapshot()).messages.map((m) => [m.id, m.isRead, m.isStarred, m.inInbox, m.isTrash, m.isSpam])).toEqual(before.messages.map((m) => [m.id, m.isRead, m.isStarred, m.inInbox, m.isTrash, m.isSpam]));
+  });
 });

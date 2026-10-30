@@ -1,5 +1,5 @@
 import type { ThreadAction } from "@terno/core";
-import { reaffirmFlagIntent, type MessageState } from "@terno/store";
+import { reaffirmFlagIntent, restoreLocationOps, sameLocation, type MessageState } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { recomputeThreads } from "./ingest";
 import { placeholders, type Db } from "./sqlite";
@@ -146,22 +146,6 @@ const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is
   isSpam: !!m.is_spam,
 });
 
-type Place = "inbox" | "archive" | "trash" | "spam";
-const placeOf = (s: Pick<MessageState, "inInbox" | "isTrash" | "isSpam">): Place => (s.isTrash ? "trash" : s.isSpam ? "spam" : s.inInbox ? "inbox" : "archive");
-
-/**
- * The provider ops that take a message from one place to another, in order:
- * out of Papelera or Spam goes through the inbox first (Gmail's archive
- * doesn't untrash; IMAP moves from wherever it is).
- */
-export function placeOps(from: Place, to: Place): ThreadAction[] {
-  if (from === to) return [];
-  const out: ThreadAction[] = from === "trash" || from === "spam" ? ["moveToInbox"] : [];
-  if (to === "inbox") return out.length ? out : ["moveToInbox"];
-  out.push(to);
-  return out;
-}
-
 export interface RestoreResult {
   threadIds: number[];
   /** ops to queue, in this order (a message's location steps stay in sequence) */
@@ -195,7 +179,7 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
     for (const m of msgs) {
       const was = wanted.get(m.id)!;
       const now = stateOf(m);
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && placeOf(now) === placeOf(was)) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was)) continue;
       db.run(
         "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ? WHERE id = ?",
         +was.isRead,
@@ -208,7 +192,7 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
-      placeOps(placeOf(now), placeOf(was)).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
     }
     recomputeThreads(db, touched);
     return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };

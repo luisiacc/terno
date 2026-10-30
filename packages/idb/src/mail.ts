@@ -1,6 +1,6 @@
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { copyOpAdmission, type OpAdmission } from "@terno/store";
-import { assetError, linkAssets, reaffirmFlagIntent, validateAssets } from "@terno/store";
+import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -1026,17 +1026,6 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
 }
 
 const stateOf = (m: R): MessageState => ({ id: m.id, isRead: !!m.is_read, isStarred: !!m.is_starred, inInbox: !!m.in_inbox, isTrash: !!m.is_trash, isSpam: !!m.is_spam });
-type Place = "inbox" | "archive" | "trash" | "spam";
-const placeOf = (s: MessageState): Place => (s.isTrash ? "trash" : s.isSpam ? "spam" : s.inInbox ? "inbox" : "archive");
-/** The provider ops from one place to another, in order (out of Papelera or Spam goes through the inbox first). */
-function placeOps(from: Place, to: Place): ThreadAction[] {
-  if (from === to) return [];
-  const out: ThreadAction[] = from === "trash" || from === "spam" ? ["moveToInbox"] : [];
-  if (to === "inbox") return out.length ? out : ["moveToInbox"];
-  out.push(to);
-  return out;
-}
-
 /** An undo: messages back exactly as they were, and the provider ops that take them there (in order). */
 export function restoreMessages(c: Ctx, states: readonly MessageState[]): { threadIds: number[]; ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[] } {
   return c.db.tx(() => {
@@ -1053,12 +1042,12 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
       const m = messages.get(was.id);
       if (!m) continue;
       const now = stateOf(m);
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && placeOf(now) === placeOf(was)) continue;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was)) continue;
       messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam });
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
-      placeOps(placeOf(now), placeOf(was)).forEach((kind, step) => add(step, m.account_id, kind, m.id));
+      restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
     }
     recomputeThreads(c, touched);
     return { threadIds: [...touched], ops: steps.flatMap((s) => [...s.values()]) };
