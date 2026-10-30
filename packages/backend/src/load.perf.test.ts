@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PerformanceObserver } from "node:perf_hooks";
 import { Worker } from "node:worker_threads";
+import type { ThreadSummary } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { seedDataset, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
@@ -61,6 +62,7 @@ interface CommandRun {
   spent: number;
   /** the time the event loop was busy over the run (the rest it waited, idle, on timers or I/O) */
   active: number;
+  injected: number;
 }
 let commands: CommandRun[] = [];
 /** the longest garbage collection pause of the stage */
@@ -93,13 +95,14 @@ function slowDown(target: Record<string, unknown>, names: string[]) {
       }
       // a synchronous wait: the event loop is blocked for exactly that long (spun, not Atomics.wait: a sleeping thread
       // can oversleep a 3 ms timeout by hundreds of ms under macOS timer coalescing, which would test the OS, not us)
+      const injectionStart = performance.now();
       if (blockPerItemMs && n) {
         const until = performance.now() + blockPerItemMs * n;
         while (performance.now() < until) {
           /* the disk is slow */
         }
       }
-      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000, spent: threadCpuMs() - startCpu, active: loopActiveMs() - startActive });
+      commands.push({ name, n, start, end: performance.now(), cpu: (used.user + used.system) / 1000, spent: threadCpuMs() - startCpu, active: loopActiveMs() - startActive, injected: blockPerItemMs && n ? performance.now() - injectionStart : 0 });
       return r;
     };
   }
@@ -272,19 +275,88 @@ it("filing every thread of a view into a category (select all N), and its undo",
   await client.call("categories.delete", { id: cat });
 }, 600_000);
 
-it("a disk that turns slow mid-job: one slice runs over, the next ones shrink back under budget", async () => {
-  // grown slices meet a synchronous wait of 3 ms per item from the first one of 20–50 items on (60–150 ms for that one)
+it("a disk that turns slow mid-job: a controlled controller restart overruns once, then shrinks back under budget", async () => {
+  const readView = async (view: "all" | "trash" | "spam") => {
+    const rows: ThreadSummary[] = [];
+    let cursor: Parameters<typeof backend.store.threads.list>[0]["cursor"];
+    do {
+      const page = await client.call("threads.list", { view, limit: 500, cursor });
+      rows.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    return rows.sort((a, b) => a.id - b.id);
+  };
+  const readMessageFlags = async (threadId: number) => {
+    const detail = await client.call("threads.get", { threadId });
+    return detail.messages.map((m) => ({ id: m.id, date: m.date, isRead: m.isRead, isStarred: m.isStarred, isSent: m.isSent }));
+  };
+  const before = await readView("all");
+  const messageFlags = new Map<number, Awaited<ReturnType<typeof readMessageFlags>>>();
+  const latestIds = new Map<number, number>();
+  let expectedAffected = 0;
+  for (const row of before) {
+    const flags = await readMessageFlags(row.id);
+    expect(flags.length).toBeGreaterThan(0);
+    const latest = flags.reduce((a, b) => b.date > a.date || (b.date === a.date && b.id > a.id) ? b : a);
+    messageFlags.set(row.id, flags);
+    latestIds.set(row.id, latest.id);
+    if (!latest.isStarred) expectedAffected++;
+  }
+  const trash = await readView("trash");
+  const spam = await readView("spam");
+  const scope = { kind: "view" as const, view: "all" as const };
+  expect(await client.call("threads.scopeCount", { scope })).toEqual({ count: before.length, capped: false });
+  expect(before.some((r) => !r.starred)).toBe(true);
+  expect(before.length).toBeGreaterThan(200);
+  const originalRunBudgeted = backend.runBudgeted;
+  const runBudgeted = backend.runBudgeted.bind(backend);
+  let handoffs = 0;
+  let injecting = false;
+  // A real prefix, then a new controller at 20: its samples, current size and hold reset.
+  // This qualifies recovery from that controlled state, not natural growth of the prefix controller.
+  backend.runBudgeted = async (items, work, budget = {}) => {
+    handoffs++;
+    await runBudgeted(items.slice(0, 200), work, budget);
+    injecting = true;
+    await runBudgeted(items.slice(200), work, { ...budget, initial: 20 });
+  };
+  const processed = new Set<number>();
+  let duplicates = 0;
+  let checkedRecovery = false;
   let switchedAt = Infinity;
   const act = backend.store.threads.act.bind(backend.store.threads);
   backend.store.threads.act = (c) => {
-    if (switchedAt === Infinity && c.threadIds.length >= 20 && c.threadIds.length <= 50) {
+    if (switchedAt !== Infinity && !checkedRecovery) {
+      checkedRecovery = true;
+      expect(c.threadIds.length, "the first recovery slice shrinks at least by half").toBeLessThanOrEqual(10);
+    }
+    for (const id of c.threadIds) {
+      if (processed.has(id)) duplicates++;
+      processed.add(id);
+    }
+    if (injecting && switchedAt === Infinity) {
+      expect(c.threadIds.length, "the controlled restart starts at 20").toBe(20);
       switchedAt = performance.now();
       blockPerItemMs = 3;
     }
     return act(c);
   };
   try {
-    const m = await measure(() => client.call("threads.actScope", { scope: { kind: "view", view: "all" }, action: "star" }));
+    let result: { total: number; affected: number } | undefined;
+    const m = await measure(async () => { result = await client.call("threads.actScope", { scope, action: "star" }); });
+    expect(result).toMatchObject({ total: before.length, affected: expectedAffected });
+    expect(await readView("all")).toEqual(before.map((r) => ({ ...r, starred: true })));
+    for (const [threadId, flags] of messageFlags) {
+      expect(await readMessageFlags(threadId)).toEqual(flags.map((m) => ({ ...m, isStarred: m.id === latestIds.get(threadId) || m.isStarred })));
+    }
+    expect(await readView("trash")).toEqual(trash);
+    expect(await readView("spam")).toEqual(spam);
+    expect([...processed].sort((a, b) => a - b)).toEqual(before.map((r) => r.id));
+    expect(duplicates).toBe(0);
+    expect(handoffs).toBe(1);
+    const prefix = m.commands.filter((r) => r.name === "act" && r.start < switchedAt);
+    expect(prefix.reduce((n, r) => n + r.n!, 0)).toBe(200);
+    for (const r of prefix) expect(r.injected).toBe(0);
     const over = m.gaps.filter((g) => g.end > switchedAt);
     const after = m.commands.filter((r) => r.name === "act" && r.start >= switchedAt);
     // a slice the OS held: off a CPU for most of it (the injected slowness is spun, so it never is)
@@ -298,8 +370,13 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
       p95: m.maxGap.busy,
       max: m.maxGap.busy,
       iterations: after.length,
+      note: JSON.stringify({ result, expectedAffected, processed: processed.size, duplicates, prefixSlices: prefix.length, prefixItems: 200, first: after[0], recovery: after.slice(1, 9), recoverySlices: after.length - 1, injectedPerItemMin: Math.min(...after.map((r) => r.injected / r.n!)), maxWall: Math.max(...after.map((r) => r.end - r.start)), maxCpu: Math.max(...after.map((r) => r.spent)), publicState: "all rows exactly starred; Trash and Spam unchanged" }),
     });
-    expect(switchedAt, "the slices grew to 20 items before the disk turned slow").toBeLessThan(Infinity);
+    expect(switchedAt, "the controlled restart reached the injection").toBeLessThan(Infinity);
+    expect(after[0]!.n).toBe(20);
+    expect(after.length).toBeGreaterThan(2);
+    expect(checkedRecovery).toBe(true);
+    for (const r of after) expect(r.injected, "real 3 ms/item injection persists").toBeGreaterThanOrEqual(3 * r.n!);
     expect(after[0]!.end - after[0]!.start, "the first slow slice ran over the budget").toBeGreaterThan(BUDGET);
     // that one overrun, then the slices are back within budget: past it, only the narrow excuses (the machine's, and a
     // single long command at most twice)
@@ -315,5 +392,6 @@ it("a disk that turns slow mid-job: one slice runs over, the next ones shrink ba
   } finally {
     blockPerItemMs = 0;
     backend.store.threads.act = act;
+    backend.runBudgeted = originalRunBudgeted;
   }
 }, 600_000);
