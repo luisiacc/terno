@@ -1120,7 +1120,7 @@ export class SqlMailStore implements MailStore {
 
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
-    if (!s) this.providerStores.set(accountId, (s = new SqlProviderStore(this.db, accountId)));
+    if (!s) this.providerStores.set(accountId, (s = new SqlProviderStore(this.db, accountId, () => this.settle())));
     if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
       const read = s.setting.bind(s);
       s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);

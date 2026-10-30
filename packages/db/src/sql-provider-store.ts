@@ -14,8 +14,9 @@ export class SqlProviderStore implements ProviderStore {
   constructor(
     private readonly db: Db,
     private readonly accountId: number,
+    settle: () => Promise<void> = () => Promise.resolve(),
   ) {
-    this.locations = new SqlImapLocations(db, accountId);
+    this.locations = new SqlImapLocations(db, accountId, settle);
   }
 
   async messageByProviderId(providerMsgId: string) {
@@ -104,6 +105,7 @@ class SqlImapLocations implements ImapLocationStore {
   constructor(
     private readonly db: Db,
     private readonly accountId: number,
+    private readonly settle: () => Promise<void>,
   ) {}
 
   async fence(messageIds: readonly number[]) {
@@ -277,6 +279,7 @@ class SqlImapLocations implements ImapLocationStore {
         this.db.run(`INSERT INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations WHERE mailbox=? AND message_id IN (${placeholders(chunk.length)}) ON CONFLICT(message_id) DO UPDATE SET owner=NULL`, mailbox, ...chunk);
         this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
       });
+      await this.settle();
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     if (!isFolder(this.db, this.accountId, mailbox)) return;
@@ -313,8 +316,11 @@ class SqlImapLocations implements ImapLocationStore {
       END;`);
     let batch: number[] = [];
     let batchMessages = 0;
-    const flush = () => {
-      if (batch.length) conditional(batch);
+    const flush = async () => {
+      if (batch.length) {
+        conditional(batch);
+        await this.settle();
+      }
       batch = [];
       batchMessages = 0;
     };
@@ -328,13 +334,14 @@ class SqlImapLocations implements ImapLocationStore {
     for (const thread of all) {
       const n = sizes.get(thread) ?? 0;
       if (n <= RESET_SLICE) {
-        if (batchMessages + n > RESET_SLICE) flush();
+        if (batchMessages + n > RESET_SLICE) await flush();
         batch.push(thread);
         batchMessages += n;
         await breathe();
         continue;
       }
       let decided = false;
+      let membershipRemoved = false;
       for (let attempt = 0; attempt < 3 && !decided; attempt++) {
         this.db.run("INSERT OR REPLACE INTO expunge_watch (thread_id, dirty) VALUES (?, 0)", thread);
         let after = { date: Number.NEGATIVE_INFINITY, id: 0 };
@@ -362,13 +369,15 @@ class SqlImapLocations implements ImapLocationStore {
           // nothing that could put one back written since the scan began: still none there, deleted in this same turn
           this.db.tx(() => this.db.run("DELETE FROM thread_folders WHERE thread_id = ? AND folder = ?", thread, mailbox));
           decided = true;
+          membershipRemoved = true;
         }
       }
       this.db.run("DELETE FROM expunge_watch WHERE thread_id = ?", thread);
+      if (membershipRemoved) await this.settle();
       // (a thread changing under all three scans keeps its row: shown a while longer, never a whole thread in one go)
       await breathe();
     }
-    flush();
+    await flush();
   }
 
   async setFlags(messageId: number, mailbox: string, flags: string) {
@@ -465,6 +474,7 @@ class SqlImapLocations implements ImapLocationStore {
         },
       );
       if (removed === 0) return ids;
+      await this.settle();
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
