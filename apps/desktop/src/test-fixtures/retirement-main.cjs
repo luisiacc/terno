@@ -17,10 +17,18 @@ app.whenReady().then(async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const child = utilityProcess.fork(join(__dirname, 'retirement-utility.cjs'), [String(server.address().port)], { stdio: 'inherit' });
   const retirement = new BackendRetirement(child);
-  let sawBody = false, exited = false;
-  child.on('spawn', () => console.log(JSON.stringify({ utility: identity(child.pid) })));
-  child.on('exit', () => { exited = true; });
-  const watchdog = setTimeout(() => { console.error('Fixture watchdog'); void retirement.retire(); }, 10000);
+  let sawBody = false, exited = false, finishing = false;
+  const finish = async (code) => {
+    if (finishing) return;
+    finishing = true;
+    clearTimeout(watchdog);
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    app.exit(code);
+  };
+  child.on('spawn', () => { console.log(JSON.stringify({ utility: identity(child.pid) })); child.postMessage('go'); });
+  child.on('exit', () => { exited = true; if (!sawBody) void finish(2); });
+  const watchdog = setTimeout(async () => { console.error('Fixture watchdog'); if (await retirement.retire()) void finish(3); }, 10000);
   child.on('message', async (msg) => {
     if (msg !== 'logical-closed-body-held') throw new Error('Unexpected fixture message');
     sawBody = true;

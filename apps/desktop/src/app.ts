@@ -396,6 +396,7 @@ async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<Sh
   const r = await coordinateShutdown({ flushWindows, releaseWindows: releaseFlushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
   if (r.outcome === "closed" || r.outcome === "forced" || (r.outcome === "timeout" && force)) {
     if (!(await stopBackend())) {
+      shutdownWaiters.clear();
       releaseFlushWindows();
       return "timeout";
     }
