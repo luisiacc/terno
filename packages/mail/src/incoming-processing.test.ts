@@ -253,3 +253,71 @@ describe("incoming processor client", () => {
     expect(terminate).toHaveBeenCalledTimes(1);
   });
 });
+
+it("reconstructs exact transferred UTF16 text, including a surrogate pair crossing a transfer boundary", async () => {
+  const h = harness();
+  try {
+    const pending = h.processor.run(input(), new AbortController().signal);
+    const first = new Uint16Array(32768).fill(65); first[32767] = 0xd83d;
+    const second = new Uint16Array([0xde00, 0x00e9, 13, 10]);
+    const parts = [first, second];
+    const packed = { kind: "mime" as const, message: { ...result.message, text: null, html: null }, textParts: { text: parts } };
+    h.answer(h.hosts[0]!, packed);
+    const parsed = await pending;
+    expect(parsed.message.text === "A".repeat(32767) + "😀é\r\n").toBe(true);
+    expect(parsed).not.toHaveProperty("textParts");
+    expect(parts).toEqual([]);
+    await h.processor.whenIdle();
+  } finally { await h.processor.close(); }
+});
+
+it("rejects a small text view retaining a larger backing buffer and retires that host", async () => {
+  const h = harness();
+  try {
+    const pending = h.processor.run(input(), new AbortController().signal);
+    const outcome = expect(pending).rejects.toMatchObject({ code: "worker-fault" });
+    const backing = new Uint16Array(65536);
+    const packed = { kind: "mime" as const, message: { ...result.message, text: null, html: null }, textParts: { text: [backing.subarray(0, 32768)] } };
+    h.answer(h.hosts[0]!, packed);
+    await outcome;
+    await h.processor.whenIdle();
+    expect(h.hosts[0]!.terminated).toBe(1);
+  } finally { await h.processor.close(); }
+});
+
+it("keeps promotion quarantined until canceled parent text decoding releases its backing buffers", async () => {
+  const { IncomingPipeline } = await import("./incoming");
+  const deliveries: (() => void)[] = [];
+  class HeldChannel {
+    port1 = { onmessage: null as (() => void) | null, close() {} };
+    port2 = { postMessage: () => { deliveries.push(() => this.port1.onmessage?.()); }, close() {} };
+  }
+  vi.stubGlobal("MessageChannel", HeldChannel);
+  const h = harness(), pipeline = new IncomingPipeline(h.processor);
+  let release: (() => void) | undefined;
+  try {
+    release = await pipeline.promote(1, new AbortController().signal);
+    const pending = h.processor.run(input(), new AbortController().signal);
+    const outcome = expect(pending).rejects.toMatchObject({ code: "worker-closed" });
+    const parts = [new Uint16Array(32768).fill(65), new Uint16Array(32768).fill(66)];
+    const packed = { kind: "mime" as const, message: { ...result.message, text: null, html: null }, textParts: { text: parts } };
+    h.answer(h.hosts[0]!, packed);
+    expect(deliveries).toHaveLength(1);
+    const closing = h.processor.close();
+    await outcome;
+    release();
+    let admitted = false;
+    const waiting = pipeline.promote(2, new AbortController().signal).then((owned) => { admitted = true; return owned; });
+    await turn();
+    expect(h.hosts[0]!.terminated).toBe(1);
+    expect(admitted).toBe(false);
+    deliveries[0]!();
+    await closing;
+    (await waiting)();
+    expect(parts).toEqual([]);
+    expect(admitted).toBe(true);
+  } finally {
+    for (const deliver of deliveries) deliver();
+    release?.(); pipeline.close(); await h.processor.close(); vi.unstubAllGlobals();
+  }
+});

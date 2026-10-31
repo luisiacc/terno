@@ -47,6 +47,11 @@ export class IncomingProcessingError extends Error {
   }
 }
 
+/** Exact UTF-16 code units, each backing allocation at most64KiB. */
+export interface IncomingTextParts { text?: Uint16Array[]; html?: Uint16Array[] }
+export type IncomingWireResult = IncomingProcessingResult & { textParts?: IncomingTextParts };
+export const INCOMING_TEXT_UNITS = 32768;
+
 export interface IncomingWorkerRequest {
   type: "process";
   incarnation: number;
@@ -56,7 +61,7 @@ export interface IncomingWorkerRequest {
 }
 export type IncomingWorkerReply =
   | { type: "fault"; code: "worker-fault" }
-  | { type: "result"; incarnation: number; job: number; result: IncomingProcessingResult }
+  | { type: "result"; incarnation: number; job: number; result: IncomingWireResult }
   | { type: "error"; incarnation: number; job: number; code: IncomingProcessingFailureCode };
 
 export interface IncomingWorkerEvents {
@@ -119,12 +124,14 @@ interface WorkerSlot {
   retiring: boolean;
   termination?: Promise<void>;
   retirementFailed?: boolean;
+  restoring?: Promise<void>;
 }
 interface Job {
   id: number;
   slot: WorkerSlot;
   input?: IncomingProcessingInput;
   timer?: ReturnType<typeof setTimeout>;
+  restoring?: boolean;
   signal: AbortSignal;
   abort(): void;
   resolve(result: IncomingProcessingResult): void;
@@ -161,10 +168,11 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     // A canceled startup keeps its slot until the factory answers.
     if (!owned.host) return Promise.resolve();
     const clear = () => { if (slot === owned) slot = undefined; notifyIdle(); };
+    const drained = () => owned.restoring ? owned.restoring.then(clear) : clear();
     try {
       const ending = owned.host.terminate();
-      if (!ending) { clear(); return Promise.resolve(); }
-      owned.termination = ending.then(clear, () => { owned.retirementFailed = true; notifyIdle(); });
+      if (!ending) { const pending = drained(); return owned.termination = pending ?? Promise.resolve(); }
+      owned.termination = ending.then(drained, () => { owned.retirementFailed = true; notifyIdle(); });
     } catch {
       owned.retirementFailed = true;
       owned.termination = Promise.resolve();
@@ -198,6 +206,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     if (!Number.isSafeInteger(value.incarnation) || !Number.isSafeInteger(value.job)) { fault(owned); return; }
     if (value.incarnation !== owned.incarnation || value.job !== job.id) return;
     if (job.signal.aborted) { job.abort(); return; }
+    if (job.restoring) { fault(owned); return; }
     if (value.type === "error" && isIncomingFailureCode(value.code)) {
       const broken = value.code === "worker-fault" || value.code === "worker-unavailable" || value.code === "worker-timeout";
       if (broken) owned.retiring = true;
@@ -207,7 +216,15 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     }
     const result = value.result;
     if (value.type !== "result" || !record(result) || result.kind !== job.input?.kind || !record(result.message) || !Array.isArray(result.message.attachments) || (result.kind === "gmail" && !record(result.metadata))) { fault(owned); return; }
-    finish(job, result as unknown as IncomingProcessingResult);
+    if (result.textParts !== undefined) {
+      job.restoring = true;
+      const restoring = restoreIncomingText(result as unknown as IncomingWireResult, () => {
+        if (active !== job || owned.retiring || slot !== owned || job.signal.aborted) throw canceled();
+      }).then((complete) => {
+        if (active === job && !owned.retiring && slot === owned) finish(job, complete);
+      }, () => { if (active === job) fault(owned); }).finally(() => { if (owned.restoring === restoring) owned.restoring = undefined; });
+      owned.restoring = restoring;
+    } else finish(job, result as unknown as IncomingProcessingResult);
   };
   const post = (job: Job) => {
     const owned = job.slot;
@@ -298,4 +315,39 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
       return closing;
     },
   };
+}
+
+
+async function restoreIncomingText(result: IncomingWireResult, check: () => void): Promise<IncomingProcessingResult> {
+  const fields = result.textParts!;
+  if (!record(fields) || Object.keys(fields).some((key) => key !== "text" && key !== "html")) throw new IncomingProcessingError("worker-fault");
+  const channel = new MessageChannel();
+  try {
+    for (const field of ["text", "html"] as const) {
+      const parts = fields[field];
+      if (parts === undefined) continue;
+      if (!Array.isArray(parts) || !parts.length || result.message[field] !== null) throw new IncomingProcessingError("worker-fault");
+      const levels: (string | undefined)[] = [];
+      for (let index = 0; index < parts.length; index++) {
+        check();
+        const part = parts[index]!;
+        if (!(part instanceof Uint16Array) || !(part.buffer instanceof ArrayBuffer) || !part.length || part.length > INCOMING_TEXT_UNITS || part.byteOffset !== 0 || part.byteLength !== part.buffer.byteLength) throw new IncomingProcessingError("worker-fault");
+        let text = String.fromCharCode(...part), level = 0;
+        while (levels[level] !== undefined) { text = levels[level]! + text; levels[level] = undefined; level++; }
+        levels[level] = text;
+        parts[index] = new Uint16Array(0);
+        await new Promise<void>((resolve) => { (channel.port1 as typeof channel.port1 & { onmessage: (() => void) | null }).onmessage = () => resolve(); channel.port2.postMessage(0); });
+      }
+      parts.length = 0;
+      let text = "";
+      for (let level = levels.length - 1; level >= 0; level--) if (levels[level] !== undefined) text += levels[level];
+      result.message[field] = text;
+    }
+    check();
+    delete result.textParts;
+    return result;
+  } finally {
+    for (const field of ["text", "html"] as const) if (Array.isArray(fields[field])) fields[field]!.length = 0;
+    channel.port1.close(); channel.port2.close();
+  }
 }

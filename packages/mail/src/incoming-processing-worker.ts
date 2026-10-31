@@ -1,5 +1,5 @@
 import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
-import { IncomingProcessingError, incomingInputTransfers, type IncomingGmailMetadata, type IncomingProcessingInput, type IncomingProcessingLimits, type IncomingProcessingResult, type IncomingWorkerReply, type IncomingWorkerRequest } from "./incoming-processing";
+import { IncomingProcessingError, INCOMING_TEXT_UNITS, incomingInputTransfers, type IncomingWireResult, type IncomingGmailMetadata, type IncomingProcessingInput, type IncomingProcessingLimits, type IncomingProcessingResult, type IncomingWorkerReply, type IncomingWorkerRequest } from "./incoming-processing";
 import { parseRaw, parseRawHeaders, type IncomingMimeLimits, type ParsedMessage } from "./mime";
 
 const MIME_LIMITS: IncomingMimeLimits = {
@@ -149,14 +149,14 @@ export async function processIncoming(input: IncomingProcessingInput, limits: In
 
 export async function runIncomingWorkerRequest(request: IncomingWorkerRequest): Promise<IncomingWorkerReply> {
   try {
-    const result = await processIncoming(request.input, request.limits);
+    const result = packIncomingText(await processIncoming(request.input, request.limits));
     return { type: "result", incarnation: request.incarnation, job: request.job, result };
   } catch (error) {
     return { type: "error", incarnation: request.incarnation, job: request.job, code: error instanceof IncomingProcessingError ? error.code : "worker-fault" };
   }
 }
 
-export function incomingResultTransfers(result: IncomingProcessingResult): ArrayBuffer[] {
+export function incomingResultTransfers(result: IncomingWireResult): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>();
   for (const part of result.message.attachments) {
     let bytes = part.bytes;
@@ -164,5 +164,24 @@ export function incomingResultTransfers(result: IncomingProcessingResult): Array
     if (!(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength) part.bytes = bytes = new Uint8Array(bytes);
     buffers.add(bytes.buffer as ArrayBuffer);
   }
+  for (const parts of Object.values(result.textParts ?? {})) for (const part of parts) buffers.add(part.buffer as ArrayBuffer);
   return [...buffers];
+}
+
+
+function packIncomingText(result: IncomingProcessingResult): IncomingWireResult {
+  const packed: IncomingWireResult = result;
+  for (const field of ["text", "html"] as const) {
+    const text = result.message[field];
+    if (!text || text.length <= INCOMING_TEXT_UNITS) continue;
+    const parts: Uint16Array[] = [];
+    for (let start = 0; start < text.length; start += INCOMING_TEXT_UNITS) {
+      const part = new Uint16Array(Math.min(INCOMING_TEXT_UNITS, text.length - start));
+      for (let at = 0; at < part.length; at++) part[at] = text.charCodeAt(start + at);
+      parts.push(part);
+    }
+    (packed.textParts ??= {})[field] = parts;
+    result.message[field] = null;
+  }
+  return packed;
 }

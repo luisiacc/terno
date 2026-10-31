@@ -82,3 +82,23 @@ for (const limit of [65536, 131072]) test(`measures the exact proposed ${limit}-
   expect(records.every((row: { combined: number }) => row.combined === limit)).toBe(true);
   expect(unexpected).toEqual([]);
 });
+
+test("preserves complete large text through actual browser UTF16 transfer and reconstruction", async ({ page, context }) => {
+  const unexpected: string[] = [];
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const result = await page.evaluate(async () => {
+    const module = "/src/web/worker/incoming-runtime.ts";
+    const { createBrowserIncomingProcessor } = await import(/* @vite-ignore */ module);
+    const processor = createBrowserIncomingProcessor();
+    try {
+      const body = "A😀e\u0301\r\n".repeat(120000);
+      const bytes = new TextEncoder().encode(`Content-Type: text/plain; charset=utf-8\r\n\r\n${body}`);
+      const parsed = await processor.run({ kind: "mime", chunks: [bytes] }, new AbortController().signal);
+      return { exact: parsed.message.text === body.replace(/\r\n/g, "\n"), detached: bytes.buffer.byteLength, complete: parsed.message.captureUnavailable === undefined, leakedParts: Object.hasOwn(parsed, "textParts") };
+    } finally { await processor.close(); }
+  });
+  expect(result).toEqual({ exact: true, detached: 0, complete: true, leakedParts: false });
+  expect(unexpected).toEqual([]);
+});

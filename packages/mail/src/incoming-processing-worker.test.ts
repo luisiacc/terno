@@ -105,3 +105,14 @@ it("checks optional result budgets before returning whole cloned text or metadat
   await expect(processIncoming({ kind: "mime", chunks: [bytes(plain)] }, { maxResultMetadataCodeUnits: 2 })).rejects.toMatchObject({ code: "result-limit" });
   expect((await processIncoming({ kind: "mime", chunks: [bytes(plain)] })).message.subject).toBe("ordinary");
 });
+
+it("transfers every exact large-text backing rather than retaining a cloned sender copy", async () => {
+  const reply = await runIncomingWorkerRequest({ type: "process", incarnation: 7, job: 9, input: { kind: "mime", chunks: [bytes("Content-Type: text/plain\r\n\r\n" + "Exact 😀 e\u0301\r\n".repeat(10000))] } });
+  if (reply.type !== "result") throw new Error("Expected complete synthetic text");
+  const parts = Object.values(reply.result.textParts ?? {}).flat();
+  expect(parts.length).toBeGreaterThan(1);
+  expect(parts.every((part) => part.byteOffset === 0 && part.byteLength === part.buffer.byteLength && part.byteLength <= 65536)).toBe(true);
+  const received = structuredClone(reply.result, { transfer: incomingResultTransfers(reply.result) });
+  expect(parts.every((part) => part.buffer.byteLength === 0)).toBe(true);
+  expect(Object.values(received.textParts ?? {}).flat().every((part) => part.buffer.byteLength > 0)).toBe(true);
+});
