@@ -190,3 +190,36 @@ Deviations from the plan:
 - **No false "Future mail too":** the spam snackbar no longer says it after "No, only…" or the menu's "Only this email"; only an active default filter brings that note.
 - **Rules compared as rules:** the builder decides whether an automatic filter was edited by comparing rules (`sameRule`), not JSON text.
 
+## Performance and resource gates (`offers.perf.test.ts`, plus `similar.perf` in both stores)
+
+The mailbox for these gates: 35k messages, one shop sending 19k of them (a third under "Tu pedido N está en camino"). Machine load was about 15 during the run.
+
+**Interactive (p95):**
+- offers after a drag 6.4 ms, after spam 9.6 ms, after archive 9.0 ms (budget 16)
+- a rare numbered subject counted in 8.4 ms (a rare subject without numbers: 13.1)
+- sweep pages 3–5 ms (budget 8)
+- a pattern checked while typing 0.06 ms (budget 2)
+
+**Background:**
+
+| Case | Time | Stall | Heap peak / kept |
+|---|---|---|---|
+| The default's group move (6,265 threads) | 0.66 s | 34 ms | +59 / +4 MB |
+| A pattern filter over all mail (14k threads) | 0.56 s | 25 ms | +64 / +3 MB |
+| The same filter without a pattern | 0.24 s | 11 ms | +49 / +3 MB |
+| Ingest of 1,500 threads, no filters | 2.5 s | 69 ms | kept +25 MB |
+| Ingest of 1,500 threads, 40 automatic filters | 1.5 s | 43 ms | kept +15 MB |
+
+The stall budget is 50 ms. Lists stayed fast throughout: list p95 was ≤ 1.6 ms.
+
+**e2e:**
+- a drag costs a fixed set of requests (the offers twice, the words once, the move once, at most three stop-filing checks)
+- a word toggled three times recounts at most twice
+- nothing is sent in the 3 s after the snackbar closes
+
+**Fixed by these gates:**
+- Counting a numbered subject called JS for every message of the sender (77 ms). A GLOB (SQLite) or the text around the numbers (IndexedDB) now goes first, and counts walk the index and stop at the cap.
+- Pattern applies stalled for 83 ms. Pattern rules now apply in 1,000-id windows, and IndexedDB windows no longer sort every key.
+
+**Seen, not fixed:** applying a filter whose action syncs (star, read, archive) to ~13k existing threads took 24 s and kept ~150 MB of heap. This was under heavy machine load, and it also happens without a pattern: it's `filters.apply`'s sync work, not this plan's. It's worth a look of its own.
+
