@@ -9,7 +9,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -69,7 +69,19 @@ interface Draft {
   enabled: boolean;
   source: Filter["source"];
   rule: FilterRule;
+  /** plan 85: Terno made it; what it was when loaded (an edit of either makes it the user's) */
+  auto?: { name: string; rule: FilterRule };
 }
+
+/** A filter loaded into the builder. */
+const draftOf = (f: Pick<Filter, "name" | "enabled" | "source" | "rule"> & { id?: number; auto?: boolean }): Draft => ({
+  id: f.id,
+  name: f.name,
+  enabled: f.enabled,
+  source: f.source,
+  rule: f.rule,
+  auto: f.auto ? { name: f.name, rule: f.rule } : undefined,
+});
 
 const emptyDraft = (): Draft => ({
   name: "",
@@ -251,7 +263,7 @@ export function FiltersDialog() {
   // "Crear filtro desde este remitente…" opens the builder with its rule
   const [draft, setDraft] = useState<Draft>(() => {
     const prefill = getApp().filterPrefill;
-    return prefill ? { ...emptyDraft(), id: prefill.id, name: prefill.name, rule: prefill.rule, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" } : emptyDraft();
+    return prefill ? draftOf({ ...prefill, enabled: prefill.enabled ?? true, source: prefill.source ?? "manual" }) : emptyDraft();
   });
   // opened from Ajustes → Filtros: closing goes back there
   const [returnTo] = useState(() => getApp().filterPrefill?.returnTo ?? null);
@@ -308,11 +320,14 @@ export function FiltersDialog() {
     if (!valid.success) return;
     setSaving(true);
     try {
-      const f = await client.call("filters.save", { id: draft.id, name: draft.name.trim() || describeCondition(rule.conditions[0]!), enabled: draft.enabled, source: draft.source, rule: valid.data });
+      const name = draft.name.trim() || describeCondition(rule.conditions[0]!);
+      // plan 85: an automatic filter the user changed is theirs now (turning it on or off isn't a change)
+      const adopted = draft.auto && (draft.auto.name !== name || JSON.stringify(draft.auto.rule) !== JSON.stringify(valid.data));
+      const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 84: applying runs in the background (its own progress snack); the dialog is free at once
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
-      setDraft({ ...draft, id: f.id, name: f.name });
+      setDraft(draftOf(f));
       await refresh();
     } catch (error) {
       snack.error(error instanceof Error ? error.message : String(error));
@@ -342,9 +357,12 @@ export function FiltersDialog() {
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            {filters.map((f) => (
-              <div key={f.id} data-testid="filter-item" className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (setDraft({ id: f.id, name: f.name, enabled: f.enabled, source: f.source, rule: f.rule }), setExplanation(null))}>
+            {/* plan 85: the user's, then Terno's under a heading of their own */}
+            {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
+              <Fragment key={f.id}>
+              {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}
+              <div data-testid="filter-item" data-auto={f.auto || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (setDraft(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
                     {f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
@@ -360,6 +378,7 @@ export function FiltersDialog() {
                   }}
                 />
               </div>
+              </Fragment>
             ))}
             {filters.length === 0 && <p className="px-2 py-2 text-xs text-muted-foreground">{t("filters.empty")}</p>}
             {proposals.length > 0 && (

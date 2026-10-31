@@ -189,7 +189,7 @@ export function growSnack(id: string, render: () => ReactNode): boolean {
 }
 
 /** Changes the current snack if it's still `id`: no new entry, the lifetime runs on; `announce` says it again. */
-export function patchSnack(id: string, patch: Partial<Pick<Snack, "message" | "description" | "tone">>, announce = false): void {
+export function patchSnack(id: string, patch: Partial<Pick<Snack, "message" | "description" | "tone" | "secondary">>, announce = false): void {
   const s = useSnack.getState();
   if (s.current?.id !== id) return;
   const next = { ...s.current, ...patch };

@@ -1,3 +1,4 @@
+import { sqlDb } from "../../backend-dev/src/server";
 import { readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { expect, navTo, test } from "./fixtures";
@@ -58,6 +59,39 @@ test.describe("accounts, settings and command palette", () => {
     await page.getByTestId("search-input").focus();
     await page.keyboard.press("Meta+Comma");
     await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("plan 85: Terno's filters sit under “Created for you”; editing one makes it the user's; Turn all off has an Undo", async ({ app: page, server }) => {
+    const ctx = { clientId: "t", origin: "dev" as const };
+    const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+    await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, ctx);
+    await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "recibos@rappi.com" }, always: true, filterName: "Rappi → Facturas" }, ctx);
+    const mine = await server.backend.server.invoke("filters.save", { name: "Boletines", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "news.example" }], actions: [{ type: "archive" }] } }, ctx);
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("palette-input").fill("settings filters");
+    await page.keyboard.press("Enter");
+    const yours = page.getByTestId("settings-filters-yours");
+    const auto = page.getByTestId("settings-filters-auto");
+    await expect(yours.locator(`[data-filter-id="${mine.id}"]`)).toBeVisible();
+    await expect(auto).toContainText("Created for you");
+    await expect(auto).toContainText("Terno made these when you sorted mail. Edit one and it becomes yours.");
+    await expect(auto.getByTestId("settings-filter")).toHaveCount(2);
+
+    // Turn all off, then Undo: both back on
+    await auto.getByTestId("settings-filters-auto-off").click();
+    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(0);
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: "Turned off 2 filters" })).toBeVisible();
+    await auto.getByRole("button", { name: "Undo turning them off" }).click();
+    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).filter((f) => f.auto && f.enabled).length).toBe(2);
+
+    // edited in the builder: the user's now
+    await auto.getByRole("button", { name: "Edit “Uber → Facturas”" }).click();
+    await page.getByTestId("filter-name").fill("Uber receipts");
+    await page.getByTestId("filter-save").click();
+    await expect.poll(async () => (await server.backend.server.invoke("filters.list", {}, ctx)).find((f) => f.name === "Uber receipts")?.auto).toBe(false);
+    await page.keyboard.press("Escape");
+    await expect(yours).toContainText("Uber receipts");
+    await expect(auto.getByTestId("settings-filter")).toHaveCount(1);
   });
 
   test("Settings → Filters: turn off, edit in the builder (closing comes back), delete after confirming", async ({ app: page, server }) => {

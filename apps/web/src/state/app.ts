@@ -66,7 +66,7 @@ export interface AppState {
   /** the thread context menu is open: global shortcuts wait (its own keys apply) */
   menuOpen: boolean;
   /** "Crear filtro desde este remitente…", Ajustes → Filtros → Editar: what the filter builder opens with (an id edits that filter) */
-  filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; returnTo?: "settings" } | null;
+  filterPrefill: { id?: number; name: string; rule: FilterRule; enabled?: boolean; source?: Filter["source"]; auto?: boolean; returnTo?: "settings" } | null;
   /** plan 24: in the List layout, the selected conversation is the page (not just the list's cursor); Split ignores it */
   readerOpen: boolean;
 

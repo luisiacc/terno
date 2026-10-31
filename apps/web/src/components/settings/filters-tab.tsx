@@ -56,7 +56,7 @@ function edit(f: Filter | null) {
   setApp({
     dialog: "filters",
     filterPrefill: f
-      ? { id: f.id, name: f.name, rule: f.rule, enabled: f.enabled, source: f.source, returnTo: "settings" }
+      ? { id: f.id, name: f.name, rule: f.rule, enabled: f.enabled, source: f.source, auto: f.auto, returnTo: "settings" }
       : { name: "", rule: { match: "all", conditions: [{ field: "from", op: "contains", value: "" }], actions: [{ type: "archive" }] }, returnTo: "settings" },
   });
 }
@@ -115,22 +115,79 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
   );
 }
 
-/** Ajustes → Filtros: every filter, on or off, edited in the builder, removed with a confirmation. */
+/** Plan 85: Terno's filters off at once; the undo token that turns back on exactly those (an edit meanwhile wins). */
+async function turnAllOff(filters: Filter[]): Promise<number | null> {
+  try {
+    const r = await client.call("filters.setEnabled", { ids: filters.filter((f) => f.enabled).map((f) => f.id), enabled: false });
+    // said, not offered: the dock is under this dialog, so the Undo sits where the button was
+    snack.success(t("filters.auto.allOff", { count: r.changed }));
+    return r.filterUndo;
+  } catch (e) {
+    snack.error(errorText(e));
+    return null;
+  }
+}
+
+/**
+ * Ajustes → Filtros: the user's filters, then (plan 85) the ones Terno made
+ * when they sorted mail; each on or off, edited in the builder (an edited
+ * automatic one becomes theirs), removed with a confirmation.
+ */
 export function FiltersTab() {
   const [filters, setFilters] = useState<Filter[] | null>(null);
   const refresh = () => void client.call("filters.list", {}).then(setFilters, (e: unknown) => snack.error(errorText(e)));
   useEffect(refresh, []);
+  const yours = filters?.filter((f) => !f.auto);
+  const auto = filters?.filter((f) => f.auto) ?? [];
+  const on = auto.filter((f) => f.enabled).length;
+  /** "Turn all off" just ran: its Undo takes the button's place until something else changes */
+  const [undoOff, setUndoOff] = useState<number | null>(null);
   return (
     <div data-testid="filters-tab">
-      <SettingsGroup title={t("settings.tab.filters")} footer={t("filters.footer")}>
-        {filters?.map((f) => <FilterItem key={f.id} filter={f} onChange={refresh} />)}
-        {filters?.length === 0 && <p className="py-3 text-sm text-muted-foreground">{t("filters.empty")}</p>}
+      <SettingsGroup title={t("filters.group.yours")} footer={t("filters.footer")} testId="settings-filters-yours">
+        {yours?.map((f) => <FilterItem key={f.id} filter={f} onChange={refresh} />)}
+        {yours?.length === 0 && <p className="py-3 text-sm text-muted-foreground">{t("filters.empty")}</p>}
         <div className="py-1.5">
           <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-filter-new" onClick={() => edit(null)}>
             <Plus /> {t("filters.newFilter")}
           </Button>
         </div>
       </SettingsGroup>
+      {auto.length > 0 && (
+        <SettingsGroup
+          testId="settings-filters-auto"
+          title={
+            <span className="flex items-center justify-between gap-2">
+              {t("filters.group.auto")}
+              {undoOff !== null ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="-my-1 font-normal"
+                  data-testid="settings-filters-auto-undo"
+                  aria-label={t("filters.auto.allOffUndo")}
+                  onClick={() => {
+                    const filterUndo = undoOff;
+                    setUndoOff(null);
+                    void client.call("similar.undo", { undoId: null, filterUndo }).then(refresh, (e: unknown) => snack.error(errorText(e)));
+                  }}
+                >
+                  {t("common.undo")}
+                </Button>
+              ) : (
+                on > 1 && (
+                  <Button variant="ghost" size="xs" className="-my-1 font-normal" data-testid="settings-filters-auto-off" onClick={() => void turnAllOff(auto).then((u) => (setUndoOff(u), refresh()))}>
+                    {t("filters.auto.turnAllOff")}
+                  </Button>
+                )
+              )}
+            </span>
+          }
+          footer={t("filters.group.autoFooter")}
+        >
+          {auto.map((f) => <FilterItem key={f.id} filter={f} onChange={() => (setUndoOff(null), refresh())} />)}
+        </SettingsGroup>
+      )}
     </div>
   );
 }

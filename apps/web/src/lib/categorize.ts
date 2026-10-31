@@ -9,7 +9,7 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, inPlainInbox, setApp, setCategories, type ScopeSelection } from "~/state/app";
 import { deferred, trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
-import { dismissSnack, registerUndo, snack } from "~/lib/snack";
+import { dismissSnack, patchSnack, registerUndo, snack, useSnack } from "~/lib/snack";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -216,9 +216,47 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
   try {
     await client.call("categories.removeThreads", { categoryId, threadIds: [...threadIds], reason });
     refreshReader(threadIds);
+    // the user took it out (an undo didn't): Terno's filter would only file the next one back
+    if (reason === "user") void offerStopFiling(categoryId, threadIds);
   } catch (error) {
     snack.error(t("category.removeFailed", { error: errorText(error) }));
     void reloadList({ keepSelection: true });
+  }
+}
+
+/**
+ * Plan 85: mail the user took out of a category that one of Terno's filters
+ * files there. The snack offers to stop it ("Stop filing"), with its own
+ * Undo. On the removal's own snack when it has one (`snackId`, while it's
+ * still up), else a snack of its own; nothing when no filter does.
+ */
+export async function offerStopFiling(categoryId: number, threadIds: readonly number[], snackId?: string): Promise<void> {
+  const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
+  let found: { id: number; name: string }[];
+  try {
+    found = (await client.call("filters.autoFor", { categoryId, threadIds: [...threadIds].slice(0, 200) })).filters;
+  } catch {
+    return;
+  }
+  if (found.length === 0) return;
+  const action = { label: t("filters.stop.action"), name: t("filters.stop.name", { category: name }), onClick: () => void stopFiling(found.map((f) => f.id), name) };
+  // the removal's snack still up: the offer joins it; gone (or replaced): one of its own
+  if (snackId && useSnack.getState().current?.id === snackId) patchSnack(snackId, { secondary: action });
+  else snack(t("filters.stop.message", { category: name }), { duration: 10_000, action });
+}
+
+async function stopFiling(ids: number[], category: string): Promise<void> {
+  try {
+    const { filterUndo } = await client.call("filters.setEnabled", { ids, enabled: false });
+    snack.success(t("filters.stop.done", { category }), {
+      duration: 8000,
+      action:
+        filterUndo === null
+          ? undefined
+          : { label: t("common.undo"), name: t("filters.stop.undo", { category }), onClick: () => void client.call("similar.undo", { undoId: null, filterUndo }).catch((e: unknown) => snack.error(errorText(e))) },
+    });
+  } catch (error) {
+    snack.error(t("filters.stop.failed", { error: errorText(error) }));
   }
 }
 
@@ -250,6 +288,7 @@ export async function removeSenderFromCategory(categoryId: number, email: string
     // undone with z before the answer came: nothing to say
     if (undo.state !== "ready") return dismissSnack(id);
     snack.success(t("category.removed", { count: removed.length, category: name }), { id, duration: 8000, action: batchId === null ? undefined : undoAction(undo, t("category.undoRemove", { category: name })) });
+    if (removed.length) void offerStopFiling(categoryId, removed.slice(0, 200), id);
   } catch (error) {
     // part of it may be done (the backend says which batch): Undo still takes that back
     const batchId = (error as { details?: { batchId?: unknown } }).details?.batchId;

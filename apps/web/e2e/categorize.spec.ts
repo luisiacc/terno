@@ -207,6 +207,22 @@ test.describe("everything from a sender, out of a category (plan 77)", () => {
   });
 });
 
+test.describe("Terno's filters (plan 85)", () => {
+  test("taking mail out of a category its filter files offers to stop filing; Undo keeps it filing", async ({ app: page, server }) => {
+    const { db, facturas, target } = uberSetup(server);
+    await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, { clientId: "t", origin: "dev" });
+    const enabled = () => db.get<{ enabled: number }>("SELECT enabled FROM filters WHERE name = 'Uber → Facturas'")!.enabled;
+    await selectThread(page, target, "from:uber.receipts@uber.com");
+    await page.getByTestId("reader").getByRole("button", { name: "Remove Facturas" }).click();
+    const offer = toast(page, "Removed from Facturas. A filter Terno made files mail like this there.");
+    await expect(offer).toBeVisible();
+    await offer.getByRole("button", { name: "Stop filing mail like this into Facturas" }).click();
+    await expect.poll(enabled).toBe(0);
+    await toast(page, "Mail like this won’t go to Facturas anymore").getByTestId("snack-action").click();
+    await expect.poll(enabled).toBe(1);
+  });
+});
+
 test.describe("everything about X and Y", { tag: "@design" }, () => {
   test("topic chips recount as they toggle, View previews the query, 4 files it", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);
