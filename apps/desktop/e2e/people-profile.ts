@@ -45,7 +45,10 @@ export function assertUpgradeSchema(db: Db): void {
   assert.equal(db.all<{ name: string }>("PRAGMA table_info(categories)").some((column) => column.name === "show_in_inbox"), true);
   assert.deepEqual(db.all<{ name: string }>("PRAGMA index_info(threads_category_counts)").map((column) => column.name),
     ["id", "unread_count"]);
-  assert.match(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'threads_category_counts'")?.sql ?? "", /WHERE in_trash = 0 AND in_spam = 0$/i);
+  const index = db.get<{ type: string; tbl_name: string; sql: string }>("SELECT type, tbl_name, sql FROM sqlite_master WHERE name = 'threads_category_counts'");
+  assert.equal(index?.type, "index");
+  assert.equal(index?.tbl_name, "threads");
+  assert.match(index.sql, /WHERE in_trash = 0 AND in_spam = 0$/i);
 }
 
 export function packagedSchemaVersion(sourceMigrations = MIGRATIONS): number {

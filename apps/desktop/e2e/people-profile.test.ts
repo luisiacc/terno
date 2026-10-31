@@ -54,3 +54,27 @@ test("source and built schema witnesses reject omitted or no-op v31/v32 even wit
     } finally { db.close(); }
   }
 });
+
+const decoyMigrations = MIGRATIONS.map((migration) => migration.version === 32 ? {
+  ...migration,
+  sql: "CREATE TABLE decoy (id INTEGER, unread_count INTEGER, in_trash INTEGER, in_spam INTEGER); CREATE INDEX threads_category_counts ON decoy(id, unread_count) WHERE in_trash = 0 AND in_spam = 0;",
+} : migration);
+
+test("source schema witness rejects a matching index on a decoy table", async () => {
+  const { packagedSchemaVersion } = await import("./people-profile");
+  assert.throws(() => packagedSchemaVersion(decoyMigrations));
+});
+
+test("packaged schema witness rejects a matching index on a decoy table with current version", async () => {
+  const { assertPackagedUpgrade } = await import("./people-profile");
+  const dir = mkdtempSync("/tmp/terno-people-decoy-");
+  const path = join(dir, "terno.db");
+  try {
+    const db = new Db(nodeSqliteDriver, path);
+    try {
+      for (const migration of decoyMigrations) db.exec(migration.sql);
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } finally { db.close(); }
+    assert.throws(() => assertPackagedUpgrade(path));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
