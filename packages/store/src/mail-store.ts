@@ -192,6 +192,7 @@ export interface SendCommand {
 
 /** Replaces ProviderContext.db: what providers read and write besides syncing through the backend. */
 export interface ProviderStore {
+  repairs?: Pick<import("./capture-repair").CaptureRepairs, "get" | "list">;
   pendingFlagSnapshots(request: FlagSnapshotRequest): Promise<FlagSnapshotPage>;
   messageByProviderId(providerMsgId: string): Promise<{ id: number; subject: string; fromEmail: string } | null>;
   /** Scan at most 50 account/provider keys, then exclude local rows. next is the last scanned key; absent only on an empty scan. */
@@ -309,6 +310,7 @@ export interface OwnerDecision {
  * touched ids describe what already committed.
  */
 export interface MailStore {
+  captureRepairs: import("./capture-repair").CaptureRepairs;
   readonly capabilities: StoreCapabilities;
   readonly isOpen: boolean;
   close(): Promise<void>;
@@ -354,7 +356,7 @@ export interface MailStore {
     beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size" }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
     remove(messageIds: readonly number[], check?: () => void): Promise<{ touched: number[] }>;

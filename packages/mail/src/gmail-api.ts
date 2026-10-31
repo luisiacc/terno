@@ -413,12 +413,17 @@ interface IncomingResource {
   release(): void;
 }
 
+class IncomingCaptureRefusal extends ProviderError {
+  constructor(readonly reason: import("@terno/core").CaptureReason) { super(L("errors.mail.processingComplex"), false); }
+}
+
 class IncomingResourceError extends ProviderError {
   constructor(readonly code: string, message: ReturnType<typeof L>) { super(message, false); }
   override get expected(): boolean { return true; }
 }
 
 function processingError(error: IncomingProcessingError | ResponseBodyLimitError): ProviderError {
+  if (error instanceof IncomingProcessingError && error.code === "mime-limit-parts") return new IncomingCaptureRefusal("mime-parts");
   if (error instanceof ResponseBodyLimitError || error.code === "input-limit" || error.code === "result-limit") return new IncomingResourceError("input-limit", L("errors.mail.processingLimit"));
   if (error.code.startsWith("malformed-")) return invalidResponse();
   if (error.code === "worker-timeout") return new IncomingResourceError(error.code, L("errors.mail.processingTimedOut"));
@@ -695,6 +700,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         };
         let release: (() => void) | undefined;
         let resource: IncomingResource | undefined;
+        const locator = { kind: "gmail" as const, providerId: id };
+        const repair = await store.repairs?.get(accountId, locator);
+        if (repair?.state === "blocked") return;
         try {
           release = ctx.incoming ? await ctx.incoming.acquire(accountId, pass.signal, reset) : undefined;
           check();
@@ -704,7 +712,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             m = resource.metadata;
           } catch (error) {
             // Enumeration isn't a snapshot: a message may disappear before its download.
-            if (error instanceof GmailApiError && error.resource === `/messages/${id}?format=raw` && error.status === 404) { gone.add(id); return; }
+            if (error instanceof GmailApiError && error.resource === `/messages/${id}?format=raw` && error.status === 404) { await sink.retireCapture?.(locator); gone.add(id); return; }
+            if (error instanceof IncomingCaptureRefusal && sink.blockCapture) {
+              check(); await sink.blockCapture(locator, error.reason, repair?.revision ?? 0); check(); return;
+            }
             throw error;
           }
           check();
@@ -713,6 +724,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           const labels = m.labelIds ?? [];
           const st = labelState(labels);
           const admitted = enqueue({
+            ...(repair && { repair: { key: repair.key, revision: repair.revision } }),
             accountId,
             providerMsgId: m.id,
             providerThreadId: m.threadId,
@@ -979,6 +991,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     sink.check();
     let removals: number[] = [];
     for (const gid of deleted) {
+      await sink.retireCapture?.({ kind: "gmail", providerId: gid });
       const id = await known(gid);
       if (id !== undefined) removals.push(id);
       if (removals.length === 50) { sink.check(); await sink.removeMessages(removals); removals = []; }
@@ -1059,6 +1072,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       sink.check();
       await captureAttachments(sink);
+      sink.check();
+      const retry = await store.repairs?.list(accountId, "", "pending");
+      if (retry?.items.length) await fetchFull(retry.items.flatMap((r) => r.locator.kind === "gmail" ? [r.locator.providerId] : []), sink);
       sink.check();
       if (malformed) throw malformed;
     },

@@ -1,3 +1,5 @@
+import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
+import { completeCapture, retryCapture } from "@terno/store";
 import { requireSqlGmailRefresh } from "./ingest";
 import { prepareRecipientCorrespondents, prepareRecipientFts } from "./recipient-fts-preparation";
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
@@ -434,7 +436,8 @@ export class SqlMailStore implements MailStore {
       return this.db.tx(() => {
         check?.();
         const flagBefore = flagEpochs(sqlFlags(this.db));
-        const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
+        for (const m of staged) completeCapture(sqlCaptureStorage(this.db), m.accountId, m.repair);
+          const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         if (applyFilters) {
@@ -447,11 +450,13 @@ export class SqlMailStore implements MailStore {
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       });
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check }) => {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
-        const flagBefore = flagEpochs(sqlFlags(this.db));
+        check?.();
+          if (accountId !== undefined) completeCapture(sqlCaptureStorage(this.db), accountId, repair);
+          const flagBefore = flagEpochs(sqlFlags(this.db));
         if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
         if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
@@ -633,6 +638,8 @@ export class SqlMailStore implements MailStore {
 
   // ───────────────────────────── compose ─────────────────────────────
 
+  get captureRepairs(): MailStore["captureRepairs"] { return sqlCaptureRepairs(this.db); }
+
   readonly attachments: MailStore["attachments"] = {
     current: async (accountId, message) => this.db.all<{ filename: string; mime: string; size: number; assetId?: string; contentId: string | null }>(
       `SELECT a.filename, a.mime, a.size, a.asset_id AS assetId, a.content_id AS contentId FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.account_id = ? AND ${"id" in message ? "m.id" : "m.provider_msg_id"} = ? ORDER BY a.id`, accountId, "id" in message ? message.id : message.providerMsgId,
@@ -640,6 +647,7 @@ export class SqlMailStore implements MailStore {
     retry: async (accountId, messageId) => this.db.tx(() => {
       const r = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId);
       if (r?.account_id !== accountId) throw assetError();
+      for (const repair of this.db.all<import("@terno/store").CaptureRepairRow>("SELECT * FROM capture_repairs WHERE account_id=? AND message_id=? AND state='blocked'", accountId,messageId)) retryCapture(sqlCaptureStorage(this.db),accountId,repair.key,repair.revision);
       this.db.run("UPDATE messages SET attachments_captured = 0 WHERE id = ?", messageId);
     }),
     create: async (p) => {

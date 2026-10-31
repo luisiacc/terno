@@ -74,6 +74,15 @@ export class Evictions {
     }
   }
 
+  async capture(accountId: number, pass: number, providerId: string, write: () => Promise<void>): Promise<void> {
+    while (this.current) await this.current.catch(() => {});
+    const removed = this.ids.get(accountId);
+    if (removed?.has(providerId) && (this.running || pass <= this.endSeq)) return;
+    const pending = write();
+    this.writes.add(pending);
+    try { await pending; } finally { this.writes.delete(pending); }
+  }
+
   end(): void {
     this.running = false;
     this.endSeq = this.seq;

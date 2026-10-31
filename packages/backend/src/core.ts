@@ -1,3 +1,4 @@
+import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
 import { copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission } from "@terno/store";
@@ -754,6 +755,15 @@ export class BackendCore {
     this.attention.counts(counts);
   }
 
+  async retryCapture(accountId: number, key: string, revision: number): Promise<import("@terno/core").CaptureRepair | null> {
+    const life = this.lifetime(accountId), credentials = this.credentialsOf(accountId);
+    const check = () => { this.assertCurrent(life); if (credentials !== this.credentialsOf(accountId)) throw new Error("Capture identity changed"); };
+    await this.accountWrite(life, () => this.store.captureRepairs.retry(accountId, key, revision, check));
+    await this.syncAccount(accountId);
+    check();
+    return this.store.captureRepairs.get(accountId, captureLocator(key));
+  }
+
   async emitAccounts(): Promise<void> {
     const accounts = await this.store.accounts.list();
     this.server.emit("accounts", accounts);
@@ -1073,6 +1083,10 @@ export class BackendCore {
     const write = <T,>(fn: () => Promise<T>) => this.accountWrite(life, fn);
     const locations = store.locations;
     return {
+      repairs: {
+        get: (_account, locator) => read(() => store.repairs!.get(life.id, locator)),
+        list: (_account, after, state) => read(() => store.repairs!.list(life.id, after, state)),
+      },
       messageByProviderId: (id) => read(() => store.messageByProviderId(id)),
       syncedMessagePage: (after) => read(() => store.syncedMessagePage(after)),
       syncedMessages: () => read(() => store.syncedMessages()),
@@ -1305,6 +1319,16 @@ export class BackendCore {
       const windowDays = before?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
       const sink: SyncSink = {
         signal: life.abort.signal,
+        blockCapture: async (locator, reason, revision) => {
+          checkCurrent();
+          const write = () => this.accountWrite(life, () => this.store.captureRepairs.block(accountId, locator, reason, revision, checkCurrent));
+          if (locator.kind === "gmail") await this.evictions.capture(accountId, pass, locator.providerId, write);
+          else await write();
+        },
+        retireCapture: async (locator) => {
+          checkCurrent();
+          await this.accountWrite(life, () => this.store.captureRepairs.retire(accountId, locator, checkCurrent));
+        },
         ingest: async (messages, o) => {
           await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass });
         },
@@ -1325,7 +1349,7 @@ export class BackendCore {
           this.assertCurrent(life);
           const classifier = await this.classifier();
           checkCurrent();
-          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, captureUnavailable: capture?.captureUnavailable }));
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkCurrent }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);

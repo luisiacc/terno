@@ -2,6 +2,22 @@ import type { LocaleCheck } from "../types";
 
 /** Español (es-MX). Same keys, placeholders and tags as en.ts: the type check at the bottom enforces it. */
 const es = {
+  "capture.capacity": "Se alcanzó la capacidad de reparación. Reintenta los mensajes o elimínalos con tu proveedor de correo antes de sincronizar de nuevo.",
+  "capture.changed": "Esta reparación cambió. Actualiza la lista e inténtalo de nuevo.",
+  "capture.title": "Mensajes que necesitan reparación",
+  "capture.hint": "Estos mensajes siguen en tu servidor de correo. El resto del correo puede sincronizarse mientras esperan. Reintenta cuando cambie el mensaje de origen o el analizador.",
+  "capture.error": "No se pudo actualizar la reparación. Actualiza la lista e inténtalo de nuevo.",
+  "capture.loading": "Cargando reparaciones…",
+  "capture.empty": "No hay mensajes que necesiten reparación.",
+  "capture.item": "Mensaje {number}",
+  "capture.complete": "Ya no necesita reparación.",
+  "capture.pending": "Reintento solicitado. Sincroniza la cuenta para continuar.",
+  "capture.parts": "Este mensaje tiene más partes MIME de las que este dispositivo puede procesar.",
+  "capture.depth": "Este mensaje está demasiado anidado para procesarlo de forma segura.",
+  "capture.retry": "Reintentar",
+  "capture.refresh": "Actualizar lista",
+  "capture.next": "Página siguiente",
+
   "attachments.bodyUnavailable": "Este mensaje supera el límite de contenido local. Sus encabezados están guardados; puedes leer el mensaje completo con tu proveedor de correo.",
   "attachments.noBody": "Este mensaje no tiene texto.",
   "attachments.connectBeforeImport": "Conecta la cuenta de correo del borrador antes de importar sus adjuntos.",

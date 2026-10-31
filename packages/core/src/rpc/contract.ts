@@ -772,6 +772,8 @@ export const contract = {
     }),
   ),
   /** null: the draft is gone (sent or discarded elsewhere). A stale baseRevision never overwrites: it saves a new draft. */
+  "captureRepairs.list": m<import("../capture-repair").CaptureRepairPage>()(z.object({ accountId: id, after: z.string().max(1048576).optional() }).strict()),
+  "captureRepairs.retry": m<{ repair: import("../capture-repair").CaptureRepair | null }>()(z.object({ accountId: id, key: z.string().max(1048576), revision: z.number().int().nonnegative() }).strict(), { timeoutMs: 120_000 }),
   "attachments.retry": m<{ ok: true }>()(z.object({ accountId: id, messageId: id }).strict(), { timeoutMs: 120_000 }),
   "attachments.create": m<AttachmentRef>()(z.object({ accountId: id, filename: z.string().max(1000), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional() }).strict()),
   "attachments.append": m<{ ok: true }>()(assetRequest.extend({ index: z.number().int().min(0).max(384), dataBase64: z.string().max(65536) }).strict()),

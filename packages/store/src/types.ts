@@ -24,6 +24,7 @@ export interface IncomingLocation {
 }
 
 export interface IncomingMessage {
+  repair?: import("@terno/core").CaptureTicket;
   accountId: number;
   providerMsgId: string | null;
   /** Gmail threadId; when null, threading uses RFC headers */

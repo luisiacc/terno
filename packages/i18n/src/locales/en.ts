@@ -8,6 +8,22 @@
  * - `<b>…</b>`: rich text, rendered by rich()/richT() callbacks
  */
 const en = {
+  "capture.capacity": "Message repair capacity reached. Retry messages or remove them with your mail provider before syncing again.",
+  "capture.changed": "This repair changed. Refresh the list and try again.",
+  "capture.title": "Messages needing repair",
+  "capture.hint": "These messages remain on your mail server. Other mail can sync while they wait. Retry after the source or parser has changed.",
+  "capture.error": "Could not update message repair. Refresh the list and try again.",
+  "capture.loading": "Loading message repair…",
+  "capture.empty": "No messages need repair.",
+  "capture.item": "Message {number}",
+  "capture.complete": "No longer needs repair.",
+  "capture.pending": "Retry requested. Sync the account to continue.",
+  "capture.parts": "This message has more MIME parts than this device can process.",
+  "capture.depth": "This message is nested too deeply to process safely.",
+  "capture.retry": "Retry",
+  "capture.refresh": "Refresh list",
+  "capture.next": "Next page",
+
   "attachments.bodyUnavailable": "This message exceeds the local content limit. Its headers are saved; you can read the full message with your mail provider.",
   "attachments.noBody": "This message has no text body.",
   "attachments.connectBeforeImport": "Connect the draft’s mail account before importing its attachments.",

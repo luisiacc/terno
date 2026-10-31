@@ -124,12 +124,14 @@ export class ProviderAuthError extends ProviderError {
 
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
 export interface SyncSink {
+  blockCapture?(locator: import("@terno/core").CaptureLocator, reason: import("@terno/core").CaptureReason, revision: number): Promise<void>;
+  retireCapture?(locator: import("@terno/core").CaptureLocator): Promise<void>;
   /**
    * `live` (plan 41): the server says these are new since the last cursor (Gmail's history, IMAP's
    * UIDs past a known uidnext), not a first sync, a resync or a re-fetch. Only live mail may notify.
    */
   ingest(messages: IncomingMessage[], o?: { live?: boolean }): Promise<void>;
-  setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { captureUnavailable?: "size" }): Promise<void>;
+  setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket }): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
   /** Applies provider state, preserving fields affected by queued/running local operations. */
   updateFlags(updates: FlagUpdate[], o?: { authoritative?: false }): Promise<void>;

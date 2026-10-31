@@ -1,3 +1,4 @@
+import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +41,8 @@ it("the emitted worker refuses the real existing MIME part limit, with a valid 1
 async function mailbox(kind: "SQL" | "IndexedDB") {
   const unexpected: string[] = [], requests: URL[] = [];
   const messages = new Map([resource("a"), resource("b")].map((m) => [m.id, m]));
-  let additions: string[] = [], transient = false;
+  let additions: string[] = [], transient = false, removed = false;
+  const deletedTerminal="90071992547409930004";
   let held: { entered: ReturnType<typeof gate>; release: ReturnType<typeof gate> } | undefined;
   // Native Request interception precedes construction of the managed fetchGoogle boundary.
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -55,7 +57,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     if (path === "/messages" && url.searchParams.size === 3 && url.searchParams.get("includeSpamTrash") === "true" && url.searchParams.get("maxResults") === "500" && /^after:\d+$/.test(url.searchParams.get("q") ?? "")) return Response.json({ messages: [...messages.keys()].map((id) => ({ id })) });
     if (path === "/history") {
       const start = url.searchParams.get("startHistoryId");
-      if (url.searchParams.get("maxResults") !== "500" || url.searchParams.getAll("historyTypes").sort().join(",") !== "labelAdded,labelRemoved,messageAdded,messageDeleted" || url.searchParams.size !== 6 || (start !== base && start !== terminal)) return refuse();
+      if (url.searchParams.get("maxResults") !== "500" || url.searchParams.getAll("historyTypes").sort().join(",") !== "labelAdded,labelRemoved,messageAdded,messageDeleted" || url.searchParams.size !== 6 || (start !== base && start !== terminal && start !== deletedTerminal)) return refuse();
+      if(removed)return Response.json({historyId:deletedTerminal,...(start!==deletedTerminal && {history:[{id:deletedTerminal,messagesDeleted:[{message:{id:"p"}}]}]})});
       return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })) }] } : {}) });
     }
     const id = path.slice("/messages/".length), format = url.searchParams.get("format");
@@ -78,17 +81,21 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   let backend = await open(); await backend.ready;
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
   const runs: Promise<void>[] = [];
+  const clients: RpcClient[] = [];
   cleanup.push(async () => {
     held?.release.release(); await Promise.allSettled(runs);
+    for(const client of clients) client.close();
     try { expect(unexpected).toEqual([]); expect(backend.net.googlePending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); }
   });
   const rows = async () => (await backend.store.debug.snapshot()).messages;
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;
   return {
     account, rows, cursor, requests, messages,
+    rpc() { const [local,remote]=createMemoryTransportPair(); backend.connect(remote,{clientId:"repair",origin:"renderer"}); const client=new RpcClient(local);clients.push(client);return client; },
     get backend() { return backend; },
     sync() { const run = backend.syncAccount(account.id); runs.push(run); return run; },
     add(files: number, failRead = false) { transient = failRead; messages.set("p", resource("p", files)); messages.set("c", resource("c")); additions = ["a", "p", "c"]; },
+    deletePoison() { removed=true; messages.delete("p"); },
     hold() { held = { entered: gate(), release: gate() }; return held; },
     async reopen() { await backend.stop(); backend = await open(); await backend.ready; },
     async cache() {
@@ -114,6 +121,43 @@ describe.each(["SQL", "IndexedDB"] as const)("%s durable malformed-message recov
     await t.reopen();
     expect.soft((await t.rows()).map((m) => m.providerMsgId).sort()).toEqual(["a", "b", "c"]);
     expect.soft(await t.cursor()).toEqual({ historyId: terminal });
+    const page=await t.rpc().call("captureRepairs.list",{accountId:t.account.id});
+    expect(page.items).toMatchObject([{locator:{kind:"gmail",providerId:"p"},state:"blocked",reason:"mime-parts"}]);
+    expect((await t.backend.store.accounts.get(t.account.id))!.syncState.status).toBe("idle");
+    const reads=t.requests.filter(u=>u.pathname.endsWith("/messages/p") && u.searchParams.get("format")==="raw").length;
+    await t.sync();expect(t.requests.filter(u=>u.pathname.endsWith("/messages/p") && u.searchParams.get("format")==="raw")).toHaveLength(reads);
+    await t.rpc().call("captureRepairs.retry",{accountId:t.account.id,key:page.items[0]!.key,revision:0});
+    expect((await t.backend.store.accounts.get(t.account.id))!.syncState.lastError).toBeNull();
+    expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toMatchObject([{state:"blocked",revision:1}]);
+    t.add(1,true);
+    await t.rpc().call("captureRepairs.retry",{accountId:t.account.id,key:page.items[0]!.key,revision:1});
+    expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toMatchObject([{state:"pending",revision:2}]);
+    t.add(1);await t.sync();
+    expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toEqual([]);
+    expect((await t.rows()).map(m=>m.providerMsgId).sort()).toEqual(["a","b","c","p"]);
+  });
+
+  it.each(["before publication","after publication"] as const)("retains history at uncertain %s and replays durable ownership after reopen",async(mode)=>{
+    const t=await mailbox(kind);await t.sync();const cached=await t.cache();t.add(1001);
+    const real=t.backend.store.captureRepairs;
+    const getter=vi.spyOn(t.backend.store,"captureRepairs","get").mockReturnValue({...real,block:async(...args)=>{
+      if(mode==="before publication")throw new Error("Synthetic publication refusal");
+      await real.block(...args);throw new Error("Synthetic lost publication acknowledgement");
+    }});
+    await t.sync();expect(await t.cursor()).toEqual({historyId:base});
+    expect((await t.cache()).filter(m=>["a","b"].includes(m.row.providerMsgId!))).toEqual(cached);
+    expect((await real.list(t.account.id)).items).toHaveLength(mode==="before publication"?0:1);
+    getter.mockRestore();await t.reopen();await t.sync();
+    expect(await t.cursor()).toEqual({historyId:terminal});expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toMatchObject([{state:"blocked"}]);
+    expect((await t.rows()).map(m=>m.providerMsgId).sort()).toEqual(["a","b","c"]);
+  });
+
+  it("retires rowless repair only on authoritative history deletion and preserves cached siblings",async()=>{
+    const t=await mailbox(kind);await t.sync();t.add(1001);await t.sync();const cached=await t.cache();
+    expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toHaveLength(1);
+    t.deletePoison();await t.sync();expect(await t.cursor()).toEqual({historyId:"90071992547409930004"});
+    expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toEqual([]);expect(await t.cache()).toEqual(cached);
+    await t.reopen();expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toEqual([]);expect(await t.cache()).toEqual(cached);
   });
 
   it("accepts the valid 100-file neighbor and persists exact capture across graceful reopen", async () => {
@@ -137,15 +181,16 @@ describe.each(["SQL", "IndexedDB"] as const)("%s durable malformed-message recov
 
   it("retains an existing legacy pending capture and its cached body across refusal and reopen", async () => {
     const t = await mailbox(kind); await t.sync(); const cached = await t.cache();
-    await t.backend.ingestSliced([{ accountId: t.account.id, providerMsgId: "p", providerThreadId: "shared", rfcMessageId: "p@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Shared", date: 1, snippet: "Legacy", bodyText: "Previously cached exact body", bodyHtml: "<p>Previously cached exact HTML</p>", bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: true, size: 5 }]);
+    await t.backend.ingestSliced([{ accountId: t.account.id, providerMsgId: "p", providerThreadId: "shared", rfcMessageId: "p@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Shared", date: 1, snippet: "Legacy", bodyText: "Previously cached exact body", bodyHtml: "<p>Previously cached exact HTML</p>", bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: true, gmailLabels:["INBOX","UNREAD"], size: 5 }]);
     const p = (await t.rows()).find((m) => m.providerMsgId === "p")!;
     const pending = async () => t.backend.store.providerStore(t.account.id).pendingAttachmentBodies(50);
     expect(await pending()).toEqual([{ id: p.id, providerMsgId: "p" }]);
     const before = await t.cache(); t.messages.set("p", resource("p", 1001)); await t.sync();
-    expect(await t.cache()).toEqual(before); expect(await pending()).toEqual([{ id: p.id, providerMsgId: "p" }]);
+    expect(await t.cache()).toEqual(before); expect(await pending()).toEqual([]);
     expect(await t.cursor()).toEqual({ historyId: base });
-    await t.reopen(); expect(await t.cache()).toEqual(before); expect(await pending()).toEqual([{ id: p.id, providerMsgId: "p" }]);
-    t.messages.set("p", resource("p")); await t.sync();
+    await t.reopen(); expect(await t.cache()).toEqual(before); expect(await pending()).toEqual([]);
+    t.messages.set("p", resource("p"));
+    await t.backend.store.attachments.retry(t.account.id,p.id); await t.sync();
     expect(await pending()).toEqual([]);
     const after = await t.cache(); expect(after.filter((m) => m.row.id !== p.id)).toEqual(cached);
     expect(after.find((m) => m.row.id === p.id)?.message).toMatchObject({ bodyText: "Exact body p", attachmentState: "complete" });

@@ -1046,6 +1046,28 @@ ALTER TABLE filters ADD COLUMN auto INTEGER NOT NULL DEFAULT 0 CHECK (auto IN (0
 -- only SimilarFilters ever saved a manual filter with a learned key: those are Terno's (a partial backfill, on purpose)
 UPDATE filters SET auto = 1 WHERE source = 'manual' AND learned_key IS NOT NULL;
 ` },
+  { version: 36, name: "durable incoming capture repair", sql: `
+CREATE TABLE capture_repair_usage(account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE, count INTEGER NOT NULL DEFAULT 0, bytes INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE capture_repairs(account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, key TEXT NOT NULL, message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE, locator TEXT NOT NULL, reason TEXT NOT NULL CHECK(reason IN ('mime-parts','mime-depth')), state TEXT NOT NULL CHECK(state IN ('blocked','pending')), revision INTEGER NOT NULL, bytes INTEGER NOT NULL, PRIMARY KEY(account_id,key));
+CREATE INDEX capture_repair_state ON capture_repairs(account_id,state,key);
+CREATE INDEX capture_repair_message ON capture_repairs(message_id,state);
+CREATE TRIGGER capture_repair_added AFTER INSERT ON capture_repairs BEGIN
+ INSERT INTO capture_repair_usage(account_id,count,bytes) VALUES(NEW.account_id,1,NEW.bytes) ON CONFLICT(account_id) DO UPDATE SET count=count+1,bytes=bytes+NEW.bytes;
+END;
+CREATE TRIGGER capture_repair_changed AFTER UPDATE ON capture_repairs BEGIN
+ UPDATE capture_repair_usage SET bytes=bytes+NEW.bytes-OLD.bytes WHERE account_id=NEW.account_id;
+END;
+CREATE TRIGGER capture_repair_removed AFTER DELETE ON capture_repairs BEGIN
+ UPDATE capture_repair_usage SET count=count-1,bytes=bytes-OLD.bytes WHERE account_id=OLD.account_id;
+END;
+CREATE TRIGGER capture_repair_location_removed AFTER DELETE ON message_locations BEGIN
+ DELETE FROM capture_repairs WHERE message_id=OLD.message_id AND json_extract(locator,'$.mailbox')=OLD.mailbox;
+END;
+CREATE TRIGGER capture_repair_location_changed AFTER UPDATE ON message_locations WHEN NEW.uid!=OLD.uid OR NEW.uidvalidity!=OLD.uidvalidity BEGIN
+ DELETE FROM capture_repairs WHERE message_id=OLD.message_id AND json_extract(locator,'$.mailbox')=OLD.mailbox;
+END;
+` },
+
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

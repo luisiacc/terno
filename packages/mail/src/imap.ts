@@ -1012,9 +1012,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           for await (const msg of c.fetch(uids, { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
             const id = byUid.get(msg.uid);
             if (!id || !msg.source) continue;
-            const parsed = await parseRaw(msg.source);
             const captured = all.find((item) => item.id === id)!;
-            await locations.dispatch([id], (await locations.of([id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity, flags: "[]" }]), () => sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, parsed.captureUnavailable ? { captureUnavailable: parsed.captureUnavailable } : undefined));
+            const locator = { kind: "imap" as const, messageId: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity };
+            const repair = await store.repairs?.get(ctx.account.id, locator);
+            if (repair?.state === "blocked") continue;
+            let parsed;
+            try { parsed = await parseRaw(msg.source); }
+            catch (error) {
+              // This direct-parser refusal is qualified independently of the worker profile.
+              if ((error as { code?: string })?.code !== "EMAXNESTINGDEPTH" || !sink.blockCapture) throw error;
+              sink.signal.throwIfAborted();
+              await sink.blockCapture(locator, "mime-depth", repair?.revision ?? 0);
+              continue;
+            }
+            await locations.dispatch([id], (await locations.of([id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity, flags: "[]" }]), () => sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }));
           }
         }
       } finally {

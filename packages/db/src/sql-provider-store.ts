@@ -1,3 +1,4 @@
+import { sqlCaptureRepairs } from "./capture-repair";
 import { isFolder } from "./folders";
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
@@ -8,6 +9,7 @@ import { placeholders, type Db } from "./sqlite";
 
 /** One account's provider-side reads and IMAP identity, as the providers used to run them on the database. */
 export class SqlProviderStore implements ProviderStore {
+  get repairs() { return sqlCaptureRepairs(this.db); }
   readonly locations: ImapLocationStore;
   async pendingFlagSnapshots(request: FlagSnapshotRequest) { return sqlFlags(this.db).snapshots(this.accountId, request); }
 
@@ -46,21 +48,21 @@ export class SqlProviderStore implements ProviderStore {
   }
 
   async pendingAttachmentBodies(limit: number) {
-    return this.db.all<{ id: number; providerMsgId: string }>("SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND attachments_captured = 0 AND provider_msg_id IS NOT NULL AND provider_msg_id NOT LIKE 'local:%' ORDER BY id LIMIT ?", this.accountId, Math.max(0, Math.min(50, limit)));
+    return this.db.all<{ id: number; providerMsgId: string }>("SELECT id, provider_msg_id AS providerMsgId FROM messages WHERE account_id = ? AND attachments_captured = 0 AND provider_msg_id IS NOT NULL AND provider_msg_id NOT LIKE 'local:%' AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.account_id=messages.account_id AND r.key=json_array('gmail',messages.provider_msg_id) AND r.state='blocked') ORDER BY id LIMIT ?", this.accountId, Math.max(0, Math.min(50, limit)));
   }
 
   async pendingBodies(limit: number) {
     return this.db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
       `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m INDEXED BY messages_capture_pending JOIN message_locations l ON l.message_id = m.id
        AND l.mailbox = (SELECT mailbox FROM message_locations WHERE message_id = m.id ORDER BY mailbox LIMIT 1)
-       WHERE m.account_id = ? AND NOT EXISTS (SELECT 1 FROM imap_identity_holds h WHERE h.message_id=m.id) AND ((m.body_state != 'full' AND m.attachments_captured != 2) OR m.attachments_captured = 0) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
+       WHERE m.account_id = ? AND NOT EXISTS (SELECT 1 FROM imap_identity_holds h WHERE h.message_id=m.id) AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.message_id=m.id AND r.state='blocked') AND ((m.body_state != 'full' AND m.attachments_captured != 2) OR m.attachments_captured = 0) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
       this.accountId,
       limit,
     );
   }
 
   async countPendingBodies() {
-    return this.db.get<{ c: number }>("SELECT count(*) c FROM messages INDEXED BY messages_capture_pending WHERE account_id = ? AND ((body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0)", this.accountId)!.c;
+    return this.db.get<{ c: number }>("SELECT count(*) c FROM messages INDEXED BY messages_capture_pending WHERE account_id = ? AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.message_id=messages.id AND r.state='blocked') AND ((body_state != 'full' AND attachments_captured != 2) OR attachments_captured = 0)", this.accountId)!.c;
   }
 
   async providerIds(messageIds: readonly number[]) {

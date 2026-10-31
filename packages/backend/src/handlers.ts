@@ -700,6 +700,8 @@ export function createHandlers(b: Backend): Handlers {
       return { opId, threadId };
     },
 
+    "captureRepairs.list": (p, ctx) => attachmentCall(ctx.origin, () => store.captureRepairs.list(p.accountId, p.after)),
+    "captureRepairs.retry": (p, ctx) => attachmentCall(ctx.origin, async () => { return { repair: await b.retryCapture(p.accountId, p.key, p.revision) }; }),
     "attachments.retry": (p, ctx) => attachmentCall(ctx.origin, async () => {
       await store.attachments.retry(p.accountId, p.messageId);
       await b.syncAccount(p.accountId);

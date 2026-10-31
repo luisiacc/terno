@@ -1,3 +1,4 @@
+import { installCaptureAccounting } from "./capture-repair";
 import { categoryReferenceCeiling } from "./category-identities";
 import { IDB_VERSION, OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
 import { installAssetAccounting } from "./asset-accounting";
@@ -16,10 +17,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 12 adds an account's own folders and their memberships (SQL v24, plan 68).
  * Version 14 fences adapters that cannot preserve reply subject context (SQL v26).
  * Version 21 adds reminders (SQL v34, plan 87).
+ * Version 22 adds capture repair (SQL v36).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 34;
+export const LOGICAL_SCHEMA = 36;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -32,6 +34,7 @@ const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
  * and every command and read that needs it waits for it.
  */
 export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
+  { name: "capture_repairs", key: ["account_id", "key"], indexes: { ...fk("account_id"), ...fk("message_id"), discovery: ["account_id", "key"], state: ["account_id", "state", "key"] } },
   { name: "flag_clocks", early: true, key: ["account_id"], indexes: fk("account_id") },
   { name: "message_flag_intents", key: ["message_id", "field"], indexes: { ...fk("account_id"), ...fk("message_id"), snapshot: ["snapshot_account_id"] } },
   { name: "flag_op_effects", key: ["op_id", "message_id", "field"], indexes: { ...fk("account_id"), ...fk("op_id"), ...fk("message_id"), parked_version: { columns: ["message_id", "field", "intent_version", "value"], where: (r) => r.active === 0 && r.intent_version != null && r.intent_version !== 0 }, parked_zero: { columns: ["message_id", "field", "value"], where: (r) => r.active === 0 && (r.intent_version == null || r.intent_version === 0) } } },
@@ -95,6 +98,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
 const c = (table: string, column: string, parent: string): ForeignKey => ({ table, column, parent, onDelete: "cascade" });
 
 export const FOREIGN_KEYS: readonly ForeignKey[] = [
+  c("capture_repairs", "account_id", "accounts"),
+  c("capture_repairs", "message_id", "messages"),
   c("flag_clocks", "account_id", "accounts"),
   c("message_flag_intents", "account_id", "accounts"),
   c("message_flag_intents", "message_id", "messages"),
@@ -150,6 +155,7 @@ const PERSISTED = TABLES.filter((t) => !t.memoryOnly);
 export function createMemDb(): MemDb {
   const db = new MemDb(TABLES, FOREIGN_KEYS);
   installAssetAccounting(db);
+  installCaptureAccounting(db);
   return db;
 }
 
@@ -261,6 +267,11 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
+      if (event.oldVersion < 22) {
+        const repairs = event.oldVersion === 0 ? tx.objectStore("capture_repairs") : db.createObjectStore("capture_repairs");
+        repairs.createIndex("discovery", ["account_id", "key"]);
+        repairs.createIndex("state", ["account_id", "state", "key"]);
+      }
       if (event.oldVersion < 19) tx.objectStore("messages").createIndex("cached_provider", ["account_id", "provider_msg_id"]);
       if (event.oldVersion < OP_STORAGE_VERSION) for (const name of OP_PART_STORES) db.createObjectStore(name);
       if (event.oldVersion >= 1) {

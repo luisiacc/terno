@@ -1,3 +1,5 @@
+import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
+import { completeCapture, retryCapture } from "@terno/store";
 class CredentialAdmissionExpired extends Error {}
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
 import { idbRecipientReceipts } from "./recipient-receipts";
@@ -930,6 +932,7 @@ export class IdbMailStore implements MailStore {
         () => {
           check?.();
           const flagBefore = flagEpochs(idbFlags(this.c));
+          for (const m of staged) completeCapture(idbCaptureStorage(this.c), m.accountId, m.repair);
           const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
@@ -944,11 +947,13 @@ export class IdbMailStore implements MailStore {
         { durability: "relaxed" },
       );
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check }) => {
       const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.command(
         () => {
+          check?.();
+          if (accountId !== undefined) completeCapture(idbCaptureStorage(this.c), accountId, repair);
           const flagBefore = flagEpochs(idbFlags(this.c));
           if (T(this.c, "imap_identity_holds").has(messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
           if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
@@ -1155,6 +1160,8 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── compose ─────────────────────────────
 
+  get captureRepairs(): MailStore["captureRepairs"] { return idbCaptureRepairs(this.c, (fn) => this.command(fn), (fn) => this.read(fn), (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state))); }
+
   readonly attachments: MailStore["attachments"] = {
     current: (accountId, message) => this.read(() => {
       const m = "id" in message ? T(this.c, "messages").get(message.id) : T(this.c, "messages").by("provider", accountId, message.providerMsgId)[0];
@@ -1164,6 +1171,7 @@ export class IdbMailStore implements MailStore {
     retry: (accountId, messageId) => this.command(() => {
       const r = T(this.c, "messages").get(messageId);
       if (r?.account_id !== accountId) throw assetError();
+      for (const repair of T(this.c,"capture_repairs").by("fk_message_id",messageId)) if(repair.state === "blocked") retryCapture(idbCaptureStorage(this.c),accountId,repair.key,repair.revision);
       T(this.c, "messages").update(r, { attachments_captured: 0, attachment_pending: 1 });
     }),
     create: async (p) => {
@@ -1842,7 +1850,7 @@ export class IdbMailStore implements MailStore {
 
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
-    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (fn) => this.command(fn), (fn) => this.read(fn), (after) => this.exclusive(() => idbCachedPage(this.idb, this.c, accountId, after)), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
+    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state)), (fn) => this.command(fn), (fn) => this.read(fn), (after) => this.exclusive(() => idbCachedPage(this.idb, this.c, accountId, after)), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
     if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
       const read = s.setting.bind(s);
       s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);

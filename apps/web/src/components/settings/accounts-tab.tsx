@@ -9,7 +9,7 @@ import { Input } from "@terno/ui/components/input";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
@@ -18,6 +18,8 @@ import { setApp, useApp } from "~/state/app";
 import { DaysField } from "./general-tab";
 import { OwnerCard } from "./owner-card";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+
+const CaptureRecovery = lazy(() => import("./capture-recovery"));
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -185,6 +187,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
+      <Suspense fallback={null}><CaptureRecovery key={`capture:${account.id}`} accountId={account.id} /></Suspense>
       {account.kind === "imap" && <><SentCopies key={`copy:${account.id}`} accountId={account.id} /><RecipientReceipts key={`recipients:${account.id}`} accountId={account.id} /></>}
       <SettingsRow label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
