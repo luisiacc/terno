@@ -3,7 +3,7 @@ import { unsubscribeOffer, unsubscribePlan, type UnsubscribeOffer, type Unsubscr
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { isPublicAddress } from "./icons/transport";
-import { ipFamily } from "./net-policy";
+import { ipFamily, NetworkPolicyError } from "./net-policy";
 
 /**
  * Plan 94: how a one-click unsubscribe (RFC 8058) reaches the sender. One POST of
@@ -32,11 +32,22 @@ export function postAllowed(url: URL): boolean {
   return host.includes(".") && !LOCAL_NAME.test(host);
 }
 
-/** The web's transport: a no-cors form POST through the network policy (its answer is opaque: "requested"). */
-export function browserUnsubscribeTransport(policed: typeof fetch): UnsubscribeTransport {
+/**
+ * The web's transport: a form POST through the network policy, never redirected. A browser refuses a
+ * no-cors request that won't follow redirects, so it goes in cors mode: a form POST is a simple request, sent
+ * without a preflight, but a sender that doesn't allow this origin answers unreadably (the fetch rejects).
+ * That, and a redirect (opaque), count as sent: the browser can't tell them from acceptance. Offline, it failed.
+ */
+export function browserUnsubscribeTransport(policed: typeof fetch, online: () => boolean = () => (globalThis.navigator as { onLine?: boolean } | undefined)?.onLine !== false): UnsubscribeTransport {
   return {
     async post(url, signal) {
-      const res = await policed(url, { method: "POST", mode: "no-cors", credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", headers: { "content-type": "application/x-www-form-urlencoded" }, body: ONE_CLICK_BODY, signal });
+      let res: Response;
+      try {
+        res = await policed(url, { method: "POST", mode: "cors", credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", headers: { "content-type": "application/x-www-form-urlencoded" }, body: ONE_CLICK_BODY, signal });
+      } catch (error) {
+        if (signal.aborted || !online() || error instanceof NetworkPolicyError) throw error;
+        return { opaque: true };
+      }
       await res.body?.cancel();
       return res.type === "opaque" || res.type === "opaqueredirect" ? { opaque: true } : { status: res.status };
     },

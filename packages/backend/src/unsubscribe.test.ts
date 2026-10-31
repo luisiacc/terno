@@ -9,7 +9,8 @@ import { demoRegistry } from "@terno/mail";
 import { afterEach, beforeAll, afterAll, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { TEST_TLS_CA, TEST_TLS_CERT, TEST_TLS_KEY } from "./test/icons-tls";
-import { postAllowed, type UnsubscribeTransport } from "./unsubscribe";
+import { browserUnsubscribeTransport, postAllowed, type UnsubscribeTransport } from "./unsubscribe";
+import { createNetworkPolicy } from "./net-policy";
 import { nodeUnsubscribeTransport } from "./unsubscribe-node";
 
 const NOW = Date.UTC(2026, 9, 31, 12);
@@ -176,6 +177,29 @@ describe("where a one-click POST may go (plan 94)", () => {
   it("https on the default port to a public name or address, without credentials", () => {
     for (const ok of ["https://weekly.example/u", "https://list.news.example.com/u?t=1", "https://93.184.216.34/u", "https://[2606:2800:220:1::1]/u"]) expect(postAllowed(new URL(ok)), ok).toBe(true);
     for (const no of ["http://weekly.example/u", "https://weekly.example:8443/u", "https://a:b@weekly.example/u", "https://127.0.0.1/u", "https://10.0.0.5/u", "https://[::1]/u", "https://[::ffff:192.168.0.1]/u", "https://localhost/u", "https://printer/u", "https://nas.local/u", "https://router.home.arpa/u", "https://svc.internal/u"]) expect(postAllowed(new URL(no)), no).toBe(false);
+  });
+});
+
+describe("the web's transport (plan 94, Codex review #2)", () => {
+  /** what a browser's fetch would get: the init it was handed, and an answer */
+  const browser = (answer: (init: RequestInit) => Response | Promise<Response>) => {
+    const asked: RequestInit[] = [];
+    const net = createNetworkPolicy({ localMode: () => true, fetch: async (_input, init) => (asked.push(init ?? {}), answer(init ?? {})) });
+    return { asked, policed: net.fetchFor("unsubscribe") };
+  };
+
+  it("sends a cors-mode form POST that never follows a redirect (a browser refuses no-cors with manual redirects)", async () => {
+    const { asked, policed } = browser(() => new Response(null, { status: 204 }));
+    expect(await browserUnsubscribeTransport(policed, () => true).post(new URL("https://weekly.example/u"), AbortSignal.timeout(1000))).toEqual({ status: 204 });
+    expect(asked).toMatchObject([{ method: "POST", mode: "cors", redirect: "manual", credentials: "omit", referrerPolicy: "no-referrer", body: "List-Unsubscribe=One-Click" }]);
+    // the Fetch Standard's rule this must never break
+    expect(asked.every((i) => !(i.mode === "no-cors" && i.redirect !== "follow"))).toBe(true);
+  });
+
+  it("an unreadable answer (the sender doesn't allow this origin) is sent; offline it failed", async () => {
+    const { policed } = browser(() => Promise.reject(new TypeError("Failed to fetch")));
+    expect(await browserUnsubscribeTransport(policed, () => true).post(new URL("https://weekly.example/u"), AbortSignal.timeout(1000))).toEqual({ opaque: true });
+    await expect(browserUnsubscribeTransport(policed, () => false).post(new URL("https://weekly.example/u"), AbortSignal.timeout(1000))).rejects.toThrow("Failed to fetch");
   });
 });
 

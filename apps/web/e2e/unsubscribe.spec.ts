@@ -126,3 +126,26 @@ test("Spanish", async ({ app: page, server }) => {
   await page.getByTestId("menu-unsubscribe").click();
   await expect(page.getByTestId("snack-message")).toHaveText("Cancelaste tu suscripción a The Weekly.");
 });
+
+test("Codex review #3: the menu moved onto another row never keeps the last row's offer", async ({ app: page, server }) => {
+  const shop = await ingest(server, { id: "shop-move", subject: "Moving menu shop deal", from: { name: "Shop", email: "deals@shop.example" }, bodyHtml: '<a href="https://shop.example/bye">Unsubscribe</a>' });
+  const ana = await ingest(server, { id: "ana-move", subject: "Moving menu lunch plan", from: { name: "Ana", email: "ana@friends.example" } });
+  await search(page, '"Moving menu"');
+  const opened = await recordOpens(page);
+  // Ana's lookup fails: nothing may stand in for it (the last row's offer least of all)
+  const threads = server.backend.store.threads;
+  const read = threads.unsubscribeSource.bind(threads);
+  threads.unsubscribeSource = (id) => (id === ana ? Promise.reject(new Error("synthetic lookup failure")) : read(id));
+  const box = (await rowOf(page, ana).boundingBox())!;
+  await rowOf(page, shop).click({ button: "right" });
+  await expect(page.getByTestId("menu-unsubscribe")).toHaveText("Unsubscribe shop.example");
+  // right-click the other row while the menu is open (over the menu's backdrop, as a person would): it moves there,
+  // and Ana's mail offers nothing
+  await page.mouse.click(box.x + 40, box.y + box.height / 2, { button: "right" });
+  await expect(page.getByTestId("menu-search-sender")).toHaveText("Search mail from Ana");
+  await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId("menu-unsubscribe")).toHaveCount(0);
+  expect(await opened()).toEqual([]);
+  threads.unsubscribeSource = read;
+});

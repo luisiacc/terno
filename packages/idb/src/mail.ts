@@ -2165,13 +2165,25 @@ export function requireIdbGmailRefresh(c: Ctx, ids: readonly number[], observati
   }, observation);
 }
 
-/** Plan 94: one thread's newest messages that aren't yours (sync: the body, if wanted, is read by the caller). */
+/**
+ * Plan 94: one thread's newest messages that aren't yours (sync: the body, if wanted, is read by the caller).
+ * One pass keeping the newest UNSUBSCRIBE_LOOKBACK in a small sorted window: no filtered copy, no sort of the
+ * whole conversation (Codex review #5).
+ */
 export function unsubscribeCandidate(c: Ctx, threadId: number) {
-  const rows = T(c, "messages")
-    .by("fk_thread_id", threadId)
-    .filter((m) => m.is_sent !== 1 && m.is_draft !== 1)
-    .sort((x, y) => y.date - x.date || y.id - x.id)
-    .slice(0, UNSUBSCRIBE_LOOKBACK)
-    .map((m) => ({ id: m.id as number, account_id: m.account_id as number, from_name: m.from_name as string, from_email: m.from_email as string, unsubscribe: m.unsubscribe as unknown }));
+  const newer = (x: R, y: R) => x.date > y.date || (x.date === y.date && x.id > y.id);
+  const window: R[] = [];
+  const messages = T(c, "messages");
+  // the index's keys, read one row at a time (no copy of the conversation)
+  for (const key of messages.keysBy("fk_thread_id", threadId)) {
+    const m = messages.get(key as number)!;
+    if (m.is_sent === 1 || m.is_draft === 1) continue;
+    if (window.length === UNSUBSCRIBE_LOOKBACK && !newer(m, window[window.length - 1]!)) continue;
+    let i = window.length;
+    while (i > 0 && newer(m, window[i - 1]!)) i--;
+    window.splice(i, 0, m);
+    if (window.length > UNSUBSCRIBE_LOOKBACK) window.pop();
+  }
+  const rows = window.map((m) => ({ id: m.id as number, account_id: m.account_id as number, from_name: m.from_name as string, from_email: m.from_email as string, unsubscribe: m.unsubscribe as unknown }));
   return pickUnsubscribeMessage(rows, ownAddresses(c.db), addressKey);
 }

@@ -37,6 +37,8 @@ describe("List-Unsubscribe (plan 94)", () => {
     // one recipient only, never extra headers, no line breaks in the subject, the first of a repeated field
     expect(mailtoParts("mailto:off@list.example?cc=boss@corp.example&bcc=x@y.example&subject=a%0D%0ABcc:%20x@y.example&subject=second")).toEqual({ to: "off@list.example", subject: "a Bcc: x@y.example", body: "unsubscribe" });
     expect(mailtoParts("mailto:off%0D%0A@list.example")).toBeNull();
+    // Codex review #4: a literal "+" stays a plus (RFC 6068), %2B too, %20 is a space
+    expect(mailtoParts("mailto:off@list.example?body=token+ABC%2BD%20E")!.body).toBe("token+ABC+D E");
   });
 });
 
@@ -66,6 +68,17 @@ describe("the link in the mail (plan 94)", () => {
     expect(findUnsubscribeLink(null, "Darse de baja: https://boletin.example/u")).toBe("https://boletin.example/u");
     expect(findUnsubscribeLink(null, "Unsubscribe below\nhttps://news.example/not-this")).toBeNull();
     expect(findUnsubscribeLink(null, "Read more https://news.example/post")).toBeNull();
+  });
+
+  it("Codex review #1: malformed HTML is read in linear time", () => {
+    for (const evil of ["<a ".repeat(200_000), "<a>".repeat(170_000), `${"<a href='https://x.example/'>".repeat(20_000)}x`, `<a href="https://x.example/u">${"y".repeat(400_000)}</a>`]) {
+      const start = performance.now();
+      expect(findUnsubscribeLink(evil, null)).toBeNull();
+      expect(performance.now() - start).toBeLessThan(150);
+    }
+    // what follows a skipped or unclosed anchor is still found
+    expect(findUnsubscribeLink(`<a href="https://a.example/">${"z".repeat(3000)}</a><a href="https://b.example/u">Unsubscribe</a>`, null)).toBe("https://b.example/u");
+    expect(findUnsubscribeLink(`<a href="https://a.example/"><a href="https://b.example/u">Unsubscribe</a>`, null)).toBe("https://b.example/u");
   });
 
   it("the HTML wins over the text", () => {

@@ -56,7 +56,8 @@ export function mailtoParts(uri: string): { to: string; subject: string; body: s
       const eq = pair.indexOf("=");
       if (eq <= 0) continue;
       const key = decodeURIComponent(pair.slice(0, eq)).toLowerCase();
-      if (!params.has(key)) params.set(key, decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, "%20")));
+      // RFC 6068: a "+" is a plus (tokens use it); a space comes as %20
+      if (!params.has(key)) params.set(key, decodeURIComponent(pair.slice(eq + 1)));
     }
   } catch {
     return null;
@@ -89,6 +90,42 @@ const attr = (tag: string, name: string): string | null => {
   return m ? decodeEntities(m[1] ?? m[2] ?? m[3] ?? "") : null;
 };
 
+const TAG_MAX = 4096;
+const INNER_MAX = 2000;
+
+/**
+ * Each `<a …>…</a>` (attributes, inner HTML), in one forward pass: every search starts where the last one
+ * ended, so malformed mail (an `<a` never closed, thousands of unclosed anchors) costs linear time, never a
+ * rescan of the rest of the body per anchor (Codex review of plan 94, #1).
+ */
+function* anchors(html: string): Generator<{ tag: string; inner: string }> {
+  const open = /<a\b/gi;
+  const close = /<\/a\s*>/gi;
+  let closeAt = -1;
+  let closeEnd = -1;
+  for (let m = open.exec(html); m; m = open.exec(html)) {
+    const tagEnd = html.indexOf(">", m.index);
+    // no ">" anywhere after it: no tag can end, so no anchor follows
+    if (tagEnd < 0) return;
+    open.lastIndex = tagEnd + 1;
+    if (tagEnd - m.index > TAG_MAX) continue;
+    // the next closing tag, found once and reused until the scan passes it
+    if (closeAt <= tagEnd) {
+      close.lastIndex = tagEnd + 1;
+      const c = close.exec(html);
+      if (!c) return;
+      closeAt = c.index;
+      closeEnd = c.index + c[0].length;
+    }
+    // an anchor opened before this one closes ends this one, as a browser reads it (the search stops there)
+    const nested = /<a\b/i.exec(html.slice(tagEnd + 1, Math.min(closeAt, tagEnd + 1 + INNER_MAX + 1)));
+    const end = nested ? tagEnd + 1 + nested.index : closeAt;
+    if (end - tagEnd - 1 > INNER_MAX) continue;
+    yield { tag: html.slice(m.index + 2, tagEnd), inner: html.slice(tagEnd + 1, end) };
+    if (!nested) open.lastIndex = closeEnd;
+  }
+}
+
 /** Bodies longer than this are read at both ends only (the link sits in the footer, sometimes in a header). */
 const SCAN_MAX = 512 * 1024;
 
@@ -100,11 +137,11 @@ export function findUnsubscribeLink(html: string | null | undefined, text: strin
   if (html) {
     const body = html.length > SCAN_MAX ? `${html.slice(0, SCAN_MAX / 4)}\n${html.slice(-SCAN_MAX * 3 / 4)}` : html;
     let found: string | null = null;
-    for (const m of body.matchAll(/<a\b([^>]*)>([\s\S]{0,2000}?)<\/a\s*>/gi)) {
-      const href = attr(m[1]!, "href");
+    for (const a of anchors(body)) {
+      const href = attr(a.tag, "href");
       const url = href ? httpUri(href.trim()) : null;
       if (!url) continue;
-      const label = `${decodeEntities(m[2]!.replace(/<[^>]*>/g, " "))} ${attr(m[1]!, "title") ?? ""} ${attr(m[1]!, "aria-label") ?? ""}`;
+      const label = `${decodeEntities(a.inner.replace(/<[^>]*>/g, " "))} ${attr(a.tag, "title") ?? ""} ${attr(a.tag, "aria-label") ?? ""}`;
       if (SAYS_UNSUBSCRIBE.test(fold(label.replace(/\s+/g, " ")))) found = url;
     }
     if (found) return found;

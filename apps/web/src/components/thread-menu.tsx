@@ -645,7 +645,8 @@ function MenuItems() {
           />
         </>
       )}
-      {single && <UnsubscribeItem threadId={single.id} />}
+      {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
+      {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
       <ContextMenuSeparator />
       <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
     </>
