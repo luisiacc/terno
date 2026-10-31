@@ -9,6 +9,7 @@ import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, en
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
+import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
@@ -534,6 +535,26 @@ export function createHandlers(b: Backend): Handlers {
       );
       return { senderName, offers, automated };
     },
+    /** Plan 94: what Unsubscribe would do here, read when the menu opens (no network). */
+    "unsubscribe.find": ({ threadId }) => findUnsubscribe(store, threadId),
+    "unsubscribe.run": ({ threadId, messageId, method, target }) =>
+      runUnsubscribe(
+        {
+          store,
+          transport: b.unsubscribeTransport,
+          assert: (url) => b.net.assert("unsubscribe", url),
+          signal: b.abort.signal,
+          send: async (accountId, mail) => {
+            const { opId, threadId: sent, deltas } = await store.compose.queueSend({ accountId, to: [{ name: "", email: mail.to }], cc: [], bcc: [], subject: mail.subject, bodyText: mail.body, recordReply: false, now: b.now() });
+            b.categorizer.apply(deltas);
+            b.notifyChanged([sent]);
+            b.kickWorker();
+            return opId;
+          },
+        },
+        threadId,
+        { messageId, method, target },
+      ),
     "categorize.alwaysOffers": async ({ categoryId, threadId }) => {
       await requireCategory(categoryId);
       const { senderName, scopes } = await store.similar.scopes([threadId]);

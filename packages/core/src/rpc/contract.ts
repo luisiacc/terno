@@ -20,6 +20,7 @@ import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
 import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
+import { UNSUBSCRIBE_METHODS } from "../unsubscribe";
 import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
@@ -683,6 +684,14 @@ export const contract = {
    */
   "snippets.save": m<Snippet>()(snippetFieldsSchema.extend({ id: snippetIdSchema, base: z.number().int().min(0).nullable(), force: z.boolean().optional() })),
   "snippets.delete": m<{ ok: true }>()(z.object({ id: snippetIdSchema })),
+
+  /** plan 94: what Unsubscribe would do for this conversation; null: nothing found (no menu item) */
+  "unsubscribe.find": m<import("../unsubscribe").UnsubscribeOffer | null>()(z.object({ threadId: id })),
+  /** plan 94: does what `find` offered, only if the conversation still offers exactly that */
+  "unsubscribe.run": m<import("../unsubscribe").UnsubscribeOutcome>()(
+    z.object({ threadId: id, messageId: id, method: z.enum(UNSUBSCRIBE_METHODS), target: z.string().min(1).max(400) }),
+    { timeoutMs: 30_000 },
+  ),
 
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
   /** Plan 91: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */

@@ -13,23 +13,21 @@ export interface NodeIconTransportOptions {
   port?: number;
 }
 
-const ADDRESS_REFUSED = "ICON_ADDRESS_REFUSED";
+export const ADDRESS_REFUSED = "ICON_ADDRESS_REFUSED";
 
 /**
- * Sender icons on Node (plan 22): `node:https`, one socket per request (no pool for a network
- * change to leave dead), and a DNS lookup that refuses any non-public address. The socket
- * connects to the address that lookup checked, so nothing can change between the check and the
- * connection. Redirects come back to the fetcher.
+ * A DNS lookup for node:http(s) that refuses a name with any non-public answer (refused, not filtered) and hands
+ * the socket the address it checked. Shared with plan 94's unsubscribe requests.
  */
-export function nodeIconTransport(o: NodeIconTransportOptions = {}): IconTransport {
+export function publicOnlyLookup(o: { lookup?: NodeIconTransportOptions["lookup"]; allowAddress?: (ip: string) => boolean; what: string }): LookupFunction {
   const allowed = o.allowAddress ?? isPublicAddress;
-  const guarded: LookupFunction = (hostname, options, callback) => {
+  return (hostname, options, callback) => {
     const resolve = o.lookup ? o.lookup(hostname) : new Promise<{ address: string; family: number }[]>((res, rej) => dnsLookup(hostname, { all: true }, (e, a) => (e ? rej(e) : res(a))));
     resolve.then(
       (all) => {
         // every address must be public: a name with one private answer is refused, not filtered
         if (all.length === 0 || !all.every((a) => allowed(a.address))) {
-          const error = Object.assign(new Error(`${hostname} resolves to an address icons never go to`), { code: ADDRESS_REFUSED });
+          const error = Object.assign(new Error(`${hostname} resolves to an address ${o.what} never go to`), { code: ADDRESS_REFUSED });
           return callback(error, "", 0);
         }
         const wanted = options.family === 4 || options.family === 6 ? all.filter((a) => a.family === options.family) : all;
@@ -40,6 +38,16 @@ export function nodeIconTransport(o: NodeIconTransportOptions = {}): IconTranspo
       (error: Error) => callback(error as NodeJS.ErrnoException, "", 0),
     );
   };
+}
+
+/**
+ * Sender icons on Node (plan 22): `node:https`, one socket per request (no pool for a network
+ * change to leave dead), and a DNS lookup that refuses any non-public address. The socket
+ * connects to the address that lookup checked, so nothing can change between the check and the
+ * connection. Redirects come back to the fetcher.
+ */
+export function nodeIconTransport(o: NodeIconTransportOptions = {}): IconTransport {
+  const guarded = publicOnlyLookup({ lookup: o.lookup, allowAddress: o.allowAddress, what: "icons" });
 
   return {
     get(r: IconRequest): Promise<IconResponse> {

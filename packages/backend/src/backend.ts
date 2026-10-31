@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import { nodeUnsubscribeTransport } from "./unsubscribe-node";
 import { nodePlatform, openDatabase, SqlMailStore, type Db } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
@@ -67,6 +68,8 @@ export class Backend extends BackendCore {
     }
     // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
     const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;
-    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport, incomingProcessor: options.incomingProcessor ?? createNodeIncomingProcessor() });
+    // plan 94: one-click unsubscribe over node:https (public addresses only) unless the host says otherwise
+    const unsubscribeTransport = options.unsubscribeTransport === undefined ? nodeUnsubscribeTransport() : options.unsubscribeTransport;
+    super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport, unsubscribeTransport, incomingProcessor: options.incomingProcessor ?? createNodeIncomingProcessor() });
   }
 }

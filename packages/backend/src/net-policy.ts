@@ -7,7 +7,7 @@ import { L, type Localized } from "@terno/i18n";
  * and goes through this module (an architecture test enforces it), so local
  * mode is one decision in one place instead of a convention.
  */
-export type NetPurpose = "mail" | "ai" | "remote-content" | "telemetry" | "update" | "cloud" | "icons";
+export type NetPurpose = "mail" | "ai" | "remote-content" | "telemetry" | "update" | "cloud" | "icons" | "unsubscribe";
 
 export interface NetMeta {
   /** declared locality of the AI provider making the call */
@@ -176,7 +176,8 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
       if (!(await options.siteIcons?.())) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
       return {};
     }
-    if (purpose === "mail" || !(await options.localMode())) return {};
+    // plan 94: an unsubscribe request is the user's own click on one conversation, to the sender of that mail
+    if (purpose === "mail" || purpose === "unsubscribe" || !(await options.localMode())) return {};
     if (purpose !== "ai") throw new NetworkPolicyError(L("errors.net.localModeBlocks", { purpose, host: url.host }), purpose, url.host);
     if (meta.providerLocality !== "local") {
       throw new NetworkPolicyError(L("errors.net.localModeCloudAi", { host: url.host }), purpose, url.host);
@@ -277,7 +278,8 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
             }
             // no pinning and no manual redirects in a browser (they come back opaque): a vetted request may not be redirected at all
             const vetted = purpose === "ai" && (await options.localMode());
-            return baseFetch(url, { ...request, redirect: vetted ? "error" : "follow" });
+            // plan 94: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque)
+            return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : vetted ? "error" : "follow" });
           }
           const target = new URL(url);
           // Connect to the address we just checked, so a DNS answer can't change between check and connect.

@@ -29,6 +29,7 @@ import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-p
 import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readLocalMode, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
+import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
 import { BULK_SLICE, SliceSizer, type SliceBudget } from "./slicer";
 import { Evictions } from "./storage";
 
@@ -100,6 +101,8 @@ export interface BackendCoreOptions {
   connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
   /** plan 22: how website icons are fetched (Node: node-transport.ts); none: this host shows no website icons (the web) */
   iconTransport?: IconTransport | null;
+  /** plan 94: how a one-click unsubscribe is POSTed (Node: unsubscribe-node.ts; the web: a no-cors fetch); null: never, its page opens instead */
+  unsubscribeTransport?: UnsubscribeTransport | null;
   /** tests: the icon fetcher's deadlines */
   iconTimeouts?: { requestMs?: number; budgetMs?: number };
   /** plan 41: a host that shows the Dock badge and notifications itself (desktop main); without one, notices go to the page */
@@ -237,6 +240,8 @@ export class BackendCore {
   readonly reminders: Reminders;
   /** plan 94: scheduled sends: one timer for the next one, sent through compose.send's own path */
   readonly scheduled: ScheduledSends;
+  /** plan 96 */
+  readonly unsubscribeTransport: UnsubscribeTransport | null;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -250,6 +255,8 @@ export class BackendCore {
     this.platform = options.platform;
     this.store = options.store;
     this.net = createNetworkPolicy({ localMode: () => readLocalMode(this.store), siteIcons: () => readSiteIcons(this.store), lookup: options.lookup, googleChanged: () => this.cooldownChanged() });
+    // the web host POSTs through the policy (no-cors); other hosts pass theirs (Node's in backend.ts)
+    this.unsubscribeTransport = options.unsubscribeTransport !== undefined ? options.unsubscribeTransport : options.host?.kind === "web" ? browserUnsubscribeTransport(this.net.fetchFor("unsubscribe")) : null;
     this.aiService = new AiService(this, options.aiFactory ?? defaultAiFactory);
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
