@@ -564,7 +564,7 @@ export class CategorizerModel {
       const e = this.entries.get(t);
       if (!e) continue;
       tokens.push(e);
-      tokenL.push(Math.log(this.alpha * e.bg + 0.1));
+      tokenL.push(e.bg < 2 ? 0 : Math.log(this.alpha * e.bg + 0.1));
     }
     const intents: Entry[] = [];
     for (const t of f.intents) {
