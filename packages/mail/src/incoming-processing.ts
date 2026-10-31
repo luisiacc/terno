@@ -3,7 +3,7 @@ import type { ParsedMessage } from "./mime";
 
 export type IncomingProcessingInput =
   | { kind: "gmail"; expectedId: string; chunks: Uint8Array[] }
-  | { kind: "mime"; chunks: Uint8Array[] };
+  | { kind: "mime"; profile?: "imap"; chunks: Uint8Array[] };
 
 export interface IncomingGmailMetadata {
   id: string;
@@ -78,6 +78,7 @@ export function isIncomingFailureCode(value: unknown): value is IncomingProcessi
 export function incomingInputTransfers(input: IncomingProcessingInput): ArrayBuffer[] {
   if (!input || (input.kind !== "gmail" && input.kind !== "mime") || !Array.isArray(input.chunks) || input.chunks.length > 4096) throw new IncomingProcessingError("input-limit");
   if (input.kind === "gmail" && (typeof input.expectedId !== "string" || !input.expectedId.trim())) throw new IncomingProcessingError("malformed-resource");
+  if (input.kind === "mime" && input.profile !== undefined && input.profile !== "imap") throw new IncomingProcessingError("input-limit");
   const buffers = new Set<ArrayBuffer>();
   const cap = input.kind === "gmail" ? INCOMING_GMAIL_WIRE_BYTES : MAX_INCOMING_MIME_BYTES + 1;
   let bytes = 0;
@@ -243,7 +244,7 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
       incomingInputTransfers(input);
       const projected: IncomingProcessingInput = input.kind === "gmail"
         ? { kind: "gmail", expectedId: input.expectedId, chunks: [...input.chunks] }
-        : { kind: "mime", chunks: [...input.chunks] };
+        : { kind: "mime", ...(input.profile && { profile: input.profile }), chunks: [...input.chunks] };
       const owned = slot ?? { incarnation: ++incarnation, retiring: false };
       const fresh = slot === undefined;
       slot = owned;

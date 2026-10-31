@@ -1554,15 +1554,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             if (!source) continue;
             let parsed;
             try {
-            if (ctx.incoming) {
-              if (!ctx.incomingProcessor) throw new IncomingProcessingError("worker-unavailable");
-              if (source.byteLength > MAX_INCOMING_MIME_BYTES + 1 || source.buffer.byteLength > MAX_INCOMING_MIME_BYTES + 65536) throw new IncomingProcessingError("input-limit");
-              const owned = new Uint8Array(source);
-              source = undefined;
-              const result = await ctx.incomingProcessor.run({ kind: "mime", chunks: [owned] }, sink.signal);
-              if (result.kind !== "mime") throw new IncomingProcessingError("worker-fault");
-              parsed = result.message;
-            } else parsed = await parseRaw(source);
+              if (ctx.incoming) {
+                if (!ctx.incomingProcessor) throw new IncomingProcessingError("worker-unavailable");
+                if (source.byteLength > MAX_INCOMING_MIME_BYTES + 1 || source.buffer.byteLength > MAX_INCOMING_MIME_BYTES + 65536) throw new IncomingProcessingError("input-limit");
+                const owned = new Uint8Array(source);
+                source = undefined;
+                const result = await ctx.incomingProcessor.run({ kind: "mime", profile: "imap", chunks: [owned] }, AbortSignal.any([sink.signal, reset]));
+                if (result.kind !== "mime") throw new IncomingProcessingError("worker-fault");
+                parsed = result.message;
+              } else parsed = await parseRaw(source);
             } catch (error) {
               const code = (error as { code?: string })?.code;
               if ((code !== "EMAXNESTINGDEPTH" && !(error instanceof IncomingProcessingError && code === "mime-limit-depth")) || !sink.blockCapture) throw error;

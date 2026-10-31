@@ -79,14 +79,15 @@ function completeHeader(prefix: Uint8Array): boolean {
   return false;
 }
 
-async function parse(bytes: Uint8Array, oversized: boolean): Promise<ParsedMessage> {
+async function parse(bytes: Uint8Array, oversized: boolean, imap = false): Promise<ParsedMessage> {
+  const limits = imap ? undefined : MIME_LIMITS;
   try {
     if (oversized) {
       const prefix = bytes.subarray(0, HEADER_BYTES);
       if (!completeHeader(prefix)) throw new IncomingProcessingError("envelope-unavailable");
-      return await parseRawHeaders(prefix, "size", MIME_LIMITS);
+      return await parseRawHeaders(prefix, "size", limits);
     }
-    return await parseRaw(bytes, { limits: MIME_LIMITS });
+    return await parseRaw(bytes, { limits });
   } catch (error) {
     if (error instanceof IncomingProcessingError) throw error;
     if (record(error)) {
@@ -128,7 +129,7 @@ export async function processIncoming(input: IncomingProcessingInput, limits: In
   let source = flatten(input);
   let result: IncomingProcessingResult;
   if (input.kind === "mime") {
-    result = { kind: "mime", message: await parse(source, source.byteLength > MAX_INCOMING_MIME_BYTES) };
+    result = { kind: "mime", message: await parse(source, source.byteLength > MAX_INCOMING_MIME_BYTES, input.profile === "imap") };
   } else {
     let value: unknown;
     try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(source)); }
