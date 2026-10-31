@@ -831,7 +831,7 @@ const es = {
   "review.similar": "Añadir similares",
   "review.similar.title": "Añadir a {category} el correo como este, ahora y en el futuro",
   "review.always": "Añadir siempre a {category}…",
-  "review.always.future": "Ahora y el correo futuro",
+  "review.always.header": "Añadir a {category}, ahora y en el futuro",
   "review.always.failed": "No se pudieron cargar las opciones. Inténtalo de nuevo.",
   "review.always.none": "Nada por lo que añadir",
   "review.always.done": { one: "# añadida a {category}, también el correo futuro", other: "# añadidas a {category}, también el correo futuro" },

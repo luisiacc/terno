@@ -111,13 +111,12 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
     await row(page, threads[1]!).getByTestId("row-review-always").click();
     const menu = page.getByTestId("review-always-menu");
     await expect(menu).toBeVisible();
-    await expect(menu).toContainText("Always add to Facturas…");
-    await expect(menu).toContainText("Now and future mail");
+    await expect(menu).toContainText("Add to Facturas, now and in the future");
     const items = menu.getByRole("menuitem");
     await expect(items).toHaveCount(2);
     await expect(items.nth(0)).toContainText(`Same subject from Rappi${SUBJECT}`);
+    await expect(items.nth(1)).toContainText("Everything from Rappirecibos@rappi.com");
     await expect(page.getByTestId("review-always-subject-count")).toHaveText(String(sameSubject));
-    await expect(items.nth(1)).toContainText("All from Rappi");
     await expect(page.getByTestId("review-always-sender-count")).toHaveText(String(Math.min(all, 1000)));
     // the press didn't open the row; shortcuts wait while the menu is open (j would move the cursor)
     expect(await cursor(page)).toBe(open);

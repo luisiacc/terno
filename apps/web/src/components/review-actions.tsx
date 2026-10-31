@@ -1,7 +1,7 @@
 import type { AlwaysScope } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@terno/ui/components/dropdown-menu";
 import { t } from "@terno/i18n";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, MessageSquareText, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { answerReview, fileAlways, filterNameOf } from "~/lib/categorize";
@@ -44,7 +44,7 @@ export function ReviewControls({ threadId, categoryId, category }: { threadId: n
           e.stopPropagation();
           void answerReview(threadId, categoryId, true);
         }}
-        className={`${pill} bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]`}
+        className={`${pill} border border-primary/25 bg-accent text-accent-foreground hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]`}
       >
         <Check className="size-3.5 shrink-0" />
         <span className="truncate">{t("review.accept", { category })}</span>
@@ -136,39 +136,42 @@ export function ReviewAlwaysMenu() {
         }}
       >
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex flex-col gap-0.5">
-            <span className="text-foreground">{t("review.always", { category: category.name })}</span>
-            <span className="text-2xs font-normal">{t("review.always.future")}</span>
-          </DropdownMenuLabel>
+          <DropdownMenuLabel className="px-2.5 pt-1.5 pb-1 text-xs font-normal text-muted-foreground">{t("review.always.header", { category: category.name })}</DropdownMenuLabel>
           {offers === "loading" ? (
-            <DropdownMenuItem disabled data-testid="review-always-loading">
-              <span className="h-3 w-40 animate-pulse rounded bg-muted" />
+            <DropdownMenuItem disabled data-testid="review-always-loading" className="h-auto px-2.5 py-2">
+              <span className="h-8 w-full animate-pulse rounded-md bg-muted" />
             </DropdownMenuItem>
           ) : list.length === 0 ? (
-            <DropdownMenuItem disabled data-testid="review-always-none">
+            <DropdownMenuItem disabled data-testid="review-always-none" className="h-auto px-2.5 py-2">
               {offers === "failed" ? t("review.always.failed") : t("review.always.none")}
             </DropdownMenuItem>
           ) : (
-            list.map((o) => (
-              <DropdownMenuItem
-                key={o.scope.kind}
-                data-testid={`review-always-${o.scope.kind}`}
-                title={o.scope.kind === "subject" ? o.scope.subject : undefined}
-                onClick={() => {
-                  const sender = (offers as Offers).senderName;
-                  close();
-                  void fileAlways(category.id, o.scope, threadId, filterNameOf(o.scope, sender, category.name));
-                }}
-              >
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{scopeLabel(o.scope, (offers as Offers).senderName)}</span>
-                  {o.scope.kind === "subject" && <span className="truncate text-2xs text-muted-foreground">{o.scope.subject}</span>}
-                </span>
-                <span data-testid={`review-always-${o.scope.kind}-count`} className="shrink-0 font-mono text-2xs text-muted-foreground tabular">
-                  {formatCount(o)}
-                </span>
-              </DropdownMenuItem>
-            ))
+            list.map((o) => {
+              const name = (offers as Offers).senderName;
+              const Icon = o.scope.kind === "subject" ? MessageSquareText : UserRound;
+              return (
+                <DropdownMenuItem
+                  key={o.scope.kind}
+                  data-testid={`review-always-${o.scope.kind}`}
+                  title={o.scope.kind === "subject" ? o.scope.subject : o.scope.email}
+                  onClick={() => {
+                    close();
+                    void fileAlways(category.id, o.scope, threadId, filterNameOf(o.scope, name, category.name));
+                  }}
+                  className="h-auto items-start gap-2.5 rounded-md px-2.5 py-2"
+                >
+                  <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  {/* both lines the same rhythm: what it is, then exactly what it matches */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate leading-5">{o.scope.kind === "subject" ? scopeLabel(o.scope, name) : t("threadMenu.allFrom", { name: name || o.scope.email })}</span>
+                    <span className="truncate text-xs leading-4 text-muted-foreground">{o.scope.kind === "subject" ? o.scope.subject : o.scope.email}</span>
+                  </span>
+                  <span data-testid={`review-always-${o.scope.kind}-count`} className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-5 text-muted-foreground tabular">
+                    {formatCount(o)}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })
           )}
         </DropdownMenuGroup>
       </DropdownMenuContent>
