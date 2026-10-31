@@ -633,7 +633,7 @@ test("resizing panes (plan 21): dragging either edge keeps frames smooth with fi
   expect(rowRenders).toBe(0);
 });
 
-test("toggling More (plan 40) with 80 more categories: what's below slides within the cap with smooth frames, no long frame, and only the five folders render", async ({ app: page, server }) => {
+test("toggling More (plan 40) with 80 more categories: what's below slides within the cap with smooth frames, no long frame, and only the six rows behind More render", async ({ app: page, server }) => {
   const db = sqlDb(server.backend.store);
   for (let i = 0; i < 80; i++) db.run("INSERT INTO categories (name, color, position) VALUES (?, 'cyan', ?)", `Long ${String(i).padStart(2, "0")}`, 100 + i);
   await page.reload();
@@ -676,8 +676,8 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   // it slid: frames between the two ends, and every frame from the cap on (plus the frame it starts in, and one) at its end
   let between = 0;
   toggles.forEach(({ samples }, i) => {
-    const to = i % 2 === 0 ? closed + 5 * rowH : closed;
-    if (samples.some((s) => s.top > closed + 1 && s.top < closed + 5 * rowH - 1)) between++;
+    const to = i % 2 === 0 ? closed + 6 * rowH : closed;
+    if (samples.some((s) => s.top > closed + 1 && s.top < closed + 6 * rowH - 1)) between++;
     for (const s of samples.filter((s) => s.t >= 100 + 34)) expect(s.top, `toggle ${i} at ${s.t.toFixed(0)} ms`).toBeCloseTo(to, 0);
   });
   stats.push({ name: `More toggles: slid through frames between in ${between}/${TOGGLES}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
@@ -685,9 +685,9 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   frameGate("toggling More with ~95 rows below", f);
   expect(between, "toggles that slid through frames between").toBeGreaterThanOrEqual(TOGGLES - 2);
   expect(f.loaf, "long animation frames").toBe(0);
-  // the five folders (their slots change); never the ~90 category and account rows below, which only slide
+  // the six rows behind More (Reminders, plan 87, and the five folders: their slots change); never the ~90 category and account rows below, which only slide
   expect(belowRenders).toBe(0);
-  expect(folderRenders / TOGGLES).toBeLessThanOrEqual(5);
+  expect(folderRenders / TOGGLES).toBeLessThanOrEqual(6);
 });
 
 test("opening and closing an account (plans 67, 68): smooth frames, no long frame; only its own rows render, nothing below", async ({ app: page, server }) => {
