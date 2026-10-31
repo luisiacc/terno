@@ -7,6 +7,7 @@ import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
 import { isNetworkError } from "./net-errors";
+import { IncomingProcessingError } from "./incoming-processing";
 import { ImapIdentityError } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
 import { nameTaken, planImapCreate, ROLE_NAME_HINTS, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
@@ -708,8 +709,20 @@ export function temporaryRefusal(error: unknown): boolean {
   return TEMPORARY_TEXT.test(text);
 }
 
+class ImapIncomingResourceError extends ProviderError {
+  constructor(readonly code: string, message: ReturnType<typeof L>) { super(message, false); }
+  override get expected(): boolean { return true; }
+}
+
 export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
+  if (error instanceof IncomingProcessingError) {
+    const key = error.code === "input-limit" || error.code === "result-limit" ? "errors.mail.processingLimit"
+      : error.code === "worker-timeout" ? "errors.mail.processingTimedOut"
+      : error.code.startsWith("mime-limit-") || error.code === "envelope-unavailable" ? "errors.mail.processingComplex"
+      : "errors.mail.processingUnavailable";
+    return new ImapIncomingResourceError(error.code, L(key));
+  }
   if (error instanceof ImapIdentityError) return new ProviderIdentityError(L("errors.imap.identityUnavailable"));
   const e = error as { authenticationFailed?: boolean; serverResponseCode?: string; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
@@ -822,6 +835,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** bumped by reset(): a session that was connecting across a network change is never kept */
   let generation = 0;
+  let incomingReset = new AbortController();
   /** the one connect in flight: a sync and an op asking together share it */
   let connecting: { gen: number; promise: Promise<ImapFlow>; session: ImapFlow | null } | null = null;
 
@@ -1515,27 +1529,50 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       try {
         // UIDs are only meaningful with their UIDVALIDITY: skip stale ones (the next sync remaps them)
         const items = all.filter((i) => i.uidvalidity === Number(c.mailbox && c.mailbox.uidValidity));
-        const byUid = new Map(items.map((i) => [i.uid, i.id]));
-        for (let i = 0; i < items.length; i += 25) {
-          const uids = items.slice(i, i + 25).map((x) => x.uid);
-          for await (const msg of c.fetch(uids, { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
-            const id = byUid.get(msg.uid);
-            if (!id || !msg.source) continue;
-            const captured = all.find((item) => item.id === id)!;
-            const locator = { kind: "imap" as const, messageId: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity };
-            const repair = await store.repairs?.get(ctx.account.id, locator);
-            if (repair?.state === "blocked") continue;
+        const reset = incomingReset.signal;
+        const check = () => { sink.signal.throwIfAborted(); reset.throwIfAborted(); };
+        for (const item of items) {
+          check();
+          const locator = { kind: "imap" as const, messageId: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity };
+          const repair = await store.repairs?.get(ctx.account.id, locator);
+          if (repair?.state === "blocked") continue;
+          let releaseRead: (() => void) | undefined;
+          let releaseLarge: (() => void) | undefined;
+          try {
+            releaseRead = await ctx.incoming?.acquire(accountId, sink.signal, reset);
+            releaseLarge = await ctx.incoming?.promote?.(accountId, sink.signal, reset);
+            check();
+            let source: Buffer | undefined;
+            let invalid = false;
+            // Exhaust the singleton command before processing: abort alone is not physical EOF.
+            for await (const msg of c.fetch([item.uid], { uid: true, source: { start: 0, maxLength: MAX_INCOMING_MIME_BYTES + 1 } }, { uid: true })) {
+              if (msg.uid !== item.uid || source) invalid = true;
+              else source = msg.source;
+            }
+            check();
+            if (invalid) throw new IncomingProcessingError("input-limit");
+            if (!source) continue;
             let parsed;
-            try { parsed = await parseRaw(msg.source); }
-            catch (error) {
-              // This direct-parser refusal is qualified independently of the worker profile.
-              if ((error as { code?: string })?.code !== "EMAXNESTINGDEPTH" || !sink.blockCapture) throw error;
-              sink.signal.throwIfAborted();
+            try {
+            if (ctx.incoming) {
+              if (!ctx.incomingProcessor) throw new IncomingProcessingError("worker-unavailable");
+              if (source.byteLength > MAX_INCOMING_MIME_BYTES + 1 || source.buffer.byteLength > MAX_INCOMING_MIME_BYTES + 65536) throw new IncomingProcessingError("input-limit");
+              const owned = new Uint8Array(source);
+              source = undefined;
+              const result = await ctx.incomingProcessor.run({ kind: "mime", chunks: [owned] }, sink.signal);
+              if (result.kind !== "mime") throw new IncomingProcessingError("worker-fault");
+              parsed = result.message;
+            } else parsed = await parseRaw(source);
+            } catch (error) {
+              const code = (error as { code?: string })?.code;
+              if ((code !== "EMAXNESTINGDEPTH" && !(error instanceof IncomingProcessingError && code === "mime-limit-depth")) || !sink.blockCapture) throw error;
+              check();
               await sink.blockCapture(locator, "mime-depth", repair?.revision ?? 0);
               continue;
             }
-            await locations.dispatch([id], (await locations.of([id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: id, mailbox, uid: msg.uid, uidvalidity: captured.uidvalidity, flags: "[]" }]), () => sink.setBody(id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }));
-          }
+            check();
+            await locations.dispatch([item.id], (await locations.of([item.id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity, flags: "[]" }]), () => { check(); return sink.setBody(item.id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }); });
+          } finally { releaseLarge?.(); releaseRead?.(); }
         }
       } finally {
         lock.release();
@@ -2521,6 +2558,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // the network changed: a session still connecting is abandoned, the cached one closes now (never
       // LOGOUT on a dead socket), and IDLE reconnects at once
       generation++;
+      incomingReset.abort(ProviderError.network(L("errors.network.changed")));
+      incomingReset = new AbortController();
       const pending = connecting;
       connecting = null;
       pending?.session?.close();
@@ -2531,6 +2570,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     },
 
     async close() {
+      incomingReset.abort(new DOMException("Mail processing stopped", "AbortError"));
       const c = client;
       client = null;
       if (c) await quit(c);
