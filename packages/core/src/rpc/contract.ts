@@ -425,7 +425,8 @@ export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchem
 
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
 export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional() });
-export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), rule: filterRuleSchema });
+// plan 85: `auto` absent (an older export) means the user's
+export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), auto: z.boolean().optional(), rule: filterRuleSchema });
 export const exportedAttachmentSchema = z.object({
   filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(), chunks: z.array(z.string().max(65536)).max(384),
 }).strict();
@@ -693,7 +694,7 @@ export const contract = {
    * partway carries `{ batchId }` in its details. Plan 80: `always` (sender, subject; plan 81: domain, list) also ensures the
    * filter that files future mail there; `filterUndo` lets similar.undo take it back.
    */
-  "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
+  "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null; filterFailed: boolean }>()(
     // a filter says who sent it (and the subject), the domain or the list (plan 81), or words (plan 84); a search can't be filed always
     z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind !== "query"),
     { timeoutMs: 120_000 },
@@ -720,9 +721,15 @@ export const contract = {
       enabled: z.boolean(),
       source: z.enum(["manual", "ai", "learned"]),
       rule: filterRuleSchema,
+      /** plan 85: the builder sends false when the user changed an automatic filter (it becomes theirs); absent keeps it */
+      auto: z.boolean().optional(),
     }),
   ),
   "filters.delete": m<{ ok: true }>()(z.object({ id })),
+  /** Plan 85: filters on or off at once, each only if unchanged since read; `filterUndo` (similar.undo) takes it back. */
+  "filters.setEnabled": m<{ changed: number; filterUndo: number | null }>()(z.object({ ids: z.array(id).min(1).max(500), enabled: z.boolean() })),
+  /** Plan 85: Terno's enabled filters that file these threads (their root inbound mail) into the category. */
+  "filters.autoFor": m<{ filters: { id: number; name: string }[] }>()(z.object({ categoryId: id, threadIds: z.array(id).min(1).max(200) })),
   "filters.preview": m<{ count: number; sample: ThreadSummary[] }>()(
     z.object({ rule: filterRuleSchema, limit: z.number().int().min(0).max(100).default(20) }),
   ),

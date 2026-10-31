@@ -122,7 +122,38 @@ export interface Filter {
   name: string;
   enabled: boolean;
   source: "manual" | "ai" | "learned";
+  /** plan 85: Terno made it when the user sorted mail (Settings lists it under "Created for you") */
+  auto: boolean;
   rule: FilterRule;
   hits: number;
   createdAt: number;
+}
+
+/** What a filter's owner can change: an automatic write compares it before it writes (plan 85). */
+export interface FilterState {
+  name: string;
+  enabled: boolean;
+  rule: FilterRule;
+  auto: boolean;
+}
+
+export const filterState = (f: Filter): FilterState => ({ name: f.name, enabled: f.enabled, rule: f.rule, auto: f.auto });
+/** Two states are the same (a rule compared as stored). */
+export const sameFilterState = (a: FilterState, b: FilterState): boolean =>
+  a.name === b.name && a.enabled === b.enabled && a.auto === b.auto && JSON.stringify(a.rule) === JSON.stringify(b.rule);
+
+/** A filter as a store saves it. */
+export interface FilterSave {
+  id?: number;
+  name: string;
+  enabled: boolean;
+  source: Filter["source"];
+  rule: FilterRule;
+  learnedKey?: string;
+  /** plan 85: false on insert when absent; an update keeps the stored value when absent */
+  auto?: boolean;
+  /** plan 85: a retarget keeps what the filter was applied to (old mail is never re-filed into the new target) */
+  keepApplications?: boolean;
+  /** plan 85: refused (CANCELLED) unless the filter is still exactly this (an edit made meanwhile wins) */
+  expect?: FilterState;
 }

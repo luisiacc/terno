@@ -16,6 +16,7 @@ import type {
   Counts,
   ThreadFilter,
   Filter,
+  FilterSave,
   FilterRule,
   OpState,
   Prediction,
@@ -431,13 +432,15 @@ export interface MailStore {
   filters: {
     list(): Promise<Filter[]>;
     get(id: number): Promise<Filter | null>;
-    save(f: { id?: number; name: string; enabled: boolean; source: Filter["source"]; rule: FilterRule; learnedKey?: string }, now: number): Promise<Filter>;
+    save(f: FilterSave, now: number): Promise<Filter>;
     delete(id: number): Promise<void>;
     preview(rule: FilterRule, now: number, limit: number): Promise<{ count: number; sample: ThreadSummary[] }>;
     /** message id bounds, for windowed matching */
     messageIdRange(): Promise<{ lo: number; hi: number } | null>;
     /** messages matching the rule in one id window */
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
+    /** plan 85: which of these messages (a few hundred at most) the rule matches */
+    matchMessages(rule: FilterRule, now: number, messageIds: readonly number[]): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
   };
@@ -552,6 +555,8 @@ export interface MailStore {
      * targets still in place join). Ids are threads in place, not starred or replied unless targeted.
      */
     resolvePage(scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): Promise<SimilarPage>;
+    /** plan 85: each thread's root inbound message (what sender and subject rules decide on) */
+    roots(threadIds: readonly number[]): Promise<number[]>;
     /** which of these threads the user values now (starred, or with a message they sent): a sweep re-reads it per slice */
     kept(threadIds: readonly number[]): Promise<number[]>;
   };

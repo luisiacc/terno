@@ -140,6 +140,7 @@ interface PendingFilter {
   name: string;
   enabled: boolean;
   source: "manual" | "ai" | "learned";
+  auto?: boolean;
   rule: FilterRule;
   accountEmails: Record<string, string>;
 }
@@ -195,7 +196,7 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
         continue;
       }
       same.add(key);
-      await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, rule }, now);
+      await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, auto: f.auto ?? false, rule }, now);
       filters++;
     }
   });
@@ -379,7 +380,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
       else emails[String(c.value)] = email;
     }
     if (!ok || actions.length === 0) skipped.push(f.name);
-    else waitingFilters.push({ name: f.name, enabled: f.enabled, source: f.source, rule: { ...f.rule, actions }, accountEmails: emails });
+    else waitingFilters.push({ name: f.name, enabled: f.enabled, source: f.source, auto: f.auto ?? false, rule: { ...f.rule, actions }, accountEmails: emails });
   }
 
   // drafts and filters that need a mailbox go in now if it is here, else when it is connected

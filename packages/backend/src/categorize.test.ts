@@ -269,11 +269,13 @@ describe("categorizer: training hooks", () => {
         expect.objectContaining({
           name: "Uber Receipts · Tu recibo → Facturas",
           enabled: true,
+          // plan 85: Terno made it
+          auto: true,
           rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }, { field: "subject", op: "equals", value: "Tu recibo" }], actions: [{ type: "addCategory", categoryId: cat }] },
         }),
       ]);
       // the same again: nothing new to file, the filter is reused (nothing to undo there)
-      expect(await client.call("categorize.apply", { categoryId: cat, scope, always: true })).toEqual({ added: 0, batchId: null, filter: { id: filters[0]!.id, filterUndo: null }, filterFailed: false });
+      expect(await client.call("categorize.apply", { categoryId: cat, scope, always: true })).toEqual({ added: 0, batchId: null, filter: { id: filters[0]!.id, filterUndo: null, retargeted: null }, filterFailed: false });
       // Undo: the filter first, then the batch
       await client.call("similar.undo", { undoId: null, filterUndo: r.filter!.filterUndo });
       expect(await client.call("filters.list", {})).toEqual([]);
@@ -302,6 +304,63 @@ describe("categorizer: training hooks", () => {
       sqlDb(backend.store).exec("DROP TRIGGER no_filters");
 
       await expect(client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "recibo" }, always: true })).rejects.toThrow();
+    });
+
+    it("plan 85: the same mail filed elsewhere retargets Terno's filter (claims kept), never the user's; undo puts it back", async () => {
+      const { backend, client, cat, ingest } = await world();
+      ingest([{ subject: "Tu recibo" }]);
+      const other = (await client.call("categories.create", { name: "Viajes", color: "cyan" })).id;
+      const scope = { kind: "sender", email: "uber.receipts@uber.com" } as const;
+      await client.call("categorize.apply", { categoryId: cat, scope, always: true, filterName: "Uber → Facturas" });
+      const [first] = await client.call("filters.list", {});
+      sqlDb(backend.store).run("INSERT INTO filter_applications (filter_id, message_id, applied_at) SELECT ?, id, 0 FROM messages", first!.id);
+      const moved = await client.call("categorize.apply", { categoryId: other, scope, always: true, filterName: "Uber → Viajes" });
+      expect(moved.filter).toMatchObject({ id: first!.id, retargeted: { from: cat } });
+      expect(await client.call("filters.list", {})).toEqual([expect.objectContaining({ id: first!.id, name: "Uber → Viajes", auto: true, rule: expect.objectContaining({ actions: [{ type: "addCategory", categoryId: other }] }) })]);
+      // old mail isn't re-filed into the new target: what the filter was applied to stays claimed
+      expect(sqlDb(backend.store).get<{ c: number }>("SELECT count(*) c FROM filter_applications WHERE filter_id = ?", first!.id)!.c).toBeGreaterThan(0);
+      await client.call("similar.undo", { undoId: null, filterUndo: moved.filter!.filterUndo });
+      expect(await client.call("filters.list", {})).toEqual([expect.objectContaining({ id: first!.id, name: "Uber → Facturas", rule: expect.objectContaining({ actions: [{ type: "addCategory", categoryId: cat }] }) })]);
+
+      // a user's own filter for the same mail elsewhere is never changed: a new automatic one is made
+      await client.call("filters.save", { id: first!.id, name: "Mine", enabled: true, source: "manual", rule: first!.rule, auto: false });
+      const mine = await client.call("categorize.apply", { categoryId: other, scope, always: true, filterName: "Uber → Viajes" });
+      expect(mine.filter).toMatchObject({ retargeted: null });
+      expect((await client.call("filters.list", {})).map((f) => [f.name, f.auto])).toEqual([["Mine", false], ["Uber → Viajes", true]]);
+    });
+
+    it("plan 85: a disabled user filter stays off; a sender's filter here turns off their subject filter elsewhere", async () => {
+      const { client, cat, ingest } = await world();
+      ingest([{ subject: "Tu recibo 12" }]);
+      const other = (await client.call("categories.create", { name: "Viajes", color: "cyan" })).id;
+      const subject = { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo 12" } as const;
+      // the user's own identical filter, turned off: a new automatic one is made, theirs untouched
+      const rule = { match: "all" as const, conditions: [{ field: "from" as const, op: "equals" as const, value: "uber.receipts@uber.com" }, { field: "subject" as const, op: "matches" as const, value: "^tu recibo [0-9]+$" }], actions: [{ type: "addCategory" as const, categoryId: other }] };
+      const off = await client.call("filters.save", { name: "Off", enabled: false, source: "manual", rule });
+      const r = await client.call("categorize.apply", { categoryId: other, scope: subject, always: true, filterName: "Uber · Tu recibo # → Viajes" });
+      expect(r.filter!.id).not.toBe(off.id);
+      expect((await client.call("filters.list", {})).find((f) => f.id === off.id)).toMatchObject({ enabled: false, auto: false });
+      // all of Uber into Facturas: their automatic subject filter into Viajes would split it, so it goes off (undo turns it back on)
+      const sender = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" });
+      expect((await client.call("filters.list", {})).find((f) => f.id === r.filter!.id)).toMatchObject({ enabled: false });
+      await client.call("similar.undo", { undoId: null, filterUndo: sender.filter!.filterUndo });
+      expect((await client.call("filters.list", {})).find((f) => f.id === r.filter!.id)).toMatchObject({ enabled: true });
+    });
+
+    it("plan 85: setEnabled turns filters off at once, autoFor finds Terno's filter for filed mail, an edit meanwhile wins", async () => {
+      const { client, cat, ingest } = await world();
+      const [a, other] = ingest([{ subject: "Tu recibo" }, { from: { name: "Ana", email: "ana@acme.studio" } }]);
+      await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" });
+      const [f] = await client.call("filters.list", {});
+      expect(await client.call("filters.autoFor", { categoryId: cat, threadIds: [a!] })).toEqual({ filters: [{ id: f!.id, name: "Uber → Facturas" }] });
+      expect(await client.call("filters.autoFor", { categoryId: cat, threadIds: [other!] })).toEqual({ filters: [] });
+      const off = await client.call("filters.setEnabled", { ids: [f!.id], enabled: false });
+      expect(off).toEqual({ changed: 1, filterUndo: expect.any(Number) });
+      expect(await client.call("filters.autoFor", { categoryId: cat, threadIds: [a!] })).toEqual({ filters: [] });
+      // the user renamed it meanwhile: the undo leaves their edit
+      await client.call("filters.save", { id: f!.id, name: "Renamed", enabled: false, source: "manual", rule: f!.rule });
+      await client.call("similar.undo", { undoId: null, filterUndo: off.filterUndo });
+      expect((await client.call("filters.list", {}))[0]).toMatchObject({ name: "Renamed", enabled: false, auto: true });
     });
 
     it("plan 81: a domain and a list scope file now and save their filter too; undo takes back both", async () => {

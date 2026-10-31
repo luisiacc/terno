@@ -1392,6 +1392,13 @@ export class IdbMailStore implements MailStore {
         return lo === null || hi === null ? null : { lo, hi };
       }),
     matchWindow: async (rule, now, window) => (await this.matchAll(rule, now, window)).messageIds,
+    matchMessages: async (rule, now, messageIds) => {
+      await this.settled();
+      return this.exclusive(async () => {
+        if (ruleReadsBody(rule)) await this.readBodies(messageIds.filter((id) => T(this.c, "messages").get(id)?.body_state === "full"));
+        return findRuleMatches(this.c, rule, now, messageIds).messageIds;
+      });
+    },
     applyChunk: (id, ruleJson, messageIds, now) =>
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
@@ -1496,6 +1503,7 @@ export class IdbMailStore implements MailStore {
     scopes: (threadIds) => this.read(() => similarScopesOf(this.c, threadIds)),
     resolvePage: (scope, action, targets, cursor, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, cursor, limit)),
     kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
+    roots: (threadIds) => this.read(() => rootRefs(this.c, threadIds).map((r) => r.messageId)),
   };
 
   readonly storage: MailStore["storage"] = {

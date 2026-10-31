@@ -14,8 +14,11 @@ import {
   type AccountSyncState,
   type Category,
   type CategoryColor,
+  filterState,
+  sameFilterState,
   type Filter,
   type FilterRule,
+  type FilterSave,
   type OpState,
   type UserActionKind,
 } from "@terno/core";
@@ -222,6 +225,7 @@ interface FilterRow {
   hits: number;
   created_at: number;
   learned_key: string | null;
+  auto: number;
 }
 
 function toFilter(r: FilterRow): Filter {
@@ -230,6 +234,7 @@ function toFilter(r: FilterRow): Filter {
     name: r.name,
     enabled: r.enabled === 1,
     source: r.source,
+    auto: r.auto === 1,
     rule: JSON.parse(r.rule_json) as FilterRule,
     hits: r.hits,
     createdAt: r.created_at,
@@ -245,37 +250,39 @@ export function getFilter(db: Db, id: number): Filter | null {
   return r ? toFilter(r) : null;
 }
 
-export function saveFilter(
-  db: Db,
-  f: { id?: number; name: string; enabled: boolean; source: Filter["source"]; rule: FilterRule; learnedKey?: string },
-  now = Date.now(),
-): Filter {
-  if (f.id !== undefined) {
-    const previous = db.get<{ rule_json: string }>("SELECT rule_json FROM filters WHERE id = ?", f.id);
-    // A changed rule is a different filter: forget what the old definition was applied to.
-    if (previous && previous.rule_json !== JSON.stringify(f.rule)) db.run("DELETE FROM filter_applications WHERE filter_id = ?", f.id);
-    db.run(
-      "UPDATE filters SET name = ?, enabled = ?, source = ?, rule_json = ? WHERE id = ?",
+export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
+  return db.tx(() => {
+    if (f.id !== undefined) {
+      const previous = getFilter(db, f.id);
+      // plan 85: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
+      if (f.expect && (!previous || !sameFilterState(filterState(previous), f.expect))) throw new RpcError("CANCELLED", L("errors.filterChanged"));
+      // A changed rule is a different filter: forget what the old definition was applied to (a retarget keeps it, plan 85).
+      if (previous && JSON.stringify(previous.rule) !== JSON.stringify(f.rule) && !f.keepApplications) db.run("DELETE FROM filter_applications WHERE filter_id = ?", f.id);
+      db.run(
+        "UPDATE filters SET name = ?, enabled = ?, source = ?, rule_json = ?, auto = coalesce(?, auto) WHERE id = ?",
+        f.name,
+        f.enabled ? 1 : 0,
+        f.source,
+        JSON.stringify(f.rule),
+        f.auto === undefined ? null : f.auto ? 1 : 0,
+        f.id,
+      );
+      return getFilter(db, f.id)!;
+    }
+    const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM filters")!.p;
+    const id = db.run(
+      "INSERT INTO filters (name, enabled, source, auto, rule_json, learned_key, position, created_at) VALUES (?,?,?,?,?,?,?,?)",
       f.name,
       f.enabled ? 1 : 0,
       f.source,
+      f.auto ? 1 : 0,
       JSON.stringify(f.rule),
-      f.id,
-    );
-    return getFilter(db, f.id)!;
-  }
-  const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM filters")!.p;
-  const id = db.run(
-    "INSERT INTO filters (name, enabled, source, rule_json, learned_key, position, created_at) VALUES (?,?,?,?,?,?,?)",
-    f.name,
-    f.enabled ? 1 : 0,
-    f.source,
-    JSON.stringify(f.rule),
-    f.learnedKey ?? null,
-    position,
-    now,
-  ).lastInsertRowid;
-  return getFilter(db, id)!;
+      f.learnedKey ?? null,
+      position,
+      now,
+    ).lastInsertRowid;
+    return getFilter(db, id)!;
+  });
 }
 
 export function deleteFilter(db: Db, id: number): void {

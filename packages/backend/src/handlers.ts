@@ -465,12 +465,12 @@ export function createHandlers(b: Backend): Handlers {
     "categorize.apply": async ({ categoryId, scope, always, filterName }, ctx) => {
       await requireCategory(categoryId);
       // plan 80: the filter first, so mail that arrives while the set is filed is caught by it (the set is fixed below)
-      let filter: { id: number; filterUndo: number | null } | null = null;
+      let filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null = null;
       let filterFailed = false;
       if (always && isFilterable(scope)) {
         try {
           const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? (scope.kind === "words" ? scope.terms.join(", ") : similarValue(scope)));
-          filter = { id: f.filter.id, filterUndo: f.filterUndo };
+          filter = { id: f.filter.id, filterUndo: f.filterUndo, retargeted: f.retargeted };
         } catch (error) {
           // the mail is still filed and undoable: the result says the filter is missing
           filterFailed = true;
@@ -560,6 +560,19 @@ export function createHandlers(b: Backend): Handlers {
 
     "filters.list": () => store.filters.list(),
     "filters.save": (p) => store.filters.save(p, b.now()),
+    "filters.setEnabled": ({ ids, enabled }) => similarFilters.setEnabled(ids, enabled),
+    "filters.autoFor": async ({ categoryId, threadIds }) => {
+      const mine = (await store.filters.list()).filter((f) => f.auto && f.enabled && f.rule.actions.some((a) => a.type === "addCategory" && a.categoryId === categoryId));
+      if (mine.length === 0) return { filters: [] };
+      // what sender and subject rules decide on: each thread's root inbound message (≤ 200), the first match enough
+      const roots = await store.similar.roots(threadIds);
+      const found: { id: number; name: string }[] = [];
+      for (const f of mine) {
+        if ((await store.filters.matchMessages(f.rule, b.now(), roots)).length) found.push({ id: f.id, name: f.name });
+        await b.yieldTurn();
+      }
+      return { filters: found };
+    },
     "filters.delete": async ({ id }) => {
       await store.filters.delete(id);
       return { ok: true as const };

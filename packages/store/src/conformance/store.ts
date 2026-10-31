@@ -1293,6 +1293,32 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         return { store, acct: acct!, cat, thread };
       }
 
+      it("plan 85: auto round-trips (kept on update unless said), a write expecting another state is refused, a retarget keeps the claims", async () => {
+        const { store, cat, thread } = await setup();
+        await thread();
+        const rule = categoryRule({ kind: "sender", email: "uber.receipts@uber.com" }, cat);
+        const f = await store.filters.save({ name: "Uber", enabled: true, source: "manual", auto: true, rule }, NOW);
+        expect(f.auto).toBe(true);
+        expect((await store.filters.save({ id: f.id, name: "Uber", enabled: false, source: "manual", rule }, NOW)).auto).toBe(true);
+        expect((await store.filters.save({ name: "Mine", enabled: true, source: "manual", rule }, NOW)).auto).toBe(false);
+        // an automatic write lands only on what it read
+        const read = { name: "Uber", enabled: true, rule, auto: true };
+        await expect(store.filters.save({ id: f.id, name: "Uber", enabled: true, source: "manual", rule, expect: read }, NOW)).rejects.toMatchObject({ code: "CANCELLED" });
+        expect((await store.filters.save({ id: f.id, name: "Uber", enabled: true, source: "manual", rule, expect: { ...read, enabled: false } }, NOW)).enabled).toBe(true);
+        // applied, then retargeted with its claims kept: applying again files nothing
+        const range = (await store.filters.messageIdRange())!;
+        const ids = await store.filters.matchWindow(rule, NOW, { from: range.lo, to: range.hi });
+        expect((await store.filters.applyChunk(f.id, JSON.stringify(rule), ids, NOW)).applied).toBe(1);
+        const other = (await store.categories.create("Viajes", "cyan")).id;
+        const moved = categoryRule({ kind: "sender", email: "uber.receipts@uber.com" }, other);
+        await store.filters.save({ id: f.id, name: "Uber", enabled: true, source: "manual", rule: moved, keepApplications: true }, NOW);
+        expect((await store.filters.applyChunk(f.id, JSON.stringify(moved), ids, NOW)).applied).toBe(0);
+        // a user's edit of the rule forgets them, as before
+        await store.filters.save({ id: f.id, name: "Uber", enabled: true, source: "manual", rule }, NOW);
+        expect((await store.filters.applyChunk(f.id, JSON.stringify(rule), ids, NOW)).applied).toBe(1);
+        expect(await store.filters.matchMessages(rule, NOW, ids)).toEqual(ids);
+      });
+
       it("a subject scope is that sender's received mail with exactly that subject (normalized), with every bulk exclusion", async () => {
         const { store, acct, cat, thread } = await setup();
         const [a, b] = [await thread(), await thread({ subject: "TU RECIBO" })];

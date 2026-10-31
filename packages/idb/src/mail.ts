@@ -34,8 +34,11 @@ import {
   type Category,
   type CategoryColor,
   type Counts,
+  filterState,
+  sameFilterState,
   type Filter,
   type FilterRule,
+  type FilterSave,
   type MessageDetail,
   type OpState,
   type RuleMessage,
@@ -1414,7 +1417,9 @@ export function reorderCategories(c: Ctx, ids: readonly number[]): Category[] {
   return listCategories(c);
 }
 
-const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at });
+// plan 85: a record written before `auto` existed is automatic when SimilarFilters made it (manual with a learned key), as SQL's v34 backfill says
+const autoOf = (r: R): boolean => (r.auto === undefined ? r.source === "manual" && r.learned_key != null : r.auto === 1);
+const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, auto: autoOf(r), rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at });
 
 export function listFilters(c: Ctx): Filter[] {
   return [...T(c, "filters").all()].sort(byPosition).map(toFilter);
@@ -1425,21 +1430,23 @@ export function getFilter(c: Ctx, id: number): Filter | null {
   return r ? toFilter(r) : null;
 }
 
-export function saveFilter(c: Ctx, f: { id?: number; name: string; enabled: boolean; source: Filter["source"]; rule: FilterRule; learnedKey?: string }, now: number): Filter {
+export function saveFilter(c: Ctx, f: FilterSave, now: number): Filter {
   const filters = T(c, "filters");
   return c.db.tx(() => {
     const ruleJson = JSON.stringify(f.rule);
     if (f.id !== undefined) {
       const previous = filters.get(f.id);
+      // plan 85: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
+      if (f.expect && (!previous || !sameFilterState(filterState(toFilter(previous)), f.expect))) throw new RpcError("CANCELLED", L("errors.filterChanged"));
       if (!previous) return getFilter(c, f.id)!;
-      if (previous.rule_json !== ruleJson) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
-      filters.update(previous, { name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson });
+      if (previous.rule_json !== ruleJson && !f.keepApplications) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
+      filters.update(previous, { name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson, auto: (f.auto ?? autoOf(previous)) ? 1 : 0 });
       reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
       return getFilter(c, f.id)!;
     }
     let position = -1;
     for (const r of filters.all()) position = Math.max(position, r.position);
-    const row: R = { id: undefined, name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson, learned_key: f.learnedKey ?? null, hits: 0, position: position + 1, created_at: now, last_applied_at: null };
+    const row: R = { id: undefined, name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, auto: f.auto ? 1 : 0, rule_json: ruleJson, learned_key: f.learnedKey ?? null, hits: 0, position: position + 1, created_at: now, last_applied_at: null };
     filters.insert(row);
     reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
     return getFilter(c, row.id)!;

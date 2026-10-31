@@ -1041,6 +1041,11 @@ CREATE TABLE reminders (
   set_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 ` },
+  { version: 35, name: "automatic filters (plan 85)", sql: `
+ALTER TABLE filters ADD COLUMN auto INTEGER NOT NULL DEFAULT 0 CHECK (auto IN (0, 1));
+-- only SimilarFilters ever saved a manual filter with a learned key: those are Terno's (a partial backfill, on purpose)
+UPDATE filters SET auto = 1 WHERE source = 'manual' AND learned_key IS NOT NULL;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

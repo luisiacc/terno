@@ -849,6 +849,7 @@ export class SqlMailStore implements MailStore {
       return r.lo === null || r.hi === null ? null : { lo: r.lo, hi: r.hi };
     },
     matchWindow: async (rule, now, window) => findRuleMatches(this.db, rule, now, undefined, window).messageIds,
+    matchMessages: async (rule, now, messageIds) => findRuleMatches(this.db, rule, now, messageIds).messageIds,
     applyChunk: async (id, ruleJson, messageIds, now) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -917,6 +918,7 @@ export class SqlMailStore implements MailStore {
     scopes: async (threadIds) => similarScopesOf(this.db, threadIds),
     resolvePage: async (scope, action, targets, cursor, limit) => resolveSimilarPage(this.db, scope, action, targets, cursor, limit),
     kept: async (threadIds) => keptThreads(this.db, threadIds),
+    roots: async (threadIds) => rootRefs(this.db, threadIds).map((r) => r.messageId),
   };
 
   readonly storage: MailStore["storage"] = {
