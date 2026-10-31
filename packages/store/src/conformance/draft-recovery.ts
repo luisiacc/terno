@@ -89,6 +89,50 @@ export function defineDraftRecoveryConformance(name: string, harness: StoreHarne
       expect(JSON.parse(copy.reply_context_json!).subject).toBe("Other baseline");
     });
 
+    it("stale-save omission preserves the authoritative baseline through copy, reopen and subject-change admission", async () => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "omitted-context", rfcMessageId: "omitted@example.test", providerThreadId: "native-omitted", references: ["ancestor@example.test"], subject: "Original" })]);
+      const source = (await store.debug.snapshot()).messages[0]!;
+      const context = { subject: "Original", sourceId: source.id, sourceAccountId: a!, contextId: "authoritative-intent", rfcMessageId: "omitted@example.test" };
+      const attachment = await store.attachments.create({ accountId: a!, filename: "keep.txt", mime: "text/plain", size: 0, now: 0 });
+      await store.attachments.seal(a!, attachment.assetId);
+      const fields = { accountId: a!, mode: "reply" as const, threadId: source.threadId, inReplyToMessageId: source.id, to: [{ name: "Recipient", email: "recipient@example.test" }], cc: [], subject: "Re: Original", bodyText: "initial", attachments: [attachment] };
+      const first = (await store.drafts.save({ ...fields, replyContext: context }, 0))!;
+      const latest = (await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, bodyText: "latest writer" }, 1))!;
+      const copy = (await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, subject: "Changed conversation", bodyText: "stale writer authored work", bodyHtml: "<b>stale writer authored work</b>", quotedText: "> retained", includeQuote: true }, 2))!;
+      expect(copy.id).not.toBe(first.id);
+      expect(copy.generation).not.toBe(first.generation);
+      store = await harness.reopen(store); opened.push(store);
+      const rows = await store.drafts.list();
+      expect(rows.find((d) => d.id === latest.id)).toMatchObject({ generation: first.generation, revision: latest.revision, body_text: "latest writer" });
+      const reopened = rows.find((d) => d.id === copy.id)!;
+      expect(reopened).toMatchObject({ generation: copy.generation, revision: 1, account_id: a!, in_reply_to_message_id: source.id, subject: "Changed conversation", body_text: "stale writer authored work", body_html: "<b>stale writer authored work</b>", quoted_text: "> retained", include_quote: 1, attachments_json: JSON.stringify([attachment]), to_json: JSON.stringify(fields.to) });
+      expect(reopened.reply_context_json).toBe(JSON.stringify(context));
+      const command = { accountId: a!, to: fields.to, cc: [], bcc: [], subject: reopened.subject, bodyText: reopened.body_text, inReplyToMessageId: source.id, draftId: copy.id, draftGeneration: copy.generation, draftRevision: copy.revision, attachments: [attachment], recordReply: false, now: 3 };
+      await expect(store.compose.queueSend({ ...command, subject: "unsaved change" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const sent = await store.compose.queueSend(command);
+      expect(JSON.parse((await store.ops.get(sent.opId))!.payload_json)).toMatchObject({ subject: "Changed conversation", inReplyTo: null, references: [], providerThreadId: null });
+      expect((await store.drafts.list()).map((d) => d.id)).toEqual([latest.id]);
+      await expect(store.attachments.info(a!, attachment.assetId)).resolves.toMatchObject({ assetId: attachment.assetId });
+    });
+
+    it.each(["null context", "detach", "different source", "legacy"] as const)("stale-save omission control: %s", async (control) => {
+      let store = await open(); const [a] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "control-a", subject: "Original" }), msg({ accountId: a!, providerMsgId: "control-b", subject: "Other" })]);
+      const sources = (await store.debug.snapshot()).messages;
+      const source = sources.find((m) => m.providerMsgId === "control-a")!, other = sources.find((m) => m.providerMsgId === "control-b")!;
+      const context = { subject: "Original", sourceId: source.id, sourceAccountId: a!, contextId: "control-intent" };
+      const fields = { accountId: a!, mode: "reply" as const, inReplyToMessageId: source.id, to: [], cc: [], subject: "Original", bodyText: "initial" };
+      const first = (await store.drafts.save({ ...fields, ...(control === "legacy" ? {} : { replyContext: context }) }, 0))!;
+      await store.drafts.save({ ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, bodyText: "latest" }, 1);
+      const stale = { ...fields, id: first.id, generation: first.generation, baseRevision: first.revision, subject: "Edited", bodyText: "stale authored" };
+      const copy = (await store.drafts.save({ ...stale, ...(control === "null context" ? { replyContext: null } : control === "detach" ? { mode: "new" as const, inReplyToMessageId: null, threadId: null } : control === "different source" ? { inReplyToMessageId: other.id } : {}) }, 2))!;
+      store = await harness.reopen(store); opened.push(store);
+      expect((await store.drafts.list()).find((d) => d.id === copy.id)).toMatchObject({ body_text: "stale authored", reply_context_json: null, in_reply_to_message_id: control === "detach" ? null : control === "different source" ? other.id : source.id });
+      await expect(store.drafts.save({ ...stale, replyContext: { ...context, sourceId: other.id } }, 3)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await store.drafts.list()).toHaveLength(2);
+    });
+
     it("retains a fresh baseline after an unsaved forward-to-reply round trip", async () => {
       const store = await open(); const [a] = await withAccounts(store);
       await ingest(store, [msg({ accountId: a!, providerMsgId: "roundtrip-source", subject: "Original" })]);
