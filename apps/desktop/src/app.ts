@@ -421,7 +421,9 @@ function shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<Bac
 /** Keep authority owned until the captured utility's exit event, even if kill fails. */
 function stopBackend(): Promise<boolean> {
   const retirement = backendRetirement;
-  return retirement ? retirement.retire() : Promise.resolve(true);
+  const stopped = retirement ? retirement.retire() : Promise.resolve(true);
+  releaseReadyWaiters();
+  return stopped;
 }
 
 async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
@@ -478,6 +480,7 @@ function restartEngine() {
 async function connectWindow(win: BrowserWindow) {
   const child = backend;
   const retirement = backendRetirement;
+  if (!child || retirement?.retiring || win.isDestroyed()) return;
   const document = win.webContents.mainFrame;
   await backendReady;
   if (!child || backend !== child || retirement?.retiring || win.isDestroyed() || win.webContents.mainFrame !== document) return;

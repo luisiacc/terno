@@ -4,8 +4,11 @@ const { execFileSync } = require('node:child_process');
 const { join } = require('node:path');
 const { BackendRetirement } = require(process.argv[2]);
 app.setPath('userData', process.argv[3]);
-const identity = (pid) => ({ pid, birth: execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' }).trim(), argv: execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim() });
-console.log(JSON.stringify({ main: identity(process.pid) }));
+const identity = (pid) => ({ pid, birth: execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8', timeout: 1000 }).trim(), argv: execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 1000 }).trim() });
+try { console.log(JSON.stringify({ main: identity(process.pid) })); } catch { app.exit(2); }
+let launchApproved = false, launchEnded = false, handoff;
+process.stdin.once('data', (data) => { launchApproved = data.toString() === 'go'; handoff?.(); });
+process.stdin.once('end', () => { launchEnded = true; handoff?.(); });
 app.whenReady().then(async () => {
   let terminal;
   const socketClosed = new Promise((r) => { terminal = r; });
@@ -26,7 +29,17 @@ app.whenReady().then(async () => {
     await new Promise((r) => server.close(r));
     app.exit(code);
   };
-  child.on('spawn', () => { console.log(JSON.stringify({ utility: identity(child.pid) })); child.postMessage('go'); });
+  child.on('spawn', () => {
+    try { console.log(JSON.stringify({ utility: identity(child.pid) })); }
+    catch { child.postMessage('abort'); return; }
+    let sent = false;
+    handoff = () => {
+      if (sent || (!launchApproved && !launchEnded)) return;
+      sent = true;
+      child.postMessage(launchApproved ? 'go' : 'abort');
+    };
+    handoff();
+  });
   child.on('exit', () => { exited = true; if (!sawBody) void finish(2); });
   const watchdog = setTimeout(async () => { console.error('Fixture watchdog'); if (await retirement.retire()) void finish(3); }, 10000);
   child.on('message', async (msg) => {

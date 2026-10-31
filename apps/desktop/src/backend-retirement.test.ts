@@ -84,7 +84,7 @@ it("actual stopBackend keeps the process owned while kill is pending, including 
   vi.useFakeTimers();
   const { child, owned } = utility();
   const retirement = new BackendRetirement(owned);
-  const h = host(["stopBackend"], { backend: owned, backendRetirement: retirement }, "{ stop: stopBackend, owner: () => backend }");
+  const h = host(["stopBackend"], { backend: owned, backendRetirement: retirement, releaseReadyWaiters: vi.fn() }, "{ stop: stopBackend, owner: () => backend }");
   const stopped = h.stop();
   expect(h.owner()).toBe(owned);
   await vi.advanceTimersByTimeAsync(BACKEND_GRACE_MS);
@@ -228,4 +228,34 @@ it("actual failed quit restores windows and retains the single-instance owner", 
   expect(h.state()).toBe("running");
   expect(app.quit).not.toHaveBeenCalled();
   expect(quitting).not.toHaveBeenCalled();
+});
+
+
+it("pre-ready retirement releases old handoffs and rejects repeated requests after failed termination", async () => {
+  vi.useFakeTimers();
+  let releaseReadyWaiters!: () => void;
+  const backendReady = new Promise<void>((resolve) => { releaseReadyWaiters = resolve; });
+  const { child, owned } = utility(vi.fn(() => false));
+  const retirement = new BackendRetirement(owned);
+  const MessageChannelMain = vi.fn();
+  const h = host(["connectWindow", "stopBackend"], {
+    backend: owned, backendRetirement: retirement, backendReady, releaseReadyWaiters, MessageChannelMain,
+  }, "{ connect: connectWindow, stop: stopBackend, owner: () => backend }");
+  let completed = 0;
+  const window = { webContents: { mainFrame: {}, postMessage: vi.fn() }, isDestroyed: () => false };
+  const pending = h.connect(window).then(() => completed++);
+  const stopping = h.stop();
+  // Retirement suppresses ready; no simulated ready message rescues these waits.
+  for (let i = 0; i < 20; i++) {
+    window.webContents.mainFrame = {};
+    void h.connect(window).then(() => completed++);
+  }
+  await vi.advanceTimersByTimeAsync(BACKEND_GRACE_MS);
+  expect(await stopping).toBe(false);
+  expect(completed).toBe(21);
+  expect(h.owner()).toBe(owned);
+  expect(retirement.exited).toBe(false);
+  expect(MessageChannelMain).not.toHaveBeenCalled();
+  await pending;
+  child.emit("exit");
 });

@@ -79,3 +79,29 @@ These are the new R2 lower-severity backlogs explicitly required to remain held.
 Final finite disposition: recommend the demonstrated desktop physical-exit/no-reuse sub-boundary as qualified with these two named cleanup limits, **not** closure of all desktop retirement/liveness or A09/W05. Retain A09 needs-work for these cleanup boundaries plus peer-owned Web and foreground/project policy. Neither held P2 grants permission to resume implementation in this exhausted series.
 
 Cleanup audit /tmp/terno-w05-desktop/cleanup-audit.json confirms the recorded parent/utility PIDs absent and synthetic directories removed for original native witness, final body, final pre-ACK and failure mutant. Test-generated packages/backend/dist/incoming.worker.cjs and its newly created directory were removed (directory birth matched first test02:44:22). Original report/working artifact state is restored; dependencies remain installed/ignored. All command sessions were joined; no user process was signalled. No full gates/build/smoke was run. Final handoff is a clean committed branch after this documentation-only record; Root owns all integration.
+
+
+## Authorized R2 follow-up (2026-10-31)
+
+New request (verbatim): "desktop retirement R2 P2s (identity-capture cleanup, pre-ready handoff waiter retention)."
+
+Actual base: 89123bfe18f4689623ec62a56190cac963baface, clean T3-prepared isolated checkout. Source4495d681 is already landed. Earlier critique/R1/R2 history above remains authoritative; this is explicitly authorized follow-up with exactly one native gpt-6.1-sol/high read-only Standards+Spec review after fixes, no review loop. Any remaining/new P1/P2 parks only this item, committed/unlanded for Root.
+
+Design: arm native supervision before identity capture and keep cleanup unconditional; capture failure uses the fixture handshake to end its own Electron/utility without signalling unverifiable identities. Keep PID/birth/argv equality before any fallback signal. Release pending renderer readiness on retirement and reject new retiring handoffs before awaiting readiness. Retain exact UtilityProcess ownership until observed exit.
+
+Tests: ordinary failing behavioral cases first for actual identity-capture failure and source-extracted pre-ready connectWindow/stopBackend with failed termination, repeated requests, suppressed ready and no port allocation. Then existing 42 direct controls plus native 2 and added cases, desktop full-package and dedicated config types, exact-file lint, serial. Append inherited NODE_OPTIONS network guard to every test. Synthetic profiles only; archive/restore original generated artifact state.
+
+Perf: cold lifecycle only; no mailbox/list/request hot path change, so no perf file applies. No polling or new idle activity.
+
+Out of scope: all shared backend/core/RPC/store/incoming code, S48 ownership, editor/list/UI, protected user plans and WIP, full repo gates, production app/Vite builds, packaging/smoke, broad A09 closure, push/fetch/landing. Root owns integration.
+
+
+### Follow-up implementation and pre-review evidence
+
+Readiness regression RED 1/1: zero of 21 handoffs completed after failed pre-ready retirement (expected21); actual extracted connectWindow/stopBackend, no synthetic ready rescue. GREEN43/43 across original four direct-control files. stopBackend marks retirement first, then resolves the generation readiness promise; connectWindow rejects a retiring/destroyed owner before retaining a document. Existing post-await generation/document checks remain. Physical ownership is unchanged.
+
+Capture regression RED1/1: actual injected invalid `ps` invocation fails, and the old runner exits0 instead of required abort2 (initial throw-only RED also retained). GREEN3/3 native cases: original body, original pre-ACK, new identity failure. Runner arms12s supervision before capture and joins in finally; EOF denies the fixture work handshake and utility exits naturally before parent exit2. One-second bounds on identity subprocesses keep synchronous capture finite. No fabricated identity or unverified PID signal; all three final runs recorded zero fallback signals. stdin errors and partial output cannot bypass cleanup. Main and utility identities are recorded by the fixture; runner records launch PID immediately. `/tmp/terno-w05-desktop-r2-followup/cleanup-audit.json` confirms all recorded parent/utility PIDs absent and profiles removed.
+
+Desktop full touched-package config typecheck, dedicated retirement config types, five exact changed-code file lint and diff-check pass. Native final rerun followed additional finite identity-probe/error-handling changes; no unchanged retry to seek green. All tests appended inherited NODE_OPTIONS with the required guard. No Backend is instantiated in selected tests, so managed Backend Request mocks are inapplicable. No unexpected external routes observed. Dependency auto-provision on first pnpm invocation reused720 local packages and ran ensure-electron; no app build was requested. The selected unit setup generated incoming.worker.cjs from an initially absent worker/dist; both were removed after checks. A RED run used the legacy body-witness path; its output is archived separately and the preexisting witness restored from Root's archived prior bytes. No real profiles/secrets were accessed. Installed Electron45 fixture only, no full app/preload/package or arbitrary crash recovery coverage; no full A09/W05/release-green claim.
+
+One authorized follow-up Standards+Spec read-only Sol/high review follows this coherent result. Evidence directory: /tmp/terno-w05-desktop-r2-followup. Earlier held findings outside these two remain held.
