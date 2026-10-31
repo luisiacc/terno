@@ -15,14 +15,14 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
-import { currentScope, listKey, loadMore, useList } from "~/state/list";
+import { currentScope, inboxTop, listKey, loadMore, useList } from "~/state/list";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
 import { client } from "~/rpc/connection";
@@ -43,6 +43,10 @@ import { listAnchor } from "~/state/list";
 import { ListTabs, TAB_PANEL_ID } from "./list-tabs";
 import { SelectionBar } from "./selection-bar";
 import { renderProbe } from "~/lib/render-probe";
+
+/** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
+const TOP_LABEL = 28;
+const TOP_GAP = 9;
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -644,15 +648,28 @@ export function ThreadList() {
   // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it
   const dock = useSnack((s) => s.inset);
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
+  // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
+  const top = useMemo(() => {
+    let n = 0;
+    while (n < items.length && inboxTop.ids.includes(items[n]!.id)) n++;
+    return n;
+  }, [items]);
+  const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => height,
+    estimateSize: (i) => height + (i === top - 1 ? topGap : 0),
+    paddingStart: top > 0 ? TOP_LABEL : 0,
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
     scrollPaddingEnd: dock,
   });
+
+  // the top came or went (or grew): positions recomputed before paint
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [top, topGap]);
 
   // a new row height (design or density): every position is recomputed before paint
   const measuredHeight = useRef(height);
@@ -810,8 +827,16 @@ export function ThreadList() {
           !filter && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+            {top > 0 && (
+              // what the rows under it are (each row says "Reminder" to a screen reader itself)
+              <div aria-hidden data-testid="inbox-reminders-label" className="absolute inset-x-0 top-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ height: TOP_LABEL }}>
+                <Bell className="size-3" />
+                {t("view.reminders")}
+              </div>
+            )}
+            {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: TOP_LABEL + top * height + topGap / 2 }} />}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} />
             ))}
           </div>
         )}

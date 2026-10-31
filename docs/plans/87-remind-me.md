@@ -268,3 +268,13 @@ The browser's native date and time inputs cut off "AM", and their popups ignored
 - **The time:** the UI library's `Select`, listing times every 15 minutes in the locale's format. It drops below the field with the chosen time in view. Times already gone today are dimmed, and choosing one says "Pick a time in the future."
 
 The picker is lazy-loaded, so react-day-picker stays out of the entry chunk. The e2e spec now drives the calendar and the time list.
+
+### Follow-up: the Inbox's top reads as its own group
+
+Due rows looked like any other row: a small bell, and the mail's own time, which read as out of order. Now:
+
+- **A label:** a quiet "🔔 Reminders" heading sits above them, inside the scroller, set as the virtualizer's `paddingStart`.
+- **A break:** a hairline gap separates them from the rest of the Inbox. It is the last top row's extra size, and that row's own separator is hidden so the line isn't doubled.
+- **The time slot:** each due row shows a bell and the time it came due, in the attention ink (`unread-ink`, the sidebar count's tone).
+
+The rows keep their height, so selection, j/k and the menus are unchanged. Drafts stay above in their strip.

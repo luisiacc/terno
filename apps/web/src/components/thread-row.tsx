@@ -44,6 +44,10 @@ interface Props {
   layout: DesignVariants["row"];
   /** plan 80: the category whose suggestions this list reviews (its rows answer them) */
   review?: number | null;
+  /** plan 87: one of the Inbox's top (its reminder is due): its time slot says so */
+  reminderTop?: boolean;
+  /** the top's last row: the hairline under the top replaces its own separator */
+  reminderEnd?: boolean;
 }
 
 /**
@@ -53,7 +57,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -95,7 +99,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       ))}
       {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
       {thread.starred && <Star className="size-3 fill-star text-star" />}
-      {reminder && (
+      {reminder && !reminderTop && (
         // plan 87: due, in the accent (the Inbox's top); set, quiet
         <Bell
           aria-hidden
@@ -137,11 +141,18 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       )}
     </span>
   );
-  const date = (
-    <span data-testid="row-date" title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-      {remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)}
-    </span>
-  );
+  const date =
+    reminderTop && reminder ? (
+      // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
+      <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", selected ? "" : checked ? "text-accent-foreground" : "text-unread-ink")}>
+        <Bell aria-hidden data-testid="row-reminder" data-due className="size-3" />
+        {listDate(reminder.dueAt)}
+      </span>
+    ) : (
+      <span data-testid="row-date" title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
+        {remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)}
+      </span>
+    );
   const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
   const subject = (
     <span data-testid="row-subject" className={cn("truncate", classic && "shrink-0", thread.unread ? "type-row-subject-strong text-foreground" : "type-row-subject text-foreground")} style={classic ? { maxWidth: "60%" } : undefined}>
@@ -201,6 +212,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
         // classic rows: one hairline separator, hidden under the selection and above it (rows render in list order, so the next sibling is the next row)
         classic && "after:absolute after:right-4 after:bottom-0 after:left-5 after:h-(--hairline-w) after:bg-hairline [&:has(+[data-checked])]:after:hidden [&:has(+[data-cursor])]:after:hidden",
         selected ? "text-row-selected-foreground before:bg-row-selected after:hidden" : checked ? "before:bg-accent after:hidden" : "hover:before:bg-row-hover",
+        reminderEnd && "after:hidden",
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
