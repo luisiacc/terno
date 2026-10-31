@@ -45,9 +45,17 @@ async function setup() {
     storage: { INBOX: {}, "": { separator: "/", folders: { Sent: { "special-use": "\\Sent" }, Archive: { "special-use": "\\Archive" } } } },
   });
   const imapCommands: string[] = [];
+  const imapWire: { session: number; command: string; data: string; mailbox: string | null }[] = [];
+  const idling = new Set<number>();
+  imap.on("session", (event) => {
+    if (event.type === "waiting" && event.command === "IDLE") idling.add(event.session.session);
+    if (event.type === "close") idling.delete(event.session.session);
+  });
+  imap.on("command", (event) => { if (event.command === "IDLE") idling.delete(event.session); });
   imap.script.add({ on: "command", run: true, when: (context) => {
     if (imapCommands.length >= 2000) throw new Error("Unbounded IMAP commands");
     imapCommands.push(context.command ?? "");
+    imapWire.push({ session: context.session, command: context.command ?? "", data: context.data, mailbox: context.mailbox });
     return false;
   } });
   const smtpCommands: string[] = [];
@@ -144,12 +152,38 @@ async function setup() {
     return account;
   };
   const reopen = async () => { await session.stop(); session = open(); await session.backend.ready; };
-  return { imap, imapCommands, smtpCommands, auths, received, state, ops, send, add, reopen,
+  return { imap, imapCommands, imapWire, idling, smtpCommands, auths, received, state, ops, send, add, reopen,
     get backend() { return session.backend; }, get client() { return session.client; },
     refuse() { refuse = true; },
     replacePassword() { refuse = false; password = "replacement-pass"; imap.control.updateUser("testuser", { password }); },
     holdRefusal() { refuse = true; holdNext = true; }, release() { const answer = release; release = noop; answer(); },
   };
+}
+
+function holdBody(t: Awaited<ReturnType<typeof setup>>, text: string) {
+  let arrive!: (id: number) => void, release!: () => void;
+  const entered = new Promise<number>((resolve) => { arrive = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const write = t.backend.store.sync.setBody.bind(t.backend.store.sync);
+  let pending: Promise<unknown> | undefined;
+  const spy = vi.spyOn(t.backend.store.sync, "setBody").mockImplementation((...args) => {
+    if (args[1] !== text) return write(...args);
+    expect(pending).toBeUndefined();
+    arrive(args[0]);
+    const work = (async () => {
+      await gate;
+      return write(...args);
+    })();
+    pending = work;
+    return work;
+  });
+  const close = async () => {
+    release();
+    try { if (pending) await bounded(pending); }
+    finally { spy.mockRestore(); }
+  };
+  cleanups.push(close);
+  return { entered, release, get completed() { return pending!; }, close };
 }
 
 async function parked(t: Awaited<ReturnType<typeof setup>>, ids: string[]) {
@@ -320,20 +354,43 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     expect(t.auths).toEqual([{ generation: "initial", refused: false }, { generation: "initial", refused: true }]);
     expect(t.smtpCommands.filter((c) => ["MAIL", "RCPT", "DATA"].includes(c))).toEqual([]);
     const prepared = Buffer.from(await readCopyWire(t.backend.store, first.opId, async () => {}, () => {}));
-    await expect.poll(() => t.imapCommands.includes("IDLE")).toBe(true);
+    await expect.poll(() => t.idling.size).toBe(1);
+    const listener = [...t.idling][0]!;
+    const body = holdBody(t, "Exact after-refusal body.\n.Dot line\n");
     const incoming = raw("after-refusal");
     const added = t.imap.control.addMessage("INBOX", { raw: incoming });
     // No explicit sync: this new body must arrive via the live watch.
     await expect.poll(async () => (await t.client.call("threads.list", { view: "inbox" })).items.map((thread) => thread.subject)).toContain("after-refusal");
     const [thread] = (await t.client.call("threads.list", { view: "inbox" })).items;
-    const message = (await t.client.call("threads.get", { threadId: thread!.id })).messages[0]!;
-    expect(message).toMatchObject({ bodyState: "full", bodyText: "Exact after-refusal body.\n.Dot line\n", isRead: false });
+    const heldId = await bounded(body.entered);
+    try {
+      const message = (await t.client.call("threads.get", { threadId: thread!.id })).messages[0]!;
+      expect(message.id).toBe(heldId);
+      expect(message).toMatchObject({ bodyState: "none", bodyText: null, bodyHtml: null, isRead: false });
+      body.release();
+      await bounded(body.completed);
+      expect((await t.client.call("threads.get", { threadId: thread!.id })).messages[0]).toMatchObject({
+        id: heldId, bodyState: "full", bodyText: "Exact after-refusal body.\n.Dot line\n", isRead: false,
+      });
+    } finally { await body.close(); }
+    const sourceFetch = t.imapWire.filter((c) => c.command === "UID FETCH" && /BODY\.PEEK\[\]/i.test(c.data));
+    expect(sourceFetch).toHaveLength(1);
+    expect(sourceFetch[0]).toMatchObject({ mailbox: "INBOX", data: expect.stringMatching(new RegExp(`\\b${added.uid}\\b.*BODY\\.PEEK\\[\\]`, "i")) });
+    expect(sourceFetch[0]!.session).not.toBe(listener);
+    expect(t.idling.has(listener)).toBe(true);
+    expect(await t.backend.store.providerStore(account.id).locations!.of([heldId])).toEqual([
+      expect.objectContaining({ mailbox: "INBOX", uid: added.uid, uidvalidity: added.uidvalidity }),
+    ]);
     expect(t.imap.control.getMessage("INBOX", added.uid).raw).toEqual(incoming);
     const second = await t.send("second-waiting", account.id);
     const commandStart = t.imapCommands.length;
     await t.client.call("threads.act", { threadIds: [thread!.id], action: "markRead" });
     await t.backend.runWorker();
     expect(t.imapCommands.slice(commandStart)).toContain("UID STORE");
+    const stores = t.imapWire.slice(commandStart).filter((c) => c.command === "UID STORE");
+    expect(stores).toHaveLength(1);
+    expect(stores[0]).toMatchObject({ mailbox: "INBOX", data: expect.stringMatching(new RegExp(`\\b${added.uid}\\b.*\\\\Seen`, "i")) });
+    expect(stores[0]!.session).not.toBe(listener);
     expect(t.imap.control.getMessage("INBOX", added.uid).flags).toContain("\\Seen");
     expect((await t.client.call("threads.get", { threadId: thread!.id })).messages[0]?.isRead).toBe(true);
     expect((await t.ops()).find((op) => op.kind === "markRead")).toMatchObject({ state: "succeeded" });
@@ -347,18 +404,38 @@ describe("S21: real SMTP authentication is isolated from receiving", () => {
     await parked(t, [first.opId, second.opId]);
     expect(Buffer.from(await readCopyWire(t.backend.store, first.opId, async () => {}, () => {}))).toEqual(prepared);
     expect(await t.state(account.id)).toMatchObject({ authRequired: true, authScope: "send" });
+    expect((await t.client.call("threads.get", { threadId: thread!.id })).messages[0]).toMatchObject({
+      id: heldId, bodyState: "full", bodyText: "Exact after-refusal body.\n.Dot line\n", isRead: true,
+    });
     // autoSync:false does not start accounts on reopen: establish receiving before the public retry.
     await t.backend.syncAccount(account.id);
     const foreground = raw("foreground-after-reopen");
-    const fresh = t.imap.control.addMessage("INBOX", { raw: foreground });
-    const before = t.imapCommands.length;
-    await t.client.call("sync.now", { accountId: account.id, reason: "user" });
-    await expect.poll(async () => (await t.client.call("threads.list", { view: "inbox" })).items.map((thread) => thread.subject)).toContain("foreground-after-reopen");
-    expect(t.imapCommands.length).toBeGreaterThan(before);
-    await t.backend.syncAccount(account.id);
-    const freshThread = (await t.client.call("threads.list", { view: "inbox" })).items.find((row) => row.subject === "foreground-after-reopen")!;
-    expect((await t.client.call("threads.get", { threadId: freshThread.id })).messages[0]).toMatchObject({ bodyState: "full", bodyText: "Exact foreground-after-reopen body.\n.Dot line\n" });
-    expect(t.imap.control.getMessage("INBOX", fresh.uid).raw).toEqual(foreground);
+    const foregroundBody = holdBody(t, "Exact foreground-after-reopen body.\n.Dot line\n");
+    // Archive is outside the INBOX watch: only the foreground request discovers this arrival.
+    const fresh = t.imap.control.addMessage("Archive", { raw: foreground });
+    const before = t.imapWire.length;
+    let freshId: number;
+    try {
+      await t.client.call("sync.now", { accountId: account.id, reason: "user" });
+      freshId = await bounded(foregroundBody.entered);
+      const freshThread = (await t.client.call("threads.list", { view: "all" })).items.find((row) => row.subject === "foreground-after-reopen")!;
+      expect((await t.client.call("threads.get", { threadId: freshThread.id })).messages[0]).toMatchObject({
+        id: freshId, bodyState: "none", bodyText: null, isRead: false,
+      });
+      foregroundBody.release();
+      await bounded(foregroundBody.completed);
+      expect((await t.client.call("threads.get", { threadId: freshThread.id })).messages[0]).toMatchObject({
+        id: freshId, bodyState: "full", bodyText: "Exact foreground-after-reopen body.\n.Dot line\n", isRead: false,
+      });
+    } finally { await foregroundBody.close(); }
+    const foregroundFetch = t.imapWire.slice(before).filter((c) => c.command === "UID FETCH" && /BODY\.PEEK\[\]/i.test(c.data));
+    expect(foregroundFetch).toHaveLength(1);
+    expect(foregroundFetch[0]).toMatchObject({ mailbox: "Archive", data: expect.stringMatching(new RegExp(`\\b${fresh.uid}\\b.*BODY\\.PEEK\\[\\]`, "i")) });
+    expect(t.idling.has(foregroundFetch[0]!.session)).toBe(false);
+    expect(await t.backend.store.providerStore(account.id).locations!.of([freshId])).toEqual([
+      expect.objectContaining({ mailbox: "Archive", uid: fresh.uid, uidvalidity: fresh.uidvalidity }),
+    ]);
+    expect(t.imap.control.getMessage("Archive", fresh.uid).raw).toEqual(foreground);
     await t.backend.runWorker();
     await parked(t, [first.opId, second.opId]);
     expect(t.auths).toHaveLength(2);
