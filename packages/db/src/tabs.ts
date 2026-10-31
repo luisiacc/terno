@@ -25,11 +25,13 @@ function writeTab(db: Db, threadId: number, own: ReadonlySet<string>): number {
 }
 
 /**
- * The facts' passes over threads (a rescan after your addresses changed, the first pass once they're known):
- * an Inbox thread of Gmail's gets its tab again, since mail of yours never decides it (Codex code review #3).
+ * What's yours changed (an alias, an account) or the facts learned it at last: a tab may change, since mail of
+ * yours never decides one (Codex code review #3). The backfill's threads phase goes over the Inbox again, in its
+ * own slices; one already under way keeps going (what it hasn't reached reads the new addresses).
  */
-export function refreshTab(db: Db, threadId: number, own: ReadonlySet<string>): void {
-  if (db.get("SELECT 1 FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND t.in_inbox = 1 AND a.kind = 'gmail'", threadId)) writeTab(db, threadId, own);
+export function requestTabRefresh(db: Db): void {
+  if (db.get("SELECT 1 FROM settings WHERE key = ?", KEY) || !db.get("SELECT 1 FROM accounts WHERE kind = 'gmail'")) return;
+  db.run("INSERT INTO settings (key, value_json) VALUES (?, ?)", KEY, JSON.stringify({ phase: "threads", after: 0 } satisfies Progress));
 }
 
 export function tabsIdle(db: Db): boolean {

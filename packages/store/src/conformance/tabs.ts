@@ -113,6 +113,9 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       // you send from it: it's yours, and mail of yours never decides a tab
       await ingest(store, [msg({ accountId: gmail, providerMsgId: "alias-sent", from: addr("me.alias@example.com"), to: [addr("bo@friends.com")], isSent: true, inInbox: false, gmailLabels: ["SENT"], date: NOW + 1 })]);
       await backfillFacts(store);
+      // the tabs' pass the change asked for (the backend's runner drives it, a slice at a time)
+      expect(await store.tabs.idle()).toBe(false);
+      while ((await store.tabs.backfill({ limit: 50 })).more);
       expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).not.toContain(thread);
       expect(await ids(store, { view: "inbox", accountId: gmail, limit: 10 })).toContain(thread);
     });

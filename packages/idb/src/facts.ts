@@ -1,7 +1,7 @@
 import { addressKey, automatedLevel, FACTS_WINDOW, newestMessages, threadFacts, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, hiddenFromInbox, tabHiddenTest } from "./inbox-hidden";
-import { refreshTab } from "./tabs";
+import { requestTabRefresh } from "./tabs";
 
 /**
  * Plan 17's thread facts on IndexedDB, mirroring packages/db's facts.ts on
@@ -363,6 +363,8 @@ export function startRescan(db: MemDb): void {
   if (p.phase === "senders" || t(db, "threads").size === 0) return;
   if (p.phase === "threads") setPhase(db, { phase: "threads", rescan: true });
   else setPhase(db, { phase: "rescan", after: 0 });
+  // plan 86: what's yours decides no tab
+  requestTabRefresh(db);
 }
 
 function upsert(db: MemDb, email: string, column: "own" | "written"): boolean {
@@ -457,6 +459,8 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
       }
     }
     setPhase(db, to >= max ? { phase: "threads" } : { phase: "senders", after: to });
+    // plan 86: your addresses are known now: tabs computed without them are checked again
+    if (to >= max) requestTabRefresh(db);
     return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
   if (senderJobs(db).length) return { phase: state.phase, processed: senderSlice(db, n), more: true };
@@ -464,8 +468,7 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
   if (queue.big) return { phase: state.phase, processed: Math.ceil(bigSlice(db, queue, factContext(db, ownAddresses(db))) / 16), more: true };
   const pending = queue.next(n, recency);
   if (pending.length) {
-    const own = ownAddresses(db);
-    const ctx = factContext(db, own);
+    const ctx = factContext(db, ownAddresses(db));
     const messages = t(db, "messages");
     for (const id of pending) {
       if (messages.count("fk_thread_id", id) > BIG_THREAD) {
@@ -474,7 +477,6 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
         break;
       }
       writeFacts(db, id, factsOf(db, id, ctx));
-      refreshTab(db, id, own);
     }
     return { phase: state.phase, processed: pending.length, more: true };
   }
@@ -494,13 +496,8 @@ export function backfillSlice(db: MemDb, queue: FactsQueue, recency: RecencyOrde
       id++;
       if (threads.has(id)) ids.push(id);
     }
-    const own = ownAddresses(db);
-    const ctx = factContext(db, own);
-    for (const x of ids) {
-      computeOrDefer(db, x, ctx);
-      // plan 86 (Codex code review #3): what's yours changed, so may a tab (a long conversation's waits for its pass)
-      if (t(db, "messages").count("fk_thread_id", x) <= BIG_THREAD) refreshTab(db, x, own);
-    }
+    const ctx = factContext(db, ownAddresses(db));
+    for (const x of ids) computeOrDefer(db, x, ctx);
     const done = id >= top;
     setPhase(db, done ? { phase: "done" } : { phase: "rescan", after: id });
     return { phase: "rescan", processed: Math.max(1, ids.length), more: !done };

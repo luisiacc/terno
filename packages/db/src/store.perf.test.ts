@@ -197,6 +197,36 @@ it("cached refresh keyset queries stay within the 50k store read budget", async 
   });
 });
 
+describe("Gmail's tabs out of the Inbox (plan 86)", () => {
+  it("60% of the Inbox in tabs, a sparse Social: Inbox pages, the unread filter, counts and a tab's pages within the navigation budgets", async () => {
+    const gmail = store.db.get<{ id: number }>("SELECT id FROM accounts WHERE kind = 'gmail' ORDER BY id LIMIT 1")!.id;
+    const inbox = store.db.all<{ id: number; account_id: number }>("SELECT id, account_id FROM threads WHERE in_inbox = 1 ORDER BY id");
+    // the stored tab is what the stores fold, set as Gmail would have it (the Inbox's test is the column alone: the gate is the walk)
+    const tabbed = inbox.filter((_, i) => i % 5 < 3).map((t) => t.id);
+    const social = inbox.filter((t, i) => i % 5 === 3 && i % 100 === 3 && t.account_id === gmail).map((t) => t.id);
+    store.db.tx(() => {
+      for (const id of tabbed) store.db.run("UPDATE threads SET tab = 1 WHERE id = ?", id);
+      for (const id of social) store.db.run("UPDATE threads SET tab = 2 WHERE id = ?", id);
+    });
+    meta.gmailTabs = `${tabbed.length} of ${inbox.length} in Promotions, ${social.length} in Social`;
+    try {
+      const page = await store.threads.list({ view: "inbox", limit: 100 });
+      expect(page.items.length).toBeGreaterThan(0);
+      expect(page.items.every((t) => !t.tab)).toBe(true);
+      await gate("tabs 60%: list inbox, first page (100)", 5, () => store.threads.list({ view: "inbox", limit: 100 }));
+      await gate("tabs 60%: list inbox, next page", 5, () => store.threads.list({ view: "inbox", limit: 100, cursor: page.nextCursor ?? undefined }));
+      await gate("tabs 60%: inbox unread filter, first page", 5, () => store.threads.list({ view: "inbox", filter: "unread", limit: 100 }));
+      await gate("tabs 60%: sidebar counts", 5, () => store.threads.counts(NOW));
+      await gate("tabs 60%: Promotions, first page (100)", 5, () => store.threads.list({ view: "inbox", accountId: gmail, tab: "promotions", limit: 100 }));
+      await gate("tabs 60%: Promotions unread filter", 5, () => store.threads.list({ view: "inbox", accountId: gmail, tab: "promotions", filter: "unread", limit: 100 }));
+      await gate("tabs sparse: Social, first page", 5, () => store.threads.list({ view: "inbox", accountId: gmail, tab: "social", limit: 100 }));
+      await gate("tabs 60%: select all in Promotions (count)", 10, () => store.threads.scopeCount({ view: "inbox", accountId: gmail, tab: "promotions", limit: 100_000 }));
+    } finally {
+      store.db.tx(() => store.db.run("UPDATE threads SET tab = 0 WHERE tab != 0"));
+    }
+  });
+});
+
 describe("a category hidden from the Inbox (plan 83)", () => {
   it("hiding the seed's largest category: Inbox pages, the unread filter and counts within the navigation budgets", async () => {
     const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;

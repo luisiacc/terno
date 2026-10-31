@@ -34,12 +34,13 @@ function writeTab(db: MemDb, thread: R, own: ReadonlySet<string>): number {
 }
 
 /**
- * The facts' passes over threads (a rescan after your addresses changed, the first pass once they're known):
- * an Inbox thread of Gmail's gets its tab again, since mail of yours never decides it (Codex code review #3).
+ * What's yours changed (an alias, an account) or the facts learned it at last: a tab may change, since mail of
+ * yours never decides one (Codex code review #3). The backfill's threads phase goes over the Inbox again, in its
+ * own slices; one already under way keeps going (what it hasn't reached reads the new addresses).
  */
-export function refreshTab(db: MemDb, threadId: number, own: ReadonlySet<string>): void {
-  const thread = t(db, "threads").get(threadId);
-  if (thread?.in_inbox === 1 && t(db, "accounts").get(thread.account_id)?.kind === "gmail") writeTab(db, thread, own);
+export function requestTabRefresh(db: MemDb): void {
+  if (t(db, "settings").get(KEY) || ![...t(db, "accounts").all()].some((a) => a.kind === "gmail")) return;
+  t(db, "settings").put({ key: KEY, value_json: JSON.stringify({ phase: "threads", after: 0 } satisfies Progress) });
 }
 
 export function tabsIdle(db: MemDb): boolean {

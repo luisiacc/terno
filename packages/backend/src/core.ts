@@ -450,7 +450,7 @@ export class BackendCore {
     this.facts.wake();
     // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
     this.refreshReminders();
-    // plan 86: the Gmail tabs of mail stored before them, once
+    // plan 86: the Gmail tabs of mail stored before them, once (and again whenever what's yours changes)
     this.tabs.start();
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
@@ -731,6 +731,7 @@ export class BackendCore {
       this.emitCounts();
       this.autocomplete.notify();
       this.facts.wake();
+      this.tabs.start();
     });
   }
 
@@ -797,6 +798,7 @@ export class BackendCore {
     // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
     // without mail to sync (an empty account brings no change that would wake it). Idle, a wake is one probe.
     this.facts.wake();
+    this.tabs.start();
   }
 
   /**

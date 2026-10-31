@@ -1,7 +1,7 @@
 import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { Db } from "./sqlite";
 import { hidingSql, inboxHiding } from "./inbox-hiding";
-import { refreshTab } from "./tabs";
+import { requestTabRefresh } from "./tabs";
 
 /**
  * Plan 17's thread facts on SQLite: who a conversation is from (`person`)
@@ -221,6 +221,8 @@ export function startRescan(db: Db): void {
   if (p.phase === "senders" || db.get("SELECT 1 FROM threads LIMIT 1") === undefined) return;
   if (p.phase === "threads") setPhase(db, { phase: "threads", rescan: true });
   else setPhase(db, { phase: "rescan", after: 0 });
+  // plan 86: what's yours decides no tab
+  requestTabRefresh(db);
 }
 
 /**
@@ -358,17 +360,15 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
     }
     // the threads computed meanwhile were written NULL: the queue holds them, and a rescan isn't needed for them
     setPhase(db, to >= max ? { phase: "threads" } : { ...state, after: to });
+    // plan 86: your addresses are known now: tabs computed without them are checked again
+    if (to >= max) requestTabRefresh(db);
     return { phase: "senders", processed: Math.max(1, to - state.after), more: true, next: to >= max ? "threads" : "senders" };
   }
   if (senderJobs(db).length) return { phase: state.phase, processed: senderSlice(db, n), more: true };
   const pending = db.all<{ id: number }>("SELECT id FROM threads INDEXED BY threads_facts_pending WHERE person IS NULL ORDER BY last_date DESC, id DESC LIMIT ?", n).map((r) => r.id);
   if (pending.length) {
-    const own = ownAddresses(db);
-    const ctx = factContext(db, own);
-    for (const id of pending) {
-      writeFacts(db, id, factsOf(db, id, ctx));
-      refreshTab(db, id, own);
-    }
+    const ctx = factContext(db, ownAddresses(db));
+    for (const id of pending) writeFacts(db, id, factsOf(db, id, ctx));
     return { phase: state.phase, processed: pending.length, more: true };
   }
   if (state.phase === "threads") {
@@ -377,12 +377,8 @@ export function backfillSlice(db: Db, limit: number): SliceResult {
   }
   if (state.phase === "rescan") {
     const ids = db.all<{ id: number }>("SELECT id FROM threads WHERE id > ? ORDER BY id LIMIT ?", state.after, n).map((r) => r.id);
-    const own = ownAddresses(db);
-    const ctx = factContext(db, own);
-    for (const id of ids) {
-      writeFacts(db, id, factsOf(db, id, ctx));
-      refreshTab(db, id, own);
-    }
+    const ctx = factContext(db, ownAddresses(db));
+    for (const id of ids) writeFacts(db, id, factsOf(db, id, ctx));
     const done = ids.length < n;
     setPhase(db, done ? { phase: "done" } : { phase: "rescan", after: ids[ids.length - 1]! });
     return { phase: "rescan", processed: Math.max(1, ids.length), more: !done };
