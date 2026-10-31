@@ -23,6 +23,7 @@ import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
 import { snippetsSaved } from "~/lib/snippets";
+import { applyScheduled, loadScheduled } from "~/lib/scheduled";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -94,6 +95,9 @@ export async function boot(): Promise<void> {
     client.on("reminders", applyReminders);
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
+    // plan 89: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
+    client.on("scheduled", applyScheduled);
+    void loadScheduled().catch((error) => console.warn("[scheduled] could not load", error));
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
     client.on("drafts", () => void loadDrafts());

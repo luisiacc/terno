@@ -100,6 +100,7 @@ export const ICONS = {
   StarOff: "StarOffIcon",
   Strikethrough: "TextStrikethroughIcon",
   Sun: "Sun01Icon",
+  Sunrise: "SunriseIcon",
   Tag: "Tag01Icon",
   TextAlignCenter: "TextAlignCenterIcon",
   TextAlignEnd: "TextAlignRightIcon",

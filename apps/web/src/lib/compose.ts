@@ -845,9 +845,11 @@ const pendingSends = new Map<string, Promise<boolean>>();
 /**
  * Sends a draft: waits for its save in flight, checks the recipients, queues
  * the send (which deletes the stored draft). One send per draft at a time;
- * while it runs the draft can't be edited or discarded.
+ * while it runs the draft can't be edited or discarded. With `sendAt` (plan
+ * 89) the very same message is prepared and scheduled instead: the stored
+ * draft stays, out of the composers, until it goes.
  */
-export function sendDraft(key: string): Promise<boolean> {
+export function sendDraft(key: string, sendAt?: number): Promise<boolean> {
   const pending = pendingSends.get(key);
   if (pending) return pending;
   let resolve!: (value: boolean) => void;
@@ -855,7 +857,7 @@ export function sendDraft(key: string): Promise<boolean> {
   const run = new Promise<boolean>((done, fail) => { resolve = done; reject = fail; });
   pendingSends.set(key, run);
   const finish = () => { if (pendingSends.get(key) === run) pendingSends.delete(key); };
-  try { void send(key).then((result) => { finish(); resolve(result); }, (error) => { finish(); reject(error); }); }
+  try { void send(key, sendAt).then((result) => { finish(); resolve(result); }, (error) => { finish(); reject(error); }); }
   catch (error) { finish(); reject(error); }
   return run;
 }
@@ -870,7 +872,7 @@ function showRecipient(key: string, field: "to" | "cc" | "bcc") {
   );
 }
 
-async function send(key: string): Promise<boolean> {
+async function send(key: string, sendAt?: number): Promise<boolean> {
   if (draftEditsHeld()) return false;
   if (useDrafts.getState().drafts[key]?.recovery) { snack.error(t("compose.recovery.sendBlocked")); return false; }
   const draft = useDrafts.getState().drafts[key];
@@ -905,7 +907,7 @@ async function send(key: string): Promise<boolean> {
     // plan 76: an image taken out of the text (and not put back) isn't sent
     const attachments = sentRefs(d.attachments ?? [], body.html ?? undefined);
     const bodyHtml = body.html === null ? undefined : sendHtml(withSentImages(body.html, attachments), d, signature);
-    const res = await client.call("compose.send", {
+    const params = {
       accountId: d.accountId,
       to,
       cc,
@@ -919,7 +921,17 @@ async function send(key: string): Promise<boolean> {
       draftRevision: d.id ? d.revision : undefined,
       draftGeneration: d.generation,
       attachments,
-    });
+    };
+    if (sendAt !== undefined) {
+      // draftForSend gave a saved draft (id, generation, revision): those fence the schedule
+      await client.call("compose.schedule", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision, sendAt });
+      forgetDraft(key);
+      if (getApp().compose?.key === key) setApp({ compose: null });
+      // lazily: its snack and Undo pull the reminders' formatting, which the send path doesn't need
+      void import("./scheduled").then((m) => m.scheduledSnack(d.id!, sendAt));
+      return true;
+    }
+    const res = await client.call("compose.send", params);
     forgetDraft(key);
     if (getApp().compose?.key === key) setApp({ compose: null });
     invalidateThreads([res.threadId]);
@@ -937,7 +949,7 @@ async function send(key: string): Promise<boolean> {
     resumeDraft(key, !preparing);
     if (e?.code === "STALE") { snack.error(t("compose.recovery.conflict")); return false; }
     captureUi(error, { code: "compose.send_failed" });
-    snack.error(t("compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));
+    snack.error(t(sendAt !== undefined ? "sendLater.scheduleFailed" : "compose.sendFailed", { error: error instanceof Error ? error.message : String(error) }));
     return false;
   }
 }

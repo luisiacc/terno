@@ -1088,6 +1088,28 @@ export function forgetDraft(key: string): void {
   drop(key);
 }
 
+/**
+ * Plan 89: which stored drafts are scheduled to send (lib/scheduled sets it):
+ * a hydration never brings one in as an editable draft, even a list asked
+ * for before it was scheduled.
+ */
+export const scheduledDrafts: { has: (id: number) => boolean } = { has: () => false };
+
+/**
+ * Plan 89: drafts scheduled in another window leave this one, unless they
+ * hold edits not saved yet (that save makes them a draft again) or are this
+ * window's own send in flight.
+ */
+export function forgetScheduledDrafts(): string[] {
+  const gone: string[] = [];
+  for (const d of Object.values(useDrafts.getState().drafts)) {
+    if (d.id === null || !scheduledDrafts.has(d.id) || d.sending || writers.get(d.key)?.stopping || d.savedRev !== d.localRev) continue;
+    forgetDraft(d.key);
+    gone.push(d.key);
+  }
+  return gone;
+}
+
 /** Deletes a draft; returns what it was, for "Undo". */
 export async function discardDraft(key: string): Promise<LocalDraft | undefined> {
   // a send in flight decides: sent, it is gone; failed, it stays for another try
@@ -1124,7 +1146,7 @@ export async function loadDrafts(list: () => Promise<Draft[]> = () => client.cal
     useDrafts.setState((s) => {
       const drafts = { ...s.drafts }, known = new Set(Object.values(s.drafts).map((d) => d.id));
       for (const d of stored) {
-        if (known.has(d.id) || excluded.has(identityOf(d))) continue;
+        if (known.has(d.id) || excluded.has(identityOf(d)) || scheduledDrafts.has(d.id)) continue;
         changeVersion++;
         const local = fromServer(d);
         if (drafts[local.key]) local.key = newKey();

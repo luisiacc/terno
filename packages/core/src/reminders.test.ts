@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultRemindAt, remindPresets } from "./reminders";
+import { defaultRemindAt, remindPresets, sendLaterTomorrow } from "./reminders";
 
 // local time throughout (the presets are the user's clock); vitest runs with TZ from the environment
 const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min);
@@ -45,5 +45,14 @@ describe("remindPresets (plan 87)", () => {
 
   it("the custom picker starts at tomorrow 9:00", () => {
     expect(show(defaultRemindAt(local(2026, 11, 3, 22)))).toBe("Wed 11/4 9:00");
+  });
+});
+
+describe("sendLaterTomorrow (plan 89)", () => {
+  it("is 8:00 the next day, from any hour (just after midnight too), across a month and a DST change", () => {
+    expect(show(sendLaterTomorrow(local(2026, 10, 22, 9, 30)))).toBe("Fri 10/23 8:00");
+    expect(show(sendLaterTomorrow(local(2026, 10, 22, 0, 5)))).toBe("Fri 10/23 8:00");
+    expect(show(sendLaterTomorrow(local(2026, 10, 31, 23, 59)))).toBe("Sun 11/1 8:00");
+    expect(show(sendLaterTomorrow(local(2026, 10, 24, 12)))).toBe("Sun 10/25 8:00");
   });
 });

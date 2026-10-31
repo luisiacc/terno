@@ -15,6 +15,7 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
+import { ScheduledReplyLine } from "./scheduled-popover";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
 import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
@@ -674,6 +675,7 @@ export function Reader() {
                   <Conversation key={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} headless={cardHeader} knownEmail={cardHeader ? senderOf(detail).email : null} />
                 </div>
               </MessageMenu>
+              <ScheduledReplyLine threadId={detail.thread.id} />
               <DraftSlot key={detail.thread.id} threadId={detail.thread.id} draftKey={draftKey} replyTo={replyName(detail, accounts.map((a) => a.email))} account={account} icons={iconsFor(detail.thread)} />
             </>
           )}

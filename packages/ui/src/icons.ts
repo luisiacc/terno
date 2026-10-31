@@ -94,6 +94,7 @@ export { Star } from "./iconset/generated/Star";
 export { StarOff } from "./iconset/generated/StarOff";
 export { Strikethrough } from "./iconset/generated/Strikethrough";
 export { Sun } from "./iconset/generated/Sun";
+export { Sunrise } from "./iconset/generated/Sunrise";
 export { Tag } from "./iconset/generated/Tag";
 export { TextAlignCenter } from "./iconset/generated/TextAlignCenter";
 export { TextAlignEnd } from "./iconset/generated/TextAlignEnd";

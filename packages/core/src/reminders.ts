@@ -1,4 +1,4 @@
-import type { ReminderKind } from "./types";
+import { SEND_LATER_MORNING, type ReminderKind } from "./types";
 
 /**
  * Plan 87: the moments a reminder offers, in local time. "Remind me": later
@@ -55,4 +55,9 @@ export function remindPresets(now: Date, kind: ReminderKind): RemindPreset[] {
 /** The custom picker's first value: tomorrow at 9. */
 export function defaultRemindAt(now: Date): number {
   return at(now, 1, REMIND_MORNING);
+}
+
+/** Plan 89: Send later's "Tomorrow" (8:00 the next day, local time) */
+export function sendLaterTomorrow(now: Date, hour = SEND_LATER_MORNING): number {
+  return at(now, 1, hour);
 }

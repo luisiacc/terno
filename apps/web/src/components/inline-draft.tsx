@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, Forward, PenLine, ReplyAll, Send, Trash2 } from "@terno/ui/icons";
+import { ChevronDown, Forward, PenLine, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
 import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
@@ -19,6 +19,7 @@ import { keepInView } from "~/lib/reader-scroll";
 import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
+import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
@@ -365,12 +366,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
     const valid = () => !stopped && !changed && rootRef.current === root && !!root?.isConnected && getSelectionWriteRevision() === revision && focusMoveGeneration() === expectedRequest && useApp.getState().selectedId === initial.selectedId && !draftEditsHeld();
     return { root, valid, stop, prepare: () => { expectedRequest = focusMoveGeneration() + 1; }, watch: (onCancel: () => void) => { cancel = onCancel; return stop; } };
   };
-  const send = async () => {
+  const send = async (sendAt?: number) => {
     if (!d) return;
     const request = exitFocus();
     let transferred = false;
     try {
-      const ok = await sendDraft(d.key);
+      const ok = await sendDraft(d.key, sendAt);
       if (ok && request.valid()) { request.prepare(); focusSoon("[data-testid=quick-reply]", request.root, 12, () => true, request.valid, request.watch); transferred = true; }
     } finally { if (!transferred) request.stop(); }
   };
@@ -437,7 +438,10 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               // keys from a popover or menu (portaled: React still bubbles them here) aren't the composer's; the editor
               // itself prevents every Enter and Esc (ProseMirror's own), so defaultPrevented can't tell
               if (!e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              if (isSendLaterKey(e)) {
+                e.preventDefault();
+                openSendLater(d.key);
+              } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void send();
               } else if (e.key === "Escape" && !popupOpen()) {
@@ -454,9 +458,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
             <Quote d={d} />
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="flex items-center gap-1 px-2.5 pt-2 pb-2.5">
-              <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending || Boolean(d.recovery)} className="mr-1.5 gap-2">
-                <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
-              </Button>
+              <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
               <FormatToggle controls={formatId} />
               <AttachButton d={d} />
               <LinkButton draftKey={d.key} disabled={d.sending} />

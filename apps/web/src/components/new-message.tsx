@@ -2,10 +2,10 @@ import { AttachButton, DraftAttachments } from "./attachments";
 import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
+import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
-import { Send, Trash2 } from "@terno/ui/icons";
+import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
@@ -56,7 +56,7 @@ export function NewMessage() {
   const drop = useComposerDrop(compose?.key ?? "", d?.sending ?? false);
   if (!compose || !d) return null;
   const key = compose.key;
-  const send = async () => {
+  const send = async (sendAt?: number) => {
     const original = compose, form = rootRef.current, active = document.activeElement;
     let changed = false, stopped = false;
     const observe = (event: FocusEvent) => { if (event.target !== active) changed = true; };
@@ -67,7 +67,7 @@ export function NewMessage() {
     const stop = () => { if (stopped) return; stopped = true; unsubscribe(); document.removeEventListener("focusin", observe, true); sendWatches.current.delete(stop); };
     sendWatches.current.add(stop);
     try {
-      const ok = await sendDraft(key);
+      const ok = await sendDraft(key, sendAt);
       if (ok && !stopped && !changed && useApp.getState().compose === original && rootRef.current === form && document.activeElement === active) leaveNewDraft();
     } finally { stop(); }
   };
@@ -96,7 +96,10 @@ export function NewMessage() {
         // keys from a popover or menu (portaled: React still bubbles them here) aren't the composer's; the editor
         // itself prevents every Enter and Esc (ProseMirror's own), so defaultPrevented can't tell
         if (!e.currentTarget.contains(e.target as Node) || e.nativeEvent.isComposing) return;
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        if (isSendLaterKey(e)) {
+          e.preventDefault();
+          openSendLater(key);
+        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           void send();
         } else if (e.key === "Escape" && !popupOpen()) {
@@ -118,9 +121,7 @@ export function NewMessage() {
           <TooltipContent>{t("compose.discard")}</TooltipContent>
         </Tooltip>
         <span className="text-sm text-muted-foreground">{t("compose.newMessage")}</span>
-        <Button type="submit" size="sm" className="no-drag ml-auto gap-2" data-testid="compose-send" aria-busy={d.sending} disabled={d.sending || Boolean(d.recovery)}>
-          <Send /> {t("common.send")} <Shortcut keys="mod+enter" className="[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_kbd]:shadow-none" />
-        </Button>
+        <SendButton d={d} onSend={(at) => void send(at)} className="no-drag ml-auto" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-10">

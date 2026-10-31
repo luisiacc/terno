@@ -1,27 +1,12 @@
 import { defaultRemindAt, remindPresets, type ReminderKind } from "@terno/core";
-import { getLocale, t } from "@terno/i18n";
+import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Calendar, CALENDAR_LOCALES } from "@terno/ui/components/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
-import { BellOff, CalendarClock, CalendarDays, Clock } from "@terno/ui/icons";
+import { BellOff, CalendarClock } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
 import { clearReminder, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
-
-/** the time list's step (a reminder needs no finer) */
-const STEP = 15;
-const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const at = (day: Date, minutes: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
-const tag = () => (getLocale() === "en" ? "en-US" : getLocale());
-const dayText = (d: Date) => new Intl.DateTimeFormat(tag(), { weekday: "short", month: "short", day: "numeric" }).format(d).replace(/\./g, "");
-const timeText = (minutes: number) =>
-  new Intl.DateTimeFormat(tag(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60));
-const TIMES = Array.from({ length: (24 * 60) / STEP }, (_, i) => i * STEP);
-
-/** the field look both triggers share (a quiet filled control, like the search field) */
-const FIELD = "h-8 gap-2 rounded-lg border-0 bg-tint px-2.5 text-sm font-normal text-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-tint [&_svg]:text-muted-foreground";
+import { useWhen, WhenFields } from "./when-fields";
 
 /**
  * Plan 87's picker: Remind me or If no reply, its presets with their
@@ -35,18 +20,11 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
   // the kind asked for ("Remind me if no reply ▸ Pick…") wins; else the reminder there is; else Remind me
   const [kind, setKind] = useState<ReminderKind>(initialKind ?? current?.kind ?? "always");
   const [picking, setPicking] = useState(custom);
-  const start = new Date(defaultRemindAt(new Date()));
-  const [day, setDay] = useState(midnight(start));
-  const [minutes, setMinutes] = useState(start.getHours() * 60 + start.getMinutes());
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const when = useWhen(defaultRemindAt(new Date()));
+  const { chosen, past } = when;
   const listRef = useRef<HTMLDivElement>(null);
   const pastId = useId();
   const presets = remindPresets(new Date(), kind);
-  const today = midnight(new Date());
-  const chosen = at(day, minutes);
-  const past = chosen <= Date.now();
-  // today: the times already gone are offered, dimmed (the list keeps its shape)
-  const gone = (m: number) => day.getTime() === today.getTime() && at(day, m) <= Date.now();
 
   const set = (dueAt: number) => {
     done();
@@ -109,46 +87,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
               if (!past) set(chosen);
             }}
           >
-            <div className="flex gap-1.5">
-              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                <PopoverTrigger
-                  render={
-                    <Button type="button" variant="ghost" data-testid="remind-date" aria-label={`${t("remind.date")}: ${dayText(day)}`} aria-invalid={past || undefined} aria-describedby={past ? pastId : undefined} className={cn(FIELD, "min-w-0 flex-1 justify-start")}>
-                      <CalendarDays className="size-3.5" aria-hidden />
-                      <span className="truncate">{dayText(day)}</span>
-                    </Button>
-                  }
-                />
-                <PopoverContent side="bottom" align="start" sideOffset={6} className="w-auto p-2.5" data-testid="remind-calendar">
-                  <Calendar
-                    mode="single"
-                    required
-                    selected={day}
-                    defaultMonth={day}
-                    locale={CALENDAR_LOCALES[getLocale() as keyof typeof CALENDAR_LOCALES] ?? CALENDAR_LOCALES.en}
-                    disabled={{ before: today }}
-                    startMonth={today}
-                    onSelect={(d) => {
-                      setDay(midnight(d));
-                      setCalendarOpen(false);
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
-              <Select value={minutes} onValueChange={(v) => v !== null && setMinutes(v)} items={TIMES.map((m) => ({ value: m, label: timeText(m) }))}>
-                <SelectTrigger data-testid="remind-time" aria-label={t("remind.time")} aria-invalid={past || undefined} aria-describedby={past ? pastId : undefined} className={cn(FIELD, "w-30 shrink-0")}>
-                  <Clock className="size-3.5" aria-hidden />
-                  <SelectValue className="tabular-nums" />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30 p-1" data-testid="remind-times">
-                  {TIMES.map((m) => (
-                    <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="tabular-nums data-gone:text-muted-foreground">
-                      {timeText(m)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <WhenFields when={when} testPrefix="remind" describedBy={pastId} />
             {past && (
               <p id={pastId} className="px-1 text-xs text-destructive-ink" data-testid="remind-past">
                 {t("remind.past")}
