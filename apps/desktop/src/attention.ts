@@ -34,7 +34,9 @@ export function parseNotice(v: unknown): MailNotice | null {
   if (!Array.isArray(n.senders) || n.senders.length > NOTICE_SENDERS) return null;
   const senders = n.senders.map((s) => text(s));
   if (senders.some((s) => s === null)) return null;
-  return { id, count: n.count as number, threadId: n.threadId as number | null, senders: senders as string[], senderCount: n.senderCount as number, subject, snippet };
+  // plan 87: a reminder's notice says so; anything else reads as new mail
+  const kind = n.kind === "reminder" ? ("reminder" as const) : undefined;
+  return { id, count: n.count as number, threadId: n.threadId as number | null, senders: senders as string[], senderCount: n.senderCount as number, subject, snippet, ...(kind && { kind }) };
 }
 
 export interface NotificationLike {

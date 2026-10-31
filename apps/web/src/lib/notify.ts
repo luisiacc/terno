@@ -63,8 +63,8 @@ function tagOf(notice: MailNotice): string {
 function show(notice: MailNotice): void {
   const s = getApp().settings;
   if (!s?.notifications || !pageNotificationsSupported() || Notification.permission !== "granted") return;
-  // a visible tab already shows the mail
-  if (document.visibilityState !== "hidden") return;
+  // a visible tab already shows the mail (a reminder is asked for: it shows anyway)
+  if (document.visibilityState !== "hidden" && notice.kind !== "reminder") return;
   const { title, subtitle, body } = noticeText(notice);
   let n: Notification;
   try {

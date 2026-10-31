@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVAL_WINDOW_MS, badgeText, importance, noticeText, redact, stillNew, summarize, type ArrivalRow } from "./attention";
+import { ARRIVAL_WINDOW_MS, badgeText, importance, noticeText, redact, reminderNotice, stillNew, summarize, type ArrivalRow } from "./attention";
 
 const NOW = Date.UTC(2026, 9, 26, 12);
 
@@ -128,5 +128,21 @@ describe("summarize and noticeText", () => {
     expect(JSON.stringify(one)).not.toMatch(/Ana|Presupuesto|presupuesto/);
     expect(noticeText(one)).toEqual({ title: "New mail", subtitle: "", body: "" });
     expect(noticeText(redact(summarize([row({ id: 1 }), row({ id: 2 })], "n8")!)).title).toBe("2 new messages");
+  });
+});
+
+describe("reminder notices (plan 87)", () => {
+  const r = (threadId: number, dueAt: number, fromName: string, subject: string) => ({ threadId, dueAt, fromName, fromEmail: `${fromName.toLowerCase()}@x.com`, subject });
+  it("one says Reminder, who and what; a click opens it", () => {
+    const n = reminderNotice([r(7, 2, "Ana", "Budget for Q4")], "r1")!;
+    expect(n).toMatchObject({ kind: "reminder", count: 1, threadId: 7 });
+    expect(noticeText(n)).toEqual({ title: "Reminder", subtitle: "Ana", body: "Budget for Q4" });
+  });
+  it("several: how many and from whom (the latest due leads), the Inbox on a click; redacted, only how many", () => {
+    const n = reminderNotice([r(7, 1, "Ana", "a"), r(8, 3, "Bo", "b"), r(9, 2, "Cy", "c")], "r2")!;
+    expect(n).toMatchObject({ count: 3, threadId: null, senders: ["Bo", "Cy", "Ana"], subject: "b" });
+    expect(noticeText(n)).toEqual({ title: "3 reminders", subtitle: "", body: "From Bo, Cy and 1 other" });
+    expect(noticeText(redact(n))).toEqual({ title: "3 reminders", subtitle: "", body: "" });
+    expect(reminderNotice([], "r3")).toBeNull();
   });
 });

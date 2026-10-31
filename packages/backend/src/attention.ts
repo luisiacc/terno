@@ -272,6 +272,15 @@ export class Attention {
     this.o.emit(out);
   }
 
+  /** Plan 87: reminders that came due, said now (no gather or gap: the user asked for this moment), if notifications are on. */
+  remind(notice: MailNotice): void {
+    if (!this.notifications || this.stopped) return;
+    const out = this.preview ? notice : redact(notice);
+    if (this.o.host) return this.o.host.notify(out);
+    log.info("notify.shown", { count: out.count });
+    this.o.emit(out);
+  }
+
   private drop(): void {
     this.generation++;
     this.important.clear();

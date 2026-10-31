@@ -250,6 +250,7 @@ export class BackendCore {
       store: this.store,
       now: () => this.now(),
       emit: (snapshot) => this.server.emit("reminders", snapshot),
+      notify: (notice) => this.attention.remind(notice),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });

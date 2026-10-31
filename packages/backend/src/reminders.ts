@@ -1,4 +1,4 @@
-import { REMINDERS_MAX, type Reminder } from "@terno/core";
+import { REMINDERS_MAX, reminderNotice, type MailNotice, type Reminder } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { RemindersSnapshot } from "@terno/core/rpc";
 import type { MailStore } from "@terno/store";
@@ -7,20 +7,26 @@ import type { MailStore } from "@terno/store";
  * Plan 87's reminders, on the backend: one timer for the soonest one that
  * isn't due yet (none without reminders: idle stays idle), a snapshot to the
  * windows whenever what they show changed (set, cleared, due, answered,
- * merged away), and the sweep that ends a "noReply" reminder once someone
- * answered. Nothing about them is shown as a notification (the Inbox's top is
- * the reminder).
+ * merged away), the sweep that ends a "noReply" reminder once someone
+ * answered, and one notification when reminders come due (once each, across
+ * restarts: the moment it last said so is kept).
  */
 
 /** setTimeout's longest delay; a later reminder re-arms when it runs out */
 const MAX_DELAY = 2 ** 31 - 1;
 /** after a change touched a reminded thread, at most one look a second (an ingest burst) */
 const TOUCH_EVERY_MS = 1000;
+/** reminders said up to here (a setting: a restart doesn't say them again) */
+export const NOTIFIED_KEY = "reminders:notifiedUpTo";
+/** one that came due longer ago than this (Terno was closed for days) is on the Inbox's top, not announced */
+const NOTIFY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface RemindersHost {
   readonly store: MailStore;
   now(): number;
   emit(snapshot: RemindersSnapshot): void;
+  /** reminders that came due: the system notification (attention decides if notifications are on) */
+  notify(notice: MailNotice): void;
   /** slices with a turn between them (the slicer's budget) */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -36,6 +42,8 @@ export class Reminders {
   private running: Promise<RemindersSnapshot> | null = null;
   private queued: Promise<RemindersSnapshot> | null = null;
   private armedAt: number | null = null;
+  /** the last moment reminders were announced up to (loaded at the first look) */
+  private notifiedUpTo: number | null = null;
   private stopped = false;
 
   constructor(private readonly host: RemindersHost) {}
@@ -145,6 +153,7 @@ export class Reminders {
       }
     }
     const now = this.host.now();
+    await this.announce(list, now);
     const snapshot: RemindersSnapshot = { reminders: list.map((r) => ({ ...r, due: r.dueAt <= now })) };
     this.ids = new Set(list.map((r) => r.threadId));
     if (this.stopped) return snapshot;
@@ -155,6 +164,23 @@ export class Reminders {
       this.host.emit(snapshot);
     }
     return snapshot;
+  }
+
+  /** The ones that came due since the last announcement (and within a day), in one notice; the moment is kept first. */
+  private async announce(list: readonly Reminder[], now: number): Promise<void> {
+    const store = this.host.store;
+    this.notifiedUpTo ??= await store.settings.get<number>(NOTIFIED_KEY, 0);
+    const since = this.notifiedUpTo;
+    const fresh = list.filter((r) => r.dueAt <= now && r.dueAt > since && r.dueAt > now - NOTIFY_WINDOW_MS);
+    if (fresh.length === 0 || this.stopped) return;
+    this.notifiedUpTo = now;
+    await store.settings.set(NOTIFIED_KEY, now);
+    const at = new Map(fresh.map((r) => [r.threadId, r.dueAt]));
+    const rows = (await store.threads.summaries([...at.keys()]))
+      .filter((t) => !t.inTrash && !t.inSpam)
+      .map((t) => ({ threadId: t.id, dueAt: at.get(t.id)!, fromName: t.fromName, fromEmail: t.fromEmail, subject: t.subject }));
+    const notice = reminderNotice(rows, `reminder-${now.toString(36)}`);
+    if (notice && !this.stopped) this.host.notify(notice);
   }
 
   /** One timer, for the soonest reminder that isn't due yet. */

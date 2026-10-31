@@ -88,6 +88,8 @@ export interface MailNotice {
   subject: string;
   /** only for a single message */
   snippet: string;
+  /** plan 87: what it says: reminders that came due (absent: new mail) */
+  kind?: "reminder";
 }
 
 export const NOTICE_SENDERS = 3;
@@ -103,6 +105,21 @@ const senderOf = (m: Pick<ArrivalRow, "fromName" | "fromEmail">) => clip(m.fromN
 /** "Show sender and subject" off: nothing about the mail leaves the backend but how many there are. */
 export function redact(n: MailNotice): MailNotice {
   return { ...n, senders: [], subject: "", snippet: "" };
+}
+
+/** Plan 87: one notice for the reminders that came due together (soonest first in, the latest due leads); null for none. */
+export function reminderNotice(rows: readonly { threadId: number; dueAt: number; fromName: string; fromEmail: string; subject: string }[], id: string): MailNotice | null {
+  if (rows.length === 0) return null;
+  const sorted = [...rows].sort((a, b) => b.dueAt - a.dueAt || b.threadId - a.threadId);
+  const senders: string[] = [];
+  const seen = new Set<string>();
+  for (const r of sorted) {
+    const key = addressKey(r.fromEmail) || r.fromName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (senders.length < NOTICE_SENDERS) senders.push(senderOf(r));
+  }
+  return { id, kind: "reminder", count: sorted.length, threadId: sorted.length === 1 ? sorted[0]!.threadId : null, senders, senderCount: Math.max(1, seen.size), subject: clip(sorted[0]!.subject, MAX_FIELD), snippet: "" };
 }
 
 /** One notice for a burst of important messages (any order in, newest first out); null for none. */
@@ -135,6 +152,15 @@ export function summarize(rows: readonly ArrivalRow[], id: string): MailNotice |
  * senders, "5 new messages" and who they're from.
  */
 export function noticeText(n: MailNotice): { title: string; subtitle: string; body: string } {
+  // plan 87: "Reminder", who and what; several: how many and from whom
+  if (n.kind === "reminder") {
+    const title = n.count <= 1 ? t("notify.reminder") : t("notify.reminders", { count: n.count });
+    if (n.senders.length === 0) return { title, subtitle: "", body: "" };
+    if (n.count <= 1) return { title, subtitle: n.senders[0] ?? "", body: n.subject || t("common.noSubject") };
+    const [a = "", b = ""] = n.senders;
+    const from = n.senderCount <= 1 ? a : n.senderCount === 2 ? t("notify.from.two", { a, b }) : t("notify.from.many", { a, b, count: n.senderCount - 2 });
+    return { title, subtitle: "", body: from };
+  }
   // redacted: only how many
   if (n.senders.length === 0) return { title: n.count <= 1 ? t("notify.new") : t("notify.count", { count: n.count }), subtitle: "", body: "" };
   const subject = n.subject || t("common.noSubject");

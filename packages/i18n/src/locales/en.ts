@@ -1775,6 +1775,8 @@ It contains none of your mail, contacts, settings or keys.
 
   // ── system notifications (plan 41)
   "notify.count": { one: "# new message", other: "# new messages" },
+  "notify.reminder": "Reminder",
+  "notify.reminders": { one: "# reminder", other: "# reminders" },
   "notify.new": "New mail",
   "notify.from.two": "From {a} and {b}",
   "notify.from.many": { one: "From {a}, {b} and # other", other: "From {a}, {b} and # others" },

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, RpcError, type RemindersSnapshot } from "@terno/core/rpc";
-import { REMINDERS_MAX } from "@terno/core";
+import { REMINDERS_MAX, type MailNotice } from "@terno/core";
+import { NOTIFIED_KEY, Reminders } from "./reminders";
 import { createAccount, ingestMessages, sqlDb, type IncomingMessage } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -256,5 +257,47 @@ describe("reminders (plan 87)", () => {
     expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId)).toEqual([b]);
     await client.call("categorize.undo", { batchId: moved.batchId });
     expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId).sort()).toEqual([a, b].sort());
+  });
+
+  it("coming due says so once (a notification), not again after a restart; off or private, as the settings say", async () => {
+    const { backend, client, a, b, advance, clock } = await setup();
+    const notices: MailNotice[] = [];
+    client.on("notify", (n) => notices.push(n));
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW + HOUR, kind: "always" });
+    await advance(HOUR);
+    expect(notices).toEqual([expect.objectContaining({ kind: "reminder", count: 1, threadId: a, senders: ["Ana"] })]);
+    // another look (a wake) says nothing new
+    backend.networkChanged(true, "wake");
+    await settle();
+    expect(notices).toHaveLength(1);
+    // private: who and what stay in the backend
+    await client.call("settings.update", { notificationPreview: false });
+    await client.call("reminders.set", { threadIds: [b], dueAt: clock.now + HOUR, kind: "always" });
+    await advance(HOUR);
+    expect(notices[1]).toMatchObject({ kind: "reminder", count: 1, senders: [], subject: "" });
+    // off: nothing
+    await client.call("settings.update", { notifications: false });
+    await client.call("reminders.set", { threadIds: [a], dueAt: clock.now + HOUR, kind: "always" });
+    await advance(HOUR);
+    expect(notices).toHaveLength(2);
+  });
+
+  it("a restart doesn't say again what it said; one that came due while closed is said once, if within a day", async () => {
+    const { backend, client, a, b, advance, clock } = await setup();
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW + HOUR, kind: "always" });
+    await advance(HOUR);
+    expect(await backend.store.settings.get(NOTIFIED_KEY, 0)).toBe(NOW + HOUR);
+    await client.call("reminders.set", { threadIds: [b], dueAt: clock.now + HOUR, kind: "always" });
+    // a fresh backend (a restart) on the same store, after b's time: says b, not a
+    const said: MailNotice[] = [];
+    const fresh = new Reminders({ store: backend.store, now: () => clock.now + 2 * HOUR, emit: () => {}, notify: (n) => said.push(n), runBudgeted: async (items, work) => void (await work([...items])), log: () => {} });
+    await fresh.refresh();
+    fresh.stop();
+    expect(said).toEqual([expect.objectContaining({ threadId: b })]);
+    // days later, nothing left to say
+    const later = new Reminders({ store: backend.store, now: () => clock.now + 5 * 24 * HOUR, emit: () => {}, notify: (n) => said.push(n), runBudgeted: async (items, work) => void (await work([...items])), log: () => {} });
+    await later.refresh();
+    later.stop();
+    expect(said).toHaveLength(1);
   });
 });

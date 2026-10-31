@@ -278,3 +278,12 @@ Due rows looked like any other row: a small bell, and the mail's own time, which
 - **The time slot:** each due row shows a bell and the time it came due, in the attention ink (`unread-ink`, the sidebar count's tone).
 
 The rows keep their height, so selection, j/k and the menus are unchanged. Drafts stay above in their strip.
+
+### Follow-up: a notification when a reminder comes due
+
+This changes the original request, which said no notification. When reminders come due, the backend now says so once, through plan 41's path. It is native in desktop main and the page's `Notification` on the web; on the web a reminder shows even while the tab is visible, because the user asked for this moment.
+
+- **Wording:** one reminder reads "Reminder", then the sender, then the subject. Several due together read "3 reminders" and who they're from (`reminderNotice`, `MailNotice.kind = "reminder"`).
+- **Click:** a click opens the conversation (several: the Inbox, where they are on top), which also ends the reminder.
+- **Settings:** the Notifications and "Show sender and subject" settings apply as for mail. It has no gather or gap, since its time is the moment.
+- **Once each:** the moment it last announced up to is a setting (`reminders:notifiedUpTo`), so a restart or a wake doesn't repeat it. One that came due while Terno was closed is announced at the next start, if that is within a day.

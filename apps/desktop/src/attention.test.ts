@@ -56,6 +56,9 @@ describe("validation of what the backend reports", () => {
   it("a notice: every field checked and bounded", () => {
     expect(parseNotice(notice())).toEqual(notice());
     expect(parseNotice(notice({ threadId: null }))).toMatchObject({ threadId: null });
+    // plan 87: a reminder's kind survives; anything else is new mail
+    expect(parseNotice({ ...notice(), kind: "reminder" })).toEqual({ ...notice(), kind: "reminder" });
+    expect(parseNotice({ ...notice(), kind: "other" })).toEqual(notice());
     expect(parseNotice({ ...notice(), subject: "x".repeat(5000) })!.subject).toHaveLength(300);
     for (const bad of [null, "x", { ...notice(), count: 0 }, { ...notice(), threadId: -1 }, { ...notice(), threadId: "42" }, { ...notice(), senders: ["a", "b", "c", "d"] }, { ...notice(), senders: [3] }, { ...notice(), subject: 3 }, { ...notice(), id: "" }, { ...notice(), senderCount: 0 }])
       expect(parseNotice(bad)).toBeNull();

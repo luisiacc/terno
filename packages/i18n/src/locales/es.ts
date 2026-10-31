@@ -1763,6 +1763,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
 
   // ── system notifications (plan 41)
   "notify.count": { one: "# mensaje nuevo", other: "# mensajes nuevos" },
+  "notify.reminder": "Recordatorio",
+  "notify.reminders": { one: "# recordatorio", other: "# recordatorios" },
   "notify.new": "Correo nuevo",
   "notify.from.two": "De {a} y {b}",
   "notify.from.many": { one: "De {a}, {b} y # más", other: "De {a}, {b} y # más" },
