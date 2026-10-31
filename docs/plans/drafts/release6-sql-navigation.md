@@ -91,3 +91,28 @@ The rebased main introduced no changes under packages/db relative to the prior r
 The ONE production review completed naturally (exit 0): native `codex exec -s read-only -m gpt-6.1-sol -c 'model_reasoning_effort="high"' -C "$PWD" -`, input `/tmp/terno-release6-sql/review-prompt.txt`. Verdict: **Standards: no findings. Spec: no findings.** Full output and owned PID/birth/argv: `production-review.{log,json}`. No fallback model, second review or review fixes. Latest test source also passed DB types and scoped lint (`final-db-types`, `final-db-lint`). All verification/review processes joined before the reserved original qualification.
 
 Guarded ingest: unchanged pre-source baseline throughput 1.007757× reference, post-source 1.010133× reference, both above the unchanged 0.970× minimum (multiplier 1; eight rounds, workload and warmup unchanged). CPU ratios 0.944× and 0.939× are recorded diagnostics, not a new threshold or a zero-cost claim.
+
+### Original qualification result
+
+Source qualified: `87caea994305740328092063407408d6239467c6` on committed main base `19b048b33726e498a152eb4a07e137b8c9f5bd73`. After all focused verification and the sole production review joined, ran **exactly once**:
+
+`pnpm exec vitest run --project perf packages/db/src/perf.perf.test.ts`
+
+Result: **34 passed, 0 failed**, natural exit 0, 64.82 s native duration. Raw log, launcher PID/birth/argv/exit and stats: `/tmp/terno-release6-sql/db-qualification.log`, `db-qualification.json`, `db-qualification-stats.json`. Multiplier 1. Everyone counts p95 **3.453750 ms <= 5 ms**, previously 5.054167 ms RED; the previously unreached No-one phase ran and passed at **2.597000 ms <= 5 ms**. Other count phases: initial 3.101791 ms, sparse 2.784625 ms; sidebar 2.619166 ms, overlapping-folder successor 3.341875 ms. Longest folder rebuild slice 7.030833 ms <=16 ms; the index correction does not establish a historical folder-stall cause. Old evidence is retained unchanged and unwaived.
+
+The original DB perf, guarded ingest and intentional index-cost measurement files are byte-for-byte unchanged from the integration base. No workload/sample/window/order/warmup/readiness/delay/timeout/budget/oracle changes, skips, retries-until-green, prewarming, displaced measured work or quiet windows. No further source edits after the production review; this final amendment records results only. No independent second review.
+
+### Commands and final limits
+
+All test/type/lint/review commands run through `/tmp/terno-release6-sql/run.py`, retaining inherited NODE_OPTIONS and appending `--require=/tmp/terno-network-guard.cjs`. Each named run has `.log` and `.json` metadata, finite deadline and natural joined exit. No termination/signalling was needed.
+
+- RED then GREEN: `pnpm exec vitest run --project unit --project db-wasm packages/db/src/category-counts.test.ts` (`counts-red`: 6 failed; `counts-green`: 6 passed). Expanded work guards: `counts-work`, 6 passed.
+- Focused: `pnpm exec vitest run --project unit --project db-wasm packages/db/src/category-counts.test.ts packages/db/src/migrations.test.ts packages/db/src/count-coverage.test.ts packages/db/src/folder-unread.test.ts` (`focused`: 68 passed).
+- Preserved contract: `pnpm exec vitest run --project unit --project db-wasm packages/db/src/store.conformance.test.ts -t 'categories hidden from the Inbox'` (`hidden-contract`: 10 passed, 620 unselected; no new skips).
+- Guarded ingestion: `pnpm exec vitest run --project perf packages/db/src/ingest.perf.test.ts` (`ingest-base`, `ingest-source`: each 1 passed, baseline then changed source, no retries).
+- DB types: `pnpm --filter @terno/db typecheck` (`db-types`, `final-db-types`: passed; final rerun covered expanded test assertions).
+- Scoped lint: `pnpm exec oxlint --deny-warnings packages/db/src/migrations.ts packages/db/src/queries.ts packages/db/src/category-counts.test.ts` (`db-lint`, `final-db-lint`: passed).
+- Production review: command/model/sandbox/verdict above (`production-review`: exit 0, Standards and Spec no findings).
+- Original qualification: exact command above (`db-qualification`: 34 passed). `git diff --check` passed.
+
+No remaining failure in the selected checks. This is a bounded SQL repair, not full release qualification. No broad tests, other perf files, app/Vite builds, UI/E2E/web/packaged smoke, full-package lint or repository-wide typecheck ran. Historical milestone failures, broader release readiness and the 153-row goal remain incomplete. Root owns integration/retests/worklist; no main/worklist, user WIP, other-owner edits, fetch, push or landing.
