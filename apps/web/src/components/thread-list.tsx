@@ -15,7 +15,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { openCompose } from "~/lib/actions";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
@@ -625,12 +625,13 @@ export function ThreadList() {
 
   // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it
   const dock = useSnack((s) => s.inset);
+  const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => height,
     overscan: 10,
-    getItemKey: (i) => items[i]!.id,
+    getItemKey,
     paddingEnd: dock,
     scrollPaddingEnd: dock,
   });
