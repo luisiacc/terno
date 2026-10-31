@@ -1,0 +1,43 @@
+{
+  "name": "@terno/site",
+  "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "type": "module",
+  "description": "terno.app: the public site (plan 96)",
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "build": "vite build && vite build --ssr src/entry-server.tsx --outDir .ssr && node scripts/prerender.mjs",
+    "preview": "pnpm build && wrangler d1 migrations apply DB --local && wrangler dev --port ${SITE_PORT:-8787}",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:preview": "node scripts/deploy.mjs --preview",
+    "shots": "tsx shots/shots.ts",
+    "test:site": "playwright test",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@cloudflare/workers-types": "^5.20261001.0",
+    "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@playwright/test": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@terno/backend": "workspace:*",
+    "@terno/backend-dev": "workspace:*",
+    "@terno/core": "workspace:*",
+    "@terno/mock-data": "workspace:*",
+    "@terno/ui": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "tsx": "catalog:",
+    "vite": "catalog:",
+    "wrangler": "^4.150.0"
+  }
+}

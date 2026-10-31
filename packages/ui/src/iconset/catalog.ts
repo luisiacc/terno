@@ -5,6 +5,8 @@
  */
 export const ICONS = {
   ALargeSmall: "TextFontIcon",
+  // terno.app (plan 96): the Mac download button
+  Apple: "AppleIcon",
   Archive: "ArchiveIcon",
   ArrowDown: "ArrowDown02Icon",
   AtSign: "AtIcon",
@@ -31,6 +33,7 @@ export const ICONS = {
   Clock: "Clock01Icon",
   Cloud: "CloudIcon",
   Columns2: "Layout2ColumnIcon",
+  Command: "CommandIcon",
   Copy: "Copy01Icon",
   Database: "DatabaseIcon",
   Download: "Download01Icon",
@@ -42,6 +45,8 @@ export const ICONS = {
   Folder: "Folder01Icon",
   FolderInput: "FolderInputIcon",
   Forward: "Redo01Icon",
+  // terno.app (plan 96): the source link
+  Github: "GithubIcon",
   HardDrive: "HardDriveIcon",
   ImageOff: "ImageNotFound01Icon",
   ImagePlus: "ImageAdd01Icon",
@@ -118,6 +123,7 @@ export const ICONS = {
   Wand2: "MagicWand01Icon",
   WifiOff: "WifiOff01Icon",
   X: "Cancel01Icon",
+  Zap: "FlashIcon",
 } as const satisfies Record<string, `${string}Icon`>;
 
 /** a second name for an icon above */

@@ -1,0 +1,32 @@
+// terno.app (plan 96). `pnpm deploy:site` deploys production; `pnpm deploy:site:preview` the preview Worker
+// (its own database, a workers.dev URL, noindex). The D1 databases are created on the first deploy.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "terno-site",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "observability": { "enabled": false },
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "terno.app", "custom_domain": true },
+    { "pattern": "www.terno.app", "custom_domain": true }
+  ],
+  "d1_databases": [{ "binding": "DB", "database_name": "terno-site-waitlist", "migrations_dir": "migrations" }],
+  "ratelimits": [{ "name": "WAITLIST_LIMIT", "namespace_id": "9601", "simple": { "limit": 5, "period": 60 } }],
+  "env": {
+    "preview": {
+      "name": "terno-site-preview",
+      "workers_dev": true,
+      "routes": [],
+      "d1_databases": [{ "binding": "DB", "database_name": "terno-site-waitlist-preview", "migrations_dir": "migrations" }],
+      "ratelimits": [{ "name": "WAITLIST_LIMIT", "namespace_id": "9602", "simple": { "limit": 5, "period": 60 } }]
+    }
+  }
+}

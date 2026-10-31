@@ -4,6 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  workerd: true
   electron: false
   electron-winstaller: false
 

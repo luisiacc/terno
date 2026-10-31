@@ -1,0 +1,102 @@
+{
+  "inbox-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "archive-similar-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "archive-similar-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "code-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "code-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "file-similar-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "file-similar-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-atelier-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-atelier-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-macos-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-macos-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-catppuccin-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-dracula-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-gruvbox-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-nord-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-solarized-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "search-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "search-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "shortcuts-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "shortcuts-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "snippets-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "snippets-light": {
+    "width": 1440,
+    "height": 900
+  }
+}

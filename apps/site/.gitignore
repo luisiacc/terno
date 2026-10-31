@@ -1,0 +1,5 @@
+.shots-raw/
+.ssr/
+dist/
+.wrangler/
+test-results/
