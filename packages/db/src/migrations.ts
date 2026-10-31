@@ -1,4 +1,5 @@
 import type { Db } from "./sqlite";
+import { MigrationError, SchemaNewerError } from "./open-errors";
 
 interface Migration {
   version: number;
@@ -1102,15 +1103,18 @@ export const SEARCH_SCHEMA_VERSION = 7;
 
 export function migrate(db: Db): { from: number; to: number } {
   const from = Number((db.get<{ user_version: number }>("PRAGMA user_version"))!.user_version);
-  if (from > SCHEMA_VERSION) {
-    throw new Error(`Database schema v${from} is newer than this app (v${SCHEMA_VERSION}). Update Terno.`);
-  }
+  if (from > SCHEMA_VERSION) throw new SchemaNewerError(from, SCHEMA_VERSION);
   for (const m of MIGRATIONS) {
     if (m.version <= from) continue;
-    db.tx(() => {
-      db.exec(m.sql);
-      db.exec(`PRAGMA user_version = ${m.version}`);
-    });
+    try {
+      db.tx(() => {
+        db.exec(m.sql);
+        db.exec(`PRAGMA user_version = ${m.version}`);
+      });
+    } catch (error) {
+      // plan 95: the step rolled back (the file is at the step before); the window says which, and why
+      throw new MigrationError(m.version, m.name, error);
+    }
   }
   if (from !== SCHEMA_VERSION) db.exec("PRAGMA optimize");
   return { from, to: SCHEMA_VERSION };

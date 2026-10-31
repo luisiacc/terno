@@ -37,7 +37,13 @@ export class Db {
     this.uuid = options.uuid ?? (() => globalThis.crypto.randomUUID());
     const readonly = options.readonly ?? false;
     this.conn = driver.open(path, { readonly });
-    for (const p of driver.pragmas({ readonly, memory: path === ":memory:" })) this.conn.exec(`PRAGMA ${p}`);
+    try {
+      for (const p of driver.pragmas({ readonly, memory: path === ":memory:" })) this.conn.exec(`PRAGMA ${p}`);
+    } catch (error) {
+      // plan 95: a file that can't take its pragmas (full, damaged, read-only) isn't left open
+      try { this.conn.close(); } catch { /* the pragma's error is the one that explains it */ }
+      throw error;
+    }
   }
 
   prepare(sql: string): SqliteStatement {
@@ -102,7 +108,15 @@ export class Db {
       if (depth === 0) for (const hook of this.beforeCommit) hook();
       this.conn.exec(depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
     } catch (error) {
-      this.conn.exec(depth === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      // SQLite may have rolled back already (SQLITE_FULL, an I/O error): a ROLLBACK then fails, and must never
+      // replace the error that explains what happened (plan 95)
+      if (this.conn.inTransaction !== false) {
+        try {
+          this.conn.exec(depth === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+        } catch {
+          /* the original error is thrown below */
+        }
+      }
       throw error;
     } finally {
       this.txDepth--;

@@ -27,3 +27,4 @@ export function openDatabase(path: string, options: OpenOptions = {}): Db {
   return db;
 }
 export { compactOnOpen, type CompactOutcome } from "./compact";
+export * from "./upgrade";

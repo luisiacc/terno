@@ -7,6 +7,7 @@ import { Db, type OpenOptions } from "./sqlite";
 export * from "./connection";
 export * from "./sqlite";
 export * from "./migrations";
+export * from "./open-errors";
 export * from "./ingest";
 export * from "./queries";
 export * from "./search";
@@ -25,12 +26,18 @@ export * from "./outbox";
 /** Opens (and migrates, unless read-only) the Terno database on any driver. */
 export function openDatabaseWith(driver: SqliteDriver, path: string, options: OpenOptions = {}): Db {
   const db = new Db(driver, path, options);
-  registerFunctions(db);
-  if (!options.readonly) {
-    migrate(db);
-    db.onBeforeCommit(() => flushSearchOutbox(db, options.searchLogBytes));
-    // no build survives a restart; writes made outside a transaction are batched now
-    db.tx(() => db.run("DELETE FROM search_leases"));
+  try {
+    registerFunctions(db);
+    if (!options.readonly) {
+      migrate(db);
+      db.onBeforeCommit(() => flushSearchOutbox(db, options.searchLogBytes));
+      // no build survives a restart; writes made outside a transaction are batched now
+      db.tx(() => db.run("DELETE FROM search_leases"));
+    }
+  } catch (error) {
+    // plan 95: a mailbox that didn't open isn't left open (the window explains the error, a retry opens it again)
+    try { db.close(); } catch { /* the open's error is the one that explains it */ }
+    throw error;
   }
   return db;
 }

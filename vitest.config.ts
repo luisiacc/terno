@@ -24,7 +24,7 @@ export default defineConfig({
           name: "db-wasm",
           include: ["packages/db/src/**/*.test.ts"],
           // Native pragmas/live disk lifecycle and source scans; storage-images covers WASM persistence.
-          exclude: ["**/*.perf.test.ts", "packages/db/src/sqlite.test.ts", "packages/db/src/storage.test.ts", "packages/db/src/portable.test.ts", "**/node_modules/**"],
+          exclude: ["**/*.perf.test.ts", "packages/db/src/sqlite.test.ts", "packages/db/src/storage.test.ts", "packages/db/src/portable.test.ts", "packages/db/src/upgrade*.test.ts", "**/node_modules/**"],
           setupFiles: ["packages/db/src/test/wasm-setup.ts"],
           environment: "node",
           testTimeout: 60_000,
