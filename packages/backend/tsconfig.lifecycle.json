@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2023", "DOM"] },
-  "include": ["src/gmail-policy-admission.int.test.ts", "src/gmail-deletion-observation.int.test.ts", "src/sync-ownership.int.test.ts", "src/send-admission-cancellation.int.test.ts", "src/recipient-admission.perf.test.ts", "src/send-submission-store.int.test.ts", "src/ai-filter-output.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-cooldown.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts", "src/provider-cooldown.stage2-baseline.int.test.ts"],
+  "include": ["src/w02-partial-action-exact-undo.int.test.ts", "src/w02-canonical-actions.int.test.ts", "src/w02-action-fixture.ts", "src/gmail-policy-admission.int.test.ts", "src/gmail-deletion-observation.int.test.ts", "src/sync-ownership.int.test.ts", "src/send-admission-cancellation.int.test.ts", "src/recipient-admission.perf.test.ts", "src/send-submission-store.int.test.ts", "src/ai-filter-output.test.ts", "src/explicit-renewal.test.ts", "src/account-lifecycle.test.ts", "src/provider-secret.test.ts", "src/gmail-rotation.int.test.ts", "src/gmail-cooldown.int.test.ts", "src/gmail-catchup.int.test.ts", "src/flag-observation.int.test.ts", "src/gmail-http-evidence.int.test.ts", "src/provider-cooldown-store.int.test.ts", "src/provider-cooldown.stage2-baseline.int.test.ts"],
   "exclude": []
 }
