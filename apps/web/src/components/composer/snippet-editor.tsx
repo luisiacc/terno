@@ -269,7 +269,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
               render={
                 <Button type="button" variant="ghost" size="sm" onMouseDown={(e) => e.preventDefault()} data-testid="snippet-variable" className="shrink-0 text-muted-foreground hover:text-foreground">
                   <Braces /> {t("snippets.variable.insert")}
-                  <ChevronDown className="size-3.5" aria-hidden />
+                  <ChevronDown aria-hidden />
                 </Button>
               }
             />
@@ -296,7 +296,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
           data-testid="snippet-fills-toggle"
           className="flex items-center gap-1 rounded-sm px-1 text-xs font-semibold text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
-          {fillsOpen ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
+          {fillsOpen ? <ChevronDown className="size-[1.15em]" aria-hidden /> : <ChevronRight className="size-[1.15em]" aria-hidden />}
           {t("snippets.alsoFills")}
         </button>
         <div id={`${base}-fills`} hidden={!fillsOpen}>

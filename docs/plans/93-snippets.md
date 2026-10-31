@@ -194,3 +194,4 @@ Requested afterwards: "when i'm doing a draft, pressing cmd+k is bring up the 'i
   - `NotepadText` → `Note01Icon`, for snippets in Settings and the palette. TextQuote is now Hugeicons' “66”, the same as the composer's blockquote button, so snippets get an icon of their own.
   - `BookmarkPlus` → `BookmarkAdd01Icon` (Hugeicons' own alias), for Save as snippet….
   - `Braces` → `ThirdBracketIcon`, for Insert variable. It draws `{ }`, the variables' own syntax. Hugeicons' `Braces` alias draws parentheses.
+- Codex review of the rebase: one finding, fixed. The editor's two chevrons were fixed at `size-3.5`, against plan 92's rule that an icon next to text is sized to it. Insert variable's chevron now takes the button's own icon size, and the "Also fills in" disclosure uses `1.15em`. The catalog, the plan references and main's palette and Gmail-tabs code had no findings.
