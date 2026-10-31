@@ -404,13 +404,13 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="search-button" variant="ghost" size="icon-sm" aria-label={t("common.search")} aria-expanded={showField} className="no-drag shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={toggleSearch}>
+              <Button data-testid="search-button" variant="ghost" size="icon-sm" aria-label={showField ? t("list.search.close") : t("common.search")} aria-expanded={showField} className="no-drag shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={toggleSearch}>
                 <Search />
               </Button>
             }
           />
           <TooltipContent>
-            {t("common.search")} <Shortcut keys="/" />
+            {showField ? t("list.search.close") : <>{t("common.search")} <Shortcut keys="/" /></>}
           </TooltipContent>
         </Tooltip>
       )}

@@ -299,6 +299,7 @@ test.describe("Lumen: search behind a button", () => {
     await focusList(page);
     await expect(input).toHaveValue("factura");
     // the button closes it again, and the query goes with it
+    await expect(page.getByTestId("search-button")).toHaveAccessibleName("Close search");
     await page.getByTestId("search-button").click();
     await expect(input).toHaveCount(0);
     await expect(page.getByTestId("search-button")).toHaveAttribute("aria-expanded", "false");

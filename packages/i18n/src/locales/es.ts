@@ -633,6 +633,7 @@ const es = {
   "list.search.coverage": "La búsqueda abarca el correo guardado en Terno, que puede estar incompleto. Si falta algo, consulta el sitio web de tu proveedor de correo.",
   "list.search.title": "Búsqueda",
   "list.search.clear": "Limpiar búsqueda",
+  "list.search.close": "Cerrar búsqueda",
   "list.search.results": { one: "# resultado", other: "# resultados" },
   "list.search.resultsMore": "{count}+ resultados",
   "list.search.stats": "{results} · {ms} ms",

@@ -642,6 +642,7 @@ const en = {
   "list.search.coverage": "Search covers mail saved in Terno, which may be incomplete. Check your mail provider’s website if something is missing.",
   "list.search.title": "Search",
   "list.search.clear": "Clear search",
+  "list.search.close": "Close search",
   "list.search.results": { one: "# result", other: "# results" },
   "list.search.resultsMore": "{count}+ results",
   "list.search.stats": "{results} · {ms} ms",
