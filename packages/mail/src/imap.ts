@@ -997,7 +997,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
 
   /** Downloads bodies newest-first (search, snippets and body filters depend on them). */
   async function syncBodies(c: ImapFlow, sink: SyncSink) {
-    const pending = await store.pendingBodies(options.bodiesPerSync ?? 500);
+    const requested = sink.captureRetry;
+    const repair = requested?.locator.kind === "imap" ? await store.repairs?.get(ctx.account.id, requested.locator) : undefined;
+    const source = repair?.state === "pending" && repair.revision === requested?.revision && repair.locator.kind === "imap" ? repair.locator : undefined;
+    const pending = source ? [{ id: source.messageId, mailbox: source.mailbox, uid: source.uid, uidvalidity: source.uidvalidity }] : await store.pendingBodies(options.bodiesPerSync ?? 500);
     const byMailbox = new Map<string, { id: number; uid: number; uidvalidity: number }[]>();
     for (const p of pending) byMailbox.set(p.mailbox, [...(byMailbox.get(p.mailbox) ?? []), p]);
     for (const [mailbox, all] of byMailbox) {

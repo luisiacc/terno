@@ -109,6 +109,7 @@ interface AccountLifetime {
   abort: AbortController;
   pending: Set<Promise<unknown>>;
   removing: boolean;
+  captureRequests: number;
   provider?: MailProvider;
 }
 
@@ -757,11 +758,29 @@ export class BackendCore {
 
   async retryCapture(accountId: number, key: string, revision: number): Promise<import("@terno/core").CaptureRepair | null> {
     const life = this.lifetime(accountId), credentials = this.credentialsOf(accountId);
-    const check = () => { this.assertCurrent(life); if (credentials !== this.credentialsOf(accountId)) throw new Error("Capture identity changed"); };
-    await this.accountWrite(life, () => this.store.captureRepairs.retry(accountId, key, revision, check));
-    await this.syncAccount(accountId);
-    check();
-    return this.store.captureRepairs.get(accountId, captureLocator(key));
+    const check = () => { this.assertCurrent(life); if (credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.accountGone")); };
+    if (life.captureRequests >= 50) throw new RpcError("UNAVAILABLE", L("capture.busy"));
+    life.captureRequests++;
+    try {
+      await this.accountWrite(life, () => this.store.captureRepairs.retry(accountId, key, revision, check));
+      const locator = captureLocator(key);
+      await this.syncAccount(accountId, { locator, revision: revision + 1, check });
+      check();
+      return this.store.captureRepairs.get(accountId, locator);
+    } finally { life.captureRequests--; }
+  }
+
+  async retryAttachments(accountId: number, messageId: number): Promise<void> {
+    const life = this.lifetime(accountId), credentials = this.credentialsOf(accountId);
+    const check = () => { this.assertCurrent(life); if (credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.accountGone")); };
+    if (life.captureRequests >= 50) throw new RpcError("UNAVAILABLE", L("capture.busy"));
+    life.captureRequests++;
+    try {
+      await this.accountWrite(life, () => this.store.attachments.retry(accountId, messageId, check));
+      const repair = await this.store.captureRepairs.forMessage(accountId, messageId);
+      check();
+      await this.syncAccount(accountId, repair ? { locator: repair.locator, revision: repair.revision, check } : undefined);
+    } finally { life.captureRequests--; }
   }
 
   async emitAccounts(): Promise<void> {
@@ -1011,7 +1030,7 @@ export class BackendCore {
   private lifetime(accountId: number): AccountLifetime {
     let life = this.lifetimes.get(accountId);
     if (!life) {
-      life = { id: accountId, abort: new AbortController(), pending: new Set(), removing: false };
+      life = { id: accountId, abort: new AbortController(), pending: new Set(), removing: false, captureRequests: 0 };
       this.lifetimes.set(accountId, life);
     }
     return life;
@@ -1281,12 +1300,12 @@ export class BackendCore {
     this.options.providers.gmailTokens?.forget?.(accountId);
   }
 
-  syncAccount(accountId: number): Promise<void> {
+  syncAccount(accountId: number, captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number; check(): void }): Promise<void> {
     if (this.stopped || this.google.get(accountId)?.paused) return Promise.resolve();
     const life = this.lifetime(accountId);
     if (!this.current(life)) return Promise.resolve();
     const running = this.syncing.get(accountId);
-    if (running) {
+    if (running && !captureRetry) {
       // Don't drop the notification (IDLE/push during a long sync): schedule one more pass.
       this.syncAgain.add(accountId);
       return running.then(() => this.syncing.get(accountId));
@@ -1297,7 +1316,8 @@ export class BackendCore {
         await this.emitAccounts();
       });
     };
-    const run = (async () => {
+    const work = async () => {
+      captureRetry?.check();
       // before the provider: a provider made from older credentials never passes for the new ones (Codex code review #1)
       const credentials = this.credentialsOf(accountId);
       const provider = await this.provider(accountId);
@@ -1313,11 +1333,13 @@ export class BackendCore {
       const before = await this.store.accounts.get(accountId);
       if (!this.current(life)) return;
       const checkCurrent = () => {
+        captureRetry?.check();
         this.assertCurrent(life);
-        if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
+        if (credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
       };
       const windowDays = before?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
       const sink: SyncSink = {
+        ...(captureRetry && { captureRetry: { locator: captureRetry.locator, revision: captureRetry.revision } }),
         signal: life.abort.signal,
         blockCapture: async (locator, reason, revision) => {
           checkCurrent();
@@ -1465,7 +1487,8 @@ export class BackendCore {
         const down = wasDown || retry.failures >= 2 || !this.connectivity.online;
         await setState({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
       }
-    })().catch((error: unknown) => {
+    };
+    const run = (running ? running.then(work) : work()).catch((error: unknown) => {
       if (error !== life.abort.signal.reason) throw error;
     }).finally(() => {
       if (this.syncing.get(accountId) !== run) return;

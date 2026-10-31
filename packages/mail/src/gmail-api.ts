@@ -1052,6 +1052,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         setBody: (...args) => effect(() => outer.setBody(...args)),
       };
       sink.check();
+      // Explicit source admission must not wait behind an expired/full reconciliation.
+      const requested = sink.captureRetry;
+      if (requested?.locator.kind === "gmail") {
+        const repair = await store.repairs?.get(accountId, requested.locator);
+        if (repair?.state === "pending" && repair.revision === requested.revision) await fetchFull([requested.locator.providerId], sink);
+      } else {
+        const retry = await store.repairs?.list(accountId, "", "pending");
+        if (retry?.items.length) await fetchFull(retry.items.flatMap((r) => r.locator.kind === "gmail" ? [r.locator.providerId] : []), sink);
+      }
+      sink.check();
       const malformed = await reconcileFlags(sink);
       sink.check();
       const cursor = await ctx.loadCursor<unknown>();
@@ -1080,9 +1090,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       sink.check();
       await captureAttachments(sink);
-      sink.check();
-      const retry = await store.repairs?.list(accountId, "", "pending");
-      if (retry?.items.length) await fetchFull(retry.items.flatMap((r) => r.locator.kind === "gmail" ? [r.locator.providerId] : []), sink);
       sink.check();
       if (malformed) throw malformed;
     },

@@ -19,6 +19,7 @@ export interface CaptureRepairStorage {
   page(account: number, after: string, state?: "pending"): CaptureRepairRow[];
 }
 export interface CaptureRepairs {
+  forMessage(account: number, message: number): Promise<CaptureRepair | null>;
   get(account: number, locator: CaptureLocator): Promise<CaptureRepair | null>;
   list(account: number, after?: string, state?: "pending"): Promise<CaptureRepairPage>;
   block(account: number, locator: CaptureLocator, reason: CaptureReason, revision: number, check?: () => void): Promise<void>;

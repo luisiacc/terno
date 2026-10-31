@@ -14,6 +14,7 @@ export function sqlCaptureStorage(db: Db): CaptureRepairStorage {
 export function sqlCaptureRepairs(db: Db): CaptureRepairs {
   const storage = sqlCaptureStorage(db);
   return {
+    forMessage: async (a,message) => { const row=db.get<CaptureRepairRow>("SELECT * FROM capture_repairs WHERE account_id=? AND message_id=? ORDER BY key LIMIT 1",a,message); return row ? captureRepair(row) : null; },
     get: async (a,l) => { const row=storage.get(a,captureKey(l)); return row ? captureRepair(row) : null; },
     list: async (a,after="",state) => { const rows=storage.page(a,after,state); return { items: rows.map(captureRepair), ...(rows.length === 50 && { next: rows.at(-1)!.key }) }; },
     block: async (a,l,r,v,check) => db.tx(() => { check?.(); blockCapture(storage,a,l,r,v); check?.(); }),

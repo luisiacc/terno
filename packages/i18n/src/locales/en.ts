@@ -10,6 +10,7 @@
 const en = {
   "capture.capacity": "Message repair capacity reached. Retry messages or remove them with your mail provider before syncing again.",
   "capture.changed": "This repair changed. Refresh the list and try again.",
+  "capture.busy": "Wait for current repair requests to finish, then try again.",
   "capture.title": "Messages needing repair",
   "capture.hint": "Other mail can sync while these messages wait. Try again after updating Terno, or read the original with your mail provider.",
   "capture.error": "Could not update message repair. Refresh the list and try again.",

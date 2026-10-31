@@ -944,7 +944,7 @@ export class IdbMailStore implements MailStore {
           for (const t of c.touched) touched.add(t);
           return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         },
-        { durability: "relaxed" },
+        { durability: "relaxed", check },
       );
     },
     setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check }) => {
@@ -969,7 +969,7 @@ export class IdbMailStore implements MailStore {
           if (owner) touched.add(owner.thread_id);
           return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
         },
-        { durability: "relaxed" },
+        { durability: "relaxed", check },
       );
     },
     updateFlags: (accountId, updates, observation, check) =>
@@ -1160,7 +1160,7 @@ export class IdbMailStore implements MailStore {
 
   // ───────────────────────────── compose ─────────────────────────────
 
-  get captureRepairs(): MailStore["captureRepairs"] { return idbCaptureRepairs(this.c, (fn) => this.command(fn), (fn) => this.read(fn), (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state))); }
+  get captureRepairs(): MailStore["captureRepairs"] { return idbCaptureRepairs(this.c, (fn, options) => this.command(fn, options), (fn) => this.read(fn), (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state))); }
 
   readonly attachments: MailStore["attachments"] = {
     current: (accountId, message) => this.read(() => {
@@ -1168,12 +1168,13 @@ export class IdbMailStore implements MailStore {
       if (!m || m.account_id !== accountId) return [];
       return T(this.c, "attachments").by("fk_message_id", m.id).sort((a,b) => a.id - b.id).map((a) => ({ filename: a.filename as string, mime: a.mime as string, size: a.size as number, assetId: a.asset_id as string | undefined, contentId: a.content_id as string | null }));
     }),
-    retry: (accountId, messageId) => this.command(() => {
+    retry: (accountId, messageId, check) => this.command(() => {
+      check?.();
       const r = T(this.c, "messages").get(messageId);
       if (r?.account_id !== accountId) throw assetError();
       for (const repair of T(this.c,"capture_repairs").by("fk_message_id",messageId)) if(repair.state === "blocked") retryCapture(idbCaptureStorage(this.c),accountId,repair.key,repair.revision);
       T(this.c, "messages").update(r, { attachments_captured: 0, attachment_pending: 1 });
-    }),
+    }, {check}),
     create: async (p) => {
       p = { ...p };
       await this.command(() => { const db = idbAssets(this.db); validateAssetCreation(db, p); db.beginOrphanGrace(p.accountId, p.now); });
@@ -1850,7 +1851,7 @@ export class IdbMailStore implements MailStore {
 
   providerStore(accountId: number): ProviderStore {
     let s = this.providerStores.get(accountId);
-    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state)), (fn) => this.command(fn), (fn) => this.read(fn), (after) => this.exclusive(() => idbCachedPage(this.idb, this.c, accountId, after)), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
+    if (!s) this.providerStores.set(accountId, (s = new IdbProviderStore(this.c, accountId, (a,after,state) => this.exclusive(() => idbCapturePage(this.idb,a,after,state)), (fn, options) => this.command(fn, options), (fn) => this.read(fn), (after) => this.exclusive(() => idbCachedPage(this.idb, this.c, accountId, after)), (request) => this.exclusive(() => idbFlagSnapshots(this.idb, idbFlags(this.c), accountId, request)))));
     if (!Object.prototype.hasOwnProperty.call(s, "setting")) {
       const read = s.setting.bind(s);
       s.setting = <V,>(key: string): Promise<V | null> => key === PROVIDER_COOLDOWN_KEY ? Promise.resolve(null) : read<V>(key);

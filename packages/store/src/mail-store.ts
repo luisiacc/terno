@@ -417,7 +417,7 @@ export interface MailStore {
 
   attachments: {
     current(accountId: number, message: { id: number } | { providerMsgId: string }): Promise<import("./types").IncomingAttachment[]>;
-    retry(accountId: number, messageId: number): Promise<void>;
+    retry(accountId: number, messageId: number, check?: () => void): Promise<void>;
     create(p: { accountId: number; filename: string; mime: string; size: number; contentId?: string | null; now: number }): Promise<import("@terno/core").AttachmentRef>;
     append(accountId: number, assetId: string, index: number, dataBase64: string): Promise<void>;
     seal(accountId: number, assetId: string): Promise<void>;

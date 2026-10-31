@@ -29,14 +29,15 @@ export function idbCaptureStorage(c: Ctx): CaptureRepairStorage {
     page:(a,after,state)=>rows.by("fk_account_id",a).filter(r=>r.key>after && (!state || r.state===state)).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0).slice(0,50),
   };
 }
-export function idbCaptureRepairs(c: Ctx, command: <V>(fn:()=>V)=>Promise<V>, read: <V>(fn:()=>V)=>Promise<V>, page?: CaptureRepairs["list"]): CaptureRepairs {
+export function idbCaptureRepairs(c: Ctx, command: <V>(fn:()=>V, options?: { check?: () => void })=>Promise<V>, read: <V>(fn:()=>V)=>Promise<V>, page?: CaptureRepairs["list"]): CaptureRepairs {
   const db=idbCaptureStorage(c);
   return {
+    forMessage:(a,message)=>read(()=>{const r=c.db.table<CaptureRepairRow>("capture_repairs").by("fk_message_id",message).find(row=>row.account_id===a); return r ? captureRepair(r) : null;}),
     get:(a,l)=>read(()=>{const r=db.get(a,captureKey(l));return r?captureRepair(r):null;}),
     list: page ?? ((a,after="",state)=>read(()=>{const rows=db.page(a,after,state);return {items:rows.map(captureRepair),...(rows.length===50 && {next:rows.at(-1)!.key})};})),
-    block:(a,l,r,v,check)=>command(()=>{check?.();blockCapture(db,a,l,r,v);check?.();}),
-    retry:(a,key,v,check)=>command(()=>{check?.();retryCapture(db,a,key,v);check?.();}),
-    retire:(a,l,check)=>command(()=>{check?.();db.remove(a,captureKey(l));}),
+    block:(a,l,r,v,check)=>command(()=>{check?.();blockCapture(db,a,l,r,v);check?.();}, {check}),
+    retry:(a,key,v,check)=>command(()=>{check?.();retryCapture(db,a,key,v);check?.();}, {check}),
+    retire:(a,l,check)=>command(()=>{check?.();db.remove(a,captureKey(l));}, {check}),
   };
 }
 export function retireLocationCapture(c: Ctx,message: number,mailbox: string): void {

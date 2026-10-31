@@ -644,7 +644,8 @@ export class SqlMailStore implements MailStore {
     current: async (accountId, message) => this.db.all<{ filename: string; mime: string; size: number; assetId?: string; contentId: string | null }>(
       `SELECT a.filename, a.mime, a.size, a.asset_id AS assetId, a.content_id AS contentId FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.account_id = ? AND ${"id" in message ? "m.id" : "m.provider_msg_id"} = ? ORDER BY a.id`, accountId, "id" in message ? message.id : message.providerMsgId,
     ),
-    retry: async (accountId, messageId) => this.db.tx(() => {
+    retry: async (accountId, messageId, check) => this.db.tx(() => {
+      check?.();
       const r = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId);
       if (r?.account_id !== accountId) throw assetError();
       for (const repair of this.db.all<import("@terno/store").CaptureRepairRow>("SELECT * FROM capture_repairs WHERE account_id=? AND message_id=? AND state='blocked'", accountId,messageId)) retryCapture(sqlCaptureStorage(this.db),accountId,repair.key,repair.revision);

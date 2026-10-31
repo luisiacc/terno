@@ -4,6 +4,7 @@ import type { LocaleCheck } from "../types";
 const es = {
   "capture.capacity": "Se alcanzó la capacidad de reparación. Reintenta los mensajes o elimínalos con tu proveedor de correo antes de sincronizar de nuevo.",
   "capture.changed": "Esta reparación cambió. Actualiza la lista e inténtalo de nuevo.",
+  "capture.busy": "Espera a que terminen los reintentos actuales y vuelve a intentarlo.",
   "capture.title": "Mensajes que necesitan reparación",
   "capture.hint": "El resto del correo puede sincronizarse mientras estos mensajes esperan. Reintenta después de actualizar Terno o lee el original con tu proveedor de correo.",
   "capture.error": "No se pudo actualizar la reparación. Actualiza la lista e inténtalo de nuevo.",

@@ -43,6 +43,8 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const messages = new Map([resource("a"), resource("b")].map((m) => [m.id, m]));
   let additions: string[] = [], transient = false, removed = false;
   let historyDeleted: string[] = [];
+  let expired=false, refreshed=false;
+  const missing=new Set<string>();
   const deletedTerminal="90071992547409930004";
   let held: { entered: ReturnType<typeof gate>; release: ReturnType<typeof gate> } | undefined;
   // Native Request interception precedes construction of the managed fetchGoogle boundary.
@@ -53,17 +55,19 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     if (url.origin !== new URL(api).origin || !url.pathname.startsWith(`${new URL(api).pathname}/`)) return refuse();
     requests.push(url);
     const path = url.pathname.slice(new URL(api).pathname.length);
-    if (path === "/profile" && !url.search) return Response.json({ emailAddress: "me@example.test", historyId: base });
+    if (path === "/profile" && !url.search) return Response.json({ emailAddress: "me@example.test", historyId: refreshed ? terminal : base });
     if (path === "/labels" && !url.search) return Response.json({ labels: [] });
     if (path === "/messages" && url.searchParams.size === 3 && url.searchParams.get("includeSpamTrash") === "true" && url.searchParams.get("maxResults") === "500" && /^after:\d+$/.test(url.searchParams.get("q") ?? "")) return Response.json({ messages: [...messages.keys()].map((id) => ({ id })) });
     if (path === "/history") {
       const start = url.searchParams.get("startHistoryId");
       if (url.searchParams.get("maxResults") !== "500" || url.searchParams.getAll("historyTypes").sort().join(",") !== "labelAdded,labelRemoved,messageAdded,messageDeleted" || url.searchParams.size !== 6 || (start !== base && start !== terminal && start !== deletedTerminal)) return refuse();
+      if(expired && start===base){expired=false;refreshed=true;return Response.json({}, {status:404});}
       if(removed)return Response.json({historyId:deletedTerminal,...(start!==deletedTerminal && {history:[{id:deletedTerminal,messagesDeleted:[{message:{id:"p"}}]}]})});
       return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })), messagesDeleted: historyDeleted.map(id=>({message:{id}})) }] } : {}) });
     }
     const id = path.slice("/messages/".length), format = url.searchParams.get("format");
-    if (!path.startsWith("/messages/") || !messages.has(id) || url.searchParams.size !== 1 || (format !== "raw" && format !== "minimal")) return refuse();
+    if (!path.startsWith("/messages/") || (!messages.has(id) && !missing.has(id)) || url.searchParams.size !== 1 || (format !== "raw" && format !== "minimal")) return refuse();
+    if(missing.has(id))return Response.json({}, {status:404});
     if (id === "p" && format === "raw") {
       if (held) { held.entered.release(); await held.release.promise; }
       if (transient) return Response.json({}, { status: 503 });
@@ -96,6 +100,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     get backend() { return backend; },
     sync() { const run = backend.syncAccount(account.id); runs.push(run); return run; },
     add(files: number, failRead = false) { transient = failRead; messages.set("p", resource("p", files)); messages.set("c", resource("c")); additions = ["a", "p", "c"]; },
+    expireAndDeleteRequested(id: string) { expired=true;missing.add(id); },
     deleteAtCapacity() { historyDeleted=["old0"]; },
     deletePoison() { removed=true; messages.delete("p"); },
     hold() { held = { entered: gate(), release: gate() }; return held; },
@@ -172,6 +177,25 @@ describe.each(["SQL", "IndexedDB"] as const)("%s durable malformed-message recov
     expect((await t.cache()).filter(m=>["a","b"].includes(m.row.providerMsgId!))).toEqual(cached);
     await t.reopen();expect.soft(await t.cursor()).toEqual({historyId:terminal});
     expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"p"})).toMatchObject({state:"blocked"});
+  });
+
+  it("R3 exact explicit source404 releases full repair capacity before expired-history reconciliation",async()=>{
+    const t=await mailbox(kind);await t.sync();const cached=await t.cache();
+    for(let i=0;i<1000;i++)await t.backend.store.captureRepairs.block(t.account.id,{kind:"gmail",providerId:`old${i}`},"mime-parts",0);
+    const requested=(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old999"}))!;
+    t.add(1001);t.expireAndDeleteRequested("old999");await t.sync();
+    expect(await t.cursor()).toMatchObject({historyId:base});
+    for(let i=0;i<51;i++){const r=(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:`old${i}`}))!;await t.backend.store.captureRepairs.retry(t.account.id,r.key,r.revision);}
+    await t.rpc().call("captureRepairs.retry",{accountId:t.account.id,key:requested.key,revision:0});
+    expect.soft(t.requests.filter(u=>u.pathname.endsWith("/messages/old999")&&u.searchParams.get("format")==="raw")).toHaveLength(1);
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old999"})).toBeNull();
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"p"})).toMatchObject({state:"blocked",reason:"mime-parts"});
+    expect.soft(await t.cursor()).toEqual({historyId:terminal});
+    expect(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old0"})).toMatchObject({state:"pending",revision:1});
+    expect((await t.cache()).filter(m=>["a","b"].includes(m.row.providerMsgId!))).toEqual(cached);
+    await t.reopen();expect.soft(await t.cursor()).toEqual({historyId:terminal});
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old999"})).toBeNull();
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old998"})).toMatchObject({state:"blocked",revision:0});
   });
 
   it("accepts the valid 100-file neighbor and persists exact capture across graceful reopen", async () => {

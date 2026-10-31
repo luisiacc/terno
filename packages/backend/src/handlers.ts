@@ -703,8 +703,7 @@ export function createHandlers(b: Backend): Handlers {
     "captureRepairs.list": (p, ctx) => attachmentCall(ctx.origin, () => store.captureRepairs.list(p.accountId, p.after)),
     "captureRepairs.retry": (p, ctx) => attachmentCall(ctx.origin, async () => { return { repair: await b.retryCapture(p.accountId, p.key, p.revision) }; }),
     "attachments.retry": (p, ctx) => attachmentCall(ctx.origin, async () => {
-      await store.attachments.retry(p.accountId, p.messageId);
-      await b.syncAccount(p.accountId);
+      await b.retryAttachments(p.accountId, p.messageId);
       return { ok: true as const };
     }),
     "attachments.create": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.create({ ...p, now: b.now() })),

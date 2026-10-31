@@ -2,6 +2,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(process.cwd()+'/apps/web/package.json');
 const {chromium,expect}=require('@playwright/test');
 const AxeBuilder=require('@axe-core/playwright').default;
+const output=process.env.CAPTURE_OUTPUT ?? '/tmp/terno-w10-repair';
 const browser=await chromium.launch({headless:true});
 const context=await browser.newContext({viewport:{width:900,height:720},serviceWorkers:'block'});
 const page=await context.newPage(), errors=[], denied=[];
@@ -17,7 +18,7 @@ try {
   await page.evaluate(mode=>{document.documentElement.dataset.theme='lumen-'+mode;document.documentElement.classList.toggle('dark',mode==='dark');},mode);
   await page.evaluate(async()=>{void document.body.offsetWidth;await Promise.all(document.getAnimations().map(a=>a.finished));});
   const results=await new AxeBuilder({page}).analyze();expect(results.violations).toEqual([]);
-  await page.screenshot({path:'/tmp/terno-w10-repair/capture-'+mode+'.png'});
+  await page.screenshot({path:output+'/capture-'+mode+'.png'});
  }
  await page.evaluate(()=>window.captureHarness.close());
  await page.reload();await page.getByRole('button',{name:'Messages needing repair'}).click();

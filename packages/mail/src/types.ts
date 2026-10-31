@@ -124,6 +124,7 @@ export class ProviderAuthError extends ProviderError {
 
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
 export interface SyncSink {
+  captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number };
   blockCapture?(locator: import("@terno/core").CaptureLocator, reason: import("@terno/core").CaptureReason, revision: number): Promise<void>;
   retireCapture?(locator: import("@terno/core").CaptureLocator): Promise<void>;
   /**

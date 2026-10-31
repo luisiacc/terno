@@ -20,7 +20,7 @@ function identityVersion(c: Ctx) {
   return version;
 }
 
-type Command = <V>(fn: () => V) => Promise<V>;
+type Command = <V>(fn: () => V, options?: { check?: () => void }) => Promise<V>;
 
 /** One account's provider-side reads and IMAP identity (the SQL adapter's SqlProviderStore, on the in-memory tables). */
 /**
