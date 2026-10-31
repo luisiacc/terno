@@ -7,7 +7,7 @@ import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, l
 import { installQueryRecovery } from "~/rpc/reconnect";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
-import { getApp, navigate, setApp, setCategories, setFolders } from "~/state/app";
+import { getApp, navigate, setAccounts, setApp, setCategories, setFolders } from "~/state/app";
 import { refreshList, reloadList, useList } from "~/state/list";
 import { bootPage, installPage, listCovered, readerShown } from "~/lib/page";
 import { invalidateThreads, loadThread, useThreads } from "~/state/threads";
@@ -78,7 +78,7 @@ export async function boot(): Promise<void> {
     });
     installQueryRecovery({ covered: listCovered, readerShown });
     client.on("accounts", (accounts) => {
-      setApp({ accounts });
+      setAccounts(accounts);
       reconcileAccounts(accounts);
       // plan 25: an account that works again ends what was said about its sign-in
       accountsChanged(accounts);

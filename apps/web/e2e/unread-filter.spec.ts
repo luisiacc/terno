@@ -14,8 +14,9 @@ const ctx = { clientId: "setup", origin: "dev" as const };
 const button = (page: Page) => page.getByTestId("unread-filter");
 const status = (page: Page) => page.getByTestId("unread-filter-status");
 const db = (server: DevServer) => sqlDb(server.backend.store);
-const unreadInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0").map((r) => r.id);
-const readInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count = 0").map((r) => r.id);
+// plan 86: what the Inbox shows (Gmail's Promotions and Social live apart)
+const unreadInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND tab = 0 AND unread_count > 0").map((r) => r.id);
+const readInbox = (server: DevServer) => db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND tab = 0 AND unread_count = 0").map((r) => r.id);
 const loadedIds = (page: Page) => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds());
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 /** the list shows the rows of that list key (the header changes before they arrive) */
@@ -125,7 +126,8 @@ test.describe("the toggle", () => {
     await expect(status(page)).toHaveText("Filtered by: Unread");
     const shown = await loadedIds(page);
     expect(shown.length).toBeGreaterThan(0);
-    const unread = new Set(unreadInbox(server));
+    // in:inbox is the server's Inbox: Gmail's tabs too (plan 86 keeps them out of the Inbox list only)
+    const unread = new Set(db(server).all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 AND unread_count > 0").map((r) => r.id));
     expect(shown.every((id) => unread.has(id))).toBe(true);
     await expect(page.getByTestId("search-stats")).toContainText(`${shown.length.toLocaleString("en-US")} results`);
   });

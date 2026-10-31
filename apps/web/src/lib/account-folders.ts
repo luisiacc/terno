@@ -1,4 +1,5 @@
-import type { Account, Folder, View } from "@terno/core";
+import type { Account, Folder, Tab, View } from "@terno/core";
+import { t } from "@terno/i18n";
 import { useLayoutEffect, useState } from "react";
 import { create } from "zustand";
 import { getApp, navigate } from "~/state/app";
@@ -68,7 +69,9 @@ export function reconcileAccounts(accounts: readonly Account[]): void {
 // ── plan 68: the account's own folders
 
 /** The folder you're in, by name (its last path step); null outside one. */
-export function folderName(s: { folders: readonly Folder[]; accountId: number | null; folder: string | null }): string | null {
+export function folderName(s: { folders: readonly Folder[]; accountId: number | null; folder: string | null; gmailTab?: Tab | null }): string | null {
+  // plan 86: a Gmail tab is named like a folder of the account
+  if (s.gmailTab) return t(`view.tab.${s.gmailTab}`);
   if (s.folder === null) return null;
   return s.folders.find((f) => f.accountId === s.accountId && f.key === s.folder)?.path.at(-1) ?? null;
 }

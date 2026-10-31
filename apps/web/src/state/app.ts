@@ -1,4 +1,4 @@
-import type { Account, Category, Counts, Filter, FilterRule, Folder, ListFilter, ReminderKind, View } from "@terno/core";
+import { separatesTabs, type Account, type Category, type Counts, type Filter, type FilterRule, type Folder, type ListFilter, type ReminderKind, type Tab, type View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
@@ -46,6 +46,8 @@ export interface AppState {
   folder: string | null;
   /** plan 68: every account's own folders */
   folders: Folder[];
+  /** plan 86: a Gmail account's Promotions or Social (with accountId; its view "inbox") */
+  gmailTab: Tab | null;
   /** "Revisar": the engine's pending suggestions for this category */
   reviewCategoryId: number | null;
   /** plan 87: the Reminders list (view "all", no account, category, folder or review) */
@@ -107,6 +109,7 @@ export const useApp = create<AppState>(() => ({
   categoryId: null,
   folder: null,
   folders: [],
+  gmailTab: null,
   reviewCategoryId: null,
   reminders: false,
   query: "",
@@ -162,7 +165,9 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
   next = keepRemindersValid(state, next);
   const m = { ...state, ...next };
-  return m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.view !== "all") ? { ...next, folder: null } : next;
+  const out = m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.view !== "all") ? { ...next, folder: null } : next;
+  // plan 86: a Gmail tab is its account's Inbox, alone, likewise
+  return m.gmailTab !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.folder !== null || m.view !== "inbox") ? { ...out, gmailTab: null } : out;
 }
 
 /** Plan 87: any other list (a tab, an account, a search: a search looks everywhere) leaves Reminders. */
@@ -179,18 +184,21 @@ export function setListAutoSelection(selectedId: number | null): void {
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean; gmailTab?: Tab | null }): void {
   // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
   // plan 87: Reminders is a list of its own, of every account
   const reminders = !folder && to.reminders === true;
+  // plan 86: a Gmail tab likewise, its view "inbox"
+  const gmailTab = folder || reminders ? null : (to.gmailTab ?? null);
   setApp((s) => ({
-    reviewCategoryId: folder || reminders ? null : (to.reviewCategoryId ?? null),
+    reviewCategoryId: folder || reminders || gmailTab ? null : (to.reviewCategoryId ?? null),
     reminders,
-    view: folder || reminders ? "all" : (to.view ?? (to.categoryId ? "all" : s.view)),
+    view: folder || reminders ? "all" : gmailTab ? "inbox" : (to.view ?? (to.categoryId ? "all" : s.view)),
     accountId: reminders ? null : to.accountId === undefined ? s.accountId : to.accountId,
-    categoryId: folder || reminders || to.categoryId === undefined ? null : to.categoryId,
+    categoryId: folder || reminders || gmailTab || to.categoryId === undefined ? null : to.categoryId,
     folder,
+    gmailTab,
     query: "",
     selectedId: null,
     checked: new Set(),
@@ -208,9 +216,29 @@ export function setFolders(folders: Folder[]): void {
   if (folder !== null && !folders.some((f) => f.accountId === accountId && f.key === folder && f.selectable)) navigate({ view: "inbox", accountId });
 }
 
-/** Plan 83: the Inbox itself (not a category's tab of it, a folder, Revisar or a search): what hidden categories leave. */
-export function inPlainInbox(s: Pick<AppState, "view" | "categoryId" | "reviewCategoryId" | "folder" | "query">): boolean {
-  return s.view === "inbox" && s.categoryId === null && s.reviewCategoryId === null && s.folder === null && s.query.trim() === "";
+/** Plan 83: the Inbox itself (not a category's tab of it, a folder, a Gmail tab, Revisar or a search): what hidden categories and Gmail tabs leave. */
+export function inPlainInbox(s: Pick<AppState, "view" | "categoryId" | "reviewCategoryId" | "folder" | "query"> & { gmailTab?: Tab | null }): boolean {
+  return s.view === "inbox" && s.categoryId === null && s.reviewCategoryId === null && s.folder === null && !s.gmailTab && s.query.trim() === "";
+}
+
+/** Plan 86: is this thread out of the Inbox in a Gmail tab its account keeps apart? */
+export function inSeparateTab(t: { accountId?: number; tab?: number }, accounts: readonly Account[]): boolean {
+  if (!t.tab || t.accountId === undefined) return false;
+  const account = accounts.find((a) => a.id === t.accountId);
+  return !!account && separatesTabs(account);
+}
+
+/**
+ * Plan 86: the account list changed (an edit here, an event from the backend). An account that stops keeping its
+ * tabs apart takes you from one of them to its Inbox, and a "select all N" of the Inbox counted other threads.
+ */
+export function setAccounts(accounts: Account[]): void {
+  const separated = (list: readonly Account[]) => list.filter(separatesTabs).map((a) => a.id).join();
+  const regrouped = separated(getApp().accounts) !== separated(accounts) && getApp().scope !== null && (inPlainInbox(getApp()) || getApp().gmailTab !== null);
+  setApp({ accounts, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });
+  const { gmailTab, accountId } = getApp();
+  const account = accounts.find((a) => a.id === accountId);
+  if (gmailTab !== null && (!account || !separatesTabs(account))) navigate({ view: "inbox", accountId: account ? accountId : null });
 }
 
 /**

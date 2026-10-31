@@ -450,6 +450,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
     }
   }
   placeInFolders(accounts, messages);
+  placeInTabs(accounts, messages);
   return { accounts, categories: MOCK_CATEGORIES, messages };
 }
 
@@ -486,6 +487,15 @@ function hash(text: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
   return h >>> 0;
+}
+
+/** Plan 86: Gmail's category on what others send (yours carry none), after the folders' labels: promotions apart, the rest Primary. */
+function placeInTabs(accounts: readonly MockAccount[], messages: MockMessage[]): void {
+  for (const m of messages) {
+    if (accounts[m.accountIndex]!.kind !== "gmail" || m.isSent) continue;
+    const category = m.tag === "promo" ? "CATEGORY_PROMOTIONS" : "CATEGORY_PERSONAL";
+    m.gmailLabels = [...(m.gmailLabels ?? []), category];
+  }
 }
 
 /**

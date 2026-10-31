@@ -65,7 +65,7 @@ test.describe("a category hidden from the Inbox (plan 83)", { tag: "@design" }, 
     )!;
     const hiddenUnread = () =>
       db.get<{ c: number }>(
-        "SELECT count(*) AS c FROM threads t WHERE t.in_inbox = 1 AND t.unread_count > 0 AND NOT EXISTS (SELECT 1 FROM thread_categories h JOIN categories k ON k.id = h.category_id WHERE h.thread_id = t.id AND k.show_in_inbox = 0)",
+        "SELECT count(*) AS c FROM threads t WHERE t.in_inbox = 1 AND t.tab = 0 AND t.unread_count > 0 AND NOT EXISTS (SELECT 1 FROM thread_categories h JOIN categories k ON k.id = h.category_id WHERE h.thread_id = t.id AND k.show_in_inbox = 0)",
       )!.c;
     const inboxCount = page.getByTestId("nav-inbox").locator("[data-slot=nav-count]");
     await expect(inboxCount).toHaveText(String(hiddenUnread()));

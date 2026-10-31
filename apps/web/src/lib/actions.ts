@@ -1,5 +1,5 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
-import { parseAddressList, type SimilarAction, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { isCategoryAction, parseAddressList, TAB_ACTION, TAB_CODE, type SimilarAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
@@ -7,14 +7,17 @@ import { currentTargets, scopeRows } from "~/lib/select";
 import { dismissSnack, registerUndo, snack, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
-import { getApp, setApp, type ScopeSelection } from "~/state/app";
+import { getApp, inPlainInbox, inSeparateTab, setApp, type AppState, type ScopeSelection } from "~/state/app";
 import { patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { placeActions } from "~/lib/places";
 
-/** Does a thread still belong in the current view after an action? */
-function staysInView(view: View, action: ThreadAction): boolean {
+/** Does a thread still belong in the current list after an action? */
+function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
+  // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs
+  if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial"));
+  const view = s.view;
   switch (action) {
     case "archive":
       return view === "all" || view === "archive" || view === "sent" || view === "starred";
@@ -44,6 +47,13 @@ const DONE = {
   markUnread: "actions.done.markUnread",
   star: "actions.done.star",
   unstar: "actions.done.unstar",
+  toPrimary: "actions.done.inbox",
+  toPromotions: "actions.done.promotions",
+  toSocial: "actions.done.social",
+  // undo's own (never asked for by the UI)
+  toUpdates: "actions.done.inbox",
+  toForums: "actions.done.inbox",
+  toNoCategory: "actions.done.inbox",
 } as const satisfies Record<ThreadAction, string>;
 /** In progress, for a scope action's snack ("Archiving 1,234 conversations"). */
 const DOING = {
@@ -56,6 +66,12 @@ const DOING = {
   markUnread: "actions.doing.markUnread",
   star: "actions.doing.star",
   unstar: "actions.doing.unstar",
+  toPrimary: "actions.doing.inbox",
+  toPromotions: "actions.doing.promotions",
+  toSocial: "actions.doing.social",
+  toUpdates: "actions.doing.inbox",
+  toForums: "actions.doing.inbox",
+  toNoCategory: "actions.doing.inbox",
 } as const satisfies Record<ThreadAction, string>;
 /** What its Undo takes back, for a screen reader ("Undo archive"). */
 const UNDO_NAME = {
@@ -68,9 +84,15 @@ const UNDO_NAME = {
   markUnread: "actions.undo.markUnread",
   star: "actions.undo.star",
   unstar: "actions.undo.unstar",
+  toPrimary: "actions.undo.inbox",
+  toPromotions: "actions.undo.promotions",
+  toSocial: "actions.undo.social",
+  toUpdates: "actions.undo.inbox",
+  toForums: "actions.undo.inbox",
+  toNoCategory: "actions.undo.inbox",
 } as const satisfies Record<ThreadAction, string>;
 /** One thread's undo snack only for these (reads and stars show in the row itself); several threads always get one. */
-const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox"]);
+const SNACK_ALWAYS = new Set<ThreadAction>(["archive", "trash", "spam", "notSpam", "moveToInbox", "toPrimary", "toPromotions", "toSocial"]);
 
 /** z / ⌘Z (the dock's store keeps it: one undo, run once by z or by a snack's Undo). */
 export { undoLast } from "~/lib/snack";
@@ -109,6 +131,13 @@ export function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
       return { ...t, inSpam: false, hasSpam: false, inInbox: t.inTrash ? t.inInbox : true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
     case "moveToInbox":
       return { ...t, inSpam: false, inTrash: false, hasSpam: false, inInbox: true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
+    // plan 86: the tab it's in now (the stores decide for a thread with several senders)
+    case "toPrimary":
+      return { ...t, tab: 0 };
+    case "toPromotions":
+      return { ...t, tab: TAB_CODE.promotions };
+    case "toSocial":
+      return { ...t, tab: TAB_CODE.social };
     default:
       return t;
   }
@@ -135,8 +164,20 @@ const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnr
 export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean; automation?: "none" } = {}): Promise<void> {
   if (!ids) {
     const target = currentTargets();
-    if ("scope" in target) return actScope(action, target.scope);
+    // plan 86: Move to Inbox from Promotions or Social takes the tab's threads out of it (Gmail learns from it)
+    if ("scope" in target) return actScope(action === "moveToInbox" && getApp().gmailTab ? "toPrimary" : action, target.scope);
     ids = target.ids;
+  }
+  if (action === "moveToInbox") {
+    // plan 86: a thread in a tab its account keeps apart is out of the Inbox by its category, not its place
+    const accounts = getApp().accounts;
+    const tabbed = new Set(targetRows(ids).filter((r) => inSeparateTab(r, accounts)).map((r) => r.id));
+    if (tabbed.size) {
+      const rest = ids.filter((id) => !tabbed.has(id));
+      await act("toPrimary", [...tabbed], options);
+      if (!rest.length) return;
+      ids = rest;
+    }
   }
   // plan 64: a search's rows can span places: a place action takes the rows it fits, read now (buttons, menu and keys alike)
   const targets = fitting(action, ids);
@@ -183,9 +224,15 @@ const FITS = { archive: "archive", trash: "trash", spam: "spam", notSpam: "notSp
 function fitting(action: ThreadAction, ids: number[]): number[] {
   const kind = FITS[action as keyof typeof FITS];
   if (!kind || !getApp().query.trim()) return ids;
-  const places = placeActions(targetRows(ids));
+  const places = placeActions(targetRows(ids), tabbedTest());
   return places ? places[kind] : ids;
 }
+
+/** Plan 86: a row in a Gmail tab its account keeps apart (Move to Inbox fits it). */
+export const tabbedTest = () => {
+  const accounts = getApp().accounts;
+  return (r: Partial<Pick<ThreadSummary, "accountId" | "tab">>) => inSeparateTab(r, accounts);
+};
 
 /** The similar snackbar loads with its offers (its own chunk): the plain snack grows into it, or stays as it is. */
 async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo, automation?: "none"): Promise<void> {
@@ -208,7 +255,7 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
   const { items, index } = useList.getState();
   // in a filtered list a row that stops matching leaves (a search too), except the open one: it stays put until the selection moves
   const reading = unmatches(action, activeFilter(s));
-  const leaving = reading || (s.query ? false : !staysInView(s.view, action));
+  const leaving = reading || (s.query ? false : !staysInView(s, action));
   const stays = reading ? s.selectedId : null;
   // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
   const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
@@ -258,7 +305,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   // the scope's loaded rows: with the unread filter, not a read row it kept (the open one)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
   const reading = unmatches(action, listFilterOfScope(sel.scope));
-  const leaving = reading || (sel.scope.kind === "search" ? false : !staysInView(s.view, action));
+  const leaving = reading || (sel.scope.kind === "search" ? false : !staysInView(s, action));
   // the open thread stays open when it isn't leaving: kept outside the scope, or read in place (the filter keeps it)
   const stays = s.selectedId !== null && (reading || !loaded.includes(s.selectedId)) ? s.selectedId : null;
   if (leaving) {

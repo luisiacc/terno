@@ -23,7 +23,7 @@ import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } 
 import { t } from "@terno/i18n";
 import { fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
-import { setApp, useApp } from "~/state/app";
+import { inSeparateTab, setApp, useApp } from "~/state/app";
 import { loadThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
@@ -583,9 +583,17 @@ export function Reader() {
             <Inbox />
           </ToolButton>
         ) : (
-          <ToolButton label={t("actions.archive")} keys="e" onClick={() => act("archive")} testId="action-archive">
-            <Archive />
-          </ToolButton>
+          <>
+            {/* plan 86: in Promotions or Social, out of the tab into the Inbox (Gmail learns from it) */}
+            {thread && inSeparateTab(thread, accounts) && (
+              <ToolButton label={t("actions.moveToInbox")} onClick={() => act("moveToInbox")} testId="action-inbox">
+                <Inbox />
+              </ToolButton>
+            )}
+            <ToolButton label={t("actions.archive")} keys="e" onClick={() => act("archive")} testId="action-archive">
+              <Archive />
+            </ToolButton>
+          </>
         )}
         <ToolButton label={t("actions.trash")} keys="#" onClick={() => act("trash")} testId="action-trash">
           <Trash2 />

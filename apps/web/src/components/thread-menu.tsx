@@ -1,4 +1,4 @@
-import { remindPresets, shortcutsFor, subjectTemplate, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -40,12 +40,13 @@ import {
   Tag,
   Trash2,
   UserRound,
+  Users,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
-import { act, openCompose, targetRows } from "~/lib/actions";
+import { act, openCompose, tabbedTest, targetRows } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
@@ -53,7 +54,7 @@ import { isMac, scopeRows, selectAll } from "~/lib/select";
 import { openThread } from "~/lib/page";
 import { menuTargets } from "~/lib/selection";
 import { openPrint } from "~/lib/print-open";
-import { getApp, setApp, useApp, type ScopeSelection } from "~/state/app";
+import { getApp, inSeparateTab, setApp, useApp, type ScopeSelection } from "~/state/app";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
 import { actionView, placeActions } from "~/lib/places";
@@ -415,7 +416,13 @@ function MenuItems() {
   const view = useApp((s) => actionView(s.view, s.query, scope ? [] : rows));
   // a search's explicit rows: each action for the rows it fits ("select all N" acts on the scope: the view's actions)
   const searching = useApp((s) => s.query.trim() !== "");
-  const searchPlaces = searching && !scope ? placeActions(rows) : null;
+  const searchPlaces = searching && !scope ? placeActions(rows, tabbedTest()) : null;
+  // plan 86: Gmail's tabs. Out of one into the Inbox; into one, for rows of accounts that keep them apart
+  const gmailTab = useApp((s) => s.gmailTab);
+  const accounts = useApp((s) => s.accounts);
+  const tabbed = scope ? [] : rows.filter((r) => inSeparateTab(r, accounts)).map((r) => r.id);
+  const tabbable = !scope && rows.length > 0 && rows.every((r) => { const a = accounts.find((x) => x.id === r.accountId); return !!a && separatesTabs(a) && r.inInbox !== false && !r.inTrash && !r.inSpam; });
+  const intoTab = (tab: Tab) => (scope ? gmailTab !== null && gmailTab !== tab : tabbable && rows.some((r) => r.tab !== TAB_CODE[tab]));
   const single = !scope && ids.length === 1 ? rows[0] : undefined;
   const run = (action: ThreadAction) => void act(action, scope ? undefined : ids);
   const anyUnread = scope !== null || rows.some((t) => t.unread);
@@ -494,6 +501,9 @@ function MenuItems() {
       {(searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run)).map((it) => (
         <Item key={it.testId} {...it} />
       ))}
+      {!searchPlaces && view === "inbox" && (gmailTab !== null || tabbed.length > 0) && <Item icon={<Inbox />} label={t("actions.moveToInbox")} testId="menu-inbox" onClick={() => run("moveToInbox")} />}
+      {intoTab("promotions") && <Item icon={<Tag />} label={t("actions.toPromotions")} testId="menu-to-promotions" onClick={() => run("toPromotions")} />}
+      {intoTab("social") && <Item icon={<Users />} label={t("actions.toSocial")} testId="menu-to-social" onClick={() => run("toSocial")} />}
       {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
       {!scope && ids.length <= 200 && (view === "inbox" || view === "all" || view === "starred" || view === "sent") && <SimilarSub action="archive" ids={ids} />}
       {!scope && ids.length <= 200 && view !== "trash" && <SimilarSub action="trash" ids={ids} />}

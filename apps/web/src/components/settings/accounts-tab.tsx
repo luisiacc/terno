@@ -1,20 +1,22 @@
 import { SentCopies } from "./sent-copies";
 import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
-import type { Account, AccountPatch, CategoryColor } from "@terno/core";
+import { separatesTabs, type Account, type AccountPatch, type CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
+import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
 import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
+import { setSeparateTabs } from "~/lib/gmail-tabs";
 import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
 import { client } from "~/rpc/connection";
-import { setApp, useApp } from "~/state/app";
+import { getApp, setAccounts, setApp, useApp } from "~/state/app";
 import { DaysField } from "./general-tab";
 import { OwnerCard } from "./owner-card";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
@@ -44,7 +46,7 @@ function status(a: Account): string {
 
 async function updateAccount(id: number, patch: AccountPatch): Promise<void> {
   const next = await client.call("accounts.update", { id, ...patch });
-  setApp((s) => ({ accounts: s.accounts.map((a) => (a.id === next.id ? next : a)) }));
+  setAccounts(getApp().accounts.map((a) => (a.id === next.id ? next : a)));
 }
 
 /**
@@ -184,6 +186,12 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
           />
         )}
       </SettingsRow>
+      {/* plan 86: Gmail's Promotions and Social, under the account and out of the Inbox */}
+      {account.kind === "gmail" && (
+        <SettingsRow label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>
+          {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
+        </SettingsRow>
+      )}
       <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>

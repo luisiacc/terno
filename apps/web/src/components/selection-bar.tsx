@@ -4,7 +4,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
-import { act, targetRows } from "~/lib/actions";
+import { act, tabbedTest, targetRows } from "~/lib/actions";
 import { actionView, placeActions } from "~/lib/places";
 import { clearSelection, isMac, selectAll } from "~/lib/select";
 import { setApp, useApp } from "~/state/app";
@@ -56,7 +56,9 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
   const run = (a: ThreadAction) => () => void act(a);
   // plan 64: a search's checked rows can span places: each action for the rows it fits ("select all N": the view's)
   const searching = useApp((s) => s.query.trim() !== "");
-  const places = searching && !scope ? placeActions(targetRows()) : null;
+  const places = searching && !scope ? placeActions(targetRows(), tabbedTest()) : null;
+  // plan 86: Promotions or Social: Move to Inbox takes them out of the tab
+  const gmailTab = useApp((s) => s.gmailTab);
   // re-read whenever the selection changes (a same-size selection too); act() takes the rows each action fits when it runs
   useApp((s) => s.checked);
   const runOn = (a: ThreadAction, _fits: number[]) => () => void act(a);
@@ -89,9 +91,16 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
           {view === "spam" ? <ShieldCheck /> : <Inbox />}
         </BarButton>
       ) : (
-        <BarButton bar={bar} label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
-          <Archive />
-        </BarButton>
+        <>
+          {gmailTab && (
+            <BarButton bar={bar} label={t("actions.moveToInbox")} onClick={run("moveToInbox")} testId="bar-inbox">
+              <Inbox />
+            </BarButton>
+          )}
+          <BarButton bar={bar} label={t("actions.archive")} command="thread.archive" onClick={run("archive")} testId="bar-archive">
+            <Archive />
+          </BarButton>
+        </>
       )}
       {!placeButtons && (
         <BarButton bar={bar} label={t("actions.trash")} command="thread.trash" onClick={run("trash")} testId="bar-trash" disabled={view === "trash"}>

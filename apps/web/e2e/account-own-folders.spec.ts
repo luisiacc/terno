@@ -106,6 +106,10 @@ test.describe("an account's own folders", { tag: "@design" }, () => {
     const acme = accountOf(server, "Acme Studio");
     await page.getByTestId(`nav-account-${acme}`).click();
     await page.getByTestId(`nav-folder-${acme}-trash`).focus();
+    // plan 86: its Gmail tabs come first
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId(`nav-tab-${acme}-promotions`)).toBeFocused();
+    await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
     await expect(own(page, acme, "Label_23")).toBeFocused();
     await page.keyboard.press("Enter");
@@ -205,6 +209,8 @@ test("Codex R10: a focused folder renamed to sort past the 250 shown keeps the f
 test("Codex R23: with one account, its last own folder taken away while focused hands focus to the account's row", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
+  // plan 86: its Gmail tabs would keep the group: kept in the Inbox, its own folders are all it lists
+  await server.backend.server.invoke("accounts.update", { id: acme, separateTabs: false }, ctx);
   await page.getByTestId(`nav-account-${acme}`).click();
   const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
   await expect(rows.first()).toBeVisible();

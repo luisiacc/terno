@@ -24,7 +24,7 @@ export function actionView(view: View, query: string, rows: readonly Pick<Thread
   return rows.every((r) => placeOf(r) === first) ? first : "all";
 }
 
-type Placed = Pick<ThreadSummary, "id" | "inInbox" | "inSpam" | "inTrash">;
+type Placed = Pick<ThreadSummary, "id" | "inInbox" | "inSpam" | "inTrash"> & Partial<Pick<ThreadSummary, "accountId" | "tab">>;
 
 /**
  * A search's selection can span places: each action is offered for the rows
@@ -32,10 +32,11 @@ type Placed = Pick<ThreadSummary, "id" | "inInbox" | "inSpam" | "inTrash">;
  * spam, Archive what's in the Inbox…). Null when a row's place is unknown
  * (an older backend): the view's actions then.
  */
-export function placeActions(rows: readonly Placed[]): { archive: number[]; trash: number[]; spam: number[]; notSpam: number[]; toInbox: number[]; restoreOnly: boolean } | null {
+export function placeActions(rows: readonly Placed[], tabbed?: (r: Placed) => boolean): { archive: number[]; trash: number[]; spam: number[]; notSpam: number[]; toInbox: number[]; restoreOnly: boolean } | null {
   if (rows.length === 0 || rows.some((r) => r.inInbox === undefined)) return null;
   const by = (keep: (p: ReturnType<typeof placeOf>) => boolean) => rows.filter((r) => keep(placeOf(r))).map((r) => r.id);
-  const toInbox = by((p) => p === "archive" || p === "trash");
+  // plan 86: a row in a Gmail tab its account keeps apart is out of the Inbox too (Move to Inbox takes it out of the tab)
+  const toInbox = rows.filter((r) => (placeOf(r) === "archive" || placeOf(r) === "trash") || (placeOf(r) === "inbox" && !!tabbed?.(r))).map((r) => r.id);
   return {
     archive: by((p) => p === "inbox"),
     trash: by((p) => p !== "trash"),

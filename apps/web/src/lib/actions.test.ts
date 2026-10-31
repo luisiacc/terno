@@ -28,7 +28,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { act, said } = await import("./actions");
-const { setApp } = await import("~/state/app");
+const { getApp, navigate, setAccounts, setApp } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 const { resetSnacks, useSnack } = await import("~/lib/snack");
 
@@ -108,5 +108,63 @@ describe("a search's selection spanning places (plan 64)", () => {
     setApp({ query: "", checked: new Set([1, 2]) });
     await act("spam");
     expect(sent).toEqual([{ action: "spam", threadIds: [1, 2] }]);
+  });
+});
+
+describe("Gmail's Promotions and Social (plan 86)", () => {
+  const account = (id: number, kind: "gmail" | "imap", separateTabs = true) => ({ id, kind, email: `${id}@x.test`, displayName: `A${id}`, color: "indigo", senderName: "", signature: "", syncWindowDays: null, separateTabs, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } }) as never;
+  const tabbed = (id: number, accountId: number, tab: number) => ({ ...row(id), accountId, inInbox: true, inSpam: false, inTrash: false, tab }) as ThreadSummary;
+  const sent: { action: string; threadIds: number[] }[] = [];
+  beforeEach(() => {
+    sent.length = 0;
+    fake.handlers["threads.act"] = async (p) => {
+      sent.push(p as { action: string; threadIds: number[] });
+      return { undoId: 1 };
+    };
+    setApp({ accounts: [account(1, "gmail"), account(2, "imap")], gmailTab: null, accountId: null, folder: null, categoryId: null, reviewCategoryId: null });
+    const items = [tabbed(1, 1, 1), tabbed(2, 1, 0), tabbed(3, 2, 0)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+  });
+
+  it("Move to Inbox on rows in a tab takes them out of it (Gmail learns); the rest move as before", async () => {
+    await act("moveToInbox", [1, 2, 3]);
+    expect(sent).toEqual([
+      { action: "toPrimary", threadIds: [1] },
+      { action: "moveToInbox", threadIds: [2, 3] },
+    ]);
+    expect(useSnack.getState().current?.message).toBe("Moved to Inbox · 2 conversations");
+  });
+
+  it("a row in a tab its account shows in the Inbox (the setting off) moves as before", async () => {
+    setApp({ accounts: [account(1, "gmail", false), account(2, "imap")] });
+    await act("moveToInbox", [1]);
+    expect(sent).toEqual([{ action: "moveToInbox", threadIds: [1] }]);
+  });
+
+  it("in Promotions, Move to Promotions keeps the row and Move to Inbox takes it away; in the Inbox, Move to Promotions does", async () => {
+    navigate({ accountId: 1, gmailTab: "promotions" });
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 1, gmailTab: "promotions", folder: null, categoryId: null });
+    const items = [tabbed(1, 1, 1), tabbed(4, 1, 1)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+    await act("toPromotions", [1]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([1, 4]);
+    await act("moveToInbox", [1]);
+    expect(useList.getState().items.map((t) => t.id)).toEqual([4]);
+    navigate({ view: "inbox", accountId: 1 });
+    const inbox = [tabbed(5, 1, 0)];
+    useList.setState({ items: inbox, index: new Map(inbox.map((t, i) => [t.id, i])) });
+    await act("toSocial", [5]);
+    expect(useList.getState().items).toEqual([]);
+    expect(sent.map((s) => s.action)).toEqual(["toPromotions", "toPrimary", "toSocial"]);
+  });
+
+  it("a tab is its account's Inbox, alone: anywhere else leaves it; an account that stops separating sends you to its Inbox", () => {
+    navigate({ accountId: 1, gmailTab: "social" });
+    setApp({ categoryId: 7 });
+    expect(getApp().gmailTab).toBeNull();
+    navigate({ accountId: 1, gmailTab: "social" });
+    setApp({ scope: { key: "k", scope: { kind: "view", view: "inbox", accountId: 1, tab: "social" }, label: "Social", count: 3 } });
+    setAccounts([account(1, "gmail", false), account(2, "imap")]);
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 1, gmailTab: null, scope: null });
   });
 });

@@ -1,5 +1,5 @@
 import { goToAccount, goToFolder } from "~/lib/account-folders";
-import { normalizeText, remindPresets, type CategoryColor, type ReminderKind } from "@terno/core";
+import { normalizeText, remindPresets, separatesTabs, TABS, type CategoryColor, type ReminderKind } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
@@ -178,6 +178,12 @@ export function CommandPalette() {
     }
     for (const a of accounts) {
       add({ id: `account:${a.id}`, group: "goTo", label: a.displayName, hint: a.email, search: `${t("palette.search.account")} ${a.displayName} ${a.email}`, icon: <Layers />, keywords: english("palette.search.account"), run: () => goToAccount(a.id) });
+    }
+    // plan 86: a Gmail account's Promotions and Social
+    for (const a of accounts.filter(separatesTabs)) {
+      for (const tab of TABS) {
+        add({ id: `tab:${a.id}:${tab}`, group: "goTo", label: t(`view.tab.${tab}`), hint: a.displayName, search: `${t(`view.tab.${tab}`)} ${a.displayName} ${a.email}`, icon: tab === "promotions" ? <Tag /> : <Users />, keywords: english(`view.tab.${tab}`), run: () => navigate({ accountId: a.id, gmailTab: tab }) });
+      }
     }
 
     // ── actions

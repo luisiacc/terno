@@ -361,7 +361,8 @@ test.describe("multi-selection", { tag: "@design" }, () => {
   });
 
   test("select all N of the view: the banner, a backend archive with progress, and its undo", async ({ app: page, server }) => {
-    const inboxCount = () => db(server).get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 1")!.c;
+    // plan 86: what the Inbox shows (Gmail's Promotions and Social live apart)
+    const inboxCount = () => db(server).get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE in_inbox = 1 AND tab = 0")!.c;
     const total = inboxCount();
     const signalsBefore = db(server).get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c;
     expect(total).toBeGreaterThan(100); // more than the first page: the banner has something to offer

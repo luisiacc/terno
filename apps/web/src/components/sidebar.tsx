@@ -1,12 +1,12 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { folderRef, type Account, type CategoryColor, type Folder, type View } from "@terno/core";
+import { folderRef, separatesTabs, tabRef, TABS, type Account, type CategoryColor, type Folder, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users } from "@terno/ui/icons";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -441,6 +441,9 @@ function AccountFolders({
   folderUnread,
   unread,
   countTone,
+  tabs,
+  activeTab,
+  tabUnread,
 }: {
   account: Account;
   open: boolean;
@@ -453,6 +456,10 @@ function AccountFolders({
   folderUnread: Record<string, number>;
   unread?: number;
   countTone: "muted" | "unread";
+  /** plan 86: a Gmail account that keeps Promotions and Social apart lists them after its Trash */
+  tabs: boolean;
+  activeTab: Tab | null;
+  tabUnread: Readonly<Record<Tab, number>>;
 }) {
   const groupRef = useRef<HTMLDivElement>(null);
   const [batches, setBatches] = useState(1);
@@ -547,8 +554,27 @@ function AccountFolders({
               />
             );
           })}
+        {/* plan 86: Gmail's Promotions and Social, out of the Inbox, after its standard folders */}
+        {mounted &&
+          tabs &&
+          TABS.map((tab) => {
+            const Icon = TAB_ICONS[tab];
+            return (
+              <NavItem
+                key={tab}
+                testId={`nav-tab-${account.id}-${tab}`}
+                inset
+                active={activeTab === tab}
+                onClick={() => navigate({ accountId: account.id, gmailTab: tab })}
+                icon={<Icon className="size-4" />}
+                label={t(`view.tab.${tab}`)}
+                count={tabUnread[tab] || undefined}
+                countHelp="general"
+              />
+            );
+          })}
         {/* plan 68: its own folders, under its standard ones, nested by path */}
-        {mounted && standard && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
+        {mounted && (standard || tabs) && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
         {mounted &&
           visible.map((r) =>
             r.selectable && r.key !== null ? (
@@ -588,6 +614,7 @@ function AccountFolders({
 }
 
 const NO_UNREAD: Record<string, number> = {};
+const TAB_ICONS: Record<Tab, typeof Tag> = { promotions: Tag, social: Users };
 
 /**
  * Folder unread counts per account, each account's slice kept as the same object while its numbers are the same
@@ -631,6 +658,9 @@ const AccountEntry = memo(function AccountEntry({
   unread,
   folderUnread,
   countTone,
+  gmailTab,
+  promotionsUnread,
+  socialUnread,
 }: {
   account: Account;
   many: boolean;
@@ -643,12 +673,18 @@ const AccountEntry = memo(function AccountEntry({
   unread: number | undefined;
   folderUnread: Record<string, number> | undefined;
   countTone: "muted" | "unread";
+  /** plan 86: the Gmail tab you're in, only for the account it's in */
+  gmailTab: Tab | null;
+  promotionsUnread: number;
+  socialUnread: number;
 }) {
   // with one account its standard folders would be the top ones: it lists only its own (plan 68),
   // and with none of those its row just scopes to it
   const hasOwn = useMemo(() => folders.some((f) => f.accountId === a.id), [folders, a.id]);
   const rows = useFolderRows(folders, a.id, openHere);
-  const discloses = many || hasOwn;
+  // plan 86: its Gmail tabs are places of its own, so a lone Gmail account discloses them too
+  const tabs = separatesTabs(a);
+  const discloses = many || hasOwn || tabs;
   const open = discloses && openHere;
   // with one account, its last own folder taken away takes the whole group: focus in it goes to the account's row
   // (Codex R23), as when a focused folder goes with others left (AccountFolders)
@@ -671,8 +707,10 @@ const AccountEntry = memo(function AccountEntry({
   }, [discloses, a.id]);
   // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
   const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);
-  const child = here && open && many && ownFolder === null && view !== null ? (inCategory ? "inbox" : view) : null;
-  const childActive = ownActive || (child !== null && listedByAccount(child));
+  const tabActive = here && open && tabs && gmailTab !== null;
+  const child = here && open && many && ownFolder === null && gmailTab === null && view !== null ? (inCategory ? "inbox" : view) : null;
+  const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
+  const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
   return (
     <div data-account-id={a.id} onFocus={noteFocus} onBlur={noteBlur}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below */}
@@ -711,6 +749,9 @@ const AccountEntry = memo(function AccountEntry({
           folderUnread={folderUnread ?? NO_UNREAD}
           unread={unread}
           countTone={countTone}
+          tabs={tabs}
+          activeTab={tabActive ? gmailTab : null}
+          tabUnread={tabUnread}
         />
       )}
     </div>
@@ -727,6 +768,7 @@ export function Sidebar() {
   const accounts = useApp((s) => s.accounts);
   const folders = useApp((s) => s.folders);
   const ownFolder = useApp((s) => s.folder);
+  const gmailTab = useApp((s) => s.gmailTab);
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
   const design = useDesign();
@@ -907,6 +949,9 @@ export function Sidebar() {
                 // only the open account's folders show counts; its own slice, the same object while nothing in it moved
                 folderUnread={openAccount === a.id ? unreadByAccount.get(a.id) : undefined}
                 countTone={design.surfaces.inboxCount}
+                gmailTab={accountId === a.id ? gmailTab : null}
+                promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
+                socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}
               />
             ))}
           </div>

@@ -25,10 +25,12 @@ export interface Mailbox {
   folder?: string | null;
   /** plan 87: the Reminders list (never filtered) */
   reminders?: boolean;
+  /** plan 86: a Gmail account's Promotions or Social */
+  gmailTab?: string | null;
 }
 
-/** "inbox||", "all||7", "inbox|2|", and a folder's "all|2||Work" (plan 68) */
-export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}${m.folder ? `|${m.folder}` : ""}`;
+/** "inbox||", "all||7", "inbox|2|", a folder's "all|2||Work" (plan 68) and a Gmail tab's "inbox|2||~promotions" (plan 86) */
+export const mailboxKey = (m: Mailbox): string => `${m.view}|${m.accountId ?? ""}|${m.categoryId ?? ""}${m.folder ? `|${m.folder}` : m.gmailTab ? `|~${m.gmailTab}` : ""}`;
 
 /** Plan 15's filters: what a backend that doesn't say (older than plan 17) knows. */
 export const LEGACY_FILTERS: readonly ListFilter[] = ["unread", "attachments", "starred"];

@@ -36,3 +36,16 @@ describe("a mixed selection in a search: each action for the rows it fits (plan 
     expect(placeActions([{ id: 9, inInbox: undefined, inSpam: undefined, inTrash: undefined }])).toBeNull();
   });
 });
+
+describe("a row in a Gmail tab its account keeps apart (plan 86)", () => {
+  it("Move to Inbox fits it, beside archived and trashed rows; Archive still does", () => {
+    const rows = [
+      { id: 1, accountId: 1, inInbox: true, inSpam: false, inTrash: false, tab: 1 },
+      { id: 2, accountId: 1, inInbox: true, inSpam: false, inTrash: false, tab: 0 },
+      { id: 3, accountId: 2, inInbox: false, inSpam: false, inTrash: false },
+    ];
+    const tabbed = (r: { tab?: number }) => !!r.tab;
+    expect(placeActions(rows, tabbed)).toMatchObject({ archive: [1, 2], toInbox: [1, 3], restoreOnly: false });
+    expect(placeActions(rows)).toMatchObject({ toInbox: [3] });
+  });
+});

@@ -63,7 +63,8 @@ export function listKey(): string {
   // the query stays last (the UI perf gate reads it from data-results-for)
   // plan 68: a folder goes before the query, only when there is one (every other list's key is as it was)
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.reminders ? ["reminders"] : []), s.query.trim()]);
+  // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), s.query.trim()]);
 }
 
 let seq = 0;
@@ -143,7 +144,7 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
   const scope = currentScope()!;
   if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, filter: scope.filter });
   const keepIds = scope.filter ? keptIds(s) : [];
-  return withTop(client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, filter: scope.filter, keepIds: keepIds.length ? keepIds : undefined }), !cursor);
+  return withTop(client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, tab: scope.tab, filter: scope.filter, keepIds: keepIds.length ? keepIds : undefined }), !cursor);
 }
 
 /**
@@ -181,7 +182,7 @@ export function currentScope(): ThreadScope | null {
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
   if (q) return { kind: "search", query: q, ...(filter ? { filter } : {}) };
   // plan 68: a folder's list is its own (a search from it looks everywhere, as any search does)
-  return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}), ...(s.folder ? { folder: s.folder } : {}) };
+  return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}), ...(s.folder ? { folder: s.folder } : {}), ...(s.gmailTab ? { tab: s.gmailTab } : {}) };
 }
 
 /** Rows that left the view leave the selection (one write, only when something left). */
@@ -412,7 +413,7 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
-  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
+  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();

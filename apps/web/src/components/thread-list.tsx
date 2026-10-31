@@ -197,7 +197,7 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
 useApp.subscribe((s, prev) => {
-  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders)) useSearchOpen.setState({ open: false });
+  if (useSearchOpen.getState().open && !s.query && (s.view !== prev.view || s.categoryId !== prev.categoryId || s.accountId !== prev.accountId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders)) useSearchOpen.setState({ open: false });
 });
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
@@ -388,8 +388,8 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
   const title = searching ? t("list.search.title") : review ? t("list.reviewTitle", { category: review.name }) : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
-  // the greeting is the inbox's title (any account); everywhere else a design that greets shows its display title
-  const kind = design.variants.listHeader === "greeting" && view === "inbox" && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
+  // the greeting is the inbox's title (any account; not a Gmail tab of it, plan 86); everywhere else a design that greets shows its display title
+  const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
   const quick = useQuickFilters();
   const list = useAppearance((s) => s.layout === "list");

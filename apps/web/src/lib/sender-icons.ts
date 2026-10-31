@@ -379,7 +379,7 @@ export function iconsAllowed(view: string, query: string): boolean {
 
 /**
  * The same for the rows on screen, by the key they were loaded for (`[view, account, category,
- * review, filter, (folder,) query]`, the query always last): leaving Spam, its rows stay until the next results replace them.
+ * review, filter, (folder,) (Gmail tab,) query]`, the query always last): leaving Spam, its rows stay until the next results replace them.
  */
 export function iconsAllowedForList(itemsKey: string | null): boolean {
   if (!itemsKey) return false;

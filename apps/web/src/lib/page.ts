@@ -85,7 +85,7 @@ refreshPolicy.keepWindow = listLayout;
 // the list shows, with its rows; a new message is left the way Esc leaves it (kept if written).
 useApp.subscribe((s, p) => {
   // a folder of the same account is another list too (plan 68, Codex R5)
-  const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders;
+  const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.gmailTab !== p.gmailTab || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders;
   if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
 });
 // Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.
