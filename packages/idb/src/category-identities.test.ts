@@ -16,6 +16,14 @@ async function setup() {
 const rule = (categoryId: number) => ({ match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "Synthetic" }], actions: [{ type: "addCategory" as const, categoryId }] });
 const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
 
+it("preserves default and explicit Inbox visibility while allocating stable IDs", async () => {
+  const t = await setup(); let s = await t.open();
+  const shown = await s.categories.create("Shown", "amber");
+  const hidden = await s.categories.create("Hidden", "amber", { showInInbox: false });
+  expect(shown.showInInbox).toBe(true); expect(hidden.showInInbox).toBe(false);
+  await t.close(s); s = await t.open(); expect(await s.categories.list()).toEqual([shown, hidden]);
+});
+
 it("never reuses highest or all deleted category IDs across repeated reopen", async () => {
   const t = await setup(); let s = await t.open(); let previous = 0;
   for (let round = 0; round < 3; round++) {

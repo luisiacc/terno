@@ -109,6 +109,19 @@ describe("stable explicit filter actions (native SQLite)", () => {
     expect((await t.backend.store.debug.snapshot()).memberships).toEqual([{ threadId: before.messages[0]!.threadId, categoryId: replacement.id, addedBy: "filter", batchId: null }]);
   });
 
+  it("preserves hidden RPC defaults, shown opt-in, and legacy backup visibility", async () => {
+    const t = await setup();
+    expect(t.category.showInInbox).toBe(false);
+    const shown = await t.client.call("categories.create", { name: "Shown", color: "amber", showInInbox: true });
+    expect(shown.showInInbox).toBe(true);
+    await t.client.call("app.import", { data: { format: "terno-export", version: 1, accounts: [], drafts: [], filters: [], categories: [{ id: 900, name: "Legacy shown", color: "amber" }, { id: 901, name: t.category.name, color: "amber", showInInbox: true }] } });
+    await t.reopen();
+    const categories = await t.backend.store.categories.list();
+    expect(categories.find((c) => c.id === t.category.id)).toEqual(t.category);
+    expect(categories.find((c) => c.id === shown.id)).toEqual(shown);
+    expect(categories.find((c) => c.name === "Legacy shown")).toMatchObject({ showInInbox: true });
+  });
+
   it("cancels an edited rule at transaction time without claiming or partially acting", async () => {
     const t = await setup(); const saved = await t.save();
     const replacement = await t.client.call("categories.create", { name: "Other destination", color: "amber" });
@@ -139,6 +152,7 @@ describe("stable explicit filter actions (native SQLite)", () => {
     const categories = await t.backend.store.categories.list();
     expect(categories).toHaveLength(1);
     expect(categories[0]!.id).not.toBe(t.category.id);
+    expect(categories[0]!.showInInbox).toBe(t.category.showInInbox);
     const filters = await t.client.call("filters.list", {});
     expect(filters).toHaveLength(2);
     expect(filters.find((f) => f.id === saved.id)).toEqual(saved);

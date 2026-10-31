@@ -14,6 +14,15 @@ function open(file: string) { const db = openDatabase(file); opened.add(db); ret
 function close(db: Db) { db.close(); opened.delete(db); }
 const rule = (categoryId: number) => ({ match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "Synthetic" }], actions: [{ type: "addCategory" as const, categoryId }] });
 
+it("preserves default and explicit Inbox visibility while allocating stable IDs", () => {
+  const file = path(); const db = open(file);
+  const shown = createCategory(db, "Shown", "amber");
+  const hidden = createCategory(db, "Hidden", "amber", { showInInbox: false });
+  expect(shown.showInInbox).toBe(true); expect(hidden.showInInbox).toBe(false);
+  close(db); const reopened = open(file);
+  expect(reopened.all("SELECT id,show_in_inbox FROM categories ORDER BY id")).toEqual([{ id: shown.id, show_in_inbox: 1 }, { id: hidden.id, show_in_inbox: 0 }]);
+});
+
 it("never reuses highest or all deleted category IDs across repeated reopen", () => {
   const file = path(); let db = open(file); let previous = 0;
   for (let round = 0; round < 3; round++) {
