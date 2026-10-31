@@ -593,8 +593,13 @@ export class IdbMailStore implements MailStore {
       if (await this.read(() => T(this.c, "body_heads").by("capture", id).length > 0)) return;
       const tx = this.idb.transaction("body_parts", "readonly");
       const keys = await new Promise<IDBValidKey[]>((resolve, reject) => { const request = tx.objectStore("body_parts").getAllKeys(IDBKeyRange.bound([id], [id, 3]), 16); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-      if (!keys.length) { await this.command(() => T(this.c, "body_captures").delete(id)); return; }
-      await this.command(() => { for (const key of keys) T(this.c, "body_parts").delete(...key as (string | number)[]); });
+      const removed = await this.command(() => {
+        if (this.activeBodyStages.has(id) || this.bodyReaders.has(id) || !T(this.c, "body_captures").get(id) || T(this.c, "body_heads").by("capture", id).length) return false;
+        if (!keys.length) T(this.c, "body_captures").delete(id);
+        else for (const key of keys) T(this.c, "body_parts").delete(...key as (string | number)[]);
+        return true;
+      });
+      if (!removed || !keys.length) return;
       await this.o.platform.yield();
     }
   }
@@ -1505,7 +1510,7 @@ export class IdbMailStore implements MailStore {
       const check = () => { if (this.bodyClosing) throw new Error("The store is closing"); };
       const body = await this.stageBody({ accountId: p.accountId, bodyText: p.bodyText, bodyHtml: p.bodyHtml || null, snippet: "" }, check);
       try {
-      return this.command(() => {
+      return await this.command(() => {
         check();
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);

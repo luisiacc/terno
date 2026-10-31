@@ -30,7 +30,7 @@ export function writeLegacyCopy(source: Db, path: string, version: number): void
       for (const table of tables) {
         const columns = db.all<{ name: string }>(`SELECT name FROM pragma_table_info('${table}')`).map((c) => c.name);
         const list = columns.map((c) => `"${c}"`).join(", ");
-        const rows = source.all<Record<string, unknown>>(`SELECT ${list} FROM ${SOURCE[table] ?? table}${table === "settings" && version < 38 ? " WHERE key != 'body_parts_upgrade'" : ""}`);
+        const rows = source.all<Record<string, unknown>>(`SELECT ${list} FROM ${SOURCE[table] ?? table}${table === "settings" && version < 41 ? " WHERE key != 'body_parts_upgrade'" : ""}`);
         // OR REPLACE: rows a migration seeds (search_state at v7) take the source's values
         const insert = `INSERT OR REPLACE INTO ${table} (${list}) VALUES (${columns.map(() => "?").join(", ")})`;
         for (const r of rows) db.run(insert, ...columns.map((c) => r[c] as never));

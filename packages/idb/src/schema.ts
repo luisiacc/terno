@@ -22,10 +22,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 23 adds scheduled sends (SQL v38, plan 94).
  * Logical 39 (plan 96) adds `messages.unsubscribe`: absent on older records reads as none, so no version change.
  * Version 24 adds forwards (SQL v44, plan 116); `categories.forward_json` and `filters.forward_json` read as none when absent.
+ * Version 25 adds exact incoming body parts (SQL v45).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 44;
+export const LOGICAL_SCHEMA = 45;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -290,7 +291,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
-      if (event.oldVersion < 23) {
+      if (event.oldVersion < 24) {
         if (event.oldVersion !== 0) for (const name of ["body_captures", "body_parts", "body_heads"]) db.createObjectStore(name);
         tx.objectStore("body_heads").createIndex("capture", "capture_id", { unique: true });
         track(tx.objectStore("meta").put({ pending: event.oldVersion !== 0, after: 0 }, "bodyPartsUpgrade"));
