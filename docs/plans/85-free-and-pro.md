@@ -132,7 +132,7 @@ In `packages/ai`: a `ternoTransport` (OpenAI-compatible wire to our relay, sessi
 
 ### 6. The three Pro features (product contract; each gets its own feature plan)
 
-Each is big enough for its own plan with the usual Codex critique (plans 86–88 when they're written). This plan fixes what they share:
+Each is big enough for its own plan with the usual Codex critique (each takes the next free plan number when it is written). This plan fixes what they share:
 
 - **AI summaries.** On demand from the thread toolbar and the palette ("Summarize thread"), plus an opt-in setting "Summarize long threads when opened" (off by default; "long" = ≥ 4 messages or ≥ 1,500 words). Output: a short summary, then decisions, dates, action items, unanswered questions, each linked to its message. **Cached locally** in a new table in both stores keyed by `(threadId, contentHash, promptVersion)`, bounded (LRU, e.g. 5,000 entries or 20 MB), cleared from Settings → Storage. A cache hit costs nothing and works after Pro ends (it's the user's data, read-only).
 - **Personal Writing AI.** "Draft reply" in the inline composer (never a modal) and "Rewrite" on a selection. Context: the thread, the user's recent sent messages to that recipient, and a **style profile per contact** (or per domain), learned locally from sent mail by a background job that only runs after the user turns the feature on, in slicer-budgeted pages. Profiles are short text plus a few numeric traits, stored locally in both stores, shown and editable in Settings → Pro → Writing style, resettable per contact and all at once. The draft lands in the composer as normal undoable text, never sent automatically.
