@@ -27,6 +27,8 @@ const base: UpdateState = {
   deferred: null,
   localMode: false,
   justUpdated: null,
+  required: null,
+  updatingNow: false,
 };
 const release = { version: "0.2.0", notes: "What's new\n\n• Faster search across every account\n• Drafts survive quitting mid-sentence\n• Calmer sidebar", size: 118_542_629, releaseDate: "2026-10-24T12:00:00.000Z" };
 

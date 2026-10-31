@@ -69,7 +69,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
   const spin = busy && <Loader2 className="animate-spin" />;
   const retry = (
     <Button variant="outline" disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-      {t("app.tryAgain")}
+      {t("updates.tryAgain")}
     </Button>
   );
   const skip = (
@@ -98,7 +98,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
           {gate.canSkipBackup && <Body>{t("mailbox.noRoom.skipHint")}</Body>}
           <Actions>
             <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-              {spin} {t("app.tryAgain")}
+              {spin} {t("updates.tryAgain")}
             </Button>
             {gate.canSkipBackup && skip}
           </Actions>
@@ -126,7 +126,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
               <Body>{t("mailbox.backup.body")}</Body>
               <Actions>
                 <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-                  {spin} {t("app.tryAgain")}
+                  {spin} {t("updates.tryAgain")}
                 </Button>
                 {skip}
               </Actions>
@@ -138,7 +138,7 @@ function GateScreen({ gate }: { gate: Exclude<MailboxGate, { kind: "open" }> }) 
               <Body>{t("mailbox.unwritable.body")}</Body>
               <Actions>
                 <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-                  {spin} {t("app.tryAgain")}
+                  {spin} {t("updates.tryAgain")}
                 </Button>
               </Actions>
             </Cover>
@@ -188,7 +188,7 @@ function Corrupt({ gate, retry, exportButton }: { gate: Extract<MailboxGate, { k
         ) : (
           <>
             <Button data-primary disabled={busy} onClick={() => void retryMailbox()} data-testid="mailbox-retry">
-              {t("app.tryAgain")}
+              {t("updates.tryAgain")}
             </Button>
             {exportButton}
           </>
