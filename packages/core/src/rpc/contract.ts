@@ -600,8 +600,9 @@ export const contract = {
   /** Takes back similar.apply: the filter first (no new mail caught meanwhile), then the threads. Retryable: a failure keeps it. */
   "similar.undo": m<{ restored: number }>()(z.object({ undoId: id.nullable(), filterUndo: id.nullable(), jobId: jobId.optional() }), { timeoutMs: 300_000 }),
 
+  /** A new category keeps its mail out of the Inbox unless asked (like a folder: plan 83's switch turns it on). */
   "categories.create": m<Category>()(
-    z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS) }),
+    z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), showInInbox: z.boolean().default(false) }),
   ),
   "categories.update": m<Category>()(
     z.object({

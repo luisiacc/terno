@@ -3,14 +3,22 @@ import { expect, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 test.describe("categories", { tag: "@design" }, () => {
-  test("creates a new category from the picker by typing its name", async ({ app: page }) => {
-    await rows(page).first().dispatchEvent("mousedown");
+  test("creates a new category from the picker by typing its name; new categories keep their mail out of the Inbox", async ({ app: page, server }) => {
+    const first = rows(page).first();
+    const id = await first.getAttribute("data-thread-id");
+    await first.dispatchEvent("mousedown");
     await page.keyboard.press("l");
     await expect(page.getByTestId("category-picker").getByRole("combobox")).toBeFocused();
     await page.keyboard.type("Proyecto Terno");
     await page.getByTestId("create-category").click();
-    await expect(page.getByTestId("sidebar").getByText("Proyecto Terno")).toBeVisible();
-    await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Proyecto Terno" })).toBeVisible();
+    const cat = sqlDb(server.backend.store).get<{ id: number; show_in_inbox: number }>("SELECT id, show_in_inbox FROM categories WHERE name = 'Proyecto Terno'")!;
+    expect(cat.show_in_inbox).toBe(0);
+    await expect(page.getByTestId(`nav-category-${cat.id}`)).toContainText("Proyecto Terno");
+    await expect(page.getByTestId(`nav-category-hidden-${cat.id}`)).toBeVisible();
+    // filed there, it left the Inbox for the category's list
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toHaveCount(0);
+    await page.getByTestId(`nav-category-${cat.id}`).click();
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toBeVisible();
   });
 
   test("a category view gathers mail from several accounts", async ({ app: page }) => {

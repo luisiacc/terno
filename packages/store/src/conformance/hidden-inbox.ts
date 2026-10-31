@@ -41,6 +41,19 @@ export function defineHiddenInboxConformance(fresh: () => Promise<MailStore>, re
       expect((await store.categories.list()).map((c) => [c.id, c.showInInbox])).toEqual([[linkedin, false], [work, true]]);
     });
 
+    it("a category created hidden is hidden from its first read, and after a reopen", async () => {
+      const { store: s, a } = await setup();
+      const quiet = await s.categories.create("Quiet", "slate", { showInInbox: false });
+      expect(quiet).toMatchObject({ showInInbox: false });
+      await ingest(s, [msg({ accountId: a, providerMsgId: "q", from: addr("q@quiet.io"), date: NOW })]);
+      const q = await threadOf(s, "q");
+      await s.categories.add({ categoryId: quiet.id, threadIds: [q], addedBy: "user", now: NOW });
+      expect(await ids(s, { view: "inbox", limit: 10 })).not.toContain(q);
+      const store = await reopen(s);
+      expect((await store.categories.list()).find((c) => c.id === quiet.id)).toMatchObject({ showInInbox: false });
+      expect(await ids(store, { view: "inbox", limit: 10 })).not.toContain(q);
+    });
+
     it("the Inbox's pages, filters, kept rows, scopes and counts leave out a hidden category's threads; hidden wins over shown", async () => {
       const { store, a, b, linkedin, work, li, both, w, plain } = await setup();
       expect(await ids(store, { view: "inbox", limit: 10 })).toEqual([plain, w, both, li]);

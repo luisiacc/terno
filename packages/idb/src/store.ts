@@ -1440,7 +1440,7 @@ export class IdbMailStore implements MailStore {
   readonly categories: MailStore["categories"] = {
     list: () => this.early(() => listCategories(this.c)),
     exists: (id) => this.early(() => T(this.c, "categories").has(id)),
-    create: (name, color) => this.command(() => createCategory(this.c, name, color)),
+    create: (name, color, options) => this.command(() => createCategory(this.c, name, color, options)),
     update: (id, patch) => this.command(() => updateCategory(this.c, id, patch)),
     reorder: (ids) => this.command(() => reorderCategories(this.c, ids)),
     delete: (id) => this.command(() => void T(this.c, "categories").delete(id)),

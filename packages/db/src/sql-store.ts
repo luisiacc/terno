@@ -870,7 +870,7 @@ export class SqlMailStore implements MailStore {
   readonly categories: MailStore["categories"] = {
     list: async () => listCategories(this.db),
     exists: async (id) => this.db.get("SELECT 1 FROM categories WHERE id = ?", id) !== undefined,
-    create: async (name, color) => createCategory(this.db, name, color),
+    create: async (name, color, options) => createCategory(this.db, name, color, options),
     update: async (id, patch) => updateCategory(this.db, id, patch),
     reorder: async (ids) => reorderCategories(this.db, ids),
     delete: async (id) => this.db.tx(() => deleteCategory(this.db, id)),

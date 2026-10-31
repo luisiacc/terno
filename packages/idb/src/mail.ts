@@ -1372,13 +1372,13 @@ export function listCategories(c: Ctx): Category[] {
   return [...T(c, "categories").all()].sort(byPosition).map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0 }));
 }
 
-export function createCategory(c: Ctx, name: string, color: CategoryColor): Category {
+export function createCategory(c: Ctx, name: string, color: CategoryColor, { showInInbox = true }: { showInInbox?: boolean } = {}): Category {
   const categories = T(c, "categories");
   let position = -1;
   for (const r of categories.all()) position = Math.max(position, r.position);
-  const row: R = { id: undefined, name, color, position: position + 1, auto_apply: 1, show_in_inbox: 1 };
+  const row: R = { id: undefined, name, color, position: position + 1, auto_apply: 1, show_in_inbox: showInInbox ? 1 : 0 };
   categories.insert(row);
-  return { id: row.id, name, color, position: position + 1, autoApply: true, showInInbox: true };
+  return { id: row.id, name, color, position: position + 1, autoApply: true, showInInbox };
 }
 
 export function updateCategory(c: Ctx, id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean }): Category | null {

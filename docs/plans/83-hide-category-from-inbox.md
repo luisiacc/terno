@@ -95,3 +95,9 @@ Request: "in the right click menu of a category, i should be able to delete it".
 Codex review: *deleting a category whose sidebar row had focus left focus on the page* (the dialog hands focus back to the row, then the row goes). Focus moves to the Inbox entry; e2e with a slowed delete fails without it.
 
 Known, not from this change: the shared destructive Button fails AA contrast in dark (the same in Settings → Categories' dialog).
+
+## Addendum: new categories start hidden
+
+Request: "make it so by default, categories are not shown in the inbox when they are created." `categories.create` takes `showInInbox`, default false, so every way you make one (the sidebar's +, the picker, Settings, a tab's +, MCP) starts hidden from the Inbox, like a folder; the menu or Settings switch shows it. Existing categories keep their setting (the column's default stays 1). The store's `create` takes the same option, written in the insert (one write), and keeps shown as its own default: the demo seed and the conformance fixtures are mail you had, and an import keeps the file's value (a file from before this plan: shown). Filing into a brand-new category takes the rows out of the Inbox the way filing into a hidden one already did.
+
+Tests: backend (`categories.create` default and opt-in; fails with the default flipped), store conformance in both stores (created hidden: hidden from the first read and after a reopen), e2e (the picker creates it hidden, the filed row leaves the Inbox and is in the category's list). Perf: `load.perf` and `categorize.perf` pass, now creating their categories hidden. Codex review: no findings.

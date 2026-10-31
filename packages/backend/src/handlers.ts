@@ -326,8 +326,8 @@ export function createHandlers(b: Backend): Handlers {
         throw error;
       }
     },
-    "categories.create": async ({ name, color }) => {
-      const c = await store.categories.create(name, color);
+    "categories.create": async ({ name, color, showInInbox }) => {
+      const c = await store.categories.create(name, color, { showInInbox });
       b.server.emit("categories", await store.categories.list());
       return c;
     },

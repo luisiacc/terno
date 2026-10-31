@@ -350,9 +350,9 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   let added = 0;
   await b.runSliced(toCreate, 50, async (chunk) => {
     for (const c of chunk) {
-      const made = await store.categories.create(c.name, c.color);
-      // a category you already have keeps your settings; a new one comes with the file's
-      if (c.autoApply === false || c.showInInbox === false) await store.categories.update(made.id, { ...(c.autoApply === false ? { autoApply: false } : {}), ...(c.showInInbox === false ? { showInInbox: false } : {}) });
+      // a category you already have keeps your settings; a new one comes with the file's (one from before plan 83 was shown)
+      const made = await store.categories.create(c.name, c.color, { showInInbox: c.showInInbox !== false });
+      if (c.autoApply === false) await store.categories.update(made.id, { autoApply: false });
       byName.set(c.name.toLocaleLowerCase(), made.id);
       added++;
     }

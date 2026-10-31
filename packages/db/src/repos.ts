@@ -156,10 +156,10 @@ export function listCategories(db: Db): Category[] {
     .map(({ auto_apply, show_in_inbox, ...c }) => ({ ...c, autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1 }));
 }
 
-export function createCategory(db: Db, name: string, color: CategoryColor): Category {
+export function createCategory(db: Db, name: string, color: CategoryColor, { showInInbox = true }: { showInInbox?: boolean } = {}): Category {
   const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM categories")!.p;
-  const id = db.run("INSERT INTO categories (name, color, position) VALUES (?, ?, ?)", name, color, position).lastInsertRowid;
-  return { id, name, color, position, autoApply: true, showInInbox: true };
+  const id = db.run("INSERT INTO categories (name, color, position, show_in_inbox) VALUES (?, ?, ?, ?)", name, color, position, showInInbox ? 1 : 0).lastInsertRowid;
+  return { id, name, color, position, autoApply: true, showInInbox };
 }
 
 export function updateCategory(

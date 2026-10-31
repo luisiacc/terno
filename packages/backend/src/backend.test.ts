@@ -536,6 +536,16 @@ describe("quitting and updating (quiesce)", () => {
   });
 });
 
+describe("categories.create", () => {
+  it("keeps a new category's mail out of the Inbox unless asked; seeded ones are shown", async () => {
+    const { backend, client } = setup();
+    expect((await backend.store.categories.list()).every((c) => c.showInInbox)).toBe(true);
+    expect(await client.call("categories.create", { name: "Nueva", color: "violet" })).toMatchObject({ showInInbox: false });
+    expect(await client.call("categories.create", { name: "Visible", color: "lime", showInInbox: true })).toMatchObject({ showInInbox: true });
+    expect((await backend.store.categories.list()).filter((c) => !c.showInInbox).map((c) => c.name)).toEqual(["Nueva"]);
+  });
+});
+
 describe("filters on incoming mail", () => {
   it("applies enabled filters once, and they are not learning signals", async () => {
     const { backend, client, accountId } = setup();
