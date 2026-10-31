@@ -30,7 +30,7 @@ export function useWhen(start: number) {
 }
 
 /**
- * Plan 87's date and time, shared with plan 89's Send later: a themed
+ * Plan 87's date and time, shared with plan 93's Send later: a themed
  * calendar (no day before today) and a 15-minute time list (today's gone
  * times dimmed, so the list keeps its shape). `testPrefix` names their
  * test ids (`remind` → remind-date, remind-time…).
@@ -46,7 +46,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
         <PopoverTrigger
           render={
             <Button type="button" variant="ghost" data-testid={`${testPrefix}-date`} aria-label={`${t("remind.date")}: ${dayText(day)}`} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(FIELD, "min-w-0 flex-1 justify-start")}>
-              <CalendarDays className="size-3.5" aria-hidden />
+              <CalendarDays className="size-[1.15em]" aria-hidden />
               <span className="truncate">{dayText(day)}</span>
             </Button>
           }
@@ -69,7 +69,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
       </Popover>
       <Select value={minutes} onValueChange={(v) => v !== null && setMinutes(v)} items={TIMES.map((m) => ({ value: m, label: timeText(m) }))}>
         <SelectTrigger data-testid={`${testPrefix}-time`} aria-label={t("remind.time")} aria-invalid={past || undefined} aria-describedby={past ? describedBy : undefined} className={cn(FIELD, "w-30 shrink-0")}>
-          <Clock className="size-3.5" aria-hidden />
+          <Clock className="size-[1.15em]" aria-hidden />
           <SelectValue className="tabular-nums" />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30 p-1" data-testid={`${testPrefix}-times`}>

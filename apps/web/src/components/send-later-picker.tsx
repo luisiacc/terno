@@ -11,7 +11,7 @@ import { dayText, useWhen, WhenFields } from "./when-fields";
 const timeOf = (ms: number) => new Intl.DateTimeFormat(getLocale() === "en" ? "en-US" : getLocale(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(ms);
 
 /**
- * Plan 89's picker: Send now, Tomorrow at 8:00, or a date and time of your
+ * Plan 93's picker: Send now, Tomorrow at 8:00, or a date and time of your
  * own (plan 87's fields), with the line that says the send leaves from this
  * device. For a scheduled one (the strip's, the reader's) it says when it
  * goes, why the last try didn't, and offers Edit message. Not a form: it is
@@ -42,7 +42,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
     items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
   };
 
-  const choice = "flex h-8 w-full items-center gap-3 rounded-md px-2 text-left text-sm outline-none hover:bg-accent/50 hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
+  const choice = "flex h-8 w-full items-center gap-3 rounded-md px-2 text-left text-sm outline-none hover:bg-accent/50 hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground [&>svg]:size-[1.15em] [&>svg]:shrink-0 [&>svg]:text-muted-foreground hover:*:[svg]:text-accent-foreground focus:*:[svg]:text-accent-foreground";
   return (
     <div className="flex flex-col gap-2" data-testid="send-later-picker" onKeyDown={onKeyDown}>
       {current && (

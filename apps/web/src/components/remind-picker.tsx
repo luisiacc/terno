@@ -76,7 +76,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
           </button>
         ))}
         <button type="button" data-remind-choice data-testid="remind-pick" aria-expanded={picking} className={choice} onClick={() => setPicking((v) => !v)}>
-          <CalendarClock className="size-3.5 text-muted-foreground" aria-hidden />
+          <CalendarClock className="size-[1.15em] text-muted-foreground" aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t("remind.pick")}</span>
         </button>
         {picking && (
@@ -114,7 +114,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
                 void clearReminder(threadIds);
               }}
             >
-              <BellOff className="size-3.5 text-muted-foreground" aria-hidden />
+              <BellOff className="size-[1.15em] text-muted-foreground" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
             </button>
           </>
