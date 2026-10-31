@@ -1,4 +1,4 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { expect, test, type Page, type Worker as BrowserWorker } from "@playwright/test";
 
 declare global { interface Window { closeAcknowledgements: number; handleProbe: { worker: Worker; url: string } } }
@@ -8,6 +8,16 @@ function trackProbe(task: Promise<unknown>, tasks: Promise<unknown>[], errors: u
 }
 
 interface Stream { source: string; closed: boolean; socketClosed: boolean; response: ServerResponse }
+async function closeStreams(server: Server, streams: Stream[], probes: Promise<unknown>[]) {
+  const closeLate = (_request: IncomingMessage, response: ServerResponse) => response.destroy();
+  server.on("request", closeLate);
+  try {
+    for (const stream of streams) stream.response.destroy();
+    await Promise.all(probes);
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  } finally { server.off("request", closeLate); }
+}
+
 interface Witness { file: string; source: string; dead: boolean; closed: boolean; socketClosed: boolean; starts: string[] }
 function retired(w: Witness, source: string, file: string) {
   expect(w.file).toBe(file);
@@ -205,9 +215,7 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
         if (p) { p.worker.terminate(); URL.revokeObjectURL(p.url); }
       }).catch((error) => { probeErrors.push(error); });
       // Only owned fixture connections; terminal assertions above precede all cleanup.
-      for (const stream of streams) stream.response.destroy();
-      await Promise.all(successorProbes);
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())).catch((error) => { probeErrors.push(error); });
+      await closeStreams(server, streams, successorProbes).catch((error) => { probeErrors.push(error); });
       if (completed) expect(probeErrors).toEqual([]);
     }
   });
@@ -245,4 +253,37 @@ test("probe rejection and early assertion preserve the primary failure and join"
   expect(errors).toHaveLength(1);
   expect(tasks).toHaveLength(1);
   expect(unexpected).toEqual([]);
+});
+
+
+test("teardown owns a successor request arriving after its first response sweep", async () => {
+  const streams: Stream[] = [];
+  let arrived!: () => void, release!: () => void;
+  const seen = new Promise<void>((resolve) => { arrived = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const server = createServer((_req, response) => {
+    streams.push({ source: "late", closed: false, socketClosed: false, response });
+    response.writeHead(200, { "connection": "close" });
+    response.write("held");
+    arrived();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing owned fixture address");
+  let request: Promise<unknown> | undefined;
+  const probe = gate.then(() => {
+    request = fetch(`http://127.0.0.1:${address.port}/stream`).then(async (response) => { await response.body!.getReader().read(); }).catch(() => {});
+    return seen;
+  });
+  const closing = closeStreams(server, streams, [probe]);
+  release();
+  try {
+    await probe;
+    expect(streams).toHaveLength(1);
+    expect(streams[0]!.response.destroyed).toBe(true);
+  } finally {
+    // Failure rescue is restricted to this fixture's own native connections.
+    server.closeAllConnections();
+    await Promise.all([closing, request]);
+  }
 });
