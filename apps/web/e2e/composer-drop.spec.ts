@@ -2,6 +2,7 @@ import { parseRaw } from "@terno/mail";
 import AxeBuilder from "@axe-core/playwright";
 import type { JSHandle, Locator, Page } from "@playwright/test";
 import { expect, openRow, stabilize, test } from "./fixtures";
+import { dragAfter } from "./helpers/composer-drop";
 
 /**
  * Plan 76: files dropped into the composer. Images dropped on the text go
@@ -140,20 +141,30 @@ test("a file dropped off the text, or one that isn't an image, attaches as a chi
   await expect(body.locator("img.rt-image")).toHaveCount(0);
 });
 
-test("images and other files dropped together: images in the text, the rest as chips; several drops in a row all land", async ({ app: page }) => {
+test("images and other files dropped together: images in the text, the rest as chips; several drops in a row all land", async ({ app: page, server }) => {
   await openRow(page, 0);
   await page.getByTestId("quick-reply").click();
   const body = page.getByTestId("compose-body");
   await body.click();
   await page.keyboard.type("One two");
   const mixed = await transfer(page, [{ name: "a.png", type: "image/png" }, { name: "b.zip", type: "application/zip" }, { name: "c.jpg", type: "image/jpeg" }]);
-  const spot = await after(page, "One");
-  await drag(body, mixed, spot, "dragenter", "dragover");
-  await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to place the images here and attach the rest");
-  await drag(body, mixed, spot, "drop");
-  // straight after, before the first has settled: it waits its turn
   const second = await transfer(page, [{ name: "d.gif", type: "image/gif" }]);
-  await drag(body, second, await after(page, "two"), "dragenter", "dragover", "drop");
+  const store = server.backend.store;
+  const seal = store.attachments.seal;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const staging = new Promise<void>(resolve => { entered = resolve; });
+  store.attachments.seal = async (...args) => { entered(); await gate; return seal(...args); };
+  try {
+    await dragAfter(body, mixed, "One", ["dragenter", "dragover"]);
+    await expect(page.getByTestId("compose-drop-label")).toHaveText("Drop to place the images here and attach the rest");
+    await dragAfter(body, mixed, "One", ["drop"]);
+    await staging;
+    await expect(page.getByTestId("compose-image-adding")).toHaveCount(2);
+    await dragAfter(body, second, "two", ["dragenter", "dragover", "drop"]);
+    await expect(page.getByTestId("compose-image-adding")).toHaveCount(3);
+  } finally { release(); store.attachments.seal = seal; }
   await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(3);
   await expect(page.getByTestId("draft-attachment")).toHaveCount(1);
   await expect(page.getByTestId("draft-attachment")).toContainText("b.zip");
@@ -291,4 +302,17 @@ test("text typed right after an image lands is its own undo step (Codex review)"
   await expect(body).toHaveText("Hi ");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(body.locator("img.rt-image")).toHaveCount(0);
+});
+
+test("a text-targeted drop remeasures after synchronous drag layout changes", async ({ app: page }) => {
+  await openRow(page, 0);
+  await page.getByTestId("quick-reply").click();
+  const body = page.getByTestId("compose-body");
+  await body.click();
+  await page.keyboard.type("One two");
+  await body.evaluate(el => el.addEventListener("dragenter", () => { el.style.paddingLeft = "400px"; }, { once: true }));
+  const dt = await transfer(page, [{ name: "live.png", type: "image/png" }]);
+  await dragAfter(body, dt, "two", ["dragenter", "dragover", "drop"]);
+  await expect(body.locator("img.rt-image:not([data-state])")).toHaveCount(1);
+  expect(await body.evaluate(el => el.innerHTML.replace(/<img class="ProseMirror-separator"[^>]*>/g, "").replace(/<img[^>]*>/g, "[img]").replace(/<[^>]+>/g, ""))).toBe("One two[img]");
 });
