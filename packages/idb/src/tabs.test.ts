@@ -103,7 +103,7 @@ it("a slice stops once it has read its share of messages, mid-window, and the ne
   for (let t = 0; t < 4; t++) await ingest(store, [0, 1, 2].map((i) => msg({ accountId: gmail!, providerMsgId: `t${t}m${i}`, providerThreadId: `gt${t}`, from: { name: "", email: `deals${t}@shop.com` }, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] })));
   const threads = await Promise.all([0, 1, 2, 3].map((t) => threadOf(store, `t${t}m0`)));
   await store.close();
-  await rewrite(factory, name, { threads: (r) => void delete r.tab }, 33);
+  await rewrite(factory, name, { threads: (r) => void delete r.tab }, 36);
   store = await open(factory, name);
   await store.whenLoaded();
   // the messages phase first (twelve ids, in one slice)
