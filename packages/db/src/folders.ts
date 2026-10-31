@@ -170,10 +170,10 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
  * are walked in UID order and their threads refolded (`limit` at a time). Each slice is its own transaction, its
  * progress saved with it, so a quit resumes where it was. Location writes meanwhile keep membership as ever.
  */
-/** a slice of the upgrade's backfill: these messages' user labels as their threads' memberships */
+/** Deduplicate within the slice before insertion: a long thread repeats its labels on every message. */
 const MESSAGE_LABELS = /* sql */ `
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
-SELECT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
+SELECT DISTINCT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
 FROM (SELECT thread_id, gmail_labels FROM messages WHERE id > ?1 AND id <= ?2 AND gmail_labels IS NOT NULL AND is_trash = 0 AND is_spam = 0 AND instr(gmail_labels, 'Label_') > 0) m
 JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
 WHERE j.value LIKE 'Label\\_%' ESCAPE '\\'
