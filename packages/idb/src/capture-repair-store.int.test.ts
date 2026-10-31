@@ -77,6 +77,29 @@ describe.each(["SQL","IDB","WASM"] as const)("%s capture obligation",kind=>{
     await expect(t.store.captureRepairs.block(a,old,"mime-depth",1)).rejects.toThrow("repair changed");
     await t.reopen();expect(await t.store.providerStore(a).pendingBodies(50)).toEqual([{id,mailbox:"Projects",uidvalidity:11,uid:2}]);
   });
+  it("R1 retries the stored IMAP mailbox copy after an earlier copy becomes available",async()=>{
+    const t=await fixture(kind);const {account}=await t.store.accounts.create({kind:"imap",email:"imap@example.test",displayName:"IMAP",color:"blue",now:1});const a=account.id;
+    await t.store.sync.ingest([{accountId:a,providerMsgId:"copied-source",providerThreadId:null,rfcMessageId:"copied@example.test",inReplyTo:null,references:[],from:{name:"",email:"sender@example.test"},to:[],cc:[],bcc:[],subject:"Copies",date:1,snippet:"",bodyText:null,bodyHtml:null,bodyState:"none",listId:null,isRead:true,isStarred:false,inInbox:true,isSent:false,isDraft:false,isTrash:false,isSpam:false,hasAttachments:false,size:5,locations:[{mailbox:"Z",uidvalidity:10,uid:2,flags:[]}]}],{applyFilters:false,now:1,classifier:null});
+    const provider=t.store.providerStore(a), id=(await provider.messageByProviderId("copied-source"))!.id;
+    const source={kind:"imap" as const,messageId:id,mailbox:"Z",uidvalidity:10,uid:2};
+    await t.store.captureRepairs.block(a,source,"mime-depth",0);
+    await provider.locations.upsert(id,"A",11,8,[]);
+    const row=(await t.store.captureRepairs.get(a,source))!;await t.store.captureRepairs.retry(a,row.key,0);
+    const selected=(await provider.pendingBodies(50))[0]!;
+    expect.soft(selected).toEqual({id,mailbox:"Z",uidvalidity:10,uid:2});
+    const ticket=await t.store.captureRepairs.get(a,{kind:"imap",messageId:id,mailbox:selected.mailbox,uidvalidity:selected.uidvalidity,uid:selected.uid});
+    await t.store.sync.setBody(id,"Recovered exact source",null,{now:1,classifier:null,...(ticket && {repair:{key:ticket.key,revision:ticket.revision}})});
+    expect.soft((await t.store.captureRepairs.list(a)).items).toEqual([]);
+    await t.reopen();expect.soft((await t.store.captureRepairs.list(a)).items).toEqual([]);
+    expect((await t.store.debug.snapshot()).messages.find(m=>m.id===id)?.bodyText).toBe("Recovered exact source");
+  });
+  it("R1 excludes attachment-pending local sent IDs before capture validation",async()=>{
+    const t=await fixture(kind),a=t.account.id;
+    const messages=["local:sent","remote"].map(providerMsgId=>({accountId:a,providerMsgId,providerThreadId:null,rfcMessageId:`${providerMsgId}@example.test`,inReplyTo:null,references:[],from:{name:"",email:"sender@example.test"},to:[],cc:[],bcc:[],subject:providerMsgId,date:1,snippet:"",bodyText:"Exact cached body",bodyHtml:null,bodyState:"full" as const,listId:null,isRead:true,isStarred:false,inInbox:false,isSent:true,isDraft:false,isTrash:false,isSpam:false,hasAttachments:true,size:5}));
+    await t.store.sync.ingest(messages,{applyFilters:false,now:1,classifier:null});const before=(await t.store.debug.snapshot()).messages;
+    const provider=t.store.providerStore(a), remote=(await provider.messageByProviderId("remote"))!;
+    expect(await provider.pendingAttachmentBodies(50)).toEqual([{id:remote.id,providerMsgId:"remote"}]);expect((await t.store.debug.snapshot()).messages).toEqual(before);
+  });
   it("backpressures at exactly 1000 identities, deduplicates at capacity, and releases capacity on deletion",async()=>{
     const t=await fixture(kind),a=t.account.id;
     for(let i=0;i<1000;i++)await t.store.captureRepairs.block(a,locator(`p${i}`),"mime-parts",0);

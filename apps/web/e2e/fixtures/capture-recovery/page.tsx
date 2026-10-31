@@ -13,4 +13,4 @@ worker.onmessage = ({data}) => {
   if(data === "ready") createRoot(document.getElementById("root")!).render(<main className="mx-auto max-w-xl p-8"><h1 className="mb-1 text-lg font-medium">Synthetic mail</h1><p className="mb-5 text-sm text-muted-foreground">Up to date</p><CaptureRecovery accountId={1}/></main>);
 };
 worker.postMessage(channel.port2,[channel.port2]);
-Object.assign(window,{captureHarness:{valid:()=>worker.postMessage("valid"),close:()=>worker.postMessage("stop")}});
+Object.assign(window,{captureHarness:{valid:()=>worker.postMessage("valid"),close:()=>new Promise<void>((resolve)=>{const stopped=({data}:MessageEvent)=>{if(data!=="stopped")return;worker.removeEventListener("message",stopped);resolve();};worker.addEventListener("message",stopped);worker.postMessage("stop");})}});

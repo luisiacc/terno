@@ -42,6 +42,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const unexpected: string[] = [], requests: URL[] = [];
   const messages = new Map([resource("a"), resource("b")].map((m) => [m.id, m]));
   let additions: string[] = [], transient = false, removed = false;
+  let historyDeleted: string[] = [];
   const deletedTerminal="90071992547409930004";
   let held: { entered: ReturnType<typeof gate>; release: ReturnType<typeof gate> } | undefined;
   // Native Request interception precedes construction of the managed fetchGoogle boundary.
@@ -59,7 +60,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
       const start = url.searchParams.get("startHistoryId");
       if (url.searchParams.get("maxResults") !== "500" || url.searchParams.getAll("historyTypes").sort().join(",") !== "labelAdded,labelRemoved,messageAdded,messageDeleted" || url.searchParams.size !== 6 || (start !== base && start !== terminal && start !== deletedTerminal)) return refuse();
       if(removed)return Response.json({historyId:deletedTerminal,...(start!==deletedTerminal && {history:[{id:deletedTerminal,messagesDeleted:[{message:{id:"p"}}]}]})});
-      return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })) }] } : {}) });
+      return Response.json({ historyId: additions.length ? terminal : base, ...(additions.length && start === base ? { history: [{ id: terminal, messagesAdded: additions.map((id) => ({ message: { id } })), messagesDeleted: historyDeleted.map(id=>({message:{id}})) }] } : {}) });
     }
     const id = path.slice("/messages/".length), format = url.searchParams.get("format");
     if (!path.startsWith("/messages/") || !messages.has(id) || url.searchParams.size !== 1 || (format !== "raw" && format !== "minimal")) return refuse();
@@ -95,6 +96,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     get backend() { return backend; },
     sync() { const run = backend.syncAccount(account.id); runs.push(run); return run; },
     add(files: number, failRead = false) { transient = failRead; messages.set("p", resource("p", files)); messages.set("c", resource("c")); additions = ["a", "p", "c"]; },
+    deleteAtCapacity() { historyDeleted=["old0"]; },
     deletePoison() { removed=true; messages.delete("p"); },
     hold() { held = { entered: gate(), release: gate() }; return held; },
     async reopen() { await backend.stop(); backend = await open(); await backend.ready; },
@@ -158,6 +160,18 @@ describe.each(["SQL", "IndexedDB"] as const)("%s durable malformed-message recov
     t.deletePoison();await t.sync();expect(await t.cursor()).toEqual({historyId:"90071992547409930004"});
     expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toEqual([]);expect(await t.cache()).toEqual(cached);
     await t.reopen();expect((await t.rpc().call("captureRepairs.list",{accountId:t.account.id})).items).toEqual([]);expect(await t.cache()).toEqual(cached);
+  });
+
+  it("R1 retires authoritative deletion before admitting replacement poison at capacity",async()=>{
+    const t=await mailbox(kind);await t.sync();const cached=await t.cache();
+    for(let i=0;i<1000;i++)await t.backend.store.captureRepairs.block(t.account.id,{kind:"gmail",providerId:`old${i}`},"mime-parts",0);
+    t.add(1001);t.deleteAtCapacity();await t.sync();
+    expect.soft(await t.cursor()).toEqual({historyId:terminal});
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"old0"})).toBeNull();
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"p"})).toMatchObject({state:"blocked",reason:"mime-parts"});
+    expect((await t.cache()).filter(m=>["a","b"].includes(m.row.providerMsgId!))).toEqual(cached);
+    await t.reopen();expect.soft(await t.cursor()).toEqual({historyId:terminal});
+    expect.soft(await t.backend.store.captureRepairs.get(t.account.id,{kind:"gmail",providerId:"p"})).toMatchObject({state:"blocked"});
   });
 
   it("accepts the valid 100-file neighbor and persists exact capture across graceful reopen", async () => {

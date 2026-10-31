@@ -10,6 +10,7 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
   useEffect(() => () => { generation.current++; }, [accountId]);
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<(CaptureRepair & { complete?: boolean })[]>([]);
+  const [after, setAfter] = useState<string>();
   const [next, setNext] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -18,7 +19,7 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
     try {
       const page = await client.call("captureRepairs.list", { accountId, after: cursor });
       if (request !== generation.current) return;
-      setRows(page.items); setNext(page.next);
+      setRows(page.items); setAfter(cursor); setNext(page.next);
     } catch { if (request === generation.current) setError(true); }
     finally { if (request === generation.current) setBusy(false); }
   };
@@ -37,7 +38,8 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
     <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onClick={() => {
       setOpen(!open); if (!open) void load(); else generation.current++;
     }}>{t("capture.title")}</Button>
-    {open && <div id={id} className="flex flex-col gap-3 pt-2" aria-busy={busy}>
+    <div id={id} hidden={!open} className="flex flex-col gap-3 pt-2" aria-busy={open && busy}>
+      {open && <>
       <p className="text-xs text-muted-foreground">{t("capture.hint")}</p>
       {error && <p role="alert" className="text-xs text-destructive-ink">{t("capture.error")}</p>}
       {busy && <p role="status" className="text-xs text-muted-foreground">{t("capture.loading")}</p>}
@@ -47,9 +49,10 @@ export default function CaptureRecovery({ accountId }: { accountId: number }) {
         <Button variant="ghost" size="sm" focusableWhenDisabled disabled={busy || row.complete || row.state === "pending"} onClick={() => void retry(row)}>{t("capture.retry")}</Button>
       </div>)}
       <div className="flex gap-2">
-        <Button variant="ghost" size="sm" disabled={busy} onClick={() => void load()}>{t("capture.refresh")}</Button>
-        {next && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void load(next)}>{t("capture.next")}</Button>}
+        <Button variant="ghost" size="sm" focusableWhenDisabled disabled={busy} onClick={() => void load()}>{t("capture.refresh")}</Button>
+        {(next || after) && <Button variant="ghost" size="sm" focusableWhenDisabled disabled={busy || !next} onClick={() => void load(next)}>{t("capture.next")}</Button>}
       </div>
-    </div>}
+      </>}
+    </div>
   </div>;
 }

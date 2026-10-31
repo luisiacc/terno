@@ -966,6 +966,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       sink.check();
       return (await store.messageByProviderId(id))?.id;
     };
+    // Authoritative deletions release bounded repair capacity before new capture admissions.
+    let retired = 0;
+    for (const gid of deleted) {
+      if (++retired % 50 === 0) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); sink.check(); }
+      const locator = { kind: "gmail" as const, providerId: gid };
+      if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
+    }
     const toFetch: string[] = [];
     for (const id of added) if (!deleted.has(id) && !(await known(id))) toFetch.push(id);
     // plan 41: what history added since the cursor is live mail (a full sync and the attachment re-fetch aren't)
@@ -991,7 +998,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     sink.check();
     let removals: number[] = [];
     for (const gid of deleted) {
-      await sink.retireCapture?.({ kind: "gmail", providerId: gid });
+      const locator = { kind: "gmail" as const, providerId: gid };
+      if (await store.repairs?.get(accountId, locator)) await sink.retireCapture?.(locator);
       const id = await known(gid);
       if (id !== undefined) removals.push(id);
       if (removals.length === 50) { sink.check(); await sink.removeMessages(removals); removals = []; }

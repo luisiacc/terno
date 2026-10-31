@@ -54,7 +54,7 @@ export class SqlProviderStore implements ProviderStore {
   async pendingBodies(limit: number) {
     return this.db.all<{ id: number; mailbox: string; uid: number; uidvalidity: number }>(
       `SELECT m.id, l.mailbox, l.uid, l.uidvalidity FROM messages m INDEXED BY messages_capture_pending JOIN message_locations l ON l.message_id = m.id
-       AND l.mailbox = (SELECT mailbox FROM message_locations WHERE message_id = m.id ORDER BY mailbox LIMIT 1)
+       AND l.mailbox = coalesce((SELECT selected.mailbox FROM capture_repairs repair JOIN message_locations selected ON selected.message_id=repair.message_id AND selected.mailbox=json_extract(repair.locator,'$.mailbox') AND selected.uidvalidity=json_extract(repair.locator,'$.uidvalidity') AND selected.uid=json_extract(repair.locator,'$.uid') WHERE repair.message_id=m.id AND repair.state='pending' ORDER BY repair.key LIMIT 1), (SELECT mailbox FROM message_locations WHERE message_id = m.id ORDER BY mailbox LIMIT 1))
        WHERE m.account_id = ? AND NOT EXISTS (SELECT 1 FROM imap_identity_holds h WHERE h.message_id=m.id) AND NOT EXISTS(SELECT 1 FROM capture_repairs r WHERE r.message_id=m.id AND r.state='blocked') AND ((m.body_state != 'full' AND m.attachments_captured != 2) OR m.attachments_captured = 0) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
       this.accountId,
       limit,

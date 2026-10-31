@@ -12,14 +12,16 @@ try {
  await expect(page.getByRole('button',{name:'Messages needing repair'})).toBeVisible({timeout:30000});
  await page.keyboard.press('Tab'); await expect(page.getByRole('button',{name:'Messages needing repair'})).toBeFocused();
  await page.keyboard.press('Enter');
- await expect(page.getByText('This message has more MIME parts than this device can process.')).toBeVisible();
+ await expect(page.getByText('This message has too many parts to process safely.')).toBeVisible();
  for(const mode of ['light','dark']){
   await page.evaluate(mode=>{document.documentElement.dataset.theme='lumen-'+mode;document.documentElement.classList.toggle('dark',mode==='dark');},mode);
+  await page.evaluate(async()=>{void document.body.offsetWidth;await Promise.all(document.getAnimations().map(a=>a.finished));});
   const results=await new AxeBuilder({page}).analyze();expect(results.violations).toEqual([]);
   await page.screenshot({path:'/tmp/terno-w10-repair/capture-'+mode+'.png'});
  }
+ await page.evaluate(()=>window.captureHarness.close());
  await page.reload();await page.getByRole('button',{name:'Messages needing repair'}).click();
- await expect(page.getByText('This message has more MIME parts than this device can process.')).toBeVisible();
+ await expect(page.getByText('This message has too many parts to process safely.')).toBeVisible();
  await page.evaluate(()=>window.captureHarness.valid());
  await page.getByRole('button',{name:'Retry',exact:true}).focus();await page.keyboard.press('Enter');
  await expect(page.getByText('No longer needs repair.')).toBeVisible();

@@ -141,23 +141,30 @@ export class IdbProviderStore implements ProviderStore {
 
   pendingAttachmentBodies(limit: number) {
     return this.read(() => T(this.c, "messages").by("attachment_pending", this.accountId, 1)
-      .filter((m) => T(this.c,"capture_repairs").get(this.accountId,captureKey({kind:"gmail",providerId:String(m.provider_msg_id)}))?.state !== "blocked")
       .filter((m) => m.provider_msg_id != null && !String(m.provider_msg_id).startsWith("local:"))
+      .filter((m) => T(this.c,"capture_repairs").get(this.accountId,captureKey({kind:"gmail",providerId:String(m.provider_msg_id)}))?.state !== "blocked")
       .slice(0, Math.max(0, Math.min(50, limit))).map((m) => ({ id: m.id as number, providerMsgId: m.provider_msg_id as string })));
   }
 
   pendingBodies(limit: number) {
     return this.read(() => {
-      const locations = T(this.c, "message_locations");
-      return T(this.c, "messages")
-        .by("pending_bodies", this.accountId)
-        .sort((x, y) => y.date - x.date || y.id - x.id)
-        .flatMap((m) => {
-          if (T(this.c, "imap_identity_holds").has(m.id)) return [];
-          const l = locations.by("fk_message_id", m.id).sort((x, y) => (x.mailbox < y.mailbox ? -1 : 1))[0];
-          return l && !T(this.c,"capture_repairs").by("fk_message_id",m.id).some(r => r.state === "blocked") ? [{ id: m.id as number, mailbox: l.mailbox as string, uid: l.uid as number, uidvalidity: l.uidvalidity as number }] : [];
-        })
-        .slice(0, limit);
+      if (limit <= 0) return [];
+      const locations = T(this.c, "message_locations"), repairs = T(this.c, "capture_repairs");
+      const result: { id: number; mailbox: string; uid: number; uidvalidity: number }[] = [];
+      const pending = T(this.c, "messages").by("pending_bodies", this.accountId).sort((x, y) => y.date - x.date || y.id - x.id);
+      for (const message of pending) {
+        if (T(this.c, "imap_identity_holds").has(message.id)) continue;
+        const obligations = repairs.by("fk_message_id", message.id);
+        if (obligations.some((repair) => repair.state === "blocked")) continue;
+        const retry = obligations.find((repair) => repair.state === "pending");
+        const source = retry ? JSON.parse(retry.locator) as import("@terno/core").CaptureLocator : undefined;
+        const exact = source?.kind === "imap" ? locations.get(message.id, source.mailbox) : undefined;
+        const location = exact && source?.kind === "imap" && exact.uid === source.uid && exact.uidvalidity === source.uidvalidity ? exact : locations.by("fk_message_id", message.id).sort((x, y) => (x.mailbox < y.mailbox ? -1 : 1))[0];
+        if (!location) continue;
+        result.push({ id: message.id, mailbox: location.mailbox, uid: location.uid, uidvalidity: location.uidvalidity });
+        if (result.length === limit) break;
+      }
+      return result;
     });
   }
 
