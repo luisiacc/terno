@@ -49,7 +49,7 @@ import {
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
-import { idbFlags } from "./flag-intents";
+import { bindIdbPromotedFlags, idbFlags } from "./flag-intents";
 import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories } from "./inbox-hidden";
@@ -747,7 +747,10 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
     for (const msg of batch) {
       let existing = findIngestMessage(c, msg);
       if (existing && T(c, "imap_identity_holds").has(existing.id)) continue;
-      if (existing && existing.provider_msg_id !== msg.providerMsgId) existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
+      if (existing && existing.provider_msg_id !== msg.providerMsgId) {
+        existing = messages.update(existing, { provider_msg_id: msg.providerMsgId });
+        bindIdbPromotedFlags(c, existing.id);
+      }
       if (existing) {
         const before = existing.body_state;
         updateExisting(c, existing, msg, observation);

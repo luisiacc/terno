@@ -1,4 +1,4 @@
-import { FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, operationFlagFields, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
+import { bindFlagTarget, FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, operationFlagFields, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
 import type { MemDb, Row } from "./mem";
 
 const repositories = new WeakMap<MemDb, IdbFlagRepository>();
@@ -108,4 +108,15 @@ export async function idbFlagSnapshots(idb: IDBDatabase, repo: IdbFlagRepository
     if (items.length > p.limit) break;
   }
   return { items: items.slice(0, p.limit), throughMessageId: through, hasMore: items.length > p.limit };
+}
+
+/** Bind only current targets; settled operation history is never loaded. */
+export function bindIdbPromotedFlags(c: { db: MemDb; uuid(): string }, id: number): void {
+  const repo = idbFlags(c), message = repo.message(id);
+  if (!message?.provider_msg_id || message.provider_msg_id.startsWith("local:") || !repo.clock(message.account_id)
+    || c.db.table("accounts").get(message.account_id)?.kind !== "gmail") return;
+  for (const target of c.db.table("op_targets").by("message", id)) {
+    const op = repo.op(target.op_id as string);
+    if (op && ["queued", "running", "unknown"].includes(op.state)) bindFlagTarget(repo, op, id, null);
+  }
 }

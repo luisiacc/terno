@@ -2,7 +2,7 @@ import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { requireGmailRefresh, acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
-import { sqlFlags } from "./flag-intents";
+import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
 import { placeholders, type Db } from "./sqlite";
@@ -266,7 +266,10 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       // instead of duplicating it): one lookup for both
       const existing = freshIds ? undefined : findIngestMessage(db, msg);
       if (existing && db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", existing.id)) continue;
-      if (existing && !existing.by_provider) db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
+      if (existing && !existing.by_provider) {
+        db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ?", msg.providerMsgId, existing.id);
+        bindSqlPromotedFlags(db, existing.id);
+      }
       if (existing) {
         flushRefs();
         const before = db.get<{ body_state: string; is_sent: number; is_draft: number }>("SELECT body_state, is_sent, is_draft FROM messages WHERE id = ?", existing.id)!;

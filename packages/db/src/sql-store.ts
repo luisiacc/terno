@@ -9,7 +9,7 @@ import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
-import { sqlFlags } from "./flag-intents";
+import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
 import { senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
@@ -547,7 +547,10 @@ export class SqlMailStore implements MailStore {
         if (op.kind === "send" && result && localId) {
           if (result.providerMsgId) {
             const changed = this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
-            if (changed.changes) refreshNeeded = requireSqlGmailRefresh(this.db, [localId]);
+            if (changed.changes) {
+              bindSqlPromotedFlags(this.db, localId);
+              refreshNeeded = requireSqlGmailRefresh(this.db, [localId]);
+            }
           }
           if (result.providerThreadId) {
             // a conversation we started gets its Gmail thread id, so replies land in it

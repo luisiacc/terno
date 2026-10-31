@@ -1,4 +1,4 @@
-import { FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
+import { bindFlagTarget, FlagObservationError, FLAG_COLUMNS, flagSnapshotBounds, type FlagClock, type FlagEffect, type FlagIntent, type FlagMessage, type FlagOp, type FlagRepository, type FlagSnapshotRequest, type LocalFlagField } from "@terno/store";
 import type { Db, Param } from "./sqlite";
 
 const repositories = new WeakMap<Db, SqlFlagRepository>();
@@ -43,4 +43,13 @@ export class SqlFlagRepository implements FlagRepository {
     const rows = this.db.all<{id:number;providerMsgId:string}>("SELECT DISTINCT f.message_id AS id,f.provider_msg_id AS providerMsgId FROM message_flag_intents f JOIN messages m ON m.id=f.message_id AND m.account_id=f.account_id AND m.provider_msg_id=f.provider_msg_id WHERE f.account_id=? AND f.needs_snapshot=1 AND f.pending_count=0 AND f.message_id>? AND f.message_id<=? ORDER BY f.message_id LIMIT ?", accountId, p.after, through, p.limit + 1);
     return { items: rows.slice(0, p.limit), throughMessageId: through, hasMore: rows.length > p.limit };
   }
+}
+
+/** Local targets become bindable only once promotion gives the row a provider identity. */
+export function bindSqlPromotedFlags(db: Db, id: number): void {
+  const repo = sqlFlags(db), message = repo.message(id);
+  if (!message?.provider_msg_id || message.provider_msg_id.startsWith("local:") || !repo.clock(message.account_id)
+    || !db.get("SELECT 1 FROM accounts WHERE id=? AND kind='gmail'", message.account_id)) return;
+  const ops = db.all<FlagOp>("SELECT o.id,o.account_id,o.seq,o.kind,o.state FROM op_targets t JOIN ops o ON o.id=t.op_id WHERE t.message_id=? AND o.account_id=? AND o.state IN ('queued','running','unknown')", id, message.account_id);
+  for (const op of ops) bindFlagTarget(repo, op, id, null);
 }

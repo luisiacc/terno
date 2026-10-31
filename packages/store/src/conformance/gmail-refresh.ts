@@ -84,6 +84,27 @@ export function defineGmailRefreshConformance(name: string, harness: StoreHarnes
       expect(await pending(store, accountId)).toHaveLength(1);
       expect((await store.debug.snapshot()).messages[0]).toMatchObject({ id: before.id, providerMsgId: providerId, bodyText: "Exact sent body" });
     });
+    it.each(["ingest", "send"] as const)("binds a flag action queued before local identity promotion through %s", async (source) => {
+      const { store, accountId } = await setup();
+      const local = msg({ accountId, providerMsgId: "local:promotion", rfcMessageId: "promotion@example.test", isStarred: false, attachments: [] });
+      const send = source === "send" ? await store.compose.queueSend({ accountId, to: [{ name: "", email: "recipient@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact sent body", recordReply: false, now: 2 }) : undefined;
+      if (!send) await ingest(store, [local]);
+      const row = (await store.debug.snapshot()).messages[0]!;
+      const action = await store.threads.act({ threadIds: [row.threadId], action: "star", signal: null, now: 3 });
+      const ready = send ? await store.ops.claimReady(100_000, 10) : undefined;
+      if (send) await store.ops.complete(send.opId, { providerMsgId: "promoted" }, 100_001);
+      else await ingest(store, [{ ...local, providerMsgId: "promoted" }]);
+      const captured = (await store.sync.beginObservation(accountId, { authoritativeFlags: true }))!;
+      const op = send ? ready!.find((candidate) => candidate.id === action.opIds[0]) : (await store.ops.claimReady(4, 10))[0];
+      expect(op?.id).toBe(action.opIds[0]);
+      await store.ops.complete(op!.id, undefined, 100_002);
+      await store.sync.updateFlags(accountId, [{ messageId: row.id, expectedProviderMsgId: "promoted", flags: { isRead: false, isStarred: false, inInbox: true, isTrash: false, isSpam: false } }], captured);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ id: row.id, providerMsgId: "promoted", isStarred: true, bodyText: row.bodyText });
+      expect((await pending(store, accountId)).map((item) => item.id)).toEqual([row.id]);
+      const fresh = (await store.sync.beginObservation(accountId, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(accountId, [{ messageId: row.id, expectedProviderMsgId: "promoted", flags: { isRead: false, isStarred: true, inInbox: true, isTrash: false, isSpam: false } }], fresh);
+      expect(await pending(store, accountId)).toEqual([]);
+    });
     it("retains current local flag intent until its operation settles", async () => {
       const { store, accountId } = await setup();
       const original = msg({ accountId, providerMsgId: "intent", attachments: [], isRead: false });

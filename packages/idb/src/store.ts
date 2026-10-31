@@ -11,7 +11,7 @@ import { removeStorage, storageThreads } from "./storage";
 import { assetAccounting } from "./asset-accounting";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
-import { idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
+import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
 import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
@@ -1064,6 +1064,7 @@ export class IdbMailStore implements MailStore {
           const local = messages.get(localId);
           if (result.providerMsgId && local && String(local.provider_msg_id ?? "").startsWith("local:")) {
             messages.update(local, { provider_msg_id: result.providerMsgId });
+            bindIdbPromotedFlags(this.c, localId);
             refreshNeeded = requireIdbGmailRefresh(this.c, [localId]);
           }
           if (result.providerThreadId) {
