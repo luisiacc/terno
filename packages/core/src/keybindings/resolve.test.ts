@@ -70,6 +70,7 @@ describe("snackbar context", () => {
   it("numbers, z and escape belong to the snackbar while it is up, and only then", () => {
     expect(resolveKey(key("1"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.action1");
     expect(resolveKey(key("5"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.action5");
+    expect(resolveKey(key("0"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.only");
     expect(resolveKey(key("z"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.undo");
     expect(resolveKey(key("Escape"), { ...ctx, snackbar: true }, null).command).toBe("snackbar.close");
     expect(resolveKey(key("1"), ctx, null).command).toBeNull();

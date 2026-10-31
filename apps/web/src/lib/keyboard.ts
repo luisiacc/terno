@@ -167,6 +167,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "snackbar.action3": () => snackbarControls.current?.action(3),
   "snackbar.action4": () => snackbarControls.current?.action(4),
   "snackbar.action5": () => snackbarControls.current?.action(5),
+  "snackbar.only": () => snackbarControls.current?.only?.(),
   "snackbar.undo": () => snackbarControls.current?.undo(),
   "snackbar.close": () => snackbarControls.current?.close(),
   // not from a dialog or menu: the dock is under them

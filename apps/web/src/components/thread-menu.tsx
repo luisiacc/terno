@@ -1,4 +1,4 @@
-import { remindPresets, shortcutsFor, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { remindPresets, shortcutsFor, subjectTemplate, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -59,6 +59,7 @@ import { listKey, useList } from "~/state/list";
 import { actionView, placeActions } from "~/lib/places";
 import { applyScope, formatCount } from "./category-snackbar";
 import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
+import { orderOffers } from "~/lib/offers";
 import { client } from "~/rpc/connection";
 import { codeKey, copyCode, threadCode } from "~/lib/codes";
 import { listScroller } from "./thread-list";
@@ -275,7 +276,9 @@ function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[];
   );
 }
 
-/** "Archive similar ▸" / "Mark similar as spam ▸": its offers are read when it opens. */
+const SIMILAR_LABEL = { archive: "similar.archive", trash: "similar.trash", spam: "similar.spam" } as const;
+
+/** "Archive similar ▸" / "Delete similar ▸" / "Mark similar as spam ▸": its offers are read when it opens (plan 86: the snackbar's lines, in its order). */
 function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
   /** opened from the keyboard: the first offer takes focus once counted (a hover leaves focus alone) */
   const byKey = useRef(false);
@@ -288,8 +291,8 @@ function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
         }}
         onPointerMove={() => (byKey.current = false)}
       >
-        {action === "archive" ? <Archive /> : <OctagonAlert />}
-        <span className="min-w-0 flex-1 truncate">{t(action === "archive" ? "similar.archive" : "similar.spam")}</span>
+        {action === "archive" ? <Archive /> : action === "trash" ? <Trash2 /> : <OctagonAlert />}
+        <span className="min-w-0 flex-1 truncate">{t(SIMILAR_LABEL[action])}</span>
       </ContextMenuSubTrigger>
       <ContextMenuSubContent className="w-max min-w-72 max-w-md" data-testid={`menu-${action}-similar-list`}>
         <SimilarItems action={action} ids={ids} byKey={byKey} />
@@ -307,7 +310,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
   }, [offers]);
   useEffect(() => {
     let alive = true;
-    void client.call("similar.offers", { threadIds: ids, action }).then(
+    void client.call("offers.forAction", { threadIds: ids, action }).then(
       (o) => alive && setOffers(o),
       () => alive && setOffers({ senderName: null, offers: [] }),
     );
@@ -315,9 +318,14 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
       alive = false;
     };
   }, [action, ids]);
-  const shown = offers ? visibleOffers(action, offers.offers) : [];
+  const shown = offers ? orderOffers(visibleOffers(action, offers.offers)) : [];
   return (
     <>
+      {/* plan 86: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
+      <ContextMenuItem ref={first} data-testid="menu-similar-only" onClick={() => void act(action, ids, { automation: "none" })}>
+        <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
+      </ContextMenuItem>
+      <ContextMenuSeparator />
       {action === "spam" && (
         <div className="px-1.5 py-1 text-xs text-muted-foreground" data-testid="menu-spam-similar-note">
           {t("similar.spamFuture")}
@@ -332,8 +340,8 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
           {t("similar.nothing")}
         </ContextMenuItem>
       ) : (
-        shown.map((o, i) => (
-          <ContextMenuItem key={o.scope.kind} ref={i === 0 ? first : undefined} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
+        shown.map((o) => (
+          <ContextMenuItem key={o.scope.kind} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
             <ScopeLabel scope={o.scope} senderName={offers.senderName} />
             <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{shownCount(o) ? formatCount(o) : ""}</ContextMenuShortcut>
           </ContextMenuItem>
@@ -488,6 +496,7 @@ function MenuItems() {
       ))}
       {/* plan 63: the same, for everything like it (explicit rows only: a "select all N" scope is already everything) */}
       {!scope && ids.length <= 200 && (view === "inbox" || view === "all" || view === "starred" || view === "sent") && <SimilarSub action="archive" ids={ids} />}
+      {!scope && ids.length <= 200 && view !== "trash" && <SimilarSub action="trash" ids={ids} />}
       {!scope && ids.length <= 200 && view !== "spam" && view !== "trash" && <SimilarSub action="spam" ids={ids} />}
       <ContextMenuSeparator />
       <ContextMenuSub>
@@ -581,13 +590,17 @@ function MenuItems() {
   );
 }
 
-/** A scope's menu label; a named sender carries its address, muted, so same-named senders tell apart. */
+/**
+ * A scope's menu label; a named sender carries its address, muted, so same-named senders tell apart; a
+ * subject its template (plan 86: "Same sender and subject · Tu pedido # está en camino", as the snackbar says it).
+ */
 function ScopeLabel({ scope, senderName }: { scope: SimilarScope; senderName: string | null }) {
   const email = scope.kind === "sender" && senderName && senderName !== scope.email ? scope.email : null;
   return (
     <span className="min-w-0 flex-1 truncate">
       {scopeLabel(scope, senderName)}
       {email && <span className="text-muted-foreground"> {email}</span>}
+      {scope.kind === "subject" && <span className="text-muted-foreground"> · {subjectTemplate(scope.subject)}</span>}
     </span>
   );
 }

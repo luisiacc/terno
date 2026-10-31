@@ -28,14 +28,15 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
   test("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
-    // plan 63: the rest from the same sender etc. grow a second row of chips under it
+    // plan 63: the rest from the same sender etc. grow under it; plan 86: one compact line each, as the category snackbar's
     await expect(dock(page).getByTestId("similar-snackbar")).toBeVisible();
     const bar = (await dock(page).boundingBox())!;
     const list = (await page.getByTestId("thread-list").boundingBox())!;
     const sidebar = (await page.getByTestId("sidebar").boundingBox())!;
-    const strip = (await dock(page).getByTestId("snackbar-strip").boundingBox())!;
-    expect(bar.height - strip.height).toBeLessThanOrEqual(40);
-    expect(bar.height).toBeLessThanOrEqual(72);
+    const offers = (await dock(page).getByTestId("similar-offers").boundingBox())!;
+    const lines = await dock(page).getByTestId("similar-offers").locator("button").count();
+    expect(bar.height - offers.height).toBeLessThanOrEqual(40);
+    expect(offers.height).toBeLessThanOrEqual(lines * 28 + 8);
     expect(bar.x).toBeGreaterThan(list.x);
     expect(bar.x + bar.width).toBeLessThan(list.x + list.width);
     expect(bar.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width);

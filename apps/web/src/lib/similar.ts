@@ -10,18 +10,18 @@ import { leaveList, trackJob, undoAction } from "~/lib/actions";
 
 export { shownCount, visibleOffers } from "./similar-offers";
 
-/** What a scope is called, in chips, menus and results. */
+/** What a scope is called, the same in every snackbar, menu and result (plan 86); a subject's template goes beside it. */
 export function scopeLabel(scope: SimilarScope, senderName: string | null): string {
   const name = senderName || ("email" in scope ? scope.email : "");
   switch (scope.kind) {
     case "sender":
       return t("similar.scope.sender", { name });
     case "subject":
-      return t("similar.scope.subject", { name });
+      return t("similar.scope.subject");
     case "domain":
       return t("similar.scope.domain", { domain: scope.domain });
     case "list":
-      return t("similar.scope.list");
+      return t("similar.scope.list", { list: scope.listId });
   }
 }
 

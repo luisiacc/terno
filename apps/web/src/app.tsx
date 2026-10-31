@@ -97,7 +97,7 @@ export function App() {
       onFiled((filed, source) => {
         // z / ⌘Z, the snackbar's Deshacer and its z: one undo, run once (z still takes it back after the snackbar is gone)
         const undo = registerUndo(() => undoFiled(filed));
-        if (source !== "snackbar") showCategorySnackbar(filed, undo);
+        if (source !== "snackbar") showCategorySnackbar(filed, undo, source);
       }),
     [],
   );

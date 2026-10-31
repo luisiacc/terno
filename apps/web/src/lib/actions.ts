@@ -132,7 +132,7 @@ const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnr
  * Without explicit ids it acts on the selection: a "select all N" scope, the
  * checked rows, or the open thread.
  */
-export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean } = {}): Promise<void> {
+export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean; automation?: "none" } = {}): Promise<void> {
   if (!ids) {
     const target = currentTargets();
     if ("scope" in target) return actScope(action, target.scope);
@@ -164,7 +164,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     if (SNACK_ALWAYS.has(action) || targets.length > 1) {
       const id = snack(said(action, targets.length), { action: ids.length ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
       // plan 63: the same snack offers the rest from this sender, subject, domain or list
-      if (ids.length && SIMILAR.has(action) && targets.length <= 200) void offerSimilar(id, action as SimilarAction, targets, undo);
+      if (ids.length && SIMILAR.has(action) && targets.length <= 200) void offerSimilar(id, action as SimilarAction, targets, undo, options.automation);
     }
   } catch (error) {
     undoIds.resolve([]);
@@ -188,10 +188,10 @@ function fitting(action: ThreadAction, ids: number[]): number[] {
 }
 
 /** The similar snackbar loads with its offers (its own chunk): the plain snack grows into it, or stays as it is. */
-async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo): Promise<void> {
+async function offerSimilar(snackId: string, action: SimilarAction, targets: readonly number[], undo: Undo, automation?: "none"): Promise<void> {
   try {
-    const [{ showSimilarSnackbar }, offers] = await Promise.all([import("~/components/similar-snackbar"), client.call("similar.offers", { threadIds: [...targets], action })]);
-    showSimilarSnackbar(snackId, { action, undoName: t(UNDO_NAME[action]), count: targets.length, offers, undo });
+    const [{ showSimilarSnackbar }, offers] = await Promise.all([import("~/components/similar-snackbar"), client.call("offers.forAction", { threadIds: [...targets], action })]);
+    showSimilarSnackbar(snackId, { action, undoName: t(UNDO_NAME[action]), targets, offers, undo, automation });
   } catch {
     // the plain snack already says what happened
   }

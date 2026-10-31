@@ -41,11 +41,15 @@ test.describe("similar mail", { tag: "@design" }, () => {
 
     const snack = page.getByTestId("similar-snackbar");
     await expect(snack.getByTestId("snack-message")).toHaveText("Archived");
-    await expect(snack.getByTestId("similar-sender")).toContainText("All from");
-    await expect(snack.getByTestId("similar-sender-count")).toHaveText(`· ${ids.length - 1}`);
+    await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
+    await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
     await expect.poll(inInbox).toBe(ids.length - 1);
+    // plan 86: archiving has no default; the lines are the category snackbar's, the same sender and subject first
+    await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
+    const keys = await snack.getByTestId("similar-offers").locator("kbd").allTextContents();
+    expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
 
-    await page.keyboard.press("1");
+    await page.keyboard.press((await snack.getByTestId("similar-sender").locator("kbd").textContent())!);
     const done = result(page, `Archived ${ids.length - 1}`);
     await expect(done).toBeVisible();
     await expect.poll(inInbox).toBe(0);
@@ -105,7 +109,9 @@ test.describe("similar mail", { tag: "@design" }, () => {
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
     await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));
+    // plan 86: the plain action comes first, focused: Enter archives only this one
+    await expect(page.getByTestId("menu-similar-only")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect.poll(inInbox).toBe(0);
+    await expect.poll(inInbox).toBe(ids.length - 1);
   });
 });

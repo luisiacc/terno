@@ -521,8 +521,8 @@ export function createHandlers(b: Backend): Handlers {
       await requireCategory(action.category);
       const { senderName, scopes } = await store.similar.scopes(threadIds);
       const offers = await Promise.all(
-        // what a move would still change: not the targets (already moved), not what is only there already
-        scopes.map(async (scope) => ({ scope, ...(await store.categorize.countScope(action.category, scope, b.now(), { move: true })), skipped: 0 })),
+        // what it would still change: not the targets (already there); after a move, also what's in it and elsewhere
+        scopes.map(async (scope) => ({ scope, ...(await store.categorize.countScope(action.category, scope, b.now(), { move: action.move })), skipped: 0 })),
       );
       return { senderName, offers, automated };
     },

@@ -90,7 +90,7 @@ export const FORMATTING: [keys: string, label: Label][] = [
 ];
 
 /** Bindings that exist but the dialog doesn't list (the snackbar's own keys are shown on it). */
-export const UNLISTED: ReadonlySet<Command> = new Set<Command>(["snackbar.action1", "snackbar.action2", "snackbar.action3", "snackbar.action4", "snackbar.action5", "snackbar.undo", "snackbar.close", "suggestion.accept", "suggestion.reject"]);
+export const UNLISTED: ReadonlySet<Command> = new Set<Command>(["snackbar.action1", "snackbar.action2", "snackbar.action3", "snackbar.action4", "snackbar.action5", "snackbar.only", "snackbar.undo", "snackbar.close", "suggestion.accept", "suggestion.reject"]);
 
 /** Every bound command is either listed or deliberately not. */
 export const LISTED: ReadonlySet<Command> = new Set(SECTIONS.flatMap((s) => s.rows.map(([c]) => c)));

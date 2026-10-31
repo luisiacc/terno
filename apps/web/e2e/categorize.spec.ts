@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { termsQuery } from "@terno/core";
 import type { DevServer } from "../../backend-dev/src/server";
 import { expect, focusList, selectRows, selectThread, test, searchBox } from "./fixtures";
@@ -36,6 +36,9 @@ function uberSetup(server: DevServer) {
   return { db, facturas, target, outside };
 }
 
+/** An offer line's key: its number, which follows the lines shown (plan 86). */
+const keyOf = async (line: Locator) => (await line.locator("kbd").first().textContent())!;
+
 async function fileWithPicker(page: Page, categoryId: number) {
   await page.keyboard.press("l");
   await expect(page.getByTestId("category-picker")).toBeVisible();
@@ -62,8 +65,8 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-sender")).toHaveAccessibleDescription("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
     await snack.getByTestId("snackbar-sender").hover();
     await expect(page.getByTestId("snackbar-sender-help")).toHaveText("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
-
-    await page.keyboard.press("1");
+    // plan 86: each line's key is its place (the same sender and subject comes first when it adds anything)
+    await page.keyboard.press(await keyOf(snack.getByTestId("snackbar-sender")));
     await expect(snack).toHaveCount(0);
     const done = toast(page, `${rest} added to Facturas, future mail too`);
     await expect(done).toBeVisible();
@@ -71,26 +74,26 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     expect(filters()).toEqual([{ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] }]);
     await expect(done.getByTestId("snack-action")).toHaveAccessibleName("Undo, and stop adding future mail");
     await done.getByTestId("snack-action").click();
-    await expect.poll(outside).toBe(rest);
+    // plan 86: one Undo takes back the newest first, then the filing it followed: everything is as before
+    await expect.poll(outside).toBe(rest + 1);
     await expect.poll(() => filters().length).toBe(0);
-    // the thread that opened the snackbar stays filed: that was its own undo
-    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas)).toBeDefined();
+    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas) ?? null).toBeNull();
   });
 
-  test("plan 81: z takes back 1, its filing and its filter (z is one level: the filing that opened the snackbar stays)", async ({ app: page, server }) => {
+  test("plan 86: z takes back the sender line, its filter, then the filing that opened the snackbar", async ({ app: page, server }) => {
     const { db, facturas, target, outside } = uberSetup(server);
     const rest = outside() - 1;
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
     await expect(page.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
-    await page.keyboard.press("1");
+    await page.keyboard.press(await keyOf(page.getByTestId("snackbar-sender")));
     await expect(toast(page, "future mail too")).toBeVisible();
     await expect.poll(outside).toBe(0);
     await focusList(page);
     await page.keyboard.press("z");
-    await expect.poll(outside).toBe(rest);
+    await expect.poll(outside).toBe(rest + 1);
     await expect.poll(() => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%uber.receipts@uber.com%'")!.c).toBe(0);
-    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas)).toBeDefined();
+    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas) ?? null).toBeNull();
   });
 
   test("z undoes the add itself without teaching the engine anything; Esc just closes", async ({ app: page, server }) => {
@@ -159,11 +162,11 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
         lecturas,
       )!.c;
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${githubOutside()}`);
-    // plan 81: the hidden domain line's key makes no filter for all of @github.com
-    await page.keyboard.press("2");
-    await expect(snack).toBeVisible();
+    // plan 81: the hidden domain line has no key: the next number names whatever line is there (plan 86: they follow the lines)
+    const keys = await snack.getByTestId("snackbar-offers").locator("kbd").allTextContents();
+    expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
     expect(db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%fromDomain%github.com%'")!.c).toBe(0);
-    await page.keyboard.press("1");
+    await snack.getByTestId("snackbar-sender").click();
     await expect.poll(githubOutside).toBe(0);
   });
 });
@@ -263,7 +266,8 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
-    await page.keyboard.press("4");
+    // the words line's key is whatever number its line has (plan 86)
+    await page.keyboard.press((await page.getByTestId("snackbar-topic-apply").locator("kbd").textContent())!);
     // plan 84: checked words file now and become a filter for new mail (from the sender: "Only from" is on again)
     await expect(toast(page, /\d+ added to Viajes, future mail too/)).toBeVisible();
     const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;

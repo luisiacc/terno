@@ -9,7 +9,8 @@ import { invalidateThreads, loadThread } from "~/state/threads";
 import { getApp, inPlainInbox, setApp, setCategories, type ScopeSelection } from "~/state/app";
 import { deferred, trackJob, undoAction } from "~/lib/actions";
 import { scopeRows } from "~/lib/select";
-import { dismissSnack, patchSnack, registerUndo, snack, useSnack } from "~/lib/snack";
+import { dismissSnack, patchSnack, registerUndo, snack, useSnack, type Undo } from "~/lib/snack";
+import { chainUndo } from "~/lib/offers";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -406,11 +407,24 @@ interface AlwaysUndo {
  * back the filter first (no new mail is caught meanwhile), then the batch;
  * the filter's failing never keeps the mail filed.
  */
-export async function fileAlways(categoryId: number, scope: FilterableScope, threadId: number | null, filterName: string): Promise<void> {
+export async function fileAlways(
+  categoryId: number,
+  scope: FilterableScope,
+  threadId: number | null,
+  filterName: string,
+  o: {
+    /** plan 86: what this followed: its Undo takes back this first, then that */
+    original?: Undo;
+    /** plan 86: after a move, the scope moves too (other categories left) */
+    move?: boolean;
+    /** plan 86: taken back first (a default this replaces) */
+    before?: () => Promise<void>;
+  } = {},
+): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
   if (threadId !== null && getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) leaveView([threadId]);
   const outcome = deferred<AlwaysUndo>();
-  const undo = registerUndo(() =>
+  const undo = chainUndo(() =>
     outcome.promise.then(async (u) => {
       let failed: unknown = null;
       if (u.filterUndo !== null) {
@@ -432,10 +446,12 @@ export async function fileAlways(categoryId: number, scope: FilterableScope, thr
       if (failed !== null) throw failed;
       void snack(t("category.undone", { category: name }), { background: true, duration: 3000 });
     }),
+    o.original,
   );
-  const id = snack.loading(t("category.adding", { category: name }));
+  const id = snack.loading(t(o.move ? "category.moving" : "category.adding", { category: name }));
   try {
-    const r = await client.call("categorize.apply", { categoryId, scope, always: true, filterName });
+    if (o.before) await o.before();
+    const r = await client.call("categorize.apply", { categoryId, scope, always: true, filterName, move: o.move });
     outcome.resolve({ batchId: r.batchId, filterUndo: r.filter?.filterUndo ?? null });
     // undone with z before the answer came: its own snacks say so
     if (undo.state !== "ready") return dismissSnack(id);

@@ -35,6 +35,9 @@ function notIn(page: Page, catId: number) {
   return page.locator(`[data-testid=thread-row]:not(:has([data-cat-dot="${catId}"]))`);
 }
 
+/** A drop's title: the drag alone, or (plan 86) with its bulk sender's same-subject group. */
+const movedTo = (category: string) => new RegExp(`^Moved (to ${category}|\\d+ emails? with the same sender and subject to ${category})$`);
+
 const navCount = async (page: Page, catId: number) => Number((await page.getByTestId(`nav-category-${catId}`).locator("[data-slot=nav-count]").textContent().catch(() => "0")) || 0);
 
 test.describe("drag and drop to a category", { tag: "@design" }, () => {
@@ -64,7 +67,7 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     await page.mouse.up();
 
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText(movedTo("Viajes"));
     const dropped = page.locator(`[data-thread-id="${id}"]`);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
@@ -151,7 +154,7 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     const id = Number(await row.getAttribute("data-thread-id"));
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText(movedTo("Viajes"));
     await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(0);
     const inCat = (cat: number) => !!sqlDb(server.backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, cat);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
@@ -171,7 +174,7 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     const before = cats();
     await dragTo(page, dropped, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
+    await expect(page.getByTestId("snackbar-title")).toHaveText(movedTo("Viajes"));
     // the same frame shows the target alone; the backend agrees
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
@@ -192,7 +195,7 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     await dragTo(page, dropped, target);
     await expect(target).toHaveAttribute("data-drop-state", "over");
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Lecturas");
+    await expect(page.getByTestId("snackbar-title")).toHaveText(movedTo("Lecturas"));
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
     await expect.poll(() => sqlDb(server.backend.store).all("SELECT category_id FROM thread_categories WHERE thread_id = ?", id)).toEqual([{ category_id: lecturas }]);
   });
@@ -208,7 +211,8 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     const before = sqlDb(server.backend.store).get("SELECT added_by, added_at, batch_id FROM thread_categories WHERE thread_id = ? AND category_id = ?", id, lecturas);
     await dragTo(page, row, page.getByTestId(`nav-category-${viajes}`));
     await page.mouse.up();
-    await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
+    // a newsletter's group may move with it (plan 86): one Undo takes back all of it
+    await expect(page.getByTestId("snackbar-title")).toHaveText(/^Moved (to Viajes|\d+ emails? with the same sender and subject to Viajes)$/);
     await expect.poll(() => [inCat(viajes), inCat(lecturas)]).toEqual([true, false]);
 
     // the backend refuses the restore: the destination must keep the thread, the snackbar turns into the error with a retry

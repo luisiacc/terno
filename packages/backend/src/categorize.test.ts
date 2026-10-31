@@ -382,7 +382,7 @@ describe("categorizer: training hooks", () => {
       const memberships = () => db.all<{ thread_id: number; category_id: number }>("SELECT thread_id, category_id FROM thread_categories ORDER BY thread_id, category_id").map((r) => `${r.thread_id}:${r.category_id}`);
       const before = memberships();
 
-      const offers = await client.call("offers.forAction", { threadIds: [target!], action: { category: cat } });
+      const offers = await client.call("offers.forAction", { threadIds: [target!], action: { category: cat, move: true } });
       expect(offers.automated).toBe(true);
       expect(offers.offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 2, capped: false });
       expect(offers.offers.find((o) => o.scope.kind === "sender")).toMatchObject({ count: 3 });
