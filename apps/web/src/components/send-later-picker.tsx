@@ -42,7 +42,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
     items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
   };
 
-  const choice = "flex h-8 w-full items-center gap-3 rounded-md px-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
+  const choice = "flex h-8 w-full items-center gap-3 rounded-md px-2 text-left text-sm outline-none hover:bg-accent/50 hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground";
   return (
     <div className="flex flex-col gap-2" data-testid="send-later-picker" onKeyDown={onKeyDown}>
       {current && (
@@ -57,7 +57,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
           )}
         </div>
       )}
-      <div ref={listRef} className="-mx-1 flex flex-col" role="group" aria-label={t("sendLater.title")}>
+      <div ref={listRef} className="-mx-1 flex flex-col gap-px" role="group" aria-label={t("sendLater.title")}>
         <button type="button" data-send-later-choice data-testid="send-later-now" className={choice} onClick={() => pick("now")}>
           <Send aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t("sendLater.now")}</span>
