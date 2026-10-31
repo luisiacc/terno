@@ -26,6 +26,7 @@ async function setup(uidplus: boolean) {
     } } },
   });
   cleanups.push(() => bounded(server.stop(), "IMAP stop"));
+  const sendEvents: string[] = [];
   const commands: { command: string; data: string; mailbox: string | null }[] = [];
   let overflow = false;
   const capabilities: string[] = [];
@@ -36,6 +37,7 @@ async function setup(uidplus: boolean) {
     return false;
   } });
   server.script.add({ on: "command", run: true, when(ctx) {
+    if (ctx.command === "APPEND") sendEvents.push("sent-append");
     if (commands.length < 2000) commands.push({ command: ctx.command!, data: ctx.data.trim(), mailbox: ctx.mailbox });
     else overflow = true;
     return false;
@@ -54,7 +56,7 @@ async function setup(uidplus: boolean) {
         else chunks.push(chunk);
       });
       stream.on("error", cb);
-      stream.on("end", () => { received.push(Buffer.concat(chunks)); cb(); });
+      stream.on("end", () => { received.push(Buffer.concat(chunks)); sendEvents.push("smtp-data"); cb(); });
     },
   });
   await bounded(new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve)), "SMTP listen");
@@ -83,7 +85,7 @@ async function setup(uidplus: boolean) {
   const snapshot = (path: string) => ({ path, uidvalidity: server.control.getMailbox(path).uidvalidity,
     messages: server.control.listMessages(path, { raw: true }).map((m) => ({ uid: m.uid, raw: m.raw, flags: [...m.flags].sort() })) });
   const mutations = () => commands.filter((c) => /^(?:UID )?(?:APPEND|STORE|COPY|MOVE|EXPUNGE|CLOSE|CREATE|DELETE)$/.test(c.command));
-  return { ...first, open, account, server, commands, capabilities, received, snapshot, mutations, assertBounded: () => expect(overflow).toBe(false) };
+  return { ...first, open, account, server, commands, capabilities, received, sendEvents, snapshot, mutations, assertBounded: () => expect(overflow).toBe(false) };
 }
 
 it.each([false, true])("A33 keeps local drafts off IMAP and preserves Deleted mail (UIDPLUS=%s)", async (uidplus) => {
@@ -132,6 +134,7 @@ it.each([false, true])("A33 keeps local drafts off IMAP and preserves Deleted ma
   await reopened.backend.runWorker();
   expect((await reopened.backend.store.ops.get(send.opId))?.state).toBe("succeeded");
   expect(t.received).toHaveLength(1);
+  expect(t.sendEvents).toEqual(["smtp-data", "sent-append"]);
   expect(t.mutations().map((c) => c.command)).toEqual(["APPEND"]);
   expect(t.mutations()[0]!.data).toMatch(/APPEND Sent /);
   const copies = ctl.listMessages("Sent", { raw: true });
@@ -151,6 +154,7 @@ it.each([false, true])("A33 keeps local drafts off IMAP and preserves Deleted ma
   expect((await final.backend.store.ops.get(send.opId))?.payload_json).toBe(payload);
   await final.backend.runWorker();
   expect(t.received).toHaveLength(1);
+  expect(t.sendEvents).toEqual(["smtp-data", "sent-append"]);
   expect(t.snapshot("Sent")).toEqual(sentBefore);
   expect((await final.backend.store.ops.get(send.opId))?.state).toBe("succeeded");
   expect(t.snapshot("Drafts")).toEqual(draftsBefore);
