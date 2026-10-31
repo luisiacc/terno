@@ -7,6 +7,13 @@ function trackProbe(task: Promise<unknown>, tasks: Promise<unknown>[], errors: u
   tasks.push(task.catch((error) => { errors.push(error); }));
 }
 
+async function openStreamServer(server: Server): Promise<URL> {
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing owned stream address");
+  return new URL(`http://127.0.0.1:${address.port}/stream`);
+}
+
 interface Stream { source: string; closed: boolean; socketClosed: boolean; response: ServerResponse }
 async function closeStreams(server: Server, streams: Stream[], probes: Promise<unknown>[]) {
   const closeLate = (_request: IncomingMessage, response: ServerResponse) => response.destroy();
@@ -65,8 +72,8 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
       res.on("close", () => { stream.closed = true; events.push(`response-close:${source}`); });
       req.socket.on("close", () => { stream.socketClosed = true; events.push(`socket-close:${source}`); });
     });
-    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(62021, "127.0.0.1", resolve); });
-    const endpoint = "http://127.0.0.1:62021/stream";
+    const streamURL = await openStreamServer(server);
+    const endpoint = streamURL.href;
     await page.addInitScript(() => {
       Object.assign(window, { closeAcknowledgements: 0 });
       addEventListener("w05-worker-closed", () => { window.closeAcknowledgements++; });
@@ -74,7 +81,7 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
     try {
       await context.route("**/*", (route) => {
         const url = new URL(route.request().url());
-        if (url.origin === baseURL || url.origin === "http://127.0.0.1:62021" && url.pathname === "/stream") return route.continue();
+        if (url.origin === baseURL || url.origin === streamURL.origin && url.pathname === streamURL.pathname) return route.continue();
         if (route.request().method() === "GET" && url.href === "https://updates.figma.com/pixel.gif") {
           blockedDemoImages.push(url.href);
           return route.abort();
@@ -285,5 +292,26 @@ test("teardown owns a successor request arriving after its first response sweep"
     // Failure rescue is restricted to this fixture's own native connections.
     server.closeAllConnections();
     await Promise.all([closing, request]);
+  }
+});
+
+
+test("independent stream fixtures allocate distinct loopback ports", async () => {
+  const servers = [createServer(), createServer()];
+  try {
+    const first = await openStreamServer(servers[0]!);
+    const second = await openStreamServer(servers[1]!);
+    expect(first.hostname).toBe("127.0.0.1");
+    expect(second.hostname).toBe("127.0.0.1");
+    expect(first.pathname).toBe("/stream");
+    expect(second.pathname).toBe("/stream");
+    expect(Number(first.port)).toBeGreaterThan(0);
+    expect(Number(second.port)).toBeGreaterThan(0);
+    expect(first.port).not.toBe(second.port);
+  } finally {
+    await Promise.all(servers.map((server) => new Promise<void>((resolve, reject) => {
+      if (!server.listening) return resolve();
+      server.close((error) => error ? reject(error) : resolve());
+    })));
   }
 });
