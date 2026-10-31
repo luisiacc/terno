@@ -11,13 +11,15 @@ export { databaseName, IDB_VERSION, LOGICAL_SCHEMA } from "./schema";
  * otherwise it is reachable by explicit choice (`?storage=idb`) or for a
  * mailbox that already lives here.
  */
-export function idbAdapter(factory: IDBFactory, o: { automatic?: boolean } = {}): StoreAdapter {
+export function idbAdapter(factory: IDBFactory, o: { automatic?: boolean; signal?: AbortSignal; legacyUpgrade?: (name: string, signal?: AbortSignal) => Promise<void> } = {}): StoreAdapter {
   return {
     id: "idb",
     label: "IndexedDB",
     automatic: o.automatic ?? false,
     available: async () => typeof factory?.open === "function",
     exists: (name) => IdbMailStore.exists(factory, name),
-    open: (opts) => IdbMailStore.open({ name: opts.name, factory, platform: opts.platform, instantSearch: opts.instantSearch, log: opts.log }),
+    open: (opts) => IdbMailStore.open({ name: opts.name, factory, platform: opts.platform, instantSearch: opts.instantSearch, log: opts.log, signal: o.signal, legacyUpgrade: o.legacyUpgrade }),
   };
 }
+
+export { upgradeLegacyIdbBodies, type IdbBodyUpgradeProgress } from "./body-upgrade";

@@ -5,6 +5,8 @@ export type { Row } from "./connection";
 
 export interface OpenOptions {
   readonly?: boolean;
+  /** The dedicated upgrade owner keeps SQLite writer ownership across its per-row commits. */
+  exclusive?: boolean;
   /** statement cache capacity (LRU) */
   statementCacheSize?: number;
   /** ids that must be globally unique (ops, the owner's user id) */
@@ -38,6 +40,7 @@ export class Db {
     const readonly = options.readonly ?? false;
     this.conn = driver.open(path, { readonly });
     try {
+      if (options.exclusive) this.conn.exec("PRAGMA locking_mode=EXCLUSIVE");
       for (const p of driver.pragmas({ readonly, memory: path === ":memory:" })) this.conn.exec(`PRAGMA ${p}`);
     } catch (error) {
       // plan 95: a file that can't take its pragmas (full, damaged, read-only) isn't left open

@@ -1,3 +1,4 @@
+import { RpcClient, createMemoryTransportPair } from "@terno/core/rpc";
 import { Worker } from "node:worker_threads";
 import { once } from "node:events";
 import { createNodeIncomingProcessor } from "./incoming-worker";
@@ -50,6 +51,24 @@ it("preserves valid complete large bodies without a monolithic parent SQL body b
     expect(search.items.map((thread) => thread.id)).toEqual([messages[0]!.threadId]);
     expect(fixture.unexpected).toEqual([]);
     expect(largest, "a complete valid body must not be rebound as one indivisible parent string").toBeLessThanOrEqual(32768);
+    let largestClone = 0;
+    const clone = structuredClone;
+    const inspect = (value: unknown): void => {
+      if (typeof value === "string") largestClone = Math.max(largestClone, value.length);
+      else if (value && typeof value === "object" && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)) for (const child of Object.values(value)) inspect(child);
+    };
+    vi.spyOn(globalThis, "structuredClone").mockImplementation((value, options) => { inspect(value); return clone(value, options); });
+    const [clientSide, backendSide] = createMemoryTransportPair();
+    backend.connect(backendSide, { clientId: "exact-body-read", origin: "renderer" });
+    const client = new RpcClient(clientSide);
+    try {
+      const detail = await client.call("threads.get", { threadId: messages[0]!.threadId });
+      expect(detail.messages[0]!.bodyText === text.replace(/\r\n/g, "\n")).toBe(true);
+      expect(detail.messages[0]!.bodyHtml === html).toBe(true);
+      expect(detail.messages[0]!.attachments[0]!.assetId).toBe(attachment.assetId);
+      expect(largestClone, "normal body-open delivery must not clone a complete large body").toBeLessThanOrEqual(32768);
+    } finally { client.close(); }
+
   } finally { try { await backend.stop(); } finally { vi.restoreAllMocks(); rmSync(dir, { recursive: true, force: true }); } }
 });
 
@@ -72,4 +91,23 @@ it("transports complete large normalized text without a monolithic worker-reply 
     expect(result.message.text === body.replace(/\r\n/g, "\n")).toBe(true);
     expect(Math.max(received.result.message.text?.length ?? 0, received.result.message.html?.length ?? 0), "parent message delivery must not clone a whole large body").toBeLessThanOrEqual(32768);
   } finally { await processor.close(); await native.terminate(); }
+});
+
+it("keeps the same account-bound complete body contract for agent reads", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "terno-body-agent-"));
+  const fixture = incomingGmailFixture({ ids: [], raw() { throw new Error("No raw route is used"); } });
+  const providers: ProviderRegistry = { create() { throw new Error("No provider is used"); }, async verifyImap() {}, async connectGmail() { throw new Error("No consent is used"); } };
+  const backend = new Backend({ dbPath: join(directory, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  const [clientSide, serverSide] = createMemoryTransportPair();
+  const client = new RpcClient(clientSide);
+  try {
+    await backend.ready;
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { msg } = await import("../../store/src/conformance/fixtures");
+    const text = "exact agent content ".repeat(10000);
+    const result = await backend.store.sync.ingest([msg({ accountId: account.id, bodyText: text, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+    backend.connect(serverSide, { clientId: "body-agent", origin: "mcp" });
+    expect((await client.call("threads.get", { threadId: result.touched[0]! })).messages[0]!.bodyText === text).toBe(true);
+    expect(fixture.unexpected).toEqual([]);
+  } finally { client.close(); await backend.stop(); vi.restoreAllMocks(); rmSync(directory, { recursive: true, force: true }); }
 });

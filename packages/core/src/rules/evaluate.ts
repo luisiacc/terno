@@ -17,6 +17,7 @@ export interface RuleMessage {
   recipients: string;
   subject: string;
   bodyText: string | null;
+  testBody?: (op: TextOp, value: string) => boolean;
   /** Omitted when the caller supplies a complete body. */
   bodyComplete?: boolean;
   listId: string | null;
@@ -76,15 +77,24 @@ function copyNarrow(text: string): string {
  *  - diacritics are removed from Latin letters only: Greek tonos or Cyrillic й are kept
  * Tokens are recomposed (NFC) so precomposed and decomposed input compare equal.
  */
-export function tokenize(text: string): string[] {
-  if (!text) return [];
+function foldTokens(text: string): string {
   // ASCII has nothing to fold; most other text folds character by character
-  const folded = !NON_ASCII.test(text)
+  return !NON_ASCII.test(text)
     ? text.toLowerCase()
     : !COMBINES.test(text)
       ? foldEachChar(text).toLowerCase()
       : text.normalize("NFD").replace(LATIN_MARKS, "$1").normalize("NFC").toLowerCase();
-  return folded.match(WORD_WITH_MARKS) ?? [];
+}
+
+export function* iterateBodyTokens(text: string): Generator<string> {
+  const folded = foldTokens(text);
+  const words = new RegExp(WORD_WITH_MARKS.source, "gu");
+  for (let match; (match = words.exec(folded));) yield match[0];
+}
+
+
+export function tokenize(text: string): string[] {
+  return foldTokens(text).match(WORD_WITH_MARKS) ?? [];
 }
 
 function textOp(op: TextOp, haystack: string, needle: string): boolean {
@@ -176,7 +186,7 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
       return c.op === "gt" ? msg.date < cutoff : msg.date > cutoff;
     }
     case "body":
-      return bodyMatches(c.op, msg.bodyText, c.value);
+      return msg.testBody ? msg.testBody(c.op, c.value) : bodyMatches(c.op, msg.bodyText, c.value);
     case "text":
       // what a search word means (the FTS columns): the subject, the sender, the recipients now; the body once it's complete.
       // A text condition is never negated: it only turns true, so deciding before the body is never wrong.
@@ -184,7 +194,7 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
         bodyMatches("contains", msg.subject, c.value) ||
         bodyMatches("contains", `${msg.fromName} ${msg.fromEmail}`, c.value) ||
         bodyMatches("contains", msg.recipients, c.value) ||
-        (msg.bodyComplete !== false && bodyMatches("contains", msg.bodyText, c.value))
+        (msg.bodyComplete !== false && (msg.testBody ? msg.testBody("contains", c.value) : bodyMatches("contains", msg.bodyText, c.value)))
       );
     case "from": {
       const v = ruleValue(c.op, c.value);

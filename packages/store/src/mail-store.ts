@@ -340,6 +340,9 @@ export interface OwnerDecision {
  * touched ids describe what already committed.
  */
 export interface MailStore {
+  /** Ordinary commands wait until exclusive durable upgrades have retired. */
+  readonly ready?: Promise<void>;
+  cancelOpening?(): Promise<void>;
   captureRepairs: import("./capture-repair").CaptureRepairs;
   readonly capabilities: StoreCapabilities;
   readonly isOpen: boolean;
@@ -364,9 +367,10 @@ export interface MailStore {
     scopeIds(p: ScopeParams & { after?: number; limit: number }): Promise<number[]>;
     /** how many threads a view holds, counted up to `limit` */
     scopeCount(p: ScopeParams & { limit: number }): Promise<number>;
-    get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: Reason[] }[]; suggestions: PendingSuggestion[] } }) | null>;
     /** plan 96: the message Unsubscribe acts on (none of yours), its List-Unsubscribe, else its body; null: nothing to act on */
     unsubscribeSource(id: number): Promise<import("@terno/core").UnsubscribeSource | null>;
+    get(id: number, options?: { bodyFormat?: "parts" }): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: Reason[] }[]; suggestions: PendingSuggestion[] } }) | null>;
+    bodyPart(input: { accountId: number; messageId: number; version: string; field: "text" | "html"; ordinal: number }): Promise<string>;
     /** `now`: the clock the waiting count reads its window from (plan 17) */
     counts(now: number): Promise<Counts>;
     /** resolves account:/category: and searches within one unit of work */
@@ -389,7 +393,7 @@ export interface MailStore {
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     /** `forwardEligible` (plan 116): live mail it inserts may be forwarded (forward_eligible), in the same commit */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
     remove(messageIds: readonly number[], check?: () => void): Promise<{ touched: number[] }>;

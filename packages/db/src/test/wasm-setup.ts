@@ -6,11 +6,12 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import init from "@sqlite.org/sqlite-wasm";
-import { useSqliteDriver, wasmSqliteDriver } from "../index";
+import { nodePlatform, useSqliteDriver, wasmSqliteDriver } from "../index";
 
 const sqlite3 = await init();
 useSqliteDriver(
   wasmSqliteDriver(sqlite3, {
+    bodyPreparation: nodePlatform.bodyPreparation,
     images: {
       read: (path) => (existsSync(path) ? new Uint8Array(readFileSync(path)) : null),
       write: (path, bytes) => writeFileSync(path, bytes),

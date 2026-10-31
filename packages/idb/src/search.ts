@@ -77,7 +77,8 @@ export function materializeChanges(c: Ctx, messageIds: readonly number[], thread
   const changes: IndexChange[] = [];
   for (const id of messageIds) {
     const m = messages.get(id);
-    changes.push(m ? { kind: "upsertMessage", doc: messageDoc(m, c.body(id)?.body_text ?? null) } : { kind: "removeMessage", messageId: id });
+    const body = m ? c.body(id) : null;
+    changes.push(m ? { kind: "upsertMessage", doc: messageDoc(m, body?.body_text ?? null, body?.capture_id ? () => c.bodyTokenParts!(body.capture_id!) : undefined) } : { kind: "removeMessage", messageId: id });
   }
   for (const id of threadIds) {
     const t = threads.get(id);
@@ -111,6 +112,7 @@ export interface ScanPlan {
 }
 
 export interface Columns {
+  bodyTest?: (value: string, prefix: boolean) => boolean;
   subject: string[];
   from: string[];
   to: string[];
@@ -134,7 +136,7 @@ function phraseAt(tokens: readonly string[], needle: readonly string[], prefix: 
 }
 
 function termIn(cols: Columns, term: MessageTerm, needle: readonly string[]): boolean {
-  if (term.field === "text") return phraseAt(cols.subject, needle, term.prefix) || phraseAt(cols.from, needle, term.prefix) || phraseAt(cols.to, needle, term.prefix) || phraseAt(cols.body, needle, term.prefix);
+  if (term.field === "text") return phraseAt(cols.subject, needle, term.prefix) || phraseAt(cols.from, needle, term.prefix) || phraseAt(cols.to, needle, term.prefix) || (cols.bodyTest ? cols.bodyTest(term.value, term.prefix) : phraseAt(cols.body, needle, term.prefix));
   return phraseAt(cols[term.field], needle, term.prefix);
 }
 

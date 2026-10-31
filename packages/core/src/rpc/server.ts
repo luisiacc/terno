@@ -72,14 +72,18 @@ export class RpcServer {
   }
 
   private async dispatch(transport: Transport, ctx: CallContext, req: RpcRequest): Promise<void> {
+    let response: import("./envelope").RpcMessage;
     try {
       const result = await this.invoke(req.m as MethodName, req.p, ctx);
-      transport.send({ v: RPC_VERSION, t: "res", id: req.id, ok: true, r: result });
+      response = { v: RPC_VERSION, t: "res", id: req.id, ok: true, r: result };
     } catch (error) {
       const payload = toErrorPayload(error);
       if (!payload.expected) this.options.onError?.(error, req.m, payload);
-      transport.send({ v: RPC_VERSION, t: "res", id: req.id, ok: false, e: payload });
+      response = { v: RPC_VERSION, t: "res", id: req.id, ok: false, e: payload };
     }
+    if (this.connections.get(transport) !== ctx) return;
+    try { transport.send(response); } catch { this.connections.delete(transport); }
+
   }
 
   /** Pushes an event to every connection, or only to the given origins (e.g. keep identity away from MCP). */

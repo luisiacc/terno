@@ -1,3 +1,7 @@
+import { resolvable, parseSearch } from "@terno/core";
+import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
+import { decodeBodyPart } from "@terno/store";
+import { observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, hydrateBody, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
 import { unsubscribeSource } from "./unsubscribe";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -213,15 +217,38 @@ export class SqlMailStore implements MailStore {
   readonly autocomplete: AutocompleteSource;
 
   private readonly yieldTo: () => Promise<void>;
+  private readonly bodyCleanup: Promise<void>;
+  private bodyClosing = false;
+  private readonly bodyCommands = new Set<Promise<unknown>>();
+  private bodyGarbage: Promise<void> | undefined;
+  private queueBodyGarbage(): void {
+    if (this.bodyClosing || this.bodyGarbage) return;
+    const task = Promise.resolve().then(() => cleanupBodies(this.db, this.yieldTo)).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; });
+    this.bodyGarbage = task;
+  }
+
+  private bodyCommand<V>(work: () => Promise<V>): Promise<V> {
+    if (this.bodyClosing) return Promise.reject(new Error("The store is closing"));
+    const command = work(); this.bodyCommands.add(command);
+    void command.finally(() => this.bodyCommands.delete(command)).catch(() => {});
+    return command;
+  }
 
   constructor(
     readonly db: Db,
     options: SqlMailStoreOptions = {},
   ) {
+    if (bodyUpgradePending(db)) {
+      if (db.get("SELECT 1 FROM message_bodies LIMIT 1")) throw new BodyUpgradeRequired();
+      db.tx(() => { db.run("UPDATE settings SET value_json='{}' WHERE key='body_parts_upgrade'"); db.exec(`PRAGMA application_id=${BODY_READY_APPLICATION_ID}`); });
+    }
+    if (db.get<{ application_id: number }>("PRAGMA application_id")?.application_id === BODY_UPGRADE_APPLICATION_ID) db.exec(`PRAGMA application_id=${BODY_READY_APPLICATION_ID}`);
     this.fts = new Fts5SearchEngine(db);
     const platform = options.platform ?? { yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
     this.yieldTo = () => platform.yield();
+    this.bodyCleanup = cleanupBodies(db, this.yieldTo);
     this.log = options.log ?? (() => {});
+    observeBodyRetirement(db, () => this.queueBodyGarbage());
     this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
     if (options.instantSearch) {
       this.instant = new InstantSearch({
@@ -258,9 +285,14 @@ export class SqlMailStore implements MailStore {
   }
 
   async close(): Promise<void> {
+    this.bodyClosing = true;
+    await Promise.allSettled(this.bodyCommands);
     // writes the snapshot of what changed since the last one
     await this.instant?.close();
     await this.checkpointer?.stop();
+    await this.bodyCleanup;
+    await this.bodyGarbage;
+    await cleanupBodies(this.db, this.yieldTo);
     this.db.close();
   }
 
@@ -295,7 +327,13 @@ export class SqlMailStore implements MailStore {
    * exactly at that revision; FTS5 answers otherwise (building, catching up,
    * disabled), with the same results.
    */
-  private searchPage(req: SearchRequest): StoreSearchPage {
+  private async searchPage(req: SearchRequest): Promise<StoreSearchPage> {
+    const bodyTests = req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix }));
+    const matches = await prepareBodyMatches(this.db, bodyTests, this.yieldTo);
+    return withBodyMatches(this.db, matches, () => this.searchPreparedPage(req));
+  }
+
+  private searchPreparedPage(req: SearchRequest): StoreSearchPage {
     const revision = this.revision();
     const ram = this.instant?.at(revision);
     let page: { items: ThreadSummary[]; nextCursor: SearchCursor | null; strategy: string };
@@ -317,12 +355,31 @@ export class SqlMailStore implements MailStore {
     summaries: async (ids) => getSummaries(this.db, ids),
     scopeIds: async (p) => scopeThreadIds(this.db, p),
     scopeCount: async (p) => countScopeThreads(this.db, p),
-    get: async (id) => {
-      const thread = getThread(this.db, id);
+    get: async (id, options) => {
+      const found = getThread(this.db, id);
+      const thread = found ? { ...found, messages: found.messages.map((message) => ({ ...message })) } : null;
       if (!thread) return null;
+      for (const message of thread.messages) {
+        if (options?.bodyFormat === "parts") {
+          const reference = bodyReadReference(this.db, message.id);
+          if (reference) { message.bodyText = null; message.bodyHtml = null; message.bodyReference = reference; continue; }
+        }
+        const body = await hydrateBody(this.db, message.id, this.yieldTo);
+        if (body) Object.assign(message, body);
+      }
       return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
     },
     unsubscribeSource: async (id) => unsubscribeSource(this.db, id),
+    bodyPart: async (input) => {
+      const current = () => !!this.db.get("SELECT 1 FROM messages m JOIN body_heads b ON b.message_id=m.id WHERE m.id=? AND m.account_id=? AND b.capture_id=?", input.messageId, input.accountId, input.version);
+      if (!current()) throw new RpcError("STALE", L("errors.originalGone"));
+      const source = sqlBodyParts(this.db, input.version, input.field === "text" ? 0 : 1, this.yieldTo);
+      try {
+        const part = await source.read(input.ordinal - 1);
+        if (!part || !current()) throw new RpcError("STALE", L("errors.originalGone"));
+        return decodeBodyPart(part.value);
+      } finally { source.close?.(); }
+    },
     counts: async (now) => getCounts(this.db, now),
     search: async (req) => this.searchPage(req),
     searchText: async (p) => {
@@ -440,13 +497,18 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => this.bodyCommand(async () => {
+      const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
+      await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
+      try {
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
-        staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
+        staged.push(await stageBody(this.db, m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) }, this.yieldTo, check));
       }
-      return this.db.tx(() => {
+      const tests = listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
+      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, staged.flatMap((m) => m.bodyCapture ? [m.bodyCapture.id] : []), false);
+      return withBodyMatches(this.db, matches, () => this.db.tx(() => {
         check?.();
         const flagBefore = flagEpochs(sqlFlags(this.db));
         for (const m of staged) completeCapture(sqlCaptureStorage(this.db), m.accountId, m.repair);
@@ -463,19 +525,26 @@ export class SqlMailStore implements MailStore {
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
-      });
-    },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check, expected }) => {
+      })); } finally {
+        for (const m of staged) if (m.bodyCapture) await finishBodyStage(this.db, m.bodyCapture.id, this.yieldTo);
+      }
+    }),
+    setBody: async (messageId, text, html, { now, classifier, attachments, bodyParts, preparedBodyTokens, captureUnavailable, repair, check, expected }) => this.bodyCommand(async () => {
+      const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
+      await this.bodyCleanup;
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
-      return this.db.tx(() => {
+      const body = !captureUnavailable && accountId !== undefined ? await stageBody(this.db, { accountId, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, this.yieldTo, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
+      const tests = listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
+      try {
+      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, body.bodyCapture ? [body.bodyCapture.id] : [], false); return withBodyMatches(this.db, matches, () => this.db.tx(() => {
         check?.();
         const current = expected ? this.db.get<{ account_id: number; thread_id: number; provider_msg_id: string; body_state: string }>("SELECT account_id,thread_id,provider_msg_id,body_state FROM messages WHERE id=?", messageId) : undefined;
         if (expected && (!current || current.body_state === "full" || current.account_id !== expected.accountId || current.thread_id !== expected.threadId || current.provider_msg_id !== expected.providerMsgId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
         if (accountId !== undefined) completeCapture(sqlCaptureStorage(this.db), accountId, repair);
         const flagBefore = flagEpochs(sqlFlags(this.db));
         if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
-        if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
+        if (!captureUnavailable) setMessageBody(this.db, messageId, body.bodyText, body.bodyHtml, "full", body.bodyCapture);
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
         const owner = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", messageId);
         if (captureUnavailable) this.db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", messageId);
@@ -488,8 +557,8 @@ export class SqlMailStore implements MailStore {
         for (const t of c.touched) touched.add(t);
         if (owner) touched.add(owner.thread_id);
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
-      });
-    },
+      })); } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
+    }),
     updateFlags: async (accountId, updates, observation, check) =>
       this.db.tx(() => {
         check?.();
@@ -762,14 +831,18 @@ export class SqlMailStore implements MailStore {
 
   readonly compose: MailStore["compose"] = {
     // Optimistic local copy + durable send op, atomically: a crash can't lose or duplicate the send.
-    queueSend: async (p) => {
+    queueSend: async (p) => this.bodyCommand(async () => {
       p = structuredClone(p);
       const preparedRecipients = (await this.accounts.get(p.accountId))?.kind === "imap" ? await recipientReceiptParts(p, this.yieldTo) : null;
       const ftsTokens = preparedRecipients ? await prepareRecipientFts(this.db, p, this.yieldTo) : undefined;
       const correspondentChunks = preparedRecipients ? await prepareRecipientCorrespondents(p, this.yieldTo) : undefined;
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.yieldTo)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
       if (preparedRecipients) await this.yieldTo();
+      const check = () => { if (this.bodyClosing) throw new Error("The store is closing"); };
+      const body = await stageBody(this.db, { accountId: p.accountId, bodyText: p.bodyText, bodyHtml: p.bodyHtml || null, snippet: "" }, this.yieldTo, check);
+      try {
       return this.db.tx(() => {
+        check();
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
@@ -822,9 +895,10 @@ export class SqlMailStore implements MailStore {
               subject: p.subject,
               date: p.now,
               snippet: "",
-              bodyText: p.bodyText,
+              bodyText: body.bodyText,
+              bodyCapture: body.bodyCapture,
               // the sent copy reads as written (the reader sanitizes it like any mail)
-              bodyHtml: p.bodyHtml || null,
+              bodyHtml: body.bodyHtml,
               bodyState: "full",
               listId: null,
               isRead: true,
@@ -857,7 +931,8 @@ export class SqlMailStore implements MailStore {
         const threadId = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
         return { opId, threadId, messageId: localId, deltas: ingest.deltas };
       });
-    },
+      } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
+    }),
   };
 
   // ───────────────────────────── forwards (plan 116) ─────────────────────────────
@@ -894,7 +969,8 @@ export class SqlMailStore implements MailStore {
     save: async (f, now) => saveFilter(this.db, f, now),
     delete: async (id, expect) => deleteFilter(this.db, id, expect),
     preview: async (rule, now, limit) => {
-      const matches = findRuleMatches(this.db, rule, now);
+      const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
+      const matches = withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now));
       const top = this.db
         .all<{ id: number }>(
           "SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) ORDER BY last_date DESC, id DESC LIMIT ?",
@@ -908,8 +984,14 @@ export class SqlMailStore implements MailStore {
       const r = this.db.get<{ lo: number | null; hi: number | null }>("SELECT min(id) AS lo, max(id) AS hi FROM messages")!;
       return r.lo === null || r.hi === null ? null : { lo: r.lo, hi: r.hi };
     },
-    matchWindow: async (rule, now, window) => findRuleMatches(this.db, rule, now, undefined, window).messageIds,
-    matchMessages: async (rule, now, messageIds) => findRuleMatches(this.db, rule, now, messageIds).messageIds,
+    matchWindow: async (rule, now, window) => {
+      const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
+      return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, undefined, window).messageIds);
+    },
+    matchMessages: async (rule, now, messageIds) => {
+      const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
+      return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, messageIds).messageIds);
+    },
     applyChunk: async (id, ruleJson, messageIds, now) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -1030,10 +1112,17 @@ export class SqlMailStore implements MailStore {
     compactPending: async () => getSetting<{ state?: string }>(this.db, COMPACT_KEY, {}).state === "pending",
   };
 
+  private async preparedScope<V>(scope: import("@terno/core").CategorizeScope, work: () => V): Promise<V> {
+    const resolved = resolvable(scope);
+    const tests = resolved.kind === "query" ? parseSearch(resolved.query).terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })) : [];
+    const matches = await prepareBodyMatches(this.db, tests, this.yieldTo);
+    return withBodyMatches(this.db, matches, work);
+  }
+
   readonly categorize: MailStore["categorize"] = {
     quickActions: async (categoryId, threadIds, model) => quickActions(this.db, categoryId, threadIds, model),
-    countScope: async (categoryId, scope, now) => countScope(this.db, categoryId, scope, now),
-    resolveScope: async (categoryId, scope, now, limit) => resolveScope(this.db, categoryId, scope, now, limit),
+    countScope: async (categoryId, scope, now) => this.preparedScope(scope, () => countScope(this.db, categoryId, scope, now)),
+    resolveScope: async (categoryId, scope, now, limit) => this.preparedScope(scope, () => resolveScope(this.db, categoryId, scope, now, limit)),
     predict: async (threadId, model, mode, now) => predictThread(this.db, threadId, model, mode, now),
     pendingSuggestions: async (o) => pendingSuggestions(this.db, o),
     reject: async (threadId, categoryId, now) => rejectSuggestion(this.db, threadId, categoryId, now),
@@ -1249,7 +1338,17 @@ export class SqlMailStore implements MailStore {
   };
 
   readonly debug: MailStore["debug"] = {
-    snapshot: async () => storeSnapshot(this.db),
+    snapshot: async () => {
+      const snapshot = storeSnapshot(this.db);
+      for (const message of snapshot.messages) {
+        const body = await hydrateBody(this.db, message.id, this.yieldTo);
+        if (!body) continue;
+        message.bodyText = body.bodyText;
+        const doc = snapshot.search.messages.find((doc) => doc.messageId === message.id);
+        if (doc) { doc.body = body.bodyText ?? ""; delete doc.bodyTokenParts; }
+      }
+      return snapshot;
+    },
     verify: async () => {
       // rank=1 compares the index against the external content, not only its own structure
       this.db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");
@@ -1277,6 +1376,7 @@ function withKey(cursor: Cursor & Partial<Pick<SearchCursor, "revision" | "query
 
 /** Tests and SQL-only tooling: the database under a SqlMailStore. */
 export function sqlDb(store: MailStore): Db {
+  store = openingSqlTargets.get(store)?.() ?? store;
   if (!(store instanceof SqlMailStore)) throw new Error(`not a SQL store: ${store.capabilities.engine}`);
   return store.db;
 }
@@ -1356,4 +1456,62 @@ function storeSnapshot(db: Db): StoreSnapshot {
       .map((o) => ({ id: o.id, accountId: o.account_id, kind: o.kind, state: o.state, attempts: o.attempts, messageIds: (JSON.parse(o.target_json) as { messageIds?: number[] }).messageIds ?? [] })),
     search: { messages: messageDocs(db), threads: threadDocs(db) },
   };
+}
+
+const openingSqlTargets = new WeakMap<MailStore, () => SqlMailStore | undefined>();
+
+/** Admission adapter only: one asynchronous opener, no ordinary command or second connection until it settles. */
+export function openingSqlStore(open: (signal: AbortSignal) => Promise<SqlMailStore>, capabilities: StoreCapabilities, autocomplete: Pick<AutocompleteSource, "identity" | "snapshotBase">): MailStore {
+  const abort = new AbortController();
+  let target: SqlMailStore | undefined, opening = true, closed = false, closing: Promise<void> | undefined;
+  const opened = Promise.resolve().then(() => open(abort.signal)).then(async (store) => {
+    if (closed) { await store.close(); throw abort.signal.reason ?? new Error("Mailbox opening cancelled"); }
+    target = store; opening = false; return store;
+  });
+  const ready = opened.then(() => {});
+  void ready.catch(() => { opening = false; });
+  const namespace = (owner: (store: SqlMailStore) => object, isAutocomplete = false): object => new Proxy({}, { get(_object, member) {
+    if (member === "then") return undefined;
+    if (isAutocomplete && (member === "identity" || member === "snapshotBase")) return target ? Reflect.get(owner(target), member) : autocomplete[member];
+    return async (...args: unknown[]) => {
+      const store = await opened;
+      if (closed) throw new Error("The store is closed");
+      const object = owner(store), method = Reflect.get(object, member);
+      if (typeof method !== "function") throw new Error("Unknown store command");
+      return Reflect.apply(method, object, args);
+    };
+  } });
+  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs"]);
+  const namespaces = new Map<PropertyKey, object>();
+  const facade = new Proxy({} as MailStore, { get(object, member) {
+    if (Object.hasOwn(object, member)) return Reflect.get(object, member);
+    if (member === "ready") return ready;
+    if (member === "then") return undefined;
+    if (member === "isOpen") return !closed && (opening || (target?.isOpen ?? false));
+    if (member === "capabilities") return target?.capabilities ?? capabilities;
+    if (member === "instant") return target?.instant ?? null;
+    if (member === "cancelOpening") return async () => { if (opening) abort.abort(new DOMException("Mailbox opening cancelled", "AbortError")); await opened.catch(() => {}); };
+    if (member === "close") return () => closing ??= (async () => { closed = true; if (opening) abort.abort(new DOMException("Mailbox opening cancelled", "AbortError")); const store = await opened.catch(() => undefined); if (store) await store.close(); })();
+    if (member === "providerStore") return (id: number) => target ? target.providerStore(id) : namespace((store) => store.providerStore(id));
+    if (typeof member === "string" && names.has(member)) {
+      if (target) return Reflect.get(target, member);
+      let object = namespaces.get(member);
+      if (!object) namespaces.set(member, object = namespace((store) => Reflect.get(store, member), member === "autocomplete"));
+      return object;
+    }
+    const value = target && Reflect.get(target, member);
+    return typeof value === "function" ? value.bind(target) : value;
+  }, getOwnPropertyDescriptor(object, member) {
+    const own = Reflect.getOwnPropertyDescriptor(object, member);
+    if (own || !target) return own;
+    let owner: object | null = target;
+    while (owner) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(owner, member);
+      if (descriptor) return descriptor.get ? { configurable: true, enumerable: descriptor.enumerable, get: descriptor.get.bind(target) } : { ...descriptor, configurable: true };
+      owner = Reflect.getPrototypeOf(owner) as object | null;
+    }
+    return undefined;
+  } });
+  openingSqlTargets.set(facade, () => target);
+  return facade;
 }

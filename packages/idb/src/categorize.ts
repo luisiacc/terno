@@ -102,7 +102,7 @@ export function rootsWithBodies(c: Ctx, refs: readonly RootRef[]): Map<number, R
         fromName: m.from_name,
         listId: m.list_id,
         subject: m.subject,
-        bodyText: c.body(m.id)?.body_text ?? null,
+        bodyText: c.body(m.id)?.body_text ?? c.body(m.id)?.body_preview ?? null,
         replied,
         attachmentNames: m.has_attachments ? attachments.by("fk_message_id", m.id).sort((x, y) => x.id - y.id).map((a) => a.filename as string) : [],
       },

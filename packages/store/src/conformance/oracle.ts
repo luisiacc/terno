@@ -23,7 +23,7 @@ const columnTokens = new WeakMap<SearchMessageDoc, Record<"subject" | "from" | "
 
 function columnsOf(m: SearchMessageDoc): Record<"subject" | "from" | "to" | "body", string[]> {
   let c = columnTokens.get(m);
-  if (!c) columnTokens.set(m, (c = { subject: tokenize(m.subject), from: tokenize(m.fromText), to: tokenize(m.recipients), body: tokenize(m.body) }));
+  if (!c) columnTokens.set(m, (c = { subject: tokenize(m.subject), from: tokenize(m.fromText), to: tokenize(m.recipients), body: tokenize(materializedBody(m)) }));
   return c;
 }
 
@@ -132,4 +132,10 @@ export function oracleSearch(corpus: SearchCorpus, query: string, now: number, s
     )
     .sort(byRecency)
     .map((t) => t.threadId);
+}
+
+/** Test oracle inputs are exact materialized snapshots, never lazy production projections. */
+export function materializedBody(message: SearchMessageDoc): string {
+  if (message.body === null) throw new Error("Oracle requires an exact materialized body");
+  return message.body;
 }

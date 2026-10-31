@@ -102,3 +102,26 @@ test("preserves complete large text through actual browser UTF16 transfer and re
   expect(result).toEqual({ exact: true, detached: 0, complete: true, leakedParts: false });
   expect(unexpected).toEqual([]);
 });
+
+for (const kind of ["idb", "opfs"] as const) test(`qualifies real ${kind} asynchronous legacy ownership and exact parts`, async ({ page, context }) => {
+  const unexpected: string[] = [];
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const result = await page.evaluate(async (kind) => { const module = "/e2e-web/mime-retention/legacy.ts"; return (await import(/* @vite-ignore */ module)).qualifyLegacy(kind); }, kind) as { exact: boolean; starred: boolean; search: number; filter: number; largest: number; ticks: number };
+  writeFileSync(`/tmp/terno-w11-s48/browser-legacy-${kind}.json`, JSON.stringify(result, null, 2));
+  expect(result).toMatchObject({ exact: true, starred: true, search: 1, filter: 1 });
+  expect(result.largest).toBeLessThanOrEqual(32768);
+  expect(result.ticks).toBeGreaterThan(0);
+  expect(unexpected).toEqual([]);
+});
+
+for (const kind of ["idb", "opfs"] as const) test(`cancels active ${kind} legacy preparation and resumes after native retirement`, async ({ page, context }) => {
+  const unexpected: string[] = [], origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const result = await page.evaluate(async (kind) => { const module = "/e2e-web/mime-retention/legacy.ts"; return (await import(/* @vite-ignore */ module)).qualifyLegacy(kind, true); }, kind) as { largest: number };
+  writeFileSync(`/tmp/terno-w11-s48/browser-legacy-cancel-${kind}.json`, JSON.stringify(result, null, 2));
+  expect(result).toMatchObject({ exact: true, assetExact: true, cancelledAtPrepared: true, starred: true, search: 1, filter: 1 });
+  expect(result.largest).toBeLessThanOrEqual(32768); expect(unexpected).toEqual([]);
+});

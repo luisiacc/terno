@@ -40,3 +40,9 @@ it("charges the complete shared backing once and each distinct retained view", (
   expect(retainedIncomingBytes(new ArrayBuffer(32))).toBe(32);
   expect(retainedIncomingBytes(new Uint8Array(new ArrayBuffer(64), 32, 0))).toBe(128);
 });
+
+it("charges UTF16 token views by their complete shared backing without enumerating units", () => {
+  const backing = new ArrayBuffer(65536);
+  const first = new Uint16Array(backing, 0, 1), second = new DataView(backing, 2, 2);
+  expect(retainedIncomingBytes([first, second])).toBe(65744);
+});

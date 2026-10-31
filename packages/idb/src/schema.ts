@@ -1,3 +1,4 @@
+import { installBodyOwnership } from "./body-ownership";
 import { installCaptureAccounting } from "./capture-repair";
 import { categoryReferenceCeiling } from "./category-identities";
 import { IDB_VERSION, OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
@@ -37,6 +38,9 @@ const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
  * and every command and read that needs it waits for it.
  */
 export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
+  { name: "body_heads", key: ["message_id"], indexes: { capture: ["capture_id"], ...fk("message_id") } },
+  { name: "body_captures", key: ["id"], indexes: fk("account_id") },
+  { name: "body_parts", key: ["capture_id", "field", "ordinal"], lazy: true },
   { name: "capture_repairs", key: ["account_id", "key"], indexes: { ...fk("account_id"), ...fk("message_id"), discovery: ["account_id", "key"], state: ["account_id", "state", "key"] } },
   { name: "flag_clocks", early: true, key: ["account_id"], indexes: fk("account_id") },
   { name: "message_flag_intents", key: ["message_id", "field"], indexes: { ...fk("account_id"), ...fk("message_id"), snapshot: ["snapshot_account_id"] } },
@@ -109,6 +113,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
 const c = (table: string, column: string, parent: string): ForeignKey => ({ table, column, parent, onDelete: "cascade" });
 
 export const FOREIGN_KEYS: readonly ForeignKey[] = [
+  c("body_heads", "message_id", "messages"),
   c("capture_repairs", "account_id", "accounts"),
   c("capture_repairs", "message_id", "messages"),
   c("flag_clocks", "account_id", "accounts"),
@@ -172,11 +177,12 @@ const PERSISTED = TABLES.filter((t) => !t.memoryOnly);
 export function createMemDb(): MemDb {
   const db = new MemDb(TABLES, FOREIGN_KEYS);
   installAssetAccounting(db);
+  installBodyOwnership(db);
   installCaptureAccounting(db);
   return db;
 }
 
-function request<T>(r: IDBRequest<T>): Promise<T> {
+export function request<T>(r: IDBRequest<T>): Promise<T> {
   const pending = new Promise<T>((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -194,7 +200,7 @@ const WRITE_MARKER = Object.freeze({ version: 1 });
 type TrackRequest = <T>(request: IDBRequest<T>, success?: (result: T) => void) => void;
 type TrackCursor = (request: IDBRequest<IDBCursorWithValue | null>, visit: (cursor: IDBCursorWithValue) => void) => void;
 
-async function writeTransaction(tx: IDBTransaction, enqueue: (track: TrackRequest, scan: TrackCursor) => void, inspected?: () => void): Promise<void> {
+export async function writeTransaction(tx: IDBTransaction, enqueue: (track: TrackRequest, scan: TrackCursor) => void, inspected?: () => void): Promise<void> {
   let firstError: unknown, failed = false;
   let enqueued = 0, succeeded = 0, enqueueDone = false, cleared = false, clearQueued = false;
   const record = (error: unknown) => {
@@ -284,6 +290,11 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
+      if (event.oldVersion < 23) {
+        if (event.oldVersion !== 0) for (const name of ["body_captures", "body_parts", "body_heads"]) db.createObjectStore(name);
+        tx.objectStore("body_heads").createIndex("capture", "capture_id", { unique: true });
+        track(tx.objectStore("meta").put({ pending: event.oldVersion !== 0, after: 0 }, "bodyPartsUpgrade"));
+      }
       if (event.oldVersion < 22) {
         const repairs = event.oldVersion === 0 ? tx.objectStore("capture_repairs") : db.createObjectStore("capture_repairs");
         repairs.createIndex("discovery", ["account_id", "key"]);

@@ -7,7 +7,7 @@ export function retainedIncomingBytes(value: unknown): number {
     if (typeof value !== "object") return 8;
     if (seen.has(value)) return 0;
     seen.add(value);
-    if (value instanceof Uint8Array) return 64 + charge(value.buffer);
+    if (ArrayBuffer.isView(value)) return 64 + charge(value.buffer);
     if (value instanceof ArrayBuffer) return value.byteLength;
     const values = Object.values(value);
     return 64 + values.length * 8 + values.reduce<number>((total, child) => total + charge(child), 0);

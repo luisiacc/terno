@@ -1,3 +1,5 @@
+import { SEARCH_SCHEMA_VERSION, openingSqlStore } from "@terno/db";
+import { needsLegacyBodyUpgrade, upgradeNodeLegacyBodies } from "./legacy-body-worker";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { nodeUnsubscribeTransport } from "./unsubscribe-node";
 import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
@@ -64,7 +66,14 @@ export class Backend extends BackendCore {
     let store = options.store;
     if (!store) {
       if (!options.dbPath) throw new Error("Backend needs a store or a dbPath");
-      store = nodeStore(openDatabase(options.dbPath, { uuid: () => platform.uuid() }), options);
+      const path = options.dbPath;
+      store = openingSqlStore(async (signal) => {
+        if (await needsLegacyBodyUpgrade(path)) await upgradeNodeLegacyBodies(path, signal);
+        signal.throwIfAborted();
+        const db = openDatabase(path, { uuid: () => platform.uuid() });
+        try { return nodeStore(db, options); }
+        catch (error) { db.close(); throw error; }
+      }, { engine: "sqlite-node-sqlite", search: options.instantSearch === false ? "fts5" : "instant+fts5", bulkRuleScan: "indexed", imapLocations: true, externalReaders: true, durability: "fsync" }, { identity: `sqlite-${SEARCH_SCHEMA_VERSION}`, snapshotBase: path === ":memory:" ? null : path });
     }
     // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
     const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;

@@ -1191,6 +1191,26 @@ CREATE TABLE forward_recipients (
 ) WITHOUT ROWID;
 CREATE INDEX forward_recipients_forward ON forward_recipients(forward_id);
 ` },
+
+  { version: 45, name: "exact incoming body parts", sql: `
+ALTER TABLE message_bodies ADD COLUMN capture_id TEXT;
+ALTER TABLE message_bodies ADD COLUMN body_preview TEXT;
+ALTER TABLE message_bodies ADD COLUMN body_revision INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE body_heads(message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, capture_id TEXT NOT NULL UNIQUE REFERENCES body_captures(id));
+CREATE TABLE body_captures(id TEXT PRIMARY KEY, account_id INTEGER NOT NULL, text_parts INTEGER, html_parts INTEGER, token_parts INTEGER NOT NULL, ready INTEGER NOT NULL DEFAULT 0, owned INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
+CREATE INDEX body_capture_account ON body_captures(account_id,id);
+CREATE INDEX body_capture_garbage ON body_captures(owned,id);
+CREATE TRIGGER body_head_added AFTER INSERT ON body_heads BEGIN UPDATE body_captures SET owned=1 WHERE id=new.capture_id; END;
+CREATE TRIGGER body_head_changed AFTER UPDATE OF capture_id ON body_heads WHEN old.capture_id!=new.capture_id BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; UPDATE body_captures SET owned=1 WHERE id=new.capture_id; SELECT terno_body_retired(old.capture_id); END;
+CREATE TRIGGER body_head_removed AFTER DELETE ON body_heads BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; SELECT terno_body_retired(old.capture_id); END;
+CREATE TABLE body_parts(capture_id TEXT NOT NULL, field INTEGER NOT NULL CHECK(field BETWEEN 0 AND 2), ordinal INTEGER NOT NULL, value BLOB NOT NULL CHECK(length(value)<=65536), PRIMARY KEY(capture_id,field,ordinal)) WITHOUT ROWID;
+CREATE TRIGGER body_revision_changed AFTER UPDATE OF body_text,body_html,capture_id ON message_bodies BEGIN
+ UPDATE message_bodies SET body_revision=old.body_revision+1 WHERE message_id=new.message_id;
+END;
+INSERT INTO settings(key,value_json) VALUES('body_parts_upgrade',CASE WHEN EXISTS(SELECT 1 FROM message_bodies LIMIT 1) THEN '{"pending":true,"after":0}' ELSE '{"pending":false,"after":0}' END);
+PRAGMA application_id=1413631824;
+` },
+
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

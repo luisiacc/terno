@@ -397,6 +397,7 @@ export class BackendCore {
   }
 
   private async init(): Promise<void> {
+    await this.store.ready;
     this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() });
     // A hold (plan 62: a clock check, or evidence it couldn't resolve) is only lifted by Check clock, and no
     // control for it ships: each start lifts them, re-waiting each hold's full retained pause from now
@@ -696,6 +697,8 @@ export class BackendCore {
     for (const flow of this.signIns.values()) flow.abort();
     this.signIns.clear();
     this.abort.abort();
+    const openingRetirement = this.store.cancelOpening?.();
+    void this.ready.catch(() => {});
     this.aiAssist.stop();
     this.incoming.close();
     const retirement = (async () => {
@@ -730,6 +733,7 @@ export class BackendCore {
     await Promise.allSettled([...this.bodyJobs.values()].map((job) => job.promise));
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
+    await openingRetirement;
     await this.ready.catch(() => {});
     // its snapshots are written before the store closes under them
     await this.autocomplete.close().catch(() => {});
@@ -754,6 +758,7 @@ export class BackendCore {
     "threads.list",
     "threads.search",
     "threads.get",
+    "threads.bodyPart",
     "threads.act",
     "categories.addThreads",
     "categories.removeThreads",
@@ -1650,7 +1655,7 @@ export class BackendCore {
           this.assertCurrent(life);
           const classifier = await this.classifier();
           checkCurrent();
-          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkCurrent }));
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkCurrent }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);

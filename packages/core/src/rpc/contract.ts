@@ -655,7 +655,8 @@ export const contract = {
       limit: z.number().int().min(1).max(500).default(100),
     }),
   ),
-  "threads.get": m<ThreadDetail>()(z.object({ threadId: id })),
+  "threads.get": m<ThreadDetail>()(z.object({ threadId: id, bodyFormat: z.literal("parts").optional() })),
+  "threads.bodyPart": m<string>()(z.object({ accountId: id, messageId: id, version: z.string().min(1).max(100), field: z.enum(["text", "html"]), ordinal: z.number().int().min(0) })),
   "reader.hydrate": m<{ changed: boolean; unavailable?: true }>()(z.object({ threadId: id, messageId: id })),
   /** `undoId` (null when nothing changed) puts back exactly the messages it changed (threads.undo) */
   "threads.act": m<{ affected: number; undoId: number | null }>()(

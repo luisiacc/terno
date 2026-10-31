@@ -1,5 +1,6 @@
-import { addressesOf, RevisionError, SENT_SIZE_MAX, SENT_TEXT_MAX, type AutocompleteSource, type ContactBatch, type ContactBuild, type ContactMessage, type SentText } from "@terno/store";
+import { bodyPrefix, addressesOf, RevisionError, SENT_SIZE_MAX, SENT_TEXT_MAX, type AutocompleteSource, type ContactBatch, type ContactBuild, type ContactMessage, type SentText } from "@terno/store";
 import { searchChangeIds, searchHead } from "./outbox";
+import { sqlBodyParts } from "./body-parts";
 import type { Db } from "./sqlite";
 
 /**
@@ -10,9 +11,9 @@ import type { Db } from "./sqlite";
  * its own.
  */
 const CONTACT = `SELECT m.id, m.account_id, m.date, m.is_sent, m.is_spam, m.is_draft, m.from_name, m.from_email, m.to_json, m.cc_json, m.bcc_json, m.body_state FROM messages m`;
-const SENT = `SELECT m.id, m.account_id, m.date, m.from_name, m.to_json, substr(b.body_text, 1, ${SENT_TEXT_MAX}) AS text
-  FROM messages m JOIN message_bodies b ON b.message_id = m.id
-  WHERE m.is_sent = 1 AND m.is_spam = 0 AND m.is_draft = 0 AND m.size <= ${SENT_SIZE_MAX} AND b.body_text IS NOT NULL`;
+const SENT = `SELECT m.id, m.account_id, m.date, m.from_name, m.to_json, substr(b.body_text, 1, ${SENT_TEXT_MAX}) AS text, h.capture_id
+  FROM messages m JOIN message_bodies b ON b.message_id = m.id LEFT JOIN body_heads h ON h.message_id=m.id LEFT JOIN body_captures c ON c.id=h.capture_id
+  WHERE m.is_sent = 1 AND m.is_spam = 0 AND m.is_draft = 0 AND m.size <= ${SENT_SIZE_MAX} AND (b.body_text IS NOT NULL OR c.text_parts IS NOT NULL)`;
 
 interface ContactRow {
   id: number;
@@ -35,7 +36,8 @@ interface SentRow {
   date: number;
   from_name: string;
   to_json: string;
-  text: string;
+  text: string | null;
+  capture_id: string | null;
 }
 
 const toContact = (r: ContactRow): ContactMessage => ({
@@ -52,7 +54,7 @@ const toContact = (r: ContactRow): ContactMessage => ({
   hasBody: r.body_state !== "none",
 });
 
-const toSent = (r: SentRow): SentText => ({ id: r.id, accountId: r.account_id, date: r.date, fromName: r.from_name, to: addressesOf(r.to_json), text: r.text });
+const toSent = (r: SentRow): SentText => ({ id: r.id, accountId: r.account_id, date: r.date, fromName: r.from_name, to: addressesOf(r.to_json), text: r.text ?? "" });
 
 export function contactMessages(db: Db, ids: readonly number[]): ContactMessage[] {
   return db.all<ContactRow>(`${CONTACT} WHERE m.id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids)).map(toContact);
@@ -74,13 +76,23 @@ export function spamSenders(db: Db, threadIds: readonly number[]): string[] {
     .map((r) => r.e);
 }
 
-export function sentTexts(db: Db, ids: readonly number[]): SentText[] {
-  if (!ids.length) return [];
-  return db.all<SentRow>(`${SENT} AND m.id IN (SELECT value FROM json_each(?)) ORDER BY m.id`, JSON.stringify(ids)).map(toSent);
+async function projectSent(db: Db, rows: SentRow[], yieldTo: () => Promise<void>): Promise<SentText[]> {
+  const out: SentText[] = [];
+  for (const row of rows) {
+    if (row.capture_id) row.text = await bodyPrefix(sqlBodyParts(db, row.capture_id, 0, yieldTo), SENT_TEXT_MAX, true);
+    out.push(toSent(row));
+  }
+  return out;
 }
 
-export function sentAfter(db: Db, afterId: number, limit: number): { texts: SentText[]; next: number | null } {
-  const texts = db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit).map(toSent);
+const bodyYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+export async function sentTexts(db: Db, ids: readonly number[], yieldTo = bodyYield): Promise<SentText[]> {
+  if (!ids.length) return [];
+  return projectSent(db, db.all<SentRow>(`${SENT} AND m.id IN (SELECT value FROM json_each(?)) ORDER BY m.id`, JSON.stringify(ids)), yieldTo);
+}
+
+export async function sentAfter(db: Db, afterId: number, limit: number, yieldTo = bodyYield): Promise<{ texts: SentText[]; next: number | null }> {
+  const texts = await projectSent(db, db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit), yieldTo);
   return { texts, next: texts.length ? texts[texts.length - 1]!.id : null };
 }
 
@@ -135,7 +147,7 @@ export function sqlAutocompleteSource(db: Db, yieldTo: () => Promise<void>, iden
         },
       };
     },
-    sentAfter: async (afterId, limit) => sentAfter(db, afterId, limit),
-    sentTexts: async (ids) => sentTexts(db, ids),
+    sentAfter: async (afterId, limit) => sentAfter(db, afterId, limit, yieldTo),
+    sentTexts: async (ids) => sentTexts(db, ids, yieldTo),
   };
 }

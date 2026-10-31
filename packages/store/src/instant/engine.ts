@@ -88,6 +88,11 @@ export interface InstantEngineOptions extends SliceOptions {
 }
 
 /** Building further would exceed the peak memory cap: nothing past it was allocated. */
+/** A cache cannot intern an indivisible term within its preparation unit; the exact store still answers. */
+export class IndexPreparationError extends Error {
+  constructor() { super("A body token requires the exact store search"); this.name = "IndexPreparationError"; }
+}
+
 export class IndexMemoryError extends Error {
   constructor(message: string) {
     super(message);
@@ -593,7 +598,32 @@ export class InstantSearchEngine implements CachedSearchEngine {
 
   /** The doc's tokens per field (subject, from, to, body), large fields in slices. */
   private async fields(doc: SearchMessageDoc, clock: SliceClock): Promise<string[][]> {
-    return [await tokenizeSliced(doc.subject, clock), await tokenizeSliced(doc.fromText, clock), await tokenizeSliced(doc.recipients, clock), await tokenizeSliced(doc.body, clock)];
+    const headers = [await tokenizeSliced(doc.subject, clock), await tokenizeSliced(doc.fromText, clock), await tokenizeSliced(doc.recipients, clock)];
+    if (!doc.bodyTokenParts) {
+      if (doc.body === null) throw new IndexPreparationError();
+      return [...headers, await tokenizeSliced(doc.body, clock)];
+    }
+    const tokens: string[] = [];
+    let carry = "", first = true, characters = 0;
+    for await (const part of doc.bodyTokenParts()) {
+      this.reserve((characters + part.length) * 2 + (tokens.length + part.length + 1) * 48, "body token preparation");
+      let start = 0;
+      for (let i = 0; i <= part.length; i++) {
+        if (i !== part.length && part.charCodeAt(i) !== 0) continue;
+        if (carry.length + i - start > 32768) throw new IndexPreparationError();
+        carry += part.slice(start, i); start = i + 1;
+        if (i === part.length) break;
+        if (first) { if (carry) throw new IndexPreparationError(); first = false; }
+        else {
+          characters += carry.length;
+          tokens.push(carry);
+        }
+        carry = "";
+      }
+      await clock.tick();
+    }
+    if (first || carry) throw new IndexPreparationError();
+    return [...headers, tokens];
   }
 
   private intern(tok: string): number {

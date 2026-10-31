@@ -623,7 +623,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       await body.promote();
       preparation?.throwIfAborted();
       if (!ctx.incomingProcessor) throw new IncomingProcessingError("worker-unavailable");
-      const result = await ctx.incomingProcessor.run({ kind: "gmail", expectedId, chunks: body.chunks }, deadline.signal);
+      const result = await ctx.incomingProcessor.run({ kind: "gmail", expectedId, bodyFormat: "parts", chunks: body.chunks }, deadline.signal);
       if (result.kind !== "gmail") throw new IncomingProcessingError("worker-fault");
       return { metadata: result.metadata, parsed: result.message, promoted: true, release: body.release };
     } catch (error) { body?.release(); throw error; }
@@ -858,6 +858,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             subject: parsed.subject,
             date: Number(m.internalDate ?? parsed.date ?? Date.now()),
             snippet: "",
+            bodyParts: parsed.bodyParts,
+            preparedBodyTokens: parsed.preparedBodyTokens,
             bodyText: parsed.text,
             bodyHtml: parsed.html,
             bodyState: parsed.captureUnavailable ? "partial" : "full",

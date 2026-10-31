@@ -19,6 +19,8 @@ export interface ParsedMessage {
   bulk: boolean;
   /** plan 96: List-Unsubscribe and List-Unsubscribe-Post, parsed */
   unsubscribe: Unsubscribe | null;
+  bodyParts?: import("@terno/core").ExactBodyParts;
+  preparedBodyTokens?: Uint16Array[];
   text: string | null;
   html: string | null;
   attachments: IncomingAttachment[];

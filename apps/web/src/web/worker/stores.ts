@@ -1,3 +1,6 @@
+import { BrowserBodyUpgrades } from "./body-upgrade";
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import type { SAHPoolUtil, Sqlite3Static } from "@sqlite.org/sqlite-wasm";
 import { openDatabaseWith, SqlMailStore, wasmSqliteDriver } from "@terno/db/wasm";
 import { idbAdapter } from "@terno/idb";
@@ -20,8 +23,10 @@ export class OpfsSqliteAdapter implements StoreAdapter {
   readonly label = "SQLite (OPFS)";
   readonly automatic = true;
   private pool: Promise<SAHPoolUtil> | null = null;
+  private activeStores = 0;
+  private opening = false;
 
-  constructor(private readonly sqlite3: Sqlite3Static) {}
+  constructor(private readonly sqlite3: Sqlite3Static, private readonly upgrades = new BrowserBodyUpgrades()) {}
 
   /** The pool (installed once). Failures (another tab still holds the handles, storage errors) surface to open(): never "unavailable". */
   install(): Promise<SAHPoolUtil> {
@@ -41,15 +46,36 @@ export class OpfsSqliteAdapter implements StoreAdapter {
   }
 
   async open(o: Parameters<StoreAdapter["open"]>[0]): Promise<SqlMailStore> {
+    if (this.opening) throw new RpcError("UNAVAILABLE", L("errors.mail.processingBusy"));
+    this.opening = true;
+    try {
+    this.upgrades.signal.throwIfAborted();
     const pool = await this.install();
+    if (pool.isPaused()) await pool.unpauseVfs();
+    this.upgrades.signal.throwIfAborted();
+    if (pool.getFileNames().includes(`/${o.name}.db`)) {
+      if (this.activeStores) throw new RpcError("UNAVAILABLE", L("errors.mail.processingBusy"));
+      pool.pauseVfs();
+      await this.upgrades.run("opfs", o.name);
+      this.upgrades.signal.throwIfAborted();
+      await pool.unpauseVfs();
+    }
     // a main db, its journal and spare slots for a second mailbox (perf runs)
     await pool.reserveMinimumCapacity(8);
-    const db = openDatabaseWith(wasmSqliteDriver(this.sqlite3, { pool }), `/${o.name}.db`, { uuid: () => o.platform.uuid() });
-    return new SqlMailStore(db, { instantSearch: o.instantSearch === false ? false : { memory: WEB_SEARCH_MEMORY }, platform: o.platform, log: o.log });
+    this.upgrades.signal.throwIfAborted();
+    const db = openDatabaseWith(wasmSqliteDriver(this.sqlite3, { pool, bodyPreparation: o.platform.bodyPreparation }), `/${o.name}.db`, { uuid: () => o.platform.uuid() });
+    const store = new SqlMailStore(db, { instantSearch: o.instantSearch === false ? false : { memory: WEB_SEARCH_MEMORY }, platform: o.platform, log: o.log });
+    this.activeStores++;
+    const close = store.close.bind(store);
+    let closed: Promise<void> | undefined;
+    store.close = () => closed ??= close().finally(() => { this.activeStores--; });
+    return store;
+    } finally { this.opening = false; }
   }
 
   /** Releases every access handle (the database must be closed): another tab may open the mailbox now. */
   async release(): Promise<void> {
+    await this.upgrades.close();
     const pool = await this.pool?.catch(() => null);
     if (pool && !pool.isPaused()) pool.pauseVfs();
   }
@@ -63,7 +89,8 @@ export class OpfsSqliteAdapter implements StoreAdapter {
  * the web-perf budgets at 10k and 50k before becoming automatic).
  */
 export function webStores(sqlite3: Sqlite3Static): { registry: StoreRegistry; release(): Promise<void>; pool(): Promise<SAHPoolUtil> } {
-  const opfs = new OpfsSqliteAdapter(sqlite3);
-  const registry = new StoreRegistry().register(opfs).register(idbAdapter(indexedDB, { automatic: true }));
+  const upgrades = new BrowserBodyUpgrades();
+  const opfs = new OpfsSqliteAdapter(sqlite3, upgrades);
+  const registry = new StoreRegistry().register(opfs).register(idbAdapter(indexedDB, { automatic: true, signal: upgrades.signal, legacyUpgrade: (name) => upgrades.run("idb", name) }));
   return { registry, release: () => opfs.release(), pool: () => opfs.install() };
 }

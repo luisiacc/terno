@@ -1,3 +1,5 @@
+import { bodyPartText } from "@terno/store";
+import { sqlBodyParts } from "./body-parts";
 import type { SearchMessageDoc, SearchThreadDoc } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -6,8 +8,8 @@ import type { Db } from "./sqlite";
  * indexes (messages_fts_src): engines and the oracle see exactly what FTS5 sees.
  */
 const MESSAGE_DOC = `SELECT m.id, m.thread_id, m.account_id, m.date, m.subject, m.from_name || ' ' || m.from_email AS from_text,
-  m.from_email, m.recipients_text, coalesce(b.body_text, '') AS body, m.has_attachments, m.body_state
-  FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id`;
+  m.from_email, m.recipients_text, coalesce(b.body_text, '') AS body, h.capture_id, m.has_attachments, m.body_state
+  FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id LEFT JOIN body_heads h ON h.message_id=m.id`;
 
 const THREAD_DOC = `SELECT t.id, t.account_id, t.last_date, t.in_inbox, t.has_sent, t.in_trash, t.in_spam, t.is_starred, t.unread_count, t.person, t.waiting_since,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats FROM threads t`;
@@ -22,6 +24,7 @@ interface MessageDocRow {
   from_email: string;
   recipients_text: string;
   body: string;
+  capture_id: string | null;
   has_attachments: number;
   body_state: SearchMessageDoc["bodyState"];
 }
@@ -41,7 +44,7 @@ interface ThreadDocRow {
   cats: string | null;
 }
 
-function toMessageDoc(r: MessageDocRow): SearchMessageDoc {
+function toMessageDoc(db: Db, r: MessageDocRow): SearchMessageDoc {
   return {
     messageId: r.id,
     threadId: r.thread_id,
@@ -51,7 +54,8 @@ function toMessageDoc(r: MessageDocRow): SearchMessageDoc {
     fromText: r.from_text,
     fromEmail: r.from_email,
     recipients: r.recipients_text,
-    body: r.body,
+    body: r.capture_id ? null : r.body,
+    ...(r.capture_id ? { bodyTokenParts: () => bodyPartText(sqlBodyParts(db, r.capture_id!, 2, () => new Promise<void>((resolve) => setTimeout(resolve, 0)))) } : {}),
     hasAttachments: r.has_attachments === 1,
     bodyState: r.body_state,
   };
@@ -79,7 +83,7 @@ export function messageDocs(db: Db, ids?: readonly number[]): SearchMessageDoc[]
   const rows = ids
     ? db.all<MessageDocRow>(`${MESSAGE_DOC} WHERE m.id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids))
     : db.all<MessageDocRow>(`${MESSAGE_DOC} ORDER BY m.id`);
-  return rows.map(toMessageDoc);
+  return rows.map((row) => toMessageDoc(db, row));
 }
 
 export function threadDocs(db: Db, ids?: readonly number[]): SearchThreadDoc[] {
@@ -91,7 +95,7 @@ export function threadDocs(db: Db, ids?: readonly number[]): SearchThreadDoc[] {
 
 /** A bounded page in id order, for sliced rebuilds. */
 export function messageDocsAfter(db: Db, afterId: number, limit: number): SearchMessageDoc[] {
-  return db.all<MessageDocRow>(`${MESSAGE_DOC} WHERE m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit).map(toMessageDoc);
+  return db.all<MessageDocRow>(`${MESSAGE_DOC} WHERE m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit).map((row) => toMessageDoc(db, row));
 }
 
 export function threadDocsAfter(db: Db, afterId: number, limit: number): SearchThreadDoc[] {

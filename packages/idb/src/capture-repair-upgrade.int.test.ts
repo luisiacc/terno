@@ -4,8 +4,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IDBFactory } from "fake-indexeddb";
-import { openDatabase, SqlMailStore } from "../../db/src/index";
+import { upgradeLegacyBodies, openDatabase, SqlMailStore } from "../../db/src/index";
 import { IdbMailStore } from "./store";
+import { upgradeLegacyIdbBodies } from "./body-upgrade";
 import { databaseName } from "./schema";
 import type { MailStore } from "@terno/store";
 import { expect, it } from "vitest";
@@ -29,8 +30,10 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     legacy.exec("DROP TABLE forward_recipients; DROP TABLE forwards; DROP TABLE forward_eligible; ALTER TABLE categories DROP COLUMN forward_json; ALTER TABLE filters DROP COLUMN forward_json");
     legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     legacy.exec("DROP TABLE scheduled_sends; DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key = 'tabs_backfill'");
-    legacy.exec("DROP TRIGGER capture_repair_location_removed; DROP TRIGGER capture_repair_location_changed; DROP TABLE capture_repairs; DROP TABLE capture_repair_usage; PRAGMA user_version=35"); legacy.close();
-    store = new SqlMailStore(openDatabase(path), { platform, instantSearch: false });
+    legacy.exec("DROP TRIGGER body_revision_changed; DROP TRIGGER body_head_added; DROP TRIGGER body_head_changed; DROP TRIGGER body_head_removed; DROP TABLE body_heads; DROP TABLE body_parts; DROP TABLE body_captures; ALTER TABLE message_bodies DROP COLUMN capture_id; ALTER TABLE message_bodies DROP COLUMN body_preview; ALTER TABLE message_bodies DROP COLUMN body_revision; DELETE FROM settings WHERE key='body_parts_upgrade'; DROP TRIGGER capture_repair_location_removed; DROP TRIGGER capture_repair_location_changed; DROP TABLE capture_repairs; DROP TABLE capture_repair_usage; PRAGMA user_version=35"); legacy.close();
+    const upgraded = openDatabase(path);
+    await upgradeLegacyBodies(upgraded, platform.yield, async () => {}, () => {});
+    store = new SqlMailStore(upgraded, { platform, instantSearch: false });
     expect((await store.debug.snapshot()).messages).toEqual(before);
     expect(await store.reminders.list()).toEqual([reminder]);
     expect((await store.accounts.config<{ cursor: unknown }>(account.id))!.config.cursor).toEqual({ historyId: "100" });
@@ -48,7 +51,7 @@ it("native fake-IDB21 upgrades capture schema while retaining populated mail and
   const reminder={threadId:before[0]!.threadId,dueAt:1000,kind:"always" as const,setAt:1}; await store.reminders.put([reminder],100);
   await store.accounts.setCursor(account.id, { historyId: "100" }); await store.close();
   const source = await request(factory.open(databaseName(original)));
-  const names = [...source.objectStoreNames].filter((n) => n !== "capture_repairs");
+  const names = [...source.objectStoreNames].filter((n) => n !== "capture_repairs" && !n.startsWith("body_"));
   const read = source.transaction(names, "readonly"), readDone = done(read);
   const images = await Promise.all(names.map(async (name) => {
     const table = read.objectStore(name);
@@ -60,7 +63,7 @@ it("native fake-IDB21 upgrades capture schema while retaining populated mail and
   const legacy = await request(opening), write = legacy.transaction(names, "readwrite"), written = done(write);
   for (const image of images) image.values.forEach((value, i) => write.objectStore(image.name).put(value, image.keys[i]));
   await written; legacy.close();
-  store = await IdbMailStore.open({ factory, name, platform, instantSearch: false });
+  store = await IdbMailStore.open({ factory, name, platform, instantSearch: false, legacyUpgrade: (name) => upgradeLegacyIdbBodies(factory, name, platform.yield, async () => {}, () => {}).then(() => {}) });
   try {
     expect((await store.debug.snapshot()).messages).toEqual(before);
     expect(await store.reminders.list()).toEqual([reminder]);

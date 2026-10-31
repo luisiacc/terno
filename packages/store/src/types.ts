@@ -41,6 +41,9 @@ export interface IncomingMessage {
   subject: string;
   date: number;
   snippet: string;
+  bodyParts?: import("@terno/core").ExactBodyParts;
+  preparedBodyTokens?: Uint16Array[];
+  bodyCapture?: { id: string; preview: string | null; snippet: string; tail: string };
   bodyText: string | null;
   bodyHtml: string | null;
   bodyState: "none" | "partial" | "full";

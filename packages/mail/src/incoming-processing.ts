@@ -2,8 +2,8 @@ import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import type { ParsedMessage } from "./mime";
 
 export type IncomingProcessingInput =
-  | { kind: "gmail"; expectedId: string; chunks: Uint8Array[] }
-  | { kind: "mime"; profile?: "imap"; chunks: Uint8Array[] };
+  | { kind: "gmail"; expectedId: string; bodyFormat?: "parts"; chunks: Uint8Array[] }
+  | { kind: "mime"; profile?: "imap"; bodyFormat?: "parts"; chunks: Uint8Array[] };
 
 export interface IncomingGmailMetadata {
   id: string;
@@ -82,6 +82,7 @@ export function isIncomingFailureCode(value: unknown): value is IncomingProcessi
 /** The collector owns exact buffers; no host-side copy can hide pooled neighbors. */
 export function incomingInputTransfers(input: IncomingProcessingInput): ArrayBuffer[] {
   if (!input || (input.kind !== "gmail" && input.kind !== "mime") || !Array.isArray(input.chunks) || input.chunks.length > 4096) throw new IncomingProcessingError("input-limit");
+  if (input.bodyFormat !== undefined && input.bodyFormat !== "parts") throw new IncomingProcessingError("input-limit");
   if (input.kind === "gmail" && (typeof input.expectedId !== "string" || !input.expectedId.trim())) throw new IncomingProcessingError("malformed-resource");
   if (input.kind === "mime" && input.profile !== undefined && input.profile !== "imap") throw new IncomingProcessingError("input-limit");
   const buffers = new Set<ArrayBuffer>();
@@ -216,11 +217,13 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
     }
     const result = value.result;
     if (value.type !== "result" || !record(result) || result.kind !== job.input?.kind || !record(result.message) || !Array.isArray(result.message.attachments) || (result.kind === "gmail" && !record(result.metadata))) { fault(owned); return; }
+    const preparedTokens = result.message.preparedBodyTokens;
+    if (preparedTokens !== undefined && (!Array.isArray(preparedTokens) || !preparedTokens.length || preparedTokens.some((part) => !(part instanceof Uint16Array) || !(part.buffer instanceof ArrayBuffer) || !part.length || part.length > INCOMING_TEXT_UNITS || part.byteOffset !== 0 || part.byteLength !== part.buffer.byteLength))) { fault(owned); return; }
     if (result.textParts !== undefined) {
       job.restoring = true;
       const restoring = restoreIncomingText(result as unknown as IncomingWireResult, () => {
         if (active !== job || owned.retiring || slot !== owned || job.signal.aborted) throw canceled();
-      }).then((complete) => {
+      }, job.input?.bodyFormat === "parts").then((complete) => {
         if (active === job && !owned.retiring && slot === owned) finish(job, complete);
       }, () => { if (active === job) fault(owned); }).finally(() => { if (owned.restoring === restoring) owned.restoring = undefined; });
       owned.restoring = restoring;
@@ -260,8 +263,8 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
       if (active || slot?.retiring) throw new IncomingProcessingError(slot?.retirementFailed ? "worker-unavailable" : "worker-busy");
       incomingInputTransfers(input);
       const projected: IncomingProcessingInput = input.kind === "gmail"
-        ? { kind: "gmail", expectedId: input.expectedId, chunks: [...input.chunks] }
-        : { kind: "mime", ...(input.profile && { profile: input.profile }), chunks: [...input.chunks] };
+        ? { kind: "gmail", expectedId: input.expectedId, ...(input.bodyFormat && { bodyFormat: input.bodyFormat }), chunks: [...input.chunks] }
+        : { kind: "mime", ...(input.profile && { profile: input.profile }), ...(input.bodyFormat && { bodyFormat: input.bodyFormat }), chunks: [...input.chunks] };
       const owned = slot ?? { incarnation: ++incarnation, retiring: false };
       const fresh = slot === undefined;
       slot = owned;
@@ -318,35 +321,43 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
 }
 
 
-async function restoreIncomingText(result: IncomingWireResult, check: () => void): Promise<IncomingProcessingResult> {
+async function restoreIncomingText(result: IncomingWireResult, check: () => void, preserveParts = false): Promise<IncomingProcessingResult> {
   const fields = result.textParts!;
   if (!record(fields) || Object.keys(fields).some((key) => key !== "text" && key !== "html")) throw new IncomingProcessingError("worker-fault");
   const channel = new MessageChannel();
+  let complete = false;
   try {
     for (const field of ["text", "html"] as const) {
       const parts = fields[field];
       if (parts === undefined) continue;
       if (!Array.isArray(parts) || !parts.length || result.message[field] !== null) throw new IncomingProcessingError("worker-fault");
       const levels: (string | undefined)[] = [];
+      const decoded: string[] = [];
       for (let index = 0; index < parts.length; index++) {
         check();
         const part = parts[index]!;
         if (!(part instanceof Uint16Array) || !(part.buffer instanceof ArrayBuffer) || !part.length || part.length > INCOMING_TEXT_UNITS || part.byteOffset !== 0 || part.byteLength !== part.buffer.byteLength) throw new IncomingProcessingError("worker-fault");
         let text = String.fromCharCode(...part), level = 0;
-        while (levels[level] !== undefined) { text = levels[level]! + text; levels[level] = undefined; level++; }
-        levels[level] = text;
+        if (preserveParts) decoded.push(text);
+        else {
+          while (levels[level] !== undefined) { text = levels[level]! + text; levels[level] = undefined; level++; }
+          levels[level] = text;
+        }
         parts[index] = new Uint16Array(0);
         await new Promise<void>((resolve) => { (channel.port1 as typeof channel.port1 & { onmessage: (() => void) | null }).onmessage = () => resolve(); channel.port2.postMessage(0); });
       }
       parts.length = 0;
       let text = "";
       for (let level = levels.length - 1; level >= 0; level--) if (levels[level] !== undefined) text += levels[level];
-      result.message[field] = text;
+      if (preserveParts) (result.message.bodyParts ??= {})[field] = decoded;
+      else result.message[field] = text;
     }
     check();
     delete result.textParts;
+    complete = true;
     return result;
   } finally {
+    if (!complete && result.message.bodyParts) { for (const parts of Object.values(result.message.bodyParts)) parts.length = 0; delete result.message.bodyParts; }
     for (const field of ["text", "html"] as const) if (Array.isArray(fields[field])) fields[field]!.length = 0;
     channel.port1.close(); channel.port2.close();
   }

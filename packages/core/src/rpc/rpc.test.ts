@@ -16,9 +16,9 @@ function setup(overrides: Partial<Handlers> = {}) {
   } as unknown as Handlers;
   const server = new RpcServer(handlers, { onError: vi.fn() });
   const [clientSide, serverSide] = createMemoryTransportPair();
-  server.connect(serverSide, { clientId: "t", origin: "renderer" });
+  const disconnect = server.connect(serverSide, { clientId: "t", origin: "renderer" });
   const client = new RpcClient(clientSide, { defaultTimeoutMs: 200 });
-  return { server, client, clientSide, serverSide };
+  return { server, client, clientSide, serverSide, disconnect };
 }
 
 describe("rpc", () => {
@@ -165,5 +165,40 @@ describe("rpc", () => {
     });
     await expect(server.invoke("counts.get", {}, { clientId: "x", origin: "mcp" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(server.invoke("counts.get", {}, { clientId: "x", origin: "renderer" })).resolves.toEqual({});
+  });
+});
+
+describe("exact body part reads", () => {
+  const detail = () => ({ id: 1, messages: [{ id: 7, accountId: 3, bodyText: null, bodyHtml: null, bodyReference: { version: "capture", textParts: 3, htmlParts: 0 } }] }) as unknown as import("../types").ThreadDetail;
+  it("assembles exact code units, negotiates parts and reports one public operation", async () => {
+    const observed = vi.fn(), parts = ["a\ud83d", "\ude00e\u0301\r", "\n\0tail"];
+    const handlers = { "threads.get": (params: { bodyFormat?: string }) => { expect(params.bodyFormat).toBe("parts"); return detail(); }, "threads.bodyPart": (params: { ordinal: number }) => { expect(params).toMatchObject({ accountId: 3, messageId: 7, version: "capture", field: "text" }); return parts[params.ordinal]!; } } as unknown as Handlers;
+    const actualServer = new RpcServer(handlers), [local, remote] = createMemoryTransportPair(); const disconnect = actualServer.connect(remote, { origin: "renderer", clientId: "body" });
+    const client = new RpcClient(local, { observe: observed });
+    try { const read = await client.call("threads.get", { threadId: 1 }); expect(read.messages[0]!.bodyText).toBe("a😀e\u0301\r\n\0tail"); expect(read.messages[0]!.bodyHtml).toBe(""); expect(read.messages[0]!.bodyReference).toBeUndefined(); await Promise.resolve(); expect(observed.mock.calls.map((call) => call[0])).toEqual(["threads.get"]); }
+    finally { client.close(); disconnect(); }
+  });
+
+  for (const action of ["close", "reattach", "stale"] as const) it(`does not publish a partial exact body on ${action}`, async () => {
+    let started!: () => void, release!: () => void;
+    const active = new Promise<void>((resolve) => { started = resolve; }), held = new Promise<void>((resolve) => { release = resolve; });
+    const { client, disconnect } = setup({ "threads.get": () => detail(), "threads.bodyPart": async ({ ordinal }) => { if (ordinal === 0) return "head"; started(); await held; if (action === "stale") throw new RpcError("STALE", "Synthetic source replacement"); return "tail"; } });
+    const read = client.call("threads.get", { threadId: 1 }), outcome = read.then(() => "published", (error: RpcError) => error.code);
+    await active;
+    let replacement: ReturnType<typeof createMemoryTransportPair> | undefined;
+    if (action === "close") client.close();
+    if (action === "reattach") { replacement = createMemoryTransportPair(); client.attach(replacement[0]); }
+    release();
+    expect(await outcome).toBe(action === "stale" ? "STALE" : "UNAVAILABLE");
+    expect(client.pendingCount).toBe(0);
+    client.close(); replacement?.[1].close(); disconnect();
+  });
+
+  it("keeps the original whole-read deadline while a real part handler is held", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { client, disconnect } = setup({ "threads.get": () => detail(), "threads.bodyPart": async () => { await held; return "late"; } });
+    try { await expect(client.call("threads.get", { threadId: 1 })).rejects.toMatchObject({ code: "TIMEOUT" }); expect(client.pendingCount).toBe(0); }
+    finally { release(); client.close(); disconnect(); }
   });
 });

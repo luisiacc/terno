@@ -292,8 +292,8 @@ export function createHandlers(b: Backend): Handlers {
       return b.hydrateBody(threadId, messageId);
     },
 
-    "threads.get": async ({ threadId }) => {
-      const thread = await store.threads.get(threadId);
+    "threads.get": async ({ threadId, bodyFormat }) => {
+      const thread = await store.threads.get(threadId, { bodyFormat });
       if (!thread) throw new RpcError("NOT_FOUND", L("errors.threadGone"));
       const { categorization, ...detail } = thread;
       return {
@@ -301,6 +301,8 @@ export function createHandlers(b: Backend): Handlers {
         categorization: { auto: categorization.auto, suggestions: categorization.suggestions.map((s) => ({ categoryId: s.categoryId, p: s.p, reasons: s.reasons })) },
       };
     },
+
+    "threads.bodyPart": (input) => store.threads.bodyPart(input),
 
     "threads.act": async ({ threadIds, action }, ctx) => {
       const signal = Backend.learningSignal(action);

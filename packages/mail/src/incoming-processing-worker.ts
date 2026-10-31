@@ -1,4 +1,4 @@
-import { MAX_INCOMING_MIME_BYTES } from "@terno/core";
+import { iterateBodyTokens, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { IncomingProcessingError, INCOMING_TEXT_UNITS, incomingInputTransfers, type IncomingWireResult, type IncomingGmailMetadata, type IncomingProcessingInput, type IncomingProcessingLimits, type IncomingProcessingResult, type IncomingWorkerReply, type IncomingWorkerRequest } from "./incoming-processing";
 import { parseRaw, parseRawHeaders, type IncomingMimeLimits, type ParsedMessage } from "./mime";
 
@@ -149,7 +149,9 @@ export async function processIncoming(input: IncomingProcessingInput, limits: In
 
 export async function runIncomingWorkerRequest(request: IncomingWorkerRequest): Promise<IncomingWorkerReply> {
   try {
-    const result = packIncomingText(await processIncoming(request.input, request.limits));
+    const parsed = await processIncoming(request.input, request.limits);
+    if ((parsed.message.text?.length ?? 0) > INCOMING_TEXT_UNITS) parsed.message.preparedBodyTokens = packBodyTokens(parsed.message.text!);
+    const result = packIncomingText(parsed);
     return { type: "result", incarnation: request.incarnation, job: request.job, result };
   } catch (error) {
     return { type: "error", incarnation: request.incarnation, job: request.job, code: error instanceof IncomingProcessingError ? error.code : "worker-fault" };
@@ -158,6 +160,7 @@ export async function runIncomingWorkerRequest(request: IncomingWorkerRequest): 
 
 export function incomingResultTransfers(result: IncomingWireResult): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>();
+  for (const part of result.message.preparedBodyTokens ?? []) buffers.add(part.buffer as ArrayBuffer);
   for (const part of result.message.attachments) {
     let bytes = part.bytes;
     if (!bytes) continue;
@@ -184,4 +187,20 @@ function packIncomingText(result: IncomingProcessingResult): IncomingWireResult 
     result.message[field] = null;
   }
   return packed;
+}
+
+function packBodyTokens(text: string): Uint16Array[] {
+  const parts: Uint16Array[] = [];
+  let part = new Uint16Array(INCOMING_TEXT_UNITS), at = 0;
+  const append = (code: number) => {
+    part[at++] = code;
+    if (at === part.length) { parts.push(part); part = new Uint16Array(INCOMING_TEXT_UNITS); at = 0; }
+  };
+  append(0);
+  for (const token of iterateBodyTokens(text)) {
+    for (let i = 0; i < token.length; i++) append(token.charCodeAt(i));
+    append(0);
+  }
+  if (at) parts.push(part.slice(0, at));
+  return parts;
 }

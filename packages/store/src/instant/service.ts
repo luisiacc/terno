@@ -1,6 +1,6 @@
 import type { Platform } from "../platform";
 import { RevisionError, sameRevision, type Revision, type SearchFeed } from "../search";
-import { IndexMemoryError, InstantSearchEngine, type PhraseSource } from "./engine";
+import { IndexPreparationError, IndexMemoryError, InstantSearchEngine, type PhraseSource } from "./engine";
 
 const MiB = 1024 * 1024;
 
@@ -226,7 +226,7 @@ export class InstantSearch {
       } catch (error) {
         if (this.stopped) return;
         // building further would pass the peak cap: FTS5 answers, nothing past the cap was allocated
-        if (error instanceof IndexMemoryError) return this.disable(error.message);
+        if (error instanceof IndexMemoryError || error instanceof IndexPreparationError) return this.disable(error.message);
         this.engine?.disable();
         this.engine = null;
         this.report.rebuilds++;

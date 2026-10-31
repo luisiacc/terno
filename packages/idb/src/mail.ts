@@ -100,7 +100,9 @@ export interface Ctx {
   /** the late tables (messages…) are in: until then a thread's messages read as none (plan 64: spam mail isn't known yet) */
   late?: { loaded: boolean };
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
-  body(messageId: number): { body_text: string | null; body_html: string | null } | null;
+  body(messageId: number): { body_text: string | null; body_html: string | null; body_preview?: string | null; capture_id?: string | null } | null;
+  bodyTokenParts?: (capture: string) => AsyncIterable<string>;
+  bodyTest?: (capture: string, op: import("@terno/core").TextOp, value: string, prefix?: boolean) => boolean;
 }
 
 export const T = (c: Ctx, name: string): Table<R> => c.db.table<R>(name);
@@ -780,6 +782,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
   c.db.tx(() => {
     const ids = messageIdAllocator(c);
     for (const msg of batch) {
+      if (msg.bodyCapture) requireBodyCapture(c, msg.accountId, msg.bodyCapture);
       let existing = findIngestMessage(c, msg);
       if (existing && T(c, "imap_identity_holds").has(existing.id)) continue;
       if (existing && existing.provider_msg_id !== msg.providerMsgId) {
@@ -830,8 +833,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         subject: msg.subject,
         subject_norm: normalizeText(msg.subject),
         date: msg.date,
-        snippet: msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText),
-        body_tail_norm: bodyTail(msg.bodyText),
+        snippet: msg.bodyCapture?.snippet ?? (msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText)),
+        body_tail_norm: msg.bodyCapture?.tail ?? bodyTail(msg.bodyText),
         body_state: msg.bodyState,
         list_id: msg.listId ? normalizeText(msg.listId) : null,
         is_read: b(msg.isRead),
@@ -851,8 +854,9 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         // plan 96 (absent on records from before: none)
         unsubscribe: unsubscribeJson(msg.unsubscribe),
       });
-      if (msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml });
+      if (msg.bodyCapture || msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml, capture_id: msg.bodyCapture?.id ?? null, body_preview: msg.bodyCapture?.preview ?? null });
       else T(c, "message_bodies").markAbsent(id);
+      if (msg.bodyCapture) { T(c, "body_heads").put({ message_id: id, capture_id: msg.bodyCapture.id }); const capture = T(c, "body_captures").get(msg.bodyCapture.id)!; T(c, "body_captures").update(capture, { message_id: id }); }
       for (const ref of refs) T(c, "message_refs").insert({ account_id: msg.accountId, ref, message_id: id });
       // plan 17: sent mail teaches your addresses and who you write to; mail of yours may answer another thread
       if (!msg.isDraft) {
@@ -894,7 +898,7 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: Flag
     // plan 96: a copy without the header (an older parse, a header-only fetch) keeps what was read
     ...(unsubscribeJson(msg.unsubscribe) === null ? {} : { unsubscribe: unsubscribeJson(msg.unsubscribe) }),
   });
-  if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
+  if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full", msg.bodyCapture);
   if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(c.db, row.id, msg.attachments);
   if (msg.captureUnavailable) T(c, "messages").update(T(c, "messages").get(row.id)!, { attachments_captured: 2, attachment_pending: 0 });
   upsertLocations(c, row.id, msg);
@@ -906,13 +910,21 @@ function upsertLocations(c: Ctx, messageId: number, msg: IncomingMessage): void 
   }
 }
 
-export function setMessageBody(c: Ctx, messageId: number, bodyText: string | null, bodyHtml: string | null, state: "partial" | "full"): void {
+function requireBodyCapture(c: Ctx, accountId: number, capture: NonNullable<IncomingMessage["bodyCapture"]>): void {
+  const row = T(c, "body_captures").get(capture.id);
+  if (!row?.ready || row.account_id !== accountId || T(c, "body_heads").count("capture", capture.id)) throw new Error("Body capture ownership changed before publication");
+}
+
+export function setMessageBody(c: Ctx, messageId: number, bodyText: string | null, bodyHtml: string | null, state: "partial" | "full", capture?: IncomingMessage["bodyCapture"]): void {
   const messages = T(c, "messages");
   const row = messages.get(messageId);
   if (!row) return;
-  messages.update(row, { body_tail_norm: bodyTail(bodyText), body_state: state, snippet: row.snippet === "" ? makeSnippet(bodyText) : row.snippet });
-  if (bodyText === null && bodyHtml === null) T(c, "message_bodies").delete(messageId);
-  else T(c, "message_bodies").put({ message_id: messageId, body_text: bodyText, body_html: bodyHtml });
+  if (capture) requireBodyCapture(c, row.account_id, capture);
+  messages.update(row, { body_tail_norm: capture?.tail ?? bodyTail(bodyText), body_state: state, snippet: row.snippet === "" ? capture?.snippet ?? makeSnippet(bodyText) : row.snippet });
+  if (!capture && bodyText === null && bodyHtml === null) T(c, "message_bodies").delete(messageId);
+  else T(c, "message_bodies").put({ message_id: messageId, body_text: bodyText, body_html: bodyHtml, capture_id: capture?.id ?? null, body_preview: capture?.preview ?? null });
+  if (capture) { T(c, "body_heads").put({ message_id: messageId, capture_id: capture.id }); T(c, "body_captures").update(T(c, "body_captures").get(capture.id)!, { message_id: messageId }); }
+  else T(c, "body_heads").delete(messageId);
 }
 
 function newer(x: R, y: R): boolean {
@@ -1640,7 +1652,10 @@ export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageId
   for (const id of messageIds) {
     const m = messages.get(id);
     if (!m || m.is_trash || (needsBody && m.body_state !== "full")) continue;
-    if (!evaluateRule(rule, ruleMessage(m, readsBody && m.body_state === "full" ? (c.body(id)?.body_text ?? null) : null), now)) continue;
+    const body = readsBody && m.body_state === "full" ? c.body(id) : null;
+    const message = ruleMessage(m, body?.body_text ?? null);
+    if (body?.capture_id) message.testBody = (op, value) => c.bodyTest!(body.capture_id!, op, value);
+    if (!evaluateRule(rule, message, now)) continue;
     ids.push(id);
     threads.add(m.thread_id);
   }
@@ -2146,7 +2161,7 @@ export function changeOwner(c: Ctx, claim: OwnerClaim, reason: string, now: numb
 
 // ───────────────────────────── search projections ─────────────────────────────
 
-export function messageDoc(m: R, bodyText: string | null): SearchMessageDoc {
+export function messageDoc(m: R, bodyText: string | null, bodyTokenParts?: () => AsyncIterable<string>): SearchMessageDoc {
   return {
     messageId: m.id,
     threadId: m.thread_id,
@@ -2156,7 +2171,8 @@ export function messageDoc(m: R, bodyText: string | null): SearchMessageDoc {
     fromText: `${m.from_name} ${m.from_email}`,
     fromEmail: m.from_email,
     recipients: m.recipients_text,
-    body: bodyText ?? "",
+    body: bodyTokenParts ? null : bodyText ?? "",
+    ...(bodyTokenParts ? { bodyTokenParts } : {}),
     hasAttachments: m.has_attachments === 1,
     bodyState: m.body_state,
   };

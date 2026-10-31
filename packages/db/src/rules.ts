@@ -3,6 +3,7 @@ import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
 /** the body of messages m, for the few rules FTS5 alone can't decide exactly */
+const CAPTURE = "(SELECT capture_id FROM body_heads WHERE message_id=m.id)";
 const BODY = "(SELECT body_text FROM message_bodies WHERE message_id = m.id)";
 
 function textSql(op: TextOp, column: string, value: string, params: Param[]): string {
@@ -39,6 +40,20 @@ function ftsSql(query: string, params: Param[], range?: { from: number; to: numb
 }
 
 function conditionSql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }, scoped = false): string {
+  if (c.field === "body" && c.op !== "matches") {
+    const ordinary = conditionOrdinarySql(c, now, params, range, scoped);
+    params.push(c.op, c.value);
+    return `(CASE WHEN ${CAPTURE} IS NULL THEN (${ordinary}) ELSE terno_part_match(${CAPTURE},?,?,0) END)`;
+  }
+  if (c.field === "text") {
+    const ordinary = conditionOrdinarySql(c, now, params, range, scoped);
+    params.push("contains", c.value);
+    return `(${ordinary} OR (m.body_state='full' AND ${CAPTURE} IS NOT NULL AND terno_part_match(${CAPTURE},?,?,0)))`;
+  }
+  return conditionOrdinarySql(c, now, params, range, scoped);
+}
+
+function conditionOrdinarySql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }, scoped = false): string {
   switch (c.field) {
     case "hasAttachment":
       params.push(c.value ? 1 : 0);

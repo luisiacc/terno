@@ -171,7 +171,13 @@ export interface ThreadSummary {
   spamHeld?: boolean;
 }
 
+/** Complete normalized code units in bounded transport/preparation parts. */
+export interface ExactBodyParts { text?: string[]; html?: string[] }
+export interface BodyReadReference { version: string; textParts: number | null; htmlParts: number | null }
+
 export interface MessageDetail {
+  /** Complete durable body, negotiated on the wire and hydrated by RpcClient. */
+  bodyReference?: BodyReadReference;
   id: MessageId;
   threadId: ThreadId;
   accountId: AccountId;

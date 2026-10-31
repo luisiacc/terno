@@ -80,26 +80,84 @@ export class RpcClient {
   }
 
   call<M extends MethodName>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    if (method !== "threads.get") return this.callRaw(method, params);
+    const version = this.connectionVersion, timeoutMs = contract[method].timeoutMs ?? this.defaultTimeoutMs;
+    const host = globalThis as unknown as { MessageChannel: new () => { port1: { onmessage: (() => void) | null; close(): void }; port2: { postMessage(value: number): void; close(): void } } };
+    const channel = new host.MessageChannel();
+    const yieldTo = () => new Promise<void>((resolve) => { channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0); });
+    const deadline = performance.now() + timeoutMs;
+    let expired = false;
+    const requests = new Set<number>();
+    const check = () => {
+      if (expired || performance.now() >= deadline) throw this.failure("TIMEOUT", "errors.rpc.timeout", { method, timeoutMs });
+      if (this.connectionVersion !== version || !this.transport) throw this.failure("UNAVAILABLE", "errors.rpc.restarted");
+    };
+    const task = this.callRaw(method, { ...params, bodyFormat: "parts" }, undefined, false, requests).then(async (result) => {
+      const thread = result as ResultOf<"threads.get">;
+      for (const message of thread.messages) {
+        const reference = message.bodyReference;
+        if (!reference) continue;
+        for (const field of ["text", "html"] as const) {
+          const count = field === "text" ? reference.textParts : reference.htmlParts;
+          if (count === null) continue;
+          if (!Number.isSafeInteger(count) || count < 0) { this.close(); throw this.failure("UNAVAILABLE", "errors.rpc.closed"); }
+          const levels: (string | undefined)[] = [];
+          for (let ordinal = 0; ordinal < count; ordinal++) {
+            check();
+            let part = await this.callRaw("threads.bodyPart", { accountId: message.accountId, messageId: message.id, version: reference.version, field, ordinal }, deadline - performance.now(), false, requests);
+            if (typeof part !== "string" || part.length > 32768) { this.close(); throw this.failure("UNAVAILABLE", "errors.rpc.closed"); }
+            let level = 0;
+            while (levels[level] !== undefined) { part = levels[level]! + part; levels[level] = undefined; level++; }
+            levels[level] = part;
+            await yieldTo();
+          }
+          let text = "";
+          for (let level = levels.length - 1; level >= 0; level--) if (levels[level] !== undefined) text += levels[level];
+          if (field === "text") message.bodyText = text; else message.bodyHtml = text;
+        }
+        delete message.bodyReference;
+      }
+      check();
+      return result;
+    }).finally(() => { channel.port1.close(); channel.port2.close(); });
+    const complete = new Promise<ResultOf<M>>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        expired = true;
+        const error = this.failure("TIMEOUT", "errors.rpc.timeout", { method, timeoutMs });
+        for (const id of requests) { const request = this.pending.get(id); if (request) { this.pending.delete(id); clearTimeout(request.timer); request.reject(error); } }
+        requests.clear(); reject(error);
+      }, Math.max(0, deadline - performance.now()));
+      task.then(resolve, reject).finally(() => clearTimeout(timer));
+    });
+    const started = deadline - timeoutMs;
+    if (this.observe) void complete.then(() => this.observe!(method, performance.now() - started), (error: unknown) => this.observe!(method, performance.now() - started, error));
+    return complete;
+  }
+
+  private callRaw<M extends MethodName>(method: M, params: ParamsOf<M>, remainingMs?: number, report = true, requests?: Set<number>): Promise<ResultOf<M>> {
     const transport = this.transport;
     if (!transport) return Promise.reject(this.failure("UNAVAILABLE", "errors.rpc.notConnected"));
     const id = this.nextId++;
-    const timeoutMs = contract[method].timeoutMs ?? this.defaultTimeoutMs;
+    requests?.add(id);
+    const timeoutMs = remainingMs ?? contract[method].timeoutMs ?? this.defaultTimeoutMs;
     const call = new Promise<ResultOf<M>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(this.failure("TIMEOUT", "errors.rpc.timeout", { method, timeoutMs }));
       }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
-      transport.send({ v: RPC_VERSION, t: "req", id, m: method, p: params });
+      try { transport.send({ v: RPC_VERSION, t: "req", id, m: method, p: params }); }
+      catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
     });
-    const observe = this.observe;
-    if (!observe) return call;
+    const observe = report ? this.observe : undefined;
+    const result = requests ? call.finally(() => requests.delete(id)) : call;
+    if (!observe) return result;
     const started = performance.now();
     call.then(
       () => observe(method, performance.now() - started),
       (error: unknown) => observe(method, performance.now() - started, error),
     );
-    return call;
+    return result;
   }
 
   on<E extends EventName>(event: E, listener: (payload: Events[E]) => void): () => void {

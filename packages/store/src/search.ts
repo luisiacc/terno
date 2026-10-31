@@ -56,7 +56,10 @@ export interface SearchMessageDoc {
   /** normalized address: from:a@b.c matches it exactly */
   fromEmail: string;
   recipients: string;
-  body: string;
+  /** null means the exact prepared token source below owns this field. */
+  body: string | null;
+  /** Exact prepared token parts; consumed lazily instead of normalizing a complete body. */
+  bodyTokenParts?: () => AsyncIterable<string>;
   hasAttachments: boolean;
   bodyState: "none" | "partial" | "full";
 }

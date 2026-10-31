@@ -1,10 +1,11 @@
+import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import "fake-indexeddb/auto";
 import type { MailStore, Platform } from "@terno/store";
 import { defineAutocompleteConformance, memoryFiles } from "@terno/store/conformance";
 import { IdbMailStore } from "./store";
 
 // files only give the store a snapshot base (the service writes through its own)
-const platform: Pick<Platform, "uuid" | "yield" | "files"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)), files: memoryFiles() };
+const platform: Pick<Platform, "uuid" | "yield" | "files" | "bodyPreparation"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)), files: memoryFiles(), bodyPreparation: nodeBodyPreparationFactory };
 let n = 0;
 const open = (name: string) => IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
 

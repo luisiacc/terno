@@ -1,3 +1,4 @@
+import { bodyPreparationWorkerMain, type BodyPreparationFactory } from "@terno/store";
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync, readSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -255,3 +256,12 @@ export const nodePlatform: Platform = {
   yield: () => yieldToLoop(),
   files: nodeFiles,
 };
+
+export const nodeBodyPreparationFactory: BodyPreparationFactory = (message, failure) => {
+  const worker = new Worker(`const {parentPort}=require('node:worker_threads'); globalThis.postMessage=(value,transfer)=>parentPort.postMessage(value,transfer); parentPort.on('message',data=>globalThis.onmessage({data})); (${bodyPreparationWorkerMain.toString()})();`, { eval: true, env: {}, execArgv: [], resourceLimits: { maxOldGenerationSizeMb: 512 } });
+  let retiring = false;
+  worker.on("message", message); worker.on("error", failure); worker.on("exit", () => { if (!retiring) failure(); });
+  return { post: (value, transfer) => worker.postMessage(value, transfer), async terminate() { retiring = true; await worker.terminate(); } };
+};
+nodeSqliteDriver.bodyPreparation = nodeBodyPreparationFactory;
+nodePlatform.bodyPreparation = nodeBodyPreparationFactory;

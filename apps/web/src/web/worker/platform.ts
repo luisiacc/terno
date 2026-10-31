@@ -1,3 +1,4 @@
+import { webBodyPreparation } from "./body-preparation";
 import type { Platform, PlatformFiles } from "@terno/store";
 import { FILES_DIR } from "./legacy-storage";
 
@@ -56,5 +57,5 @@ export async function opfsFiles(dirName = FILES_DIR): Promise<PlatformFiles> {
 }
 
 export function webPlatform(files: PlatformFiles | undefined): Platform {
-  return { uuid: () => crypto.randomUUID(), yield: channelYield(), files };
+  return { uuid: () => crypto.randomUUID(), yield: channelYield(), files, bodyPreparation: webBodyPreparation };
 }

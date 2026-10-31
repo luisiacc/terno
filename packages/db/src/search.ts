@@ -211,7 +211,8 @@ export function runSearch<R>(
   extra: { where: string[]; params: Param[] } = { where: [], params: [] },
 ): { rows: R[]; strategy: SearchStrategy } {
   const q = resolved.query;
-  const c = compileSearch(resolved);
+  const segmented = !!db.get("SELECT 1 FROM body_heads LIMIT 1");
+  const c = segmented ? compileSegmentedSearch(resolved) : compileSearch(resolved);
   if (c.impossible) return { rows: [], strategy: "empty" };
   c.threadWhere.push(...extra.where);
   c.threadParams.push(...extra.params);
@@ -305,10 +306,37 @@ function excludeClause(): string {
 export function ftsTermMessages(db: Db, term: MessageTerm): number[] {
   const expr = ftsTerm(term);
   if (!expr) return [];
-  return db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ?", expr).map((r) => r.id);
+  const ids = db.all<{ id: number }>("SELECT rowid AS id FROM messages_fts WHERE messages_fts MATCH ?", expr).map((r) => r.id);
+  if (term.field === "text") for (const row of db.all<{ id: number }>("SELECT message_id AS id FROM body_heads WHERE terno_part_match(capture_id,'contains',?,?)", term.value, term.prefix ? 1 : 0)) ids.push(row.id);
+  return [...new Set(ids)];
 }
 
 /** True while some messages still lack a full body (search may be incomplete). */
 export function searchIsComplete(db: Db): boolean {
   return db.get("SELECT 1 FROM messages WHERE body_state != 'full' LIMIT 1") === undefined;
+}
+
+function compileSegmentedSearch(resolved: ResolvedSearch): Compiled {
+  const terms = resolved.query.terms.filter((term) => !(term.field === "from" && isFullEmail(term.value)));
+  const c = compileSearch({ ...resolved, query: { ...resolved.query, terms: resolved.query.terms.filter((term) => term.field === "from" && isFullEmail(term.value)) } });
+  const positives = terms.filter((term) => !term.negate);
+  const sameMessage = positives.length > 0 || c.messageWhere.length > 0;
+  const negatives: string[] = [], negativeParams: Param[] = [];
+  for (const term of terms) {
+    const expression = ftsTerm(term);
+    if (!expression) continue;
+    let sql = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
+    const params: Param[] = [expression];
+    if (term.field === "text") {
+      sql = `(${sql} OR EXISTS (SELECT 1 FROM body_heads b WHERE b.message_id=m.id AND terno_part_match(b.capture_id,'contains',?,?)))`;
+      params.push(term.value, term.prefix ? 1 : 0);
+    }
+    if (term.negate && !sameMessage) { negatives.push(sql); negativeParams.push(...params); }
+    else { c.messageWhere.push(term.negate ? `NOT (${sql})` : `(${sql})`); c.messageParams.push(...params); }
+  }
+  if (negatives.length) {
+    c.threadWhere.push(`NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id=t.id AND (${negatives.join(" OR ")}))`);
+    c.threadParams.push(...negativeParams);
+  }
+  return c;
 }

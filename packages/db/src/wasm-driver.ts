@@ -12,6 +12,7 @@ export interface WasmImages {
 }
 
 export interface WasmDriverOptions {
+  bodyPreparation?: import("@terno/store").BodyPreparationFactory;
   /** OPFS through the sahpool VFS (a dedicated worker only): durable, synchronous, one tab at a time */
   pool?: SAHPoolUtil;
   /** without a pool: where a path's bytes live between open and close (default: memory of this process) */
@@ -154,6 +155,7 @@ export function wasmSqliteDriver(sqlite3: Sqlite3Static, options: WasmDriverOpti
   const images = options.images ?? memoryImages();
   return {
     id: pool ? "wasm-opfs" : "wasm-memory",
+    bodyPreparation: options.bodyPreparation,
     open(path, { readonly }) {
       if (pool) {
         const db = new pool.OpfsSAHPoolDb(path);

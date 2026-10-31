@@ -1,3 +1,4 @@
+import { materializedBody } from "./oracle";
 import { normalizeText, parseSearch, resolveSearch, tokenize } from "@terno/core";
 import type { MockDataset } from "@terno/mock-data";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -92,16 +93,16 @@ export function generateQueries(corpus: SearchCorpus, count: number, seed: numbe
     if (r < 0.3) return w;
     if (r < 0.45) {
       const m = pick(sample);
-      const p = run(rand() < 0.3 ? m.subject : m.body, 2 + Math.floor(rand() * 3));
+      const p = run(rand() < 0.3 ? m.subject : materializedBody(m), 2 + Math.floor(rand() * 3));
       return p ? `"${p.join(" ")}"` : w;
     }
     if (r < 0.52) {
       // a multi-token value whose last token is being typed
-      const p = run(pick(sample).body, 2);
+      const p = run(materializedBody(pick(sample)), 2);
       return p ? `${p[0]}.${p[1]!.slice(0, Math.max(1, Math.floor(rand() * p[1]!.length)))}` : w;
     }
     if (r < 0.58) return `"${pick(words)} ${pick(words)}"`; // rarely adjacent
-    if (r < 0.68) return `-${rand() < 0.8 ? pick(words) : `"${(run(pick(sample).body, 2) ?? [w, w]).join(" ")}"`}`;
+    if (r < 0.68) return `-${rand() < 0.8 ? pick(words) : `"${(run(materializedBody(pick(sample)), 2) ?? [w, w]).join(" ")}"`}`;
     if (r < 0.76) {
       const n = pick(names);
       return `${rand() < 0.5 ? "from" : "de"}:${n.slice(0, 1 + Math.floor(rand() * 2)).join(".") || w}`;
@@ -203,11 +204,11 @@ function mutate(model: Model, rand: () => number, step: number): IndexBatch {
         : { threadId, accountId: like.accountId, lastDate: date, inInbox: true, hasSent: false, inTrash: false, inSpam: false, isStarred: false, unreadCount: 1, categoryIds: [] };
       push({
         kind: "upsertMessage",
-        doc: { ...like, messageId: Math.max(...model.messages.keys()) + 1, threadId, accountId: t.accountId, date, body: `${pick(msgs).body.slice(0, 200)} presupuesto ${step}`, subject: rand() < 0.5 ? `Re: ${like.subject}` : like.subject },
+        doc: { ...like, messageId: Math.max(...model.messages.keys()) + 1, threadId, accountId: t.accountId, date, body: `${materializedBody(pick(msgs)).slice(0, 200)} presupuesto ${step}`, subject: rand() < 0.5 ? `Re: ${like.subject}` : like.subject },
       });
       push({ kind: "upsertThread", doc: t });
     } else if (r < 0.45) {
-      push({ kind: "upsertMessage", doc: { ...pick(msgs), body: rand() < 0.2 ? "" : pick(msgs).body.slice(0, 300), bodyState: "full" } });
+      push({ kind: "upsertMessage", doc: { ...pick(msgs), body: rand() < 0.2 ? "" : materializedBody(pick(msgs)).slice(0, 300), bodyState: "full" } });
     } else if (r < 0.55) {
       push({ kind: "removeMessage", messageId: pick(msgs).messageId });
     } else if (r < 0.75) {

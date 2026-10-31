@@ -1,3 +1,4 @@
+import { materializedBody } from "./oracle";
 import { normalizeText, tokenize } from "@terno/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { StaleCursorError, type SearchCursor } from "../search";
@@ -120,8 +121,8 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
         const sender = msgs.find(
           (a) =>
             /@.+\./.test(a.fromEmail) &&
-            msgs.some((b) => b.fromEmail !== a.fromEmail && mentions(b.body)) &&
-            !msgs.some((c) => c.fromEmail === a.fromEmail && (mentions(c.body) || mentions(c.subject))),
+            msgs.some((b) => b.fromEmail !== a.fromEmail && mentions(materializedBody(b))) &&
+            !msgs.some((c) => c.fromEmail === a.fromEmail && (mentions(materializedBody(c)) || mentions(c.subject))),
         );
         if (sender) {
           found = { threadId, fromEmail: sender.fromEmail };
@@ -135,9 +136,9 @@ export function defineSearchConformance(name: string, setup: () => Promise<Searc
     });
 
     it("phrases stay inside one field and match whole tokens", async () => {
-      const m = corpus.messages.find((x) => tokenize(x.subject).length >= 2 && tokenize(x.body).length >= 2)!;
+      const m = corpus.messages.find((x) => tokenize(x.subject).length >= 2 && tokenize(materializedBody(x)).length >= 2)!;
       const lastOfSubject = tokenize(m.subject).at(-1)!;
-      const firstOfBody = tokenize(m.body)[0]!;
+      const firstOfBody = tokenize(materializedBody(m))[0]!;
       const spanning = `"${lastOfSubject} ${firstOfBody}"`;
       expect((await searchAll(spanning)).ids).toEqual(oracle(spanning));
     });

@@ -1,3 +1,4 @@
+import { registerBodyMatches } from "./body-parts";
 import type { SqliteDriver } from "./connection";
 import { migrate } from "./migrations";
 import { flushSearchOutbox } from "./outbox";
@@ -29,6 +30,7 @@ export function openDatabaseWith(driver: SqliteDriver, path: string, options: Op
   const db = new Db(driver, path, options);
   try {
     registerFunctions(db);
+    registerBodyMatches(db);
     if (!options.readonly) {
       migrate(db);
       db.onBeforeCommit(() => flushSearchOutbox(db, options.searchLogBytes));
@@ -45,3 +47,5 @@ export function openDatabaseWith(driver: SqliteDriver, path: string, options: Op
 export * from "./sql-store";
 export * from "./sql-provider-store";
 export * from "./page-cache";
+
+export * from "./body-upgrade";

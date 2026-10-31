@@ -1,3 +1,4 @@
+import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,7 +23,7 @@ async function fixture(kind: "gmail" | "imap", blocked = true, partial = false) 
   const unexpected: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => { unexpected.push("Unexpected request during local admission control"); throw new Error(unexpected.at(-1)); });
   const dir = mkdtempSync(join(tmpdir(), "terno-repair-admission-")), factory = new IDBFactory(), name = crypto.randomUUID();
-  const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+  const platform = { bodyPreparation: nodeBodyPreparationFactory, uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let action: ((sink: SyncSink) => Promise<void>) | undefined;
   let lastSink: SyncSink | undefined;
   const providers: ProviderRegistry = { create: () => ({ async verify() {}, async close() {}, async execute() { throw new Error("Unexpected mutation"); }, async sync(sink) { lastSink = sink; await action?.(sink); } }), async verifyImap() {}, async connectGmail() { throw new Error("Unexpected consent"); } };
@@ -74,7 +75,7 @@ it.each(["ingest", "body", "publication", "retry", "retirement", "attachments"] 
     return plans;
   });
   const repair = (await t.backend.store.captureRepairs.get(t.account.id, t.locator));
-  const parsed = await parseRaw("From: sender@example.test\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nRepaired exact body\r\n--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=new.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAQID\r\n--b--\r\n");
+  const parsed = await parseRaw(`From: sender@example.test\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n${mode === "body" ? "Repaired exact body ".repeat(6000) : "Repaired exact body"}\r\n--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=new.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAQID\r\n--b--\r\n`);
   t.setAction(async (sink) => {
     if (mode === "publication") await sink.blockCapture!(t.locator, "mime-parts", 0);
     else if (mode === "retirement") await sink.retireCapture!(t.locator);

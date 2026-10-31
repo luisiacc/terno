@@ -1559,7 +1559,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 if (source.byteLength > MAX_INCOMING_MIME_BYTES + 1 || source.buffer.byteLength > MAX_INCOMING_MIME_BYTES + 65536) throw new IncomingProcessingError("input-limit");
                 const owned = new Uint8Array(source);
                 source = undefined;
-                const result = await ctx.incomingProcessor.run({ kind: "mime", profile: "imap", chunks: [owned] }, AbortSignal.any([sink.signal, reset]));
+                const result = await ctx.incomingProcessor.run({ kind: "mime", profile: "imap", bodyFormat: "parts", chunks: [owned] }, AbortSignal.any([sink.signal, reset]));
                 if (result.kind !== "mime") throw new IncomingProcessingError("worker-fault");
                 parsed = result.message;
               } else parsed = await parseRaw(source);
@@ -1571,7 +1571,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               continue;
             }
             check();
-            await locations.dispatch([item.id], (await locations.of([item.id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity, flags: "[]" }]), () => { check(); return sink.setBody(item.id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }); });
+            await locations.dispatch([item.id], (await locations.of([item.id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity, flags: "[]" }]), () => { check(); return sink.setBody(item.id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { bodyParts: parsed.bodyParts, preparedBodyTokens: parsed.preparedBodyTokens, ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }); });
           } finally { releaseLarge?.(); releaseRead?.(); }
         }
       } finally {

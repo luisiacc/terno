@@ -233,7 +233,7 @@ export function findIngestMessage(db: Db, msg: Pick<IncomingMessage, "accountId"
 
 /** Body-first indexing can share writes only when every input is a distinct new server row. */
 function prepareNewBodies(db: Db, messages: readonly IncomingMessage[], ids: { next(): number }): number[] | null {
-  if (messages.length > 200) return null;
+  if (messages.length > 200 || messages.some((message) => message.bodyCapture)) return null;
   const keys = new Set<string>();
   for (const msg of messages) {
     if (!msg.providerMsgId || msg.providerMsgId.slice(0, 6).toLowerCase() === "local:") return null;
@@ -274,6 +274,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       pendingRefs.length = 0;
     };
     for (const [index, msg] of messages.entries()) {
+      if (msg.bodyCapture) requireBodyCapture(db, msg.accountId, msg.bodyCapture);
       // the same provider message, else the server copy of a message we sent (adopt the optimistic local row
       // instead of duplicating it): one lookup for both
       const existing = freshIds ? undefined : findIngestMessage(db, msg);
@@ -309,8 +310,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       // A new row has no attachment metadata or pins to replace.
       const capture = !msg.captureUnavailable && msg.attachments !== undefined;
       // the body goes in first: the message's insert trigger indexes it in the same write
-      if (!freshIds && (msg.bodyText !== null || msg.bodyHtml !== null)) {
-        db.run("INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml);
+      if (!freshIds && (msg.bodyCapture || msg.bodyText !== null || msg.bodyHtml !== null)) {
+        db.run("INSERT INTO message_bodies (message_id, body_text, body_html, capture_id, body_preview) VALUES (?, ?, ?, ?, ?)", allocated, msg.bodyText, msg.bodyHtml, msg.bodyCapture?.id ?? null, msg.bodyCapture?.preview ?? null);
       }
       if (preparedRecipients?.ftsTokens !== undefined) db.run("INSERT INTO recipient_fts_stage(message_id,tokens) VALUES(?,?)", allocated, preparedRecipients.ftsTokens);
       const id = db.run(
@@ -334,8 +335,8 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         msg.subject,
         normalizeText(msg.subject),
         msg.date,
-        msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText),
-        bodyTail(msg.bodyText),
+        msg.bodyCapture?.snippet ?? (msg.snippet ? makeSnippet(msg.snippet) : makeSnippet(msg.bodyText)),
+        msg.bodyCapture?.tail ?? bodyTail(msg.bodyText),
         msg.bodyState,
         msg.listId ? normalizeText(msg.listId) : null,
         b(msg.isRead),
@@ -355,6 +356,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         categoryOf(msg.gmailLabels),
         unsubscribeJson(msg.unsubscribe),
       ).lastInsertRowid;
+      if (msg.bodyCapture) db.run("INSERT INTO body_heads(message_id,capture_id) VALUES(?,?)", id, msg.bodyCapture.id);
       if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
       for (const ref of refs) {
         pendingRefs.push([msg.accountId, ref, id]);
@@ -428,7 +430,7 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
     id,
   );
   if (msg.bodyState === "full") {
-    setMessageBody(db, id, msg.bodyText, msg.bodyHtml, "full");
+    setMessageBody(db, id, msg.bodyText, msg.bodyHtml, "full", msg.bodyCapture);
   }
   if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(db, id, msg.attachments);
   if (msg.captureUnavailable) db.run("UPDATE messages SET attachments_captured = 2 WHERE id = ?", id);
@@ -451,29 +453,43 @@ function upsertLocations(db: Db, messageId: number, msg: IncomingMessage): void 
 }
 
 /** Stores a downloaded body; the message_bodies triggers reindex the message. */
+function requireBodyCapture(db: Db, accountId: number, capture: NonNullable<IncomingMessage["bodyCapture"]>): void {
+  if (!db.get("SELECT 1 FROM body_captures WHERE id=? AND account_id=? AND ready=1 AND owned=0", capture.id, accountId)) throw new Error("Body capture ownership changed before publication");
+}
+
 export function setMessageBody(
   db: Db,
   messageId: number,
   bodyText: string | null,
   bodyHtml: string | null,
   state: "partial" | "full",
+  capture?: IncomingMessage["bodyCapture"],
 ): void {
+  if (capture) {
+    const message = db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id=?", messageId);
+    if (!message) return;
+    requireBodyCapture(db, message.account_id, capture);
+  }
   const updated = db.run(
     `UPDATE messages SET body_tail_norm = ?, body_state = ?, snippet = CASE WHEN snippet = '' THEN ? ELSE snippet END WHERE id = ?`,
-    bodyTail(bodyText),
+    capture?.tail ?? bodyTail(bodyText),
     state,
-    makeSnippet(bodyText),
+    capture?.snippet ?? makeSnippet(bodyText),
     messageId,
   );
   if (updated.changes === 0) return;
-  if (bodyText === null && bodyHtml === null) db.run("DELETE FROM message_bodies WHERE message_id = ?", messageId);
+  if (capture) db.run("INSERT INTO body_heads(message_id,capture_id) VALUES(?,?) ON CONFLICT(message_id) DO UPDATE SET capture_id=excluded.capture_id", messageId, capture.id);
+  else db.run("DELETE FROM body_heads WHERE message_id=?", messageId);
+  if (!capture && bodyText === null && bodyHtml === null) db.run("DELETE FROM message_bodies WHERE message_id = ?", messageId);
   else {
     db.run(
-      `INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?)
-       ON CONFLICT (message_id) DO UPDATE SET body_text = excluded.body_text, body_html = excluded.body_html`,
+      `INSERT INTO message_bodies (message_id, body_text, body_html, capture_id, body_preview) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (message_id) DO UPDATE SET body_text = excluded.body_text, body_html = excluded.body_html, capture_id=excluded.capture_id, body_preview=excluded.body_preview`,
       messageId,
       bodyText,
       bodyHtml,
+      capture?.id ?? null,
+      capture?.preview ?? null,
     );
   }
 }

@@ -1,3 +1,7 @@
+import { validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
+import { bodyOwnership } from "./body-ownership";
+import { iterateBodyTokens, type TextOp } from "@terno/core";
+import { decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartText, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
 import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -189,9 +193,11 @@ const NO_CLASSIFICATION: ClassifyResult = { deltas: [], auto: new Map(), touched
 export interface IdbMailStoreOptions {
   /** the mailbox: one IndexedDB database per name (terno-<name>) */
   name: string;
+  signal?: AbortSignal;
+  legacyUpgrade?: (name: string, signal?: AbortSignal) => Promise<void>;
   /** the browser's indexedDB (fake-indexeddb in Node tests) */
   factory: IDBFactory;
-  platform: Pick<Platform, "uuid" | "yield" | "files">;
+  platform: Pick<Platform, "uuid" | "yield" | "files" | "bodyPreparation">;
   /** answer searches from the instant index when it is current (default); the exact scan otherwise */
   instantSearch?: boolean | Omit<InstantSearchOptions, "feed" | "platform" | "snapshotPath" | "identity" | "phrases" | "log">;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
@@ -225,6 +231,24 @@ export class IdbMailStore implements MailStore {
   private backfill: { scan: Iterator<R> | null; done: boolean; pending: number[] | null } | null = null;
   private inflight: Promise<unknown> | null = null;
   private open = true;
+  private bodyClosing = false;
+  private readonly bodyCommands = new Set<Promise<unknown>>();
+  private readonly activeBodyStages = new Set<string>();
+  private readonly bodyReaders = new Map<string, number>();
+  private bodyCleanup: Promise<void> = Promise.resolve();
+  private bodyGarbage: Promise<void> | undefined;
+  private queueBodyGarbage(): void {
+    if (this.bodyClosing || this.bodyGarbage) return;
+    const task = Promise.resolve().then(() => this.cleanupBodies()).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; });
+    this.bodyGarbage = task;
+  }
+
+  private bodyCommand<V>(work: () => Promise<V>): Promise<V> {
+    if (this.bodyClosing) return Promise.reject(new Error("The store is closing"));
+    const command = work(); this.bodyCommands.add(command);
+    void command.finally(() => this.bodyCommands.delete(command)).catch(() => {});
+    return command;
+  }
   private unusable = false;
   private seeding = false;
   /**
@@ -244,6 +268,7 @@ export class IdbMailStore implements MailStore {
     private readonly o: IdbMailStoreOptions,
   ) {
     this.log = o.log ?? (() => {});
+    bodyOwnership(db).onRetired = () => this.queueBodyGarbage();
     const order = new ThreadOrder(db);
     const filterOrders = Object.fromEntries(LIST_FILTERS.map((f) => [f, new ThreadOrder(db, FILTER_TEST[f])])) as Record<ListFilter, ThreadOrder>;
     const facts = new FactsQueue(db);
@@ -256,9 +281,10 @@ export class IdbMailStore implements MailStore {
       facts,
       scopes,
       uuid: () => o.platform.uuid(),
+      bodyTokenParts: (capture) => bodyPartText(this.bodyPartSource(capture, 2)),
       body: (id) => {
         const r = bodies.get(id);
-        if (r) return { body_text: r.body_text ?? null, body_html: r.body_html ?? null };
+        if (r) return { body_text: r.body_text ?? null, body_html: r.body_html ?? null, body_preview: r.body_preview ?? null, capture_id: r.capture_id ?? null };
         if (bodies.absent.has(id)) return null;
         throw new Error(`the body of message ${id} was not read ahead`);
       },
@@ -281,8 +307,14 @@ export class IdbMailStore implements MailStore {
 
   /** Opens (creating) the mailbox and mirrors it in memory. */
   static async open(o: IdbMailStoreOptions): Promise<IdbMailStore> {
+    o.signal?.throwIfAborted();
+    await o.legacyUpgrade?.(o.name, o.signal);
+    o.signal?.throwIfAborted();
     const idb = await openIdb(o.factory, o.name);
     try {
+      const pending = await new Promise<{ pending?: boolean } | undefined>((resolve, reject) => { const query = idb.transaction("meta", "readonly").objectStore("meta").get("bodyPartsUpgrade"); query.onsuccess = () => resolve(query.result); query.onerror = () => reject(query.error); });
+      if (pending?.pending) throw new Error("This mailbox needs asynchronous body upgrade admission");
+      o.signal?.throwIfAborted();
       const db = createMemDb();
       const timings: Record<string, number> = {};
       const meta = await loadAll(idb, db, timings, EARLY_TABLES, () => o.platform.yield());
@@ -307,6 +339,7 @@ export class IdbMailStore implements MailStore {
       }
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
       else if (meta.logicalSchema !== LOGICAL_SCHEMA || foldersPending) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, ...(foldersPending && { foldersPending: true }) });
+      o.signal?.throwIfAborted();
       const store = new IdbMailStore(idb, db, o);
       Object.assign(store.openTimings, timings);
       // the first screen needs none of it: messages load while it paints (writes to these tables wait for them)
@@ -323,6 +356,9 @@ export class IdbMailStore implements MailStore {
       // the upgrade's backfill goes through folders.rebuild (the backend's runner: a slice a turn, what it touched
       // published), a batch of messages at a time once no folder job is left (Codex R17)
       if (foldersPending) store.backfill = { scan: null, done: false, pending: null };
+      store.bodyCleanup = store.loaded.then(() => store.cleanupBodies());
+      void store.bodyCleanup.catch(() => {});
+      if (o.signal?.aborted) { await store.close(); o.signal.throwIfAborted(); }
       return store;
     } catch (error) {
       idb.close();
@@ -351,8 +387,13 @@ export class IdbMailStore implements MailStore {
   async close(): Promise<void> {
     if (!this.open) return;
     this.exportLeases.clear();
+    this.bodyClosing = true;
+    await Promise.allSettled(this.bodyCommands);
+    await this.bodyCleanup;
+    await this.bodyGarbage;
     try {
       await this.instant?.close();
+      if (!this.unusable) await this.cleanupBodies();
     } finally {
       await this.loaded.catch(() => {});
       await this.queue.catch(() => {});
@@ -451,6 +492,8 @@ export class IdbMailStore implements MailStore {
 
   private evictBodies(): void {
     if (this.seeding || this.db.inTransaction) return;
+    const parts = this.db.table("body_parts");
+    parts.evict([...parts.rows.keys()]); parts.absent.clear();
     const chunks = this.db.table("attachment_bytes");
     chunks.evict([...chunks.rows.keys()]);
     // No pending undo remains here; cold-delete keys need not outlive their committed unit.
@@ -481,6 +524,103 @@ export class IdbMailStore implements MailStore {
     const bodies = this.db.table<R>("message_bodies");
     for (const r of bodies.rows.values()) bytes += bodyBytes(r);
     return { count: bodies.size, bytes, budgetBytes: BODY_CACHE_BYTES };
+  }
+
+  private searchMessageDoc(id: number): SearchMessageDoc {
+    const body = this.c.body(id);
+    return messageDoc(T(this.c, "messages").get(id)!, body?.body_text ?? null, body?.capture_id ? () => bodyPartText(this.bodyPartSource(body.capture_id!, 2)) : undefined);
+  }
+
+  private bodyPartSource(capture: string, field: number): BodyPartSource {
+    const row = T(this.c, "body_captures").get(capture);
+    if (!row?.ready) throw new Error("Body source changed before it was read");
+    let retained = false;
+    const expected = field === 0 ? row?.text_parts : field === 1 ? row?.html_parts : row?.token_parts;
+    return { close: () => { if (!retained) return; retained = false; const count = this.bodyReaders.get(capture)! - 1; if (count) this.bodyReaders.set(capture, count); else { this.bodyReaders.delete(capture); if (bodyOwnership(this.db).isOrphan(capture)) this.queueBodyGarbage(); } }, read: async (after) => {
+      if (!retained) { retained = true; this.bodyReaders.set(capture, (this.bodyReaders.get(capture) ?? 0) + 1); }
+      if (expected == null || after + 1 >= expected) return null;
+      const table = this.db.table("body_parts"), key = JSON.stringify([capture, field, after + 1]);
+      await readLazy(this.idb, table, [key]);
+      const part = table.get(capture, field, after + 1);
+      table.evict([key]); table.absent.delete(key);
+      if (!part) throw new Error("Incomplete body parts");
+      await this.o.platform.yield();
+      return { ordinal: after + 1, value: part.value as Uint8Array };
+    } };
+  }
+
+  private async stageBody<M extends Pick<IncomingMessage, "accountId" | "bodyText" | "bodyHtml" | "snippet" | "preparedBodyTokens" | "bodyParts">>(message: M, check?: () => void): Promise<M & Pick<IncomingMessage, "bodyCapture">> {
+    validateBodyInput(message);
+    if (!message.bodyParts && Math.max(message.bodyText?.length ?? 0, message.bodyHtml?.length ?? 0) <= BODY_PART_UNITS) return message;
+    const id = this.o.platform.uuid();
+    check?.();
+    this.activeBodyStages.add(id);
+    let tokenCount = 0; const acknowledged = [0, 0, 0];
+    try {
+    await this.command(() => T(this.c, "body_captures").insert({ id, account_id: message.accountId, message_id: null, text_parts: message.bodyParts?.text?.length ?? (message.bodyText === null ? null : Math.ceil(message.bodyText.length / BODY_PART_UNITS)), html_parts: message.bodyParts?.html?.length ?? (message.bodyHtml === null ? null : Math.ceil(message.bodyHtml.length / BODY_PART_UNITS)), token_parts: 0, ready: 0 }), { check });
+      for await (const part of bodyPartWrites(message.bodyText, message.bodyHtml, message.preparedBodyTokens ?? (message.bodyParts?.text || (message.bodyText && message.bodyText.length > BODY_PART_UNITS) ? prepareBodyTokens(message.bodyParts?.text ?? message.bodyText!, this.o.platform.yield, this.o.platform.bodyPreparation ?? browserBodyPreparationFactory, check) : iterateBodyTokens(message.bodyText ?? "")), message.bodyParts)) {
+        await this.command(() => { check?.(); T(this.c, "body_parts").insert({ capture_id: id, ...part }); }, { check });
+        if (part.ordinal !== acknowledged[part.field]!) throw new Error("Body acknowledgement is not contiguous");
+        acknowledged[part.field]!++;
+        if (part.field === 2) tokenCount = part.ordinal + 1;
+        await this.o.platform.yield();
+      }
+      if (acknowledged[0] !== (message.bodyParts?.text?.length ?? Math.ceil((message.bodyText?.length ?? 0) / BODY_PART_UNITS)) || acknowledged[1] !== (message.bodyParts?.html?.length ?? Math.ceil((message.bodyHtml?.length ?? 0) / BODY_PART_UNITS))) throw new Error("Body acknowledgements are incomplete");
+      await this.command(() => { check?.(); const row = T(this.c, "body_captures").get(id)!; T(this.c, "body_captures").update(row, { token_parts: tokenCount, ready: 1 }); }, { check });
+      return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: (message.bodyParts?.text?.[0] ?? message.bodyText)?.slice(0, 4096) ?? null, snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
+    } catch (error) { if (this.isOpen && !this.unusable) await this.finishBodyStage(id); throw error; }
+  }
+
+  private async finishBodyStage(id: string): Promise<void> {
+    this.activeBodyStages.delete(id);
+    await this.discardBody(id);
+    await this.cleanupBodies();
+  }
+
+  private async cleanupBodies(): Promise<void> {
+    await this.loaded;
+    for (const id of bodyOwnership(this.db).candidates()) {
+      await this.discardBody(id);
+      await this.o.platform.yield();
+    }
+  }
+
+  private async discardBody(id: string): Promise<void> {
+    while (this.open && !this.unusable) {
+      if (this.activeBodyStages.has(id) || this.bodyReaders.has(id)) return;
+      const capture = await this.read(() => T(this.c, "body_captures").get(id));
+      if (!capture) return;
+      if (await this.read(() => T(this.c, "body_heads").by("capture", id).length > 0)) return;
+      const tx = this.idb.transaction("body_parts", "readonly");
+      const keys = await new Promise<IDBValidKey[]>((resolve, reject) => { const request = tx.objectStore("body_parts").getAllKeys(IDBKeyRange.bound([id], [id, 3]), 16); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+      if (!keys.length) { await this.command(() => T(this.c, "body_captures").delete(id)); return; }
+      await this.command(() => { for (const key of keys) T(this.c, "body_parts").delete(...key as (string | number)[]); });
+      await this.o.platform.yield();
+    }
+  }
+
+  private ruleTests(rules: readonly import("@terno/core").FilterRule[]): BodyTest[] {
+    return rules.flatMap((rule) => rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
+  }
+  private async prepareBodyTests(tests: readonly BodyTest[], ids?: readonly number[], onlyCaptures?: readonly string[]): Promise<BodyTestResults> {
+    if (!tests.length) return new Map();
+    const captures = onlyCaptures ? new Set(onlyCaptures) : ids ? new Set(ids.flatMap((id) => { const body = this.c.body(id); return body?.capture_id ? [body.capture_id] : []; })) : new Set([...T(this.c, "body_captures").all()].filter((r) => r.ready).map((r) => String(r.id)));
+    const results: BodyTestResults = new Map();
+    for (const id of captures) {
+      const matches = new Map<string, boolean>(); results.set(id, matches);
+      for (const test of tests) { const key = bodyTestKey(test.op, test.value, test.prefix); if (!matches.has(key)) matches.set(key, await matchBodyParts(this.bodyPartSource(id, 2), test.op, test.value, test.prefix)); }
+    }
+    return results;
+  }
+  private preparedBodyTest(results: BodyTestResults, id: string, op: TextOp, value: string, prefix = false): boolean {
+    const result = results.get(id)?.get(bodyTestKey(op, value, prefix));
+    if (result === undefined) throw new Error("Body match was not prepared at this content revision");
+    return result;
+  }
+  private withBodyTests<V>(results: BodyTestResults, work: () => V): V {
+    const prior = this.c.bodyTest;
+    this.c.bodyTest = (id, op, value, prefix) => this.preparedBodyTest(results, id, op, value, prefix);
+    try { return work(); } finally { this.c.bodyTest = prior; }
   }
 
   private readBodies(ids: Iterable<number>): Promise<void> {
@@ -620,7 +760,8 @@ export class IdbMailStore implements MailStore {
               await this.readBodies(learnable);
               const texts: SentText[] = [];
               for (const id of learnable) {
-                const body = this.c.body(id)?.body_text;
+                const stored = this.c.body(id);
+                const body = stored?.capture_id ? await bodyPrefix(this.bodyPartSource(stored.capture_id, 0), SENT_TEXT_MAX) : stored?.body_text;
                 if (body) texts.push(sentOf(rows.get(id)!, body));
               }
               return texts;
@@ -684,7 +825,7 @@ export class IdbMailStore implements MailStore {
           return { docs, next: at + slice.length };
         });
       const messagesAt = (at: number) =>
-        page<SearchMessageDoc>("messages", messageIds, at, (id) => messageDoc(this.db.table<R>("messages").get(id)!, this.c.body(id)?.body_text ?? null), (slice) => this.readBodies(slice));
+        page<SearchMessageDoc>("messages", messageIds, at, (id) => this.searchMessageDoc(id), (slice) => this.readBodies(slice));
       const threadsAt = (at: number) => page<SearchThreadDoc>("threads", threadIds, at, (id) => threadDoc(this.c, this.db.table<R>("threads").get(id)!));
       const release = async () => {
         if (!this.open) return;
@@ -754,11 +895,18 @@ export class IdbMailStore implements MailStore {
           while (i < ids.length && performance.now() - sliceStarted < SCAN_SLICE_MS) {
             const chunk = ids.slice(i, i + SCAN_CHUNK);
             if (plan.needsBodies) await this.readBodies(chunk);
+            const prepared = plan.needsBodies ? await this.prepareBodyTests(req.search.query.terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })), chunk) : new Map();
             for (const id of chunk) {
               const m = messages.get(id);
               if (!m) continue;
               let cols: ReturnType<typeof columnsOf> | null = null;
-              const columns = () => (cols ??= columnsOf(m, plan.needsBodies ? (this.c.body(id)?.body_text ?? null) : null));
+              const columns = () => {
+                if (cols) return cols;
+                const body = plan.needsBodies ? this.c.body(id) : null;
+                cols = columnsOf(m, body?.body_text ?? null);
+                if (body?.capture_id) cols.bodyTest = (value, prefix) => this.preparedBodyTest(prepared, body.capture_id!, "contains", value, prefix);
+                return cols;
+              };
               if (matched) {
                 if (!matched.has(m.thread_id) && plan.messageOk(m, columns)) matched.add(m.thread_id);
               } else if (!excluded.has(m.thread_id) && plan.excludes(m, columns)) excluded.add(m.thread_id);
@@ -824,13 +972,22 @@ export class IdbMailStore implements MailStore {
     scopeIds: (p) => this.early(() => scopeThreadIds(this.c, p)),
     scopeCount: (p) => this.early(() => scopeThreadIds(this.c, p).length),
     summaries: (ids) => this.early(() => summariesInOrder(this.c, ids)),
-    get: async (id) => {
+    get: async (id, options) => {
       await this.settled();
       // exclusive: no command can add a message (or evict a body) between reading the bodies and the thread
       return this.exclusive(async () => {
         await this.readBodies(T(this.c, "messages").by("fk_thread_id", id).map((m) => m.id as number));
         const thread = getThread(this.c, id);
         if (!thread) return null;
+        for (const message of thread.messages) {
+          const body = this.c.body(message.id);
+          if (body?.capture_id) {
+            const capture = T(this.c, "body_captures").get(body.capture_id)!;
+            if (options?.bodyFormat === "parts") { message.bodyReference = { version: body.capture_id, textParts: capture.text_parts, htmlParts: capture.html_parts }; continue; }
+            message.bodyText = capture.text_parts === null ? null : await assembleBody(this.bodyPartSource(body.capture_id, 0));
+            message.bodyHtml = capture.html_parts === null ? null : await assembleBody(this.bodyPartSource(body.capture_id, 1));
+          }
+        }
         return { ...thread, categorization: { auto: autoReasons(this.c, id), suggestions: pendingSuggestions(this.c, { threadId: id, limit: 5 }) } };
       });
     },
@@ -853,6 +1010,18 @@ export class IdbMailStore implements MailStore {
         };
       });
     },
+    bodyPart: async (input) => this.exclusive(async () => {
+      const message = T(this.c, "messages").get(input.messageId);
+      if (!message || message.account_id !== input.accountId) throw new RpcError("STALE", L("errors.originalGone"));
+      await this.readBodies([input.messageId]);
+      if (this.c.body(input.messageId)?.capture_id !== input.version) throw new RpcError("STALE", L("errors.originalGone"));
+      const source = this.bodyPartSource(input.version, input.field === "text" ? 0 : 1);
+      try {
+        const part = await source.read(input.ordinal - 1);
+        if (!part) throw new RpcError("STALE", L("errors.originalGone"));
+        return decodeBodyPart(part.value);
+      } finally { source.close?.(); }
+    }),
     counts: (now) => this.early(() => getCounts(this.c, now)),
     search: (req) => this.searchPage(req),
     searchText: async (p) => {
@@ -974,14 +1143,19 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => this.bodyCommand(async () => {
+      const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
+      await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
+      try {
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? await this.read(() => findIngestMessage(this.c, m)) : undefined;
-        staged.push(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) });
+        staged.push(await this.stageBody(m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.o.platform.yield, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) }, check));
       }
-      return this.command(
-        () => {
+      const tests = await this.read(() => this.ruleTests(listFilters(this.c).filter((f) => f.enabled).map((f) => f.rule)));
+      const prepared = await this.prepareBodyTests(tests, undefined, staged.flatMap((m) => m.bodyCapture ? [m.bodyCapture.id] : []));
+      return await this.command(
+        () => this.withBodyTests(prepared, () => {
           check?.();
           const flagBefore = flagEpochs(idbFlags(this.c));
           for (const m of staged) completeCapture(idbCaptureStorage(this.c), m.accountId, m.repair);
@@ -997,22 +1171,27 @@ export class IdbMailStore implements MailStore {
           const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
           for (const t of c.touched) touched.add(t);
           return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
-        },
+        }),
         { durability: "relaxed", check },
-      );
-    },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check, expected }) => {
+      ); } finally { for (const m of staged) if (m.bodyCapture && this.isOpen && !this.unusable) await this.finishBodyStage(m.bodyCapture.id); }
+    }),
+    setBody: async (messageId, text, html, { now, classifier, attachments, bodyParts, preparedBodyTokens, captureUnavailable, repair, check, expected }) => this.bodyCommand(async () => {
+      const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
+      await this.bodyCleanup;
       const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
-      return this.command(
-        () => {
+      const body = !captureUnavailable && accountId !== undefined ? await this.stageBody({ accountId, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
+      const tests = await this.read(() => this.ruleTests(listFilters(this.c).filter((f) => f.enabled).map((f) => f.rule)));
+      try {
+      const prepared = await this.prepareBodyTests(tests, undefined, body.bodyCapture ? [body.bodyCapture.id] : []); return await this.command(
+        () => this.withBodyTests(prepared, () => {
           check?.();
           const flagBefore = flagEpochs(idbFlags(this.c));
           const current = expected ? T(this.c, "messages").get(messageId) : undefined;
           if (expected && (!current || current.body_state === "full" || current.account_id !== expected.accountId || current.thread_id !== expected.threadId || current.provider_msg_id !== expected.providerMsgId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
           if (accountId !== undefined) completeCapture(idbCaptureStorage(this.c), accountId, repair);
           if (T(this.c, "imap_identity_holds").has(messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
-          if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
+          if (!captureUnavailable) setMessageBody(this.c, messageId, body.bodyText, body.bodyHtml, "full", body.bodyCapture);
           if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);
           const owner = T(this.c, "messages").get(messageId);
           if (captureUnavailable && owner) T(this.c, "messages").update(owner, { attachments_captured: 2, attachment_pending: 0 });
@@ -1024,10 +1203,10 @@ export class IdbMailStore implements MailStore {
           for (const t of c.touched) touched.add(t);
           if (owner) touched.add(owner.thread_id);
           return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(idbFlags(this.c), flagBefore) };
-        },
+        }),
         { durability: "relaxed", check },
-      );
-    },
+      ); } finally { if (body.bodyCapture && this.isOpen && !this.unusable) await this.finishBodyStage(body.bodyCapture.id); }
+    }),
     updateFlags: (accountId, updates, observation, check) =>
       this.command(
         () => {
@@ -1319,11 +1498,15 @@ export class IdbMailStore implements MailStore {
   };
 
   readonly compose: MailStore["compose"] = {
-    queueSend: async (p) => {
+    queueSend: async (p) => this.bodyCommand(async () => {
       p = structuredClone(p);
       const preparedRecipients = (await this.accounts.get(p.accountId))?.kind === "imap" ? await recipientReceiptParts(p, this.o.platform.yield) : null;
       if (!await attachmentMessageBudgetAsync(p.bodyText, p.bodyHtml, p.attachments ?? [], this.o.platform.yield)) throw new RpcError("BAD_REQUEST", L("attachments.tooLarge"));
+      const check = () => { if (this.bodyClosing) throw new Error("The store is closing"); };
+      const body = await this.stageBody({ accountId: p.accountId, bodyText: p.bodyText, bodyHtml: p.bodyHtml || null, snippet: "" }, check);
+      try {
       return this.command(() => {
+        check();
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
@@ -1371,9 +1554,10 @@ export class IdbMailStore implements MailStore {
               subject: p.subject,
               date: p.now,
               snippet: "",
-              bodyText: p.bodyText,
+              bodyText: body.bodyText,
+              bodyCapture: body.bodyCapture,
               // the sent copy reads as written (the reader sanitizes it like any mail)
-              bodyHtml: p.bodyHtml || null,
+              bodyHtml: body.bodyHtml,
               bodyState: "full",
               listId: null,
               isRead: true,
@@ -1402,7 +1586,8 @@ export class IdbMailStore implements MailStore {
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
         return { opId, threadId: T(this.c, "messages").get(localId)!.thread_id as number, messageId: localId, deltas: ingest.deltas };
       });
-    },
+      } finally { if (body.bodyCapture && this.isOpen && !this.unusable) await this.finishBodyStage(body.bodyCapture.id); }
+    }),
   };
 
   // ───────────────────────────── filters ─────────────────────────────
@@ -1431,7 +1616,8 @@ export class IdbMailStore implements MailStore {
         // a text rule (plan 89) reads the complete bodies only
         const full = readsBody && !needsBody ? slice.filter((id) => messages.get(id)?.body_state === "full") : slice;
         if (readsBody && full.length) await this.readBodies(full);
-        const m = findRuleMatches(this.c, rule, now, slice);
+        const prepared = readsBody ? await this.prepareBodyTests(this.ruleTests([rule]), full) : new Map();
+        const m = this.withBodyTests(prepared, () => findRuleMatches(this.c, rule, now, slice));
         out.messageIds.push(...m.messageIds);
         for (const t of m.threadIds) out.threadIds.add(t);
         if (needsBody) {
@@ -2010,6 +2196,13 @@ export class IdbMailStore implements MailStore {
       return this.exclusive(async () => {
         await this.readBodies([...T(this.c, "messages").rows.keys()].map(Number));
         const snap = storeSnapshot(this.c);
+        for (const message of snap.messages) {
+          const body = this.c.body(message.id);
+          if (!body?.capture_id) continue;
+          const capture = T(this.c, "body_captures").get(body.capture_id)!;
+          message.bodyText = capture.text_parts === null ? null : await assembleBody(this.bodyPartSource(body.capture_id, 0));
+          const doc = snap.search.messages.find((doc) => doc.messageId === message.id); if (doc) { doc.body = message.bodyText ?? ""; delete doc.bodyTokenParts; }
+        }
         this.evictBodies();
         return snap;
       });

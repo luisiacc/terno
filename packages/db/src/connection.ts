@@ -50,6 +50,7 @@ export interface CheckpointWorker {
 }
 
 export interface SqliteDriver {
+  bodyPreparation?: import("@terno/store").BodyPreparationFactory;
   readonly id: "node-sqlite" | "wasm-opfs" | "wasm-memory" | (string & {});
   open(path: string, options: { readonly: boolean }): SqliteConnection;
   /** applied by Db right after open */
