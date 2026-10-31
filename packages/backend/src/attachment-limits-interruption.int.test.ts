@@ -57,6 +57,17 @@ function snapshot(t: Fixture) {
     copies: db.all("SELECT * FROM send_copies ORDER BY opId"),
   };
 }
+function stagingContinues(actual: ReturnType<typeof snapshot>, expected: ReturnType<typeof snapshot>) {
+  expect(actual).toEqual(expected);
+}
+function parkedOwns(actual: ReturnType<typeof snapshot>, expected: ReturnType<typeof snapshot>) {
+  expect(actual.ops[0]!.state).toBe("queued");
+  for (const key of ["assets", "chunks", "parts", "links", "ops"] as const) expect(actual[key]).toEqual(expected[key]);
+}
+function queuedIdentity(actual: string | null, expected: string) {
+  expect(expected.length).toBeGreaterThan(0);
+  expect(actual).toBe(expected);
+}
 async function stage(t: Fixture, bytes: Buffer, accountId = t.accountId) {
   const ref = await t.client.call("attachments.create", { accountId, filename: "witness.bin", mime: "application/octet-stream", size: bytes.length });
   for (let offset = 0, index = 0; offset < bytes.length; offset += ATTACHMENT_CHUNK, index++) await t.client.call("attachments.append", { accountId, assetId: ref.assetId, index, dataBase64: bytes.subarray(offset, offset + ATTACHMENT_CHUNK).toString("base64") });
@@ -151,8 +162,9 @@ it("interrupted staging resumes one identity; incomplete, removed and expired re
   const bytes = Buffer.alloc(ATTACHMENT_CHUNK + 5, 0x61); bytes.set([0, 255, 128, 13, 10], ATTACHMENT_CHUNK);
   const ref = await t.client.call("attachments.create", { accountId: t.accountId, filename: "resume.bin", mime: "application/octet-stream", size: bytes.length });
   const first = { accountId: t.accountId, assetId: ref.assetId, index: 0, dataBase64: bytes.subarray(0, ATTACHMENT_CHUNK).toString("base64") };
-  await t.client.call("attachments.append", first); await t.reopen();
-  await t.client.call("attachments.append", first);
+  await t.client.call("attachments.append", first); const staged = snapshot(t); await t.reopen();
+  stagingContinues(snapshot(t), staged);
+  await t.client.call("attachments.append", first); stagingContinues(snapshot(t), staged);
   const before = snapshot(t);
   await expect(t.client.call("attachments.append", { ...first, dataBase64: Buffer.alloc(ATTACHMENT_CHUNK, 7).toString("base64") })).rejects.toThrow();
   await expect(t.client.call("attachments.append", { ...first, index: 2 })).rejects.toThrow();
@@ -160,6 +172,7 @@ it("interrupted staging resumes one identity; incomplete, removed and expired re
   await t.client.call("attachments.append", { ...first, index: 1, dataBase64: bytes.subarray(ATTACHMENT_CHUNK).toString("base64") });
   await t.client.call("attachments.seal", { accountId: t.accountId, assetId: ref.assetId });
   const complete = snapshot(t); expect(complete.assets).toHaveLength(2); expect(complete.chunks).toHaveLength(3);
+  for (let index = 0; index < 2; index++) expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: ref.assetId, index })).toEqual({ dataBase64: bytes.subarray(index * ATTACHMENT_CHUNK, (index + 1) * ATTACHMENT_CHUNK).toString("base64") });
   await t.client.call("attachments.discard", { accountId: t.accountId, assetId: ref.assetId });
   const removed = snapshot(t); await expect(t.client.call("compose.send", params(draft, [ref]))).rejects.toThrow(); await retained(t, draft, removed);
   const orphan = await stage(t, Buffer.from([8]));
@@ -177,9 +190,9 @@ it.each(["401", "offline"] as const)("queued pins survive expiry and managed Gma
   await expect(t.client.call("attachments.discard", { accountId: t.accountId, assetId: ref.assetId })).rejects.toThrow();
   t.setNow(172800002); const orphan = await stage(t, Buffer.alloc(0));
   expect(snapshot(t).chunks).toEqual(before.chunks); expect(snapshot(t).links).toEqual(before.links);
-  t.setMode(mode); await t.backend.runWorker();
+  const attemptBefore = snapshot(t); t.setMode(mode); await t.backend.runWorker();
   if (mode === "offline") {
-    expect((await t.backend.store.ops.get(opId))?.state).toBe("queued");
+    parkedOwns(snapshot(t), attemptBefore);
     t.setMode("accept"); await t.backend.store.ops.resumeNetwork(t.accountId, 172800002); await t.backend.runWorker();
   }
   expect((await t.backend.store.ops.get(opId))?.state).toBe("succeeded");
@@ -189,7 +202,8 @@ it.each(["401", "offline"] as const)("queued pins survive expiry and managed Gma
   expect(parsed.to).toEqual(to); expect(Buffer.from(parsed.attachments[0]!.bytes!)).toEqual(bytes);
   const retried = await parseRaw(Buffer.from(JSON.parse(t.sends[1]!).raw, "base64url"));
   expect(retried.to).toEqual(to); expect(retried.subject).toBe("Limits witness"); expect(retried.text).toBe("Exact body");
-  expect(parsed.rfcMessageId).toEqual(expect.any(String)); expect(retried.rfcMessageId).toBe(parsed.rfcMessageId); expect(Buffer.from(retried.attachments[0]!.bytes!)).toEqual(bytes);
+  const queuedMessageId = JSON.parse(payload).messageId as string;
+  queuedIdentity(parsed.rfcMessageId, queuedMessageId); queuedIdentity(retried.rfcMessageId, queuedMessageId); expect(Buffer.from(retried.attachments[0]!.bytes!)).toEqual(bytes);
   const accepted = snapshot(t); await t.reopen(); await t.backend.runWorker();
   expect(snapshot(t)).toEqual(accepted); expect(t.sends).toHaveLength(2);
   expect((await t.backend.store.ops.get(opId))?.payload_json).toBe(payload);
@@ -239,4 +253,24 @@ it("interrupted orphan cleanup cannot reclaim or rebind a queued sibling across 
   const accepted = snapshot(t); await t.reopen(); await t.backend.runWorker();
   expect(snapshot(t)).toEqual(accepted); expect(t.sends).toHaveLength(1);
   expect(await t.client.call("attachments.read", { accountId: t.accountId, assetId: pinned.assetId, index: 0 })).toEqual({ dataBase64: "AP+A" });
+});
+
+it.each(["staging bytes", "parked pins", "queued identity"] as const)("R1 oracle rejects %s corruption at its observation point", async (fault) => {
+  const t = await setup(), ref = await stage(t, Buffer.from([0, 255, 128])), draft = await save(t, [ref]);
+  await t.client.call("compose.send", params(draft));
+  const expected = snapshot(t), actual = structuredClone(expected);
+  if (fault === "staging bytes") {
+    stagingContinues(actual, expected);
+    actual.chunks[0]!.data_base64 = "AAAA";
+    expect(() => stagingContinues(actual, expected)).toThrowError(/expected/);
+  } else if (fault === "parked pins") {
+    parkedOwns(actual, expected);
+    actual.links = actual.links.filter((link) => link.op_id === null);
+    expect(() => parkedOwns(actual, expected)).toThrowError(/expected/);
+  } else {
+    const id = JSON.parse(String(expected.ops[0]!.payload_json)).messageId as string;
+    queuedIdentity(id, id);
+    expect(() => queuedIdentity("wrong@example.test", id)).toThrowError(/expected/);
+    expect(() => queuedIdentity("", "")).toThrowError(/expected/);
+  }
 });
