@@ -58,6 +58,7 @@ export function defineExactBodyLifecycle(open: () => Promise<{ store: MailStore;
       for (const [query, expected] of [['"alpha beta é"', [threadId]], ['alpha be*', [threadId]], ['alpha gamma', []], ['from:one@example.test gamma', []], ['-gamma', []]] as const) expect((await store.threads.searchText({ query, now: 1, limit: 10 })).items.map((thread) => thread.id)).toEqual(expected);
       for (const [op, value, expected] of [["contains", "alpha beta é", 1], ["endsWith", "e tail", 1], ["startsWith", "alpha", 0], ["equals", "alpha beta", 0]] as const) expect((await store.filters.preview({ match: "all", conditions: [{ field: "body", op, value }], actions: [{ type: "star" }] }, 1, 10)).count).toBe(expected);
       const message = (await store.threads.get(threadId))!.messages.find((message) => message.bodyText === text)!;
+      expect(await store.filters.matchMessages({ match: "all", conditions: [{ field: "body", op: "contains", value: "alpha beta é" }], actions: [{ type: "star" }] }, 1, [message.id])).toEqual([message.id]);
       expect(message.bodyHtml === `<p>${text}</p>`).toBe(true);
     } finally { await store.close(); await fixture.dispose(); }
   });

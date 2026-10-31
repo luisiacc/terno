@@ -12,7 +12,7 @@ import { Db, MIGRATIONS, createAccount, ingestMessages, nodeSqliteDriver, regist
 import { msg } from "../../store/src/conformance/fixtures";
 import { Backend, plaintextCipher } from "./backend";
 
-it("opens SQL36 large cached bodies without materializing old body columns on the parent", async () => {
+for (const version of [36, 37]) it(`opens SQL${version} large cached bodies without materializing old body columns on the parent`, async () => {
   const directory = mkdtempSync(join(tmpdir(), "terno-legacy-body-")), path = join(directory, "mail.db");
   const text = `${"alpha e\u0301 😀\r\n".repeat(90000)} boundaryneedle acrossboundary `;
   const html = `<p>${"Exact &amp; complete. ".repeat(90000)}</p>`;
@@ -20,10 +20,11 @@ it("opens SQL36 large cached bodies without materializing old body columns on th
   let threadId = 0;
   try {
     registerFunctions(legacy);
-    for (const migration of MIGRATIONS) if (migration.version <= 36) legacy.tx(() => { legacy.exec(migration.sql); legacy.exec(`PRAGMA user_version=${migration.version}`); });
+    for (const migration of MIGRATIONS) if (migration.version <= 37) legacy.tx(() => { legacy.exec(migration.sql); legacy.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(legacy, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
     const result = ingestMessages(legacy, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1);
     threadId = [...result.touchedThreads][0]!;
+    if (version === 36) legacy.exec("DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key='tabs_backfill'; PRAGMA user_version=36");
   } finally { legacy.close(); }
   let largest = 0;
   const inspect = (value: unknown): void => {
@@ -50,7 +51,7 @@ it("opens SQL36 large cached bodies without materializing old body columns on th
   try {
     await backend.ready;
     const timing = loop.stop(); clearInterval(memory);
-    writeFileSync("/tmp/terno-w11-s48/native-legacy-opening.json", JSON.stringify({ wallMs: performance.now() - began, timing, baselineRss: baseline.rss, sampledPeakProcessRss: peakRss, samples, fixtureStringCodeUnits: text.length + html.length, hostIsolateHeapUsed: process.memoryUsage().heapUsed, hostIsolateArrayBuffers: process.memoryUsage().arrayBuffers }, null, 2));
+    writeFileSync(`/tmp/terno-w11-s48/native-legacy-opening-v${version}.json`, JSON.stringify({ wallMs: performance.now() - began, timing, baselineRss: baseline.rss, sampledPeakProcessRss: peakRss, samples, fixtureStringCodeUnits: text.length + html.length, hostIsolateHeapUsed: process.memoryUsage().heapUsed, hostIsolateArrayBuffers: process.memoryUsage().arrayBuffers }, null, 2));
     const detail = (await backend.store.threads.get(threadId))!;
     expect(detail.messages[0]!.bodyText === text).toBe(true);
     expect(detail.messages[0]!.bodyHtml === html).toBe(true);
@@ -68,7 +69,7 @@ for (const phase of ["prepared", "committed"] as const) it(`resumes exact legacy
   const old = new Db(nodeSqliteDriver, path);
   try {
     registerFunctions(old);
-    for (const migration of MIGRATIONS) if (migration.version <= 36) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
+    for (const migration of MIGRATIONS) if (migration.version <= 37) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
     accountId = createAccount(old, { kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1).id;
     const repo = sqlAssets(old);
     const asset = old.tx(() => { const asset = createAsset(repo, () => crypto.randomUUID(), { accountId, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(repo, accountId, asset.assetId!, 0, "AP+A"); sealAsset(repo, accountId, asset.assetId!); return asset; });

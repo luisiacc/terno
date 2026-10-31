@@ -1,5 +1,5 @@
 import { iterateBodyTokens, type TextOp } from "@terno/core";
-import { BODY_PART_UNITS, validateBodyInput, assembleBody, bodyPartWrites, bodyTestKey, matchBodyParts, prepareBodyTokens, prepareBodySnippet, browserBodyPreparationFactory, type BodyPartSource, type IncomingMessage } from "@terno/store";
+import { BODY_PART_UNITS, bodyPreview, validateBodyInput, assembleBody, bodyPartWrites, bodyTestKey, matchBodyParts, prepareBodyTokens, prepareBodySnippet, browserBodyPreparationFactory, type BodyPartSource, type IncomingMessage } from "@terno/store";
 import type { Db } from "./sqlite";
 
 const staging = new WeakMap<Db, Set<string>>();
@@ -50,7 +50,7 @@ export async function stageBody<T extends Pick<IncomingMessage, "accountId" | "b
     if (acknowledged[0] !== (counts[0] ?? 0) || acknowledged[1] !== (counts[1] ?? 0)) throw new Error("Body acknowledgements are incomplete");
     check?.();
     db.tx(() => db.run("UPDATE body_captures SET text_parts=?,html_parts=?,token_parts=?,ready=1 WHERE id=?", counts[0]!, counts[1]!, tokenCount, id));
-    return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: (message.bodyParts?.text?.[0] ?? message.bodyText)?.slice(0, 4096) ?? null, snippet: await prepareBodySnippet(message.snippet || message.bodyText, yieldTo, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
+    return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, yieldTo, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
   } catch (error) { await finishBodyStage(db, id, yieldTo); throw error; }
 }
 
@@ -103,7 +103,6 @@ export function withBodyMatches<T>(db: Db, matches: PreparedBodyMatches, work: (
   try { return work(); } finally { if (prior) active.set(db, prior); else active.delete(db); }
 }
 export function registerBodyMatches(db: Db): void {
-  db.function("terno_body_retired", {}, (_capture) => { retiredObservers.get(db)?.(); return 0; });
   db.function("terno_part_match", {}, (capture, op, value, prefix) => {
     const result = active.get(db)?.get(String(capture))?.get(bodyTestKey(op as TextOp, String(value), prefix === 1));
     if (result === undefined) throw new Error("Body match was not prepared at this content revision");

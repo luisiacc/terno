@@ -24,6 +24,7 @@ it("persists complete bodies in bounded physical clones and reads exact phrases 
     await store.filters.save({ name: "boundary match", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "boundaryneedle acrossboundary" }], actions: [{ type: "star" }] } }, 1);
     const result = await store.sync.ingest([msg({ accountId: accountId!, providerMsgId: "large", bodyText: text, bodyHtml: html, bodyState: "full", attachments: [{ filename: "witness.bin", mime: "application/octet-stream", size: 3, bytes: new Uint8Array([0, 255, 128]) }] })], { now: 1, classifier: null, applyFilters: true });
     const threadId = result.touched[0]!;
+    expect(store.bodyCache().bytes, "the retained preview belongs to the existing body cache budget").toBeGreaterThanOrEqual(8192);
     await store.close();
     store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
     const message = (await store.threads.get(threadId))!.messages[0]!;
@@ -101,4 +102,23 @@ it("retains a replaced capture until its actual token reader finishes, then recl
       expect(await count()).toBe(1);
     } finally { native.close(); await pages.return?.(); }
   } finally { await release?.(); await build?.release(); spy.mockRestore(); await store.close(); }
+});
+
+it("retires acknowledged staging backing before any body read and reads exact durable parts cold", async () => {
+  const store = await IdbMailStore.open({ name: `staging-${crypto.randomUUID()}`, factory: indexedDB, platform, instantSearch: false });
+  try {
+    const [accountId] = await withAccounts(store, 1), text = "exact cold persistence ".repeat(6000);
+    const result = await store.sync.ingest([msg({ accountId: accountId!, bodyText: text, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+    // Inspect actual strong backing references, not a reported byte counter or RSS inference.
+    const memory = Reflect.get(store, "db") as import("./mem").MemDb;
+    const backings = new Set<ArrayBufferLike>();
+    for (const row of memory.table("body_parts").rows.values()) if (row.value instanceof Uint8Array) backings.add(row.value.buffer);
+    expect([...backings].reduce((sum, backing) => sum + backing.byteLength, 0), "durably acknowledged part buffers must leave the live staging table").toBe(0);
+    const message = (await store.threads.get(result.touched[0]!, { bodyFormat: "parts" }))!.messages[0]!;
+    let reads = 0;
+    const get = IDBObjectStore.prototype.get;
+    const spy = vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (this: IDBObjectStore, key) { if (this.name === "body_parts") reads++; return get.call(this, key); });
+    try { expect(await store.threads.bodyPart!({ accountId: accountId!, messageId: message.id, version: message.bodyReference!.version, field: "text", ordinal: 0 }) === text.slice(0, 32768)).toBe(true); expect(reads).toBe(1); }
+    finally { spy.mockRestore(); }
+  } finally { await store.close(); }
 });

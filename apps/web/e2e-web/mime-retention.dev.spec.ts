@@ -125,3 +125,23 @@ for (const kind of ["idb", "opfs"] as const) test(`cancels active ${kind} legacy
   expect(result).toMatchObject({ exact: true, assetExact: true, cancelledAtPrepared: true, starred: true, search: 1, filter: 1 });
   expect(result.largest).toBeLessThanOrEqual(32768); expect(unexpected).toEqual([]);
 });
+
+for (const kind of ["idb", "opfs"] as const) test(`preserves managed browser source through emitted workers and ${kind} exact publication/read`, async ({ page, context }) => {
+  const unexpected: string[] = [], origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const result = await page.evaluate(async (kind) => { const module = "/e2e-web/mime-retention/source.ts"; return (await import(/* @vite-ignore */ module)).qualifySource(kind); }, kind) as { largestString: number; largestBacking: number };
+  writeFileSync(`/tmp/terno-w11-s48/browser-source-${kind}.json`, JSON.stringify(result, null, 2));
+  expect(result).toMatchObject({ exact: true, inlineExact: true, assetExact: true, starred: true, workerRuns: 1, preparations: 1, raw: 2, minimal: 2, unexpected: 0 });
+  expect(result.largestString).toBeLessThanOrEqual(32768); expect(result.largestBacking).toBe(65536); expect(unexpected).toEqual([]);
+});
+
+test("distinguishes actual browser message-task service from the OPFS timer-gap observation", async ({ page, context }) => {
+  const unexpected: string[] = [], origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const result = await page.evaluate(async () => { const module = "/e2e-web/mime-retention/source.ts"; return (await import(/* @vite-ignore */ module)).qualifySource("opfs", true); }) as { probeMessages: number; controlLatency: number };
+  writeFileSync("/tmp/terno-w11-s48/browser-source-opfs-task-cause.json", JSON.stringify(result, null, 2));
+  expect(result).toMatchObject({ exact: true, inlineExact: true, assetExact: true, largestString: 32768, largestBacking: 65536, unexpected: 0 });
+  expect(result.probeMessages).toBeGreaterThan(0); expect(result.controlLatency).toBeGreaterThan(15); expect(unexpected).toEqual([]);
+});

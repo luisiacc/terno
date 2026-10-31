@@ -165,3 +165,9 @@ export function validateBodyInput(message: { bodyText: string | null; bodyHtml: 
   }
   for (const part of message.preparedBodyTokens ?? []) if (!(part instanceof Uint16Array) || !(part.buffer instanceof ArrayBuffer) || part.byteOffset || !part.length || part.length > BODY_PART_UNITS || part.byteLength !== part.buffer.byteLength) throw new Error("Invalid prepared body ownership");
 }
+
+/** A durable/cache preview owns its backing independently of a larger caller string. */
+export function bodyPreview(text: string | null, parts?: import("@terno/core").ExactBodyParts): string | null {
+  const source = parts?.text ? parts.text[0] ?? "" : text;
+  return source === null ? null : decodeBodyPart(encodeBodyPart(source.slice(0, 4096)));
+}

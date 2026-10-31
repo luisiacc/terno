@@ -249,6 +249,7 @@ export class SqlMailStore implements MailStore {
     this.bodyCleanup = cleanupBodies(db, this.yieldTo);
     this.log = options.log ?? (() => {});
     observeBodyRetirement(db, () => this.queueBodyGarbage());
+    db.onCommit(() => { if (!this.bodyClosing && db.get("SELECT 1 FROM body_captures WHERE owned=0 AND ready=1 LIMIT 1")) this.queueBodyGarbage(); });
     this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
     if (options.instantSearch) {
       this.instant = new InstantSearch({
@@ -1481,7 +1482,7 @@ export function openingSqlStore(open: (signal: AbortSignal) => Promise<SqlMailSt
       return Reflect.apply(method, object, args);
     };
   } });
-  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs"]);
+  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
   const namespaces = new Map<PropertyKey, object>();
   const facade = new Proxy({} as MailStore, { get(object, member) {
     if (Object.hasOwn(object, member)) return Reflect.get(object, member);

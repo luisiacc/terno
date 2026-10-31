@@ -1201,8 +1201,8 @@ CREATE TABLE body_captures(id TEXT PRIMARY KEY, account_id INTEGER NOT NULL, tex
 CREATE INDEX body_capture_account ON body_captures(account_id,id);
 CREATE INDEX body_capture_garbage ON body_captures(owned,id);
 CREATE TRIGGER body_head_added AFTER INSERT ON body_heads BEGIN UPDATE body_captures SET owned=1 WHERE id=new.capture_id; END;
-CREATE TRIGGER body_head_changed AFTER UPDATE OF capture_id ON body_heads WHEN old.capture_id!=new.capture_id BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; UPDATE body_captures SET owned=1 WHERE id=new.capture_id; SELECT terno_body_retired(old.capture_id); END;
-CREATE TRIGGER body_head_removed AFTER DELETE ON body_heads BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; SELECT terno_body_retired(old.capture_id); END;
+CREATE TRIGGER body_head_changed AFTER UPDATE OF capture_id ON body_heads WHEN old.capture_id!=new.capture_id BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; UPDATE body_captures SET owned=1 WHERE id=new.capture_id; END;
+CREATE TRIGGER body_head_removed AFTER DELETE ON body_heads BEGIN UPDATE body_captures SET owned=0 WHERE id=old.capture_id; END;
 CREATE TABLE body_parts(capture_id TEXT NOT NULL, field INTEGER NOT NULL CHECK(field BETWEEN 0 AND 2), ordinal INTEGER NOT NULL, value BLOB NOT NULL CHECK(length(value)<=65536), PRIMARY KEY(capture_id,field,ordinal)) WITHOUT ROWID;
 CREATE TRIGGER body_revision_changed AFTER UPDATE OF body_text,body_html,capture_id ON message_bodies BEGIN
  UPDATE message_bodies SET body_revision=old.body_revision+1 WHERE message_id=new.message_id;

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll } from "vitest";
-import { openDatabase, sqliteDriver } from "./index";
+import { upgradeLegacyBodies, openDatabase, sqliteDriver } from "./index";
 import { writeLegacyCopy } from "./test/legacy";
 import { sqlDb, SqlMailStore } from "./sql-store";
 
@@ -35,6 +35,8 @@ defineStoreConformance(`SqlMailStore (${sqliteDriver().id})`, {
     const legacy = join(tempDir(), "v5.db");
     writeLegacyCopy(source.db, legacy, 5);
     await source.close();
-    return { store: new SqlMailStore(openDatabase(legacy)), before };
+    const upgraded = openDatabase(legacy);
+    await upgradeLegacyBodies(upgraded, () => new Promise<void>((resolve) => setTimeout(resolve, 0)), async () => {}, () => {});
+    return { store: new SqlMailStore(upgraded), before };
   },
 });

@@ -1,4 +1,4 @@
-import { validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
+import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
 import { decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartText, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
@@ -567,7 +567,7 @@ export class IdbMailStore implements MailStore {
       }
       if (acknowledged[0] !== (message.bodyParts?.text?.length ?? Math.ceil((message.bodyText?.length ?? 0) / BODY_PART_UNITS)) || acknowledged[1] !== (message.bodyParts?.html?.length ?? Math.ceil((message.bodyHtml?.length ?? 0) / BODY_PART_UNITS))) throw new Error("Body acknowledgements are incomplete");
       await this.command(() => { check?.(); const row = T(this.c, "body_captures").get(id)!; T(this.c, "body_captures").update(row, { token_parts: tokenCount, ready: 1 }); }, { check });
-      return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: (message.bodyParts?.text?.[0] ?? message.bodyText)?.slice(0, 4096) ?? null, snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
+      return { ...message, bodyText: null, bodyHtml: null, bodyParts: undefined, preparedBodyTokens: undefined, bodyCapture: { id, preview: bodyPreview(message.bodyText, message.bodyParts), snippet: await prepareBodySnippet(message.snippet || message.bodyText, this.o.platform.yield, message.snippet ? undefined : message.bodyParts?.text), tail: "" } };
     } catch (error) { if (this.isOpen && !this.unusable) await this.finishBodyStage(id); throw error; }
   }
 
@@ -1668,8 +1668,10 @@ export class IdbMailStore implements MailStore {
     matchMessages: async (rule, now, messageIds) => {
       await this.settled();
       return this.exclusive(async () => {
-        if (ruleReadsBody(rule)) await this.readBodies(messageIds.filter((id) => T(this.c, "messages").get(id)?.body_state === "full"));
-        return findRuleMatches(this.c, rule, now, messageIds).messageIds;
+        const full = ruleReadsBody(rule) ? messageIds.filter((id) => T(this.c, "messages").get(id)?.body_state === "full") : [];
+        if (full.length) await this.readBodies(full);
+        const prepared = await this.prepareBodyTests(this.ruleTests([rule]), full);
+        return this.withBodyTests(prepared, () => findRuleMatches(this.c, rule, now, messageIds).messageIds);
       });
     },
     applyChunk: (id, ruleJson, messageIds, now) =>
@@ -2306,7 +2308,7 @@ export class IdbMailStore implements MailStore {
 
 /** plan 68: an upgrade's folder backfill: threads per batch, and the time a command keeps taking batches */
 
-const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0));
+const bodyBytes = (r: R) => 2 * ((r.body_text?.length ?? 0) + (r.body_html?.length ?? 0) + (r.body_preview?.length ?? 0));
 
 /** Uint8Arrays compared by content */
 const bytes = (_k: string, v: unknown) => (v instanceof Uint8Array ? [...v] : v);
