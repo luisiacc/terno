@@ -1,4 +1,4 @@
-import { remindPresets, shortcutsFor, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { remindPresets, shortcutsFor, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -291,7 +291,7 @@ function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
         {action === "archive" ? <Archive /> : <OctagonAlert />}
         <span className="min-w-0 flex-1 truncate">{t(action === "archive" ? "similar.archive" : "similar.spam")}</span>
       </ContextMenuSubTrigger>
-      <ContextMenuSubContent className="w-72" data-testid={`menu-${action}-similar-list`}>
+      <ContextMenuSubContent className="w-max min-w-72 max-w-md" data-testid={`menu-${action}-similar-list`}>
         <SimilarItems action={action} ids={ids} byKey={byKey} />
       </ContextMenuSubContent>
     </ContextMenuSub>
@@ -334,7 +334,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
       ) : (
         shown.map((o, i) => (
           <ContextMenuItem key={o.scope.kind} ref={i === 0 ? first : undefined} data-testid={`menu-similar-${o.scope.kind}`} title={o.scope.kind === "subject" ? o.scope.subject : undefined} onClick={() => void actSimilar(action, ids, o.scope, offers.senderName)}>
-            <span className="min-w-0 flex-1 truncate">{scopeLabel(o.scope, offers.senderName)}</span>
+            <ScopeLabel scope={o.scope} senderName={offers.senderName} />
             <ContextMenuShortcut className="tracking-normal tabular-nums" data-testid={`menu-similar-${o.scope.kind}-count`}>{shownCount(o) ? formatCount(o) : ""}</ContextMenuShortcut>
           </ContextMenuItem>
         ))
@@ -371,7 +371,7 @@ function ReviewItems({ thread }: { thread: ThreadSummary }) {
           <Repeat />
           <span className="min-w-0 flex-1 truncate">{t("review.always", { category: category.name })}</span>
         </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-64" data-testid="menu-review-always-list">
+        <ContextMenuSubContent className="w-max min-w-64 max-w-md" data-testid="menu-review-always-list">
           {offers === null ? (
             <ContextMenuItem disabled>
               <span className="h-3 w-40 animate-pulse rounded bg-muted" />
@@ -386,7 +386,7 @@ function ReviewItems({ thread }: { thread: ThreadSummary }) {
                 title={o.scope.kind === "subject" ? o.scope.subject : undefined}
                 onClick={() => void fileAlways(category.id, o.scope, thread.id, filterNameOf(o.scope, offers.senderName, category.name))}
               >
-                <span className="min-w-0 flex-1 truncate">{scopeLabel(o.scope, offers.senderName)}</span>
+                <ScopeLabel scope={o.scope} senderName={offers.senderName} />
                 <span className="font-mono text-2xs text-muted-foreground tabular">{formatCount(o)}</span>
               </ContextMenuItem>
             ))
@@ -578,5 +578,16 @@ function MenuItems() {
       <ContextMenuSeparator />
       <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
     </>
+  );
+}
+
+/** A scope's menu label; a named sender carries its address, muted, so same-named senders tell apart. */
+function ScopeLabel({ scope, senderName }: { scope: SimilarScope; senderName: string | null }) {
+  const email = scope.kind === "sender" && senderName && senderName !== scope.email ? scope.email : null;
+  return (
+    <span className="min-w-0 flex-1 truncate">
+      {scopeLabel(scope, senderName)}
+      {email && <span className="text-muted-foreground"> {email}</span>}
+    </span>
   );
 }

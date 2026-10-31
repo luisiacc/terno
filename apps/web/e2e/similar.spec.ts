@@ -77,6 +77,8 @@ test.describe("similar mail", { tag: "@design" }, () => {
     const list = page.getByTestId("menu-spam-similar-list");
     await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
     await expect(list.getByTestId("menu-similar-sender-count")).toHaveText(String(anywhere.length));
+    // the full address follows the name, so same-named senders tell apart
+    await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^All from .+ ${email.replace(/[.+]/g, "\\$&")}`));
     await list.getByTestId("menu-similar-sender").click();
 
     const done = result(page, `Marked ${anywhere.length} as spam`);
