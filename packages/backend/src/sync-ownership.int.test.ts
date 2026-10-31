@@ -22,10 +22,12 @@ const gate = () => {
   return { promise, release };
 };
 
-async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
+async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false) {
   const dir = path ?? mkdtempSync(join(tmpdir(), "terno-sync-owner-"));
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const routes: string[] = [];
+  const unexpected: string[] = [];
+  let failure: "400" | "404" | "503" | null = null;
   const historyReplies: { start: string; ids: string[] }[] = [];
   const contexts: ProviderContext[] = [];
   let h2 = false, identity = "me@example.test";
@@ -39,7 +41,7 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
     const url = new URL(request.url);
     routes.push(`${request.method} ${url.pathname}${url.search}`);
     expect(request.headers.get("authorization")).toBe("Bearer synthetic");
-    if (url.origin !== "https://gmail.googleapis.com" || request.method !== "GET") throw new Error(`Unexpected synthetic route ${request.url}`);
+    if (url.origin !== "https://gmail.googleapis.com" || request.method !== "GET") { unexpected.push(request.url); throw new Error("Unexpected synthetic origin/method"); }
     const endpoint = url.pathname.replace("/gmail/v1/users/me", "");
     if (endpoint === "/profile") return Response.json({ emailAddress: identity, historyId: h2 ? "102" : "100" });
     if (endpoint === "/labels") return Response.json({ labels: [] });
@@ -50,11 +52,15 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
       value.history = value.history.filter((h) => BigInt(h.id) > BigInt(start));
       historyReplies.push({ start: url.searchParams.get("startHistoryId")!, ids: value.history.map((h) => h.id) });
       const hold = historyGate; historyGate = undefined; await hold?.();
+      if (failure === "400" || failure === "404") return Response.json({ error: { message: "Synthetic rejected checkpoint" } }, { status: Number(failure) });
+      if (failure === "503") return Response.json({ error: { message: "Synthetic unavailable" } }, { status: 503 });
       return Response.json(value);
     }
+    if (endpoint === "/messages") return Response.json({ messages: h2 ? [{ id: "arrival" }] : [] });
     if (endpoint === "/messages/arrival") return Response.json(url.searchParams.get("format") === "raw"
       ? { id: "arrival", threadId: "arrival", labelIds: ["STARRED"], raw }
       : { id: "arrival", labelIds: ["STARRED"] });
+    unexpected.push(request.url);
     throw new Error(`Unexpected synthetic route ${request.url}`);
   });
   const providers: ProviderRegistry = {
@@ -68,10 +74,11 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
   const open = async (autoSync: boolean) => {
     const b = new Backend({ dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, instantSearch: false,
       platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((r) => setImmediate(r)) } }) : undefined,
-      providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null, syncIntervalMs: 3_600_000 });
+      providers, cipher: plaintextCipher, version: "test", autoSync,
+ instantSearch: false, iconTransport: null, syncIntervalMs: 3_600_000 });
     await b.ready; return b;
   };
-  let backend = await open(false);
+  let backend = await open(enabled);
   const existing = await backend.store.accounts.list();
   const account = existing[0] ?? (await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 })).account;
   if (!existing.length) {
@@ -88,7 +95,8 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
   };
   cleanup.push(async () => { await backend.stop(); if (!path) rmSync(dir, { recursive: true, force: true }); });
   return {
-    dir, account, contexts, routes, cursor, rpc,
+    dir, account, contexts, routes, cursor, rpc, unexpected,
+    fail(value: typeof failure) { failure = value; },
     historyStarts() { return routes.filter((r) => r.includes("/history?")).map((r) => new URL(r.slice(4), "https://fixture.test").searchParams.get("startHistoryId")); }, identity(value: string) { identity = value; }, get backend() { return backend; }, newer() { h2 = true; },
     holdHistory(fn: () => Promise<void>) { historyGate = fn; }, holdCursor(fn?: (value: unknown) => Promise<void>) { cursorGate = fn; },
     async reopen(autoSync: boolean) {
@@ -116,7 +124,131 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string) {
   };
 }
 
+async function settle(sync: { mock: { results: { value: unknown }[] } }): Promise<void> {
+  for (let round = 0; round < 8; round++) {
+    const count = sync.mock.results.length;
+    await Promise.all(sync.mock.results.map((r) => r.value));
+    await new Promise<void>((r) => setImmediate(r));
+    if (sync.mock.results.length === count) return;
+  }
+  throw new Error("Sync kept creating passes after eight finalizer joins");
+}
+
 describe.each(["SQL", "IndexedDB"] as const)("%s local ownership", (kind) => {
+  it.each(["live", "reopen"] as const)("B07 failed checkpoint retains replay after effects via %s", async (recovery) => {
+    const t = await fixture(kind, undefined, true); t.newer();
+    const save = vi.spyOn(t.backend.store.accounts, "setCursor").mockRejectedValueOnce(new Error("Synthetic checkpoint failure"));
+    await t.backend.syncAccount(t.account.id);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(await t.cursor()).toEqual({ historyId: "100" });
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "error", lastSyncAt: null, lastError: "Synthetic checkpoint failure" });
+    // Exact effects exist despite the uncommitted cursor: replay must retain identity and claims.
+    const before = await t.backend.store.debug.snapshot();
+    expect(before.messages).toHaveLength(1);
+    const message = before.messages[0]!;
+    const assets = await t.backend.store.attachments.current(t.account.id, { id: message.id });
+    expect(assets).toHaveLength(1);
+    expect(await t.backend.store.attachments.read(t.account.id, assets[0]!.assetId!, 0)).toBe("AP+ADQo=");
+    expect((await t.backend.store.filters.list())[0]?.hits).toBe(1);
+    expect(t.backend.connectivity.timers).toBe(0);
+    save.mockRestore();
+    if (recovery === "reopen") {
+      await t.reopen(false);
+      expect(await t.cursor()).toEqual({ historyId: "100" });
+      expect((await t.backend.store.debug.snapshot()).messages).toEqual(before.messages);
+    }
+    const sync = vi.spyOn(t.backend, "syncAccount");
+    // Reopened manual hosts need a first admission; sync.now only targets tracked accounts.
+    if (recovery === "reopen") await t.backend.syncAccount(t.account.id);
+    else await t.rpc().call("sync.now", { accountId: t.account.id, reason: "user" });
+    await settle(sync);
+    const after = await t.exact();
+    expect(after.message).toEqual(message);
+    expect(after.assets).toEqual(assets);
+    expect(t.historyStarts()).toEqual(recovery === "live" ? ["100", "100"] : ["100"]);
+    expect(t.routes.some((r) => /\/messages\?/.test(r))).toBe(false);
+    expect(t.unexpected).toEqual([]);
+    await t.reopen(false);
+    expect(await t.exact()).toEqual(after);
+  });
+
+  it("B07 rejected checkpoint acknowledgement retains committed effects and releases the live gate", async () => {
+    const t = await fixture(kind, undefined, true); t.newer();
+    t.holdCursor(async () => { t.holdCursor(); throw new Error("Synthetic lost acknowledgement"); });
+    await t.backend.syncAccount(t.account.id);
+    const before = await t.exact();
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "error", lastSyncAt: null });
+    const sync = vi.spyOn(t.backend, "syncAccount");
+    await t.rpc().call("sync.now", { accountId: t.account.id, reason: "user" }); await settle(sync);
+    expect(t.historyStarts()).toEqual(["100", "102"]);
+    expect(await t.exact()).toEqual(before);
+    expect(t.unexpected).toEqual([]);
+    await t.reopen(false); expect(await t.exact()).toEqual(before);
+  });
+
+  it("B14 repeated public requests consume one trailing intent per active failing pass, then recover", async () => {
+    const t = await fixture(kind, undefined, true); t.fail("400");
+    const first = gate(), releaseFirst = gate(), second = gate(), releaseSecond = gate();
+    cleanup.push(async () => { releaseFirst.release(); releaseSecond.release(); });
+    t.holdHistory(async () => { first.release(); await releaseFirst.promise; t.holdHistory(async () => { second.release(); await releaseSecond.promise; }); });
+    const sync = vi.spyOn(t.backend, "syncAccount");
+    const running = t.backend.syncAccount(t.account.id); await first.promise;
+    const client = t.rpc();
+    await Promise.all(Array.from({ length: 8 }, () => client.call("sync.now", { accountId: t.account.id, reason: "user" })));
+    releaseFirst.release(); await second.promise;
+    expect(t.historyStarts()).toEqual(["100", "100"]);
+    await Promise.all(Array.from({ length: 8 }, () => client.call("sync.now", { accountId: t.account.id, reason: "user" })));
+    releaseSecond.release(); await running; await settle(sync);
+    expect(t.historyStarts()).toEqual(["100", "100", "100"]);
+    expect(await t.cursor()).toEqual({ historyId: "100" });
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState).toMatchObject({ status: "error", lastSyncAt: null });
+    expect(t.backend.connectivity.timers).toBe(0);
+    const settled = [...t.routes];
+    for (let i = 0; i < 8; i++) await new Promise<void>((r) => setImmediate(r));
+    expect(t.routes).toEqual(settled);
+    t.fail(null); t.newer();
+    await client.call("sync.now", { accountId: t.account.id, reason: "user" }); await settle(sync);
+    expect(t.historyStarts()).toEqual(["100", "100", "100", "100"]);
+    await t.exact();
+    expect(t.routes.some((r) => /\/messages\?/.test(r))).toBe(false);
+    expect(t.backend.connectivity.timers).toBe(0); expect(t.unexpected).toEqual([]);
+  });
+
+  it("B14 unchanged expired history performs one full reset per requested pass and retains recovery", async () => {
+    const t = await fixture(kind, undefined, true); t.fail("404");
+    const entered = gate(), released = gate(); cleanup.push(async () => { released.release(); });
+    t.holdHistory(async () => { entered.release(); await released.promise; });
+    const sync = vi.spyOn(t.backend, "syncAccount");
+    const first = t.backend.syncAccount(t.account.id); await entered.promise;
+    await Promise.all(Array.from({ length: 8 }, () => t.rpc().call("sync.now", { accountId: t.account.id, reason: "user" })));
+    released.release(); await first; await settle(sync);
+    // First pass: expired completed history + catchup. Trailing pass resumes the reset phase.
+    expect(t.historyStarts()).toEqual(["100", "100", "100"]);
+    expect(t.routes.filter((r) => /\/messages\?/.test(r))).toHaveLength(2);
+    expect(await t.cursor()).toMatchObject({ historyId: "100", reconciliation: { version: 1, stage: "restart" } });
+    expect((await t.backend.store.accounts.get(t.account.id))?.syncState.lastSyncAt).toBeNull();
+    expect(t.backend.connectivity.timers).toBe(1);
+    t.fail(null); t.newer();
+    await t.rpc().call("sync.now", { accountId: t.account.id, reason: "user" }); await settle(sync);
+    await t.exact();
+    expect(t.routes.filter((r) => /\/messages\?/.test(r))).toHaveLength(3);
+    expect(t.backend.connectivity.timers).toBe(0); expect(t.unexpected).toEqual([]);
+  });
+
+  it("B14 timer observation distinguishes legitimate retryable backoff and automatic recovery", async () => {
+    const t = await fixture(kind, undefined, true); t.fail("503");
+    const sync = vi.spyOn(t.backend, "syncAccount");
+    await t.backend.syncAccount(t.account.id);
+    expect(t.historyStarts()).toEqual(["100"]);
+    expect(t.backend.connectivity.timers).toBe(1);
+    expect(await t.cursor()).toEqual({ historyId: "100" });
+    const retried = gate(); t.fail(null); t.newer(); t.holdHistory(async () => { retried.release(); });
+    await retried.promise; await settle(sync);
+    expect(sync).toHaveBeenCalledTimes(2); expect(t.backend.connectivity.timers).toBe(0);
+    expect(t.historyStarts()).toEqual(["100", "100"]);
+    await t.exact(); expect(t.unexpected).toEqual([]);
+  });
+
   it("startup refuses a mismatched Google subject before history, then a legitimate owner recovers", async () => {
     const t = await fixture(kind); t.newer(); t.identity("other@example.test");
     await t.reopen(true);
