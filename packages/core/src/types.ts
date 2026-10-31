@@ -21,6 +21,8 @@ export interface Account {
   signature: string;
   /** days of mail its first sync downloads; null: the general setting */
   syncWindowDays: number | null;
+  /** plan 86 (Gmail): Promotions and Social live under the account, out of the Inbox; on unless turned off (absent: on) */
+  separateTabs?: boolean;
   syncState: AccountSyncState;
 }
 
@@ -31,6 +33,7 @@ export interface AccountPatch {
   senderName?: string;
   signature?: string;
   syncWindowDays?: number | null;
+  separateTabs?: boolean;
 }
 
 /** The account preferences kept in its provider config, beside what the provider stores there. */
@@ -38,11 +41,13 @@ export interface AccountPrefs {
   senderName?: string;
   signature?: string;
   syncWindowDays?: number | null;
+  /** plan 86: absent: on */
+  separateTabs?: boolean;
 }
 
 /** An account's preferences as the renderer sees them, from its stored config. */
-export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays"> {
-  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null };
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false };
 }
 
 /** The config with a patch's preferences applied (the rest of the patch lives in columns). */
@@ -53,6 +58,10 @@ export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: Accou
   if (patch.syncWindowDays !== undefined) {
     if (patch.syncWindowDays === null) delete next.syncWindowDays;
     else next.syncWindowDays = patch.syncWindowDays;
+  }
+  if (patch.separateTabs !== undefined) {
+    if (patch.separateTabs) delete next.separateTabs;
+    else next.separateTabs = false;
   }
   return next;
 }
@@ -111,6 +120,8 @@ export interface ThreadSummary {
   inInbox?: boolean;
   inSpam?: boolean;
   inTrash?: boolean;
+  /** plan 86: the Gmail tab it's in (0 or absent: none; whether it's shown apart is the account's setting) */
+  tab?: number;
   /** a message of it is spam, wherever it is now (trashed spam too): never a sender icon (plan 22) */
   hasSpam?: boolean;
   /** renderer only: it was spam a moment ago (Not spam, not yet confirmed): still no sender icon */
@@ -201,6 +212,8 @@ export const FOLDER_NAME_MAX = 225;
 export const FOLDERS_PER_ACCOUNT_MAX = 10_000;
 /** A folder's place in counts: "accountId:key" */
 export const folderRef = (accountId: AccountId, key: string) => `${accountId}:${key}`;
+/** A Gmail tab's place in counts: "accountId:promotions" (plan 86) */
+export const tabRef = (accountId: AccountId, tab: "promotions" | "social") => `${accountId}:${tab}`;
 
 export const CATEGORY_COLORS = [
   "rose",
@@ -227,6 +240,8 @@ export interface Counts {
   inboxWaitingByAccount?: Record<AccountId, number>;
   /** plan 68: unread threads per folder, by folderRef (listed folders only; absent from an older backend) */
   folderUnread?: Record<string, number>;
+  /** plan 86: unread threads per Gmail tab, by tabRef (accounts that separate them; absent from an older backend) */
+  tabUnread?: Record<string, number>;
 }
 
 /** Plan 87: "always" comes back at its time; "noReply" only if nobody but you wrote in the thread since it was set. */
@@ -254,7 +269,14 @@ export type ThreadAction =
   | "markRead"
   | "markUnread"
   | "star"
-  | "unstar";
+  | "unstar"
+  // plan 86: a Gmail message's category (toPrimary moves it out of a tab; the others are undo's)
+  | "toPrimary"
+  | "toPromotions"
+  | "toSocial"
+  | "toUpdates"
+  | "toForums"
+  | "toNoCategory";
 
 export type UserActionKind = "archive" | "trash" | "spam" | "star" | "reply" | "markImportant" | "read";
 

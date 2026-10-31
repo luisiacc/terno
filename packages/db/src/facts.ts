@@ -1,5 +1,6 @@
 import { addressKey, automatedLevel, threadFactsNewestFirst, type Address, type ArrivalRow, type FactContext, type FactRow, type ThreadFacts } from "@terno/core";
 import type { Db } from "./sqlite";
+import { hidingSql, inboxHiding } from "./inbox-hiding";
 
 /**
  * Plan 17's thread facts on SQLite: who a conversation is from (`person`)
@@ -402,14 +403,14 @@ export function resetFacts(db: Db): void {
  */
 export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {
   if (ids.length === 0) return [];
-  // plan 83: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
-  const hidden = db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 0").map((r) => r.id);
+  // plans 83, 86: a thread in a category hidden from the Inbox, or in a Gmail tab, isn't Inbox mail to notify about
+  const hiding = hidingSql("t", inboxHiding(db));
   const rows = db.all<{ id: number; thread_id: number; account_id: number; date: number; from_name: string; from_email: string; subject: string; snippet: string; is_read: number; is_sent: number; is_draft: number; in_inbox: number; thread_inbox: number; thread_sent: number; body_state: string; attachments_captured: number; is_trash: number; is_spam: number; list_id: string | null; is_bulk: number; gmail_labels: string | null }>(
     `SELECT m.id, m.thread_id, m.account_id, m.date, m.from_name, m.from_email, m.subject, m.snippet, m.is_read, m.is_sent, m.is_draft, m.in_inbox,
-       t.in_inbox ${hidden.length ? `AND NOT EXISTS (SELECT 1 FROM thread_categories h WHERE h.thread_id = t.id AND h.category_id IN (SELECT value FROM json_each(?)))` : ""} AS thread_inbox,
+       t.in_inbox ${hiding.where.map((w) => `AND ${w}`).join(" ")} AS thread_inbox,
        t.has_sent AS thread_sent, m.body_state, m.attachments_captured, m.is_trash, m.is_spam, m.list_id, m.is_bulk, m.gmail_labels
      FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id IN (SELECT value FROM json_each(?))`,
-    ...(hidden.length ? [JSON.stringify(hidden)] : []),
+    ...hiding.params,
     JSON.stringify(ids),
   );
   if (rows.length === 0) return [];

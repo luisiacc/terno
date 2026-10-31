@@ -22,3 +22,4 @@ export * from "./send-copy";
 export * from "./storage";
 export * from "./codes";
 export * from "./capture-repair";
+export * from "./tabs";

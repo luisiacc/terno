@@ -3,6 +3,7 @@ import type { MailNotice } from "../attention";
 import { LANGUAGE_SETTINGS, t, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
+import { TABS } from "../tabs";
 import {
   AI_PROVIDER_IDS,
   COMPATIBLE_PRESETS,
@@ -487,10 +488,18 @@ const folderScope = <T extends { view?: string; accountId?: number; categoryId?:
   if (p.categoryId !== undefined) ctx.addIssue({ code: "custom", path: ["folder"], message: t("errors.folder.noCategory") });
   if (p.view !== undefined && p.view !== "all") ctx.addIssue({ code: "custom", path: ["view"], message: t("errors.folder.allView") });
 };
+/** plan 86: a Gmail tab is an account's Inbox, alone (no folder or category with it) */
+const tabScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string; tab?: string }>(p: T, ctx: z.RefinementCtx) => {
+  folderScope(p, ctx);
+  if (p.tab === undefined) return;
+  if (p.accountId === undefined) ctx.addIssue({ code: "custom", path: ["tab"], message: t("errors.tab.needsAccount") });
+  if (p.categoryId !== undefined || p.folder !== undefined) ctx.addIssue({ code: "custom", path: ["tab"], message: t("errors.tab.alone") });
+  if (p.view !== undefined && p.view !== "inbox") ctx.addIssue({ code: "custom", path: ["view"], message: t("errors.tab.inboxView") });
+};
 
 /** Every thread of a view (account/category optional) or of a search: "select all N" acts on it on the backend. `filter`: the list's quick filter (`unreadOnly`: plan 12's name for "unread", still accepted). */
 const threadScope = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), folder: folderKey.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }).superRefine(folderScope),
+  z.object({ kind: z.literal("view"), view: z.enum(VIEWS), accountId: id.optional(), categoryId: id.optional(), folder: folderKey.optional(), tab: z.enum(TABS).optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }).superRefine(tabScope),
   z.object({ kind: z.literal("search"), query: z.string().trim().min(1).max(2000), accountId: id.optional(), categoryId: id.optional(), unreadOnly: z.boolean().optional(), filter: z.enum(LIST_FILTERS).optional() }),
 ]);
 export type ThreadScope = z.output<typeof threadScope>;
@@ -505,7 +514,7 @@ const similarScope = z.discriminatedUnion("kind", [
 /** the filter's name in the user's language (the backend falls back to English) */
 const filterName = z.string().trim().min(1).max(120).optional();
 
-export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar"] as const;
+export const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"] as const;
 const jobId = z.string().min(1).max(64);
 
 const imapServer = z.object({
@@ -551,6 +560,8 @@ export const contract = {
       categoryId: id.optional(),
       /** plan 68: one of the account's own folders (with accountId, view "all") */
       folder: folderKey.optional(),
+      /** plan 86: a Gmail tab of the account's Inbox (with accountId, view "inbox") */
+      tab: z.enum(TABS).optional(),
       /** the unread filter: threads with something unread only (plan 12; `filter: "unread"` since plan 15) */
       unreadOnly: z.boolean().optional(),
       /** the quick filter: unread, with attachments or starred threads only */
@@ -559,7 +570,7 @@ export const contract = {
       keepIds: z.array(id).max(500).optional(),
       cursor: cursor.optional(),
       limit: z.number().int().min(1).max(500).default(100),
-    }).superRefine(folderScope),
+    }).superRefine(tabScope),
   ),
   "threads.search": m<SearchPage>()(
     z.object({
@@ -864,6 +875,8 @@ export const contract = {
       signature: z.string().max(10_000).optional(),
       /** null: the general setting */
       syncWindowDays: syncWindow.nullable().optional(),
+      /** plan 86 (Gmail): Promotions and Social apart from the Inbox */
+      separateTabs: z.boolean().optional(),
     }),
   ),
   /**

@@ -16,7 +16,7 @@ import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flag
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -160,6 +160,7 @@ import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
+import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
@@ -282,6 +283,15 @@ export class IdbMailStore implements MailStore {
       // plan 68 (SQL v24): a mailbox from before gets its Gmail memberships once, after its messages load; the mark
       // goes in with the upgrade and comes off only when they're saved, so a close or a failure meanwhile resumes (Codex R1)
       const foldersPending = (typeof meta.logicalSchema === "number" && meta.logicalSchema < 24) || meta.foldersPending === true;
+      // plan 86 (SQL v37): a mailbox from before gets its Gmail tabs once; the mark is saved before the schema moves on
+      if (typeof meta.logicalSchema === "number" && meta.logicalSchema < 37) {
+        db.tx(() => startTabsBackfill(db));
+        const commit = db.takeCommit();
+        if (commit) {
+          await persist(idb, commit, "strict", o.platform);
+          db.confirm();
+        }
+      }
       if (meta.logicalSchema === undefined) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, createdAt: Date.now() });
       else if (meta.logicalSchema !== LOGICAL_SCHEMA || foldersPending) await writeMeta(idb, { logicalSchema: LOGICAL_SCHEMA, ...(foldersPending && { foldersPending: true }) });
       const store = new IdbMailStore(idb, db, o);
@@ -990,7 +1000,12 @@ export class IdbMailStore implements MailStore {
               .filter(([k, v]) => FLAG_COLUMNS[k] && !pending.has(k as LocalFlagField) && acceptFlagObservation(idbFlags(this.c), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { reconciliation.flagReconcileAccounts ??= [accountId]; }))
               .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
             // plan 17 (Codex review 1, #8): Gmail's category moves change who a message is from
-            if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
+            if (u.gmailLabels) {
+              sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
+              // plan 86: the category, unless a move of the user's owns it until Gmail confirms it
+              const category = categoryOf(u.gmailLabels)!;
+              if (!pending.has("category") && acceptFlagObservation(idbFlags(this.c), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
+            }
             if (!sets.length) continue;
             const m = messages.get(u.messageId);
             if (!m || m.account_id !== accountId) continue;
@@ -1912,6 +1927,11 @@ export class IdbMailStore implements MailStore {
   readonly facts: MailStore["facts"] = {
     backfill: ({ limit }) => this.command(() => backfillSlice(this.db, this.c.facts, this.c.order, limit), { durability: "relaxed" }),
     idle: () => this.early(() => factsReady(this.db, this.c.facts)),
+  };
+
+  readonly tabs: MailStore["tabs"] = {
+    backfill: ({ limit }) => this.command(() => tabsSlice(this.db, limit), { durability: "relaxed" }),
+    idle: () => this.early(() => tabsIdle(this.db)),
   };
 
   readonly dev: MailStore["dev"] = {

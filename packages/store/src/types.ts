@@ -70,6 +70,8 @@ export interface MessageState {
   inInbox: boolean;
   isTrash: boolean;
   isSpam: boolean;
+  /** plan 86: the Gmail category (MessageCategory); null or absent: not Gmail, or a snapshot from before plan 86 */
+  category?: number | null;
 }
 
 export interface FlagUpdate {
@@ -123,6 +125,8 @@ export interface ScopeParams {
   categoryId?: number;
   /** plan 68: one of the account's own folders (with accountId; never with a category) */
   folder?: string;
+  /** plan 86: a Gmail tab of the account's Inbox (with accountId, view "inbox") */
+  tab?: "promotions" | "social";
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */
@@ -137,6 +141,8 @@ export interface ListParams {
   categoryId?: number;
   /** plan 68: one of the account's own folders (with accountId; never with a category) */
   folder?: string;
+  /** plan 86: a Gmail tab of the account's Inbox (with accountId, view "inbox") */
+  tab?: "promotions" | "social";
   /** only threads with something unread (the list's unread filter; `filter: "unread"` since plan 15) */
   unreadOnly?: boolean;
   /** the list's quick filter (wins over unreadOnly) */

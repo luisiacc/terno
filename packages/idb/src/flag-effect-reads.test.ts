@@ -35,7 +35,7 @@ for (const instantSearch of [false, true]) {
       try {
         await store.threads.act({ threadIds: threads.slice(0, selected), action: "markUnread", signal: null, now: 2 });
         expect(loaded.reduce((sum, count) => sum + count, 0)).toBe(selected * 2);
-        expect(attempts).toHaveLength(selected * 6);
+        expect(attempts).toHaveLength(selected * 7);
       } finally { bySpy.mockRestore(); getSpy.mockRestore(); }
       const snapshot = await store.debug.snapshot();
       expect(snapshot.messages.map((message) => message.isRead)).toEqual([...Array(selected).fill(false), ...Array(12 - selected).fill(true)]);
@@ -67,7 +67,7 @@ for (const instantSearch of [false, true]) {
       expect(repo.effects("op", [])).toEqual([]);
       expect(keys).toHaveLength(0);
       expect(repo.effects("op", [1, 1, 99])).toEqual([effect]);
-      expect(keys).toHaveLength(10);
+      expect(keys).toHaveLength(12);
       expect(repo.effects("op")).toEqual([effect]);
     } finally { spy.mockRestore(); }
   });

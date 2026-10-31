@@ -20,6 +20,7 @@ import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
 import { Reminders } from "./reminders";
+import { TabsBackfill } from "./tabs";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
@@ -116,7 +117,7 @@ interface AccountLifetime {
 const COUNTS_EVERY_MS = 200;
 
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
-const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move"]);
+const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
 /** plan 25: the account's sign-in was refused as a whole (not only its sending) */
 const needsWholeSignIn = (s: AccountSyncState): boolean => Boolean(s.authRequired) && s.authScope !== "send";
@@ -223,6 +224,8 @@ export class BackendCore {
   readonly autocomplete: Autocomplete;
   /** plan 17: the thread facts' backfill, woken at start and by changes */
   readonly facts: FactsBackfill;
+  /** plan 86 */
+  readonly tabs: TabsBackfill;
   /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
@@ -256,6 +259,7 @@ export class BackendCore {
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });
+    this.tabs = new TabsBackfill(this);
     const web = options.host?.kind === "web";
     this.autocomplete = new Autocomplete({
       source: this.store.autocomplete,
@@ -446,6 +450,8 @@ export class BackendCore {
     this.facts.wake();
     // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
     this.refreshReminders();
+    // plan 86: the Gmail tabs of mail stored before them, once
+    this.tabs.start();
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -620,6 +626,7 @@ export class BackendCore {
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
     await this.facts.stop();
+    await this.tabs.stop();
     if (this.workerTimer) clearTimeout(this.workerTimer);
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     for (const off of this.unwatch.values()) off();

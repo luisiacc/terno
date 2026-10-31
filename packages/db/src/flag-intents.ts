@@ -17,7 +17,7 @@ export class SqlFlagRepository implements FlagRepository {
   clock(id: number) { return this.db.get<FlagClock>("SELECT * FROM flag_clocks WHERE account_id=?", id) ?? null; }
   clocks() { return this.db.all<FlagClock>("SELECT * FROM flag_clocks"); }
   putClock(row: FlagClock) { this.put("flag_clocks", row); }
-  message(id: number) { return this.db.get<FlagMessage>("SELECT id,account_id,provider_msg_id,is_read,is_starred,in_inbox,is_trash,is_spam FROM messages WHERE id=?", id) ?? null; }
+  message(id: number) { return this.db.get<FlagMessage>("SELECT id,account_id,provider_msg_id,is_read,is_starred,in_inbox,is_trash,is_spam,category FROM messages WHERE id=?", id) ?? null; }
   setMessageFlags(id: number, values: Partial<Record<LocalFlagField, number>>) {
     for (const [field, value] of Object.entries(values)) this.db.run(`UPDATE messages SET ${FLAG_COLUMNS[field as LocalFlagField]}=? WHERE id=?`, value, id);
   }

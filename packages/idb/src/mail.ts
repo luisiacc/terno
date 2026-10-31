@@ -51,13 +51,24 @@ import {
   cleanFromName,
   storedAddresses,
   withAccountPrefs,
+  categoryAction,
+  categoryOf,
+  categoryOfJson,
+  CATEGORY_ACTIONS,
+  isCategoryAction,
+  TAB_CODE,
+  tabOfCode,
+  tabRef,
+  threadTab,
+  type MessageCategory,
+  type TabMessage,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags } from "./flag-intents";
 import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
-import { hiddenCategories } from "./inbox-hidden";
+import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 import { mergeReminder } from "./reminders";
 
@@ -815,6 +826,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         is_spam: b(msg.isSpam),
         has_attachments: b(msg.hasAttachments),
         gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
+        // plan 86
+        category: categoryOf(msg.gmailLabels),
         size: msg.size,
         created_at: now,
         is_bulk: b(msg.bulk ?? false),
@@ -856,6 +869,8 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: Flag
     is_trash: protectedField("isTrash") ? row.is_trash : b(msg.isTrash),
     is_spam: protectedField("isSpam") ? row.is_spam : b(msg.isSpam),
     gmail_labels: msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : row.gmail_labels,
+    // plan 86: a category the user just set is theirs until Gmail confirms it
+    category: !msg.gmailLabels || protectedField("category") ? (row.category ?? null) : categoryOf(msg.gmailLabels),
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
@@ -928,7 +943,11 @@ export function recomputeThreads(c: Ctx, threadIds: Iterable<number>): void {
     }
     if (facts === undefined) facts = recomputeContext(c.db);
     const f = facts ? threadFacts(rows as unknown as FactRow[], facts) : null;
+    // plan 86: Gmail's tab (only Gmail messages carry a category; your own mail never decides it)
+    const ctx = facts;
+    const tab = inbox ? threadTab(rows as unknown as TabMessage[], ctx ? (m) => ctx.own(addressKey((m as unknown as R).from_email)) : undefined) : 0;
     threads.update(thread, {
+      tab,
       subject: baseSubject(first.subject) || first.subject,
       snippet: latest.snippet,
       last_date: latest.date,
@@ -989,6 +1008,12 @@ function plan(action: ThreadAction, msgs: R[], explicit: boolean): { ids: number
   }
   const latest = explicit ? msgs : [...latestPerThread.values()];
   const ids = (list: R[]) => list.map((m) => m.id as number);
+  if (isCategoryAction(action)) {
+    // plan 86: Gmail messages someone else wrote (yours never decide a tab); only Gmail has categories
+    const target = CATEGORY_ACTIONS[action];
+    const chosen = msgs.filter((m) => categoryOfRow(m) !== null && !m.is_sent && !m.is_draft);
+    return { ids: ids(chosen.filter((m) => categoryOfRow(m) !== target)), set: { category: target }, scope: ids(chosen) };
+  }
   switch (action) {
     case "archive":
       return { ids: ids(msgs.filter((m) => m.in_inbox)), set: { in_inbox: 0 } };
@@ -1034,7 +1059,8 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   const before: MessageState[] = [];
   for (const id of ids) {
     const m = messages.get(id)!;
-    before.push(stateOf(m));
+    // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
+    before.push(stateOf(m, isCategoryAction(action)));
     messages.update(m, set);
     touched.add(m.thread_id);
     let targets = byAccount.get(m.account_id);
@@ -1045,7 +1071,9 @@ function applyToMessages(c: Ctx, msgs: R[], action: ThreadAction, explicit: bool
   return { threadIds: [...touched], targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })), before };
 }
 
-const stateOf = (m: R): MessageState => ({ id: m.id, isRead: !!m.is_read, isStarred: !!m.is_starred, inInbox: !!m.in_inbox, isTrash: !!m.is_trash, isSpam: !!m.is_spam });
+/** plan 86: a row stored before it has no category yet: its labels say */
+const categoryOfRow = (m: R): number | null => (m.category === undefined ? categoryOfJson(m.gmail_labels) : m.category);
+const stateOf = (m: R, category = true): MessageState => ({ id: m.id, isRead: !!m.is_read, isStarred: !!m.is_starred, inInbox: !!m.in_inbox, isTrash: !!m.is_trash, isSpam: !!m.is_spam, ...(category ? { category: categoryOfRow(m) } : {}) });
 /** An undo: messages back exactly as they were, and the provider ops that take them there (in order). */
 export function restoreMessages(c: Ctx, states: readonly MessageState[]): { threadIds: number[]; ops: { accountId: number; kind: ThreadAction; messageIds: number[] }[] } {
   return c.db.tx(() => {
@@ -1062,11 +1090,15 @@ export function restoreMessages(c: Ctx, states: readonly MessageState[]): { thre
       const m = messages.get(was.id);
       if (!m) continue;
       const now = stateOf(m);
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was)) continue;
-      messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam });
+      // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
+      const current = now.category ?? null;
+      const category = was.category == null || current === null ? current : was.category;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && category === current) continue;
+      messages.update(m, { is_read: +was.isRead, is_starred: +was.isStarred, in_inbox: +was.inInbox, is_trash: +was.isTrash, is_spam: +was.isSpam, category });
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
+      if (category !== current) add(0, m.account_id, categoryAction(category as MessageCategory), m.id);
       restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
     }
     recomputeThreads(c, touched);
@@ -1097,9 +1129,17 @@ export const SEARCH_VIEW_TEST: Record<SearchView, (t: R) => boolean> = { ...VIEW
  */
 export function inboxHiddenTest(c: Ctx): ((threadId: number) => boolean) | null {
   const hidden = hiddenCategories(c.db);
-  if (!hidden) return null;
+  // plan 86: a Gmail tab its account keeps apart (a column of the thread row)
+  const tabbed = tabHiddenTest(c.db);
+  if (!hidden && !tabbed) return null;
   const memberships = T(c, "thread_categories");
+  const threads = T(c, "threads");
   return (id) => {
+    if (tabbed) {
+      const t = threads.get(id);
+      if (t && tabbed(t)) return true;
+    }
+    if (!hidden) return false;
     const keys = memberships.bucket("fk_thread_id", id);
     if (!keys) return false;
     for (const k of keys) if (hidden.has(memberships.rows.get(k)!.category_id as number)) return true;
@@ -1107,9 +1147,64 @@ export function inboxHiddenTest(c: Ctx): ((threadId: number) => boolean) | null 
   };
 }
 
-/** What the view leaves out: the plain Inbox's hidden threads (not a category's tab of it, plan 67, nor a folder), else nothing. */
+/** What the view leaves out: the plain Inbox's hidden threads (not a category's tab of it, plan 67, a folder nor a Gmail tab), else nothing. */
 function hiddenFor(c: Ctx, p: ScopeParams): ((threadId: number) => boolean) | null {
-  return p.view === "inbox" && p.categoryId === undefined && p.folder === undefined ? inboxHiddenTest(c) : null;
+  return p.view === "inbox" && p.categoryId === undefined && p.folder === undefined && p.tab === undefined ? inboxHiddenTest(c) : null;
+}
+
+/** Does a thread pass a tab list's view, account and filter (Waiting: inside its window)? */
+function tabKeeps(p: ScopeParams): (t: R | undefined) => t is R {
+  const filter = listFilterOf(p);
+  const cutoff = filter === "waiting" ? waitingFrom(p.now) : null;
+  const code = TAB_CODE[p.tab!];
+  return (t): t is R => !!t && t.in_inbox === 1 && t.tab === code && t.account_id === p.accountId && (!filter || FILTER_TEST[filter](t)) && (cutoff === null || t.waiting_since >= cutoff);
+}
+
+/**
+ * Plan 86: a page of a Gmail tab, from the tab's own index (account, tab): one walk of its members keeping the
+ * newest `limit + 1` that pass, so a sparse or empty tab never walks the mailbox.
+ */
+function tabPage(c: Ctx, p: ListParams): Page {
+  const threads = T(c, "threads");
+  const pass = tabKeeps(p);
+  const before = (t: R) => !p.cursor || t.last_date < p.cursor.lastDate || (t.last_date === p.cursor.lastDate && t.id < p.cursor.id);
+  const newer = (a: R, b: R) => b.last_date - a.last_date || b.id - a.id;
+  const top: R[] = [];
+  for (const k of threads.keysBy("tab", p.accountId, TAB_CODE[p.tab!])) {
+    const t = threads.rows.get(k);
+    if (!t || !before(t) || !pass(t)) continue;
+    if (top.length > p.limit && newer(t, top[p.limit]!) >= 0) continue;
+    let lo = 0;
+    let hi = top.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (newer(top[mid]!, t) < 0) lo = mid + 1;
+      else hi = mid;
+    }
+    top.splice(lo, 0, t);
+    if (top.length > p.limit + 1) top.pop();
+  }
+  const hasMore = top.length > p.limit;
+  const items = (hasMore ? top.slice(0, p.limit) : top).map((t) => toSummary(c, t));
+  const last = items[items.length - 1];
+  const page = { items, nextCursor: hasMore && last ? { lastDate: last.lastDate, id: last.id } : null };
+  if (!listFilterOf(p) || !p.keepIds?.length) return page;
+  const inView = tabKeeps({ ...p, filter: undefined, unreadOnly: false });
+  const kept = [...new Set(p.keepIds)].map((id) => threads.get(id)).filter((t): t is R => inView(t) && before(t));
+  return keepInPage(page, kept.map((t) => toSummary(c, t)));
+}
+
+/** A tab's thread ids above `after`, ascending: its members that pass, sorted (a tab is a part of one Inbox). */
+function tabScopeIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
+  const threads = T(c, "threads");
+  const pass = tabKeeps(p);
+  const after = p.after ?? 0;
+  const out: number[] = [];
+  for (const k of threads.keysBy("tab", p.accountId, TAB_CODE[p.tab!])) {
+    const t = threads.rows.get(k);
+    if (t && (t.id as number) > after && pass(t)) out.push(t.id as number);
+  }
+  return out.sort((x, y) => x - y).slice(0, p.limit);
 }
 
 export function categoryIdsOf(c: Ctx, threadId: number): number[] {
@@ -1140,11 +1235,13 @@ export function toSummary(c: Ctx, t: R): ThreadSummary {
     inTrash: t.in_trash === 1,
     // before the messages load (an early read) any thread may hold spam (trashed, or beside a reply): no icon until it's known (plan 22)
     hasSpam: c.late && !c.late.loaded ? true : T(c, "messages").by("fk_thread_id", t.id).some((m) => m.is_spam === 1),
+    ...(t.tab ? { tab: t.tab } : {}),
   };
 }
 
 export function listThreads(c: Ctx, p: ListParams): Page {
   if (p.folder !== undefined) return folderPage(c, p);
+  if (p.tab !== undefined) return tabPage(c, p);
   const threads = T(c, "threads");
   const filter = listFilterOf(p);
   const order = filter ? c.filterOrders[filter] : c.order;
@@ -1183,6 +1280,7 @@ export function listThreads(c: Ctx, p: ListParams): Page {
 /** A view's thread ids above `after`, ascending, up to `limit`: a category walks its memberships, not the whole mailbox. */
 export function scopeThreadIds(c: Ctx, p: ScopeParams & { after?: number; limit: number }): number[] {
   if (p.folder !== undefined) return folderScopeIds(c, p);
+  if (p.tab !== undefined) return tabScopeIds(c, p);
   const threads = T(c, "threads");
   const test = VIEW_TEST[p.view];
   // ascending ids, seeked past the last page and walked until this one is full
@@ -1290,10 +1388,19 @@ export function getCounts(c: Ctx, now: number): Counts {
   let inboxUnread = 0;
   const threads = T(c, "threads");
   const hidden = inboxHiddenTest(c);
+  // plan 86: unread threads per Gmail tab, from the tab's unread index (its buckets' sizes)
+  const tabUnread: Record<string, number> = {};
   for (const t of threads.all()) {
     if (t.in_inbox === 1 && t.unread_count > 0 && !hidden?.(t.id)) {
       byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
       inboxUnread++;
+    }
+  }
+  for (const a of T(c, "accounts").all()) {
+    if (a.kind !== "gmail") continue;
+    for (const code of [1, 2] as const) {
+      const n = threads.bucket("tab_unread", a.id, code)?.size ?? 0;
+      if (n) tabUnread[tabRef(a.id, tabOfCode(code)!)] = n;
     }
   }
   const categoryUnread: Record<number, number> = {};
@@ -1304,7 +1411,7 @@ export function getCounts(c: Ctx, now: number): Counts {
     categoryTotal[tc.category_id] = (categoryTotal[tc.category_id] ?? 0) + 1;
     categoryUnread[tc.category_id] = (categoryUnread[tc.category_id] ?? 0) + (t.unread_count > 0 ? 1 : 0);
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now), folderUnread: folderUnreadCounts(c) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now), folderUnread: folderUnreadCounts(c), tabUnread };
 }
 
 /** Inbox threads waiting for your reply (plan 17): the waiting order from the top to the cutoff; unknown while facts are pending. */
@@ -1371,7 +1478,7 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
   const accounts = T(c, "accounts");
   const r = accounts.get(id);
   if (!r) return null;
-  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined;
+  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined;
   accounts.update(r, {
     ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),

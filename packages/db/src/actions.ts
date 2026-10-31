@@ -1,4 +1,4 @@
-import type { ThreadAction } from "@terno/core";
+import { categoryAction, categoryOfJson, CATEGORY_ACTIONS, isCategoryAction, type MessageCategory, type ThreadAction } from "@terno/core";
 import { reaffirmFlagIntent, restoreLocationOps, sameLocation, type MessageState } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { recomputeThreads } from "./ingest";
@@ -28,6 +28,20 @@ interface Msg {
   in_inbox: number;
   is_read: number;
   is_starred: number;
+  is_draft: number;
+  /** plan 86: null: not Gmail (read from the labels when a stored row predates the column) */
+  category: number | null;
+}
+
+const MSG_COLUMNS = "id, account_id, thread_id, date, is_sent, is_draft, is_trash, is_spam, in_inbox, is_read, is_starred, coalesce(category, CASE WHEN gmail_labels IS NULL THEN NULL ELSE -1 END) AS category, CASE WHEN category IS NULL THEN gmail_labels END AS gmail_labels";
+
+/** Rows read with MSG_COLUMNS: a category the backfill hasn't written yet comes from the labels. */
+function withCategory(rows: (Msg & { gmail_labels?: string | null })[]): Msg[] {
+  for (const r of rows) {
+    if (r.category === -1) r.category = categoryOfJson(r.gmail_labels);
+    delete r.gmail_labels;
+  }
+  return rows;
 }
 
 /** Which messages an action changes, and the column updates applied to them. */
@@ -40,6 +54,12 @@ function plan(action: ThreadAction, msgs: Msg[], explicit = false): { ids: numbe
   // Thread actions star / mark-unread the latest message; explicit message actions (filters) act on every message given.
   const latest = explicit ? msgs : [...latestPerThread.values()];
   const ids = (list: Msg[]) => list.map((m) => m.id);
+  if (isCategoryAction(action)) {
+    // plan 86: Gmail messages someone else wrote (yours never decide a tab); only Gmail has categories
+    const target = CATEGORY_ACTIONS[action];
+    const chosen = msgs.filter((m) => m.category !== null && !m.is_sent && !m.is_draft);
+    return { ids: ids(chosen.filter((m) => m.category !== target)), set: `category = ${target}`, scope: ids(chosen) };
+  }
   switch (action) {
     case "archive":
       return { ids: ids(msgs.filter((m) => m.in_inbox)), set: "in_inbox = 0" };
@@ -82,11 +102,7 @@ export function applyThreadAction(db: Db, threadIds: readonly number[], action: 
     for (let i = 0; i < threadIds.length; i += 500) {
       const chunk = threadIds.slice(i, i + 500);
       msgs.push(
-        ...db.all<Msg>(
-          `SELECT id, account_id, thread_id, date, is_sent, is_trash, is_spam, in_inbox, is_read, is_starred
-           FROM messages WHERE thread_id IN (${placeholders(chunk.length)})`,
-          ...chunk,
-        ),
+        ...withCategory(db.all<Msg>(`SELECT ${MSG_COLUMNS} FROM messages WHERE thread_id IN (${placeholders(chunk.length)})`, ...chunk)),
       );
     }
     return applyToMessages(db, msgs, action, false);
@@ -100,11 +116,7 @@ export function applyMessageAction(db: Db, messageIds: readonly number[], action
     for (let i = 0; i < messageIds.length; i += 500) {
       const chunk = messageIds.slice(i, i + 500);
       msgs.push(
-        ...db.all<Msg>(
-          `SELECT id, account_id, thread_id, date, is_sent, is_trash, is_spam, in_inbox, is_read, is_starred
-           FROM messages WHERE id IN (${placeholders(chunk.length)})`,
-          ...chunk,
-        ),
+        ...withCategory(db.all<Msg>(`SELECT ${MSG_COLUMNS} FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)),
       );
     }
     return applyToMessages(db, msgs, action, true);
@@ -133,17 +145,19 @@ function applyToMessages(db: Db, msgs: Msg[], action: ThreadAction, explicit: bo
   return {
     threadIds: [...touched],
     targets: [...byAccount].map(([accountId, messageIds]) => ({ accountId, messageIds })),
-    before: ids.map((id) => stateOf(byId.get(id)!)),
+    // plan 86: only a category move's undo puts a category back (an archive's never touches one Gmail changed since)
+    before: ids.map((id) => stateOf(byId.get(id)!, isCategoryAction(action))),
   };
 }
 
-const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is_trash" | "is_spam">): MessageState => ({
+const stateOf = (m: Pick<Msg, "id" | "is_read" | "is_starred" | "in_inbox" | "is_trash" | "is_spam" | "category">, category = true): MessageState => ({
   id: m.id,
   isRead: !!m.is_read,
   isStarred: !!m.is_starred,
   inInbox: !!m.in_inbox,
   isTrash: !!m.is_trash,
   isSpam: !!m.is_spam,
+  ...(category ? { category: m.category } : {}),
 });
 
 export interface RestoreResult {
@@ -161,10 +175,7 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
       msgs.push(
-        ...db.all<Msg>(
-          `SELECT id, account_id, thread_id, date, is_sent, is_trash, is_spam, in_inbox, is_read, is_starred FROM messages WHERE id IN (${placeholders(chunk.length)})`,
-          ...chunk,
-        ),
+        ...withCategory(db.all<Msg>(`SELECT ${MSG_COLUMNS} FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)),
       );
     }
     // step 0: read/star and the first location step; step 1: the second location step
@@ -179,19 +190,23 @@ export function restoreMessages(db: Db, states: readonly MessageState[]): Restor
     for (const m of msgs) {
       const was = wanted.get(m.id)!;
       const now = stateOf(m);
-      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was)) continue;
+      // plan 86: a snapshot from before it, or of a message without a category, leaves the category as it is
+      const category = was.category == null || m.category === null ? m.category : was.category;
+      if (now.isRead === was.isRead && now.isStarred === was.isStarred && sameLocation(now, was) && category === m.category) continue;
       db.run(
-        "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ? WHERE id = ?",
+        "UPDATE messages SET is_read = ?, is_starred = ?, in_inbox = ?, is_trash = ?, is_spam = ?, category = ? WHERE id = ?",
         +was.isRead,
         +was.isStarred,
         +was.inInbox,
         +was.isTrash,
         +was.isSpam,
+        category,
         m.id,
       );
       touched.add(m.thread_id);
       if (now.isRead !== was.isRead) add(0, m.account_id, was.isRead ? "markRead" : "markUnread", m.id);
       if (now.isStarred !== was.isStarred) add(0, m.account_id, was.isStarred ? "star" : "unstar", m.id);
+      if (category !== m.category) add(0, m.account_id, categoryAction(category as MessageCategory), m.id);
       restoreLocationOps(now, was).forEach((kind, step) => add(step, m.account_id, kind, m.id));
     }
     recomputeThreads(db, touched);

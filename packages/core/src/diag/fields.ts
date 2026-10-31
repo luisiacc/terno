@@ -25,7 +25,7 @@ const bool = { t: "bool" } as const;
 const id = { t: "id" } as const;
 
 const RPC_CODES = ["BAD_REQUEST", "NOT_FOUND", "UNAVAILABLE", "TIMEOUT", "INTERNAL", "UNKNOWN_METHOD", "FORBIDDEN", "CANCELLED", "STALE"] as const;
-const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar"] as const;
+const THREAD_ACTIONS = ["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"] as const;
 
 /** Every field any code may use, with its type. */
 export const FIELD_TYPES = {

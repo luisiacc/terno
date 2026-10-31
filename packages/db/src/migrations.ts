@@ -1068,6 +1068,14 @@ CREATE TRIGGER capture_repair_location_changed AFTER UPDATE ON message_locations
 END;
 ` },
 
+  { version: 37, name: "Gmail tabs out of the Inbox (plan 86)", sql: `
+ALTER TABLE messages ADD COLUMN category INTEGER;
+ALTER TABLE threads ADD COLUMN tab INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX threads_unread_tab ON threads(account_id, tab) WHERE in_inbox = 1 AND unread_count > 0;
+CREATE INDEX threads_tab_date ON threads(account_id, tab, last_date DESC, id DESC) WHERE in_inbox = 1 AND tab > 0;
+CREATE INDEX threads_tab_id ON threads(account_id, tab, id) WHERE in_inbox = 1 AND tab > 0;
+INSERT OR REPLACE INTO settings (key, value_json) SELECT 'tabs_backfill', '{"phase":"messages","after":0}' WHERE EXISTS (SELECT 1 FROM accounts WHERE kind = 'gmail');
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

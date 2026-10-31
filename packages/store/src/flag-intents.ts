@@ -18,6 +18,12 @@ const EFFECTS = {
   markUnread: ["isRead"],
   star: ["isStarred"],
   unstar: ["isStarred"],
+  toPrimary: ["category"],
+  toPromotions: ["category"],
+  toSocial: ["category"],
+  toUpdates: ["category"],
+  toForums: ["category"],
+  toNoCategory: ["category"],
 } as const satisfies Record<ThreadAction, readonly LocalFlagField[]>;
 
 /** Sends and other operations do not own incoming message flags. */

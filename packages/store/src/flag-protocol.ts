@@ -5,13 +5,15 @@ export interface FlagClock { account_id: number; protocol_id: string; epoch: num
 export interface FlagIntent { message_id: number; field: LocalFlagField; account_id: number; provider_msg_id: string; intent_version: number; desired: number; owner_op_id: string | null; barrier_epoch: number; last_observation_epoch: number; pending_count: number; needs_snapshot: number; snapshot_account_id?: number }
 export interface FlagEffect { op_id: string; message_id: number; field: LocalFlagField; account_id: number; intent_version: number | null; value: number; active: number }
 export interface FlagOp { id: string; account_id: number; seq: number; kind: string; state: string }
-export interface FlagMessage { id: number; account_id: number; provider_msg_id: string | null; is_read: number; is_starred: number; in_inbox: number; is_trash: number; is_spam: number }
+export interface FlagMessage { id: number; account_id: number; provider_msg_id: string | null; is_read: number; is_starred: number; in_inbox: number; is_trash: number; is_spam: number; category: number | null }
 
-export const FLAG_COLUMNS: Record<LocalFlagField, keyof FlagMessage> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam" };
+export const FLAG_COLUMNS: Record<LocalFlagField, keyof FlagMessage> = { isRead: "is_read", isStarred: "is_starred", inInbox: "in_inbox", isTrash: "is_trash", isSpam: "is_spam", category: "category" };
 const VALUES: Record<string, Partial<Record<LocalFlagField, number>>> = {
   markRead: { isRead: 1 }, markUnread: { isRead: 0 }, star: { isStarred: 1 }, unstar: { isStarred: 0 },
   archive: { inInbox: 0 }, trash: { isTrash: 1, inInbox: 0 }, spam: { isSpam: 1, inInbox: 0 },
   notSpam: { isSpam: 0, inInbox: 1 }, moveToInbox: { inInbox: 1, isTrash: 0, isSpam: 0 },
+  // plan 86: a Gmail message's category (MessageCategory)
+  toNoCategory: { category: 0 }, toPrimary: { category: 1 }, toPromotions: { category: 2 }, toSocial: { category: 3 }, toUpdates: { category: 4 }, toForums: { category: 5 },
 };
 
 /** Synchronous point/range operations, always used inside an adapter-owned transaction. */
@@ -143,6 +145,8 @@ export function reaffirmSavedFlagIntent(repo: FlagRepository, saved: readonly Me
     const message = repo.message(state.id);
     if (!stable(message) || !repo.clock(message.account_id)) continue;
     for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
+      // a snapshot from before plan 86, or not Gmail: no category to reaffirm
+      if (state[field] == null) continue;
       const row = repo.intent(message.id, field);
       if (!row || Number(state[field]) !== Number(message[FLAG_COLUMNS[field]]) || row.desired === Number(state[field]) || !repo.hasCurrentUnknownEffect(message.id, field, row.intent_version, row.desired)) continue;
       let version = versions.get(message.account_id);
@@ -169,7 +173,7 @@ export function flagObservationValid(repo: FlagRepository, accountId: number, ob
   const clock = repo.clock(accountId);
   return !!clock?.phase && !!observation && observation.accountId === accountId && observation.protocolId === clock.protocol_id && Number.isSafeInteger(observation.epoch) && observation.epoch > 0 && observation.epoch <= clock.epoch;
 }
-export function acceptFlagObservation(repo: FlagRepository, messageId: number, field: LocalFlagField, observation?: FlagObservation, value?: boolean, needsSnapshot?: () => void): boolean {
+export function acceptFlagObservation(repo: FlagRepository, messageId: number, field: LocalFlagField, observation?: FlagObservation, value?: boolean | number, needsSnapshot?: () => void): boolean {
   const row = repo.intent(messageId, field);
   if (!row) return true;
   if (!observation && !row.pending_count && !row.needs_snapshot && value !== undefined && Number(value) !== repo.message(messageId)?.[FLAG_COLUMNS[field]]) {

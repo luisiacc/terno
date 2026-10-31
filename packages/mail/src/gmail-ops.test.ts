@@ -33,7 +33,8 @@ function mailbox(count = 3, successStatus = 204) {
   } as unknown as ProviderContext;
   const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "token", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   const restore = (ids = Array.from({ length: count }, (_, i) => i + 1)) => provider.execute({ id: "restore", kind: "moveToInbox", target: { messageIds: ids }, payload: {} });
-  return { labels, batches, requests, restore, fail: (index: number, status: number) => { failBatch = { index, status }; }, loseResponse: (index: number) => { loseResponse = index; }, onBatch: (fn: (index: number) => void) => { onBatch = fn; } };
+  const execute = (kind: string, ids = Array.from({ length: count }, (_, i) => i + 1)) => provider.execute({ id: kind, kind, target: { messageIds: ids }, payload: {} });
+  return { labels, batches, requests, restore, execute, fail: (index: number, status: number) => { failBatch = { index, status }; }, loseResponse: (index: number) => { loseResponse = index; }, onBatch: (fn: (index: number) => void) => { onBatch = fn; } };
 }
 
 describe("Gmail restore to inbox", () => {
@@ -100,5 +101,23 @@ describe("Gmail restore to inbox", () => {
     expect(error).toBeInstanceOf(ProviderError);
     expect(error).toMatchObject({ status, retryable, ambiguous: false });
     expect([...box.labels.get("g1")!].sort()).toEqual(["STARRED", "TRASH", "custom"]);
+  });
+});
+
+describe("Gmail categories (plan 86)", () => {
+  const run = (box: ReturnType<typeof mailbox>, kind: string) => box.execute(kind);
+  it.each([
+    ["toPrimary", ["CATEGORY_PERSONAL"]],
+    ["toPromotions", ["CATEGORY_PROMOTIONS"]],
+    ["toSocial", ["CATEGORY_SOCIAL"]],
+    ["toUpdates", ["CATEGORY_UPDATES"]],
+    ["toForums", ["CATEGORY_FORUMS"]],
+    ["toNoCategory", []],
+  ] as const)("%s leaves the message in that category alone, its other labels untouched", async (kind, category) => {
+    const box = mailbox(1);
+    box.labels.set("g1", new Set(["INBOX", "UNREAD", "custom", "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL"]));
+    await run(box, kind);
+    expect([...box.labels.get("g1")!].sort()).toEqual(["INBOX", "UNREAD", "custom", ...category].sort());
+    expect(box.requests).toHaveLength(1);
   });
 });

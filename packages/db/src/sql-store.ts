@@ -14,7 +14,7 @@ import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flag
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { ruleReadsBody, senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { categoryOf, ruleReadsBody, senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -81,6 +81,7 @@ import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage,
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
 import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages, recomputeThreads, setMessageBody } from "./ingest";
+import { tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
 import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
@@ -491,7 +492,12 @@ export class SqlMailStore implements MailStore {
             .filter(([k, v]) => FLAG_COLUMNS[k] && !owned?.has(k as LocalFlagField) && acceptFlagObservation(sqlFlags(this.db), u.messageId, k as LocalFlagField, observation, Boolean(v), () => { reconciliation.flagReconcileAccounts ??= [accountId]; }))
             .map(([k, v]) => [FLAG_COLUMNS[k]!, v ? 1 : 0]);
           // plan 17 (Codex review 1, #8): Gmail's category moves (Promotions ↔ Primary) change who a message is from
-          if (u.gmailLabels) sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
+          if (u.gmailLabels) {
+            sets.push(["gmail_labels", JSON.stringify(u.gmailLabels)]);
+            // plan 86: the category, unless a move of the user's owns it until Gmail confirms it
+            const category = categoryOf(u.gmailLabels)!;
+            if (!owned?.has("category") && acceptFlagObservation(sqlFlags(this.db), u.messageId, "category", observation, category, () => { reconciliation.flagReconcileAccounts ??= [accountId]; })) sets.push(["category", category]);
+          }
           if (!sets.length) continue;
           // plan 17 (Codex R4): a message becoming sent, or a draft, is your mail appearing or going
           const sentOrDraft = "isSent" in u.flags || "isDraft" in u.flags;
@@ -1166,6 +1172,11 @@ export class SqlMailStore implements MailStore {
   readonly facts: MailStore["facts"] = {
     backfill: async ({ limit }) => this.db.tx(() => backfillSlice(this.db, limit)),
     idle: async () => factsIdle(this.db),
+  };
+
+  readonly tabs: MailStore["tabs"] = {
+    backfill: async ({ limit }) => this.db.tx(() => tabsSlice(this.db, limit)),
+    idle: async () => tabsIdle(this.db),
   };
 
   readonly debug: MailStore["debug"] = {

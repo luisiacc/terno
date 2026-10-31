@@ -1,4 +1,4 @@
-import { cleanFromName, folderRef, listFilterOf, storedAddresses, waitingCutoff } from "@terno/core";
+import { cleanFromName, folderRef, listFilterOf, storedAddresses, TAB_CODE, tabOfCode, tabRef, waitingCutoff } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
@@ -12,6 +12,9 @@ import type {
 import { keepInPage, type ListParams, type Page, type ScopeParams } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 import { factsReady } from "./facts";
+import { hidingSql, inboxHiding, NO_HIDING, type InboxHiding } from "./inbox-hiding";
+
+export { hiddenCategories, hidingSql, inboxHiding, NO_HIDING, shownInInbox, type InboxHiding } from "./inbox-hiding";
 import { readThread } from "./thread-read-cache";
 
 export type { Cursor, ListParams, Page } from "@terno/store";
@@ -33,25 +36,12 @@ export const VIEW_WHERE: Record<View, string> = {
 /** Plan 64: a search looks everywhere unless it says in:… (Spam and Trash too). */
 export const SEARCH_VIEW_WHERE: Record<SearchView, string> = { ...VIEW_WHERE, anywhere: "1" };
 
-/**
- * Plan 83: the categories whose mail the plain Inbox leaves out (a handful of
- * rows, read per query). None: every Inbox query is the SQL it was.
- */
-export function hiddenCategories(db: Db): number[] {
-  return db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 0 ORDER BY id").map((r) => r.id);
-}
-
-/** The thread (`alias`) is in no hidden category: a primary-key probe of its memberships. */
-export function shownInInbox(alias: string, hidden: readonly number[]): { where: string; params: Param[] } {
-  return { where: `NOT EXISTS (SELECT 1 FROM thread_categories h WHERE h.thread_id = ${alias}.id AND h.category_id IN (${placeholders(hidden.length)}))`, params: [...hidden] };
-}
-
-/** The Inbox itself, not a category's tab of it (plan 67) nor a folder: what hiding applies to. */
-export const plainInbox = (p: ScopeParams) => p.view === "inbox" && p.categoryId === undefined && p.folder === undefined;
+/** The Inbox itself, not a category's tab of it (plan 67), a folder nor a Gmail tab: what hiding applies to. */
+export const plainInbox = (p: ScopeParams) => p.view === "inbox" && p.categoryId === undefined && p.folder === undefined && p.tab === undefined;
 
 export const SUMMARY_COLUMNS = `t.id, t.account_id, t.subject, t.snippet, t.last_date, t.last_from_name,
   t.last_from_email, t.message_count, t.unread_count, t.is_starred, t.has_attachments, t.person, t.waiting_since, t.in_inbox, t.in_spam, t.in_trash,
-  EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
+  t.tab, EXISTS (SELECT 1 FROM messages s INDEXED BY messages_thread WHERE s.thread_id = t.id AND s.is_spam = 1) AS has_spam,
   (SELECT group_concat(category_id) FROM thread_categories WHERE thread_id = t.id) AS cats`;
 
 export interface SummaryRow {
@@ -68,6 +58,7 @@ export interface SummaryRow {
   has_attachments: number;
   person: number | null;
   waiting_since: number | null;
+  tab: number;
   in_inbox: number;
   in_spam: number;
   in_trash: number;
@@ -95,6 +86,7 @@ export function toSummary(r: SummaryRow): ThreadSummary {
     inSpam: r.in_spam === 1,
     inTrash: r.in_trash === 1,
     hasSpam: r.has_spam === 1,
+    ...(r.tab ? { tab: r.tab } : {}),
   };
 }
 
@@ -142,7 +134,7 @@ function filterSql(filter: ListFilter, now: number | undefined): FilterSql {
 
 /** Keyset-paginated list of a view, optionally scoped to an account and/or category. */
 export function listThreads(db: Db, p: ListParams): Page {
-  const hidden = plainInbox(p) ? hiddenCategories(db) : [];
+  const hidden = plainInbox(p) ? inboxHiding(db) : NO_HIDING;
   const q = listSql(p, undefined, hidden);
   const page = pageFrom(db.all<SummaryRow>(q.sql, ...q.params), p.limit);
   if (!listFilterOf(p) || !p.keepIds?.length) return page;
@@ -155,7 +147,7 @@ export function listThreads(db: Db, p: ListParams): Page {
  * The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: those threads, the ones
  * the page's view holds; `hidden`: the plain Inbox's hidden categories (plan 83).
  */
-export function listSql(p: ListParams, only?: readonly number[], hidden: readonly number[] = []): { sql: string; params: Param[] } {
+export function listSql(p: ListParams, only?: readonly number[], hidden: InboxHiding = NO_HIDING): { sql: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // unread: pinned to the unread index, which tests view and account in the index (the planner
@@ -163,14 +155,19 @@ export function listSql(p: ListParams, only?: readonly number[], hidden: readonl
   const filter = listFilterOf(p);
   const f = filter ? filterSql(filter, p.now) : null;
   // plan 68: a folder walks its memberships by date (outer, CROSS JOIN), filtered or not, and joins the threads
-  const threads = f && p.folder === undefined ? `threads t INDEXED BY ${f.byDate}` : "threads t";
+  // plan 86: a Gmail tab walks its own index (account, tab, date), filtered or not, testing the filter on its rows
+  const threads = p.tab !== undefined ? "threads t INDEXED BY threads_tab_date" : f && p.folder === undefined ? `threads t INDEXED BY ${f.byDate}` : "threads t";
   if (f) {
     where.push(f.where);
     params.push(...f.params);
   }
-  if (hidden.length && plainInbox(p)) {
-    const h = shownInInbox("t", hidden);
-    where.push(h.where);
+  if (p.tab !== undefined) {
+    where.push("t.tab > 0 AND t.tab = ?");
+    params.push(TAB_CODE[p.tab]);
+  }
+  if (plainInbox(p)) {
+    const h = hidingSql("t", hidden);
+    where.push(...h.where);
     params.push(...h.params);
   }
   let from = threads;
@@ -221,7 +218,7 @@ export function listSql(p: ListParams, only?: readonly number[], hidden: readonl
 }
 
 /** What a view (account/category optional) is, for the id-only scope queries: index-backed, no display columns. */
-function scopeFrom(p: ScopeParams, paged = false, hidden: readonly number[] = []): { from: string; where: string; params: Param[] } {
+function scopeFrom(p: ScopeParams, paged = false, hidden: InboxHiding = NO_HIDING): { from: string; where: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
   const params: Param[] = [];
   // pages walk an index in id order and stop at the limit: the threads by key, an account's by (account_id, id),
@@ -233,6 +230,12 @@ function scopeFrom(p: ScopeParams, paged = false, hidden: readonly number[] = []
   const filter = listFilterOf(p);
   const f = filter ? filterSql(filter, p.now) : null;
   let from = f ? `threads t INDEXED BY ${f.byId ?? f.byDate}` : !paged ? "threads t" : p.accountId !== undefined ? "threads t INDEXED BY threads_account_id" : "threads t NOT INDEXED";
+  if (p.tab !== undefined) {
+    // plan 86: a Gmail tab's threads by (account, tab, id), in key order for pages
+    from = "threads t INDEXED BY threads_tab_id";
+    where.push("t.tab > 0 AND t.tab = ?");
+    params.push(TAB_CODE[p.tab]);
+  }
   if (p.folder !== undefined) {
     // plan 68: a folder's memberships by (account, folder, thread), outer like a category's
     from = paged ? "thread_folders tf INDEXED BY thread_folders_id CROSS JOIN threads t ON t.id = tf.thread_id" : "thread_folders tf JOIN threads t ON t.id = tf.thread_id";
@@ -253,9 +256,9 @@ function scopeFrom(p: ScopeParams, paged = false, hidden: readonly number[] = []
     where.push(f.where);
     params.push(...f.params);
   }
-  if (hidden.length && plainInbox(p)) {
-    const h = shownInInbox("t", hidden);
-    where.push(h.where);
+  if (plainInbox(p)) {
+    const h = hidingSql("t", hidden);
+    where.push(...h.where);
     params.push(...h.params);
   }
   return { from, where: where.join(" AND "), params };
@@ -267,12 +270,12 @@ function scopeFrom(p: ScopeParams, paged = false, hidden: readonly number[] = []
  * order, any other view the threads by key.
  */
 export function scopeThreadIds(db: Db, p: ScopeParams & { after?: number; limit: number }): number[] {
-  const q = scopeIdsSql(p, plainInbox(p) ? hiddenCategories(db) : []);
+  const q = scopeIdsSql(p, plainInbox(p) ? inboxHiding(db) : NO_HIDING);
   return db.all<{ id: number }>(q.sql, ...q.params).map((r) => r.id);
 }
 
 /** The SQL a scope page runs (query-plan tests: an index walk in key order, never a sort). */
-export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }, hidden: readonly number[] = []): { sql: string; params: Param[] } {
+export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }, hidden: InboxHiding = NO_HIDING): { sql: string; params: Param[] } {
   const s = scopeFrom(p, true, hidden);
   const key = p.folder !== undefined ? "tf.thread_id" : p.categoryId !== undefined ? "tc.thread_id" : "t.id";
   return { sql: `SELECT ${key} AS id FROM ${s.from} WHERE ${s.where} AND ${key} > ? ORDER BY ${key} LIMIT ?`, params: [...s.params, p.after ?? 0, p.limit] };
@@ -280,7 +283,7 @@ export function scopeIdsSql(p: ScopeParams & { after?: number; limit: number }, 
 
 /** How many threads a view holds, counted (up to `limit`). */
 export function countScopeThreads(db: Db, p: ScopeParams & { limit: number }): number {
-  const s = scopeFrom(p, false, plainInbox(p) ? hiddenCategories(db) : []);
+  const s = scopeFrom(p, false, plainInbox(p) ? inboxHiding(db) : NO_HIDING);
   return db.get<{ c: number }>(`SELECT count(*) AS c FROM (SELECT 1 FROM ${s.from} WHERE ${s.where} LIMIT ?)`, ...s.params, p.limit)!.c;
 }
 
@@ -401,15 +404,25 @@ export function getCounts(db: Db, now: number): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db), tabUnread: tabUnreadCounts(db) };
 }
 
-/** The Inbox counts' extra test (plan 83): none while no category is hidden. */
+/** The Inbox counts' extra tests (plans 83, 86): none while nothing is hidden. */
 function inboxShown(db: Db): { where: string; params: Param[] } {
-  const hidden = hiddenCategories(db);
-  if (!hidden.length) return { where: "", params: [] };
-  const h = shownInInbox("threads", hidden);
-  return { where: ` AND ${h.where}`, params: h.params };
+  const h = hidingSql("threads", inboxHiding(db));
+  return { where: h.where.map((w) => ` AND ${w}`).join(""), params: h.params };
+}
+
+/** plan 86: unread threads per Gmail tab ("accountId:promotions"), from the unread Inbox's (account, tab) index. */
+export function tabUnreadCounts(db: Db): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of db.all<{ account_id: number; tab: number; c: number }>(
+    "SELECT account_id, tab, count(*) AS c FROM threads INDEXED BY threads_unread_tab WHERE in_inbox = 1 AND unread_count > 0 AND tab > 0 GROUP BY account_id, tab",
+  )) {
+    const tab = tabOfCode(r.tab);
+    if (tab) out[tabRef(r.account_id, tab)] = r.c;
+  }
+  return out;
 }
 
 /** plan 68: unread threads per listed folder ("accountId:key"). */

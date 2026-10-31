@@ -1,6 +1,6 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
-import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
+import { addressKey, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { requireGmailRefresh, acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
@@ -194,8 +194,8 @@ INSERT INTO messages (
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
-  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json, attachments_captured
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json, attachments_captured, category
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -342,6 +342,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         b(msg.bulk ?? false),
         JSON.stringify(msg.replyTo ?? []),
         capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
+        categoryOf(msg.gmailLabels),
       ).lastInsertRowid;
       if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
       for (const ref of refs) {
@@ -392,7 +393,8 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
        is_starred = CASE WHEN ? THEN is_starred ELSE ? END, in_inbox = CASE WHEN ? THEN in_inbox ELSE ? END,
        is_sent = ?, is_draft = ?, is_trash = CASE WHEN ? THEN is_trash ELSE ? END,
        is_spam = CASE WHEN ? THEN is_spam ELSE ? END,
-       gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json) WHERE id = ?`,
+       gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json),
+       category = CASE WHEN ? THEN category ELSE coalesce(?, category) END WHERE id = ?`,
     b(!!protectedField("isRead")),
     b(msg.isRead),
     b(!!protectedField("isStarred")),
@@ -407,6 +409,9 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
     b(msg.isSpam),
     msg.gmailLabels ? JSON.stringify(msg.gmailLabels) : null,
     msg.replyTo === undefined ? null : JSON.stringify(msg.replyTo),
+    // plan 86: a category the user just set is theirs until Gmail confirms it
+    b(!msg.gmailLabels || !!protectedField("category")),
+    categoryOf(msg.gmailLabels),
     id,
   );
   if (msg.bodyState === "full") {
@@ -471,6 +476,8 @@ interface ThreadMessage extends FactRow {
   is_starred: number;
   in_inbox: number;
   has_attachments: number;
+  /** plan 86 */
+  category: number | null;
 }
 
 /** (trash or spam) last, then newest, ties broken by id: the order the list summary reads a thread in */
@@ -494,7 +501,7 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
   for (const threadId of threadIds) {
     // one read of the thread's messages; the aggregates are folded here
     const messages = db.all<ThreadMessage>(
-      `SELECT id, account_id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments, ${FACT_COLUMNS},
+      `SELECT id, account_id, date, from_name, from_email, snippet, subject, is_read, is_trash, is_spam, is_starred, in_inbox, is_sent, has_attachments, category, ${FACT_COLUMNS},
          CASE WHEN instr(gmail_labels, 'Label_') THEN gmail_labels END AS user_labels
        FROM messages WHERE thread_id = ?`,
       threadId,
@@ -537,10 +544,13 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
     const inSpam = visible > 0 && visibleNonspam === 0 ? 1 : 0;
     if (facts === undefined) facts = recomputeContext(db);
     const f = facts ? threadFacts(messages, facts) : null;
+    // plan 86: Gmail's tab (only Gmail messages carry a category; your own mail never decides it)
+    const ctx = facts;
+    const tab = inbox ? threadTab(messages, ctx ? (m) => ctx.own(addressKey((m as ThreadMessage).from_email)) : undefined) : 0;
     db.run(
       `UPDATE threads SET subject = ?, snippet = ?, last_date = ?, last_from_name = ?, last_from_email = ?,
          message_count = ?, unread_count = ?, has_attachments = ?, is_starred = ?, in_inbox = ?,
-         has_sent = ?, in_trash = ?, in_spam = ?, person = ?, waiting_since = ?
+         has_sent = ?, in_trash = ?, in_spam = ?, person = ?, waiting_since = ?, tab = ?
        WHERE id = ?`,
       baseSubject(first.subject) || first.subject,
       latest.snippet,
@@ -557,6 +567,7 @@ export function recomputeThreads(db: Db, threadIds: Iterable<number>): void {
       inSpam,
       f ? f.person : null,
       f ? f.waitingSince : null,
+      tab,
       threadId,
     );
     written.push(threadId);

@@ -14,6 +14,7 @@ import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 import { defineReminderConformance } from "./reminders";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
+import { defineTabsConformance } from "./tabs";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 import { defineFolderConformance } from "./folders";
@@ -72,6 +73,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineReminderConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineTabsConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

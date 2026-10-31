@@ -21,7 +21,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 36;
+export const LOGICAL_SCHEMA = 37;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -39,7 +39,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "message_flag_intents", key: ["message_id", "field"], indexes: { ...fk("account_id"), ...fk("message_id"), snapshot: ["snapshot_account_id"] } },
   { name: "flag_op_effects", key: ["op_id", "message_id", "field"], indexes: { ...fk("account_id"), ...fk("op_id"), ...fk("message_id"), parked_version: { columns: ["message_id", "field", "intent_version", "value"], where: (r) => r.active === 0 && r.intent_version != null && r.intent_version !== 0 }, parked_zero: { columns: ["message_id", "field", "value"], where: (r) => r.active === 0 && (r.intent_version == null || r.intent_version === 0) } } },
   { name: "accounts", early: true, key: ["id"] },
-  { name: "threads", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"] } },
+  // plan 86: a Gmail tab's threads, and its unread ones (a tab page and its count never walk the mailbox)
+  { name: "threads", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), provider: ["account_id", "provider_thread_id"], tab: { columns: ["account_id", "tab"], where: (r) => r.in_inbox === 1 && (r.tab as number) > 0 }, tab_unread: { columns: ["account_id", "tab"], where: (r) => r.in_inbox === 1 && (r.tab as number) > 0 && (r.unread_count as number) > 0 } } },
   {
     name: "messages",
     key: ["id"],

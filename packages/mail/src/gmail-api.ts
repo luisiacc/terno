@@ -2,7 +2,7 @@ import { retainedIncomingBytes } from "./incoming-size";
 import { gmailSendBody } from "./outgoing-wire";
 import { L } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder } from "@terno/store";
-import { FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
+import { CATEGORY_ACTIONS, CATEGORY_LABELS, FOLDER_NAME_MAX, FOLDERS_PER_ACCOUNT_MAX, isValidEmail } from "@terno/core";
 import { collectGooglePhotos, PEOPLE_API, type GoogleFailureReason } from "./google-photos";
 import type { ParsedMessage } from "./mime";
 import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted } from "./http-body";
@@ -325,6 +325,8 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
   markUnread: { add: ["UNREAD"] },
   star: { add: ["STARRED"] },
   unstar: { remove: ["STARRED"] },
+  // plan 86: a message's category (its inbox tab): the one asked for, none of the others
+  ...Object.fromEntries(Object.entries(CATEGORY_ACTIONS).map(([kind, c]) => [kind, { add: c ? [CATEGORY_LABELS[c]] : [], remove: CATEGORY_LABELS.filter((l, i) => l && i !== c) }])),
 };
 
 /** Where the provider gets access tokens: a refresh token on desktop, Google's token model (memory only) on the web. */

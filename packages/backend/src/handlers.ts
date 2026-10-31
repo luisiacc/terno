@@ -906,6 +906,8 @@ export function createHandlers(b: Backend): Handlers {
       const account = await store.accounts.update(id, patch);
       if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
       await b.emitAccounts();
+      // plan 86: what the Inbox shows changed (lists reload, the counts and the Dock follow)
+      if (patch.separateTabs !== undefined) b.notifyChanged([]);
       return account;
     },
 

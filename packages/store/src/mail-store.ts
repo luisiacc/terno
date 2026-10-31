@@ -689,6 +689,16 @@ export interface MailStore {
     idle(): Promise<boolean>;
   };
 
+  /**
+   * Plan 86: the Gmail tabs of mail stored before them (each message's
+   * category, then each Inbox thread's tab), in slices of at most `limit`
+   * message ids or threads. Resumes where it stopped; done once.
+   */
+  tabs: {
+    backfill(o: { limit: number }): Promise<{ processed: number; more: boolean }>;
+    idle(): Promise<boolean>;
+  };
+
   providerStore(accountId: number): ProviderStore;
 
   /** test-only, required: plain rows for oracles and property tests */

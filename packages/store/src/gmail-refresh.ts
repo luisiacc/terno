@@ -26,6 +26,8 @@ export function requireGmailRefresh(repo: FlagRepository, ids: readonly number[]
     const epoch = flagTick(repo, accountId);
     changed = true;
     for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
+      // plan 86: a message without labels has no category for a snapshot to confirm
+      if (field === "category" && message.category == null) continue;
       const current = repo.intent(id, field);
       putFlagIntent(repo, { message_id: id, field, account_id: accountId,
         intent_version: 0, desired: Number(message[FLAG_COLUMNS[field]]), owner_op_id: null, last_observation_epoch: 0, pending_count: 0,

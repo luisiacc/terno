@@ -96,7 +96,7 @@ export async function idbFlagSnapshots(idb: IDBDatabase, repo: IdbFlagRepository
   const last = p.through === undefined ? await cursorValues(idb, "message_flag_intents", "flag_snapshots", range, "prev", 1) : [];
   const through = p.through ?? (last[0] as Row | undefined)?.message_id as number | undefined ?? 0;
   if (through <= p.after) return { items: [], throughMessageId: through, hasMore: false };
-  const rows = await cursorValues(idb, "message_flag_intents", "flag_snapshots", IDBKeyRange.bound([accountId, p.after], [accountId, through], true), "next", (p.limit + 1) * 5) as Row[];
+  const rows = await cursorValues(idb, "message_flag_intents", "flag_snapshots", IDBKeyRange.bound([accountId, p.after], [accountId, through], true), "next", (p.limit + 1) * Object.keys(FLAG_COLUMNS).length) as Row[];
   const items: {id:number;providerMsgId:string}[] = [];
   let previous = -1;
   for (const row of rows) {

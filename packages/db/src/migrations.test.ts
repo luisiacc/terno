@@ -418,7 +418,7 @@ describe("migration v14: people and waiting for your reply (plan 17)", () => {
     const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
     expect(migrate(db)).toEqual({ from: 13, to: SCHEMA_VERSION });
     const after = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
-    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null })));
+    expect(after).toEqual(before.map((t) => ({ ...t, person: null, waiting_since: null, tab: 0 })));
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE is_bulk != 0")!.c).toBe(0);
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM correspondents")!.c).toBe(0);
     expect(JSON.parse(db.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'facts_backfill'")!.value_json)).toEqual({ phase: "senders", after: 0 });
@@ -623,5 +623,20 @@ describe("migration v35: automatic filters (plan 90)", () => {
       { name: "learned", auto: 0 },
     ]);
     expect(() => db.run("UPDATE filters SET auto = 2")).toThrow();
+  });
+});
+
+describe("migration v37: Gmail tabs (plan 86)", () => {
+  it("adds the columns without rewriting a row, and marks the backfill only for a mailbox with a Gmail account", () => {
+    const { db } = legacyMail(36, { threads: 10, seed: 6 });
+    const before = db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 36, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM threads ORDER BY id")).toEqual(before.map((t) => ({ ...t, tab: 0 })));
+    expect(db.get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE category IS NOT NULL")!.c).toBe(0);
+    expect(db.get("SELECT 1 FROM settings WHERE key = 'tabs_backfill'")).toBeUndefined();
+    const gmail = legacyMail(36, { threads: 2, seed: 7 }).db;
+    gmail.run("UPDATE accounts SET kind = 'gmail'");
+    migrate(gmail);
+    expect(JSON.parse(gmail.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'tabs_backfill'")!.value_json)).toEqual({ phase: "messages", after: 0 });
   });
 });

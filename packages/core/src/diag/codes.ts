@@ -82,6 +82,8 @@ export const CODES = {
   // plan 17: the thread facts' backfill (a slice failed; three in a row stop it for the session)
   "facts.backfill_failed": c("errorClass", "count"),
   "facts.backfilled": c("count", "durationMs"),
+  "tabs.backfill_failed": c("errorClass"),
+  "tabs.backfilled": c("durationMs"),
   "import.restore_failed": c("errorClass"),
   "secret.unreadable": c("op"),
   "agents.socket_failed": c("errno"),
