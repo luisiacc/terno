@@ -1101,7 +1101,7 @@ The trivial packaged schema expectation is already fixed and landed inc519c833, 
 
 | Branch | Preserved checkpoint | Note |
 |---|---|---|
-| `t3/prosemirror-view-reconciliation` |5ee9a729plus any wind-down WIP checkpoint | Existing continuation steered to stop cleanly, join owned work and commit/park all WIP only. Evidence `/tmp/terno-r7-pm-7b6ccbf2/`; Root will record final parking acknowledgement. No new tests/reviews/qualification. |
+| `t3/prosemirror-view-reconciliation` |aebddc5d (candidate5ee9a729 retained) | PARKED acknowledgement: clean committed unlanded; diagnostics joined naturally, no signals or live owned processes. Diagnostic fixture/config WIP retained; second capture unanalyzed, no new causal conclusion. Evidence `/tmp/terno-r7-pm-7b6ccbf2/continuation/parked-source/`. Delegate cancelled after parking; no new tests/reviews/qualification. |
 | `t3/huge-editor-rendering-boundary` |9d32eb72 | Existing evidence-only rendering/mapping boundary; preserve branch/worktree unlanded. |
 | `t3/prosemirror-position-bounds-dependency` |211c7f6d | Existing dependency experiment; preserve unlanded, historical104.8ms/50REDunwaived. |
 | `t3/large-editor-typing-performance` |0f5cbefb | Existing editor experiment; preserve unlanded, timing/content evidence unchanged. |
