@@ -1,4 +1,5 @@
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
+import { unsubscribeSource } from "./unsubscribe";
 import { completeCapture, retryCapture } from "@terno/store";
 import { requireSqlGmailRefresh } from "./ingest";
 import { prepareRecipientCorrespondents, prepareRecipientFts } from "./recipient-fts-preparation";
@@ -319,6 +320,7 @@ export class SqlMailStore implements MailStore {
       if (!thread) return null;
       return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
     },
+    unsubscribeSource: async (id) => unsubscribeSource(this.db, id),
     counts: async (now) => getCounts(this.db, now),
     search: async (req) => this.searchPage(req),
     searchText: async (p) => {
@@ -1266,6 +1268,7 @@ function storeSnapshot(db: Db): StoreSnapshot {
       ccJson: m.cc_json as string,
       replyToJson: m.reply_to_json as string,
       isBulk: b(m.is_bulk),
+      unsubscribe: (m.unsubscribe as string | null) ?? null,
       gmailLabels: m.gmail_labels as string | null,
       inReplyTo: m.in_reply_to as string | null,
       references: JSON.parse(m.references_json as string) as string[],

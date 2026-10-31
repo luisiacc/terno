@@ -1090,6 +1090,8 @@ CREATE TABLE scheduled_sends (
   retry_at INTEGER
 );
 ` },
+  // plan 96: List-Unsubscribe as compact JSON (NULL: none, or stored before; no backfill: the headers aren't kept)
+  { version: 39, name: "unsubscribe (plan 96)", sql: "ALTER TABLE messages ADD COLUMN unsubscribe TEXT;" },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

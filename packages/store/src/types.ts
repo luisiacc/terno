@@ -47,6 +47,8 @@ export interface IncomingMessage {
   listId: string | null;
   /** plan 17: bulk headers (List-Unsubscribe, Precedence bulk/list/junk, Auto-Submitted); absent: none seen */
   bulk?: boolean;
+  /** plan 94: how the sender says to stop their mail (List-Unsubscribe); absent or null: none seen */
+  unsubscribe?: import("@terno/core").Unsubscribe | null;
   isRead: boolean;
   isStarred: boolean;
   inInbox: boolean;

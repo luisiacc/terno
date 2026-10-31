@@ -24,3 +24,4 @@ export * from "./codes";
 export * from "./capture-repair";
 export * from "./tabs";
 export * from "./snippets";
+export * from "./unsubscribe";

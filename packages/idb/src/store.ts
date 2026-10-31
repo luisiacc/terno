@@ -115,6 +115,7 @@ import {
   getOwner,
   getSetting,
   getThread,
+  unsubscribeCandidate,
   requireIdbGmailRefresh,
   ingestMessages,
   findIngestMessage,
@@ -818,6 +819,25 @@ export class IdbMailStore implements MailStore {
         const thread = getThread(this.c, id);
         if (!thread) return null;
         return { ...thread, categorization: { auto: autoReasons(this.c, id), suggestions: pendingSuggestions(this.c, { threadId: id, limit: 5 }) } };
+      });
+    },
+    unsubscribeSource: async (id) => {
+      await this.settled();
+      return this.exclusive(async () => {
+        const pick = unsubscribeCandidate(this.c, id);
+        if (!pick) return null;
+        // only without the header: that one message's body, never the thread's
+        if (!pick.unsubscribe) await this.readBodies([pick.row.id]);
+        const body = pick.unsubscribe ? undefined : T(this.c, "message_bodies").get(pick.row.id);
+        return {
+          messageId: pick.row.id,
+          accountId: pick.row.account_id,
+          fromName: pick.row.from_name,
+          fromEmail: pick.row.from_email,
+          unsubscribe: pick.unsubscribe,
+          bodyHtml: (body?.body_html as string | null | undefined) ?? null,
+          bodyText: (body?.body_text as string | null | undefined) ?? null,
+        };
       });
     },
     counts: (now) => this.early(() => getCounts(this.c, now)),
@@ -2044,6 +2064,7 @@ function storeSnapshot(c: Ctx): StoreSnapshot {
       ccJson: m.cc_json,
       replyToJson: m.reply_to_json ?? "[]",
       isBulk: b(m.is_bulk ?? 0),
+      unsubscribe: m.unsubscribe ?? null,
       gmailLabels: m.gmail_labels ?? null,
       inReplyTo: m.in_reply_to ?? null,
       references: JSON.parse(m.references_json) as string[],

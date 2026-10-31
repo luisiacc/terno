@@ -19,10 +19,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 21 adds reminders (SQL v34, plan 87).
  * Version 22 adds capture repair (SQL v36).
  * Version 23 adds scheduled sends (SQL v38, plan 94).
+ * Logical 39 (plan 96) adds `messages.unsubscribe`: absent on older records reads as none, so no version change.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 38;
+export const LOGICAL_SCHEMA = 39;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 

@@ -25,6 +25,7 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     await store.accounts.setCursor(account.id, { historyId: "100" }); await store.close();
     // Remove only migration36's additions (and the later migrations', plan 86's v37 and plan 94's v38) to create the exact prior schema shape with populated data.
     const legacy = new DatabaseSync(path);
+    legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     legacy.exec("DROP TABLE scheduled_sends; DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key = 'tabs_backfill'");
     legacy.exec("DROP TRIGGER capture_repair_location_removed; DROP TRIGGER capture_repair_location_changed; DROP TABLE capture_repairs; DROP TABLE capture_repair_usage; PRAGMA user_version=35"); legacy.close();
     store = new SqlMailStore(openDatabase(path), { platform, instantSearch: false });

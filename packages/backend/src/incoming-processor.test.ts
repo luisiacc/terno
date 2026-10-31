@@ -9,7 +9,7 @@ import { Backend, plaintextCipher } from "./backend";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
-const result: IncomingProcessingResult = { kind: "mime", message: { rfcMessageId: null, inReplyTo: null, references: [], from: { name: "", email: "" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Synthetic", date: null, listId: null, bulk: false, text: "exact", html: null, attachments: [] } };
+const result: IncomingProcessingResult = { kind: "mime", message: { rfcMessageId: null, inReplyTo: null, references: [], from: { name: "", email: "" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Synthetic", date: null, listId: null, bulk: false, unsubscribe: null, text: "exact", html: null, attachments: [] } };
 const input = () => ({ kind: "mime" as const, chunks: [new Uint8Array([1, 2, 3])] });
 
 async function setup(processor: IncomingProcessor) {

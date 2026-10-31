@@ -2,7 +2,7 @@ import { sentCopyWarning, type SentCopyHooks } from "./sent-copy";
 import { FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
-import { bulkHeaders } from "@terno/core";
+import { bulkHeaders, parseListUnsubscribe } from "@terno/core";
 import { L, type Localized } from "@terno/i18n";
 import type { IncomingMessage, ProviderFolder, ImapLocation, FlagSnapshotPage } from "@terno/store";
 import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from "./mime";
@@ -821,7 +821,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       for (let i = 0; i < found.length; i += 250) {
         const batch = found.slice(i, i + 250);
         const expected = new Set(batch);
-        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
+        for await (const msg of c.fetch(batch, { uid: true, flags: true, envelope: true, internalDate: true, size: true, bodyStructure: true, headers: ["references", "list-id", "list-unsubscribe", "list-unsubscribe-post", "precedence", "auto-submitted", ...ADDRESS_HEADERS] }, { uid: true })) {
           const m = msg as FetchMessageObject;
           if (!expected.delete(m.uid) || !(m.flags instanceof Set)) throw new ProviderError(L("errors.imap.listRefused"), false);
           const flags = [...m.flags];
@@ -885,6 +885,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             bodyState: "none",
             listId: parseListId(headerValue(m.headers, "list-id")),
             bulk: bulkHeaders({ listUnsubscribe: headerValue(m.headers, "list-unsubscribe"), precedence: headerValue(m.headers, "precedence"), autoSubmitted: headerValue(m.headers, "auto-submitted") }),
+            unsubscribe: parseListUnsubscribe(headerValue(m.headers, "list-unsubscribe"), headerValue(m.headers, "list-unsubscribe-post")),
             isRead: flags.includes("\\Seen"),
             isStarred: flags.includes("\\Flagged"),
             inInbox: role === "inbox",

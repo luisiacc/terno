@@ -7,7 +7,7 @@ import { IncomingProcessingError, type IncomingProcessingResult } from "./incomi
 import type { ParsedMessage } from "./mime";
 import type { ProviderContext, SyncSink } from "./types";
 
-const parsed: ParsedMessage = { rfcMessageId: null, inReplyTo: null, references: [], from: { name: "", email: "synthetic@example.test" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Synthetic", date: null, listId: null, bulk: false, text: "Exact processed body", html: null, attachments: [] };
+const parsed: ParsedMessage = { rfcMessageId: null, inReplyTo: null, references: [], from: { name: "", email: "synthetic@example.test" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Synthetic", date: null, listId: null, bulk: false, unsubscribe: null, text: "Exact processed body", html: null, attachments: [] };
 afterEach(() => { vi.useRealTimers(); });
 
 function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSignal) => Promise<IncomingProcessingResult>, promote?: (signal: AbortSignal) => Promise<() => void>) {

@@ -50,6 +50,9 @@ import {
   type SearchView,
   cleanFromName,
   storedAddresses,
+  unsubscribeJson,
+  pickUnsubscribeMessage,
+  UNSUBSCRIBE_LOOKBACK,
   withAccountPrefs,
   categoryAction,
   categoryOf,
@@ -831,6 +834,8 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         size: msg.size,
         created_at: now,
         is_bulk: b(msg.bulk ?? false),
+        // plan 94 (absent on records from before: none)
+        unsubscribe: unsubscribeJson(msg.unsubscribe),
       });
       if (msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml });
       else T(c, "message_bodies").markAbsent(id);
@@ -872,6 +877,8 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: Flag
     // plan 86: a category the user just set is theirs until Gmail confirms it
     category: !msg.gmailLabels || protectedField("category") ? (row.category ?? null) : categoryOf(msg.gmailLabels),
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
+    // plan 94: a copy without the header (an older parse, a header-only fetch) keeps what was read
+    ...(unsubscribeJson(msg.unsubscribe) === null ? {} : { unsubscribe: unsubscribeJson(msg.unsubscribe) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
   if (msg.attachments !== undefined && !msg.captureUnavailable) replaceAttachments(c.db, row.id, msg.attachments);
@@ -2156,4 +2163,15 @@ export function requireIdbGmailRefresh(c: Ctx, ids: readonly number[], observati
     const row = T(c, "accounts").get(id);
     return row ? { kind: row.kind as string, cursor: (JSON.parse(row.provider_config as string) as { cursor?: unknown }).cursor } : null;
   }, observation);
+}
+
+/** Plan 94: one thread's newest messages that aren't yours (sync: the body, if wanted, is read by the caller). */
+export function unsubscribeCandidate(c: Ctx, threadId: number) {
+  const rows = T(c, "messages")
+    .by("fk_thread_id", threadId)
+    .filter((m) => m.is_sent !== 1 && m.is_draft !== 1)
+    .sort((x, y) => y.date - x.date || y.id - x.id)
+    .slice(0, UNSUBSCRIBE_LOOKBACK)
+    .map((m) => ({ id: m.id as number, account_id: m.account_id as number, from_name: m.from_name as string, from_email: m.from_email as string, unsubscribe: m.unsubscribe as unknown }));
+  return pickUnsubscribeMessage(rows, ownAddresses(c.db), addressKey);
 }

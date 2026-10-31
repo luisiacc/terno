@@ -113,7 +113,7 @@ function checkResult(result: IncomingProcessingResult, limits: IncomingProcessin
     size += value?.length ?? 0;
     if (size > limits.maxResultMetadataCodeUnits!) throw new IncomingProcessingError("result-limit");
   };
-  for (const value of [message.rfcMessageId, message.inReplyTo, message.subject, message.listId, ...message.references]) charge(value);
+  for (const value of [message.rfcMessageId, message.inReplyTo, message.subject, message.listId, message.unsubscribe?.mailto, message.unsubscribe?.url, ...message.references]) charge(value);
   for (const address of [message.from, ...message.replyTo, ...message.to, ...message.cc, ...message.bcc]) { charge(address.name); charge(address.email); }
   for (const part of message.attachments) { charge(part.filename); charge(part.mime); charge(part.contentId); }
   if (result.kind === "gmail") {

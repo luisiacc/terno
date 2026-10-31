@@ -96,6 +96,8 @@ export interface SnapshotMessage {
   ccJson: string;
   replyToJson: string;
   isBulk: boolean;
+  /** plan 94: List-Unsubscribe as stored (JSON), null when none */
+  unsubscribe: string | null;
   gmailLabels: string | null;
   inReplyTo: string | null;
   references: string[];
@@ -339,6 +341,8 @@ export interface MailStore {
     /** how many threads a view holds, counted up to `limit` */
     scopeCount(p: ScopeParams & { limit: number }): Promise<number>;
     get(id: number): Promise<(ThreadDetail & { categorization: { auto: { categoryId: number; reasons: Reason[] }[]; suggestions: PendingSuggestion[] } }) | null>;
+    /** plan 94: the message Unsubscribe acts on (none of yours), its List-Unsubscribe, else its body; null: nothing to act on */
+    unsubscribeSource(id: number): Promise<import("@terno/core").UnsubscribeSource | null>;
     /** `now`: the clock the waiting count reads its window from (plan 17) */
     counts(now: number): Promise<Counts>;
     /** resolves account:/category: and searches within one unit of work */

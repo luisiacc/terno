@@ -1,6 +1,6 @@
 import PostalMime, { type PostalMimeOptions } from "postal-mime";
 import { htmlToText } from "./visible-mail-text";
-import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, parseAddressHeader, repairAddresses, type Address } from "@terno/core";
+import { MAX_INCOMING_MIME_BYTES, attachmentFilename, attachmentMime, bulkHeaders, parseAddressHeader, repairAddresses, parseListUnsubscribe, type Address, type Unsubscribe } from "@terno/core";
 import type { IncomingAttachment } from "@terno/store";
 
 export interface ParsedMessage {
@@ -17,6 +17,8 @@ export interface ParsedMessage {
   listId: string | null;
   /** List-Unsubscribe, Precedence: bulk/list/junk or Auto-Submitted (plan 17) */
   bulk: boolean;
+  /** plan 94: List-Unsubscribe and List-Unsubscribe-Post, parsed */
+  unsubscribe: Unsubscribe | null;
   text: string | null;
   html: string | null;
   attachments: IncomingAttachment[];
@@ -149,6 +151,7 @@ export async function parseRaw(raw: Uint8Array | string, options: { captureUnava
     date: Number.isNaN(date) ? null : date,
     listId: parseListId(header("list-id")),
     bulk: bulkHeaders({ listUnsubscribe: header("list-unsubscribe"), precedence: header("precedence"), autoSubmitted: header("auto-submitted") }),
+    unsubscribe: parseListUnsubscribe(header("list-unsubscribe"), header("list-unsubscribe-post")),
     ...(unavailable ? { captureUnavailable: "size" as const } : {}),
     text: unavailable ? null : email.text ?? (email.html ? await htmlToText(email.html) : null),
     html: unavailable ? null : email.html ?? null,

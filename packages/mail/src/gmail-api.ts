@@ -747,6 +747,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
             captureUnavailable: parsed.captureUnavailable,
             listId: parsed.listId,
             bulk: parsed.bulk,
+            unsubscribe: parsed.unsubscribe,
             isRead: st.isRead!,
             isStarred: st.isStarred!,
             inInbox: st.inInbox!,

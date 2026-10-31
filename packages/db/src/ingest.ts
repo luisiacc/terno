@@ -1,6 +1,6 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
-import { addressKey, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
+import { addressKey, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { requireGmailRefresh, acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
@@ -194,8 +194,8 @@ INSERT INTO messages (
   from_name, from_email, from_domain, from_name_norm, to_json, cc_json, bcc_json,
   recipients_text, recipients_norm, subject, subject_norm, date, snippet,
   body_tail_norm, body_state, list_id, is_read, is_starred, in_inbox, is_sent,
-  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json, attachments_captured, category
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  is_draft, is_trash, is_spam, has_attachments, gmail_labels, size, created_at, is_bulk, reply_to_json, attachments_captured, category, unsubscribe
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 /**
  * Message ids are never reused (SQLite would reuse the max rowid after a
@@ -343,6 +343,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
         JSON.stringify(msg.replyTo ?? []),
         capture ? (msg.attachments!.every((p) => p.assetId) ? 1 : 2) : 0,
         categoryOf(msg.gmailLabels),
+        unsubscribeJson(msg.unsubscribe),
       ).lastInsertRowid;
       if (preparedRecipients?.ftsTokens !== undefined) db.run("DELETE FROM recipient_fts_stage WHERE message_id=?", allocated);
       for (const ref of refs) {
@@ -394,7 +395,7 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
        is_sent = ?, is_draft = ?, is_trash = CASE WHEN ? THEN is_trash ELSE ? END,
        is_spam = CASE WHEN ? THEN is_spam ELSE ? END,
        gmail_labels = coalesce(?, gmail_labels), reply_to_json = coalesce(?, reply_to_json),
-       category = CASE WHEN ? THEN category ELSE coalesce(?, category) END WHERE id = ?`,
+       category = CASE WHEN ? THEN category ELSE coalesce(?, category) END, unsubscribe = coalesce(?, unsubscribe) WHERE id = ?`,
     b(!!protectedField("isRead")),
     b(msg.isRead),
     b(!!protectedField("isStarred")),
@@ -412,6 +413,8 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
     // plan 86: a category the user just set is theirs until Gmail confirms it
     b(!msg.gmailLabels || !!protectedField("category")),
     categoryOf(msg.gmailLabels),
+    // plan 94: a copy without the header (an older parse, a header-only fetch) keeps what was read
+    unsubscribeJson(msg.unsubscribe),
     id,
   );
   if (msg.bodyState === "full") {

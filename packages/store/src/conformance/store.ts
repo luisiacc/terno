@@ -14,6 +14,7 @@ import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 import { defineReminderConformance } from "./reminders";
 import { defineScheduledConformance } from "./scheduled";
+import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
 import { defineFlagIntentConformance } from "./flag-intents";
@@ -74,6 +75,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineReminderConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineUnsubscribeConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;
@@ -2076,8 +2082,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const { store, before } = await harness.upgraded!();
         open.push(store);
         let after = await store.debug.snapshot();
-        // the bulk headers were never stored before v14: old mail has none (plan 17 §4.2)
-        expect(after.messages).toEqual(before.messages.map((m) => ({ ...m, isBulk: false })));
+        // the bulk headers were never stored before v14, nor List-Unsubscribe before v38: old mail has none (plan 17 §4.2, plan 94)
+        expect(after.messages).toEqual(before.messages.map((m) => ({ ...m, isBulk: false, unsubscribe: null })));
         // plan 17: the old mail's facts aren't known until the backfill has run, and the waiting count says so
         expect(after.threads).toEqual(before.threads.map((t) => ({ ...t, person: null, waitingSince: null })));
         expect((await store.threads.counts(NOW)).inboxWaiting).toBeNull();

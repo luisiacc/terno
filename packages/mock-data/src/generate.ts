@@ -1,4 +1,4 @@
-import type { Address, CategoryColor } from "@terno/core";
+import type { Address, CategoryColor, Unsubscribe } from "@terno/core";
 import { FAMILIES, FAMILY_SHARE, FAMILY_TAGS, familyThread, type AdversarialFamily, type FamilyMessage } from "./adversarial";
 import * as B from "./banks";
 
@@ -23,6 +23,8 @@ export interface MockMessage {
   listId: string | null;
   /** sent with bulk headers (List-Unsubscribe, Precedence): newsletters, notifications, spam */
   bulk: boolean;
+  /** plan 94: newsletters' List-Unsubscribe, a mailto only (the demo provider never sends, so the demo reaches no real site) */
+  unsubscribe?: Unsubscribe;
   isRead: boolean;
   isStarred: boolean;
   inInbox: boolean;
@@ -261,6 +263,7 @@ export function generateDataset(options: GenerateOptions): MockDataset {
         bodyHtml: `<div style="font-family:Georgia,serif;max-width:600px;margin:auto"><h1 style="font-size:22px">${escapeHtml(subject)}</h1><p>${escapeHtml(intro)}</p><p>${escapeHtml(sentences(nl.lang, 3))}</p><img src="https://${nl.listId}/pixel.gif" width="1" height="1" alt=""><p style="color:#888;font-size:12px"><a href="https://${nl.listId}/u">${nl.lang === "es" ? "Darse de baja" : "Unsubscribe"}</a></p></div>`,
         listId: nl.listId,
         bulk: true,
+        unsubscribe: { mailto: `mailto:unsubscribe@${nl.listId}?subject=unsubscribe` },
         isRead: ageDays > 7 || chance(0.4),
         inInbox: inInboxBase && chance(0.7),
         isSent: false,
