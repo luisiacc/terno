@@ -7,6 +7,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
 1. **UX first.** Every flow should feel obvious and calm. Never lose the user's work or position: drafts autosave, undo is exact, and focus and scroll survive navigation. Errors say what happened and what to do next, in plain English.
 2. **Intuitive, premium UI.** Minimal, Apple Mail and t3code inspired:
    - hairlines rather than boxes, quiet controls, SF on macOS
+   - **alignment is consistent:** things stacked in one column should look aligned. A new element follows its neighbours' margins and content line, never its own. Judge alignment in the resting state, not only on hover: a hover or selection shape may sit wider than a filled box if that keeps the text and icons on one line. Before adding or moving an element, look at it beside its neighbours in a screenshot
    - motion within the `--motion` cap (≤ 100 ms), and none when motion is reduced or off
    - every control keyboard-reachable and named for screen readers (axe-clean in light and dark, AA contrast in all themes)
    - focus rings only while the user moves with Tab (plan 54): never after a click, a shortcut or a programmatic focus, and never around a whole list or pane (plan 52). Style focus with `focus-visible:` utilities, which are gated on this; text fields keep their rings. A control revealed by focus (`opacity-0` until focused) uses `focus-reveal:` instead, which is not gated.
