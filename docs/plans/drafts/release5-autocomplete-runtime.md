@@ -167,3 +167,15 @@ E2E_PORT=57910 WEB_PORT=57920 python3 /tmp/terno-ac-run.py 500 /tmp/terno-r5-run
 E2E_PORT=57910 WEB_PORT=57920 python3 /tmp/terno-ac-run.py 1700 /tmp/terno-r5-runtime3-original10.log pnpm --filter @terno/web exec playwright test -c playwright.runtime3-local.config.ts --project=perf --no-deps e2e/autocomplete-perf.spec.ts -g 'a 10 MB draft: suggestions at the start, middle and end cost typing nothing beyond the paired gate, and appear in time$'
 ```
 Temporary diagnostic/config copies archived at /tmp/terno-r5-runtime3-diagnostic.ts and /tmp/terno-r5-runtime3-playwright.config.ts before cleanup. The generator, analysis scripts, pristine/previous/edited/fresh package reproductions and full traces remain under the unique runtime3 prefix. Own processes joined/reaped, screenshots restored, originals untouched, no manual process signals. Branch is committed for Root; no landing.
+
+## Root integration — 2026-10-30
+
+Landed the full series through8f50e54c on committed maina0d4f1da after local rebase and independent scoped verification. The user's uncommitted review-actions work was left untouched; it was not copied into the candidate or counted as tested.
+
+Root passes33focused tests,38fresh offline ESM/CJS grouping controls, dependency-source/Web main-worker/owned-browser test types, strict exact-file lint, and62browser cases including native layout-root confinement, full true-midpoint PM/DOM/saved text+HTML, history, Chromium composition and mixed grouped content. Root inspected four light/dark ghost/group captures. Source, public ESM/CJS, declarations and package metadata match the fresh offline package. Root temporary configs removed and original hardcoded screenshot directories restored.
+
+Both unchanged original gates pass once on the final candidate:
+-2MB: frame p50=19.1ms/50ms, transaction p95=11.3ms/30ms, serialization30.9ms/150ms, toolbar1.4ms/16ms, indent1461.1ms/1500ms; all content/focus/save assertions reached.
+-10MB: start median1.028≤1.172/tail1.032≤1.329; middle1.014≤1.165/.934≤1.307; end.985≤1.178/.983≤1.336. Each position observed18requests. Placement62.5/62.9/61.4ms≤120ms; all original assertions reached. Exit0,2.3minutes. No workload, window, sample, warming, budget, delay, deadline, multiplier or assertion change; no unchanged retry.
+
+Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ac-runtime5-2t1__bwx` retains exact commands, PID/birth/argv/deadlines/exits, logs, fresh package parity, screenshots and the untouched-main state record. The one earlier native Sol/high review remains narrow; later containment and ownership-map corrections have ordinary regressions and the above integration checks without independent rereview, under the explicit cap. No second review or clean final-series reviewer verdict is claimed. Historical failures remain recorded and the allocation correction does not prove every historical ratio's cause. Full production/release verification remains pending.
