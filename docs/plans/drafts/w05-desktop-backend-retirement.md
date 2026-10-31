@@ -105,3 +105,22 @@ Capture regression RED1/1: actual injected invalid `ps` invocation fails, and th
 Desktop full touched-package config typecheck, dedicated retirement config types, five exact changed-code file lint and diff-check pass. Native final rerun followed additional finite identity-probe/error-handling changes; no unchanged retry to seek green. All tests appended inherited NODE_OPTIONS with the required guard. No Backend is instantiated in selected tests, so managed Backend Request mocks are inapplicable. No unexpected external routes observed. Dependency auto-provision on first pnpm invocation reused720 local packages and ran ensure-electron; no app build was requested. The selected unit setup generated incoming.worker.cjs from an initially absent worker/dist; both were removed after checks. A RED run used the legacy body-witness path; its output is archived separately and the preexisting witness restored from Root's archived prior bytes. No real profiles/secrets were accessed. Installed Electron45 fixture only, no full app/preload/package or arbitrary crash recovery coverage; no full A09/W05/release-green claim.
 
 One authorized follow-up Standards+Spec read-only Sol/high review follows this coherent result. Evidence directory: /tmp/terno-w05-desktop-r2-followup. Earlier held findings outside these two remain held.
+
+
+### Authorized follow-up review and finite disposition
+
+Exactly one native `codex exec -s read-only -C <this checkout> -m gpt-6.1-sol -c model_reasoning_effort="high"` Standards+Spec review of 89123bfe18f4689623ec62a56190cac963baface..80d23265341aad8cfccad40a16d5c49eba137250 completed exit0. Verdict verbatim: "Standards: No findings." / "Spec: No findings." No P1/P2 remains in this requested follow-up. No review-driven source changes or additional review were needed. Prompt/output/run transcript/captured reviewer PID-birth-argv are retained in `/tmp/terno-w05-desktop-r2-followup/review-prompt.txt`, `review.txt`, `review-run.txt`, `review-process.json`. Reviewer ran no tests/builds/install and made no mutations. All command sessions are joined; no fallback model, children, push/fetch/main/worklist/landing or peer changes.
+
+Exact final checks (serial; all tests/type commands append inherited NODE_OPTIONS with `--require=/tmp/terno-network-guard.cjs`):
+
+```sh
+pnpm exec vitest run --project unit apps/desktop/src/backend-retirement.test.ts apps/desktop/src/shutdown.test.ts apps/desktop/src/preload-shutdown.test.ts packages/core/src/rpc/rpc.test.ts --reporter=verbose
+# TERNO_TEST_ELECTRON=/Users/Luis/projects/emailclient/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron
+pnpm exec vitest run -c apps/desktop/vitest.retirement.config.ts --reporter=verbose
+pnpm --filter @terno/desktop typecheck
+pnpm exec tsc --noEmit --skipLibCheck --moduleResolution bundler --module esnext --target es2023 --types node apps/desktop/vitest.retirement.config.ts
+pnpm exec oxlint --deny-warnings apps/desktop/src/app.ts apps/desktop/src/backend-retirement.native.ts apps/desktop/src/backend-retirement.test.ts apps/desktop/src/test-fixtures/retirement-main.cjs apps/desktop/src/test-fixtures/retirement-utility.cjs
+git diff --check
+```
+
+The two specifically authorized R2 cleanup items are ready for Root's serial integration review/retest. This handoff is committed and unlanded. Qualification remains limited to the actual host callback/helper boundaries and installed native fixture described above. It does not close broader A09/W05 or establish release readiness. Earlier exhausted/held findings outside this scope remain unchanged.
