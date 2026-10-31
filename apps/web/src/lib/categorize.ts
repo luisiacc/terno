@@ -41,7 +41,7 @@ function patch(threadIds: readonly number[], categoryId: number, on: boolean): v
   }));
 }
 
-/** Plan 80: filing into this category takes rows out of the list on screen (a category hidden from the Inbox you're in). */
+/** Plan 83: filing into this category takes rows out of the list on screen (a category hidden from the Inbox you're in). */
 function leavesInbox(categoryId: number): boolean {
   const s = getApp();
   return inPlainInbox(s) && s.categories.some((c) => c.id === categoryId && !c.showInInbox);
@@ -407,7 +407,7 @@ export async function fileAlways(categoryId: number, scope: FilterableScope, thr
 }
 
 /**
- * Plan 80: a category's mail in the Inbox, or not. Applied once the backend
+ * Plan 83: a category's mail in the Inbox, or not. Applied once the backend
  * has it (a local call), so a list refresh meanwhile never brings rows back:
  * then the category list follows, and hiding it from the Inbox on screen
  * takes its loaded rows out with the archive's fade and slide (the reload

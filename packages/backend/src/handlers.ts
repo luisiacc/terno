@@ -335,7 +335,7 @@ export function createHandlers(b: Backend): Handlers {
       const c = await store.categories.update(id, patch);
       if (!c) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
       b.server.emit("categories", await store.categories.list());
-      // plan 80: the Inbox's lists and counts (and the Dock) follow what it shows
+      // plan 83: the Inbox's lists and counts (and the Dock) follow what it shows
       if (patch.showInInbox !== undefined) b.notifyChanged([]);
       return c;
     },

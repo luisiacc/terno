@@ -110,7 +110,7 @@ function NavItem({
   countHelp?: "general" | "account" | { id: string; text: string };
   countHelpDisabled?: boolean;
   shortcut?: string;
-  /** a quiet mark after the name (plan 80: a category hidden from the Inbox) */
+  /** a quiet mark after the name (plan 83: a category hidden from the Inbox) */
   note?: React.ReactNode;
 }) {
   renderProbe("NavItem");

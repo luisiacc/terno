@@ -402,7 +402,7 @@ export function resetFacts(db: Db): void {
  */
 export function arrivalRows(db: Db, ids: readonly number[]): ArrivalRow[] {
   if (ids.length === 0) return [];
-  // plan 80: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
+  // plan 83: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
   const hidden = db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 0").map((r) => r.id);
   const rows = db.all<{ id: number; thread_id: number; account_id: number; date: number; from_name: string; from_email: string; subject: string; snippet: string; is_read: number; is_sent: number; is_draft: number; in_inbox: number; thread_inbox: number; thread_sent: number; body_state: string; attachments_captured: number; is_trash: number; is_spam: number; list_id: string | null; is_bulk: number; gmail_labels: string | null }>(
     `SELECT m.id, m.thread_id, m.account_id, m.date, m.from_name, m.from_email, m.subject, m.snippet, m.is_read, m.is_sent, m.is_draft, m.in_inbox,

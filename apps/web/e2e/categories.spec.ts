@@ -46,7 +46,7 @@ test.describe("categories", { tag: "@design" }, () => {
   });
 });
 
-test.describe("a category hidden from the Inbox (plan 80)", { tag: "@design" }, () => {
+test.describe("a category hidden from the Inbox (plan 83)", { tag: "@design" }, () => {
   test("right-click → Show in Inbox off: its rows leave the Inbox and its count; the category keeps them; Undo brings them back", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     // the category with the most Inbox threads in the seed

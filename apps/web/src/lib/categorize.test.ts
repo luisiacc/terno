@@ -302,7 +302,7 @@ describe("plan 80: the filter's name", () => {
   });
 });
 
-describe("plan 80: a category hidden from the Inbox", () => {
+describe("plan 83: a category hidden from the Inbox", () => {
   const LINKEDIN = 9;
   const cat = (showInInbox: boolean) => ({ id: LINKEDIN, name: "LinkedIn", color: "cyan" as const, position: 0, autoApply: true, showInInbox });
   const inbox = { view: "inbox" as const, categoryId: null, reviewCategoryId: null, folder: null, query: "", selectedId: null, scope: null, checked: new Set<number>() };
@@ -365,7 +365,7 @@ describe("plan 80: a category hidden from the Inbox", () => {
   });
 });
 
-describe("plan 80 (Codex review): a refused filing into a hidden category keeps your place", () => {
+describe("plan 83 (Codex review): a refused filing into a hidden category keeps your place", () => {
   it("the rows and the open thread stay when the backend refuses", async () => {
     const items = [row(1, true), row(2, true), row(3, false)];
     useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });

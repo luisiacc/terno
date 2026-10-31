@@ -515,7 +515,7 @@ export function arrivalRows(db: MemDb, ids: readonly number[]): ArrivalRow[] {
   const threads = t(db, "threads");
   const correspondents = t(db, "correspondents");
   let own: Set<string> | null = null;
-  // plan 80: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
+  // plan 83: a thread in a category hidden from the Inbox isn't Inbox mail to notify about
   const hidden = hiddenCategories(db);
   const out: ArrivalRow[] = [];
   for (const id of ids) {

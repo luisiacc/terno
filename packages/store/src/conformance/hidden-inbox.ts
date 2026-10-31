@@ -7,13 +7,13 @@ const DAY = 86_400_000;
 const addr = (email: string, name = "") => ({ name, email });
 
 /**
- * Plan 80: a category hidden from the Inbox. The plain Inbox (its pages, quick
+ * Plan 83: a category hidden from the Inbox. The plain Inbox (its pages, quick
  * filters, kept rows, scopes and counts) leaves out every thread in a hidden
  * category; the category's own list, its tab of an account's Inbox (plan 67)
  * and its counts keep them; notifications don't screen them as Inbox mail.
  */
 export function defineHiddenInboxConformance(fresh: () => Promise<MailStore>, reopen: (store: MailStore) => Promise<MailStore>): void {
-  describe("categories hidden from the Inbox (plan 80)", () => {
+  describe("categories hidden from the Inbox (plan 83)", () => {
     async function setup() {
       const store = await fresh();
       const [a, b] = await withAccounts(store, 2);

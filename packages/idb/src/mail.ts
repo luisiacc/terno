@@ -1073,7 +1073,7 @@ export const VIEW_TEST: Record<View, (t: R) => boolean> = {
 export const SEARCH_VIEW_TEST: Record<SearchView, (t: R) => boolean> = { ...VIEW_TEST, anywhere: () => true };
 
 /**
- * Plan 80: a test that a thread is in a category hidden from the Inbox, or
+ * Plan 83: a test that a thread is in a category hidden from the Inbox, or
  * null when none is. Per thread, its own memberships (a thread in none is
  * one index lookup): never the hidden categories' member lists, which a
  * membership change would make the next read rebuild and sort whole (Codex review).

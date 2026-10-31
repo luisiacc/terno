@@ -1,9 +1,9 @@
 import type { MemDb, Row } from "./mem";
 
 /**
- * Plan 80 (SQLite's hiddenCategories): the categories whose mail the plain
+ * Plan 83 (SQLite's hiddenCategories): the categories whose mail the plain
  * Inbox leaves out, or null when none is (every Inbox walk is what it was).
- * A row written before plan 80 has no show_in_inbox: shown.
+ * A row written before plan 83 has no show_in_inbox: shown.
  */
 export function hiddenCategories(db: MemDb): Set<number> | null {
   let hidden: Set<number> | null = null;

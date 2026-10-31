@@ -34,7 +34,7 @@ export const VIEW_WHERE: Record<View, string> = {
 export const SEARCH_VIEW_WHERE: Record<SearchView, string> = { ...VIEW_WHERE, anywhere: "1" };
 
 /**
- * Plan 80: the categories whose mail the plain Inbox leaves out (a handful of
+ * Plan 83: the categories whose mail the plain Inbox leaves out (a handful of
  * rows, read per query). None: every Inbox query is the SQL it was.
  */
 export function hiddenCategories(db: Db): number[] {
@@ -153,7 +153,7 @@ export function listThreads(db: Db, p: ListParams): Page {
 
 /**
  * The SQL a list page runs (query-plan tests: the unread filter walks threads_unread); `only`: those threads, the ones
- * the page's view holds; `hidden`: the plain Inbox's hidden categories (plan 80).
+ * the page's view holds; `hidden`: the plain Inbox's hidden categories (plan 83).
  */
 export function listSql(p: ListParams, only?: readonly number[], hidden: readonly number[] = []): { sql: string; params: Param[] } {
   const where = [VIEW_WHERE[p.view]];
@@ -404,7 +404,7 @@ export function getCounts(db: Db, now: number): Counts {
   return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db) };
 }
 
-/** The Inbox counts' extra test (plan 80): none while no category is hidden. */
+/** The Inbox counts' extra test (plan 83): none while no category is hidden. */
 function inboxShown(db: Db): { where: string; params: Param[] } {
   const hidden = hiddenCategories(db);
   if (!hidden.length) return { where: "", params: [] };

@@ -1,4 +1,4 @@
-# 80: Hide a category from the Inbox
+# 83: Hide a category from the Inbox
 
 ## Request (verbatim)
 

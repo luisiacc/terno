@@ -197,7 +197,7 @@ it("cached refresh keyset queries stay within the 50k store read budget", async 
   });
 });
 
-describe("a category hidden from the Inbox (plan 80)", () => {
+describe("a category hidden from the Inbox (plan 83)", () => {
   it("hiding the seed's largest category: Inbox pages, the unread filter and counts within the navigation budgets", async () => {
     const largest = store.db.get<{ category_id: number }>("SELECT category_id FROM thread_categories GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")!.category_id;
     await store.categories.update(largest, { showInInbox: false });

@@ -1000,7 +1000,7 @@ CREATE INDEX imap_identity_holds_account ON imap_identity_holds(account_id, mess
 INSERT INTO imap_identity_holds (message_id, account_id) SELECT m.id, m.account_id FROM messages m JOIN accounts a ON a.id=m.account_id
 WHERE a.kind='imap' AND m.provider_msg_id NOT LIKE 'local:%';
 ` },
-  { version: 31, name: "categories hidden from the Inbox (plan 80)", sql: `
+  { version: 31, name: "categories hidden from the Inbox (plan 83)", sql: `
 ALTER TABLE categories ADD COLUMN show_in_inbox INTEGER NOT NULL DEFAULT 1;
 ` },
 ];

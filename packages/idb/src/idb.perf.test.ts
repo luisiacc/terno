@@ -575,7 +575,7 @@ it("cached refresh keyset traversal at 50k never stalls a frame", async () => {
   expect(result.maxStall).toBeLessThanOrEqual(FRAME * MULT);
 });
 
-it("plan 80: a category hidden from the Inbox holding 95% of it: Inbox pages, unread, select all and counts within a frame, a membership change after too", async () => {
+it("plan 83: a category hidden from the Inbox holding 95% of it: Inbox pages, unread, select all and counts within a frame, a membership change after too", async () => {
   const inbox = await store.threads.scopeIds({ view: "inbox", limit: 1_000_000 });
   const hide = inbox.filter((_, i) => i % 20 !== 0);
   const big = (await store.categories.create("Hidden big", "slate")).id;
