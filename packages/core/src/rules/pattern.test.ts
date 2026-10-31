@@ -53,6 +53,18 @@ describe("the linear matcher (plan 84)", () => {
     }
   });
 
+  it("Codex review: compiling nested empty repeats is bounded, not exponential", () => {
+    const start = performance.now();
+    expect(checkPattern("(?:(?:(?:(?:(?:)){100}){100}){100}){100}")).toBe("complex");
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+
+  it("Codex review: case folds as /iu does (ß isn't SS, ς is σ), and an escaped surrogate pair is one character", () => {
+    for (const [pattern, text] of [["^[A-Z]$", "ß"], ["σ", "ς"], ["ς", "σ"], ["^[a-z]$", "K"], ["\\uD83D\\uDE00", "😀"], ["^[\\uD83D\\uDE00]$", "😀"]] as const) {
+      expect(compileRegex(pattern).test(text), `${pattern} ~ ${text}`).toBe(native(pattern, text));
+    }
+  });
+
   it("keeps the case of escapes and ignores the case of letters", () => {
     expect(patternMatches("\\D+", "abc")).toBe(true);
     expect(patternMatches("^\\d+$", "abc")).toBe(false);

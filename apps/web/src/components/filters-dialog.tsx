@@ -365,7 +365,7 @@ export function FiltersDialog() {
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (setDraft(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
-                    {f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
+                    {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}
                   </span>
                 </button>
                 <Switch

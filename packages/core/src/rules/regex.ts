@@ -35,8 +35,18 @@ export class RegexError extends Error {
 const isWord = (c: string | undefined) => c !== undefined && /[A-Za-z0-9_]/.test(c);
 const isSpace = (c: string) => /\s/u.test(c);
 const isDigit = (c: string) => c >= "0" && c <= "9";
-/** the text is lower-cased: a literal or range compares in either case */
-const fold = (c: string) => c.toLowerCase();
+/** Unicode simple case folding as /iu does it: one code point to one (ß stays ß, ς is σ) */
+const FOLD: Record<string, string> = { ς: "σ", ſ: "s", ϐ: "β", ϑ: "θ", ϕ: "φ", ϖ: "π", ϰ: "κ", ϱ: "ρ", ϵ: "ε", ẛ: "ṡ" };
+const fold = (c: string) => {
+  const lower = c.toLowerCase();
+  if (lower.length !== c.length && Array.from(lower).length !== 1) return c;
+  return FOLD[lower] ?? lower;
+};
+/** the other case of one code point, if it is one code point */
+const upper = (c: string) => {
+  const u = c.toUpperCase();
+  return Array.from(u).length === 1 ? u : c;
+};
 
 const CLASS: Record<string, Test> = {
   d: isDigit,
@@ -174,6 +184,14 @@ class Parser {
       const code = m ? parseInt(m[1] ?? m[2]!, 16) : NaN;
       if (!m || code > 0x10ffff) throw new RegexError("syntax");
       this.i += m[0].length;
+      // \uD83D\uDE00 is one character, as the text's code points are
+      if (code >= 0xd800 && code <= 0xdbff && !m[1]) {
+        const low = /^\\u([dD][c-fC-F][0-9a-fA-F]{2})/.exec(this.s.slice(this.i).join(""));
+        if (low) {
+          this.i += low[0].length;
+          return String.fromCharCode(code, parseInt(low[1]!, 16));
+        }
+      }
       return String.fromCodePoint(code);
     }
     // under the u flag only syntax characters (and /, -) escape to themselves
@@ -221,7 +239,7 @@ class Parser {
             const p = y.codePointAt(0)!;
             return p >= a && p <= b;
           };
-          return inRange(x) || inRange(x.toUpperCase()) || inRange(fold(x));
+          return inRange(x) || inRange(upper(x)) || inRange(fold(x));
         });
         continue;
       }
@@ -237,14 +255,19 @@ function literal(c: string): Node {
   return { t: "char", test: (x) => x === want || fold(x) === want };
 }
 
+/** Nodes compiled at most: {n} of an empty group emits nothing, but expanding it still costs (Codex review). */
+const WORK_MAX = 20_000;
+
 function compile(node: Node): Instr[] {
   const prog: Instr[] = [];
+  let work = 0;
   const emit = (i: Instr) => {
     if (prog.length >= PROGRAM_MAX) throw new RegexError("complex");
     prog.push(i);
     return prog.length - 1;
   };
   const gen = (n: Node): void => {
+    if (++work > WORK_MAX) throw new RegexError("complex");
     switch (n.t) {
       case "char":
         emit({ op: "char", test: n.test });

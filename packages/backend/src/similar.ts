@@ -88,60 +88,96 @@ export class SimilarFilters {
     return this.ensureRule(similarRule(scope, action), name ?? L(LEARNED_FILTER_NAME[action], { value: similarValue(scope) }).message, key ?? undefined);
   }
 
+  /**
+   * Runs a series of writes; what committed is journaled whatever happens. A
+   * filter edited between the read and the write is left as the edit made it
+   * (CANCELLED, skipped); any other failure rethrows with the undo of what
+   * committed before it in its details (Codex review).
+   */
+  private async journaled<T>(work: (record: (change: Change) => void, skip: (write: () => Promise<Change>) => Promise<Change | null>) => Promise<T>): Promise<{ result: T; filterUndo: number | null }> {
+    const changes: Change[] = [];
+    const record = (c: Change) => void changes.push(c);
+    const skip = async (write: () => Promise<Change>) => {
+      try {
+        return await write();
+      } catch (error) {
+        if (error instanceof RpcError && error.code === "CANCELLED") return null;
+        throw error;
+      }
+    };
+    try {
+      const result = await work(record, skip);
+      return { result, filterUndo: this.remember(changes) };
+    } catch (error) {
+      const filterUndo = this.remember(changes);
+      if (filterUndo === null) throw error;
+      throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { filterUndo }, { expected: false, cause: error });
+    }
+  }
+
   /** Plan 80: any rule, the same way; plan 85: an automatic category filter for the same mail elsewhere moves here instead. */
   ensureRule(rule: FilterRule, name: string, learnedKey?: string): Promise<Ensured> {
     return this.serial(async () => {
       const all = await this.store.filters.list();
-      const same = all.filter((f) => sameRule(f.rule, rule));
-      // anyone's identical filter, on, is already doing it: reused, never changed
-      const on = same.find((f) => f.enabled);
-      if (on) return { filter: on, filterUndo: null, retargeted: null };
-      const changes: Change[] = [];
-      let filter: Filter;
-      let retargeted: { from: number } | null = null;
-      // a disabled one is turned back on only if it's Terno's: the user turned theirs off
-      const off = same.find((f) => f.auto);
-      const target = targetOf(rule);
-      const elsewhere = target === null ? [] : all.filter((f) => f.auto && sameMail(f.rule, rule) && targetOf(f.rule) !== null && targetOf(f.rule) !== target).sort((a, b) => b.id - a.id);
-      if (off) {
-        const w = await this.write(off, { enabled: true });
-        filter = w.filter;
-        changes.push(w.change);
-      } else if (elsewhere[0]) {
-        // the same mail filed elsewhere before: it files here now (old mail isn't re-filed: its claims stay)
-        const from = targetOf(elsewhere[0].rule)!;
-        const w = await this.write(elsewhere[0], { rule, name: capFilterName(name), enabled: true }, true);
-        filter = w.filter;
-        changes.push(w.change);
-        retargeted = { from };
-      } else {
-        filter = await this.store.filters.save({ name: capFilterName(name), enabled: true, source: "manual", auto: true, rule, learnedKey }, this.now());
-        changes.push({ filterId: filter.id, before: null, after: filterState(filter) });
-      }
-      // a sender's mail filed here: their automatic subject filters filing elsewhere would split it (plan 86 R9)
-      const sender = target === null ? null : senderOf(rule);
-      if (sender) {
-        for (const f of all) {
-          if (!f.auto || !f.enabled || f.id === filter.id || subjectSenderOf(f.rule) !== sender) continue;
-          const to = targetOf(f.rule);
-          if (to === null || to === target) continue;
-          changes.push((await this.write(f, { enabled: false })).change);
+      const { result, filterUndo } = await this.journaled(async (record, skip) => {
+        const same = all.filter((f) => sameRule(f.rule, rule));
+        // anyone's identical filter, on, is already doing it: reused, never changed
+        let filter = same.find((f) => f.enabled) ?? null;
+        let retargeted: { from: number } | null = null;
+        const target = targetOf(rule);
+        if (!filter) {
+          // a disabled one is turned back on only if it's Terno's: the user turned theirs off
+          const off = same.find((f) => f.auto);
+          const elsewhere = target === null ? [] : all.filter((f) => f.auto && sameMail(f.rule, rule) && targetOf(f.rule) !== null && targetOf(f.rule) !== target).sort((a, b) => b.id - a.id);
+          if (off) {
+            const w = await this.write(off, { enabled: true });
+            filter = w.filter;
+            record(w.change);
+          } else if (elsewhere[0]) {
+            // the same mail filed elsewhere before: it files here now (old mail isn't re-filed: its claims stay)
+            const from = targetOf(elsewhere[0].rule)!;
+            const w = await this.write(elsewhere[0], { rule, name: capFilterName(name), enabled: true }, true);
+            filter = w.filter;
+            record(w.change);
+            retargeted = { from };
+          } else {
+            filter = await this.store.filters.save({ name: capFilterName(name), enabled: true, source: "manual", auto: true, rule, learnedKey }, this.now());
+            record({ filterId: filter.id, before: null, after: filterState(filter) });
+          }
         }
-      }
-      return { filter, filterUndo: this.remember(changes), retargeted };
+        // a sender's mail filed here: their automatic subject filters filing elsewhere would split it (plan 86 R9), reused or not
+        const sender = target === null ? null : senderOf(rule);
+        if (sender) {
+          for (const f of all) {
+            if (!f.auto || !f.enabled || f.id === filter.id || subjectSenderOf(f.rule) !== sender) continue;
+            const to = targetOf(f.rule);
+            if (to === null || to === target) continue;
+            const change = await skip(async () => (await this.write(f, { enabled: false })).change);
+            if (change) record(change);
+          }
+        }
+        return { filter, retargeted };
+      });
+      return { ...result, filterUndo };
     });
   }
 
   /** Plan 85: filters on or off at once ("Stop filing…", "Turn all off"), each only if unchanged since it was read; one Undo. */
   setEnabled(ids: readonly number[], enabled: boolean): Promise<{ changed: number; filterUndo: number | null }> {
     return this.serial(async () => {
-      const changes: Change[] = [];
-      for (const id of new Set(ids)) {
-        const f = await this.store.filters.get(id);
-        if (!f || f.enabled === enabled) continue;
-        changes.push((await this.write(f, { enabled })).change);
-      }
-      return { changed: changes.length, filterUndo: this.remember(changes) };
+      let changed = 0;
+      const { filterUndo } = await this.journaled(async (record, skip) => {
+        for (const id of new Set(ids)) {
+          const f = await this.store.filters.get(id);
+          if (!f || f.enabled === enabled) continue;
+          const change = await skip(async () => (await this.write(f, { enabled })).change);
+          if (change) {
+            record(change);
+            changed++;
+          }
+        }
+      });
+      return { changed, filterUndo };
     });
   }
 
@@ -153,8 +189,14 @@ export class SimilarFilters {
       for (const c of [...changes].reverse()) {
         const current = await this.store.filters.get(c.filterId);
         if (!current || !sameFilterState(filterState(current), c.after)) continue;
-        if (c.before === null) await this.store.filters.delete(c.filterId);
-        else {
+        if (c.before === null) {
+          try {
+            // only what it made, unchanged: an edit made between this read and the delete wins (Codex review)
+            await this.store.filters.delete(c.filterId, c.after);
+          } catch (error) {
+            if (!(error instanceof RpcError && error.code === "CANCELLED")) throw error;
+          }
+        } else {
           try {
             await this.store.filters.save({ id: c.filterId, ...c.before, source: current.source, keepApplications: true, expect: c.after }, this.now());
           } catch (error) {

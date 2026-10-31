@@ -832,7 +832,7 @@ export class SqlMailStore implements MailStore {
     list: async () => listFilters(this.db),
     get: async (id) => getFilter(this.db, id),
     save: async (f, now) => saveFilter(this.db, f, now),
-    delete: async (id) => deleteFilter(this.db, id),
+    delete: async (id, expect) => deleteFilter(this.db, id, expect),
     preview: async (rule, now, limit) => {
       const matches = findRuleMatches(this.db, rule, now);
       const top = this.db

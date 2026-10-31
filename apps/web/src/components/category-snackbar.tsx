@@ -7,7 +7,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { formatList, t } from "@terno/i18n";
 import { Check, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { fileAlways, filterNameOf, undoFiled, type Filed } from "~/lib/categorize";
+import { fileAlways, filterNameOf, stopFiling, undoFiled, type Filed } from "~/lib/categorize";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
 import { scopeLabel } from "~/lib/similar";
 import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
@@ -105,6 +105,10 @@ interface Default {
   moved: number;
   /** "Future ones move to Facturas instead of Lecturas" */
   retargeted: string | null;
+  /** the category the filter filed into before (no stop-filing offer for it: it files here now) */
+  retargetedFrom: number | null;
+  /** the group moved but the filter for new mail couldn't be saved */
+  filterFailed: boolean;
   /** takes it back once (the filter, then the group's move); "only" and Undo share it */
   takeBack: () => Promise<void>;
   /** z's undo while it stands: it, then the move */
@@ -146,7 +150,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   const moreRef = useRef<HTMLButtonElement>(null);
   const refocusMore = useRef(false);
   /** z's undo for everything this snackbar stands for */
-  const token = def && def.status !== "failed" ? def.token : undo;
+  // a failed default may have moved part of the group: its chain still takes that back (Codex review)
+  const token = def ? def.token : undo;
 
   useEffect(() => {
     let alive = true;
@@ -176,10 +181,18 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
    * rest with the same sender and subject too, and files their new mail. Only
    * while this is still the latest thing the user did (its undo is z's).
    */
+  /** the offers counted again: what the default or "only" changed changes what each line would do */
+  const recount = () =>
+    void client.call("offers.forAction", { threadIds: filed.threadIds.slice(0, 200), action: { category: filed.categoryId, move: filed.moved } }).then(
+      (o) => current() && setOffers(o),
+      () => undefined,
+    );
+
   const maybeDefault = (o: SimilarOffers & { automated: boolean }) => {
     const subject = o.offers.find((x) => x.scope.kind === "subject");
     if (!subject || subject.scope.kind !== "subject" || !(subject.count > 0 || subject.capped)) return;
-    if (!filed.moved || !DEFAULT_SOURCES.has(source) || !o.automated || !current() || !isLatest(undo)) return;
+    // every target checked (the backend reads at most 200): more than that gets no default (Codex review)
+    if (!filed.moved || filed.threadIds.length > 200 || !DEFAULT_SOURCES.has(source) || !o.automated || !current() || !isLatest(undo)) return;
     const scope = subject.scope;
     const name = getApp().categories.find((c) => c.id === filed.categoryId)?.name ?? "";
     // what it did, known once the backend answers; z meanwhile waits for it, then takes it back
@@ -191,7 +204,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
       if (u.batchId !== null) await undoFiled({ categoryId: filed.categoryId, addedIds: [], batchId: u.batchId, moved: true });
     });
     const chained = chainUndo(takeBack, undo);
-    setDef({ status: "running", moved: subject.count, retargeted: null, takeBack, token: chained });
+    setDef({ status: "running", moved: subject.count, retargeted: null, retargetedFrom: null, filterFailed: false, takeBack, token: chained });
     patchSnack(id, { message: t("offers.default.moving", { count: filed.threadIds.length + subject.count, category: name }) });
     void client
       .call("categorize.apply", { categoryId: filed.categoryId, scope, always: true, move: true, filterName: filterNameOf(scope, o.senderName, name) })
@@ -200,7 +213,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
           outcome({ batchId: r.batchId, filterUndo: r.filter?.filterUndo ?? null });
           void reloadList({ keepSelection: true });
           const from = r.filter?.retargeted ? (getApp().categories.find((c) => c.id === r.filter!.retargeted!.from)?.name ?? null) : null;
-          setDef((d) => d && { ...d, status: "done", moved: r.added, retargeted: from });
+          setDef((d) => d && { ...d, status: "done", moved: r.added, retargeted: from, retargetedFrom: r.filter?.retargeted?.from ?? null, filterFailed: r.filterFailed });
+          recount();
           const message = t("offers.default.moved", { count: filed.threadIds.length + r.added, category: name });
           // said aloud too: the whole group moved, not just the one dragged
           if (current()) patchSnack(id, { message }, true);
@@ -214,6 +228,26 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
         },
       );
   };
+
+  /**
+   * Plan 85: a move took mail out of categories where Terno's filters may
+   * still file mail like it: a line offers to stop them, once the default (if
+   * any) settled; not for the category whose filter it just retargeted here.
+   */
+  const [stops, setStops] = useState<{ categoryId: number; name: string; ids: number[] } | null>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current || !offers || def?.status === "running" || !filed.left?.length || filed.threadIds.length > 200) return;
+    asked.current = true;
+    const from = def?.retargetedFrom ?? null;
+    void (async () => {
+      for (const c of filed.left!.filter((x) => x !== from && x !== filed.categoryId).slice(0, 3)) {
+        const r = await client.call("filters.autoFor", { categoryId: c, threadIds: filed.threadIds }).catch(() => ({ filters: [] }));
+        const name = getApp().categories.find((x) => x.id === c)?.name;
+        if (r.filters.length && name && current()) return setStops({ categoryId: c, name, ids: r.filters.map((f) => f.id) });
+      }
+    })();
+  }, [offers, def?.status]);
 
   // the topic recounts as words are toggled or typed (debounced)
   const topic: CategorizeScope | null = (() => {
@@ -287,7 +321,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
    * it moves (plan 86); Undo then takes back the newest first.
    */
   const run = (l: Line | undefined) => {
-    if (!l || !category || busy) return;
+    // not while "only" takes the default back: the chain this would join is being retired (Codex review)
+    if (!l || !category || busy || undoing) return;
     const original = token.state === "ready" ? token : undefined;
     if (l.kind === "words") {
       if (!topic) return;
@@ -318,6 +353,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
         setUndoing(false);
         setDef(null);
         setOnlyDone(true);
+        recount();
         void reloadList({ keepSelection: true });
         if (current()) patchSnack(id, { message: t("offers.only.done", { count: filed.threadIds.length, category: category?.name ?? "" }) }, true);
       },
@@ -366,12 +402,20 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom, topic?.kind === "words" && topic.email ? (qa?.sender?.name ?? topic.email) : null);
   const senderName = offers?.senderName ?? qa?.sender?.name ?? null;
   const title = failed ?? (def?.status === "running" ? t("offers.default.moving", { count: filed.threadIds.length + def.moved, category: category.name }) : def?.status === "done" ? t("offers.default.moved", { count: filed.threadIds.length + def.moved, category: category.name }) : onlyDone ? t("offers.only.done", { count: filed.threadIds.length, category: category.name }) : titleOf(filed, category.name));
-  const note = def?.status === "done" ? (def.retargeted ? t("offers.default.retargeted", { category: category.name, from: def.retargeted }) : t("offers.default.future")) : null;
+  const note =
+    def?.status === "done"
+      ? def.filterFailed
+        ? t("offers.default.noFilter")
+        : def.retargeted
+          ? t("offers.default.retargeted", { category: category.name, from: def.retargeted })
+          : t("offers.default.future")
+      : null;
   return (
     <div data-testid="category-snackbar" data-failed={failed ? "" : undefined} data-default={def?.status}>
-      <div className="flex h-9 items-center gap-2 pr-1.5 pl-3 text-sm">
+      <div className="flex min-h-9 items-center gap-2 py-1 pr-1.5 pl-3 text-sm">
         <CategoryDot color={category.color as CategoryColor} />
-        <span className={cn("min-w-0 flex-1 truncate", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={title}>
+        {/* a default's title is a sentence read whole: it wraps to a second line rather than cut */}
+        <span className={cn("line-clamp-2 min-w-0 flex-1", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={title}>
           {title}
         </span>
         {(filed.batchId !== null || def) && (
@@ -391,7 +435,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
           {note}
         </p>
       )}
-      {lines.length > 0 && (
+      {(lines.length > 0 || stops || def?.status === "done") && (
         <div data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
           {lines.map((l, i) =>
             l.kind === "scope" ? (
@@ -403,7 +447,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                 detail={l.offer.scope.kind === "subject" ? subjectTemplate(l.offer.scope.subject) : undefined}
                 help={offerHelp(l.offer, senderName, category.name)}
                 future
-                disabled={busy}
+                disabled={busy || undoing}
                 // the sender with nothing left now: the line is about their future mail, no "0"
                 count={l.offer.count === 0 && !l.offer.capped ? undefined : l.offer}
                 onClick={() => run(l)}
@@ -420,7 +464,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                             type="button"
                             onClick={() => run(l)}
                             // stays focusable with nothing checked, so its help is still there to read
-                            aria-disabled={!topic || busy || undefined}
+                            aria-disabled={!topic || busy || undoing || undefined}
                             aria-describedby={helpId}
                             className={cn(line, "flex-1 text-left aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent")}
                             data-testid="snackbar-topic-apply"
@@ -522,6 +566,19 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                 </div>
               )
             ),
+          )}
+          {stops && (
+            <button
+              type="button"
+              data-testid="snackbar-stop"
+              onClick={() => {
+                close();
+                void stopFiling(stops.ids, stops.name);
+              }}
+              className={cn(line, "w-full text-left text-muted-foreground hover:text-foreground")}
+            >
+              {t("filters.stop.line", { category: stops.name })}
+            </button>
           )}
           {def?.status === "done" && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
         </div>

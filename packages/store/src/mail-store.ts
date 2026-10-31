@@ -17,6 +17,7 @@ import type {
   ThreadFilter,
   Filter,
   FilterSave,
+  FilterState,
   FilterRule,
   OpState,
   Prediction,
@@ -433,7 +434,8 @@ export interface MailStore {
     list(): Promise<Filter[]>;
     get(id: number): Promise<Filter | null>;
     save(f: FilterSave, now: number): Promise<Filter>;
-    delete(id: number): Promise<void>;
+    /** plan 85: with `expect`, only while the filter is still exactly that (else CANCELLED) */
+    delete(id: number, expect?: FilterState): Promise<void>;
     preview(rule: FilterRule, now: number, limit: number): Promise<{ count: number; sample: ThreadSummary[] }>;
     /** message id bounds, for windowed matching */
     messageIdRange(): Promise<{ lo: number; hi: number } | null>;

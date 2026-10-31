@@ -19,6 +19,7 @@ import {
   type Filter,
   type FilterRule,
   type FilterSave,
+  type FilterState,
   type OpState,
   type UserActionKind,
 } from "@terno/core";
@@ -285,8 +286,13 @@ export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
   });
 }
 
-export function deleteFilter(db: Db, id: number): void {
-  db.run("DELETE FROM filters WHERE id = ?", id);
+export function deleteFilter(db: Db, id: number, expect?: FilterState): void {
+  db.tx(() => {
+    // plan 85: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
+    const current = expect ? getFilter(db, id) : null;
+    if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
+    db.run("DELETE FROM filters WHERE id = ?", id);
+  });
 }
 
 export function learnedFilterKeys(db: Db): Set<string> {

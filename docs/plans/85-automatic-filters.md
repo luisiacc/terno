@@ -87,3 +87,16 @@ Agreed before this plan (point 5 of the review of the proposal):
 10. **A removal snack:** taking threads out of a category shows "Removed from Facturas", which it didn't before. The offer joins it only while that snack is current. An undo removal (`reason: "undo"`) asks nothing.
 11. **`filters.setEnabled`:** a narrow `filters.setEnabled({ ids, enabled })` with compare-and-set and a journaled undo (`filterUndo`) is used by "Stop filing…" and "Turn all off".
 12. **Backup and restore:** export, pending imports and restore carry `auto`; it is absent, meaning false, in older backups.
+
+## What the Codex code review changed
+
+- **A partial failure keeps its undo:** the filter writes are journaled as they commit. A compare-and-set conflict skips that filter (the edit wins). Any other failure rethrows with the undo of what already committed (`filterUndo` in its details), and `categorize.apply` and `similar.apply` pass it on.
+- **Undo never deletes an edited filter:** undo deletes a filter it made only if the filter is unchanged (`filters.delete(id, expect)`, checked in the store's transaction in both stores), so a user's edit made in between survives.
+- **Conflict cleanup on reuse:** reusing an enabled sender filter still turns off that sender's automatic subject filters that file elsewhere.
+- **Moves offer to stop filing (revision 8):** a move records the categories it took mail out of (`Filed.left`). Once the default settles, the category snackbar offers "Stop filing mail like this into Lecturas" when one of Terno's filters fills that category, except for the filter it just retargeted.
+
+Tests: `similar-filters.test.ts` (failure after a commit, edit between read and delete, reuse cleanup), and the e2e for the move's stop line.
+
+Deviations from the plan:
+- "Turn all off" has its Undo in the Settings group itself, since the dock is under the dialog.
+- The filter lists keep their stored order (position), not newest first.

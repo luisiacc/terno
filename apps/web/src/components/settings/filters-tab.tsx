@@ -72,7 +72,8 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{filter.name}</p>
         <p className="truncate text-xs text-muted-foreground">
-          {t(SOURCE[filter.source])} · {t("filters.hits", { count: filter.hits })} · {summary}
+          {/* plan 85: Terno's own say so, not how the rule was written */}
+          {t(filter.auto ? "filters.source.auto" : SOURCE[filter.source])} · {t("filters.hits", { count: filter.hits })} · {summary}
         </p>
       </div>
       <Switch

@@ -161,3 +161,22 @@ The note under it reads "Future ones too" (`offers.default.future`), and "Future
 10. **Mail the filter catches during the undo window:** like plans 80 and 81, mail the new filter files while the snackbar is up (seconds) stays filed after "only" or Undo. The filter is undone first, so this window is as short as the undo itself. It is documented, not journaled.
 11. **Screen readers:** the default's completion and "only" update the snack's spoken message (`patchSnack` with `spoken`), so screen readers hear "Moved 47 emails…". Progress stays silent.
 12. **Order of work:** plans 84 and 85 are implemented first. The defaults are gated on their cross-store tests.
+
+## What the Codex code review changed
+
+- **A failed default keeps its undo chain:** a default that fails partway keeps its chained undo, so Undo takes back what part of the group moved, then the action.
+- **Over 200 targets, no default:** defaults run only for up to 200 targets (the backend checks at most 200), so a larger selection can't be approved by sampling.
+- **No offers during "only":** offer lines are disabled while "No, only…" takes the default back, so no new step joins a chain being retired.
+- **A failed narrowing says so:** narrowing a spam default to the same subject reports a rollback failure with a retry, instead of dropping it.
+- **No promise without a filter:** when the default's filter couldn't be saved, the note says new mail isn't covered instead of promising it is.
+
+Tests: an e2e where the filter insert fails during the default.
+
+Deviations from the plan:
+- **Labels:** one set everywhere (`similar.scope.*`):
+  - "Same sender and subject" + the `#` template
+  - "Everything from …"
+  - "Everything from @…"
+  - "Mailing list …"
+- **The category submenu's "Everything from X":** plan 77's file/out choice is kept as it is. "Move to → category" runs the same default and snackbar as a drag.
+- **The menu's "Only this email"** still shows the offers (without a default) in the snackbar, for consistency.

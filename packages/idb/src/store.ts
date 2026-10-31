@@ -14,7 +14,7 @@ import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flag
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { COUNT_CAP, LIST_FILTERS, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -1368,7 +1368,13 @@ export class IdbMailStore implements MailStore {
     list: () => this.early(() => listFilters(this.c)),
     get: (id) => this.early(() => getFilter(this.c, id)),
     save: (f, now) => this.command(() => saveFilter(this.c, f, now)),
-    delete: (id) => this.command(() => void T(this.c, "filters").delete(id)),
+    delete: (id, expect) =>
+      this.command(() => {
+        const current = expect ? getFilter(this.c, id) : null;
+        // plan 85: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
+        if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
+        T(this.c, "filters").delete(id);
+      }),
     preview: async (rule, now, limit) => {
       const matches = await this.matchAll(rule, now);
       return this.read(() => {

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { said } from "~/lib/actions";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";
 import { applySimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar";
-import { dismissSnack, growSnack, patchSnack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
+import { dismissSnack, growSnack, patchSnack, snack, undoNow, useSnack, zHolds, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
 import { reloadList } from "~/state/list";
@@ -46,24 +46,34 @@ function defaultScope(shown: Shown): SimilarOffer | null {
 
 interface Default {
   status: "running" | "done" | "failed";
+  /** the sweep ran but its filter for new mail couldn't be saved */
+  filterFailed?: boolean;
   /** how many more the sweep marked */
   more: number;
   takeBack: () => Promise<void>;
   token: Undo;
 }
 
-function SimilarSnackbar({ id, action, targets, offers, undo, undoName, automation }: Shown & { id: string }) {
+function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, automation }: Shown & { id: string }) {
+  /** counted again once the default or "only" changed what each line would do */
+  const [offers, setOffers] = useState(first);
   const live = useSnack((s) => s.current?.id === id);
   const [def, setDef] = useState<Default | null>(null);
   const [busy, setBusy] = useState(false);
   /** "No, only …" ran: the title says so */
   const [onlyDone, setOnlyDone] = useState(false);
-  const token = def && def.status !== "failed" ? def.token : undo;
+  // a failed default may have marked part of the sender: its chain still takes that back (Codex review)
+  const token = def ? def.token : undo;
   const z = useSnack((s) => zHolds(s, token));
   const close = () => dismissSnack(id);
   const current = () => useSnack.getState().current?.id === id;
   const name = offers.senderName ?? "";
-  const sender = defaultScope({ action, targets, offers, undo, undoName, automation });
+  const sender = defaultScope({ action, targets, offers: first, undo, undoName, automation });
+  const recount = () =>
+    void client.call("offers.forAction", { threadIds: [...targets], action }).then(
+      (o) => current() && setOffers(o),
+      () => undefined,
+    );
 
   // spam: the rest from the sender too, and a filter for their new mail, while this is still the last thing done
   useEffect(() => {
@@ -85,7 +95,8 @@ function SimilarSnackbar({ id, action, targets, offers, undo, undoName, automati
       (r) => {
         settle({ undoId: r.undoId, filterUndo: r.filter?.filterUndo ?? null });
         void reloadList({ keepSelection: true });
-        setDef((d) => d && { ...d, status: "done", more: r.affected });
+        setDef((d) => d && { ...d, status: "done", more: r.affected, filterFailed: r.filterFailed });
+        recount();
         if (current()) patchSnack(id, { message: t("offers.default.spammed", { count: targets.length + r.affected, name }) }, true);
       },
       (error: unknown) => {
@@ -106,13 +117,19 @@ function SimilarSnackbar({ id, action, targets, offers, undo, undoName, automati
     close();
     // narrower than the default (the same subject from them): the default comes back first, then this runs alone
     if (def?.status === "done" && offer.scope.kind === "subject") {
-      void def.takeBack().then(
-        () => {
-          unchain(def.token, undo);
-          return applySimilar(action, [], offer.scope, { senderName: offers.senderName, original: undo });
-        },
-        () => undefined,
-      );
+      const narrow = (): void =>
+        void def.takeBack().then(
+          () => {
+            unchain(def.token, undo);
+            return applySimilar(action, [], offer.scope, { senderName: offers.senderName, original: undo });
+          },
+          // the sender's mail is still marked: said, with a retry (Codex review); Undo still takes all of it back
+          (error: unknown) =>
+            void snack.error(t("offers.narrowFailed", { error: error instanceof Error ? error.message : String(error) }), {
+              action: { label: t("common.retry"), name: t("offers.narrowRetry"), onClick: narrow },
+            }),
+        );
+      narrow();
       return;
     }
     // the offer takes over the undo: one Undo brings back this, then the default, then the action
@@ -132,6 +149,7 @@ function SimilarSnackbar({ id, action, targets, offers, undo, undoName, automati
         setDef(null);
         setOnlyDone(true);
         setBusy(false);
+        recount();
         void reloadList({ keepSelection: true });
         if (current()) patchSnack(id, { message: t("offers.only.spamDone", { count: targets.length }) }, true);
       },
@@ -152,11 +170,11 @@ function SimilarSnackbar({ id, action, targets, offers, undo, undoName, automati
     };
   });
 
-  const note = def?.status === "done" ? t("offers.default.spamFuture") : !def && action === "spam" ? t("similar.alsoFuture") : null;
+  const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : !def && action === "spam" ? t("similar.alsoFuture") : null;
   return (
     <div data-testid="similar-snackbar" data-default={def?.status}>
       <div className="flex min-h-9 items-center gap-2 py-1.5 pr-1.5 pl-3">
-        <p className={cn("min-w-0 flex-1 truncate text-sm", def && "font-medium")} data-testid="snack-message" title={title}>
+        <p className={cn("line-clamp-2 min-w-0 flex-1 text-sm", def && "font-medium")} data-testid="snack-message" title={title}>
           {title}
         </p>
         {token.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} disabled={def?.status === "running" || busy} onClick={doUndo} />}

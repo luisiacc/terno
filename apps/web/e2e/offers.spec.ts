@@ -166,4 +166,32 @@ test.describe("plan 86: defaults and the same offers everywhere", { tag: "@desig
     await page.keyboard.press("z");
     await expect.poll(spam).toBe(0);
   });
+
+  test("Codex review: a default whose filter can't be saved says new mail isn't covered; a move out of a category Terno's filter fills offers to stop it", async ({ app: page, server }) => {
+    const facturas = catId(server, "Facturas");
+    const lecturas = catId(server, "Lecturas");
+    const g = group(server, facturas);
+    g.db.exec("CREATE TRIGGER e2e_no_filters BEFORE INSERT ON filters BEGIN SELECT RAISE(ABORT, 'disk full'); END");
+    await selectThread(page, g.target, `from:${g.email}`);
+    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack).toHaveAttribute("data-default", "done");
+    await expect(snack.getByTestId("snackbar-note")).toHaveText("Couldn’t save the filter for new mail: only the mail you have now changed.");
+    g.db.exec("DROP TRIGGER e2e_no_filters");
+    await page.keyboard.press("Escape");
+
+    // a person's thread in Lecturas, which a filter of Terno's fills; moved to Facturas (no default: a person)
+    const person = g.db.get<{ id: number; email: string }>(
+      `SELECT t.id, t.last_from_email AS email FROM threads t WHERE t.in_inbox = 1 AND t.person = 1 AND t.in_trash = 0 AND t.message_count = 1
+       AND NOT EXISTS (SELECT 1 FROM thread_categories c WHERE c.thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
+    )!;
+    await server.backend.server.invoke("categorize.apply", { categoryId: lecturas, scope: { kind: "sender", email: person.email }, always: true, filterName: "Them → Lecturas" }, { clientId: "t", origin: "dev" });
+    const enabled = () => g.db.get<{ enabled: number }>("SELECT enabled FROM filters WHERE name = 'Them → Lecturas'")!.enabled;
+    await selectThread(page, person.id, `from:${person.email}`);
+    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${person.id}"]`), page.getByTestId(`nav-category-${facturas}`));
+    const stop = snack.getByTestId("snackbar-stop");
+    await expect(stop).toHaveText("Stop filing mail like this into Lecturas");
+    await stop.click();
+    await expect.poll(enabled).toBe(0);
+  });
 });

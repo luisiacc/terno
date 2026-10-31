@@ -367,6 +367,9 @@ export function createHandlers(b: Backend): Handlers {
         } catch (error) {
           // the mail moved and stays undoable: the result says the filter is missing
           filterFailed = true;
+          // what committed before the failure still comes back with Undo (Codex review)
+          const partial = error instanceof RpcError ? (error.details as { filterUndo?: unknown } | undefined)?.filterUndo : undefined;
+          if (typeof partial === "number") filter = { id: 0, filterUndo: partial };
           b.log("warn", "similar filter failed", error instanceof Error ? error.message : error);
         }
       }
@@ -474,6 +477,9 @@ export function createHandlers(b: Backend): Handlers {
         } catch (error) {
           // the mail is still filed and undoable: the result says the filter is missing
           filterFailed = true;
+          // what committed before the failure (a filter made, then another failing to turn off) still comes back with Undo
+          const partial = error instanceof RpcError ? (error.details as { filterUndo?: unknown } | undefined)?.filterUndo : undefined;
+          if (typeof partial === "number") filter = { id: 0, filterUndo: partial, retargeted: null };
           b.log("warn", "category filter failed", error instanceof Error ? error.message : error);
         }
       }

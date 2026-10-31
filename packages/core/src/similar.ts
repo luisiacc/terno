@@ -88,11 +88,14 @@ export function subjectTest(scopeSubject: string): { kind: "key"; key: string } 
   return subjectGeneralizes(normalized) ? { kind: "key", key: subjectKey(normalized) } : { kind: "exact", normalized };
 }
 
-/** Does this normalized subject belong to the scope's subject? */
-export function sameSubject(scopeSubject: string, normalized: string): boolean {
+/** The scope's subject test, prepared once for a walk: does this normalized subject belong to it? */
+export function subjectMatcher(scopeSubject: string): (normalized: string) => boolean {
   const test = subjectTest(scopeSubject);
-  return test.kind === "key" ? subjectKey(normalized) === test.key : normalized === test.normalized;
+  return test.kind === "key" ? (normalized) => subjectKey(normalized) === test.key : (normalized) => normalized === test.normalized;
 }
+
+/** Does this normalized subject belong to the scope's subject? */
+export const sameSubject = (scopeSubject: string, normalized: string): boolean => subjectMatcher(scopeSubject)(normalized);
 
 /** The filter rule that does the same to future mail. */
 export function similarRule(scope: SimilarScope, action: SimilarAction): FilterRule {

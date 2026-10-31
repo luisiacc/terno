@@ -28,7 +28,7 @@ import {
   type QuickActions,
   type TrainExample,
   type Vetoes,
-  sameSubject,
+  subjectMatcher,
 } from "@terno/core";
 import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@terno/store";
 import { pendingSuggestionCounts, T, type Ctx, type R } from "./mail";
@@ -876,7 +876,8 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
       break;
     case "subject": {
       // what the filter's rule compares: the normalized subject, or its key with numbers (plan 84; plan 63's similar scope does the same)
-      rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => sameSubject(scope.subject, m.subject_norm));
+      const same = subjectMatcher(scope.subject);
+      rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => same(m.subject_norm));
       break;
     }
     case "domain":

@@ -115,3 +115,14 @@ Agreed before this plan: a regex is never typed by most people. A subject the ap
 9. **Unbounded resolve (accepted, measured):** scope resolution was already unbounded for sender scopes. The key UDF only runs on generalized subjects of one sender. `categorize.perf.test.ts` gains a dominant sender with a rare numbered subject, so the cost is measured, not assumed.
 10. **IDB windows:** they stay at 4,000 ids, since the matcher is linear. There is no smaller regex window.
 11. **Background apply:** it moves to `lib/filters.ts` (`applyFilter`), which owns the job and its snack independently of the dialog. The backend refuses a second apply of a running filter (a set entry taken before the first await, released in `finally`). A failure partway returns `{ matchedMessages, affectedThreads }` so far in its details, and the snack says how many were done, then reloads the list.
+
+## What the Codex code review changed
+
+- **Compile time is bounded too:** nested empty repeats (`(?:(?:){100}){100}…`) emitted no instructions but expanded exponentially. Compilation now counts its work (20,000 nodes) and refuses past it. Test: such a pattern is `complex` within 250 ms.
+- **Case folding matches `/iu`:** `[A-Z]` no longer matches `ß` (its upper case is two letters), and `σ`/`ς` fold together. Escaped surrogate pairs (`\uD83D\uDE00`) are one character, in classes too. Tests compare each case with the native engine.
+- **Subject tests are prepared once:** the subject test is prepared once per walk in IndexedDB (`subjectMatcher`), and `subjectGeneralizes` goes through the compiled-pattern cache, so a dominant sender's sweep doesn't recompile per message.
+
+Changes after review (screenshots):
+- The snackbar title wraps to two lines instead of truncating ("Moved 21 emails with the same sender and subject to Facturas").
+- Offers are counted again after the default and after "No, only…".
+- Terno's filters are labelled "Automatic", not "Manual".

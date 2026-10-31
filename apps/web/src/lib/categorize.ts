@@ -24,6 +24,8 @@ export interface Filed {
   batchId: number | null;
   /** an exclusive move (drag and drop, "Move to…"): the threads also left every other category; undo puts them back */
   moved?: boolean;
+  /** plan 85: the categories a move took them out of (the loaded rows'), where Terno's filters may still file their like */
+  left?: number[];
 }
 
 type Listener = (filed: Filed, source: CategorizeSource) => void;
@@ -104,6 +106,8 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
   if (ids.length === 0) return null;
   const { items, index } = useList.getState();
   const delta: Record<number, number> = {};
+  const left = new Set<number>();
+  for (const id of ids) for (const c of items[index.get(id) ?? -1]?.categoryIds ?? []) if (c !== categoryId) left.add(c);
   for (const id of ids) {
     const t = items[index.get(id) ?? -1];
     if (!t?.unread) continue;
@@ -121,7 +125,7 @@ export async function moveToCategory(categoryId: number, threadIds: readonly num
     const res = await client.call("categories.moveThreads", { to: categoryId, threadIds: ids, source });
     if (leaves) leaveLoaded(ids);
     refreshReader(ids);
-    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, moved: true };
+    const filed: Filed = { categoryId, threadIds: ids, addedIds: res.addedIds, batchId: res.batchId, moved: true, left: [...left] };
     for (const l of listeners) l(filed, source);
     return filed;
   } catch (error) {
@@ -246,7 +250,7 @@ export async function offerStopFiling(categoryId: number, threadIds: readonly nu
   else snack(t("filters.stop.message", { category: name }), { duration: 10_000, action });
 }
 
-async function stopFiling(ids: number[], category: string): Promise<void> {
+export async function stopFiling(ids: number[], category: string): Promise<void> {
   try {
     const { filterUndo } = await client.call("filters.setEnabled", { ids, enabled: false });
     snack.success(t("filters.stop.done", { category }), {

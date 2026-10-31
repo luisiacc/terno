@@ -62,7 +62,8 @@ export function subjectPattern(normalized: string): string {
 }
 
 /** A subject with numbers whose pattern is a valid rule value: its scope generalizes them; any other stays exact. */
-export const subjectGeneralizes = (normalized: string): boolean => hasNumber(normalized) && checkPattern(subjectPattern(normalized)) === null;
+// through the compiled-pattern cache: a sweep asks once per message (Codex review)
+export const subjectGeneralizes = (normalized: string): boolean => hasNumber(normalized) && compile(subjectPattern(normalized)) !== null;
 
 /**
  * A normalized subject as a sweep compares it: with its numbers generalized
