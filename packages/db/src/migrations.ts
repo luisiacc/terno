@@ -1003,6 +1003,9 @@ WHERE a.kind='imap' AND m.provider_msg_id NOT LIKE 'local:%';
   { version: 31, name: "categories hidden from the Inbox (plan 83)", sql: `
 ALTER TABLE categories ADD COLUMN show_in_inbox INTEGER NOT NULL DEFAULT 1;
 ` },
+  { version: 32, name: "cover category counts without wide thread reads", sql: `
+CREATE INDEX threads_category_counts ON threads(id, unread_count) WHERE in_trash = 0 AND in_spam = 0;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

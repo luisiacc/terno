@@ -395,7 +395,7 @@ export function getCounts(db: Db, now: number): Counts {
   const categoryTotal: Record<number, number> = {};
   for (const r of db.all<{ category_id: number; total: number; unread: number }>(
     `SELECT tc.category_id, count(*) AS total, sum(t.unread_count > 0) AS unread
-     FROM thread_categories tc JOIN threads t ON t.id = tc.thread_id
+     FROM thread_categories tc JOIN threads t INDEXED BY threads_category_counts ON t.id = tc.thread_id
      WHERE t.in_trash = 0 AND t.in_spam = 0 GROUP BY tc.category_id`,
   )) {
     categoryTotal[r.category_id] = r.total;
