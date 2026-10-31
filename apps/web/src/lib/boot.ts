@@ -22,13 +22,15 @@ import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
+import { snippetsSaved } from "~/lib/snippets";
 
 export async function boot(): Promise<void> {
   startDiag();
   trackDraftComposition();
   installNativeReload();
   // Registered before readiness: an update cannot miss a document still starting.
-  window.ternoDesktop?.onFlushDrafts?.(() => draftsSaved(4000), acquireDraftHold);
+  // plan 89: snippets an editor hasn't saved yet go too
+  window.ternoDesktop?.onFlushDrafts?.(async () => (await Promise.all([draftsSaved(4000), snippetsSaved(4000)])).every(Boolean), acquireDraftHold);
   try {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
@@ -40,7 +42,10 @@ export async function boot(): Promise<void> {
     // every stored draft comes back: replies onto their conversations, new ones to the drafts strip
     void loadDrafts().catch((error) => console.warn("[drafts] could not load", error));
     // best effort when the page goes away (the autosave pause may not have ended)
-    window.addEventListener("pagehide", () => void flushAllDrafts());
+    window.addEventListener("pagehide", () => {
+      void flushAllDrafts();
+      void snippetsSaved();
+    });
     // desktop: main pushes the update state (nothing is checked here)
     startUpdates();
     exposeForTests({

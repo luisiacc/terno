@@ -151,3 +151,28 @@ Hairline rows like Filters; the editor reuses the composer's field style (border
 10. **A real size budget.** 32 KB of HTML and 16 KB of text per snippet, at most 200 snippets and 1 MB of snippets in all (checked on save and import), so the settings value stays small to parse and write in both stores and any backup imports back. Perf test: saving the 200th snippet into a full 1 MB list stays under 20 ms in each store.
 11. **Import is specified end to end**: the `app.import` envelope accepts `snippets`, `importMailbox` validates each item on its own (limits, no images, the budget), adds those whose id and name aren't here, and `ImportResult` gains `snippets` (count); the web's import summary says it in English and Spanish, and the snippets cache reloads. Tested through `app.import`.
 12. **Variables match across formatting.** Filling scans each textblock's whole text in the inserted range (a `{first_name}` split by a bold "first" is still one variable), maps matches back to positions, and replaces from last to first with the marks at the variable's start. Unit tests: split tokens, two unfilled variables, values longer and shorter than the token.
+
+## Implementation notes
+
+- **The palette's page lives in a small store** (`usePalettePage`, `lib/palette-open.ts`) instead of the component's state: whoever opens the palette sets it (⌘K the root, ⌘; the snippets), so ⌘; can switch an open palette to the snippets page and keep the draft it was opened from.
+- **The draft group's order**: Send, Insert snippet…, Attach files, Add Cc, Add Bcc, Insert link, Save as snippet…, Discard draft.
+- **Deleting in Settings shows its Undo in the list**, where the snippet was: a snack sits under the Settings dialog, which makes everything outside it inert. Deleting from the editor goes back to the list with the same Undo.
+- **Settings' content column got `min-w-0`** (and the tabs root): the snippet editor's format bar would otherwise widen the column past the dialog. The bar now folds into More as it does in a narrow composer.
+- **Spanish calls them "Plantillas"** (what Gmail calls templates); "snippet" still matches as an English word.
+- New ids are made in the renderer (`newSnippetId`, `lib/snippets.ts`): core has no `crypto` in its Node typings.
+
+## What the Codex code review changed
+
+1. **A new message from a snippet was discarded as untouched.** The prefill went into `createDraft`, which makes a clean draft: Escape dropped it and autosave skipped it. It is now an edit (`editDraft`) right after creation, saved like typing. E2E: New message from snippet, Escape, the draft is stored (fails without the fix).
+2. **An editor opened again lost what it couldn't save.** After a failed save or a conflict the session kept the content, but the editor started from the stored snippet, and the next change saved the stale text over it. The editor now starts from the session's unsaved content (`unsavedContent`), and a new snippet whose first save failed stays in the list as "Couldn't save." until it saves. Unit test.
+3. **Quitting or reloading skipped a waiting save.** The 500 ms timer was flushed only when the editor unmounted. `snippetsSaved()` now joins the desktop's shutdown flush (with `draftsSaved`) and the web's `pagehide`: it saves what's waiting at once and reports false if anything isn't stored. Unit test.
+4. **Load theirs could save the editor's text over theirs.** Typing while it loaded queued a save that ran on their version once it arrived. The session now drops changes while it replaces the content. Unit test.
+5. **Delete then Undo after a failed save restored the older text.** Delete now takes what a failed in-flight save put back (newer than the stored one, older than anything queued). Unit test.
+6. **A new snippet opened again (another tab and back) conflicted with itself.** The editor began a fresh session with no base. A session already open keeps its version, and the base comes from the stored snippet whenever there is one. Unit test.
+7. **One imported snippet too large for the remaining budget stopped the rest.** It is skipped and later ones that fit still come in; only the count cap stops the import. Unit test (IndexedDB).
+
+## Verification
+
+- Unit: core (`snippets.test.ts`, keybindings), backend (`snippets.test.ts` over RPC on SQLite, `snippets-idb.test.ts`), web (`lib/snippets.test.ts`, `components/composer/snippets.test.ts`, `palette-commands.test.ts`, tabs, backup).
+- E2E: `snippets.spec.ts` (11, including axe in light and dark), `palette.spec.ts`, `settings*.spec.ts`, `designs.spec.ts`, `i18n.spec.ts`, `composer.spec.ts`, `shortcuts.spec.ts`.
+- Screenshots of the Snippets tab, the editor and the palette page, light and dark, looked at.

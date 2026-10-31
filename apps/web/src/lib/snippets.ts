@@ -60,36 +60,62 @@ function drop(id: string): void {
 
 export type SaveStatus = "idle" | "saving" | "saved" | "failed" | "conflict";
 export const useSaveStatus = create<Record<string, SaveStatus>>(() => ({}));
-const setStatus = (id: string, status: SaveStatus) => useSaveStatus.setState({ [id]: status });
+/**
+ * What an editor wrote that isn't stored (a failed save, a conflict), by id:
+ * an editor opened again starts from it, and a new snippet that never saved
+ * stays in the list until it does (Codex code review 2).
+ */
+export const useUnsaved = create<Record<string, SnippetFields>>(() => ({}));
+function setStatus(id: string, status: SaveStatus): void {
+  useSaveStatus.setState({ [id]: status });
+  const s = sessions.get(id);
+  const unsaved = status === "failed" || status === "conflict" ? (s?.pending ?? s?.sending ?? null) : null;
+  const { [id]: _was, ...rest } = useUnsaved.getState();
+  useUnsaved.setState(unsaved && !s?.closed ? { ...rest, [id]: unsaved } : rest, true);
+}
 
 interface Session {
   /** the updatedAt the next save is based on (null: not created yet) */
   base: number | null;
   /** what's still to save */
   pending: SnippetFields | null;
+  /** what the save in flight carries */
+  sending: SnippetFields | null;
   inFlight: Promise<void> | null;
   timer: ReturnType<typeof setTimeout> | null;
   /** "Keep mine": the next save goes over another window's */
   force: boolean;
   /** deleted: nothing more is saved */
   closed: boolean;
+  /** "Load theirs" is replacing the content: changes meanwhile are dropped (theirs is what shows) */
+  paused: boolean;
 }
 const sessions = new Map<string, Session>();
 /** how long after the last change a snippet saves */
 export const SAVE_DELAY_MS = 500;
 
-/** The editor opening a snippet: its saves are based on this version (null for a new one). */
+/**
+ * The editor opening a snippet: its saves are based on this version (null
+ * for a new one). A session already open keeps its own version and unsaved
+ * work (an editor opened again on it: another tab and back, the list and back).
+ */
 export function beginEdit(id: string, base: number | null): void {
   const s = sessions.get(id);
-  if (s && !s.closed && (s.pending || s.inFlight)) return; // its own unsaved work is still the newest
-  sessions.set(id, { base, pending: null, inFlight: null, timer: null, force: false, closed: false });
+  if (s && !s.closed) return;
+  sessions.set(id, { base, pending: null, sending: null, inFlight: null, timer: null, force: false, closed: false, paused: false });
   setStatus(id, "idle");
+}
+
+/** What the editor should start from: this session's unsaved content, if any. */
+export function unsavedContent(id: string): SnippetFields | null {
+  const s = sessions.get(id);
+  return (s && !s.closed && (s.pending ?? s.sending)) || null;
 }
 
 /** A change: saved SAVE_DELAY_MS after the last one (or now with `flush`). */
 export function queueSave(id: string, fields: SnippetFields, flush = false): void {
   const s = sessions.get(id);
-  if (!s || s.closed) return;
+  if (!s || s.closed || s.paused) return;
   s.pending = fields;
   if (s.timer) clearTimeout(s.timer);
   s.timer = null;
@@ -112,13 +138,15 @@ export function flushSave(id: string): void {
 function pump(id: string): void {
   const s = sessions.get(id);
   const status = useSaveStatus.getState()[id];
-  if (!s || s.closed || s.inFlight || !s.pending || status === "conflict") return;
+  if (!s || s.closed || s.paused || s.inFlight || !s.pending || status === "conflict") return;
   const fields = s.pending;
   s.pending = null;
+  s.sending = fields;
   setStatus(id, "saving");
   s.inFlight = client.call("snippets.save", { ...fields, id, base: s.base, ...(s.force ? { force: true } : {}) }).then(
     (saved) => {
       s.inFlight = null;
+      s.sending = null;
       s.base = saved.updatedAt;
       s.force = false;
       put(saved);
@@ -127,6 +155,7 @@ function pump(id: string): void {
     },
     (error: unknown) => {
       s.inFlight = null;
+      s.sending = null;
       // kept: the newest content waits for a retry (or "Keep mine")
       s.pending ??= fields;
       setStatus(id, (error as { code?: string } | null)?.code === "STALE" ? "conflict" : "failed");
@@ -153,14 +182,23 @@ export function keepMine(id: string): void {
 export async function loadTheirs(id: string): Promise<Snippet | null> {
   const s = sessions.get(id);
   if (s) {
+    // nothing typed meanwhile is saved over theirs (Codex code review 4): the editor shows theirs next
+    s.paused = true;
     s.pending = null;
     if (s.timer) clearTimeout(s.timer);
     s.timer = null;
   }
-  const theirs = (await reloadSnippets()).find((x) => x.id === id) ?? null;
-  if (s) s.base = theirs?.updatedAt ?? null;
-  setStatus(id, theirs ? "saved" : "idle");
-  return theirs;
+  try {
+    const theirs = (await reloadSnippets()).find((x) => x.id === id) ?? null;
+    if (s) {
+      s.pending = null;
+      s.base = theirs?.updatedAt ?? null;
+    }
+    setStatus(id, theirs ? "saved" : "idle");
+    return theirs;
+  } finally {
+    if (s) s.paused = false;
+  }
 }
 
 /**
@@ -178,6 +216,9 @@ export async function deleteSnippet(snippet: Snippet): Promise<Undo | null> {
     pending = s.pending;
     s.pending = null;
     await s.inFlight;
+    // a save that failed meanwhile put its content back: newer than what's stored, older than what was queued (Codex code review 5)
+    pending = pending ?? s.pending;
+    s.pending = null;
   }
   // what was being typed comes back with Undo too
   const latest: Snippet = { ...snippet, ...useSnippets.getState().list?.find((x) => x.id === snippet.id), ...pending };
@@ -193,10 +234,35 @@ export async function deleteSnippet(snippet: Snippet): Promise<Undo | null> {
   }
   sessions.delete(snippet.id);
   drop(snippet.id);
+  setStatus(snippet.id, "idle");
   return registerUndo(async () => {
     const { id, name, bodyHtml, bodyText, subject, to, cc, bcc } = latest;
     put(await client.call("snippets.save", { id, name, bodyHtml, bodyText, subject, to, cc, bcc, base: null }));
   });
+}
+
+/**
+ * Quitting, updating or reloading (Codex code review 3): every waiting save
+ * goes now; true once all are stored within `capMs`, false if one failed or
+ * is still out.
+ */
+export async function snippetsSaved(capMs = 4000): Promise<boolean> {
+  for (const [id, s] of sessions) {
+    if (s.timer) {
+      clearTimeout(s.timer);
+      s.timer = null;
+    }
+    pump(id);
+  }
+  const settled = (async () => {
+    for (;;) {
+      const out = [...sessions.values()].map((s) => s.inFlight).filter((p) => p !== null);
+      if (!out.length) return;
+      await Promise.all(out);
+    }
+  })();
+  const ok = await Promise.race([settled.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), capMs))]);
+  return ok && [...sessions.values()].every((s) => s.closed || (!s.pending && !s.inFlight));
 }
 
 /** A new snippet straight from content (Save as snippet…): created now, so the editor opens on it. */

@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect } from "react";
 import { isMac } from "~/lib/select";
-import { deleteSnippet, loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
+import { deleteSnippet, loadSnippets, newSnippetId, useSnippets, useUnsaved } from "~/lib/snippets";
 import { openSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
 import { undoNow } from "~/lib/snack";
 import { SettingsGroup } from "./parts";
@@ -52,6 +52,9 @@ function SnippetRow({ snippet }: { snippet: Snippet }) {
 export function SnippetsTab() {
   const list = useSnippets((s) => s.list);
   const editor = useSnippetEditor();
+  // a new one whose first save failed stays here, to open and save again
+  const unsaved = useUnsaved();
+  const notStored = Object.entries(unsaved).filter(([id]) => list && !list.some((s) => s.id === id));
   useEffect(loadSnippets, []);
   if (editor.editing) {
     return (
@@ -64,6 +67,16 @@ export function SnippetsTab() {
     <div data-testid="snippets-tab">
       <SettingsGroup title={t("settings.tab.snippets")} footer={list?.length ? t("snippets.footer", { keys: snippetKeys(), palette: paletteKeys(), example: "{first_name}" }) : undefined}>
         {list?.map((s) => <SnippetRow key={s.id} snippet={s} />)}
+        {notStored.map(([id, f]) => (
+          <div key={id} className="flex min-h-11 items-center gap-3 py-2" data-testid="settings-snippet-unsaved">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium">
+              {f.name || t("snippets.untitled")} <span className="font-normal text-destructive-ink">· {t("snippets.status.failed")}</span>
+            </p>
+            <Button variant="ghost" size="icon-sm" aria-label={t("snippets.edit", { name: f.name || t("snippets.untitled") })} onClick={() => openSnippetEditor(id, { fresh: true })}>
+              <Pencil />
+            </Button>
+          </div>
+        ))}
         {editor.deleted && !list?.some((s) => s.id === editor.deleted!.id) && (
           <div className="flex min-h-11 items-center gap-3 py-2" data-testid="settings-snippet-deleted">
             <p role="status" className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{t("snippets.deleted", { name: editor.deleted.name })}</p>
@@ -81,7 +94,7 @@ export function SnippetsTab() {
             </Button>
           </div>
         )}
-        {list?.length === 0 && !editor.deleted && <p className="py-3 text-sm text-muted-foreground" data-testid="snippets-empty">{t("snippets.empty", { keys: snippetKeys() })}</p>}
+        {list?.length === 0 && !editor.deleted && !notStored.length && <p className="py-3 text-sm text-muted-foreground" data-testid="snippets-empty">{t("snippets.empty", { keys: snippetKeys() })}</p>}
         <div className="py-1.5">
           <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-snippet-new" onClick={() => openSnippetEditor(newSnippetId(), { fresh: true })}>
             <Plus /> {t("snippets.new")}

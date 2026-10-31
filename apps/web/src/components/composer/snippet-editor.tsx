@@ -11,7 +11,7 @@ import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { openLink } from "../mail-body";
-import { beginEdit, flushSave, keepMine, loadTheirs, queueSave, retrySave, useSaveStatus, useSnippets } from "~/lib/snippets";
+import { beginEdit, flushSave, keepMine, loadTheirs, queueSave, retrySave, unsavedContent, useSaveStatus, useSnippets } from "~/lib/snippets";
 import { closeSnippetEditor } from "~/lib/snippet-editor-state";
 import { removeSnippet } from "../settings/snippets-tab";
 import { EMPTY_FORMAT, registerController, type ComposerController, type FormatState } from "./controller";
@@ -151,7 +151,11 @@ function Status({ id, tooLong, onTheirs }: { id: string; tooLong: boolean; onThe
 export default function SnippetEditor({ id, fresh, selectName }: { id: string; fresh: boolean; selectName: boolean }) {
   const stored = useSnippets((s) => s.list?.find((x) => x.id === id) ?? null);
   // what the editor started from; "Load theirs" starts it again (a new key remounts the text)
-  const [start, setStart] = useState<{ snippet: Snippet | null; n: number }>(() => ({ snippet: stored, n: 0 }));
+  // (what this editor wrote and couldn't save yet comes back over it: Codex code review 2)
+  const [start, setStart] = useState<{ snippet: Snippet | null; n: number }>(() => {
+    const unsaved = unsavedContent(id);
+    return { snippet: unsaved ? { ...(stored ?? { id, createdAt: 0, updatedAt: 0 }), ...unsaved } : stored, n: 0 };
+  });
   const initial = start.snippet;
   const [name, setName] = useState(initial?.name ?? "");
   const [fills, setFills] = useState(() => ({ subject: initial?.subject ?? "", to: initial?.to ?? "", cc: initial?.cc ?? "", bcc: initial?.bcc ?? "" }));
@@ -165,7 +169,8 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
   latest.current = { name, fills };
 
   // its saves are based on what it opened (a new one has none yet)
-  useState(() => beginEdit(id, fresh ? null : (initial?.updatedAt ?? null)));
+  // (on the stored version when there is one, whatever opened it: Codex code review 6)
+  useState(() => beginEdit(id, stored?.updatedAt ?? null));
   // leaving (back, another tab, Settings closing) saves what's waiting now
   useEffect(() => () => flushSave(id), [id]);
   useEffect(() => {

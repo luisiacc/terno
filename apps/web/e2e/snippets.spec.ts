@@ -133,6 +133,16 @@ test.describe("snippets", () => {
     await expect(body(page)).toContainText("Let’s talk this week.");
   });
 
+  test("a new message from a snippet is written content: closed at once, it's kept as a draft (Codex code review 1)", async ({ app: page, server }) => {
+    await seed(server, { ...intro, subject: "Quick call" });
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+;");
+    await page.getByTestId(`palette-snippet-${intro.id}`).click();
+    await expect(body(page)).toContainText("Let’s talk this week.");
+    await page.keyboard.press("Escape");
+    await expect.poll(async () => (await server.backend.store.drafts.list()).map((d) => d.subject)).toContain("Quick call");
+  });
+
   test("Save as snippet… from a draft opens the editor on its text, named for its subject", async ({ app: page }) => {
     await focusList(page);
     await page.keyboard.press("c");

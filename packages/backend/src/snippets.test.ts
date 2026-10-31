@@ -1,15 +1,11 @@
-/** Plan 89: snippets in the settings store (both stores), saved with a base version, exported and imported. */
-import "fake-indexeddb/auto";
+/** Plan 89: snippets over RPC (SQLite), saved with a base version, exported and imported (IndexedDB: snippets-idb.test.ts). */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SNIPPETS_MAX, type Snippet } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { deleteSnippet, importSnippets, listSnippets, saveSnippet } from "./snippets";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -84,42 +80,5 @@ describe("snippets over RPC (SQLite)", () => {
     // a file from before snippets imports as before
     const { snippets: _none, ...older } = dump;
     expect((await target.call("app.import", { data: older as never })).snippets).toBe(0);
-  });
-});
-
-describe("snippets in the IndexedDB store", () => {
-  it("save, list, update, delete and the cap", async () => {
-    const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
-    cleanups.push(() => store.close());
-    const a = await saveSnippet(store, { ...fields, id: "s_aaaaaaaa", base: null }, 10);
-    expect(await listSnippets(store)).toEqual([a]);
-    const b = await saveSnippet(store, { ...fields, name: "B", id: a.id, base: a.updatedAt }, 10);
-    // the same clock still makes a later version
-    expect(b.updatedAt).toBe(11);
-    await deleteSnippet(store, a.id);
-    expect(await listSnippets(store)).toEqual([]);
-    const many: Snippet[] = Array.from({ length: SNIPPETS_MAX + 5 }, (_, i) => ({ ...fields, name: `n${i}`, id: `s_many${String(i).padStart(4, "0")}`, createdAt: 0, updatedAt: 0 }));
-    expect(await importSnippets(store, many)).toBe(SNIPPETS_MAX);
-    expect(await errorOf(saveSnippet(store, { ...fields, id: "s_onemore1", base: null }, 20))).toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("keeps the whole list within the byte budget", async () => {
-    const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} } });
-    cleanups.push(() => store.close());
-    const big = { ...fields, bodyHtml: "x".repeat(30_000), bodyText: "y".repeat(15_000) };
-    let saved = 0;
-    for (let i = 0; i < 40; i++) {
-      const e = await errorOf(saveSnippet(store, { ...big, name: `b${i}`, id: `s_big${String(i).padStart(5, "0")}`, base: null }, i));
-      if (e) {
-        expect(e).toMatchObject({ code: "BAD_REQUEST" });
-        break;
-      }
-      saved++;
-    }
-    expect(saved).toBeGreaterThan(10);
-    expect(saved).toBeLessThan(40);
-    const t0 = performance.now();
-    await listSnippets(store);
-    expect(performance.now() - t0).toBeLessThan(50);
   });
 });

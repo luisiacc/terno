@@ -75,7 +75,9 @@ export async function importSnippets(store: SettingsStore, items: readonly Snipp
       if (ids.has(s.id) || names.has(s.name.toLocaleLowerCase())) continue;
       // each item adds itself and a comma to the array's JSON
       const more = snippetsBytes([s]) - 1;
-      if (list.length + 1 > SNIPPETS_MAX || bytes + more > SNIPPETS_BYTES_MAX) break;
+      if (list.length + 1 > SNIPPETS_MAX) break;
+      // one too large for what's left is skipped; a smaller one after it may still fit (Codex code review 7)
+      if (bytes + more > SNIPPETS_BYTES_MAX) continue;
       bytes += more;
       list.push(s);
       ids.add(s.id);

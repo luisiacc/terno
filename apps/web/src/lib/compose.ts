@@ -496,7 +496,10 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (mode === "new" || threadId === null) {
     // a new message takes the reader pane; a bulk selection steps aside for it
     // (List: the new message is the page, and leaving it lands on the list, not on the conversation it was opened over; plan 24, R1)
-    const key = createDraft({ ...newFields(defaultAccount), ...prefill?.(defaultAccount) });
+    const key = createDraft(newFields(defaultAccount));
+    // a snippet's content is written content: saved like typing, kept when the message is closed (Codex code review 1)
+    const filled = prefill?.(defaultAccount);
+    if (filled) editDraft(key, filled);
     if (mine !== intent) return;
     setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
     return;
