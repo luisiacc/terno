@@ -12,7 +12,8 @@ import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, navTo, openRow, selectedRow, test } from "./fixtures";
 
-const HIDDEN = ["sent", "archive", "all", "spam", "trash"] as const;
+// plan 87: Reminders too (shown closed only while one is due)
+const HIDDEN = ["reminders", "sent", "archive", "all", "spam", "trash"] as const;
 const designOf = async (page: Page): Promise<DesignDefinition> => {
   const id = await page.locator("html").getAttribute("data-design");
   return DESIGNS.find((d) => d.id === id)!;
@@ -25,8 +26,10 @@ const reload = async (page: Page) => {
 test.describe("Part A: More", { tag: "@design" }, () => {
   const more = (page: Page) => page.getByTestId("nav-more");
   const slot = (page: Page, view: string) => page.locator(`[data-more-slot="${view}"]`);
+  /** the rows behind More: Reminders (plan 87) and the five folders */
+  const MORE_ROWS = 6;
 
-  test("closed by default: Inbox and Starred shown, the five hidden and out of the Tab order, More a disclosure", async ({ app: page }) => {
+  test("closed by default: Inbox and Starred shown, the six hidden and out of the Tab order, More a disclosure", async ({ app: page }) => {
     await expect(page.getByTestId("nav-inbox")).toBeVisible();
     await expect(page.getByTestId("nav-starred")).toBeVisible();
     await expect(more(page)).toHaveAttribute("aria-expanded", "false");
@@ -52,7 +55,8 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     for (const v of HIDDEN) await expect(page.getByTestId(`nav-${v}`)).toBeVisible();
     await more(page).focus();
     await page.keyboard.press("Tab");
-    await expect(page.getByTestId("nav-sent")).toBeFocused();
+    // plan 87: Reminders leads the group
+    await expect(page.getByTestId("nav-reminders")).toBeFocused();
     await reload(page);
     await expect(more(page)).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByTestId("nav-trash")).toBeVisible();
@@ -83,7 +87,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       };
     });
 
-  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, five rows lower (plan 40)", async ({ app: page }) => {
+  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, six rows lower (plan 40, 87)", async ({ app: page }) => {
     const closed = await layout(page);
     // the design's gap between sections: the same as between the last category and Accounts
     const gap = closed.accountsTop - closed.lastCategoryBottom;
@@ -93,8 +97,8 @@ test.describe("Part A: More", { tag: "@design" }, () => {
     await expect(page.getByTestId("nav-trash")).toBeVisible();
     const open = await layout(page);
     expect(open.categoriesTop - open.trashBottom).toBeCloseTo(gap, 0);
-    expect(open.firstCategoryTop - closed.firstCategoryTop).toBeCloseTo(5 * closed.rowH, 0);
-    expect(open.contentBottom - closed.contentBottom).toBeCloseTo(5 * closed.rowH, 0);
+    expect(open.firstCategoryTop - closed.firstCategoryTop).toBeCloseTo(MORE_ROWS * closed.rowH, 0);
+    expect(open.contentBottom - closed.contentBottom).toBeCloseTo(MORE_ROWS * closed.rowH, 0);
     expect(open.moreBottom).toBe(closed.moreBottom);
     await more(page).click();
     await expect(page.getByTestId("nav-trash")).toBeHidden();
@@ -151,7 +155,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
 
     test("opening and closing slide what's below through the positions between, within the motion cap", async ({ app: page }) => {
       const { firstCategoryTop: closed, rowH } = await layout(page);
-      const opened = closed + 5 * rowH;
+      const opened = closed + MORE_ROWS * rowH;
       for (const [from, to] of [
         [closed, opened],
         [opened, closed],
@@ -170,7 +174,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
 
     test("a click mid-way turns it back from where it is, both ways, and it ends exactly where it started", async ({ app: page }) => {
       const { firstCategoryTop: closed, rowH } = await layout(page);
-      for (const end of [closed, closed + 5 * rowH]) {
+      for (const end of [closed, closed + MORE_ROWS * rowH]) {
         const mid = await freeze(page, 0.4);
         // the second click: the new transitions start from the frozen position, not from either end
         const back = await freeze(page, 0);
@@ -181,7 +185,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
           // then open it for the other direction
           await more(page).click();
           await finish(page);
-          await expect.poll(async () => (await layout(page)).firstCategoryTop).toBeCloseTo(closed + 5 * rowH, 0);
+          await expect.poll(async () => (await layout(page)).firstCategoryTop).toBeCloseTo(closed + MORE_ROWS * rowH, 0);
         }
       }
     });
@@ -199,7 +203,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
         if (cap) expect(Math.max(...r.durations), `at ${ms}`).toBeLessThanOrEqual(cap);
         else {
           expect(r.durations, "nothing animates at 0").toEqual([]);
-          expect(r.top).toBeCloseTo(closed.firstCategoryTop + 5 * closed.rowH, 0);
+          expect(r.top).toBeCloseTo(closed.firstCategoryTop + MORE_ROWS * closed.rowH, 0);
         }
         await finish(page);
         await more(page).click();
@@ -212,7 +216,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
       await freeze(page, 0.3);
       await page.emulateMedia({ reducedMotion: "reduce" });
       await expect.poll(() => page.evaluate(() => document.getElementById("sidebar-more-folders")!.getAnimations({ subtree: true }).length)).toBe(0);
-      expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop + 5 * closed.rowH, 0);
+      expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop + MORE_ROWS * closed.rowH, 0);
     });
   });
 
@@ -233,7 +237,7 @@ test.describe("Part A: More", { tag: "@design" }, () => {
         }),
       );
     });
-    expect(r).toEqual({ opacity: "1", visibility: "visible", top: expect.closeTo(closed.firstCategoryTop + 5 * closed.rowH, 0), animations: 0 });
+    expect(r).toEqual({ opacity: "1", visibility: "visible", top: expect.closeTo(closed.firstCategoryTop + MORE_ROWS * closed.rowH, 0), animations: 0 });
   });
 
   test("the folder you're in shows alone while More is closed (one row lower for what's below); reached by a key, it goes when you leave", async ({ app: page }) => {

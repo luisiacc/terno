@@ -82,12 +82,12 @@ function RemindButton({ threadId }: { threadId: number }) {
   );
 }
 
-function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean }) {
+function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy, className }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean; className?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star")}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star", className)}>
             {children}
           </Button>
         }
@@ -598,7 +598,8 @@ export function Reader() {
         <ToolButton label={t("actions.category")} keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
           <Tag />
         </ToolButton>
-        <ToolButton label={t("actions.markUnread")} onClick={() => act("markUnread")} testId="action-unread">
+        {/* plan 87: a narrow reader (the minimum window) gives its place to the bell; the menu, the palette and ⌘⇧U keep it */}
+        <ToolButton label={t("actions.markUnread")} onClick={() => act("markUnread")} testId="action-unread" className="@max-[420px]:hidden">
           <MailOpen />
         </ToolButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
