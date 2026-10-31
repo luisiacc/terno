@@ -68,7 +68,7 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
     await expect(page.getByTestId("row-review-accept")).toHaveCount(0);
     const { facturas, threads, filed } = await reviewing(page, server);
     await expect(page.getByTestId("row-review-accept")).toHaveCount(3);
-    await expect(row(page, threads[0]!).getByTestId("row-review-accept")).toHaveAttribute("title", "Belongs in Facturas");
+    await expect(row(page, threads[0]!).getByTestId("row-review-accept")).toHaveAttribute("title", "Add to Facturas");
 
     // a row that isn't the open one: pressing its ✓ opens nothing
     const open = await cursor(page);
@@ -163,7 +163,7 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
     const { facturas, threads, filed, filters, fromRappi } = await reviewing(page, server);
     await row(page, threads[2]!).click({ button: "right" });
     const menu = page.getByTestId("thread-menu");
-    await expect(menu.getByTestId("menu-review-accept")).toHaveText("Belongs in Facturas");
+    await expect(menu.getByTestId("menu-review-accept")).toHaveText("Add to Facturas");
     await menu.getByTestId("menu-review-always").hover();
     const sub = page.getByTestId("menu-review-always-list");
     await expect(sub.getByTestId("menu-review-always-subject")).toBeVisible();
@@ -181,7 +181,7 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
   });
 });
 
-test("the controls and the open menu are axe-clean and read well in light and dark", async ({ app: page, server }) => {
+test("the controls and the open menu are axe-clean and read well in light and dark", { tag: "@design" }, async ({ app: page, server }) => {
   for (const theme of ["light", "dark"] as const) {
     await server.backend.server.invoke("settings.update", { theme }, ctx);
     const { threads } = await reviewing(page, server);
@@ -191,7 +191,7 @@ test("the controls and the open menu are axe-clean and read well in light and da
     await expect(page.getByTestId("review-always-subject-count")).toBeVisible();
     const r = await new AxeBuilder({ page }).include("[data-testid=review-always-menu]").include("[data-testid=thread-list]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
     expect(r.violations.map((v) => `${theme} ${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
-    await page.screenshot({ path: `/tmp/terno-review-actions-${theme}.png` });
+    await page.screenshot({ path: `/tmp/terno-review-actions-${test.info().project.name}-${theme}.png` });
     await page.keyboard.press("Escape");
   }
 });

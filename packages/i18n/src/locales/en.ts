@@ -837,7 +837,9 @@ const en = {
   "category.removed": { one: "# removed from {category}", other: "# removed from {category}" },
   "category.undone": "Undone: {category}",
   // plan 80: answering suggestions from the Review list's rows
-  "review.accept": "Belongs in {category}",
+  "review.accept": "Add to {category}",
+  "review.similar": "Add similar",
+  "review.similar.title": "Add mail like this to {category}, now and in the future",
   "review.always": "Always add to {category}…",
   "review.always.future": "Now and future mail",
   "review.always.failed": "Couldn’t load the options. Try again.",

@@ -222,7 +222,9 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           <div className="relative flex min-w-0 items-center gap-2">
             {from}
             {count}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* plan 80: in Review, the answers sit beside the sender, the subject keeps its line */}
+            {answer && <span className="ml-auto flex min-w-0 shrink">{answer}</span>}
+            <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
               {chip}
               {marks}
               {date}
@@ -235,7 +237,6 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
               {snippet}
             </span>
             {accountTag}
-            {answer}
           </div>
         </>
       ) : (
@@ -259,9 +260,9 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
               {accountTag}
             </div>
             <div className={cn("flex min-w-0 items-center gap-1.5", big && "mt-0.5")}>
-              {snippet}
+              {/* plan 80: in Review, the answers take the preview's place */}
+              {answer || snippet}
               {big && <span className="ml-auto flex shrink-0 items-center gap-1.5">{marks}</span>}
-              {answer && <span className={cn("flex shrink-0", !big && "ml-auto")}>{answer}</span>}
             </div>
           </div>
         </div>

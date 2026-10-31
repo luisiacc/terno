@@ -25,14 +25,16 @@ const hold = (e: React.MouseEvent) => {
 };
 
 /**
- * Plan 80: a Review row's two quiet controls, ✓ (it belongs) and Always ▾.
- * Pointer targets like the code chip: a row is an option, which can't hold a
- * button; keyboards answer with y/n and the thread menu's same items.
+ * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and
+ * "Add similar ▾" (the same subject or everything from the sender, now and in
+ * the future). They take the place of the row's preview line. Pointer targets
+ * like the code chip: a row is an option, which can't hold a button; keyboards
+ * answer with y/n and the thread menu's same items.
  */
 export function ReviewControls({ threadId, categoryId, category }: { threadId: number; categoryId: number; category: string }) {
-  const control = "inline-flex h-5 cursor-pointer items-center rounded-full text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground";
+  const pill = "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-fast";
   return (
-    <span aria-hidden className="flex shrink-0 items-center gap-0.5">
+    <span aria-hidden className="flex min-w-0 items-center gap-1.5">
       <span
         data-testid="row-review-accept"
         data-row-control
@@ -42,23 +44,24 @@ export function ReviewControls({ threadId, categoryId, category }: { threadId: n
           e.stopPropagation();
           void answerReview(threadId, categoryId, true);
         }}
-        className={`${control} w-5 justify-center`}
+        className={`${pill} bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary)_88%,var(--background))]`}
       >
-        <Check className="size-3.5" />
+        <Check className="size-3.5 shrink-0" />
+        <span className="truncate">{t("review.accept", { category })}</span>
       </span>
       <span
         data-testid="row-review-always"
         data-row-control
-        title={t("review.always", { category })}
+        title={t("review.similar.title", { category })}
         onMouseDown={hold}
         onClick={(e) => {
           e.stopPropagation();
           useAlwaysMenu.setState({ threadId, anchor: e.currentTarget });
         }}
-        className={`${control} gap-0.5 pr-1 pl-1.5 text-2xs`}
+        className={`${pill} shrink-0 border border-border bg-background text-foreground hover:bg-muted`}
       >
-        {t("similar.always")}
-        <ChevronDown className="size-3" />
+        {t("review.similar")}
+        <ChevronDown className="size-3.5" />
       </span>
     </span>
   );
