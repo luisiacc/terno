@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
  * Plan 88: closed is idle (no render for category or account changes), and a
- * search renders only the matching values, however many categories there are.
+ * search renders only the matching values, however many categories there are;
+ * "Create … and move" moves what it was picked for, whatever is selected by
+ * the time the category exists.
  */
 import type { Category } from "@terno/core";
 import { act, Profiler } from "react";
@@ -9,10 +11,21 @@ import { createRoot } from "react-dom/client";
 import { afterAll, expect, it, vi } from "vitest";
 import { setApp } from "~/state/app";
 
-vi.hoisted(() => {
+const rpc = vi.hoisted(() => {
   (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  return { create: null as ((c: unknown) => void) | null };
 });
-vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}), on: () => () => {} } }));
+vi.mock("~/rpc/connection", () => ({
+  client: {
+    call: (method: string) => (method === "categories.create" ? new Promise((resolve) => (rpc.create = resolve)) : new Promise(() => {})),
+    on: () => () => {},
+  },
+}));
+const moves = vi.hoisted(() => [] as { categoryId: number; ids: readonly number[] }[]);
+vi.mock("~/lib/categorize", async (original) => ({
+  ...(await original<typeof import("~/lib/categorize")>()),
+  moveToCategory: (categoryId: number, ids: readonly number[]) => (moves.push({ categoryId, ids }), Promise.resolve(null)),
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // cmdk measures and scrolls the selected item
 Element.prototype.scrollIntoView = () => {};
@@ -21,6 +34,14 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 const { CommandPalette } = await import("./command-palette");
 
 const categories = (n: number): Category[] => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `Category ${i + 1}`, color: "indigo", position: i, autoApply: false, showInInbox: true }) as Category);
+
+async function type(text: string) {
+  const input = document.querySelector<HTMLInputElement>("[data-testid=palette-input]")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 
 const host = document.createElement("div");
 document.body.append(host);
@@ -59,4 +80,15 @@ it("a search renders only the values that match it", async () => {
   expect(moves.length).toBeLessThan(50);
   expect(moves[0]!.dataset.command).toBe("move:42");
   await act(async () => setApp({ dialog: null }));
+});
+
+it("Create and move moves the conversation it was picked for, not the one selected while the category was created", async () => {
+  await act(async () => setApp({ categories: categories(3), selectedId: 7, checked: new Set(), scope: null, dialog: "palette" }));
+  await act(async () => document.querySelector<HTMLElement>("[data-testid=palette-move]")!.click());
+  await type("Nueva");
+  await act(async () => document.querySelector<HTMLElement>("[data-testid=palette-create]")!.click());
+  // the selection moves on while the category is being created
+  await act(async () => setApp({ selectedId: 8 }));
+  await act(async () => rpc.create!({ id: 99, name: "Nueva", color: "indigo", position: 3, autoApply: false, showInInbox: true }));
+  expect(moves).toEqual([{ categoryId: 99, ids: [7] }]);
 });

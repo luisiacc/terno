@@ -159,3 +159,10 @@ Unchanged otherwise: same dialog, hairlines, icons and shortcut column. The page
 - **Scale 0.5 for a page's values at the root** (revision 11's reasoning was wrong: without the display quotes, "move to Viajes" scores 0.9 for "viajes"). Halved, then boosted at most 1.5×, it stays under the category's own 0.9.
 - **Draft commands wait up to 300 ms** for focus to come back (the dialog's return focus runs after its exit), then check as revision 7 says.
 - **Items with a hint on the right** hide cmdk's check icon (it also took `ml-auto`, which centered the moments), and a page starts scrolled to its top.
+
+## What the Codex code review changed
+
+1. **Enter on the page chip moved mail.** cmdk's root ran the selected category when Enter reached it from the focused chip. The chip now keeps its own Enter and Space. E2E: Shift+Tab to the chip, Enter goes back and the conversation's categories are unchanged.
+2. **"Create … and move" could act on a later selection.** It read the targets after the create finished. It now captures them when picked. jsdom test with a held `categories.create` and a selection change in between.
+3. **⌘K closing kept the page and query.** The keyboard handler closes without the component's reset, so the next ⌘K reopened on the old page. Every opening now starts at the root with nothing typed. E2E from a page and from a query.
+4. **English names of the new commands didn't match in Spanish** (Reply, Forward, Send, Attach, Add Cc/Bcc, Insert link, Discard). Their English labels join their keywords. E2E: "forward" and "reply all" in Spanish.

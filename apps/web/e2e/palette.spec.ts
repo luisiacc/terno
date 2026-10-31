@@ -112,6 +112,40 @@ test.describe("palette", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
+  test("Enter on the page's chip goes back, and moves nothing", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    await openRow(page, 1);
+    const id = Number(await selectedRow(page).getAttribute("data-thread-id"));
+    const before = db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ?", id);
+    await focusList(page);
+    await palette(page, "move to");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("palette-page")).toBeVisible();
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.getByTestId("palette-page")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("palette-page")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ?", id)).toEqual(before);
+  });
+
+  test("⌘K closes from a page or a query; the next ⌘K starts at the root, empty", async ({ app: page }) => {
+    await openRow(page, 0);
+    await focusList(page);
+    await palette(page, "remind");
+    await page.getByTestId("palette-remind").click();
+    await expect(page.getByTestId("palette-page")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await palette(page);
+    await expect(page.getByTestId("palette-page")).toHaveCount(0);
+    await expect(input(page)).toHaveValue("");
+    await input(page).fill("archive");
+    await page.keyboard.press("ControlOrMeta+k");
+    await palette(page);
+    await expect(input(page)).toHaveValue("");
+  });
+
   test("“move viajes” moves from the root; a bare “viajes” still goes to the category, however often you moved there", async ({ app: page, server }) => {
     const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     for (const n of [3, 4, 5]) {
@@ -210,6 +244,11 @@ test.describe("palette", () => {
     await expect(selected(page).getByTestId("palette-alias")).toHaveText("(listo)");
     await input(page).fill("done");
     await expect(selected(page)).toContainText("Archivar conversación");
+    // the commands' English names match too, new ones included
+    await input(page).fill("forward");
+    await expect(selected(page)).toHaveAttribute("data-testid", "palette-forward");
+    await input(page).fill("reply all");
+    await expect(selected(page)).toHaveAttribute("data-testid", "palette-reply-all");
   });
 
   for (const mode of ["light", "dark"] as const) {

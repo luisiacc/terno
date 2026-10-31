@@ -34,7 +34,7 @@ const DRAFT_FOCUS_MS = 300;
 /** A command's synonyms: the language's own, and in another language the English ones too (matched, not shown). */
 type AliasKey = Extract<TextKey, `palette.alias.${string}`>;
 type FilterKey = "palette.showAll" | "palette.showUnread" | "palette.showPeople" | "palette.showWaiting" | "palette.showAttachments" | "palette.showStarred";
-const synonyms = (key: AliasKey) => ({ aliases: words(t(key)), keywords: english(key).flatMap(words) });
+const synonyms = (key: AliasKey, label: string[] = []) => ({ aliases: words(t(key)), keywords: [...label, ...english(key).flatMap(words)] });
 
 /**
  * A draft command runs once the palette has closed and focus is back in that
@@ -100,6 +100,15 @@ export function CommandPalette() {
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
   const [page, setPage] = useState<PalettePage>("root");
+  // every opening starts at the root with nothing typed, however it was closed (⌘K closes from the keyboard handler)
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setValue("");
+      setPage("root");
+    }
+  }
   // read once per open: what was run, when, and the draft it was opened from
   const usage = useMemo(() => (open ? readUsage() : NO_USAGE), [open]);
   const now = useMemo(() => (open ? Date.now() : 0), [open]);
@@ -141,12 +150,12 @@ export function CommandPalette() {
   if (open) {
     // ── the draft the palette was opened from
     if (draft && draftState) {
-      if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send"), draft: true, run: inDraft((d) => d.send()) });
-      if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach"), draft: true, run: inDraft((d) => d.attach()) });
-      if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", draft: true, run: inDraft((d) => d.showCc()) });
-      if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", draft: true, run: inDraft((d) => d.showBcc()) });
-      if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", draft: true, run: inDraft((d) => d.link()) });
-      if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard"), draft: true, run: inDraft((d) => d.discard()) });
+      if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send", english("common.send")), draft: true, run: inDraft((d) => d.send()) });
+      if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
+      if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", keywords: english("palette.addCc"), draft: true, run: inDraft((d) => d.showCc()) });
+      if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", keywords: english("palette.addBcc"), draft: true, run: inDraft((d) => d.showBcc()) });
+      if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", keywords: english("compose.link.insert"), draft: true, run: inDraft((d) => d.link()) });
+      if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard", english("compose.discard")), draft: true, run: inDraft((d) => d.discard()) });
     }
 
     // ── go to
@@ -173,9 +182,9 @@ export function CommandPalette() {
     // ── actions
     add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
     if (replyable) {
-      add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply"), run: () => reply("reply") });
+      add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply", english("palette.reply")), run: () => reply("reply") });
       add({ id: "compose.replyAll", group: "actions", label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
-      add({ id: "compose.forward", group: "actions", label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward"), run: () => reply("forward") });
+      add({ id: "compose.forward", group: "actions", label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), run: () => reply("forward") });
     }
     if (targets > 0) {
       const withEnglish = (words: string[], alias: AliasKey) => {
@@ -296,9 +305,10 @@ export function CommandPalette() {
   const createAnd = async () => {
     const name = query;
     const intoMove = page === "move";
+    // the conversations it was picked for, before the create's wait (the selection may move meanwhile)
+    const target = currentTargets();
     close();
     const id = await createCategory(name);
-    const target = currentTargets();
     if (intoMove && "ids" in target) void moveToCategory(id, target.ids, { source: "picker" });
     else if ("scope" in target) void addScopeToCategory(id, target.scope);
     else void addToCategory(id, target.ids, { source: "picker" });
@@ -337,7 +347,7 @@ export function CommandPalette() {
           data-testid="palette-input"
           addon={
             page !== "root" && (
-              <button type="button" onClick={back} data-testid="palette-page" className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+              <button type="button" onClick={back} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.stopPropagation()} data-testid="palette-page" className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                 {pageName[page]}
                 <span className="sr-only">, {t("palette.back")}</span>
                 <X className="size-3" aria-hidden />
