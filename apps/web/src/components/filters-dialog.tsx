@@ -1,4 +1,4 @@
-import { filterIssueKey, filterRuleSchema, describeCondition, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
+import { checkPattern, filterIssueKey, filterRuleSchema, describeCondition, patternTemplate, PATTERN_FIELDS, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -9,15 +9,15 @@ import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
+import { applyFilter } from "~/lib/filters";
 import { errorHelp, privacyLine } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
-import { reloadList } from "~/state/list";
 import { ConfirmDialog } from "./settings/parts";
 
 type Field = Condition["field"];
@@ -27,6 +27,7 @@ const fields = (): { value: Field; label: string }[] => [
   { value: "fromDomain", label: t("filters.field.fromDomain") },
   { value: "subject", label: t("filters.field.subject") },
   { value: "body", label: t("filters.field.body") },
+  { value: "text", label: t("filters.field.text") },
   { value: "recipients", label: t("filters.field.recipients") },
   { value: "listId", label: t("filters.field.listId") },
   { value: "hasAttachment", label: t("filters.field.hasAttachment") },
@@ -34,12 +35,24 @@ const fields = (): { value: Field; label: string }[] => [
   { value: "ageDays", label: t("filters.field.ageDays") },
 ];
 
-const textOps = () => [
-  { value: "contains", label: t("filters.op.contains") },
-  { value: "equals", label: t("filters.op.equals") },
-  { value: "startsWith", label: t("filters.op.startsWith") },
-  { value: "endsWith", label: t("filters.op.endsWith") },
-];
+/** plan 84: a word field only mentions; a pattern only where the field allows one (never the body) */
+const textOps = (field: Field) =>
+  field === "text"
+    ? [{ value: "contains", label: t("filters.op.mentions") }]
+    : [
+        { value: "contains", label: t("filters.op.contains") },
+        { value: "equals", label: t("filters.op.equals") },
+        { value: "startsWith", label: t("filters.op.startsWith") },
+        { value: "endsWith", label: t("filters.op.endsWith") },
+        ...((PATTERN_FIELDS as readonly string[]).includes(field) ? [{ value: "matches", label: t("filters.op.matches") }] : []),
+      ];
+
+const PATTERN_ISSUES = {
+  syntax: "filters.invalid.pattern.syntax",
+  length: "filters.invalid.pattern.length",
+  unsupported: "filters.invalid.pattern.unsupported",
+  complex: "filters.invalid.pattern.complex",
+} as const satisfies Record<NonNullable<ReturnType<typeof checkPattern>>, TextKey>;
 
 const ACTIONS: { type: Exclude<FilterAction["type"], "addCategory">; label: `filters.action.${string}` & TextKey; icon: typeof Archive }[] = [
   { type: "archive", label: "filters.action.archive", icon: Archive },
@@ -80,9 +93,15 @@ function defaultCondition(field: Field, accountId: number): Condition {
 
 function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: Condition) => void; onRemove?: () => void }) {
   const accounts = useApp((s) => s.accounts);
+  const issueId = useId();
   const FIELDS = fields();
-  const TEXT_OPS = textOps();
+  const TEXT_OPS = textOps(c.field);
+  const pattern = c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches" ? c.value : null;
+  // checked as it's typed (an empty value is just "fill in", like any other field)
+  const issue = pattern?.trim() ? checkPattern(pattern.trim()) : null;
+  const template = pattern ? patternTemplate(pattern.trim()) : null;
   return (
+    <div className="flex flex-col gap-1">
     <div className="flex items-center gap-1.5" data-testid="condition-row">
       <Select value={c.field} onValueChange={(f) => onChange(defaultCondition(f as Field, accounts[0]?.id ?? 1))} items={FIELDS}>
         <SelectTrigger size="sm" className="w-36" data-testid="condition-field">
@@ -96,8 +115,10 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
           ))}
         </SelectContent>
       </Select>
+      {/* a word field only ever turns true (plan 84): it has no "not" */}
       <button
         type="button"
+        hidden={c.field === "text"}
         onClick={() => onChange({ ...c, negate: !c.negate || undefined } as Condition)}
         className={cn("h-7 rounded-md border px-2 text-xs transition-colors", c.negate ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-transparent text-muted-foreground hover:bg-muted")}
         title={t("filters.negate")}
@@ -147,13 +168,28 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
               ))}
             </SelectContent>
           </Select>
-          <Input data-testid="condition-value" className="h-7 flex-1" value={c.value} placeholder={c.field === "from" ? t("filters.placeholder.from") : c.field === "fromDomain" ? t("filters.placeholder.domain") : t("filters.placeholder.text")} onChange={(e) => onChange({ ...c, value: e.target.value })} />
+          <Input
+            data-testid="condition-value"
+            className={cn("h-7 flex-1", pattern !== null && "font-mono text-xs")}
+            value={c.value}
+            aria-invalid={issue ? true : undefined}
+            aria-describedby={pattern !== null ? issueId : undefined}
+            placeholder={pattern !== null ? t("filters.placeholder.pattern") : c.field === "from" ? t("filters.placeholder.from") : c.field === "fromDomain" ? t("filters.placeholder.domain") : t("filters.placeholder.text")}
+            onChange={(e) => onChange({ ...c, value: e.target.value })}
+          />
         </>
       )}
       {onRemove && (
         <Button variant="ghost" size="icon-xs" aria-label={t("filters.removeCondition")} onClick={onRemove} className="text-muted-foreground">
           <X />
         </Button>
+      )}
+    </div>
+      {pattern !== null && (
+        // the pattern's issue, else what a generated one reads as, else how to write one
+        <p id={issueId} data-testid="condition-pattern-help" className={cn("pl-1 text-xs", issue ? "text-destructive-ink" : "text-muted-foreground")}>
+          {issue ? t(PATTERN_ISSUES[issue]) : template !== null ? t("filters.pattern.template", { template }) : t("filters.pattern.help")}
+        </p>
       )}
     </div>
   );
@@ -273,11 +309,9 @@ export function FiltersDialog() {
     setSaving(true);
     try {
       const f = await client.call("filters.save", { id: draft.id, name: draft.name.trim() || describeCondition(rule.conditions[0]!), enabled: draft.enabled, source: draft.source, rule: valid.data });
-      if (applyExisting) {
-        const r = await client.call("filters.apply", { id: f.id });
-        snack.success(t("filters.applied", { count: r.affectedThreads }));
-        void reloadList({ keepSelection: true });
-      } else snack.success(t("filters.saved"));
+      // plan 84: applying runs in the background (its own progress snack); the dialog is free at once
+      if (applyExisting) void applyFilter(f.id, f.name);
+      else snack.success(t("filters.saved"));
       setDraft({ ...draft, id: f.id, name: f.name });
       await refresh();
     } catch (error) {

@@ -726,9 +726,10 @@ export const contract = {
   "filters.preview": m<{ count: number; sample: ThreadSummary[] }>()(
     z.object({ rule: filterRuleSchema, limit: z.number().int().min(0).max(100).default(20) }),
   ),
+  /** Plan 84: a background job (progress on `jobId`); one at a time per filter (BAD_REQUEST); a failure partway carries the counts so far. */
   "filters.apply": m<{ matchedMessages: number; affectedThreads: number }>()(
-    z.object({ id }),
-    { timeoutMs: 120_000 },
+    z.object({ id, jobId: z.string().max(100).optional() }),
+    { timeoutMs: 30 * 60_000 },
   ),
   "filters.generate": m<{ name: string; rule: FilterRule; explanation: string }>()(
     z.object({ prompt: z.string().trim().min(3).max(2000) }),

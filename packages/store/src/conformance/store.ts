@@ -1450,7 +1450,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await resolveAll(store, { ...scope, subject: "Tu pedido está en camino" }, "archive", [])).ids).toEqual([exact]);
         // two targets with different numbers share the subject
         expect((await store.similar.offers([a, b], "archive")).offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 2 });
-        const category = await store.categories.create("Pedidos", "blue");
+        const category = await store.categories.create("Pedidos", "indigo");
         expect(sorted(await store.categorize.resolveScope(category.id, scope, NOW))).toEqual(sorted([a, b]));
         expect(await store.categorize.countScope(category.id, scope, NOW)).toEqual({ count: 2, capped: false });
         // the filter says the same: its pattern matches both, and not the cancelled one

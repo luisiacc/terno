@@ -1,6 +1,6 @@
-import { capFilterName, FILTER_NAME_MAX, type FilterableScope } from "@terno/core";
+import { capFilterName, FILTER_NAME_MAX, subjectTemplate, type FilterableScope } from "@terno/core";
 import type { CategorizeSource } from "@terno/core/rpc";
-import { t } from "@terno/i18n";
+import { formatList, t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
@@ -326,12 +326,29 @@ export async function answerReview(threadId: number, categoryId: number, yes: bo
   if (!(await answered)) await recover();
 }
 
-/** What a filter made here is called: who (and the subject), the domain or the list → the category. */
+/** Who (and the subject, its numbers as #), the domain, the list, or the words (from whom). */
+function headOf(scope: FilterableScope, senderName: string | null): string {
+  switch (scope.kind) {
+    case "domain":
+      return `@${scope.domain}`;
+    case "list":
+      return scope.listId;
+    case "words": {
+      const words = formatList(scope.terms.map((word) => t("category.topicWord", { word })));
+      return scope.email ? t("filters.wordsNameFrom", { words, name: senderName || scope.email }) : t("filters.wordsName", { words });
+    }
+    case "subject":
+      return `${senderName || scope.email} · ${subjectTemplate(scope.subject)}`;
+    case "sender":
+      return senderName || scope.email;
+  }
+}
+
+/** What a filter made here is called: who (and the subject), the domain, the list or the words → the category. */
 export function filterNameOf(scope: FilterableScope, senderName: string | null, category: string): string {
-  const who = scope.kind === "domain" ? `@${scope.domain}` : scope.kind === "list" ? scope.listId : senderName || scope.email;
   const tail = ` → ${category}`;
   // a filter's name has a cap: a long subject shortens, the category stays readable at the end
-  const head = [...(scope.kind === "subject" ? `${who} · ${scope.subject}` : who)];
+  const head = [...headOf(scope, senderName)];
   const room = Math.max(1, FILTER_NAME_MAX - [...tail].length);
   return capFilterName(`${head.length <= room ? head.join("") : `${head.slice(0, room - 1).join("").trimEnd()}…`}${tail}`);
 }

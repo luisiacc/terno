@@ -1,4 +1,4 @@
-import type { Condition, Filter } from "@terno/core";
+import { patternTemplate, type Condition, type Filter } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -16,6 +16,7 @@ const FIELD = {
   fromDomain: "filters.field.fromDomain",
   subject: "filters.field.subject",
   body: "filters.field.body",
+  text: "filters.field.text",
   recipients: "filters.field.recipients",
   listId: "filters.field.listIdShort",
   hasAttachment: "filters.field.hasAttachment",
@@ -28,6 +29,7 @@ const OP: Record<string, readonly [`filters.op.${string}` & TextKey, `filters.op
   equals: ["filters.op.equals", "filters.op.notEquals"],
   startsWith: ["filters.op.startsWith", "filters.op.notStartsWith"],
   endsWith: ["filters.op.endsWith", "filters.op.notEndsWith"],
+  matches: ["filters.op.matches", "filters.op.notMatches"],
 };
 
 /** One line for a condition, in the builder's words. */
@@ -39,6 +41,10 @@ function conditionText(c: Condition, accountEmail: (id: number) => string): stri
     const key = c.op === "gt" ? (not ? "filters.cond.notOlderThan" : "filters.cond.olderThan") : not ? "filters.cond.notNewerThan" : "filters.cond.newerThan";
     return t(key, { count: c.value });
   }
+  // plan 84: a word "mentions"; a generated subject pattern reads as its template ("Tu pedido # está en camino")
+  if (c.field === "text") return t("filters.cond.mentions", { value: c.value });
+  const template = c.op === "matches" ? patternTemplate(c.value) : null;
+  if (template !== null) return t(not ? "filters.cond.notLike" : "filters.cond.like", { field: t(FIELD[c.field]), template });
   const op = OP[c.op];
   return t("filters.cond.text", { field: t(FIELD[c.field]), op: op ? t(op[not ? 1 : 0]) : not ? t("filters.cond.notOp", { op: c.op }) : c.op, value: c.value });
 }

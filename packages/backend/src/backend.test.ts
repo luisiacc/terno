@@ -635,6 +635,34 @@ describe("filters on incoming mail", () => {
   });
 });
 
+describe("pattern and word filters (plan 84)", () => {
+  it("applies in the background with progress, one apply per filter at a time", async () => {
+    const { backend, client, accountId } = setup();
+    await backend.ingestSliced(Array.from({ length: 40 }, () => incoming(accountId)));
+    const rule = { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "matches" as const, value: "^morning(brew)?\\.com$" }], actions: [{ type: "markRead" as const }] };
+    const f = await client.call("filters.save", { name: "p", enabled: true, source: "manual", rule });
+    const progress: { done: number; total: number }[] = [];
+    client.on("bulkProgress", (p) => p.jobId === "job-p" && progress.push(p));
+    const first = client.call("filters.apply", { id: f.id, jobId: "job-p" });
+    // a second apply of the same filter while the first runs is refused, never queued
+    await expect(client.call("filters.apply", { id: f.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(await first).toEqual({ matchedMessages: 40, affectedThreads: 40 });
+    expect(progress.length).toBeGreaterThan(0);
+    // released: it can run again (nothing left to do)
+    expect(await client.call("filters.apply", { id: f.id })).toEqual({ matchedMessages: 0, affectedThreads: 0 });
+  });
+
+  it("a word filter fires at ingest on the subject, and its pattern can't stall the backend", async () => {
+    const { backend, client, accountId } = setup();
+    await client.call("filters.save", { name: "w", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "text", op: "contains", value: "brief" }], actions: [{ type: "star" }] } });
+    await client.call("filters.save", { name: "slow", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "matches", value: "(a|aa)+$" }], actions: [{ type: "markRead" }] } });
+    const start = performance.now();
+    await backend.ingestSliced([{ ...incoming(accountId), subject: `${"a".repeat(3000)}! Morning brief` }]);
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect((await client.call("threads.list", { view: "inbox" })).items[0]).toMatchObject({ starred: true });
+  });
+});
+
 describe("learned filters", () => {
   it("proposes a rule after repeated explicit archives and turns it into a filter", async () => {
     const { backend, client, accountId } = setup();

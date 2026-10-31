@@ -218,6 +218,14 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
     await expect(pressed).toHaveCount(2);
     const selected = await pressed.allTextContents();
+    // plan 84: the words come only from the sender at first; from anyone once that's off
+    const onlyFrom = snack.getByTestId("snackbar-only-from");
+    await expect(onlyFrom).toHaveAttribute("aria-pressed", "true");
+    const fromSender = await countOf(server, facturas, `${termsQuery(selected, "Facturas")} from:uber.receipts@uber.com`);
+    await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${fromSender}`);
+    await expect(snack.getByTestId("snackbar-topic-future")).toHaveText("+ new mail");
+    await onlyFrom.click();
+    await expect(onlyFrom).toHaveAttribute("aria-pressed", "false");
     const count = (terms: string[]) => countOf(server, facturas, termsQuery(terms, "Facturas"));
     const both = await count(selected);
     await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${both}`);
@@ -231,7 +239,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(`${both}`);
 
     await snack.getByTestId("snackbar-view").click();
-    await expect(page.getByTestId("search-input")).toHaveValue(termsQuery(selected, "Facturas"));
+    await expect(page.getByTestId("search-input")).toHaveValue(`${selected.map((w) => `"${w}"`).join(" ")} -category:Facturas`);
     await expect(page.getByTestId("search-stats")).toBeVisible();
 
     // filing it from a fresh snackbar with the keyboard
@@ -240,7 +248,15 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
     await page.keyboard.press("4");
-    await expect(toast(page, /\d+ added to Viajes/)).toBeVisible();
+    // plan 84: checked words file now and become a filter for new mail (from the sender: "Only from" is on again)
+    await expect(toast(page, /\d+ added to Viajes, future mail too/)).toBeVisible();
+    const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    const filters = db.all<{ rule_json: string }>("SELECT rule_json FROM filters");
+    const rule = filters.map((f) => JSON.parse(f.rule_json) as { conditions: { field: string; op: string; value: string }[]; actions: { categoryId?: number }[] }).find((r) => r.actions[0]?.categoryId === viajes)!;
+    // the words the new snackbar had checked (its own two), then the sender
+    expect(rule.conditions).toHaveLength(3);
+    expect(rule.conditions.slice(0, 2).every((c) => c.field === "text" && c.op === "contains")).toBe(true);
+    expect(rule.conditions[2]).toEqual({ field: "from", op: "equals", value: "uber.receipts@uber.com" });
   });
 
   test("plan 81: one offer per line, all of it in view; 4 says what it files, on hover and to a screen reader", async ({ app: page, server }) => {
@@ -267,10 +283,13 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
     const [a, b] = await pressed.allTextContents();
     const words = `“${a}” and “${b}”`;
+    // plan 84: from the sender at first, and a filter too
+    await expect(apply).toHaveAccessibleDescription(`Adds every conversation from Uber Receipts that mentions ${words} to Facturas, and their new mail that does too. Click a word to add or remove it.`);
+    await snack.getByTestId("snackbar-only-from").click();
     await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions ${words} to Facturas`));
     await apply.hover();
     const help = page.getByTestId("snackbar-topic-help");
-    await expect(help).toHaveText(`Adds every conversation that mentions ${words} to Facturas, from all your mail. Click a word to add or remove it.`);
+    await expect(help).toHaveText(`Adds every conversation that mentions ${words} to Facturas, from all your mail, and new mail that does too. Click a word to add or remove it.`);
     // it follows the words, the visible tooltip too
     await pressed.first().click();
     await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions “${b}” to Facturas`));
@@ -292,9 +311,9 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     // More…: the description says the text; Esc brings More… back with focus on it
     await snack.getByTestId("snackbar-more").click();
     await snack.getByTestId("snackbar-query").fill("recibo");
-    await expect(apply).toHaveAccessibleDescription("Adds every conversation that matches “recibo” to Facturas, from all your mail.");
+    await expect(apply).toHaveAccessibleDescription("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a filter: new mail isn’t included).");
     await apply.hover();
-    await expect(help).toHaveText("Adds every conversation that matches “recibo” to Facturas, from all your mail.");
+    await expect(help).toHaveText("Adds every conversation that matches “recibo” to Facturas, from the mail you have now (a search isn’t a filter: new mail isn’t included).");
     await snack.getByTestId("snackbar-query").press("Escape");
     await expect(snack.getByTestId("snackbar-more")).toBeFocused();
     await expect(snack).toBeVisible();

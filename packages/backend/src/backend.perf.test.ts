@@ -87,7 +87,17 @@ it("under load: interactive RPCs stay responsive during a 15k-message import + b
     name: "bulk",
     enabled: false,
     source: "manual",
-    rule: { match: "any", conditions: [{ field: "subject", op: "contains", value: "factura" }, { field: "fromDomain", op: "endsWith", value: ".com" }], actions: [{ type: "markRead" }] },
+    // plan 84: a pattern (a function per row) and a word (FTS) in the same gate
+    rule: {
+      match: "any",
+      conditions: [
+        { field: "subject", op: "contains", value: "factura" },
+        { field: "fromDomain", op: "endsWith", value: ".com" },
+        { field: "subject", op: "matches", value: "(pedido|orden)\\s+#?[0-9]+|(a|aa)+$" },
+        { field: "text", op: "contains", value: "propuesta" },
+      ],
+      actions: [{ type: "markRead" }],
+    },
   });
   const ids = (await client.call("threads.list", { view: "all" })).items.map((t) => t.id);
   let done = false;

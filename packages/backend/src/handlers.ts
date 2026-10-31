@@ -201,6 +201,8 @@ export function createHandlers(b: Backend): Handlers {
     }
   };
   const similarFilters = new SimilarFilters(store, () => b.now());
+  /** filters being applied to existing mail (plan 84: one job each) */
+  const applying = new Set<number>();
   let resolveQueue: Promise<unknown> = Promise.resolve();
   const resolving = <T,>(work: () => Promise<T>): Promise<T> => {
     const next = resolveQueue.then(work, work);
@@ -563,29 +565,48 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "filters.preview": ({ rule, limit }) => store.filters.preview(rule, b.now(), limit),
-    "filters.apply": async ({ id }) => {
-      const filter = await store.filters.get(id);
-      if (!filter) throw new RpcError("NOT_FOUND", L("errors.filterGone"));
-      // match in id windows, yielding between them: no single long synchronous scan
-      const bounds = await store.filters.messageIdRange();
-      const matched: number[] = [];
-      for (let from = bounds?.lo ?? 1; bounds && from <= bounds.hi; from += 4000) {
-        matched.push(...(await store.filters.matchWindow(filter.rule, b.now(), { from, to: from + 3999 })));
-        await b.platform.yield();
-      }
-      const touched = new Set<number>();
+    "filters.apply": async ({ id, jobId }) => {
+      // plan 84: one apply of a filter at a time (taken before the first await, released whatever happens)
+      if (applying.has(id)) throw new RpcError("BAD_REQUEST", L("errors.filterApplying"));
+      applying.add(id);
       let applied = 0;
-      // time-sliced so a huge bulk apply doesn't freeze list/search
-      const capturedRule = JSON.stringify(filter.rule);
-      await b.runSliced(matched, 20, async (chunk) => {
-        const r = await store.filters.applyChunk(id, capturedRule, chunk, b.now());
-        for (const t of r.touched) touched.add(t);
-        applied += r.applied;
-        b.opsQueued(r.opIds);
-        b.reconcileFlags(r.flagReconcileAccounts);
-      });
-      b.notifyChanged(touched);
-      return { matchedMessages: applied, affectedThreads: touched.size };
+      const touched = new Set<number>();
+      try {
+        const filter = await store.filters.get(id);
+        if (!filter) throw new RpcError("NOT_FOUND", L("errors.filterGone"));
+        // match in id windows, yielding between them: no single long synchronous scan (a pattern runs in linear time)
+        const bounds = await store.filters.messageIdRange();
+        const span = bounds ? bounds.hi - bounds.lo + 1 : 0;
+        const checking = progressReporter(b, jobId, span);
+        checking(0);
+        const matched: number[] = [];
+        for (let from = bounds?.lo ?? 1; bounds && from <= bounds.hi; from += 4000) {
+          matched.push(...(await store.filters.matchWindow(filter.rule, b.now(), { from, to: from + 3999 })));
+          checking(Math.min(span, from + 4000 - bounds.lo));
+          await b.platform.yield();
+        }
+        const progress = progressReporter(b, jobId, matched.length);
+        let done = 0;
+        // time-sliced so a huge bulk apply doesn't freeze list/search
+        const capturedRule = JSON.stringify(filter.rule);
+        await b.runSliced(matched, 20, async (chunk) => {
+          const r = await store.filters.applyChunk(id, capturedRule, chunk, b.now());
+          for (const t of r.touched) touched.add(t);
+          applied += r.applied;
+          b.opsQueued(r.opIds);
+          b.reconcileFlags(r.flagReconcileAccounts);
+          progress((done += chunk.length));
+        });
+        return { matchedMessages: applied, affectedThreads: touched.size };
+      } catch (error) {
+        if (error instanceof RpcError && applied === 0) throw error;
+        // what committed stays applied: the error says how much
+        const details = { matchedMessages: applied, affectedThreads: touched.size };
+        throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), details, { expected: false, cause: error });
+      } finally {
+        applying.delete(id);
+        b.notifyChanged(touched);
+      }
     },
     "filters.generate": ({ prompt }, ctx) => b.aiService.generateFilter(prompt, ctx.clientId),
 

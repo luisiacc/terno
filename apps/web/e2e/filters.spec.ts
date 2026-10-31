@@ -56,6 +56,35 @@ test.describe("AI filters and learned filters", () => {
     await expect(page.getByTestId("filter-save")).toBeDisabled();
   });
 
+  test("plan 84: a pattern is checked as it's typed, saved, and applied in the background", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const read = () => db.get<{ c: number }>("SELECT count(*) c FROM threads WHERE unread_count = 0 AND last_from_email = 'uber.receipts@uber.com'")!.c;
+    await page.getByTestId("open-filters").click();
+    await page.getByTestId("condition-field").click();
+    await page.getByRole("option", { name: "Sender", exact: true }).click();
+    await page.getByTestId("condition-op").click();
+    await page.getByRole("option", { name: "matches pattern" }).click();
+    const value = page.getByTestId("condition-value");
+    const help = page.getByTestId("condition-pattern-help");
+    await expect(help).toContainText("[0-9]+ is any number");
+    // a lookahead isn't supported: said under the field, and the filter can't be saved
+    await value.fill("(?=uber)");
+    await expect(value).toHaveAttribute("aria-invalid", "true");
+    await expect(help).toHaveText("Patterns can’t look around (?=, ?!) or refer back to a group (\\1).");
+    await expect(page.getByTestId("filter-save")).toBeDisabled();
+    await value.fill("^uber\\.receipts@uber\\.(com|mx)$");
+    await expect(value).not.toHaveAttribute("aria-invalid");
+    await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);
+    await page.getByTestId("action-toggle-archive").click();
+    await page.getByTestId("action-toggle-markRead").click();
+    await page.getByTestId("filter-save-apply").click();
+    // the dialog is free at once; the snack follows the job to its end
+    await expect(page.getByTestId("filter-save")).toBeEnabled();
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: /Filter applied to \d+ conversations?/ })).toBeVisible();
+    await expect.poll(read).toBeGreaterThan(0);
+    await expect(page.getByTestId("filter-item").first()).toBeVisible();
+  });
+
   test("the learned suggestion becomes a filter in one click", async ({ app: page }) => {
     const banner = page.getByTestId("learned-banner");
     await expect(banner).toContainText("daily.morningbrew.com");

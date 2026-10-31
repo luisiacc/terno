@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, normalizeText, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
+import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;

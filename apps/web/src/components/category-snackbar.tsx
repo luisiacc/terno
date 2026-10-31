@@ -1,4 +1,4 @@
-import { isFilterable, termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
+import { isFilterable, termsQuery, wordsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -35,10 +35,12 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * More… text, else how to start. A blank More… still files the words, so it
  * says the words.
  */
-export function topicHelp(category: string, words: readonly string[], custom: string | null): string {
+export function topicHelp(category: string, words: readonly string[], custom: string | null, from: string | null = null): string {
   const text = custom?.trim();
   if (text) return t("category.topicHelpQuery", { query: text, category });
-  if (words.length) return t("category.topicHelp", { words: formatList(words.map((word) => t("category.topicWord", { word }))), category });
+  const list = formatList(words.map((word) => t("category.topicWord", { word })));
+  // plan 84: checked words are a filter too (+ new mail), from the sender when "Only from" is on
+  if (words.length) return from ? t("category.topicHelpFrom", { words: list, category, name: from }) : t("category.topicHelp", { words: list, category });
   return t("category.topicHelpEmpty", { category });
 }
 
@@ -198,6 +200,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   const [qa, setQa] = useState<QuickActions | null>(null);
   const [counts, setCounts] = useState<Partial<Record<Slot, Count | "loading">>>({});
   const [terms, setTerms] = useState<Set<string>>(new Set());
+  /** plan 84: the words only from this sender (on while there is one) */
+  const [onlyFrom, setOnlyFrom] = useState(true);
   /** "More…": anything in the search language ("factura uber from:@uber.com") */
   const [custom, setCustom] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
@@ -219,7 +223,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     if (qa.list) out.list = { kind: "list", listId: qa.list };
     const text = custom?.trim();
     if (text) out.topic = { kind: "query", query: text };
-    else if (terms.size) out.topic = { kind: "query", query: termsQuery([...terms], category.name) };
+    // in the offer's order; a filter as well as a search (plan 84)
+    else if (terms.size) out.topic = { kind: "words", terms: qa.terms.map((x) => x.term).filter((x) => terms.has(x)), email: onlyFrom && qa.sender ? qa.sender.email : null };
     return out;
   };
 
@@ -258,12 +263,10 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   }, [qa]);
 
   // the topic recounts as words are toggled or typed (debounced)
-  const topicQuery = (() => {
-    const t = scopes().topic;
-    return t?.kind === "query" ? t.query : null;
-  })();
+  const topic = scopes().topic;
+  const topicKey = topic ? JSON.stringify(topic) : null;
   useEffect(() => {
-    if (!topicQuery) {
+    if (!topic) {
       setCounts((c) => ({ ...c, topic: undefined }));
       return;
     }
@@ -271,7 +274,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     setCounts((c) => ({ ...c, topic: "loading" }));
     const t = setTimeout(() => {
       void client
-        .call("categorize.count", { categoryId: filed.categoryId, scope: { kind: "query", query: topicQuery } })
+        .call("categorize.count", { categoryId: filed.categoryId, scope: topic })
         .then((r) => alive && setCounts((c) => ({ ...c, topic: r })))
         .catch(() => alive && setCounts((c) => ({ ...c, topic: { count: 0, capped: false } })));
     }, 150);
@@ -279,7 +282,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       alive = false;
       clearTimeout(t);
     };
-  }, [topicQuery]);
+  }, [topicKey]);
 
   // an undo in flight holds the countdown (and lets it go if the snackbar leaves first)
   useEffect(() => {
@@ -297,14 +300,14 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
 
   /** "View": the topic as a search, so the user sees exactly what would be added. */
   const view = () => {
-    if (!topicQuery || !category) return;
+    if (!topic || !category) return;
     close();
-    const query = custom?.trim() ? `${custom.trim()} ${termsQuery([], category.name)}` : topicQuery;
+    const query = `${topic.kind === "words" ? wordsQuery(topic) : topic.kind === "query" ? topic.query : ""} ${termsQuery([], category.name)}`;
     // exactly the scope bulk apply uses: all accounts, no category or review view on top
     setApp({ query, view: "all", categoryId: null, accountId: null, reviewCategoryId: null, selectedId: null });
   };
 
-  /** 1–3 file now and catch future mail (plan 81), even with nothing left now; 4 (words) only files what's there. */
+  /** 1–3 and checked words file now and catch future mail (plans 81, 84), even with nothing left now; More… text only files what's there. */
   const run = (slot: Slot) => {
     const scope = scopes()[slot];
     const count = counts[slot];
@@ -369,7 +372,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
   };
   if (!category) return null;
   const title = titleOf(filed, category.name);
-  const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom);
+  const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom, topic?.kind === "words" && topic.email ? (qa?.sender?.name ?? topic.email) : null);
   const offers = qa && (qa.sender || qa.domain || qa.list || qa.terms.length);
   // the sender with nothing left now: the line is about their future mail, no "0"
   const senderCount = counts.sender && counts.sender !== "loading" && counts.sender.count === 0 ? undefined : counts.sender;
@@ -427,7 +430,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
                       type="button"
                       onClick={() => run("topic")}
                       // stays focusable with nothing checked, so its help is still there to read
-                      aria-disabled={!topicQuery || undefined}
+                      aria-disabled={!topic || undefined}
                       aria-describedby={helpId}
                       className={cn(line, "flex-1 text-left aria-disabled:text-muted-foreground aria-disabled:hover:bg-transparent")}
                       data-testid="snackbar-topic-apply"
@@ -436,6 +439,11 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
                 >
                   <Kbd className={key}>4</Kbd>
                   {t("category.topic")}
+                  {topic?.kind === "words" && (
+                    <span data-testid="snackbar-topic-future" className="text-2xs whitespace-nowrap text-muted-foreground">
+                      {t("category.newMailToo")}
+                    </span>
+                  )}
                 </TooltipTrigger>
                 <TooltipContent align="start" data-testid="snackbar-topic-help">{help}</TooltipContent>
               </Tooltip>
@@ -443,12 +451,12 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
                 {help}
               </span>
               <div className="flex shrink-0 items-center gap-2 pr-1.5">
-                {topicQuery && (
+                {topic && (
                   <button type="button" data-testid="snackbar-view" onClick={view} className="inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-2xs text-primary hover:bg-muted">
                     <Search className="size-3" /> {t("common.view")}
                   </button>
                 )}
-                {topicQuery && <OfferCount count={counts.topic} testId="snackbar-topic-count" />}
+                {topic && <OfferCount count={counts.topic} testId="snackbar-topic-count" />}
               </div>
             </div>
             {/* indented to the label: the line's padding, the key and the gap */}
@@ -478,6 +486,22 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
                       {terms.has(term) && <Check className="size-2.5 shrink-0" />}
                     </button>
                   ))}
+                  {qa.sender && (
+                    // plan 84: the words from this sender only, or from anyone
+                    <button
+                      type="button"
+                      data-testid="snackbar-only-from"
+                      aria-pressed={onlyFrom}
+                      onClick={() => setOnlyFrom((v) => !v)}
+                      className={cn(
+                        "inline-flex h-5 max-w-full items-center gap-0.5 rounded-full px-1.5 text-2xs",
+                        onlyFrom ? "bg-accent text-accent-foreground" : "bg-tint text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span className="truncate">{t("category.onlyFrom", { name: qa.sender.name })}</span>
+                      {onlyFrom && <Check className="size-2.5 shrink-0" />}
+                    </button>
+                  )}
                   <button ref={moreRef} type="button" data-testid="snackbar-more" onClick={() => setCustom("")} className="h-5 rounded-full px-1.5 text-2xs text-muted-foreground hover:text-foreground">
                     {t("category.more")}
                   </button>
