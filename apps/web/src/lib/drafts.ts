@@ -1089,14 +1089,14 @@ export function forgetDraft(key: string): void {
 }
 
 /**
- * Plan 89: which stored drafts are scheduled to send (lib/scheduled sets it):
+ * Plan 94: which stored drafts are scheduled to send (lib/scheduled sets it):
  * a hydration never brings one in as an editable draft, even a list asked
  * for before it was scheduled.
  */
 export const scheduledDrafts: { has: (id: number) => boolean } = { has: () => false };
 
 /**
- * Plan 89: drafts scheduled in another window leave this one, unless they
+ * Plan 94: drafts scheduled in another window leave this one, unless they
  * hold edits not saved yet (that save makes them a draft again) or are this
  * window's own send in flight.
  */

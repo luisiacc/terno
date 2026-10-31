@@ -304,7 +304,7 @@ export interface DraftRow {
   updated_at: number;
 }
 
-/** Plan 89: a draft scheduled to send, as listed (its draft's recipients and subject; no params). */
+/** Plan 94: a draft scheduled to send, as listed (its draft's recipients and subject; no params). */
 export interface ScheduledSend {
   draftId: number;
   sendAt: number;
@@ -320,7 +320,7 @@ export interface ScheduledSend {
   retryAt: number | null;
 }
 
-/** Plan 89: a scheduled send as stored: the exact compose.send parameters, as JSON. */
+/** Plan 94: a scheduled send as stored: the exact compose.send parameters, as JSON. */
 export interface ScheduledRow {
   draftId: number;
   sendAt: number;

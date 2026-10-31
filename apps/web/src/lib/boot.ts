@@ -95,7 +95,7 @@ export async function boot(): Promise<void> {
     client.on("reminders", applyReminders);
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
-    // plan 89: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
+    // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
     client.on("scheduled", applyScheduled);
     void loadScheduled().catch((error) => console.warn("[scheduled] could not load", error));
     client.on("owner", (owner) => setApp({ owner }));

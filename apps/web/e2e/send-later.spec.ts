@@ -1,5 +1,5 @@
 /**
- * Plan 89: send later. The clock joined to Send opens Send now, Tomorrow at
+ * Plan 94: send later. The clock joined to Send opens Send now, Tomorrow at
  * 8:00 and Custom; a scheduled message leaves the composer for the strip
  * above the list, where a click offers Send now, a new time or Edit message.
  * The app's clock and the backend's are E2E_NOW: Thursday Oct 22, 2026,

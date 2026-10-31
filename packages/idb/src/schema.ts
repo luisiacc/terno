@@ -18,7 +18,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 14 fences adapters that cannot preserve reply subject context (SQL v26).
  * Version 21 adds reminders (SQL v34, plan 87).
  * Version 22 adds capture repair (SQL v36).
- * Version 23 adds scheduled sends (SQL v38, plan 93).
+ * Version 23 adds scheduled sends (SQL v38, plan 94).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
@@ -73,7 +73,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dismissed_suggestions", early: true, key: ["key"] },
   { name: "draft_counter", early: true, key: ["id"] },
   { name: "drafts", early: true, key: ["id"], autoId: true, indexes: { ...fk("account_id"), ...fk("thread_id") } },
-  // plan 89: a draft's scheduled send (a handful; the backend reads them at startup)
+  // plan 94: a draft's scheduled send (a handful; the backend reads them at startup)
   { name: "scheduled_sends", early: true, key: ["draft_id"] },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
@@ -306,7 +306,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
       // plan 87 (an image written by a later adapter's table list may have it already)
       if (event.oldVersion >= 1 && event.oldVersion < 21 && !db.objectStoreNames.contains("reminders")) db.createObjectStore("reminders");
-      // plan 89 (likewise)
+      // plan 94 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 23 && !db.objectStoreNames.contains("scheduled_sends")) db.createObjectStore("scheduled_sends");
       if (event.oldVersion < 20) {
         const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");

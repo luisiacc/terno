@@ -48,7 +48,7 @@ describe("remindPresets (plan 87)", () => {
   });
 });
 
-describe("sendLaterTomorrow (plan 89)", () => {
+describe("sendLaterTomorrow (plan 94)", () => {
   it("is 8:00 the next day, from any hour (just after midnight too), across a month and a DST change", () => {
     expect(show(sendLaterTomorrow(local(2026, 10, 22, 9, 30)))).toBe("Fri 10/23 8:00");
     expect(show(sendLaterTomorrow(local(2026, 10, 22, 0, 5)))).toBe("Fri 10/23 8:00");

@@ -189,7 +189,7 @@ export interface SendCommand {
   attachments?: import("@terno/core").AttachmentRef[];
   /** explicit user replies feed learned filters; agents' don't */
   recordReply: boolean;
-  /** plan 89: a scheduled send: only while the draft is still scheduled for exactly this moment (STALE "unscheduled" otherwise) */
+  /** plan 94: a scheduled send: only while the draft is still scheduled for exactly this moment (STALE "unscheduled" otherwise) */
   scheduledAt?: number;
   now: number;
 }
@@ -481,7 +481,7 @@ export interface MailStore {
   };
 
   /**
-   * Plan 89: drafts scheduled to send (one row per draft; deleting the draft
+   * Plan 94: drafts scheduled to send (one row per draft; deleting the draft
    * removes it). The draft stays as it was until the send deletes it.
    */
   scheduled: {

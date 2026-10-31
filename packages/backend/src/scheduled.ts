@@ -4,7 +4,7 @@ import { contract, RpcError, type ParsedParamsOf, type ScheduledFailure, type Sc
 import type { MailStore, ScheduledSend } from "@terno/store";
 
 /**
- * Plan 89's scheduled sends, on the backend: one timer for the soonest one
+ * Plan 94's scheduled sends, on the backend: one timer for the soonest one
  * (none without any: idle stays idle), the send itself through compose.send's
  * own path when its time comes (fenced: only while it is still scheduled for
  * that moment, so a cancel or a new time meanwhile wins), and a snapshot to

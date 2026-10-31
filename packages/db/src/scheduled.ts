@@ -1,7 +1,7 @@
 import type { ScheduledRow, ScheduledSend } from "@terno/store";
 import type { Db } from "./sqlite";
 
-/** Plan 89: drafts scheduled to send (`scheduled_sends`, v35). */
+/** Plan 94: drafts scheduled to send (`scheduled_sends`, v35). */
 
 interface Joined {
   draft_id: number;

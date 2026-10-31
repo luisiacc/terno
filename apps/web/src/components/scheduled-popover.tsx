@@ -8,7 +8,7 @@ import { editScheduled, rescheduleScheduled, useScheduled } from "~/lib/schedule
 
 const SendLaterPicker = lazy(() => import("./send-later-picker").then((m) => ({ default: m.SendLaterPicker })));
 
-/** Plan 93: Send later on a scheduled send (Send now, a new time, Edit message), around the trigger `children` renders. */
+/** Plan 94: Send later on a scheduled send (Send now, a new time, Edit message), around the trigger `children` renders. */
 export function ScheduledPopover({ s, align, children }: { s: ScheduledInfo; align: "start" | "end"; children: (open: boolean) => React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -28,7 +28,7 @@ export function ScheduledPopover({ s, align, children }: { s: ScheduledInfo; ali
   );
 }
 
-/** Plan 93: in a conversation, its scheduled reply (or forward), quietly above the reply bar: a click opens Send later on it. */
+/** Plan 94: in a conversation, its scheduled reply (or forward), quietly above the reply bar: a click opens Send later on it. */
 export function ScheduledReplyLine({ threadId }: { threadId: number }) {
   const s = useScheduled((x) => x.items.find((i) => i.threadId === threadId && i.mode !== "new"));
   if (!s) return null;

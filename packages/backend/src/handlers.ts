@@ -727,7 +727,7 @@ export function createHandlers(b: Backend): Handlers {
     "drafts.save": async (p, ctx) => {
       // a rich body only from the renderer (an agent's save is plain text, and rewrites the body)
       const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "" }, b.now());
-      // plan 89: an edit to a scheduled draft (another window still had it open) wins: it is a draft again
+      // plan 94: an edit to a scheduled draft (another window still had it open) wins: it is a draft again
       if (saved && (b.scheduled.has(saved.id) || (p.id !== undefined && b.scheduled.has(p.id)))) {
         if (await store.scheduled.delete(saved.id)) b.server.emit("drafts", { reason: "scheduled" });
         b.scheduled.poke();
@@ -757,7 +757,7 @@ export function createHandlers(b: Backend): Handlers {
       if (!b.autocomplete.warmed) void b.warmAutocomplete();
       return { text: b.autocomplete.suggestText({ before, names, me }) };
     },
-    // plan 89: a scheduled draft isn't for editing (it shows as scheduled)
+    // plan 94: a scheduled draft isn't for editing (it shows as scheduled)
     "drafts.list": async () => {
       const scheduled = new Set((await store.scheduled.list()).map((x) => x.draftId));
       return (await store.drafts.list()).filter((d) => !scheduled.has(d.id)).map(toDraft);

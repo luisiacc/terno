@@ -8,7 +8,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { getApp, setApp } from "~/state/app";
 
 /**
- * Plan 89: the scheduled sends as the windows see them (the backend's
+ * Plan 94: the scheduled sends as the windows see them (the backend's
  * snapshot: at startup and on its `scheduled` event), and what the UI does
  * with them: a new time, Send now, and Edit (a draft again, opened).
  */

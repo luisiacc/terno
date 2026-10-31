@@ -24,7 +24,7 @@ function recipientsLine(d: LocalDraft): string {
   return more > 0 ? t("compose.strip.andMore", { name, count: more }) : name;
 }
 
-/** Plan 89's "To …" line, from a scheduled send's addresses. */
+/** Plan 94's "To …" line, from a scheduled send's addresses. */
 function scheduledTo(s: ScheduledInfo): string {
   const first = s.to[0];
   if (!first) return t("compose.strip.noRecipients");
@@ -35,7 +35,7 @@ function scheduledTo(s: ScheduledInfo): string {
 const ROW = cn("relative flex h-9 w-full items-center gap-2 px-5 text-left text-sm", "before:absolute before:inset-x-2 before:inset-y-px before:rounded-md");
 
 /**
- * Plan 89: a scheduled send, above the drafts: its clock, what and to whom,
+ * Plan 94: a scheduled send, above the drafts: its clock, what and to whom,
  * and when it goes (in the destructive ink while a try failed). A click opens
  * Send later on it: Send now, a new time, or Edit message.
  */
@@ -72,7 +72,7 @@ function ScheduledRow({ s }: { s: ScheduledInfo }) {
  * virtualizer, where the banners sit): new messages, drafts whose
  * conversation isn't in this list (archived, moved, another view) and older
  * drafts of a conversation that has a newer one. One click away each.
- * Scheduled sends (plan 89) come first.
+ * Scheduled sends (plan 94) come first.
  */
 export function DraftsStrip() {
   const compose = useApp((s) => s.compose?.key ?? null);

@@ -11,7 +11,7 @@ import { dayText, useWhen, WhenFields } from "./when-fields";
 const timeOf = (ms: number) => new Intl.DateTimeFormat(getLocale() === "en" ? "en-US" : getLocale(), getLocale() === "en" ? { hour: "numeric", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }).format(ms);
 
 /**
- * Plan 93's picker: Send now, Tomorrow at 8:00, or a date and time of your
+ * Plan 94's picker: Send now, Tomorrow at 8:00, or a date and time of your
  * own (plan 87's fields), with the line that says the send leaves from this
  * device. For a scheduled one (the strip's, the reader's) it says when it
  * goes, why the last try didn't, and offers Edit message. Not a form: it is

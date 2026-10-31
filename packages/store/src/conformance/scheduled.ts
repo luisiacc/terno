@@ -7,13 +7,13 @@ const HOUR = 3_600_000;
 const CAP = { count: 10, bytes: 1e6 };
 
 /**
- * Plan 89: a draft's scheduled send. Put only on the draft as prepared
+ * Plan 94: a draft's scheduled send. Put only on the draft as prepared
  * (generation and revision), under a cap; listed with its draft's
  * recipients and subject, soonest first; rescheduled, deleted, gone with its
  * draft (and its account), and durable.
  */
 export function defineScheduledConformance(fresh: () => Promise<MailStore>, reopen: (store: MailStore) => Promise<MailStore>): void {
-  describe("scheduled sends (plan 89)", () => {
+  describe("scheduled sends (plan 94)", () => {
     async function setup() {
       const store = await fresh();
       const [a] = await withAccounts(store, 1);

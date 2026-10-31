@@ -539,7 +539,7 @@ export interface RemindersSnapshot {
   reminders: ReminderInfo[];
 }
 
-/** Plan 89: a scheduled send as the renderer sees it (who and what from its draft; `error`: why the last try didn't go) */
+/** Plan 94: a scheduled send as the renderer sees it (who and what from its draft; `error`: why the last try didn't go) */
 export interface ScheduledInfo {
   draftId: number;
   sendAt: number;
@@ -551,7 +551,7 @@ export interface ScheduledInfo {
   error: string | null;
   retryAt: number | null;
 }
-/** Plan 89: a scheduled send that couldn't go and won't be tried again (its draft is a draft again), until the user saw it */
+/** Plan 94: a scheduled send that couldn't go and won't be tried again (its draft is a draft again), until the user saw it */
 export interface ScheduledFailure {
   id: string;
   draftId: number;
@@ -574,7 +574,7 @@ function m<R>() {
 
 const empty = z.object({}).strict();
 
-/** compose.send's parameters (plan 89's compose.schedule adds the moment and requires the draft) */
+/** compose.send's parameters (plan 94's compose.schedule adds the moment and requires the draft) */
 const composeSend = z.object({
   accountId: id,
   to: z.array(address).min(1).max(MAX_RECIPIENTS),
@@ -826,7 +826,7 @@ export const contract = {
   "learning.dismiss": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
 
   "compose.send": m<{ opId: string; threadId: number }>()(composeSend),
-  /** plan 89: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
+  /** plan 94: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
   "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
   "scheduled.list": m<ScheduledSnapshot>()(empty),
   "scheduled.reschedule": m<{ ok: true }>()(z.object({ draftId: id, sendAt: z.number().int().nonnegative() }).strict()),
@@ -1041,7 +1041,7 @@ export interface Events {
   notify: MailNotice;
   /** plan 87: the reminders changed, or one came due */
   reminders: RemindersSnapshot;
-  /** plan 89: the scheduled sends changed (scheduled, sent, failed) */
+  /** plan 94: the scheduled sends changed (scheduled, sent, failed) */
   scheduled: ScheduledSnapshot;
 }
 export type EventName = keyof Events;

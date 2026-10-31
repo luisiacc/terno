@@ -235,7 +235,7 @@ export class BackendCore {
   readonly attention: Attention;
   /** plan 87: reminders: one timer for the next one, a snapshot to the windows when they change */
   readonly reminders: Reminders;
-  /** plan 89: scheduled sends: one timer for the next one, sent through compose.send's own path */
+  /** plan 94: scheduled sends: one timer for the next one, sent through compose.send's own path */
   readonly scheduled: ScheduledSends;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -463,7 +463,7 @@ export class BackendCore {
     this.refreshReminders();
     // plan 86: the Gmail tabs of mail stored before them, once (and again whenever what's yours changes)
     this.tabs.start();
-    // plan 89: what came due while Terno was closed goes now
+    // plan 94: what came due while Terno was closed goes now
     this.scheduled.poke();
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
@@ -638,7 +638,7 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     this.attention.stop();
     this.reminders.stop();
-    // plan 89: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
+    // plan 94: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
     const scheduledStopped = this.scheduled.stop();
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
@@ -733,7 +733,7 @@ export class BackendCore {
   }
 
   /**
-   * compose.send's own path (plan 89's scheduled sends take it too): queued
+   * compose.send's own path (plan 94's scheduled sends take it too): queued
    * (the draft deleted with it), then announced. Once queued, nothing after
    * it can fail the send: the announcing is logged instead.
    */

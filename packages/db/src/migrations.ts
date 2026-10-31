@@ -1077,7 +1077,7 @@ CREATE INDEX threads_tab_id ON threads(account_id, tab, id) WHERE in_inbox = 1 A
 CREATE INDEX threads_waiting_inbox_tab ON threads(waiting_since, account_id, tab) WHERE in_inbox = 1 AND waiting_since IS NOT NULL;
 INSERT OR REPLACE INTO settings (key, value_json) SELECT 'tabs_backfill', '{"phase":"messages","after":0}' WHERE EXISTS (SELECT 1 FROM accounts WHERE kind = 'gmail');
 ` },
-  { version: 38, name: "scheduled sends (plan 93)", sql: `
+  { version: 38, name: "scheduled sends (plan 94)", sql: `
 CREATE TABLE scheduled_sends (
   draft_id INTEGER PRIMARY KEY REFERENCES drafts(id) ON DELETE CASCADE,
   send_at INTEGER NOT NULL,

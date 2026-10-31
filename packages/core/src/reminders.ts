@@ -57,7 +57,7 @@ export function defaultRemindAt(now: Date): number {
   return at(now, 1, REMIND_MORNING);
 }
 
-/** Plan 89: Send later's "Tomorrow" (8:00 the next day, local time) */
+/** Plan 94: Send later's "Tomorrow" (8:00 the next day, local time) */
 export function sendLaterTomorrow(now: Date, hour = SEND_LATER_MORNING): number {
   return at(now, 1, hour);
 }

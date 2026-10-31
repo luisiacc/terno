@@ -11,7 +11,7 @@ import type { LocalDraft } from "~/lib/drafts";
 
 const SendLaterPicker = lazy(() => import("./send-later-picker").then((m) => ({ default: m.SendLaterPicker })));
 
-/** Plan 89: which composer's Send later is open (⌘⇧↩ opens it from the keyboard). */
+/** Plan 94: which composer's Send later is open (⌘⇧↩ opens it from the keyboard). */
 export const useSendLater = create<{ open: string | null }>(() => ({ open: null }));
 export const openSendLater = (key: string) => useSendLater.setState({ open: key });
 
@@ -19,7 +19,7 @@ export const openSendLater = (key: string) => useSendLater.setState({ open: key 
 export const isSendLaterKey = (e: React.KeyboardEvent) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && e.shiftKey;
 
 /**
- * Send, and joined to its right the clock that schedules it (plan 89): the
+ * Send, and joined to its right the clock that schedules it (plan 94): the
  * same fill, split by a hairline. The clock opens Send now, Tomorrow at
  * 8:00 and Custom above it.
  */

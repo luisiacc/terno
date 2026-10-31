@@ -52,7 +52,7 @@ async function setup() {
   return { backend, client, account, events, drafts, clock, advance, draft, schedule, sends };
 }
 
-describe("scheduled sends (plan 89)", () => {
+describe("scheduled sends (plan 94)", () => {
   it("waits for its moment (one timer, the draft kept and out of drafts.list), then sends the prepared message", async () => {
     const { backend, client, events, advance, draft, schedule, sends } = await setup();
     const d = await draft();

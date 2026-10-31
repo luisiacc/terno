@@ -1,6 +1,6 @@
 import { getLocale, t } from "@terno/i18n";
 
-/** Plan 87's moments in words (plan 89's scheduled sends say theirs the same way); no imports of the app. */
+/** Plan 87's moments in words (plan 94's scheduled sends say theirs the same way); no imports of the app. */
 
 const DAY = 86_400_000;
 const formats = new Map<string, { time: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; day: Intl.DateTimeFormat; year: Intl.DateTimeFormat }>();

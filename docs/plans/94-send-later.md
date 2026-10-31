@@ -1,4 +1,4 @@
-# 89: Send later
+# 94: Send later
 
 ## Request (verbatim)
 
@@ -33,8 +33,8 @@ The schedule is local, like reminders: Terno sends it from this device. If Terno
 
 ### 2. Stores (`MailStore.scheduled`)
 
-- **SQLite** migration v35: `CREATE TABLE scheduled_sends (draft_id INTEGER PRIMARY KEY REFERENCES drafts(id) ON DELETE CASCADE, send_at INTEGER NOT NULL, set_at INTEGER NOT NULL, params_json TEXT NOT NULL)`. A rowid table (the params can be large).
-- **IndexedDB**: an early `scheduled_sends` table keyed by `draft_id`, cascading from `drafts`. `IDB_VERSION` 22, `LOGICAL_SCHEMA` 35.
+- **SQLite** migration v38: `CREATE TABLE scheduled_sends (draft_id INTEGER PRIMARY KEY REFERENCES drafts(id) ON DELETE CASCADE, send_at INTEGER NOT NULL, set_at INTEGER NOT NULL, params_json TEXT NOT NULL)`. A rowid table (the params can be large).
+- **IndexedDB**: an early `scheduled_sends` table keyed by `draft_id`, cascading from `drafts`. `IDB_VERSION` 23, `LOGICAL_SCHEMA` 38 (renumbered from 22 and 35 after rebasing onto plan 86, the capture repair and the Hugeicons swap).
 - **Methods:**
   - `put({ draftId, generation, revision, sendAt, setAt, paramsJson }, cap)` → `"ok" | "full" | "stale"`. Stale: the draft is gone or its generation or revision differ. Replaces an existing row of that draft.
   - `list()` → `{ draftId, sendAt, setAt, accountId, threadId, mode, to, subject }[]`, soonest first, read from the rows and their drafts (no params).

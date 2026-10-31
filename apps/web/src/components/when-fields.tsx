@@ -30,7 +30,7 @@ export function useWhen(start: number) {
 }
 
 /**
- * Plan 87's date and time, shared with plan 93's Send later: a themed
+ * Plan 87's date and time, shared with plan 94's Send later: a themed
  * calendar (no day before today) and a 15-minute time list (today's gone
  * times dimmed, so the list keeps its shape). `testPrefix` names their
  * test ids (`remind` → remind-date, remind-time…).

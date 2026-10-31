@@ -1,7 +1,7 @@
 import type { ScheduledRow, ScheduledSend } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 
-/** Plan 89: drafts scheduled to send, like SQL's `scheduled_sends` (packages/db/src/scheduled.ts). */
+/** Plan 94: drafts scheduled to send, like SQL's `scheduled_sends` (packages/db/src/scheduled.ts). */
 
 const toRow = (r: R): ScheduledRow => ({ draftId: r.draft_id, sendAt: r.send_at, setAt: r.set_at, paramsJson: r.params_json, error: r.error ?? null, retryAt: r.retry_at ?? null });
 
