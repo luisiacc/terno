@@ -24,7 +24,7 @@ export interface Filed {
   batchId: number | null;
   /** an exclusive move (drag and drop, "Move to…"): the threads also left every other category; undo puts them back */
   moved?: boolean;
-  /** plan 85: the categories a move took them out of (the loaded rows'), where Terno's filters may still file their like */
+  /** plan 90: the categories a move took them out of (the loaded rows'), where Terno's filters may still file their like */
   left?: number[];
 }
 
@@ -230,7 +230,7 @@ export async function removeFromCategory(categoryId: number, threadIds: readonly
 }
 
 /**
- * Plan 85: mail the user took out of a category that one of Terno's filters
+ * Plan 90: mail the user took out of a category that one of Terno's filters
  * files there. The snack offers to stop it ("Stop filing"), with its own
  * Undo. On the removal's own snack when it has one (`snackId`, while it's
  * still up), else a snack of its own; nothing when no filter does.
@@ -417,11 +417,11 @@ export async function fileAlways(
   threadId: number | null,
   filterName: string,
   o: {
-    /** plan 86: what this followed: its Undo takes back this first, then that */
+    /** plan 91: what this followed: its Undo takes back this first, then that */
     original?: Undo;
-    /** plan 86: after a move, the scope moves too (other categories left) */
+    /** plan 91: after a move, the scope moves too (other categories left) */
     move?: boolean;
-    /** plan 86: taken back first (a default this replaces) */
+    /** plan 91: taken back first (a default this replaces) */
     before?: () => Promise<void>;
   } = {},
 ): Promise<void> {

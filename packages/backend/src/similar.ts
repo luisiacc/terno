@@ -4,7 +4,7 @@
  * make two filters; Undo takes back only what it did, and only while the
  * filter is still exactly that.
  *
- * Plan 85: they're Terno's (`auto`). One for the same mail filing elsewhere is
+ * Plan 90: they're Terno's (`auto`). One for the same mail filing elsewhere is
  * retargeted, not doubled; a user's own filter is never changed, only reused
  * as it is. Every write compares the filter it read (an edit meanwhile wins).
  */
@@ -28,7 +28,7 @@ export interface Ensured {
   filter: Filter;
   /** null when nothing changed */
   filterUndo: number | null;
-  /** plan 85: the same mail's automatic filter filed into this category before */
+  /** plan 90: the same mail's automatic filter filed into this category before */
   retargeted: { from: number } | null;
 }
 
@@ -115,7 +115,7 @@ export class SimilarFilters {
     }
   }
 
-  /** Plan 80: any rule, the same way; plan 85: an automatic category filter for the same mail elsewhere moves here instead. */
+  /** Plan 80: any rule, the same way; plan 90: an automatic category filter for the same mail elsewhere moves here instead. */
   ensureRule(rule: FilterRule, name: string, learnedKey?: string): Promise<Ensured> {
     return this.serial(async () => {
       const all = await this.store.filters.list();
@@ -145,7 +145,7 @@ export class SimilarFilters {
             record({ filterId: filter.id, before: null, after: filterState(filter) });
           }
         }
-        // a sender's mail filed here: their automatic subject filters filing elsewhere would split it (plan 86 R9), reused or not
+        // a sender's mail filed here: their automatic subject filters filing elsewhere would split it (plan 91 R9), reused or not
         const sender = target === null ? null : senderOf(rule);
         if (sender) {
           for (const f of all) {
@@ -162,7 +162,7 @@ export class SimilarFilters {
     });
   }
 
-  /** Plan 85: filters on or off at once ("Stop filing…", "Turn all off"), each only if unchanged since it was read; one Undo. */
+  /** Plan 90: filters on or off at once ("Stop filing…", "Turn all off"), each only if unchanged since it was read; one Undo. */
   setEnabled(ids: readonly number[], enabled: boolean): Promise<{ changed: number; filterUndo: number | null }> {
     return this.serial(async () => {
       let changed = 0;

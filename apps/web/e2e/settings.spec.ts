@@ -61,7 +61,7 @@ test.describe("accounts, settings and command palette", () => {
     await expect(page.getByTestId("tab-general")).toHaveAttribute("aria-selected", "true");
   });
 
-  test("plan 85: Terno's filters sit under “Created for you”; editing one makes it the user's; Turn all off has an Undo", async ({ app: page, server }) => {
+  test("plan 90: Terno's filters sit under “Created for you”; editing one makes it the user's; Turn all off has an Undo", async ({ app: page, server }) => {
     const ctx = { clientId: "t", origin: "dev" as const };
     const facturas = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
     await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, ctx);

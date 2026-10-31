@@ -1293,7 +1293,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         return { store, acct: acct!, cat, thread };
       }
 
-      it("plan 85: auto round-trips (kept on update unless said), a write expecting another state is refused, a retarget keeps the claims", async () => {
+      it("plan 90: auto round-trips (kept on update unless said), a write expecting another state is refused, a retarget keeps the claims", async () => {
         const { store, cat, thread } = await setup();
         await thread();
         const rule = categoryRule({ kind: "sender", email: "uber.receipts@uber.com" }, cat);
@@ -1464,7 +1464,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(sorted(await store.similar.kept([a, starred, replied]))).toEqual(sorted([starred, replied]));
       });
 
-      it("plan 84: a subject's numbers stand for any number, in sweeps, offers, category scopes and its filter", async () => {
+      it("plan 89: a subject's numbers stand for any number, in sweeps, offers, category scopes and its filter", async () => {
         const { store, thread } = await setup();
         const a = await thread({ subject: "Tu pedido 43790 está en camino" });
         const b = await thread({ subject: "Tu pedido 3052 está en camino" });
@@ -2143,7 +2143,7 @@ function generateRules(messages: readonly SnapshotMessage[]): FilterRule[] {
     }
     rules.push({ match: rand() < 0.7 ? "all" : "any", conditions, actions: [{ type: "archive" }] });
   }
-  // plan 84: patterns (generated subjects and a fixed safe set) and text words, on their own seed so the rules above stay as they were
+  // plan 89: patterns (generated subjects and a fixed safe set) and text words, on their own seed so the rules above stay as they were
   seed = 84;
   const patterns: [Extract<FilterRule["conditions"][number], { op: string }>["field"], string][] = [
     ["subject", "^re:"], ["subject", "[0-9]{3,}"], ["subject", "\\b(factura|pedido|orden)\\b"], ["subject", ".*"], ["subject", "^$"],

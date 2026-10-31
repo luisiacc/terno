@@ -255,9 +255,9 @@ export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
   return db.tx(() => {
     if (f.id !== undefined) {
       const previous = getFilter(db, f.id);
-      // plan 85: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
+      // plan 90: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
       if (f.expect && (!previous || !sameFilterState(filterState(previous), f.expect))) throw new RpcError("CANCELLED", L("errors.filterChanged"));
-      // A changed rule is a different filter: forget what the old definition was applied to (a retarget keeps it, plan 85).
+      // A changed rule is a different filter: forget what the old definition was applied to (a retarget keeps it, plan 90).
       if (previous && JSON.stringify(previous.rule) !== JSON.stringify(f.rule) && !f.keepApplications) db.run("DELETE FROM filter_applications WHERE filter_id = ?", f.id);
       db.run(
         "UPDATE filters SET name = ?, enabled = ?, source = ?, rule_json = ?, auto = coalesce(?, auto) WHERE id = ?",
@@ -288,7 +288,7 @@ export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
 
 export function deleteFilter(db: Db, id: number, expect?: FilterState): void {
   db.tx(() => {
-    // plan 85: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
+    // plan 90: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
     const current = expect ? getFilter(db, id) : null;
     if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
     db.run("DELETE FROM filters WHERE id = ?", id);

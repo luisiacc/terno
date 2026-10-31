@@ -35,7 +35,7 @@ const fields = (): { value: Field; label: string }[] => [
   { value: "ageDays", label: t("filters.field.ageDays") },
 ];
 
-/** plan 84: a word field only mentions; a pattern only where the field allows one (never the body) */
+/** plan 89: a word field only mentions; a pattern only where the field allows one (never the body) */
 const textOps = (field: Field) =>
   field === "text"
     ? [{ value: "contains", label: t("filters.op.mentions") }]
@@ -69,7 +69,7 @@ interface Draft {
   enabled: boolean;
   source: Filter["source"];
   rule: FilterRule;
-  /** plan 85: Terno made it; what it was when loaded (an edit of either makes it the user's) */
+  /** plan 90: Terno made it; what it was when loaded (an edit of either makes it the user's) */
   auto?: { name: string; rule: FilterRule };
 }
 
@@ -127,7 +127,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
           ))}
         </SelectContent>
       </Select>
-      {/* a word field only ever turns true (plan 84): it has no "not" */}
+      {/* a word field only ever turns true (plan 89): it has no "not" */}
       <button
         type="button"
         hidden={c.field === "text"}
@@ -321,11 +321,11 @@ export function FiltersDialog() {
     setSaving(true);
     try {
       const name = draft.name.trim() || describeCondition(rule.conditions[0]!);
-      // plan 85: an automatic filter the user changed is theirs now (turning it on or off isn't a change)
+      // plan 90: an automatic filter the user changed is theirs now (turning it on or off isn't a change)
       // compared as rules (key order, padding and case don't make an edit)
       const adopted = draft.auto && (draft.auto.name !== name || !sameRule(draft.auto.rule, valid.data));
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
-      // plan 84: applying runs in the background (its own progress snack); the dialog is free at once
+      // plan 89: applying runs in the background (its own progress snack); the dialog is free at once
       if (applyExisting) void applyFilter(f.id, f.name);
       else snack.success(t("filters.saved"));
       setDraft(draftOf(f));
@@ -358,7 +358,7 @@ export function FiltersDialog() {
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            {/* plan 85: the user's, then Terno's under a heading of their own */}
+            {/* plan 90: the user's, then Terno's under a heading of their own */}
             {[...filters.filter((f) => !f.auto), ...filters.filter((f) => f.auto)].map((f, i, all) => (
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("filters.group.auto")}</p>}

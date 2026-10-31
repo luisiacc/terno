@@ -56,7 +56,7 @@ test.describe("AI filters and learned filters", () => {
     await expect(page.getByTestId("filter-save")).toBeDisabled();
   });
 
-  test("plan 84: a pattern is checked as it's typed, saved, and applied in the background", async ({ app: page, server }) => {
+  test("plan 89: a pattern is checked as it's typed, saved, and applied in the background", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const read = () => db.get<{ c: number }>("SELECT count(*) c FROM threads WHERE unread_count = 0 AND last_from_email = 'uber.receipts@uber.com'")!.c;
     await page.getByTestId("open-filters").click();

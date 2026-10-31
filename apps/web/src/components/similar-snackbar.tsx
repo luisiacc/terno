@@ -21,14 +21,14 @@ interface Shown {
   targets: readonly number[];
   offers: SimilarOffers & { automated?: boolean };
   undo: Undo;
-  /** plan 86: the menu's "Only this email" runs no default */
+  /** plan 91: the menu's "Only this email" runs no default */
   automation?: "none";
 }
 
 /**
  * Plan 63: the plain "Archived · Undo" snack grows, in place (same entry, same
  * countdown), the offers for the rest: the same lines and order as the
- * category snackbar (plan 86). Spam marks everything from the sender by
+ * category snackbar (plan 91). Spam marks everything from the sender by
  * default, with "No, only …" last. Nothing worth offering leaves it as it is.
  */
 export function showSimilarSnackbar(snackId: string, shown: Shown): void {
@@ -38,7 +38,7 @@ export function showSimilarSnackbar(snackId: string, shown: Shown): void {
   growSnack(snackId, () => <SimilarSnackbar id={snackId} {...shown} />);
 }
 
-/** Plan 86: spam's default, everything from the one sender the targets share (spammers change subjects). */
+/** Plan 91: spam's default, everything from the one sender the targets share (spammers change subjects). */
 function defaultScope(shown: Shown): SimilarOffer | null {
   if (shown.action !== "spam" || shown.automation === "none") return null;
   return shown.offers.offers.find((o) => o.scope.kind === "sender") ?? null;

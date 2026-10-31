@@ -269,7 +269,7 @@ describe("categorizer: training hooks", () => {
         expect.objectContaining({
           name: "Uber Receipts · Tu recibo → Facturas",
           enabled: true,
-          // plan 85: Terno made it
+          // plan 90: Terno made it
           auto: true,
           rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }, { field: "subject", op: "equals", value: "Tu recibo" }], actions: [{ type: "addCategory", categoryId: cat }] },
         }),
@@ -306,7 +306,7 @@ describe("categorizer: training hooks", () => {
       await expect(client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "recibo" }, always: true })).rejects.toThrow();
     });
 
-    it("plan 85: the same mail filed elsewhere retargets Terno's filter (claims kept), never the user's; undo puts it back", async () => {
+    it("plan 90: the same mail filed elsewhere retargets Terno's filter (claims kept), never the user's; undo puts it back", async () => {
       const { backend, client, cat, ingest } = await world();
       ingest([{ subject: "Tu recibo" }]);
       const other = (await client.call("categories.create", { name: "Viajes", color: "cyan" })).id;
@@ -329,7 +329,7 @@ describe("categorizer: training hooks", () => {
       expect((await client.call("filters.list", {})).map((f) => [f.name, f.auto])).toEqual([["Mine", false], ["Uber → Viajes", true]]);
     });
 
-    it("plan 85: a disabled user filter stays off; a sender's filter here turns off their subject filter elsewhere", async () => {
+    it("plan 90: a disabled user filter stays off; a sender's filter here turns off their subject filter elsewhere", async () => {
       const { client, cat, ingest } = await world();
       ingest([{ subject: "Tu recibo 12" }]);
       const other = (await client.call("categories.create", { name: "Viajes", color: "cyan" })).id;
@@ -347,7 +347,7 @@ describe("categorizer: training hooks", () => {
       expect((await client.call("filters.list", {})).find((f) => f.id === r.filter!.id)).toMatchObject({ enabled: true });
     });
 
-    it("plan 85: setEnabled turns filters off at once, autoFor finds Terno's filter for filed mail, an edit meanwhile wins", async () => {
+    it("plan 90: setEnabled turns filters off at once, autoFor finds Terno's filter for filed mail, an edit meanwhile wins", async () => {
       const { client, cat, ingest } = await world();
       const [a, other] = ingest([{ subject: "Tu recibo" }, { from: { name: "Ana", email: "ana@acme.studio" } }]);
       await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" });
@@ -363,7 +363,7 @@ describe("categorizer: training hooks", () => {
       expect((await client.call("filters.list", {}))[0]).toMatchObject({ name: "Renamed", enabled: false, auto: true });
     });
 
-    it("plan 86: a move of the group is exclusive (other categories left), never touches what's already here, and undoes exactly; offers count what it would change", async () => {
+    it("plan 91: a move of the group is exclusive (other categories left), never touches what's already here, and undoes exactly; offers count what it would change", async () => {
       const { backend, client, cat, ingest } = await world();
       const db = sqlDb(backend.store);
       const lecturas = (await client.call("categories.create", { name: "Lecturas", color: "cyan" })).id;

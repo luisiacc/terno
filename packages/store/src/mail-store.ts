@@ -434,14 +434,14 @@ export interface MailStore {
     list(): Promise<Filter[]>;
     get(id: number): Promise<Filter | null>;
     save(f: FilterSave, now: number): Promise<Filter>;
-    /** plan 85: with `expect`, only while the filter is still exactly that (else CANCELLED) */
+    /** plan 90: with `expect`, only while the filter is still exactly that (else CANCELLED) */
     delete(id: number, expect?: FilterState): Promise<void>;
     preview(rule: FilterRule, now: number, limit: number): Promise<{ count: number; sample: ThreadSummary[] }>;
     /** message id bounds, for windowed matching */
     messageIdRange(): Promise<{ lo: number; hi: number } | null>;
     /** messages matching the rule in one id window */
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
-    /** plan 85: which of these messages (a few hundred at most) the rule matches */
+    /** plan 90: which of these messages (a few hundred at most) the rule matches */
     matchMessages(rule: FilterRule, now: number, messageIds: readonly number[]): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
@@ -557,9 +557,9 @@ export interface MailStore {
      * targets still in place join). Ids are threads in place, not starred or replied unless targeted.
      */
     resolvePage(scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): Promise<SimilarPage>;
-    /** plan 85: each thread's root inbound message (what sender and subject rules decide on) */
+    /** plan 90: each thread's root inbound message (what sender and subject rules decide on) */
     roots(threadIds: readonly number[]): Promise<number[]>;
-    /** plan 86: every thread is known not to be from a person (its facts computed: person = 0, never still unknown) */
+    /** plan 91: every thread is known not to be from a person (its facts computed: person = 0, never still unknown) */
     automated(threadIds: readonly number[]): Promise<boolean>;
     /** which of these threads the user values now (starred, or with a message they sent): a sweep re-reads it per slice */
     kept(threadIds: readonly number[]): Promise<number[]>;

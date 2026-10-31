@@ -98,7 +98,7 @@ it("plan 80: the Review list's Always offers (scopes, a subject and a sender cou
   expect(rare, `rare subject count, one sender: ${rare.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
 }, 300_000);
 
-it("plan 84: a numbered subject (any number) is counted and swept within a frame, a rare one too, for a sender that sent everything", async () => {
+it("plan 89: a numbered subject (any number) is counted and swept within a frame, a rare one too, for a sender that sent everything", async () => {
   const dcat = (await dominant.categories.create(`Perf numbered ${Date.now()}`, "amber")).id;
   // a subject with numbers nothing has: every message of the sender is tested (the text around the numbers first)
   const rare = { kind: "subject", email: "bot@notify.example", subject: "Factura 1 vencida hoy" } as const;

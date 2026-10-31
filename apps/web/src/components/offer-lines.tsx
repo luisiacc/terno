@@ -1,5 +1,5 @@
 /**
- * Plan 86: the lines every follow-up offer is drawn with, in the category
+ * Plan 91: the lines every follow-up offer is drawn with, in the category
  * snackbar and the similar one alike: `[n] label · detail …… + new mail  count`,
  * then, when a default ran, `[0] No, only …`.
  */

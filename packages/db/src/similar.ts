@@ -26,7 +26,7 @@ export function pageSql(scope: SimilarScope, action: SimilarAction, own: OwnAddr
     scope.kind === "domain" ? ["messages_domain", "m.from_domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
     : scope.kind === "list" ? ["messages_list", "m.list_id", normalizeText(scope.listId.trim())]
     : ["messages_from", "m.from_email", normalizeText(scope.email.trim())];
-  // what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding); with numbers, its key (plan 84)
+  // what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding); with numbers, its key (plan 89)
   const subject = scope.kind === "subject" ? subjectSql(scope.subject) : null;
   return {
     sql: `SELECT m.id, m.thread_id, ${subject?.sql ?? "1"} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AS match,

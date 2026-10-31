@@ -1,4 +1,4 @@
-/** Codex review of plans 85/86: SimilarFilters' journal under failures, races and reuse. */
+/** Codex review of plans 90/86: SimilarFilters' journal under failures, races and reuse. */
 import { categoryRule, type Filter, type FilterSave, type FilterState } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { describe, expect, it } from "vitest";

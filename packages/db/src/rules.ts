@@ -20,7 +20,7 @@ function textSql(op: TextOp, column: string, value: string, params: Param[]): st
       params.push(value, value);
       return `substr(${column}, -length(?)) = ?`;
     case "matches":
-      // plan 84: the same matcher as core's (checked pattern, cut input), as a function
+      // plan 89: the same matcher as core's (checked pattern, cut input), as a function
       params.push(value);
       return `terno_matches(?, ${column}) = 1`;
   }
@@ -63,7 +63,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
     case "listId":
       return textSql(c.op, "coalesce(m.list_id, '')", ruleValue(c.op, c.value), params);
     case "text": {
-      // plan 84: a search word's columns: subject, sender and recipients now, the body once it's complete (token semantics, like body)
+      // plan 89: a search word's columns: subject, sender and recipients now, the body once it's complete (token semantics, like body)
       const phrase = c.value.replaceAll('"', '""');
       return `(${ftsSql(`{subject from_text recipients} : "${phrase}"`, params, range, scoped)} OR (m.body_state = 'full' AND ${ftsSql(`body : "${phrase}"`, params, range, scoped)}))`;
     }

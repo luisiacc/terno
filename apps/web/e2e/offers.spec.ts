@@ -1,5 +1,5 @@
 /**
- * Plan 86: the same offers after every action, and the defaults. A drag of an
+ * Plan 91: the same offers after every action, and the defaults. A drag of an
  * automated sender's mail moves the rest with the same sender and subject
  * (numbers standing for any number) and files their new mail; "No, only move
  * this email" (0) takes that back and keeps the drag; z takes back all of it.
@@ -60,7 +60,7 @@ function group(server: DevServer, categoryId: number) {
 
 const catId = (server: DevServer, name: string) => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
-test.describe("plan 86: defaults and the same offers everywhere", { tag: "@design" }, () => {
+test.describe("plan 91: defaults and the same offers everywhere", { tag: "@design" }, () => {
   test("a drag of bulk mail moves its sender + subject group and files their new mail; 0 keeps only the drag; z undoes the drag", async ({ app: page, server }) => {
     const facturas = catId(server, "Facturas");
     const g = group(server, facturas);

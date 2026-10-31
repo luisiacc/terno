@@ -14,7 +14,7 @@ export type SimilarAction = DestructiveAction;
 
 export type SimilarScope =
   | { kind: "sender"; email: string }
-  /** the same sender and this subject, any numbers in it standing for any number (plan 84) */
+  /** the same sender and this subject, any numbers in it standing for any number (plan 89) */
   | { kind: "subject"; email: string; subject: string }
   | { kind: "domain"; domain: string }
   | { kind: "list"; listId: string };
@@ -55,7 +55,7 @@ export function similarScopes(roots: readonly { sender: string; subject: string;
   };
   const email = shared((r) => r.sender || null);
   // a filter value is trimmed and non-empty: only a subject that is already so means the same in the rule
-  // compared by key: "Tu pedido 43790" and "Tu pedido 3052" are one subject (plan 84)
+  // compared by key: "Tu pedido 43790" and "Tu pedido 3052" are one subject (plan 89)
   const subject = email ? shared((r) => (r.subject && r.subject === r.subject.trim() && r.subject.length <= RULE_VALUE_MAX ? subjectIdentity(normalizeText(r.subject)) : null)) : null;
   const domain = shared((r) => (r.domain && !CONSUMER_DOMAINS.has(r.domain) ? r.domain : null));
   const list = shared((r) => r.list);

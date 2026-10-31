@@ -23,7 +23,7 @@ const LIFETIME_MS = 10_000;
 
 interface Controls {
   action(n: number): void;
-  /** plan 86: 0, "No, only …" (when a default ran) */
+  /** plan 91: 0, "No, only …" (when a default ran) */
   only?(): void;
   undo(): void;
   close(): void;
@@ -42,7 +42,7 @@ export function topicHelp(category: string, words: readonly string[], custom: st
   const text = custom?.trim();
   if (text) return t("category.topicHelpQuery", { query: text, category });
   const list = formatList(words.map((word) => t("category.topicWord", { word })));
-  // plan 84: checked words are a filter too (+ new mail), from the sender when "Only from" is on
+  // plan 89: checked words are a filter too (+ new mail), from the sender when "Only from" is on
   if (words.length) return from ? t("category.topicHelpFrom", { words: list, category, name: from }) : t("category.topicHelp", { words: list, category });
   return t("category.topicHelpEmpty", { category });
 }
@@ -51,7 +51,7 @@ function titleOf(filed: Filed, name: string): string {
   return t(filed.moved ? "category.filed.moved" : "category.filed.added", { count: filed.threadIds.length, category: name });
 }
 
-/** Plan 86: where a move's default (the same sender and subject, moved too) runs: a drag and "Move to…", nothing additive. */
+/** Plan 91: where a move's default (the same sender and subject, moved too) runs: a drag and "Move to…", nothing additive. */
 const DEFAULT_SOURCES = new Set<CategorizeSource>(["dnd", "picker"]);
 
 let filings = 0;
@@ -98,7 +98,7 @@ function undoScope(categoryId: number, batchId: number, name: string): void {
   );
 }
 
-/** Plan 86: the move's default, the same sender and subject moved too (and a filter for their new mail). */
+/** Plan 91: the move's default, the same sender and subject moved too (and a filter for their new mail). */
 interface Default {
   status: "running" | "done" | "failed";
   /** the conversations it moved besides the user's own */
@@ -134,7 +134,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   const [offers, setOffers] = useState<(SimilarOffers & { automated: boolean }) | null>(null);
   const [topicCount, setTopicCount] = useState<Count | "loading" | undefined>(undefined);
   const [terms, setTerms] = useState<Set<string>>(new Set());
-  /** plan 84: the words only from this sender (on while there is one) */
+  /** plan 89: the words only from this sender (on while there is one) */
   const [onlyFrom, setOnlyFrom] = useState(true);
   /** "More…": anything in the search language ("factura uber from:@uber.com") */
   const [custom, setCustom] = useState<string | null>(null);
@@ -179,7 +179,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   }, [filed]);
 
   /**
-   * Plan 86: a drag or "Move to…" of an automated sender's mail moves the
+   * Plan 91: a drag or "Move to…" of an automated sender's mail moves the
    * rest with the same sender and subject too, and files their new mail. Only
    * while this is still the latest thing the user did (its undo is z's).
    */
@@ -234,7 +234,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   };
 
   /**
-   * Plan 85: a move took mail out of categories where Terno's filters may
+   * Plan 90: a move took mail out of categories where Terno's filters may
    * still file mail like it: a line offers to stop them, once the default (if
    * any) settled; not for the category whose filter it just retargeted here.
    */
@@ -258,7 +258,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
     if (!qa) return null;
     const text = custom?.trim();
     if (text) return { kind: "query", query: text };
-    // in the offer's order; a filter as well as a search (plan 84)
+    // in the offer's order; a filter as well as a search (plan 89)
     if (terms.size) return { kind: "words", terms: qa.terms.map((x) => x.term).filter((x) => terms.has(x)), email: onlyFrom && qa.sender ? qa.sender.email : null };
     return null;
   })();
@@ -322,7 +322,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   /**
    * Every line files now and catches future mail (plans 81, 84), even with
    * nothing left now; a More… search only files what's there. After a move
-   * it moves (plan 86); Undo then takes back the newest first.
+   * it moves (plan 91); Undo then takes back the newest first.
    */
   const run = (l: Line | undefined) => {
     // not while "only" takes the default back: the chain this would join is being retired (Codex review)
@@ -529,7 +529,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
                           </button>
                         ))}
                         {qa.sender && (
-                          // plan 84: the words from this sender only, or from anyone
+                          // plan 89: the words from this sender only, or from anyone
                           <button
                             type="button"
                             data-testid="snackbar-only-from"

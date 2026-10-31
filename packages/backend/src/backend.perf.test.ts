@@ -87,7 +87,7 @@ it("under load: interactive RPCs stay responsive during a 15k-message import + b
     name: "bulk",
     enabled: false,
     source: "manual",
-    // plan 84: a pattern (a function per row) and a word (FTS) in the same gate
+    // plan 89: a pattern (a function per row) and a word (FTS) in the same gate
     rule: {
       match: "any",
       conditions: [

@@ -41,7 +41,7 @@ function conditionText(c: Condition, accountEmail: (id: number) => string): stri
     const key = c.op === "gt" ? (not ? "filters.cond.notOlderThan" : "filters.cond.olderThan") : not ? "filters.cond.notNewerThan" : "filters.cond.newerThan";
     return t(key, { count: c.value });
   }
-  // plan 84: a word "mentions"; a generated subject pattern reads as its template ("Tu pedido # está en camino")
+  // plan 89: a word "mentions"; a generated subject pattern reads as its template ("Tu pedido # está en camino")
   if (c.field === "text") return t("filters.cond.mentions", { value: c.value });
   const template = c.op === "matches" ? patternTemplate(c.value) : null;
   if (template !== null) return t(not ? "filters.cond.notLike" : "filters.cond.like", { field: t(FIELD[c.field]), template });
@@ -72,7 +72,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{filter.name}</p>
         <p className="truncate text-xs text-muted-foreground">
-          {/* plan 85: Terno's own say so, not how the rule was written */}
+          {/* plan 90: Terno's own say so, not how the rule was written */}
           {t(filter.auto ? "filters.source.auto" : SOURCE[filter.source])} · {t("filters.hits", { count: filter.hits })} · {summary}
         </p>
       </div>
@@ -116,7 +116,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
   );
 }
 
-/** Plan 85: Terno's filters off at once; the undo token that turns back on exactly those (an edit meanwhile wins). */
+/** Plan 90: Terno's filters off at once; the undo token that turns back on exactly those (an edit meanwhile wins). */
 async function turnAllOff(filters: Filter[]): Promise<number | null> {
   try {
     const r = await client.call("filters.setEnabled", { ids: filters.filter((f) => f.enabled).map((f) => f.id), enabled: false });
@@ -130,7 +130,7 @@ async function turnAllOff(filters: Filter[]): Promise<number | null> {
 }
 
 /**
- * Ajustes → Filtros: the user's filters, then (plan 85) the ones Terno made
+ * Ajustes → Filtros: the user's filters, then (plan 90) the ones Terno made
  * when they sorted mail; each on or off, edited in the builder (an edited
  * automatic one becomes theirs), removed with a confirmation.
  */

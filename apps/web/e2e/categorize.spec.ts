@@ -36,7 +36,7 @@ function uberSetup(server: DevServer) {
   return { db, facturas, target, outside };
 }
 
-/** An offer line's key: its number, which follows the lines shown (plan 86). */
+/** An offer line's key: its number, which follows the lines shown (plan 91). */
 const keyOf = async (line: Locator) => (await line.locator("kbd").first().textContent())!;
 
 async function fileWithPicker(page: Page, categoryId: number) {
@@ -65,7 +65,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-sender")).toHaveAccessibleDescription("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
     await snack.getByTestId("snackbar-sender").hover();
     await expect(page.getByTestId("snackbar-sender-help")).toHaveText("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
-    // plan 86: each line's key is its place (the same sender and subject comes first when it adds anything)
+    // plan 91: each line's key is its place (the same sender and subject comes first when it adds anything)
     await page.keyboard.press(await keyOf(snack.getByTestId("snackbar-sender")));
     await expect(snack).toHaveCount(0);
     const done = toast(page, `${rest} added to Facturas, future mail too`);
@@ -74,13 +74,13 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     expect(filters()).toEqual([{ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] }]);
     await expect(done.getByTestId("snack-action")).toHaveAccessibleName("Undo, and stop adding future mail");
     await done.getByTestId("snack-action").click();
-    // plan 86: one Undo takes back the newest first, then the filing it followed: everything is as before
+    // plan 91: one Undo takes back the newest first, then the filing it followed: everything is as before
     await expect.poll(outside).toBe(rest + 1);
     await expect.poll(() => filters().length).toBe(0);
     expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas) ?? null).toBeNull();
   });
 
-  test("plan 86: z takes back the sender line, its filter, then the filing that opened the snackbar", async ({ app: page, server }) => {
+  test("plan 91: z takes back the sender line, its filter, then the filing that opened the snackbar", async ({ app: page, server }) => {
     const { db, facturas, target, outside } = uberSetup(server);
     const rest = outside() - 1;
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -162,7 +162,7 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
         lecturas,
       )!.c;
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${githubOutside()}`);
-    // plan 81: the hidden domain line has no key: the next number names whatever line is there (plan 86: they follow the lines)
+    // plan 81: the hidden domain line has no key: the next number names whatever line is there (plan 91: they follow the lines)
     const keys = await snack.getByTestId("snackbar-offers").locator("kbd").allTextContents();
     expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
     expect(db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%fromDomain%github.com%'")!.c).toBe(0);
@@ -210,7 +210,7 @@ test.describe("everything from a sender, out of a category (plan 77)", () => {
   });
 });
 
-test.describe("Terno's filters (plan 85)", () => {
+test.describe("Terno's filters (plan 90)", () => {
   test("taking mail out of a category its filter files offers to stop filing; Undo keeps it filing", async ({ app: page, server }) => {
     const { db, facturas, target } = uberSetup(server);
     await server.backend.server.invoke("categorize.apply", { categoryId: facturas, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" }, { clientId: "t", origin: "dev" });
@@ -237,7 +237,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
     await expect(pressed).toHaveCount(2);
     const selected = await pressed.allTextContents();
-    // plan 84: the words come only from the sender at first; from anyone once that's off
+    // plan 89: the words come only from the sender at first; from anyone once that's off
     const onlyFrom = snack.getByTestId("snackbar-only-from");
     await expect(onlyFrom).toHaveAttribute("aria-pressed", "true");
     const fromSender = await countOf(server, facturas, `${termsQuery(selected, "Facturas")} from:uber.receipts@uber.com`);
@@ -266,9 +266,9 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id);
     await expect(page.getByTestId("snackbar-topic-count")).toBeVisible();
-    // the words line's key is whatever number its line has (plan 86)
+    // the words line's key is whatever number its line has (plan 91)
     await page.keyboard.press((await page.getByTestId("snackbar-topic-apply").locator("kbd").textContent())!);
-    // plan 84: checked words file now and become a filter for new mail (from the sender: "Only from" is on again)
+    // plan 89: checked words file now and become a filter for new mail (from the sender: "Only from" is on again)
     await expect(toast(page, /\d+ added to Viajes, future mail too/)).toBeVisible();
     const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     const filters = db.all<{ rule_json: string }>("SELECT rule_json FROM filters");
@@ -303,7 +303,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     const pressed = snack.locator("[data-testid=snackbar-term][aria-pressed=true]");
     const [a, b] = await pressed.allTextContents();
     const words = `“${a}” and “${b}”`;
-    // plan 84: from the sender at first, and a filter too
+    // plan 89: from the sender at first, and a filter too
     await expect(apply).toHaveAccessibleDescription(`Adds every conversation from Uber Receipts that mentions ${words} to Facturas, and their new mail that does too. Click a word to add or remove it.`);
     await snack.getByTestId("snackbar-only-from").click();
     await expect(apply).toHaveAccessibleDescription(new RegExp(`mentions ${words} to Facturas`));

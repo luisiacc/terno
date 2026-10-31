@@ -635,7 +635,7 @@ describe("filters on incoming mail", () => {
   });
 });
 
-describe("pattern and word filters (plan 84)", () => {
+describe("pattern and word filters (plan 89)", () => {
   it("applies in the background with progress, one apply per filter at a time", async () => {
     const { backend, client, accountId } = setup();
     await backend.ingestSliced(Array.from({ length: 40 }, () => incoming(accountId)));

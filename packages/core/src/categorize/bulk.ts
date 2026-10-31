@@ -12,7 +12,7 @@ export type CategorizeScope =
   | { kind: "subject"; email: string; subject: string }
   | { kind: "domain"; domain: string }
   | { kind: "list"; listId: string }
-  /** plan 84: conversations that mention every word (as a search word does), from one sender or anyone; a filter can say it */
+  /** plan 89: conversations that mention every word (as a search word does), from one sender or anyone; a filter can say it */
   | { kind: "words"; terms: string[]; email: string | null }
   /** search language, e.g. `"factura" "uber" from:@uber.com` */
   | { kind: "query"; query: string };
@@ -65,7 +65,7 @@ export const resolvable = <S extends CategorizeScope>(scope: S): Exclude<S, { ki
 
 /** Plan 80: the scopes "Always file here" offers, and the filter that does it to future mail. */
 export type AlwaysScope = Extract<CategorizeScope, { kind: "sender" | "subject" }>;
-/** Plan 81: every scope a filter can say (the snackbar's 1–3 file now and catch future mail); plan 84: words too, a search can't. */
+/** Plan 81: every scope a filter can say (the snackbar's 1–3 file now and catch future mail); plan 89: words too, a search can't. */
 export type FilterableScope = Extract<CategorizeScope, { kind: "sender" | "subject" | "domain" | "list" | "words" }>;
 
 export const isFilterable = (scope: CategorizeScope): scope is FilterableScope => scope.kind !== "query";

@@ -1355,7 +1355,7 @@ export class IdbMailStore implements MailStore {
           const message = messages.get(id);
           return message?.body_state === "full" && !message.is_trash;
         }) : candidates;
-        // a text rule (plan 84) reads the complete bodies only
+        // a text rule (plan 89) reads the complete bodies only
         const full = readsBody && !needsBody ? slice.filter((id) => messages.get(id)?.body_state === "full") : slice;
         if (readsBody && full.length) await this.readBodies(full);
         const m = findRuleMatches(this.c, rule, now, slice);
@@ -1377,7 +1377,7 @@ export class IdbMailStore implements MailStore {
     delete: (id, expect) =>
       this.command(() => {
         const current = expect ? getFilter(this.c, id) : null;
-        // plan 85: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
+        // plan 90: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
         if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         T(this.c, "filters").delete(id);
       }),

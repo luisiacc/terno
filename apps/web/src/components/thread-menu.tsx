@@ -278,7 +278,7 @@ function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[];
 
 const SIMILAR_LABEL = { archive: "similar.archive", trash: "similar.trash", spam: "similar.spam" } as const;
 
-/** "Archive similar ▸" / "Delete similar ▸" / "Mark similar as spam ▸": its offers are read when it opens (plan 86: the snackbar's lines, in its order). */
+/** "Archive similar ▸" / "Delete similar ▸" / "Mark similar as spam ▸": its offers are read when it opens (plan 91: the snackbar's lines, in its order). */
 function SimilarSub({ action, ids }: { action: SimilarAction; ids: number[] }) {
   /** opened from the keyboard: the first offer takes focus once counted (a hover leaves focus alone) */
   const byKey = useRef(false);
@@ -321,7 +321,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
   const shown = offers ? orderOffers(visibleOffers(action, offers.offers)) : [];
   return (
     <>
-      {/* plan 86: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
+      {/* plan 91: the plain action first, said as plainly as the snackbar's "No, only …" (no default, no sweep) */}
       <ContextMenuItem ref={first} data-testid="menu-similar-only" onClick={() => void act(action, ids, { automation: "none" })}>
         <span className="min-w-0 flex-1 truncate">{t(`offers.onlyThis.${action}`, { count: ids.length })}</span>
       </ContextMenuItem>
@@ -592,7 +592,7 @@ function MenuItems() {
 
 /**
  * A scope's menu label; a named sender carries its address, muted, so same-named senders tell apart; a
- * subject its template (plan 86: "Same sender and subject · Tu pedido # está en camino", as the snackbar says it).
+ * subject its template (plan 91: "Same sender and subject · Tu pedido # está en camino", as the snackbar says it).
  */
 function ScopeLabel({ scope, senderName }: { scope: SimilarScope; senderName: string | null }) {
   const email = scope.kind === "sender" && senderName && senderName !== scope.email ? scope.email : null;

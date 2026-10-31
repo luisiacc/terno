@@ -28,7 +28,7 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
   test("archive: the bar sits inside the list column, compact, over neither the sidebar nor the reader", async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
-    // plan 63: the rest from the same sender etc. grow under it; plan 86: one compact line each, as the category snackbar's
+    // plan 63: the rest from the same sender etc. grow under it; plan 91: one compact line each, as the category snackbar's
     await expect(dock(page).getByTestId("similar-snackbar")).toBeVisible();
     const bar = (await dock(page).boundingBox())!;
     const list = (await page.getByTestId("thread-list").boundingBox())!;

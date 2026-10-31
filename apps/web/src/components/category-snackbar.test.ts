@@ -16,7 +16,7 @@ describe("topicHelp: what 4 files, in words (plan 81)", () => {
     expect(topicHelp("Facturas", ["api", "pagos"], null)).toBe(
       "Adds every conversation that mentions “api” and “pagos” to Facturas, from all your mail, and new mail that does too. Click a word to add or remove it.",
     );
-    // plan 84: "Only from" narrows it to the sender, and their new mail
+    // plan 89: "Only from" narrows it to the sender, and their new mail
     expect(topicHelp("Facturas", ["api"], null, "Mercado Libre")).toBe(
       "Adds every conversation from Mercado Libre that mentions “api” to Facturas, and their new mail that does too. Click a word to add or remove it.",
     );

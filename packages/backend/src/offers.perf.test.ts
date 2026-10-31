@@ -1,5 +1,5 @@
 /**
- * Plans 84–86 on the 50k-message perf mailbox, with one sender that sent a
+ * Plans 89–91 on the 50k-message perf mailbox, with one sender that sent a
  * third of it under a numbered subject ("Tu pedido N está en camino") and
  * another third under other subjects.
  *
@@ -62,7 +62,7 @@ beforeAll(async () => {
 }, 600_000);
 
 afterAll(async () => {
-  report("offers.json", "Offers and automatic filters (plans 84–86)", meta, stats);
+  report("offers.json", "Offers and automatic filters (plans 89–91)", meta, stats);
   await backend.stop();
   rmSync(dir, { recursive: true, force: true });
 });

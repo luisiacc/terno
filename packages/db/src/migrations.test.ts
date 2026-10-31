@@ -605,18 +605,18 @@ it("upgrades v27 pending and accepted recipient receipts conservatively", () => 
   expect(db.all("SELECT opId,hasRejected FROM recipient_receipts ORDER BY opId")).toEqual([{ opId: "accepted", hasRejected: 1 }, { opId: "pending", hasRejected: 0 }]);
 });
 
-describe("migration v34: automatic filters (plan 85)", () => {
+describe("migration v35: automatic filters (plan 90)", () => {
   it("marks only SimilarFilters' filters (manual with a learned key) as Terno's; a new one is the user's unless said", () => {
     const db = v2();
-    // every step up to v33, then the filters an older app made
-    for (const m of MIGRATIONS.filter((m) => m.version > 2 && m.version <= 33)) db.exec(m.sql);
-    db.exec("PRAGMA user_version = 33");
+    // every step up to v34, then the filters an older app made
+    for (const m of MIGRATIONS.filter((m) => m.version > 2 && m.version <= 34)) db.exec(m.sql);
+    db.exec("PRAGMA user_version = 34");
     const rule = JSON.stringify({ match: "all", conditions: [{ field: "from", op: "equals", value: "a@b.com" }], actions: [{ type: "spam" }] });
     const insert = (name: string, source: string, key: string | null) => db.run("INSERT INTO filters (name, enabled, source, rule_json, learned_key, created_at) VALUES (?, 1, ?, ?, ?, 0)", name, source, rule, key);
     insert("spam sweep", "manual", "sender:a@b.com:spam");
     insert("mine", "manual", null);
     insert("learned", "learned", "sender:a@b.com:archive");
-    expect(migrate(db)).toEqual({ from: 33, to: SCHEMA_VERSION });
+    expect(migrate(db)).toEqual({ from: 34, to: SCHEMA_VERSION });
     expect(db.all<{ name: string; auto: number }>("SELECT name, auto FROM filters ORDER BY id")).toEqual([
       { name: "spam sweep", auto: 1 },
       { name: "mine", auto: 0 },

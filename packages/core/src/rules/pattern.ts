@@ -1,5 +1,5 @@
 /**
- * Plan 84: the `matches` op (a regular expression over a field's normalized
+ * Plan 89: the `matches` op (a regular expression over a field's normalized
  * text) and the subject keys that let "Tu pedido 43790" and "Tu pedido 3052"
  * be one subject. Patterns run on a linear-time matcher (./regex), so no
  * pattern can stall the backend; one that doesn't parse is refused on save

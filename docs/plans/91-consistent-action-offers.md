@@ -1,4 +1,4 @@
-# 86: The same follow-up offers for every action, and a default for bulk mail
+# 91: The same follow-up offers for every action, and a default for bulk mail
 
 ## Request (verbatim)
 
@@ -11,7 +11,7 @@ The adjustments the user agreed to:
 2. Spam defaults to the whole sender (spammers vary subjects); sender + subject is the next option.
 3. "No, only move this email" undoes exactly the extra conversations and the filter, and keeps the dragged ones where they were put.
 4. Several conversations from different senders get no default; a shared sender and subject still does.
-5. Automatic filters are reused, not piled up (plan 85).
+5. Automatic filters are reused, not piled up (plan 90).
 
 Trash behaves like archive (only the email by default); the user didn't object to that proposal.
 
@@ -33,7 +33,7 @@ Trash behaves like archive (only the email by default); the user didn't object t
 
 The **offer list** is `orderOffers()` in `lib/offers.ts`. It's shared by both snackbars and every submenu, and always runs in this order:
 
-1. **Same sender and subject:** "Same sender and subject" plus the subject's `#` template, muted (plan 84).
+1. **Same sender and subject:** "Same sender and subject" plus the subject's `#` template, muted (plan 89).
 2. **Everything from <name>**
 3. **Everything from @domain**
 4. **This mailing list**
@@ -61,7 +61,7 @@ The **number keys** follow the visible lines (1…n). `0` is "No, only …" (bel
 
 **When the default runs:**
 - The default is computed with the offers (one call: `offers.forAction`, below) right after the action itself succeeds. It runs only while the action's undo is still `ready`; a `z` pressed first means it never starts.
-- **For a move:** `categorize.apply { scope: subject, always: true, move: true }` moves the rest of the group (exclusive, journaled like a drag) and ensures the auto filter (plan 85: reused or retargeted).
+- **For a move:** `categorize.apply { scope: subject, always: true, move: true }` moves the rest of the group (exclusive, journaled like a drag) and ensures the auto filter (plan 90: reused or retargeted).
 - **For spam:** `similar.apply { scope: sender }` sweeps the rest and makes the filter, as the sender chip does today.
 
 ### 3. What the snackbar says
@@ -153,14 +153,14 @@ The note under it reads "Future ones too" (`offers.default.future`), and "Future
 2. **The menu's "Only this email"** runs `act(action, ids, { automation: "none" })`: no default, no offers.
 3. **Narrower after a default, the default is replaced.** It's undone (sweep, and its filter if it made one), then the chosen scope runs. "Sender + subject" after the spam sender default is one case. Wider offers (domain, list, and sender after a subject default) run on top; for categories, the default's own filter is taken back first, so the wider filter replaces it. A filter that existed before the action is never touched, and the line notes it.
 4. **Stale defaults:** each action gets a generation. The default starts only if its snack is still the dock's current snack and its undo is still the global one.
-5. **Bounded counts (accepted, measured):** category counts keep their existing per-scope cost. `categorize.perf.test.ts` measures a dominant sender (plan 84, revision 9).
+5. **Bounded counts (accepted, measured):** category counts keep their existing per-scope cost. `categorize.perf.test.ts` measures a dominant sender (plan 89, revision 9).
 6. **Counts:** offers report `additional`, the eligible threads beyond the targets. The default runs when `additional ≥ 1`, and titles use the counts the mutation actually returned. The copy says "emails", as the user worded it, in both en and es.
 7. **Move scopes:** with `move: true`, the resolve excludes the targets and the threads that are only in the destination already. Threads in the destination plus another category are included: they leave the other one.
 8. **Move batches:** `categorize.apply move` keeps the batch id from `beginMove`, returns it on any failure in its details, and reports what it changed from the move journal (`moveOutcome`).
-9. **Overlapping automatic filters:** an auto category filter for a sender scope disables (with undo) that sender's auto subject filters that file elsewhere. An exact match is retargeted (plan 85). A subject filter under a broader sender filter to another category stays additive; that case is documented as out of scope.
+9. **Overlapping automatic filters:** an auto category filter for a sender scope disables (with undo) that sender's auto subject filters that file elsewhere. An exact match is retargeted (plan 90). A subject filter under a broader sender filter to another category stays additive; that case is documented as out of scope.
 10. **Mail the filter catches during the undo window:** like plans 80 and 81, mail the new filter files while the snackbar is up (seconds) stays filed after "only" or Undo. The filter is undone first, so this window is as short as the undo itself. It is documented, not journaled.
 11. **Screen readers:** the default's completion and "only" update the snack's spoken message (`patchSnack` with `spoken`), so screen readers hear "Moved 47 emails…". Progress stays silent.
-12. **Order of work:** plans 84 and 85 are implemented first. The defaults are gated on their cross-store tests.
+12. **Order of work:** plans 89 and 85 are implemented first. The defaults are gated on their cross-store tests.
 
 ## What the Codex code review changed
 

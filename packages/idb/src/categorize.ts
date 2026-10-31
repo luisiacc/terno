@@ -875,7 +875,7 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
       rows = messages.by("from", normalizeText(scope.email.trim()));
       break;
     case "subject": {
-      // what the filter's rule compares: the normalized subject, or its key with numbers (plan 84; plan 63's similar scope does the same)
+      // what the filter's rule compares: the normalized subject, or its key with numbers (plan 89; plan 63's similar scope does the same)
       const same = subjectMatcher(scope.subject);
       rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => same(m.subject_norm));
       break;

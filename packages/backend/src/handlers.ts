@@ -201,7 +201,7 @@ export function createHandlers(b: Backend): Handlers {
     }
   };
   const similarFilters = new SimilarFilters(store, () => b.now());
-  /** filters being applied to existing mail (plan 84: one job each) */
+  /** filters being applied to existing mail (plan 89: one job each) */
   const applying = new Set<number>();
   let resolveQueue: Promise<unknown> = Promise.resolve();
   const resolving = <T,>(work: () => Promise<T>): Promise<T> => {
@@ -486,15 +486,15 @@ export function createHandlers(b: Backend): Handlers {
       const addedBy = ctx.origin === "mcp" ? "agent" : "bulk";
       let added = 0;
       let batchId = 0;
-      // plan 86: a move's batch is journaled from its start: a failure partway still names it
+      // plan 91: a move's batch is journaled from its start: a failure partway still names it
       let moving = false;
       // from here a failure still names the filter made above (plan 81: resolving or the batch failing stranded it)
       try {
         // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
-        // never what's already in the category (plan 86, review): a thread deliberately in it and another keeps both
+        // never what's already in the category (plan 91, review): a thread deliberately in it and another keeps both
         const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
         if (move) {
-          // plan 86: an exclusive move of the whole set, like a drag (other categories left, every row journaled)
+          // plan 91: an exclusive move of the whole set, like a drag (other categories left, every row journaled)
           if (ids.length === 0) return { batchId: null, added: 0, filter, filterFailed };
           ({ batchId } = await store.categories.beginMove({ to: categoryId, threadIds: ids, addedBy, now: b.now(), source: "snackbar" }));
           moving = true;
@@ -518,7 +518,7 @@ export function createHandlers(b: Backend): Handlers {
       return { batchId: added ? batchId : null, added, filter, filterFailed };
     },
     /**
-     * Plan 86: what one action offers next, the same everywhere (snackbars, menus): the scopes the targets share,
+     * Plan 91: what one action offers next, the same everywhere (snackbars, menus): the scopes the targets share,
      * each with what it would change now, and whether every target came from a sender that isn't a person.
      */
     "offers.forAction": async ({ threadIds, action }) => {
@@ -614,7 +614,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "filters.preview": ({ rule, limit }) => store.filters.preview(rule, b.now(), limit),
     "filters.apply": async ({ id, jobId }) => {
-      // plan 84: one apply of a filter at a time (taken before the first await, released whatever happens)
+      // plan 89: one apply of a filter at a time (taken before the first await, released whatever happens)
       if (applying.has(id)) throw new RpcError("BAD_REQUEST", L("errors.filterApplying"));
       applying.add(id);
       let applied = 0;

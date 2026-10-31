@@ -161,7 +161,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "3", command: "snackbar.action3", context: "snackbar" },
   { keys: "4", command: "snackbar.action4", context: "snackbar" },
   { keys: "5", command: "snackbar.action5", context: "snackbar" },
-  // plan 86: "No, only …" after a default
+  // plan 91: "No, only …" after a default
   { keys: "0", command: "snackbar.only", context: "snackbar" },
   { keys: "z", command: "snackbar.undo", context: "snackbar" },
   { keys: "escape", command: "snackbar.close", context: "snackbar" },

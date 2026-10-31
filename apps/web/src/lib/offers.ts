@@ -1,5 +1,5 @@
 /**
- * Plan 86: what every action offers next, the same everywhere (the category
+ * Plan 91: what every action offers next, the same everywhere (the category
  * snackbar, the similar snackbar, the thread menu's submenus): one order,
  * one set of labels, one way to chain undos.
  */

@@ -1417,7 +1417,7 @@ export function reorderCategories(c: Ctx, ids: readonly number[]): Category[] {
   return listCategories(c);
 }
 
-// plan 85: a record written before `auto` existed is automatic when SimilarFilters made it (manual with a learned key), as SQL's v34 backfill says
+// plan 90: a record written before `auto` existed is automatic when SimilarFilters made it (manual with a learned key), as SQL's v35 backfill says
 const autoOf = (r: R): boolean => (r.auto === undefined ? r.source === "manual" && r.learned_key != null : r.auto === 1);
 const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, auto: autoOf(r), rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at });
 
@@ -1436,7 +1436,7 @@ export function saveFilter(c: Ctx, f: FilterSave, now: number): Filter {
     const ruleJson = JSON.stringify(f.rule);
     if (f.id !== undefined) {
       const previous = filters.get(f.id);
-      // plan 85: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
+      // plan 90: an automatic write only lands on the filter it read (an edit or a deletion meanwhile wins)
       if (f.expect && (!previous || !sameFilterState(filterState(toFilter(previous)), f.expect))) throw new RpcError("CANCELLED", L("errors.filterChanged"));
       if (!previous) return getFilter(c, f.id)!;
       if (previous.rule_json !== ruleJson && !f.keepApplications) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
@@ -1478,7 +1478,7 @@ export { ruleNeedsBody, ruleReadsBody } from "@terno/core";
 export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageIds: readonly number[]): { messageIds: number[]; threadIds: number[] } {
   const messages = T(c, "messages");
   const needsBody = ruleNeedsBody(rule);
-  // a text rule (plan 84) reads a complete body, and decides an incomplete one on its subject
+  // a text rule (plan 89) reads a complete body, and decides an incomplete one on its subject
   const readsBody = ruleReadsBody(rule);
   const ids: number[] = [];
   const threads = new Set<number>();

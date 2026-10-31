@@ -1,4 +1,4 @@
-# 85: Your filters and automatic filters
+# 90: Your filters and automatic filters
 
 ## Request (verbatim)
 
@@ -19,7 +19,7 @@ Agreed before this plan (point 5 of the review of the proposal):
 ### 1. An `auto` flag
 
 - **Storage:** `Filter` gains `auto: boolean`.
-  - **SQL:** migration v34 `ALTER TABLE filters ADD COLUMN auto INTEGER NOT NULL DEFAULT 0`. The `source` CHECK is untouched, so the table isn't rebuilt and its triggers and foreign keys stay as they are.
+  - **SQL:** migration v35 `ALTER TABLE filters ADD COLUMN auto INTEGER NOT NULL DEFAULT 0`. The `source` CHECK is untouched, so the table isn't rebuilt and its triggers and foreign keys stay as they are.
   - **IDB:** an optional field, read as `false` when absent.
 - **Existing filters:** the migration marks `source = 'manual' AND learned_key IS NOT NULL` as auto. Only `SimilarFilters.ensure` ever wrote that combination (learning writes `learned`). IDB derives the same rule when the field is absent.
 - **Saving:** `filters.save` takes an optional `auto`; the default is `false`, so anything the user saves is theirs. `SimilarFilters.ensureRule` saves `auto: true`.
@@ -75,13 +75,13 @@ Agreed before this plan (point 5 of the review of the proposal):
 
 ## Revisions after the Codex review (plan)
 
-1. **The backfill is partial, on purpose:** only manual filters with a `learned_key` are marked auto. Category and subject filters made before v34 stay under "Your filters", because their origin can't be proven.
+1. **The backfill is partial, on purpose:** only manual filters with a `learned_key` are marked auto. Category and subject filters made before v35 stay under "Your filters", because their origin can't be proven.
 2. **`auto` on save:** it defaults to `false` only when a filter is inserted. An update keeps the stored value unless `auto` is passed. The builder passes `auto: false` only when the name or the rule changed.
 3. **Reuse rules:** `ensureRule` reuses an identical enabled filter of either owner without changing it. It re-enables only an identical disabled **auto** filter; a disabled user filter is never touched (a new auto one is made). An exact match wins over a retarget candidate, and the newest candidate is retargeted.
 4. **Undo journal variants:** the undo journal gains `retargeted` and `disabled` entries. Each holds the full prior state (name, enabled, rule, auto) and the state it left. It restores only when the current state still equals what it left.
 5. **Claims survive a retarget:** a retarget keeps the filter's `filter_applications` (`keepApplications`). Old mail is never re-filed into the new target, and an undo finds the claims as they were. A user's edit still clears them, as today.
 6. **Race-safe writes:** every automatic write is compare-and-set. `filters.save` takes `expect` (name, enabled, rule, auto), checked in the store's transaction, and a mismatch is CANCELLED. Settings edits made meanwhile win.
-7. **Rule comparison** is op-aware (plan 84, revision 2).
+7. **Rule comparison** is op-aware (plan 89, revision 2).
 8. **After moves:** the stop-filing offer shows after any removal or move, unless that operation's default retargeted those very filters.
 9. **Bounded `autoFor`:** it runs on the threads' root inbound messages only (one per thread, ≤ 200), which is what sender and subject rules decide on. Each filter stops testing at its first match.
 10. **A removal snack:** taking threads out of a category shows "Removed from Facturas", which it didn't before. The offer joins it only while that snack is current. An undo removal (`reason: "undo"`) asks nothing.

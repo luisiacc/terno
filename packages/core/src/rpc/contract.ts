@@ -425,7 +425,7 @@ export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchem
 
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
 export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional() });
-// plan 85: `auto` absent (an older export) means the user's
+// plan 90: `auto` absent (an older export) means the user's
 export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), auto: z.boolean().optional(), rule: filterRuleSchema });
 export const exportedAttachmentSchema = z.object({
   filename: z.string().min(1).max(180), mime: z.string().max(120), size: z.number().int().min(0).max(18 * 1024 * 1024), contentId: z.string().max(300).nullable().optional(), chunks: z.array(z.string().max(65536)).max(384),
@@ -473,7 +473,7 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("subject"), email: z.string().trim().email().max(320), subject: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("domain"), domain: z.string().trim().min(1).max(253) }),
   z.object({ kind: z.literal("list"), listId: z.string().trim().min(1).max(400) }),
-  // plan 84: up to 6 words (the snackbar's), each a rule value; the sender optional
+  // plan 89: up to 6 words (the snackbar's), each a rule value; the sender optional
   z.object({ kind: z.literal("words"), terms: z.array(z.string().trim().min(1).max(100)).min(1).max(6), email: z.string().trim().email().max(320).nullable() }),
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
@@ -613,7 +613,7 @@ export const contract = {
   "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
 
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
-  /** Plan 86: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
+  /** Plan 91: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
   "offers.forAction": m<SimilarOffers & { automated: boolean }>()(
     z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id })]) }),
   ),
@@ -699,8 +699,8 @@ export const contract = {
    * filter that files future mail there; `filterUndo` lets similar.undo take it back.
    */
   "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null; filterFailed: boolean }>()(
-    // a filter says who sent it (and the subject), the domain or the list (plan 81), or words (plan 84); a search can't be filed always
-    // plan 86: `move` files the set exclusively (a drag's semantics: other categories left, journaled; categorize.undo restores)
+    // a filter says who sent it (and the subject), the domain or the list (plan 81), or words (plan 89); a search can't be filed always
+    // plan 91: `move` files the set exclusively (a drag's semantics: other categories left, journaled; categorize.undo restores)
     z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName, move: z.boolean().optional() }).refine((p) => !p.always || p.scope.kind !== "query"),
     { timeoutMs: 120_000 },
   ),
@@ -726,19 +726,19 @@ export const contract = {
       enabled: z.boolean(),
       source: z.enum(["manual", "ai", "learned"]),
       rule: filterRuleSchema,
-      /** plan 85: the builder sends false when the user changed an automatic filter (it becomes theirs); absent keeps it */
+      /** plan 90: the builder sends false when the user changed an automatic filter (it becomes theirs); absent keeps it */
       auto: z.boolean().optional(),
     }),
   ),
   "filters.delete": m<{ ok: true }>()(z.object({ id })),
-  /** Plan 85: filters on or off at once, each only if unchanged since read; `filterUndo` (similar.undo) takes it back. */
+  /** Plan 90: filters on or off at once, each only if unchanged since read; `filterUndo` (similar.undo) takes it back. */
   "filters.setEnabled": m<{ changed: number; filterUndo: number | null }>()(z.object({ ids: z.array(id).min(1).max(500), enabled: z.boolean() })),
-  /** Plan 85: Terno's enabled filters that file these threads (their root inbound mail) into the category. */
+  /** Plan 90: Terno's enabled filters that file these threads (their root inbound mail) into the category. */
   "filters.autoFor": m<{ filters: { id: number; name: string }[] }>()(z.object({ categoryId: id, threadIds: z.array(id).min(1).max(200) })),
   "filters.preview": m<{ count: number; sample: ThreadSummary[] }>()(
     z.object({ rule: filterRuleSchema, limit: z.number().int().min(0).max(100).default(20) }),
   ),
-  /** Plan 84: a background job (progress on `jobId`); one at a time per filter (BAD_REQUEST); a failure partway carries the counts so far. */
+  /** Plan 89: a background job (progress on `jobId`); one at a time per filter (BAD_REQUEST); a failure partway carries the counts so far. */
   "filters.apply": m<{ matchedMessages: number; affectedThreads: number }>()(
     z.object({ id, jobId: z.string().max(100).optional() }),
     { timeoutMs: 30 * 60_000 },

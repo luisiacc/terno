@@ -114,7 +114,7 @@ test.describe("Review list: answering from the rows (plan 80)", { tag: "@design"
     await expect(menu).toContainText("Add to Facturas, now and in the future");
     const items = menu.getByRole("menuitem");
     await expect(items).toHaveCount(2);
-    // plan 86: the label every offer list uses
+    // plan 91: the label every offer list uses
     await expect(items.nth(0)).toContainText(`Same sender and subject${SUBJECT}`);
     await expect(items.nth(1)).toContainText("Everything from Rappirecibos@rappi.com");
     await expect(page.getByTestId("review-always-subject-count")).toHaveText(String(sameSubject));

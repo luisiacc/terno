@@ -3,9 +3,9 @@ import { z } from "zod";
 
 import { checkPattern, type PatternIssue } from "./pattern";
 
-/** plan 84: `text` is the subject or the body, by words (it only "mentions") */
+/** plan 89: `text` is the subject or the body, by words (it only "mentions") */
 export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "text"] as const;
-/** plan 84: `matches` is a regular expression over the field's normalized text */
+/** plan 89: `matches` is a regular expression over the field's normalized text */
 export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith", "matches"] as const;
 /** The fields a pattern may run on: not bodies (large, and FTS-backed). */
 export const PATTERN_FIELDS = ["from", "fromDomain", "recipients", "subject", "listId"] as const;
@@ -122,14 +122,14 @@ export interface Filter {
   name: string;
   enabled: boolean;
   source: "manual" | "ai" | "learned";
-  /** plan 85: Terno made it when the user sorted mail (Settings lists it under "Created for you") */
+  /** plan 90: Terno made it when the user sorted mail (Settings lists it under "Created for you") */
   auto: boolean;
   rule: FilterRule;
   hits: number;
   createdAt: number;
 }
 
-/** What a filter's owner can change: an automatic write compares it before it writes (plan 85). */
+/** What a filter's owner can change: an automatic write compares it before it writes (plan 90). */
 export interface FilterState {
   name: string;
   enabled: boolean;
@@ -150,10 +150,10 @@ export interface FilterSave {
   source: Filter["source"];
   rule: FilterRule;
   learnedKey?: string;
-  /** plan 85: false on insert when absent; an update keeps the stored value when absent */
+  /** plan 90: false on insert when absent; an update keeps the stored value when absent */
   auto?: boolean;
-  /** plan 85: a retarget keeps what the filter was applied to (old mail is never re-filed into the new target) */
+  /** plan 90: a retarget keeps what the filter was applied to (old mail is never re-filed into the new target) */
   keepApplications?: boolean;
-  /** plan 85: refused (CANCELLED) unless the filter is still exactly this (an edit made meanwhile wins) */
+  /** plan 90: refused (CANCELLED) unless the filter is still exactly this (an edit made meanwhile wins) */
   expect?: FilterState;
 }

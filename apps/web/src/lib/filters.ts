@@ -7,7 +7,7 @@ import { reloadList } from "~/state/list";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * Plan 84: a filter applied to existing mail runs in the background, owned
+ * Plan 89: a filter applied to existing mail runs in the background, owned
  * here rather than by the dialog (closing it keeps it going): a progress
  * snack that ends with how many conversations it changed, or, when it fails
  * partway, how many it changed before that.

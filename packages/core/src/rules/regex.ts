@@ -1,5 +1,5 @@
 /**
- * Plan 84: the matcher behind the `matches` op. A filter runs on every
+ * Plan 89: the matcher behind the `matches` op. A filter runs on every
  * incoming message and over 50k old ones in the backend's event loop, so a
  * pattern must never backtrack: this is a Pike VM (Thompson's construction,
  * no captures) over the common subset of JavaScript's syntax. Its cost is

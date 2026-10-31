@@ -5,7 +5,7 @@ import { registerUndo, resetSnacks, runUndo, undoLast, useSnack } from "./snack"
 
 afterEach(() => resetSnacks());
 
-describe("plan 86: offers", () => {
+describe("plan 91: offers", () => {
   it("one order everywhere: sender and subject, sender, domain, list", () => {
     const of = (...kinds: SimilarScope["kind"][]) => kinds.map((kind) => ({ scope: { kind } as SimilarScope }));
     expect(orderOffers(of("list", "sender", "domain", "subject")).map((o) => o.scope.kind)).toEqual(["subject", "sender", "domain", "list"]);

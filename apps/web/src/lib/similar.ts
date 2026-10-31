@@ -10,7 +10,7 @@ import { leaveList, trackJob, undoAction } from "~/lib/actions";
 
 export { shownCount, visibleOffers } from "./similar-offers";
 
-/** What a scope is called, the same in every snackbar, menu and result (plan 86); a subject's template goes beside it. */
+/** What a scope is called, the same in every snackbar, menu and result (plan 91); a subject's template goes beside it. */
 export function scopeLabel(scope: SimilarScope, senderName: string | null): string {
   const name = senderName || ("email" in scope ? scope.email : "");
   switch (scope.kind) {

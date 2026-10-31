@@ -52,7 +52,7 @@ function keepWalk(c: Ctx, walk: Iterator<unknown>): number {
 function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, cursor: number | null, limit: number, keep = true): SimilarPage {
   const messages = T(c, "messages");
   const threads = T(c, "threads");
-  // with numbers, the subject's key (plan 84): "Tu pedido 1" and "Tu pedido 2" are one subject
+  // with numbers, the subject's key (plan 89): "Tu pedido 1" and "Tu pedido 2" are one subject
   // prepared once for the walk, not per message (Codex review)
   const subject = scope.kind === "subject" ? subjectMatcher(scope.subject) : null;
   const walk = walkOf(c, scope, cursor);

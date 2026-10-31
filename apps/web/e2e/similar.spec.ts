@@ -44,7 +44,7 @@ test.describe("similar mail", { tag: "@design" }, () => {
     await expect(snack.getByTestId("similar-sender")).toContainText("Everything from");
     await expect(snack.getByTestId("similar-sender-count")).toHaveText(`${ids.length - 1}`);
     await expect.poll(inInbox).toBe(ids.length - 1);
-    // plan 86: archiving has no default; the lines are the category snackbar's, the same sender and subject first
+    // plan 91: archiving has no default; the lines are the category snackbar's, the same sender and subject first
     await expect(snack.getByTestId("snackbar-only")).toHaveCount(0);
     const keys = await snack.getByTestId("similar-offers").locator("kbd").allTextContents();
     expect(keys).toEqual(keys.map((_, i) => String(i + 1)));
@@ -82,7 +82,7 @@ test.describe("similar mail", { tag: "@design" }, () => {
     await expect(list.getByTestId("menu-spam-similar-note")).toHaveText("Their future mail goes to Spam too.");
     await expect(list.getByTestId("menu-similar-sender-count")).toHaveText(String(anywhere.length));
     // the full address follows the name, so same-named senders tell apart
-    await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^All from .+ ${email.replace(/[.+]/g, "\\$&")}`));
+    await expect(list.getByTestId("menu-similar-sender")).toContainText(new RegExp(`^Everything from .+ ${email.replace(/[.+]/g, "\\$&")}`));
     await list.getByTestId("menu-similar-sender").click();
 
     const done = result(page, `Marked ${anywhere.length} as spam`);
@@ -109,7 +109,7 @@ test.describe("similar mail", { tag: "@design" }, () => {
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("menu-similar-sender")).toBeVisible();
     await expect(page.getByTestId("menu-similar-sender-count")).toHaveText(String(ids.length));
-    // plan 86: the plain action comes first, focused: Enter archives only this one
+    // plan 91: the plain action comes first, focused: Enter archives only this one
     await expect(page.getByTestId("menu-similar-only")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect.poll(inInbox).toBe(ids.length - 1);

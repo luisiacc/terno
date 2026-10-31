@@ -82,7 +82,7 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("migrates retai
   for (const m of MIGRATIONS.filter((m) => m.version <= 32)) db.exec(m.sql);
   db.exec("PRAGMA user_version = 32");
   db.run("INSERT INTO categories(id,name,color,position) VALUES(1,'Survivor','amber',0)");
-  // written as the v32 app did (today's saveFilter knows v34's auto column)
+  // written as the v32 app did (today's saveFilter knows v35's auto column)
   const f = { id: Number(db.run("INSERT INTO filters(name,enabled,source,rule_json,position,created_at) VALUES('legacy',1,'manual',?,0,0)", JSON.stringify(rule(ids.filter))).lastInsertRowid) };
   db.run("INSERT INTO settings(key,value_json) VALUES('import:pending',?)", JSON.stringify({ filters: [{ rule: rule(ids.pending) }] }));
   db.run("INSERT INTO cat_batches(id,category_id,source,scope_json,created_at,added) VALUES(1,1,'dnd',?,0,0)", JSON.stringify({ kind: "move", from: ids.moveSource }));
@@ -96,7 +96,7 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("migrates retai
   expect(db.get("SELECT name FROM sqlite_master WHERE name='category_counter'")).toBeUndefined();
   expect(db.all("SELECT * FROM filters")).toEqual(filters);
   migrate(db);
-  // unchanged but for v34's auto column (plan 85): a manual filter without a learned key is the user's
+  // unchanged but for v35's auto column (plan 90): a manual filter without a learned key is the user's
   expect(db.all("SELECT * FROM filters")).toEqual(filters.map((x) => ({ ...(x as object), auto: 0 })));
   expect(db.get("SELECT rule_json FROM filters WHERE id=?", f.id)).toEqual({ rule_json: JSON.stringify(rule(ids.filter)) });
   for (const row of schema) expect(db.all("SELECT type,name,sql FROM sqlite_master WHERE name=?", row.name as string)).toContainEqual(row);

@@ -7,7 +7,7 @@ import { compileRegex } from "./regex";
 /** what the native engine says, for the subset both accept */
 const native = (pattern: string, text: string) => new RegExp(pattern, "iu").test(text);
 
-describe("the linear matcher (plan 84)", () => {
+describe("the linear matcher (plan 89)", () => {
   const cases: [string, string[]][] = [
     ["pedido", ["tu pedido 1", "pedidos", "pedid", ""]],
     ["^tu pedido [0-9]+ esta en camino$", ["tu pedido 43790 esta en camino", "tu pedido x esta en camino", "re: tu pedido 1 esta en camino", "tu pedido 12 esta en camino ya"]],
@@ -119,7 +119,7 @@ describe("subject keys and patterns", () => {
   });
 });
 
-describe("the text field (plan 84)", () => {
+describe("the text field (plan 89)", () => {
   const msg = (over: Partial<RuleMessage>): RuleMessage => ({
     accountId: 1, fromName: "Mercado Libre", fromEmail: "info@mercadolibre.com", recipients: "luis@example.com", subject: "Tu pedido está en camino",
     bodyText: "Tu paquete con número de guía llegará pronto", listId: null, hasAttachments: false, date: 0, ...over,
