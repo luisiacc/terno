@@ -18,6 +18,7 @@ const TABS = [
   ["accounts", "Accounts"],
   ["categories", "Categories"],
   ["filters", "Filters"],
+  ["snippets", "Snippets"],
   ["ai", "AI"],
   ["agents", "Agents"],
   ["data", "Data"],

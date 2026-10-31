@@ -14,7 +14,7 @@ import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
 import { SnippetsTab } from "./settings/snippets-tab";
-import { closeSnippetEditor } from "~/lib/snippet-editor-state";
+import { closeSnippetEditor, setDeletedSnippet } from "~/lib/snippet-editor-state";
 import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
 import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
@@ -52,11 +52,12 @@ export function SettingsDialog() {
         setApp({ dialog: null });
         // plan 89: Settings opens again on the list (the editor's save is flushed as it unmounts)
         closeSnippetEditor();
+        setDeletedSnippet(null);
       }}
     >
       <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={switchFocus}>
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
-        <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
+        <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full min-w-0 flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
@@ -74,7 +75,7 @@ export function SettingsDialog() {
               ))}
             </TabsList>
           </nav>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-4">
             <h2 className="mb-4 text-lg font-semibold tracking-tight">{settingsTabLabel(tab)}</h2>
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>

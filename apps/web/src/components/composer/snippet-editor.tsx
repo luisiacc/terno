@@ -11,8 +11,9 @@ import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { openLink } from "../mail-body";
-import { beginEdit, deleteSnippet, flushSave, keepMine, loadTheirs, queueSave, retrySave, useSaveStatus, useSnippets } from "~/lib/snippets";
+import { beginEdit, flushSave, keepMine, loadTheirs, queueSave, retrySave, useSaveStatus, useSnippets } from "~/lib/snippets";
 import { closeSnippetEditor } from "~/lib/snippet-editor-state";
+import { removeSnippet } from "../settings/snippets-tab";
 import { EMPTY_FORMAT, registerController, type ComposerController, type FormatState } from "./controller";
 import { COMMANDS, createEditor, formatState, isEmpty, linkAt, newState, sameFormat, serialize, setAlign, setMark } from "./editor";
 import { FormatBar, LinkPopover, type LinkDraft } from "./rich";
@@ -229,7 +230,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
   );
 
   return (
-    <div data-testid="snippet-editor" data-snippet-id={id}>
+    <div className="min-w-0" data-testid="snippet-editor" data-snippet-id={id}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <Button variant="ghost" size="sm" className="-ml-2" onClick={() => closeSnippetEditor()} data-testid="snippet-back">
           <ChevronLeft /> {t("settings.tab.snippets")}
@@ -313,7 +314,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
             data-testid="snippet-delete"
             onClick={() => {
               closeSnippetEditor();
-              void deleteSnippet(stored);
+              void removeSnippet(stored);
             }}
           >
             <Trash2 /> {t("snippets.delete")}

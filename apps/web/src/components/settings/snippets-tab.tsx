@@ -5,7 +5,8 @@ import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect } from "react";
 import { isMac } from "~/lib/select";
 import { deleteSnippet, loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
-import { openSnippetEditor, useSnippetEditor } from "~/lib/snippet-editor-state";
+import { openSnippetEditor, setDeletedSnippet, useSnippetEditor } from "~/lib/snippet-editor-state";
+import { undoNow } from "~/lib/snack";
 import { SettingsGroup } from "./parts";
 
 // the composer's editor: its chunk loads when a snippet is opened, not with Settings
@@ -18,6 +19,12 @@ const paletteKeys = () => (isMac ? "⌘K" : "Ctrl+K");
 function fillsOf(s: Snippet): string | null {
   const fields = [s.subject && t("compose.subject"), s.to && t("compose.to"), s.cc && t("compose.cc"), s.bcc && t("compose.bcc")].filter(Boolean) as string[];
   return fields.length ? t("snippets.fills", { fields: formatList(fields) }) : null;
+}
+
+/** Deletes it now; the list then offers its Undo where it was. */
+export async function removeSnippet(snippet: Snippet): Promise<void> {
+  const undo = await deleteSnippet(snippet);
+  if (undo) setDeletedSnippet({ id: snippet.id, name: snippet.name || t("snippets.untitled"), undo });
 }
 
 function SnippetRow({ snippet }: { snippet: Snippet }) {
@@ -34,7 +41,7 @@ function SnippetRow({ snippet }: { snippet: Snippet }) {
       <Button variant="ghost" size="icon-sm" aria-label={t("snippets.edit", { name })} data-testid="settings-snippet-edit" onClick={() => openSnippetEditor(snippet.id)}>
         <Pencil />
       </Button>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("snippets.deleteNamed", { name })} data-testid="settings-snippet-delete" onClick={() => void deleteSnippet(snippet)}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("snippets.deleteNamed", { name })} data-testid="settings-snippet-delete" onClick={() => void removeSnippet(snippet)}>
         <Trash2 />
       </Button>
     </div>
@@ -57,7 +64,24 @@ export function SnippetsTab() {
     <div data-testid="snippets-tab">
       <SettingsGroup title={t("settings.tab.snippets")} footer={list?.length ? t("snippets.footer", { keys: snippetKeys(), palette: paletteKeys(), example: "{first_name}" }) : undefined}>
         {list?.map((s) => <SnippetRow key={s.id} snippet={s} />)}
-        {list?.length === 0 && <p className="py-3 text-sm text-muted-foreground" data-testid="snippets-empty">{t("snippets.empty", { keys: snippetKeys() })}</p>}
+        {editor.deleted && !list?.some((s) => s.id === editor.deleted!.id) && (
+          <div className="flex min-h-11 items-center gap-3 py-2" data-testid="settings-snippet-deleted">
+            <p role="status" className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{t("snippets.deleted", { name: editor.deleted.name })}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="settings-snippet-undo"
+              onClick={() => {
+                const { undo } = editor.deleted!;
+                setDeletedSnippet(null);
+                undoNow(undo);
+              }}
+            >
+              {t("common.undo")}
+            </Button>
+          </div>
+        )}
+        {list?.length === 0 && !editor.deleted && <p className="py-3 text-sm text-muted-foreground" data-testid="snippets-empty">{t("snippets.empty", { keys: snippetKeys() })}</p>}
         <div className="py-1.5">
           <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-snippet-new" onClick={() => openSnippetEditor(newSnippetId(), { fresh: true })}>
             <Plus /> {t("snippets.new")}

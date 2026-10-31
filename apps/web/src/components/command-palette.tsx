@@ -164,14 +164,12 @@ export function CommandPalette() {
     if (draft && draftState) {
       if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send", english("common.send")), draft: true, run: inDraft((d) => d.send()) });
       // plan 89: snippets, while the text can change
-      if (draftState.link) {
-        add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
-        add({ id: "draft.saveSnippet", group: "draft", label: t("palette.saveAsSnippet"), icon: <BookmarkPlus />, testId: "palette-draft-save-snippet", keywords: english("palette.saveAsSnippet"), draft: true, run: () => draftKey && runInDraft(draftKey, () => void saveDraftAsSnippet(draftKey)) });
-      }
+      if (draftState.link) add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
       if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
       if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", keywords: english("palette.addCc"), draft: true, run: inDraft((d) => d.showCc()) });
       if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", keywords: english("palette.addBcc"), draft: true, run: inDraft((d) => d.showBcc()) });
       if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", keywords: english("compose.link.insert"), draft: true, run: inDraft((d) => d.link()) });
+      if (draftState.link) add({ id: "draft.saveSnippet", group: "draft", label: t("palette.saveAsSnippet"), icon: <BookmarkPlus />, testId: "palette-draft-save-snippet", keywords: english("palette.saveAsSnippet"), draft: true, run: () => draftKey && runInDraft(draftKey, () => void saveDraftAsSnippet(draftKey)) });
       if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard", english("compose.discard")), draft: true, run: inDraft((d) => d.discard()) });
     }
 

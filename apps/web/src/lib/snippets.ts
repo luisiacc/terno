@@ -1,8 +1,7 @@
 import type { Snippet, SnippetFields } from "@terno/core";
-import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { registerUndo, snack } from "./snack";
+import { registerUndo, snack, type Undo } from "./snack";
 
 /**
  * Plan 89: the snippets, loaded on first need (the palette, ⌘;, Settings) and
@@ -164,8 +163,12 @@ export async function loadTheirs(id: string): Promise<Snippet | null> {
   return theirs;
 }
 
-/** Deletes it at once (after its save in flight), with a snack whose Undo puts the same snippet back. */
-export async function deleteSnippet(snippet: Snippet): Promise<void> {
+/**
+ * Deletes it at once (after its save in flight); its Undo puts the same
+ * snippet back. Returns that Undo (Settings shows it in its list: a snack
+ * would sit under the dialog), or null when the delete failed.
+ */
+export async function deleteSnippet(snippet: Snippet): Promise<Undo | null> {
   const s = sessions.get(snippet.id);
   let pending: SnippetFields | null = null;
   if (s) {
@@ -186,16 +189,14 @@ export async function deleteSnippet(snippet: Snippet): Promise<void> {
       s.pending ??= pending;
     }
     snack.error(errorText(error));
-    return;
+    return null;
   }
   sessions.delete(snippet.id);
   drop(snippet.id);
-  const name = latest.name || t("snippets.untitled");
-  const undo = registerUndo(async () => {
+  return registerUndo(async () => {
     const { id, name, bodyHtml, bodyText, subject, to, cc, bcc } = latest;
     put(await client.call("snippets.save", { id, name, bodyHtml, bodyText, subject, to, cc, bcc, base: null }));
   });
-  snack({ message: t("snippets.deleted", { name }), action: { label: t("common.undo"), undo } });
 }
 
 /** A new snippet straight from content (Save as snippet…): created now, so the editor opens on it. */
