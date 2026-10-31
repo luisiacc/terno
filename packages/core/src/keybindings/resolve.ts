@@ -108,8 +108,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "shift+arrowup", command: "list.extendPrev" },
   { keys: "shift+f10", command: "list.menu" },
   { keys: "contextmenu", command: "list.menu" },
-  // Apple Mail's message filter; resolves everywhere (else the browser's ⌘L takes the address bar), the handler decides
-  { keys: "mod+l", command: "list.toggleUnread", inEditable: true, inDialog: true },
+  // list.toggleUnread has no key: ⌘L is the composer's link (its button, the palette and the desktop's View menu toggle it)
   // the list's quick filters by name: ⇧U Unread, ⇧A All (a plain u marks nothing: Mark as unread is in the menus)
   { keys: "shift+u", command: "list.filterUnread" },
   { keys: "shift+a", command: "list.filterAll" },

@@ -2,7 +2,7 @@
  * Plan 88: the palette. Recent commands lead it, the synonym that matched
  * shows, Reply and Forward are in it, Move to / Add to / Remind me take their
  * value on a page of their own, and a focused draft gets its own commands
- * (the second ⌘K in the text goes past the link popover to them).
+ * (⌘K in the text too: ⌘L is the link).
  */
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
@@ -198,14 +198,12 @@ test.describe("palette", () => {
     await expect(snackWith(page, "Reminder cleared")).toBeVisible();
   });
 
-  test("a focused reply: ⌘K in the text is a link, the second ⌘K the palette with the draft's commands; Add Cc, then Send", async ({ app: page }) => {
+  test("a focused reply: ⌘K in the text is the palette with the draft's commands; Add Cc, then Send", async ({ app: page }) => {
     await openRow(page, 0);
     await focusList(page);
     await page.keyboard.press("r");
     await expect(page.getByTestId("compose-body")).toBeFocused();
     await page.keyboard.type("Nos vemos el viernes.");
-    await page.keyboard.press("ControlOrMeta+k");
-    await expect(page.getByTestId("link-popover")).toBeVisible();
     await page.keyboard.press("ControlOrMeta+k");
     await expect(page.getByTestId("link-popover")).toHaveCount(0);
     await expect(input(page)).toBeFocused();
@@ -229,8 +227,8 @@ test.describe("palette", () => {
     await page.keyboard.press("c");
     await expect(page.getByTestId("compose-to")).toBeFocused();
     await page.getByTestId("compose-body").fill("Borrador de prueba");
-    // in the text, the first ⌘K is a link; the second the palette
-    await page.keyboard.press("ControlOrMeta+k");
+    // ⌘L's link popover: ⌘K from it goes on to the palette
+    await page.keyboard.press("ControlOrMeta+l");
     await expect(page.getByTestId("link-popover")).toBeVisible();
     await palette(page, "delete draft");
     await expect(selected(page)).toHaveAttribute("data-testid", "palette-draft-discard");

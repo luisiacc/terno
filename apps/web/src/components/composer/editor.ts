@@ -393,7 +393,8 @@ export function createPlugins(): Plugin[] {
     "Mod-z": undo,
     "Mod-Shift-z": redo,
     "Mod-y": redo,
-    "Mod-k": (_state, _dispatch, view) => {
+    // ⌘L: ⌘K is the palette's, in a draft too (its Insert snippet…)
+    "Mod-l": (_state, _dispatch, view) => {
       if (view) viewHooks.get(view)?.onLink();
       return true;
     },

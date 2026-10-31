@@ -100,7 +100,7 @@ function UnreadFilterButton({ filter }: { filter: QuickFilter | undefined }) {
         }
       />
       <TooltipContent>
-        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")} <Shortcut keys="mod+l" />
+        {active ? t("list.unreadFilter.showAll") : t("list.unreadFilter.showUnread")}
       </TooltipContent>
     </Tooltip>
   );

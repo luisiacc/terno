@@ -27,17 +27,17 @@ describe("main: the menu bar", () => {
     expect(items.at(-1)!.role).toBe("quit");
   });
 
-  it("leads View with Mail's message filter on ⌘L, a whitelisted command; dev tools only in development", () => {
+  it("leads View with Mail's message filter, a whitelisted command with no key (⌘L is the composer's link); dev tools only in development", () => {
     const sent: string[] = [];
     const items = sub(viewMenu((c) => sent.push(c), false, () => {}));
-    expect([items[0]!.label, items[0]!.accelerator]).toEqual(["Filter by Unread", "CmdOrCtrl+L"]);
+    expect([items[0]!.label, items[0]!.accelerator]).toEqual(["Filter by Unread", undefined]);
     (items[0]!.click as () => void)();
     expect(sent).toEqual(["list.toggleUnread"]);
     for (const c of sent) expect(MENU_COMMANDS).toContain(c);
     expect(items.find((i) => i.role === "toggleDevTools")!.visible).toBe(false);
     expect(sub(viewMenu(() => {}, true, () => {})).find((i) => i.role === "toggleDevTools")!.visible).toBe(true);
-    // no other item claims ⌘L
-    expect(items.filter((i) => i.accelerator === "CmdOrCtrl+L")).toHaveLength(1);
+    // nothing in the menu claims ⌘L, or a draft's ⌘L would never reach the editor
+    expect(items.filter((i) => i.accelerator === "CmdOrCtrl+L")).toHaveLength(0);
   });
 
   it("View has Back (⌘[) and Forward (⌘]) for the List layout, both whitelisted commands (plan 24)", () => {

@@ -193,7 +193,7 @@ test.describe("formatting the selection", { tag: "@design" }, () => {
     await expect(body(page).locator("p")).toHaveCSS("margin-left", "0px");
   });
 
-  test("typing - or 1. starts a list; a typed URL becomes a link; ⌘K stays out of the palette", async ({ app: page }) => {
+  test("typing - or 1. starts a list; a typed URL becomes a link; ⌘L is the link, ⌘K the palette", async ({ app: page }) => {
     await reply(page, "- uno");
     await expect(body(page).locator("ul li")).toHaveText(["uno"]);
     await page.keyboard.press("Enter");
@@ -205,17 +205,26 @@ test.describe("formatting the selection", { tag: "@design" }, () => {
     await page.keyboard.type("mira https://example.com/a ya");
     await expect(body(page).locator("a")).toHaveAttribute("href", "https://example.com/a");
     await expect(body(page).locator("a")).toHaveText("https://example.com/a");
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("ControlOrMeta+l");
     await expect(page.getByTestId("link-popover")).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Commands" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("link-popover")).toHaveCount(0);
+    await expect(body(page)).toBeFocused();
+    // ⌘K in the text is the palette, Insert snippet… among the draft's commands
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.getByRole("dialog", { name: "Commands" })).toBeVisible();
+    await expect(page.getByTestId("palette-draft-snippet")).toBeVisible();
+    await expect(page.getByTestId("palette-draft-link")).toContainText(/⌘L|Ctrl\+L/);
+    await expect(page.getByTestId("link-popover")).toHaveCount(0);
   });
 });
 
 test.describe("links", { tag: "@design" }, () => {
-  test("⌘K links the selection; the bubble opens, edits and removes it; Enter and Esc in the popover never send or collapse", async ({ app: page }) => {
+  test("⌘L links the selection; the bubble opens, edits and removes it; Enter and Esc in the popover never send or collapse", async ({ app: page }) => {
     await reply(page);
     await select(page, "propuesta");
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("ControlOrMeta+l");
     const popover = page.getByTestId("link-popover");
     await expect(popover).toBeVisible();
     await expect(page.getByTestId("link-text")).toHaveValue("propuesta");
@@ -225,7 +234,7 @@ test.describe("links", { tag: "@design" }, () => {
     await expect(popover).toHaveCount(0);
     await expect(page.getByTestId("composer")).toBeVisible();
     await expect(body(page)).toBeFocused();
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("ControlOrMeta+l");
     await page.getByTestId("link-url").fill("javascript:alert(1)");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("link-error")).toBeVisible();
@@ -290,7 +299,7 @@ test.describe("Codex review (plan 16)", { tag: "@design" }, () => {
 
   test("a link with only its address, at a caret, goes in as the address", async ({ app: page }) => {
     await reply(page, "Ver ");
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("ControlOrMeta+l");
     await page.getByTestId("link-url").fill("plan.example");
     await page.keyboard.press("Enter");
     await expect(body(page).locator("a")).toHaveAttribute("href", "https://plan.example");
@@ -578,7 +587,7 @@ test.describe("the format bar", { tag: "@design" }, () => {
       await check();
       await page.keyboard.press("Escape");
       await select(page, "viernes");
-      await page.keyboard.press("ControlOrMeta+k");
+      await page.keyboard.press("ControlOrMeta+l");
       await expect(page.getByTestId("link-popover")).toBeVisible();
       await check();
     });

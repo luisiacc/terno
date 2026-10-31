@@ -76,13 +76,14 @@ export function editMenu(): MenuItemConstructorOptions {
 
 /**
  * Ver / View: Mail's message filter first (View → Filter), sent to the
- * renderer, which decides like it does for ⌘L; then the window's own items.
+ * renderer, which decides like it does for the header button (no key: ⌘L is
+ * the composer's link); then the window's own items.
  */
 export function viewMenu(send: (command: MenuCommand) => void, dev: boolean, reload: (ignoreCache: boolean, focusedWindow?: BaseWindow) => void): MenuItemConstructorOptions {
   return {
     label: t("menu.view"),
     submenu: [
-      { id: "unread-filter", label: t("menu.filterUnread"), accelerator: "CmdOrCtrl+L", click: () => send("list.toggleUnread") },
+      { id: "unread-filter", label: t("menu.filterUnread"), click: () => send("list.toggleUnread") },
       { type: "separator" },
       // plan 24: the List layout's Back and Forward (the renderer decides; nothing in Split). The accelerators also reach a mail's frame.
       { id: "nav-back", label: t("menu.back"), accelerator: "CmdOrCtrl+[", click: () => send("nav.back") },

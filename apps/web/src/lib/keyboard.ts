@@ -21,7 +21,7 @@ import { noteOpen, openRemind } from "~/lib/reminders";
 import { togglePalette, toggleSnippets } from "~/lib/palette-open";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
-const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
+const TOGGLES = new Set<Command>(["nav.back", "nav.forward"]);
 const ECHO_MS = 300;
 const lastKey = new Map<Command, number>();
 

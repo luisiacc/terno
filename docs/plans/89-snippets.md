@@ -176,3 +176,12 @@ Hairline rows like Filters; the editor reuses the composer's field style (border
 - Unit: core (`snippets.test.ts`, keybindings), backend (`snippets.test.ts` over RPC on SQLite, `snippets-idb.test.ts`), web (`lib/snippets.test.ts`, `components/composer/snippets.test.ts`, `palette-commands.test.ts`, tabs, backup).
 - E2E: `snippets.spec.ts` (11, including axe in light and dark), `palette.spec.ts`, `settings*.spec.ts`, `designs.spec.ts`, `i18n.spec.ts`, `composer.spec.ts`, `shortcuts.spec.ts`.
 - Screenshots of the Snippets tab, the editor and the palette page, light and dark, looked at.
+
+## After: ⌘K is the palette in a draft, ⌘L the link
+
+Requested afterwards: "when i'm doing a draft, pressing cmd+k is bring up the 'insert link', change that to cmd+l instead, and remove cmd+l from toggling on the 'unread' in the thread list, so that i can press cmd+k for inserting a snippet."
+
+- **The editor's link is ⌘L** (`Mod-l` in `composer/editor.ts`, the snippet editor's too). ⌘K in the text now reaches the app's `palette.open` like everywhere else, with the draft's commands (Insert snippet… second). ⌘K inside the link popover still goes on to the palette. The Link button's tooltip, the palette's Insert link row and the shortcuts dialog's formatting list show ⌘L.
+- **The unread filter has no key** (plan 12's ⌘L is gone): no `mod+l` binding, no desktop View-menu accelerator (it would take ⌘L before the editor), no forwarding from a mail's frame, and no ⌘L on its tooltip, its palette row or the shortcuts dialog. The header button, Lumen's chips, ⇧U/⇧A, the palette and View → Filter by Unread still set it. On the web, ⌘L outside a draft is the browser's again (the address bar).
+- Tests: `resolve.test.ts` (⌘L resolves to nothing anywhere, ⌘K to the palette in a draft), `menu.test.ts` (nothing in the menu claims ⌘L), `composer.spec.ts` (⌘L opens the link popover, ⌘K the palette with Insert snippet…), `unread-filter.spec.ts` (⌘L leaves the filter alone; no key on its palette row), `palette.spec.ts`, `snippets.spec.ts`, and the specs that toggled the filter with ⌘L now use the palette or the button. The desktop `unread.smoke.ts` checks that the View item toggles once per click and that ⌘L toggles nothing.
+- Codex code review of this change: no functional findings; two stale descriptions fixed: the README's "unread (⌘L)" (now ⇧U, ⇧A for all) and `tabs.test.ts`/`tabs.ts`, which still called the Unread tab "⌘L" (with the palette's, `page.ts`'s and `unread-filter.ts`'s comments).

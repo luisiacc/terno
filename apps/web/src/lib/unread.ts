@@ -1,11 +1,10 @@
 /**
- * The quick filter, bound to the app: ⌘L, the header button and its menu,
+ * The quick filter, bound to the app: the header button and its menu,
  * Lumen's chips, the palette and the desktop's View menu all set it here; and
  * in a filtered list a row that stops matching leaves once it is neither open nor checked (lib/unread-filter
  * holds the state's rules, state/list asks the store to keep those rows).
  */
 import { reflowRemoval } from "~/lib/flash";
-import { isMac } from "~/lib/select";
 import { matchesFilter, type ListFilter } from "@terno/core";
 import { activeFilter, isUnreadOnly, mailboxKey, saveListFilters, withFilter } from "~/lib/unread-filter";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -26,20 +25,9 @@ export function setListFilter(filter: ListFilter | undefined): void {
   setApp({ listFilters, checked: new Set(), anchorId: null, scope: null });
 }
 
-/** ⌘L: unread ↔ everything (another filter on: unread). */
+/** The button, the palette and the View menu: unread ↔ everything (another filter on: unread). */
 export function toggleUnreadFilter(): void {
   setListFilter(isUnreadOnly(getApp()) ? undefined : "unread");
-}
-
-/**
- * Keys pressed inside a mail's frame never reach the document's handler: ⌘L
- * is handed to it as the same key (its repeat and echo rules apply), so it
- * doesn't depend on where focus is.
- */
-export function forwardUnreadKey(e: KeyboardEvent): void {
-  if (e.key.toLowerCase() !== "l" || e.altKey || e.shiftKey || !(isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return;
-  e.preventDefault();
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, repeat: e.repeat, cancelable: true }));
 }
 
 /** The open thread moved (j/k, a click) or the checks changed: rows that no longer match, held by nobody, leave the filtered list. */

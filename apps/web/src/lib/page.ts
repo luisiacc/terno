@@ -191,8 +191,8 @@ export function bootPage(): number | null {
 
 /**
  * Keys pressed inside a mail's frame never reach the document's handler:
- * Esc and ⌘[ (Ctrl+[ off Mac) go back from List's page there too, like ⌘L
- * and ⌘P are handed over (a menu accelerator covers ⌘[ on desktop anyway).
+ * Esc and ⌘[ (Ctrl+[ off Mac) go back from List's page there too, like ⌘P
+ * is handed over (a menu accelerator covers ⌘[ on desktop anyway).
  */
 export function forwardNavKey(e: KeyboardEvent): void {
   if (!listLayout() || currentPage() === "list" || e.defaultPrevented || e.isComposing) return;

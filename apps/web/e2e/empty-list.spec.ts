@@ -80,7 +80,9 @@ for (const design of ["macos", "lumen"] as const) {
         })).toBe(true);
         await axe(page);
         await input.fill("zzqx-no-such-mail");
-        await page.keyboard.press("ControlOrMeta+l");
+        // the filter from the palette (⌘L is the composer's link)
+        await page.keyboard.press("ControlOrMeta+k");
+        await page.getByTestId("palette-unread-filter").click();
         const filtered = page.getByTestId("unread-empty");
         await empty(page, filtered, copy[language].filter, copy[language].name);
         await scroller.evaluate((el) => el.focus());

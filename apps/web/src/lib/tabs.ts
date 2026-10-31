@@ -1,8 +1,8 @@
 /**
  * Plan 24: the List layout's category tabs. They're another view of the same
  * state as the sidebar and the quick filter (view, category, the mailbox's
- * filter), never a state of their own, so the tabs, the sidebar and ⌘L always
- * agree. Pure parts (which tab is selected, what fits) are unit-tested.
+ * filter), never a state of their own, so the tabs, the sidebar and the unread
+ * toggle always agree. Pure parts (which tab is selected, what fits) are unit-tested.
  */
 import { CATEGORY_COLORS } from "@terno/core";
 import { client } from "~/rpc/connection";
@@ -31,7 +31,7 @@ export function selectedTab(s: TabState): Tab | null {
 /**
  * One state change (so one list load). A category is the sidebar's category
  * (the same list, the same count). All and Unread are the inbox, its filter
- * off or on Unread: inside the inbox that's exactly ⌘L (the open thread and
+ * off or on Unread: inside the inbox that's exactly the unread toggle (the open thread and
  * the cursor stay); from a category it's the inbox's list.
  */
 export function openTab(tab: Tab): void {

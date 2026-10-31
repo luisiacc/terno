@@ -186,7 +186,7 @@ export function FormatToggle({ controls }: { controls: string }) {
   );
 }
 
-/** Insert link (⌘K): the editor's link popover for the selection. */
+/** Insert link (⌘L): the editor's link popover for the selection. */
 export function LinkButton({ draftKey, disabled }: { draftKey: string; disabled?: boolean }) {
   const label = t("compose.link.button");
   return (
@@ -200,7 +200,7 @@ export function LinkButton({ draftKey, disabled }: { draftKey: string; disabled?
       />
       <TooltipContent>
         {label}
-        <Shortcut keys="mod+k" />
+        <Shortcut keys="mod+l" />
       </TooltipContent>
     </Tooltip>
   );

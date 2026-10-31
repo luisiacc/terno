@@ -310,7 +310,7 @@ test.describe("the List layout: what stays put", () => {
 });
 
 test.describe("category tabs", { tag: "@design" }, () => {
-  test("All, Unread and the categories: the same state as the sidebar and ⌘L, with unread counts", async ({ app: page, server }) => {
+  test("All, Unread and the categories: the same state as the sidebar and the unread toggle, with unread counts", async ({ app: page, server }) => {
     const viajes = categoryId(server, "Viajes");
     const all = page.getByTestId("list-tab-all");
     const unread = page.getByTestId("list-tab-unread");
@@ -324,12 +324,13 @@ test.describe("category tabs", { tag: "@design" }, () => {
     await expect(page.getByTestId("list-title")).toHaveText("Viajes");
     await page.getByTestId("nav-inbox").click();
     await expect(all).toHaveAttribute("aria-selected", "true");
-    // Unread is the inbox's ⌘L
+    // Unread is the inbox's unread toggle (the palette's too)
     await unread.click();
     await expect(unread).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("unread-filter")).toHaveAttribute("aria-pressed", "true");
     await focusList(page);
-    await page.keyboard.press("ControlOrMeta+l");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-unread-filter").click();
     await expect(all).toHaveAttribute("aria-selected", "true");
     // counts: the inbox's unread on Unread, in its accessible name
     const n = await page.evaluate(() => (window as unknown as { __terno: { getApp(): { counts: { inboxUnread: number } } } }).__terno.getApp().counts.inboxUnread);

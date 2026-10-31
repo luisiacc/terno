@@ -1346,7 +1346,6 @@ const en = {
   "shortcuts.section.compose": "Compose",
   "shortcuts.next": "Next conversation",
   "shortcuts.prev": "Previous conversation",
-  "shortcuts.unreadOnly": "Unread only",
   "shortcuts.filterUnread": "Show unread",
   "shortcuts.filterAll": "Show all",
   "shortcuts.palette": "Command palette",

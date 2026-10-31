@@ -71,7 +71,7 @@ describe("opening a tab", () => {
     c.off();
   });
 
-  it("Unread inside the inbox is ⌘L: the filter, the cursor kept; All turns it off", () => {
+  it("Unread inside the inbox is the unread toggle: the filter, the cursor kept; All turns it off", () => {
     openTab("unread");
     expect(getApp().listFilters.get("inbox||")).toBe("unread");
     expect(getApp().selectedId).toBe(4);

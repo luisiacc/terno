@@ -1,6 +1,6 @@
 /**
- * Plan 12: the unread filter, like Mail's message filter. The header button,
- * ⌘L and the palette; per mailbox and across a reload; the open thread stays
+ * Plan 12: the unread filter, like Mail's message filter. The header button
+ * and the palette (⌘L is the composer's link since plan 89); per mailbox and across a reload; the open thread stays
  * while it is open; select-all and actions reach only the unread threads;
  * the empty state; axe and baselines of the header and the empty state.
  */
@@ -61,27 +61,21 @@ test.describe("the toggle", () => {
     await expect(status(page)).toHaveCount(0);
   });
 
-  test("⌘L toggles from the list and from the search field, once per press; the palette offers the other state", async ({ app: page }) => {
+  test("⌘L is not the filter's (it is the composer's link); the palette offers the other state, with no key", async ({ app: page }) => {
     await focusList(page);
-    await page.keyboard.press("ControlOrMeta+l");
-    await expect(button(page)).toHaveAttribute("aria-pressed", "true");
-    await showing(page, true);
-    // in the search field ⌘L is still the filter (not the browser's address bar)
-    await page.getByTestId("search-input").focus();
-    await page.keyboard.press("ControlOrMeta+l");
-    await expect(button(page)).toHaveAttribute("aria-pressed", "false");
-    // a held key toggles once: its auto-repeats do nothing
-    await focusList(page);
-    await page.keyboard.press("ControlOrMeta+l");
-    await expect(button(page)).toHaveAttribute("aria-pressed", "true");
     await page.evaluate(() => {
       const mac = navigator.platform.includes("Mac");
-      for (let i = 0; i < 3; i++) document.dispatchEvent(new KeyboardEvent("keydown", { key: "l", metaKey: mac, ctrlKey: !mac, repeat: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "l", metaKey: mac, ctrlKey: !mac, cancelable: true }));
     });
     await page.waitForTimeout(100);
+    await expect(button(page)).toHaveAttribute("aria-pressed", "false");
+    await button(page).hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Show unread only");
+    await button(page).click();
     await expect(button(page)).toHaveAttribute("aria-pressed", "true");
 
     await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.getByTestId("palette-unread-filter").locator("[data-slot=command-shortcut]")).toHaveCount(0);
     await expect(page.getByTestId("palette-unread-filter")).toContainText("Show all");
     await page.getByTestId("palette-unread-filter").click();
     await expect(button(page)).toHaveAttribute("aria-pressed", "false");

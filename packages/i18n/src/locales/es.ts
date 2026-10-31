@@ -1334,7 +1334,6 @@ const es = {
   "shortcuts.section.compose": "Escribir",
   "shortcuts.next": "Siguiente conversación",
   "shortcuts.prev": "Conversación anterior",
-  "shortcuts.unreadOnly": "Solo no leídos",
   "shortcuts.filterUnread": "Mostrar no leídos",
   "shortcuts.filterAll": "Mostrar todo",
   "shortcuts.palette": "Paleta de comandos",

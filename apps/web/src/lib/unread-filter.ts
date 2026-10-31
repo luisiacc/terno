@@ -50,7 +50,7 @@ export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedF
   return f && (m.supportedFilters ?? LIST_FILTERS).includes(f) ? f : undefined;
 }
 
-/** Is the current list filtered to unread threads (⌘L's state, its "Filtered by" count)? */
+/** Is the current list filtered to unread threads (the unread toggle's state, its "Filtered by" count)? */
 export function isUnreadOnly(m: Mailbox & { listFilters: ListFilters }): boolean {
   return activeFilter(m) === "unread";
 }

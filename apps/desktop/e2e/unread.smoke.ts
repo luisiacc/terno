@@ -1,7 +1,7 @@
 /**
- * Plan 12 on the desktop: ⌘L and Ver → Filter by Unread reach the renderer
- * through one dispatcher, and one press toggles once (the menu's echo of a
- * key the page handled is dropped). Runs against the dev build
+ * Plan 12 on the desktop: Ver → Filter by Unread reaches the renderer and
+ * toggles once per click; ⌘L is no longer the filter's (it is the composer's
+ * link, plan 89), so a ⌘L press leaves the list as it is. Runs against the dev build
  * (`pnpm build`) with TERNO_UNREAD_SMOKE_DEV=1, or the packaged app.
  */
 import { execFileSync } from "node:child_process";
@@ -55,22 +55,20 @@ test.afterAll(async () => {
 const pressed = () => page.getByTestId("thread-list").evaluate((el) => String((JSON.parse(el.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === "unread"));
 const delivered = () => page.evaluate(() => (window as unknown as { __menuCommands: string[] }).__menuCommands.length);
 
-test("⌘L toggles once per press; the Ver menu item toggles too, and its echo of a key is dropped", async () => {
+test("the Ver menu item toggles once per click; ⌘L toggles nothing", async () => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Meta+l");
+  await page.waitForTimeout(500);
+  expect(await pressed()).toBe("false");
+  expect(await delivered()).toBe(0);
+
+  const click = () => app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById("unread-filter")!.click());
+  await click();
   await expect.poll(pressed).toBe("true");
+  // two clicks close together are two toggles (no key to echo any more)
+  await click();
+  await click();
   await page.waitForTimeout(500);
   expect(await pressed()).toBe("true");
-  const echoes = await delivered();
-  console.log(`menu commands delivered for one ⌘L press: ${echoes}`);
-
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById("unread-filter")!.click());
-  await expect.poll(pressed).toBe("false");
-  expect(await delivered()).toBe(echoes + 1);
-
-  // a key and the menu's echo of it within the same moment: one toggle
-  await page.keyboard.press("Meta+l");
-  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById("unread-filter")!.click());
-  await page.waitForTimeout(500);
-  expect(await pressed()).toBe("true");
+  expect(await delivered()).toBe(3);
 });

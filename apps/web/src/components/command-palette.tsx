@@ -97,7 +97,7 @@ export function CommandPalette() {
   const single = useApp((s) => (open && !s.scope && s.checked.size === 0 ? s.selectedId : null));
   const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
   // the unread filter applies to a mailbox (not "Review")
-  // ⌘L's state: Unread on or not (another filter on: ⌘L switches to Unread)
+  // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
@@ -168,7 +168,7 @@ export function CommandPalette() {
       if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
       if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", keywords: english("palette.addCc"), draft: true, run: inDraft((d) => d.showCc()) });
       if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", keywords: english("palette.addBcc"), draft: true, run: inDraft((d) => d.showBcc()) });
-      if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", keywords: english("compose.link.insert"), draft: true, run: inDraft((d) => d.link()) });
+      if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘L" : "Ctrl+L", testId: "palette-draft-link", keywords: english("compose.link.insert"), draft: true, run: inDraft((d) => d.link()) });
       if (draftState.link) add({ id: "draft.saveSnippet", group: "draft", label: t("palette.saveAsSnippet"), icon: <BookmarkPlus />, testId: "palette-draft-save-snippet", keywords: english("palette.saveAsSnippet"), draft: true, run: () => draftKey && runInDraft(draftKey, () => void saveDraftAsSnippet(draftKey)) });
       if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard", english("compose.discard")), draft: true, run: inDraft((d) => d.discard()) });
     }
@@ -283,7 +283,7 @@ export function CommandPalette() {
       const filterWords = (key: FilterKey) => [...english(key), ...english("palette.search.unreadFilter")];
       const filterSearch = (key: FilterKey) => `${t(key)} ${t("palette.search.unreadFilter")}`;
       const toggle = filter === "on" ? "palette.showAll" : "palette.showUnread";
-      add({ id: "filter.unread", group: "actions", label: t(toggle), search: filterSearch(toggle), icon: <ListFilter />, shortcut: isMac ? "⌘L" : "Ctrl+L", testId: "palette-unread-filter", keywords: filterWords(toggle), run: toggleUnreadFilter });
+      add({ id: "filter.unread", group: "actions", label: t(toggle), search: filterSearch(toggle), icon: <ListFilter />, testId: "palette-unread-filter", keywords: filterWords(toggle), run: toggleUnreadFilter });
       if (active && active !== "unread") add({ id: "filter.all", group: "actions", label: t("palette.showAll"), search: filterSearch("palette.showAll"), icon: <ListFilter />, shortcut: "⇧A", testId: "palette-filter-all", keywords: filterWords("palette.showAll"), run: () => setListFilter(undefined) });
       if (active !== "people" && supported.includes("people")) add({ id: "filter.people", group: "actions", label: t("palette.showPeople"), search: filterSearch("palette.showPeople"), icon: <Users />, testId: "palette-filter-people", keywords: filterWords("palette.showPeople"), run: () => setListFilter("people") });
       if (active !== "waiting" && supported.includes("waiting")) add({ id: "filter.waiting", group: "actions", label: t("palette.showWaiting"), search: filterSearch("palette.showWaiting"), icon: <Reply />, testId: "palette-filter-waiting", keywords: filterWords("palette.showWaiting"), run: () => setListFilter("waiting") });

@@ -111,10 +111,10 @@ test.describe("snippets", () => {
     await expect(body(page)).toHaveText("Dear Marta, welcome aboard.");
   });
 
-  test("⌘K “intro” ↵ in a draft inserts it; outside a draft “New message from snippet…” opens one with it", async ({ app: page, server }) => {
+  test("⌘K “intro” ↵ in a draft’s text inserts it; outside a draft “New message from snippet…” opens one with it", async ({ app: page, server }) => {
     await seed(server, intro);
+    // ⌘K in the text itself (⌘L is the link)
     await reply(page);
-    await page.getByTestId("compose-to").focus();
     await page.keyboard.press("ControlOrMeta+k");
     await input(page).fill("intro");
     await expect(selected(page)).toContainText("Insert snippet: Intro call");
@@ -150,8 +150,9 @@ test.describe("snippets", () => {
     await body(page).click();
     await page.keyboard.type("This week we shipped snippets.");
     // at once, before any autosave
-    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("ControlOrMeta+l");
     await expect(page.getByTestId("link-popover")).toBeVisible();
+    // ⌘K from the link popover goes on to the palette
     await page.keyboard.press("ControlOrMeta+k");
     await input(page).fill("save as snippet");
     await page.keyboard.press("Enter");

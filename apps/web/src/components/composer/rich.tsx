@@ -592,7 +592,7 @@ const serializeEmpty = (state: EditorState): boolean => isEmpty(state.doc);
 
 // ── links
 
-/** `palette`: a second ⌘K goes on to the palette (a draft's; not the snippet editor's, inside Settings) */
+/** `palette`: ⌘K goes on to the palette (a draft's; not the snippet editor's, inside Settings) */
 export function LinkPopover({ view, draft, onClose, canEdit, palette = true }: { view: EditorView; draft: LinkDraft; onClose: () => void; canEdit: () => boolean; palette?: boolean }) {
   const id = useId();
   const [text, setText] = useState(draft.text);
@@ -625,7 +625,7 @@ export function LinkPopover({ view, draft, onClose, canEdit, palette = true }: {
   const keys = (e: React.KeyboardEvent) => {
     // the popover owns Enter and Escape: never the composer's send or collapse
     if (e.nativeEvent.isComposing) return;
-    // plan 88: a second ⌘K goes on to the palette, for this draft (focus back in its text first)
+    // plan 88: ⌘K goes on to the palette, for this draft (focus back in its text first)
     if (palette && e.key.toLowerCase() === "k" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();

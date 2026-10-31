@@ -1040,7 +1040,7 @@ test("printing: the print document for a 100-message conversation builds in unde
   expect(s.p95).toBeLessThanOrEqual(30 * MULT);
 });
 
-test("the unread filter: ⌘L → the other list rendered within 100 ms; moving off the kept read row renders only rows on screen", async ({ app: page }) => {
+test("the unread filter: its button → the other list rendered within 100 ms; moving off the kept read row renders only rows on screen", async ({ app: page }) => {
   await expect(rows(page).first()).toBeVisible();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const samples: number[] = [];
@@ -1050,8 +1050,7 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
       // [view, account, category, review, filter, query]
       const shows = () => (JSON.parse(list.getAttribute("data-results-for") ?? "[]") as unknown[])[4] === want;
       const t0 = performance.now();
-      const mac = navigator.platform.includes("Mac");
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "l", metaKey: mac, ctrlKey: !mac, cancelable: true }));
+      (document.querySelector("[data-testid=unread-filter]") as HTMLElement).click();
       await new Promise<void>((resolve) => {
         if (shows()) return resolve();
         const mo = new MutationObserver(() => {
@@ -1066,9 +1065,9 @@ test("the unread filter: ⌘L → the other list rendered within 100 ms; moving 
     }, i % 2 === 0 ? "unread" : null);
     samples.push(ms);
   }
-  const s = stat("unread filter: ⌘L → list rendered (+1 frame)", 100, samples.slice(2));
+  const s = stat("unread filter: button → list rendered (+1 frame)", 100, samples.slice(2));
   // off again after 16 toggles; on, with the open thread read and kept: j moves off it and it leaves
-  await page.keyboard.press("ControlOrMeta+l");
+  await page.evaluate(() => (document.querySelector("[data-testid=unread-filter]") as HTMLElement).click());
   await expect(page.locator("[data-testid=thread-row]:not([data-unread])")).toHaveCount(1);
   const mounted = await rows(page).count();
   const before = await renders(page, "ThreadRow");
