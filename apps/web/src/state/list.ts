@@ -196,6 +196,7 @@ function pruneSelection(index: Map<number, number>): void {
 export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
+  const connection = client.connectionVersion;
   const selectionRevision = getSelectionWriteRevision();
   const current = useList.getState();
   const sameView = current.key === key;
@@ -215,7 +216,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const counting = scope?.kind === "view" && scope.filter === "unread" ? client.call("threads.scopeCount", { scope }).catch(() => null) : null;
   try {
     let page = await fetchPage(undefined, limit);
-    if (mine !== seq) return;
+    if (mine !== seq || connection !== client.connectionVersion) return;
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
     // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap.
     const windowed = sameView && (options.window || refreshPolicy.keepWindow());
@@ -226,7 +227,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       const missing = () => keep.some((id) => !page.items.some((t) => t.id === id));
       while ((page.items.length < want || missing()) && page.nextCursor && page.items.length < want + REACH) {
         const more = await fetchPage(page.nextCursor, page.items.length < want ? Math.min(WINDOW_PAGE, want - page.items.length) : WINDOW_PAGE);
-        if (mine !== seq) return;
+        if (mine !== seq || connection !== client.connectionVersion) return;
         page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
       }
     }
@@ -256,7 +257,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     restore?.();
     if (counting)
       void counting.then((r) => {
-        if (mine === seq && r) useList.setState({ unreadTotal: { key, n: r.count, capped: r.capped } });
+        if (mine === seq && connection === client.connectionVersion && r) useList.setState({ unreadTotal: { key, n: r.count, capped: r.capped } });
       });
     pruneSelection(useList.getState().index);
     // the same for a first page that came back empty with more after it
@@ -268,7 +269,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     }
   } catch (error) {
     if (error instanceof RpcError && error.code === "CANCELLED") return;
-    if (mine !== seq) return;
+    if (mine !== seq || connection !== client.connectionVersion) return;
     useList.setState({ loading: false, error: error instanceof Error ? error.message : String(error) });
   }
 }
@@ -296,11 +297,12 @@ async function loadNextPage(): Promise<boolean> {
   if (!st.nextCursor || st.loadingMore || st.loading || st.itemsKey !== st.key) return true;
   const key = st.key;
   const mine = pageSeq;
+  const connection = client.connectionVersion;
   const editsAtStart = edits;
   useList.setState({ loadingMore: true });
   try {
     const page = await fetchPage(st.nextCursor);
-    if (mine !== pageSeq || useList.getState().key !== key) return true;
+    if (connection !== client.connectionVersion || mine !== pageSeq || useList.getState().key !== key) return true;
     if (edits !== editsAtStart) {
       // it may bring back a row an optimistic edit just took out: ask again from where the list ends now
       useList.setState({ loadingMore: false });
@@ -314,7 +316,7 @@ async function loadNextPage(): Promise<boolean> {
     if (fresh.length === 0 && page.nextCursor) void loadMore();
     return true;
   } catch (error) {
-    if (mine !== pageSeq) return true;
+    if (connection !== client.connectionVersion || mine !== pageSeq) return true;
     useList.setState({ loadingMore: false });
     // the mailbox changed since that page (a thread may have moved above it): refetch the loaded window and
     // the next page from the top instead of continuing a stale cursor
@@ -348,6 +350,14 @@ export function syncRow(t: Pick<ThreadSummary, "id" | "starred" | "unread" | "ca
   const items = st.items.slice();
   items[i!] = { ...row, starred: t.starred, unread: t.unread, categoryIds: t.categoryIds };
   useList.setState({ items });
+}
+
+/** Retire cursors and pending publications from the previous transport. */
+export function invalidateListConnection(): void {
+  seq++;
+  pageSeq++;
+  pendingMore = null;
+  useList.setState({ loading: false, loadingMore: false, nextCursor: null, unreadTotal: null, error: null });
 }
 
 /** a refresh that waited while a page covered the list (List layout) */

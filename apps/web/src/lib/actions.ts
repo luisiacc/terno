@@ -144,6 +144,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
   breadcrumb("action", "action.thread", { action, count: targets.length });
   leaveList(action, targets, options);
   // z right after the key: this action is the last one already, its undo waits for the backend's answer
+  const connection = client.connectionVersion;
   const undoIds = deferred<number[]>();
   const undo = options.quiet ? null : registerUndo(() => undoIds.promise.then((ids) => (ids.length ? undoActions(ids, targets.length) : undefined)));
   try {
@@ -151,6 +152,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     const ids: number[] = [];
     for (let i = 0; i < targets.length; i += 5000) {
       const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
+      if (connection !== client.connectionVersion) { undoIds.resolve([]); return; }
       if (r.undoId !== null) ids.push(r.undoId);
     }
     undoIds.resolve(ids);
@@ -166,6 +168,7 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     }
   } catch (error) {
     undoIds.resolve([]);
+    if (connection !== client.connectionVersion) return;
     captureUi(error, { code: "action.failed", fields: { action, count: targets.length } });
     snack.error(failed(error));
     void reloadList({ keepSelection: true });

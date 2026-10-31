@@ -4,6 +4,7 @@ import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import type { DesignId } from "@terno/core";
 import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts } from "~/lib/drafts";
+import { installQueryRecovery } from "~/rpc/reconnect";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
 import { getApp, navigate, setApp, setCategories, setFolders } from "~/state/app";
@@ -75,7 +76,7 @@ export async function boot(): Promise<void> {
         refreshList(listCovered());
       });
     });
-    client.on("counts", (counts) => setApp({ counts }));
+    installQueryRecovery({ covered: listCovered, readerShown });
     client.on("accounts", (accounts) => {
       setApp({ accounts });
       reconcileAccounts(accounts);

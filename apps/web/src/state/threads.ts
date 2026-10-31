@@ -42,7 +42,24 @@ function lost(id: number): void {
   useThreads.setState((s) => ({ details, gone: new Set([...s.gone, id].slice(-MAX)), version: s.version + 1 }));
 }
 
+let connection = client.connectionVersion;
+
+/** Same-store reattachment: keep the selected object until its replacement arrives. */
+export function invalidateThreadConnection(): void {
+  connection = client.connectionVersion;
+  const selected = getApp().selectedId;
+  const current = useThreads.getState().details;
+  const retained = selected === null ? undefined : current.get(selected);
+  inflight.clear();
+  newest.clear();
+  staleSince.clear();
+  if (retained) staleSince.set(selected!, ++seq);
+  useThreads.setState((s) => ({ details: retained ? new Map([[selected!, retained]]) : new Map(), gone: new Set(), version: s.version + 1 }));
+}
+
 export function loadThread(id: number, force = false): Promise<ThreadDetail | null> {
+  if (connection !== client.connectionVersion) invalidateThreadConnection();
+  const atConnection = client.connectionVersion;
   if (!force) {
     const cached = useThreads.getState().details.get(id);
     if (cached && !staleSince.has(id)) return Promise.resolve(cached);
@@ -55,6 +72,7 @@ export function loadThread(id: number, force = false): Promise<ThreadDetail | nu
   const p = client
     .call("threads.get", { threadId: id })
     .then((d) => {
+      if (atConnection !== client.connectionVersion) return null;
       if (newest.get(id) !== n) return d;
       put(d);
       // its row says what the conversation now says (List's page waits to refresh the list; actions read the row), unless an
@@ -65,7 +83,7 @@ export function loadThread(id: number, force = false): Promise<ThreadDetail | nu
     })
     .catch((error: unknown) => {
       // a passing failure keeps what is on screen (the next load tries again); a thread that is gone stops being shown
-      if (error instanceof RpcError && error.code === "NOT_FOUND" && newest.get(id) === n) lost(id);
+      if (atConnection === client.connectionVersion && error instanceof RpcError && error.code === "NOT_FOUND" && newest.get(id) === n) lost(id);
       return null;
     })
     .finally(() => {
