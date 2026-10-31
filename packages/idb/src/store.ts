@@ -1536,16 +1536,16 @@ export class IdbMailStore implements MailStore {
         return quickActions(this.c, categoryId, threadIds, model);
       });
     },
-    countScope: async (categoryId, given, now) => {
+    countScope: async (categoryId, given, now, opts) => {
       const scope = resolvable(given);
       if (scope.kind === "query") return countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length);
-      return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1)))!.length);
+      return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1, opts?.move)))!.length);
     },
-    resolveScope: async (categoryId, given, now, limit = -1) => {
+    resolveScope: async (categoryId, given, now, limit = -1, opts) => {
       const scope = resolvable(given);
       // sender/domain/list scopes read the message indexes: the late tables must be in
       const prepared = await this.read(() => {
-        const direct = scopeThreads(this.c, categoryId, scope);
+        const direct = scopeThreads(this.c, categoryId, scope, undefined, opts?.move);
         if (direct) return { ids: direct, search: null };
         if (scope.kind !== "query") return { ids: [], search: null };
         const search = this.resolve({ query: scope.query, now });

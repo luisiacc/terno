@@ -866,7 +866,7 @@ function decideThreads(c: Ctx, roots: Map<number, RootMessage>, req: { now: numb
 // ───────────────────────────── bulk scopes, quick actions, predictions ─────────────────────────────
 
 /** Sender/domain/list scopes (received mail only, outside trash and spam, not filed, not removed); null for query scopes. */
-export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope, count?: number): number[] | null {
+export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope, count?: number, move = false): number[] | null {
   const own = ownAddresses(c);
   const messages = T(c, "messages");
   let rows: R[];
@@ -895,7 +895,7 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
   for (const m of rows) {
     if (m.is_sent !== 0 || own.emails.has(m.from_email) || seen.has(m.thread_id)) continue;
     seen.add(m.thread_id);
-    if (!scopeOpen(c, categoryId, threads.get(m.thread_id))) continue;
+    if (!scopeOpen(c, categoryId, threads.get(m.thread_id), move)) continue;
     ids.add(m.thread_id);
     // a count (plan 80) stops past what it shows, and needs no order: a dominant sender costs what its first matches do
     if (count !== undefined && ids.size >= count) return [...ids];
@@ -904,8 +904,11 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
 }
 
 /** what every bulk scope leaves out */
-export function scopeOpen(c: Ctx, categoryId: number, t: R | undefined): boolean {
-  if (!t || t.in_trash || t.in_spam || T(c, "thread_categories").has(t.id, categoryId)) return false;
+export function scopeOpen(c: Ctx, categoryId: number, t: R | undefined, move = false): boolean {
+  if (!t || t.in_trash || t.in_spam) return false;
+  // plan 86: a move also takes threads in the category and another one (they leave the other)
+  const memberships = T(c, "thread_categories");
+  if (memberships.has(t.id, categoryId) && (!move || memberships.by("fk_thread_id", t.id).length === 1)) return false;
   const e = T(c, "cls_examples").get(t.id, categoryId);
   return !(e && e.label < 0);
 }

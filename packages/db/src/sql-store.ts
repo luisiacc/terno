@@ -942,8 +942,8 @@ export class SqlMailStore implements MailStore {
 
   readonly categorize: MailStore["categorize"] = {
     quickActions: async (categoryId, threadIds, model) => quickActions(this.db, categoryId, threadIds, model),
-    countScope: async (categoryId, scope, now) => countScope(this.db, categoryId, scope, now),
-    resolveScope: async (categoryId, scope, now, limit) => resolveScope(this.db, categoryId, scope, now, limit),
+    countScope: async (categoryId, scope, now, opts) => countScope(this.db, categoryId, scope, now, opts),
+    resolveScope: async (categoryId, scope, now, limit, opts) => resolveScope(this.db, categoryId, scope, now, limit, opts),
     predict: async (threadId, model, mode, now) => predictThread(this.db, threadId, model, mode, now),
     pendingSuggestions: async (o) => pendingSuggestions(this.db, o),
     reject: async (threadId, categoryId, now) => rejectSuggestion(this.db, threadId, categoryId, now),

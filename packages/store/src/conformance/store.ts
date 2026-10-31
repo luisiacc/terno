@@ -1319,6 +1319,19 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(await store.filters.matchMessages(rule, NOW, ids)).toEqual(ids);
       });
 
+      it("plan 86: a move scope also takes threads in the category and another one, never those only there", async () => {
+        const { store, cat, thread } = await setup();
+        const sorted = (ids: number[]) => [...ids].sort((a, b) => a - b);
+        const other = (await store.categories.create("Lecturas", "cyan")).id;
+        const [none, both, onlyHere, onlyOther] = [await thread(), await thread(), await thread(), await thread()];
+        await store.categories.add({ categoryId: cat, threadIds: [both, onlyHere], addedBy: "user", now: NOW });
+        await store.categories.add({ categoryId: other, threadIds: [both, onlyOther], addedBy: "user", now: NOW });
+        const scope = { kind: "sender", email: "uber.receipts@uber.com" } as const;
+        expect(sorted(await store.categorize.resolveScope(cat, scope, NOW))).toEqual(sorted([none, onlyOther]));
+        expect(sorted(await store.categorize.resolveScope(cat, scope, NOW, -1, { move: true }))).toEqual(sorted([none, both, onlyOther]));
+        expect(await store.categorize.countScope(cat, scope, NOW, { move: true })).toEqual({ count: 3, capped: false });
+      });
+
       it("a subject scope is that sender's received mail with exactly that subject (normalized), with every bulk exclusion", async () => {
         const { store, acct, cat, thread } = await setup();
         const [a, b] = [await thread(), await thread({ subject: "TU RECIBO" })];

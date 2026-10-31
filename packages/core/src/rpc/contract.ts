@@ -613,6 +613,10 @@ export const contract = {
   "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
 
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
+  /** Plan 86: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
+  "offers.forAction": m<SimilarOffers & { automated: boolean }>()(
+    z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id })]) }),
+  ),
   "similar.offers": m<SimilarOffers>()(z.object({ threadIds: z.array(id).min(1).max(200), action: z.enum(SIMILAR_ACTIONS) })),
   /**
    * Archives, deletes or spams a scope (resolved once, sliced, with progress) plus the
@@ -696,7 +700,8 @@ export const contract = {
    */
   "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null; filterFailed: boolean }>()(
     // a filter says who sent it (and the subject), the domain or the list (plan 81), or words (plan 84); a search can't be filed always
-    z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind !== "query"),
+    // plan 86: `move` files the set exclusively (a drag's semantics: other categories left, journaled; categorize.undo restores)
+    z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName, move: z.boolean().optional() }).refine((p) => !p.always || p.scope.kind !== "query"),
     { timeoutMs: 120_000 },
   ),
   /** Plan 80: "Always file here" for one thread: same subject from its sender, then all from them, with how many each files now. */

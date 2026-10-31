@@ -462,7 +462,7 @@ export function createHandlers(b: Backend): Handlers {
       const ids = await store.categorize.resolveScope(categoryId, scope, b.now(), COUNT_CAP + 1);
       return { count: Math.min(ids.length, COUNT_CAP), capped: ids.length > COUNT_CAP, sample: await store.threads.summaries(ids.slice(0, limit)) };
     },
-    "categorize.apply": async ({ categoryId, scope, always, filterName }, ctx) => {
+    "categorize.apply": async ({ categoryId, scope, always, filterName, move }, ctx) => {
       await requireCategory(categoryId);
       // plan 80: the filter first, so mail that arrives while the set is filed is caught by it (the set is fixed below)
       let filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null = null;
@@ -480,10 +480,22 @@ export function createHandlers(b: Backend): Handlers {
       const addedBy = ctx.origin === "mcp" ? "agent" : "bulk";
       let added = 0;
       let batchId = 0;
+      // plan 86: a move's batch is journaled from its start: a failure partway still names it
+      let moving = false;
       // from here a failure still names the filter made above (plan 81: resolving or the batch failing stranded it)
       try {
         // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
-        const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
+        const ids = await store.categorize.resolveScope(categoryId, scope, b.now(), -1, { move });
+        if (move) {
+          // plan 86: an exclusive move of the whole set, like a drag (other categories left, every row journaled)
+          if (ids.length === 0) return { batchId: null, added: 0, filter, filterFailed };
+          ({ batchId } = await store.categories.beginMove({ to: categoryId, threadIds: ids, addedBy, now: b.now(), source: "snackbar" }));
+          moving = true;
+          await b.finishMove(batchId);
+          const r = await store.categories.moveOutcome(batchId);
+          const changed = new Set([...r.added, ...r.moved]);
+          return { batchId: changed.size ? batchId : null, added: changed.size, filter, filterFailed };
+        }
         batchId = await store.categories.createBatch(categoryId, always ? "always" : "snackbar", scope, b.now());
         await b.runSliced(ids, 100, async (chunk) => {
           const r = await store.categories.add({ categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
@@ -492,11 +504,27 @@ export function createHandlers(b: Backend): Handlers {
           b.notifyChanged(r.added);
         });
       } catch (error) {
-        // what committed stays filed, and the filter stays: the renderer can still undo both
-        const details = { batchId: added ? batchId : null, filterUndo: filter?.filterUndo ?? null };
+        // what committed stays filed (a move's journal holds it), and the filter stays: the renderer can still undo both
+        const details = { batchId: added || moving ? batchId : null, filterUndo: filter?.filterUndo ?? null };
         throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), details, { expected: false, cause: error });
       }
       return { batchId: added ? batchId : null, added, filter, filterFailed };
+    },
+    /**
+     * Plan 86: what one action offers next, the same everywhere (snackbars, menus): the scopes the targets share,
+     * each with what it would change now, and whether every target came from a sender that isn't a person.
+     */
+    "offers.forAction": async ({ threadIds, action }) => {
+      const summaries = await store.threads.summaries([...new Set(threadIds)].slice(0, 200));
+      const automated = summaries.length > 0 && summaries.every((t) => t.person !== true);
+      if (typeof action === "string") return { ...(await store.similar.offers(threadIds, action)), automated };
+      await requireCategory(action.category);
+      const { senderName, scopes } = await store.similar.scopes(threadIds);
+      const offers = await Promise.all(
+        // what a move would still change: not the targets (already moved), not what is only there already
+        scopes.map(async (scope) => ({ scope, ...(await store.categorize.countScope(action.category, scope, b.now(), { move: true })), skipped: 0 })),
+      );
+      return { senderName, offers, automated };
     },
     "categorize.alwaysOffers": async ({ categoryId, threadId }) => {
       await requireCategory(categoryId);
