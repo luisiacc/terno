@@ -58,3 +58,8 @@ Exactly one native read-only Standards+Spec review completed naturally, exit0/re
 Review limits retained verbatim in substance: eight event-loop turns establish finite quiescence only; the production timer getter covers connectivity ownership rather than all process timers; graceful reopen adds no crash/native-browser guarantee; fairness, poison and broader pending-attachment recovery remain outside scope. Later changes are this evidence-only record, not independently reviewed production/test changes. No in-scope shared dependency or outstanding finding remains for this finite handoff. Root retains sole authority for serial integration, any rerun and worklist dispositions.
 
 The invalidated owned process identities were checked after reaping: none remained alive with the captured identity (`supervised-tree-final.json`). Successful selected tests closed their synthetic fixture backends/stores and temporary profiles; no user process, port or real profile was touched. Broader milestones and the remaining provider report rows remain pending.
+
+
+## Root integration
+
+Rebased series onto committedmain2d19f82c; no conflicts or production changes. Root66selected tests, backend both types, owned lint/whitespace pass; two existing crash cases intentionally unselected, not new skip annotations. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-w03-retry-j26kvs3o`, exact guardedargv/PID/results. All processes naturally joined. Fast-forward landed82f7c96f. One actual nativeSol/high review PASS/PASS0, no further review/source/test changes. Root records B07/B14alreadyprotected with the finite post-finalizer/connectivity-timer/graceful-reopen limits above. No fullgate/build/perf/releaseclaim.
