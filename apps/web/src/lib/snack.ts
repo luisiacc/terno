@@ -295,6 +295,11 @@ export function zHolds(s: Pick<SnackState, "undo">, undo: Undo | undefined): boo
   return !!undo && s.undo === undo && undo.state === "ready";
 }
 
+/** Tests: copies of retained identities, without changing their lifetime. */
+export function snackRetentionForTests(): { queued: (string | undefined)[]; displaced: string[] } {
+  return { queued: queue.map((entry) => entry.id), displaced: [...displaced] };
+}
+
 /** Tests: a clean slate. */
 export function resetSnacks(): void {
   if (timer) clearTimeout(timer);

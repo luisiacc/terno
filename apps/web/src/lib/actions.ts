@@ -4,7 +4,7 @@ import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
 import { currentTargets, scopeRows } from "~/lib/select";
-import { dismissSnack, registerUndo, snack, type Undo } from "~/lib/snack";
+import { dismissSnack, registerUndo, snack, withdrawSnack, type Undo } from "~/lib/snack";
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, setApp, type ScopeSelection } from "~/state/app";
@@ -284,7 +284,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   } finally {
     progress.stop();
     if (connection === client.connectionVersion) void reloadList({ keepSelection: true });
-    else dismissSnack(progress.snackId);
+    else withdrawSnack(progress.snackId);
   }
 }
 

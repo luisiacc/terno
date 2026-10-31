@@ -82,3 +82,38 @@ it.each(["pending", "received"] as const)("a %s old scoped action cannot publish
     await tick();
   }
 });
+
+for (const phase of ["pending", "received"] as const) for (const retained of ["displaced", "queued"] as const) it(`${phase} scoped cleanup withdraws ${retained} progress identities across repeated reattachments`, async () => {
+  const { listKey } = await import("~/state/list");
+  const { snack, snackRetentionForTests, registerUndo, dismissSnack } = await import("~/lib/snack");
+  const baseline = snackRetentionForTests();
+  expect(baseline).toEqual({ queued: [], displaced: [] });
+  let old = attach();
+  for (let iteration = 0; iteration < 12; iteration++) {
+    setApp({ selectedId: null, checked: new Set(), scope: { key: listKey(), scope: { kind: "view", view: "inbox" }, label: "Synthetic", count: 1 } });
+    useList.setState({ items: [{ id: 901, starred: false, unread: true, categoryIds: [] } as unknown as ThreadSummary], index: new Map([[901, 0]]) });
+    const first = act("star"); await tick();
+    const request = old.requests.at(-1)!;
+    expect(request.m).toBe("threads.actScope");
+    const progress = useSnack.getState().current!;
+    expect(progress.tone).toBe("loading");
+    const newerUndo = registerUndo(() => {});
+    snack("Newer user action", { action: { label: "Undo", undo: newerUndo } });
+    const newer = useSnack.getState().current;
+    expect(snackRetentionForTests().displaced).toContain(progress.id);
+    if (retained === "queued") {
+      snack.success("Queued progress result", { id: progress.id });
+      expect(snackRetentionForTests().queued).toContain(progress.id);
+    }
+    if (phase === "received") { old.reply(request, { undoId: 100 + iteration, affected: 1 }); await Promise.resolve(); }
+    const replacement = attach();
+    await first; await tick();
+    expect(useSnack.getState().current).toBe(newer);
+    expect(useSnack.getState().undo).toBe(newerUndo);
+    expect(replacement.requests).toEqual([]);
+    expect(snackRetentionForTests()).toEqual(baseline);
+    dismissSnack(newer!.id);
+    expect(useSnack.getState().current).toBeNull();
+    old = replacement;
+  }
+});
