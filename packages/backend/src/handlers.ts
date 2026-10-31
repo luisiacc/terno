@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
+import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -18,6 +18,8 @@ const FIRST_BUILD_WAIT_MS = 250;
 
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
+/** plan 87: what ends a due reminder (the conversation put away; reading or starring it doesn't) */
+const ENDS_REMINDER: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "spam"]);
 /** Messages a similar sweep reads per page while resolving its scope (plan 63). */
 const SIMILAR_PAGE = 2000;
 
@@ -106,6 +108,8 @@ export function createHandlers(b: Backend): Handlers {
   ) => {
     const changed = new Set<number>();
     const before: MessageState[] = [];
+    // plan 87: a due reminder ends when its conversation is put away (else the Inbox's top brings it back); Undo restores it
+    const ended: Reminder[] = [];
     let done = 0;
     const run = async (slice: number[]) => {
       // a sweep re-reads what it may still touch, in the same turn as the act (plan 63: a star added meanwhile wins)
@@ -116,6 +120,7 @@ export function createHandlers(b: Backend): Handlers {
       b.opsQueued(r.opIds);
       b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
+      if (ENDS_REMINDER.has(action)) for (const x of await b.reminders.endDue(chunk)) ended.push(x);
       progress?.((done += slice.length));
     };
     try {
@@ -124,15 +129,23 @@ export function createHandlers(b: Backend): Handlers {
       else await b.runBudgeted([...threadIds], run);
     } catch (error) {
       // the slices that committed stay undoable: the error carries their undo
-      if (!o.partialUndo || before.length === 0) throw error;
-      const undoId = undoJournal.remember(before);
+      if (!o.partialUndo || (before.length === 0 && ended.length === 0)) throw error;
+      const undoId = remember(before, ended);
       if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
       throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId }, { expected: false, cause: error });
     }
     // what an undo puts back: these messages, exactly as they were
-    return { threads: [...changed], undoId: before.length ? undoJournal.remember(before) : null };
+    return { threads: [...changed], undoId: before.length || ended.length ? remember(before, ended) : null };
   };
   const undoJournal = new UndoJournal();
+  /** plan 87: the reminders an action ended, by its undo id (as many as the journal keeps) */
+  const endedReminders = new Map<number, Reminder[]>();
+  const remember = (before: MessageState[], ended: Reminder[]) => {
+    const id = undoJournal.remember(before);
+    if (ended.length) endedReminders.set(id, ended);
+    for (const key of endedReminders.keys()) if (endedReminders.size > 16) endedReminders.delete(key);
+    return id;
+  };
   /** Puts these messages back as they were: one store command (transaction, ops per account) per slice, like the action. */
   const restore = async (before: MessageState[], jobId: string | undefined) => {
     const progress = progressReporter(b, jobId, before.length);
@@ -153,6 +166,22 @@ export function createHandlers(b: Backend): Handlers {
       { initial: 16 },
     );
     return restored;
+  };
+  /** Takes back an action by its undo id: its messages, then the reminders it ended (plan 87). How many threads came back. */
+  const undoActs = async (undoId: number, jobId: string | undefined) => {
+    const before = undoJournal.take(undoId);
+    if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
+    try {
+      const restored = (await restore(before, jobId)).size;
+      const ended = endedReminders.get(undoId);
+      if (ended) await b.reminders.restore([], ended);
+      endedReminders.delete(undoId);
+      return restored;
+    } catch (error) {
+      // restoring is idempotent: a retry repeats all of it
+      undoJournal.putBack(undoId, before);
+      throw error;
+    }
   };
   const similarFilters = new SimilarFilters(store, () => b.now());
   let resolveQueue: Promise<unknown> = Promise.resolve();
@@ -251,15 +280,28 @@ export function createHandlers(b: Backend): Handlers {
       return { undoId: r.undoId, affected: r.threads.length, total: ids.length };
     },
     "threads.undo": async ({ undoId, jobId }) => {
-      const before = undoJournal.take(undoId);
-      if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
-      try {
-        return { restored: (await restore(before, jobId)).size };
-      } catch (error) {
-        // restoring is idempotent: a retry repeats all of it
-        undoJournal.putBack(undoId, before);
-        throw error;
-      }
+      return { restored: await undoActs(undoId, jobId) };
+    },
+
+    "reminders.list": () => b.reminders.refresh(),
+    "reminders.set": async ({ threadIds, dueAt, kind }) => {
+      const r = await b.reminders.set([...new Set(threadIds)], dueAt, kind);
+      if (!r) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
+      return r;
+    },
+    "reminders.clear": async ({ threadIds, dueOnly }) => ({ cleared: await b.reminders.clear(threadIds, dueOnly ?? false) }),
+    "reminders.restore": async ({ drop, put }) => {
+      if (!(await b.reminders.restore(drop, put))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
+      return { ok: true as const };
+    },
+    "reminders.threads": async ({ dueOnly, accountId }) => {
+      const now = b.now();
+      const rows = (await b.reminders.refresh()).reminders.filter((r) => !dueOnly || r.dueAt <= now);
+      const at = new Map(rows.map((r) => [r.threadId, r.dueAt]));
+      const items = (await store.threads.summaries([...at.keys()])).filter((t) => !t.inTrash && !t.inSpam && (accountId === undefined || t.accountId === accountId));
+      // the Inbox's top: the newest due first; the Reminders list: the soonest first
+      items.sort((x, y) => (dueOnly ? at.get(y.id)! - at.get(x.id)! : at.get(x.id)! - at.get(y.id)!) || y.id - x.id);
+      return { items };
     },
 
     "similar.offers": ({ threadIds, action }) => store.similar.offers(threadIds, action),
@@ -316,15 +358,7 @@ export function createHandlers(b: Backend): Handlers {
       // the filter first: no new mail is caught while the threads come back
       if (filterUndo !== null) await similarFilters.undo(filterUndo);
       if (undoId === null) return { restored: 0 };
-      const before = undoJournal.take(undoId);
-      if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
-      try {
-        return { restored: (await restore(before, jobId)).size };
-      } catch (error) {
-        // restoring is idempotent: a retry repeats all of it
-        undoJournal.putBack(undoId, before);
-        throw error;
-      }
+      return { restored: await undoActs(undoId, jobId) };
     },
     "categories.create": async ({ name, color, showInInbox }) => {
       const c = await store.categories.create(name, color, { showInInbox });
@@ -870,6 +904,8 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "sync.now": async ({ accountId, reason }) => {
+      // plan 87: a window's focus looks at reminders too (a timer runs late while a laptop sleeps; the web hears of no wake)
+      if (reason === "focus") b.refreshReminders();
       await b.retryNow(accountId ?? null, reason);
       return { ok: true as const };
     },

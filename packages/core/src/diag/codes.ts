@@ -96,6 +96,8 @@ export const CODES = {
   // notifications (plan 41): how many messages a notice stood for, never a name or a subject
   "notify.shown": c("count"),
   "notify.failed": c("errorClass"),
+  // reminders (plan 87): a failed read, never a thread or a time
+  "reminders.failed": c("errorClass"),
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
   "icons.batch": c("count", "durationMs"),
   "icons.trimmed": c("count", "bytes"),

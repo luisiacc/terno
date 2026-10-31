@@ -1434,6 +1434,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.filterChanged": "The filter changed while it was being applied.",
   "errors.suggestionGone": "That suggestion is no longer available.",
   "errors.tooManyThreads": "Too many conversations. Narrow the view or the search.",
+  "errors.remindersFull": "You can have up to {max} reminders. Clear some in Reminders to add more.",
   "errors.undoGone": "This action can no longer be undone.",
   "errors.moveExpired": "This move can no longer be undone.",
   "errors.replySourceGone": "The original message is no longer available. Copy your draft into a new message to send it.",

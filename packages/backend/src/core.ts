@@ -18,6 +18,7 @@ import { Attention, type AttentionHost } from "./attention";
 import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
+import { Reminders } from "./reminders";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
@@ -226,6 +227,8 @@ export class BackendCore {
   readonly icons: IconService;
   /** plan 41: the Dock badge and notifications for important new mail */
   readonly attention: Attention;
+  /** plan 87: reminders: one timer for the next one, a snapshot to the windows when they change */
+  readonly reminders: Reminders;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -243,6 +246,13 @@ export class BackendCore {
     this.categorizer = new Categorizer(this);
     this.aiAssist = new AiAssist(this);
     this.facts = new FactsBackfill(this);
+    this.reminders = new Reminders({
+      store: this.store,
+      now: () => this.now(),
+      emit: (snapshot) => this.server.emit("reminders", snapshot),
+      runBudgeted: (items, work) => this.runBudgeted(items, work),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
     const web = options.host?.kind === "web";
     this.autocomplete = new Autocomplete({
       source: this.store.autocomplete,
@@ -431,6 +441,8 @@ export class BackendCore {
     if (this.stopped) return;
     // plan 17: old mail's facts, and threads requeued before a quit, in slices
     this.facts.wake();
+    // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
+    this.refreshReminders();
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -470,7 +482,10 @@ export class BackendCore {
 
   /** The host's word on the network: desktop's main (a route or address change, a wake), the web page (online/offline). */
   networkChanged(online: boolean, reason: NetReason): void {
-    if (this.stopped || this.options.autoSync === false) return;
+    if (this.stopped) return;
+    // plan 87: a timer runs late across sleep: a wake looks at once (sync or not)
+    if (reason === "wake") this.refreshReminders();
+    if (this.options.autoSync === false) return;
     breadcrumb("sync", "net.changed", { netReason: reason, online });
     this.connectivity.network(online, reason);
   }
@@ -597,6 +612,7 @@ export class BackendCore {
     if (this.idleTimer) clearInterval(this.idleTimer);
     if (this.countsTimer) clearTimeout(this.countsTimer);
     this.attention.stop();
+    this.reminders.stop();
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
@@ -679,6 +695,14 @@ export class BackendCore {
 
   // ───────────────────────────── events ─────────────────────────────
 
+  /** plan 87: the reminders now (a start, a wake, a window's focus); a failure waits for the next one */
+  refreshReminders(): void {
+    this.reminders.refresh().catch((error: unknown) => {
+      captureError(error, { code: "reminders.failed" });
+      this.log("warn", "reminders couldn't be read", error instanceof Error ? error.message : error);
+    });
+  }
+
   /** Coalesces change notifications within one turn of the event loop. */
   notifyChanged(threadIds: Iterable<number>, views = true): void {
     for (const id of threadIds) this.pendingThreadIds.add(id);
@@ -693,6 +717,7 @@ export class BackendCore {
       this.pendingThreadIds.clear();
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
+      this.reminders.touched(threadIds);
       this.emitCounts();
       this.autocomplete.notify();
       this.facts.wake();

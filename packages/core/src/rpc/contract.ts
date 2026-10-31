@@ -25,8 +25,11 @@ import { LIST_FILTERS, type ListFilter } from "../list-filter";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
+  REMINDER_KINDS,
+  REMINDERS_MAX,
   VIEWS,
   type Account,
+  type Reminder,
   type Category,
   type Folder,
   type Counts,
@@ -509,6 +512,14 @@ const imapServer = z.object({
   user: z.string().min(1).max(320),
 });
 
+const reminderSchema = z.object({ threadId: id, dueAt: z.number().int().positive(), kind: z.enum(REMINDER_KINDS), setAt: z.number().int().nonnegative() });
+
+/** Plan 87: a reminder as the renderer sees it; `due`: its time came (by the backend's clock) */
+export type ReminderInfo = Reminder & { due: boolean };
+export interface RemindersSnapshot {
+  reminders: ReminderInfo[];
+}
+
 function m<R>() {
   return <P extends z.ZodType>(params: P, options: { timeoutMs?: number } = {}) => ({
     params,
@@ -582,6 +593,19 @@ export const contract = {
   ),
   /** Takes an action back (threads.act or actScope): each message it changed returns to its previous read, star and place. Once. */
   "threads.undo": m<{ restored: number }>()(z.object({ undoId: id, jobId: jobId.optional() }), { timeoutMs: 300_000 }),
+
+  /** plan 87: every reminder (answered "noReply" ones end first) */
+  "reminders.list": m<RemindersSnapshot>()(empty),
+  /** plan 87: the same reminder on these threads, replacing theirs; refused past REMINDERS_MAX. `rows`: what it set; `replaced`: what they had (Undo) */
+  "reminders.set": m<{ rows: Reminder[]; replaced: Reminder[] }>()(
+    z.object({ threadIds: z.array(id).min(1).max(REMINDERS_MAX), dueAt: z.number().int().positive(), kind: z.enum(REMINDER_KINDS) }),
+  ),
+  /** plan 87: removes these threads' reminders (`dueOnly`: only those due now: opening one); what it removed */
+  "reminders.clear": m<{ cleared: Reminder[] }>()(z.object({ threadIds: z.array(id).min(1).max(REMINDERS_MAX), dueOnly: z.boolean().optional() })),
+  /** plan 87: Undo: drops these rows if they are still exactly these, and puts those back */
+  "reminders.restore": m<{ ok: true }>()(z.object({ drop: z.array(reminderSchema).max(REMINDERS_MAX), put: z.array(reminderSchema).max(REMINDERS_MAX) })),
+  /** plan 87: the reminders' conversations, none in Trash or Spam. `dueOnly`: the due ones (newest due first, the Inbox's top); otherwise all (soonest first) */
+  "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
 
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
   "similar.offers": m<SimilarOffers>()(z.object({ threadIds: z.array(id).min(1).max(200), action: z.enum(SIMILAR_ACTIONS) })),
@@ -931,5 +955,7 @@ export interface Events {
   icons: { icons: Record<string, IconAnswer>; reset?: boolean };
   /** plan 41: important new mail, for a host that shows notifications from the page (the web; desktop main shows its own) */
   notify: MailNotice;
+  /** plan 87: the reminders changed, or one came due */
+  reminders: RemindersSnapshot;
 }
 export type EventName = keyof Events;
