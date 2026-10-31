@@ -168,6 +168,12 @@ export function validateBodyInput(message: { bodyText: string | null; bodyHtml: 
 
 /** A durable/cache preview owns its backing independently of a larger caller string. */
 export function bodyPreview(text: string | null, parts?: import("@terno/core").ExactBodyParts): string | null {
-  const source = parts?.text ? parts.text[0] ?? "" : text;
-  return source === null ? null : decodeBodyPart(encodeBodyPart(source.slice(0, 4096)));
+  if (!parts?.text) return text === null ? null : decodeBodyPart(encodeBodyPart(text.slice(0, 4096)));
+  const units = new Uint16Array(4096);
+  let length = 0;
+  for (const part of parts.text) {
+    for (let at = 0; at < part.length && length < units.length; at++) units[length++] = part.charCodeAt(at);
+    if (length === units.length) break;
+  }
+  return String.fromCharCode(...units.subarray(0, length));
 }

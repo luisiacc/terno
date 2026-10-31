@@ -63,4 +63,16 @@ export function defineExactBodyLifecycle(open: () => Promise<{ store: MailStore;
     } finally { await store.close(); await fixture.dispose(); }
   });
 
+  it("keeps category preparation independent of short UTF16 part boundaries", async () => {
+    const fixture = await open(), store = fixture.store;
+    try {
+      const [accountId] = await withAccounts(store, 1), parts = ["\ud83d", "\ude00 distinct", "ive marker ".repeat(900)], text = parts.join("");
+      const result = await store.sync.ingest([msg({ accountId: accountId!, bodyText: null, bodyParts: { text: parts }, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+      const id = result.touched[0]!;
+      expect((await store.threads.get(id))!.messages[0]!.bodyText === text).toBe(true);
+      const features = (await store.categorize.threadFeatures([id])).get(id)!;
+      expect(features.root.source.bodyText === text.slice(0, 4096), "the existing category prefix must span storage boundaries").toBe(true);
+    } finally { await store.close(); await fixture.dispose(); }
+  });
+
 }

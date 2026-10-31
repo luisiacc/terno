@@ -1,4 +1,8 @@
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import { BODY_PART_UNITS } from "./body-parts";
+
+const unavailable = () => new RpcError("UNAVAILABLE", L("errors.mail.processingBusy"));
 
 export interface BodyPreparationWorker {
   post(value: unknown, transfer: ArrayBuffer[]): void;
@@ -64,7 +68,7 @@ export function browserBodyPreparationFactory(message: (value: unknown) => void,
 export async function* prepareBodyTokens(text: string | readonly string[], yieldTo: () => Promise<void>, factory: BodyPreparationFactory, check?: () => void): AsyncGenerator<Uint16Array> {
   let waiting: { resolve(value: { type: string; value?: Uint16Array }): void; reject(error: Error): void } | undefined;
   let pending: { type: string; value?: Uint16Array } | undefined, failed = false;
-  const fault = () => { failed = true; waiting?.reject(new Error("Body preparation worker failed")); waiting = undefined; };
+  const fault = () => { failed = true; waiting?.reject(unavailable()); waiting = undefined; };
   const worker = factory((value) => {
     if (!value || typeof value !== "object" || !("type" in value) || typeof value.type !== "string") { fault(); return; }
     const reply = value as { type: string; value?: Uint16Array };
@@ -72,10 +76,10 @@ export async function* prepareBodyTokens(text: string | readonly string[], yield
     if (waiting) { const next = waiting; waiting = undefined; next.resolve(reply); } else pending = reply;
   }, fault);
   const next = async () => {
-    if (failed) throw new Error("Body preparation worker failed");
+    if (failed) throw unavailable();
     if (pending) { const reply = pending; pending = undefined; return reply; }
     return new Promise<{ type: string; value?: Uint16Array }>((resolve, reject) => {
-      const timer = setTimeout(() => { failed = true; waiting = undefined; reject(new Error("Body preparation worker timed out")); }, 30000);
+      const timer = setTimeout(() => { failed = true; waiting = undefined; reject(unavailable()); }, 30000);
       waiting = { resolve: (reply) => { clearTimeout(timer); resolve(reply); }, reject: (error) => { clearTimeout(timer); reject(error); } };
     });
   };
@@ -87,7 +91,7 @@ export async function* prepareBodyTokens(text: string | readonly string[], yield
       const part = new Uint16Array(chunk.length);
       for (let i = 0; i < part.length; i++) part[i] = chunk.charCodeAt(i);
       worker.post({ type: "part", value: part }, [part.buffer]);
-      if ((await next()).type !== "ack") throw new Error("Invalid body preparation acknowledgement");
+      if ((await next()).type !== "ack") throw unavailable();
       await yieldTo();
     }
     worker.post({ type: "end" }, []);
@@ -96,7 +100,7 @@ export async function* prepareBodyTokens(text: string | readonly string[], yield
       const reply = await next();
       if (reply.type === "done") return;
       const part = reply.value;
-      if (reply.type !== "tokens" || !(part instanceof Uint16Array) || !part.length || part.length > BODY_PART_UNITS || part.byteOffset || part.byteLength !== part.buffer.byteLength) throw new Error("Invalid prepared body part");
+      if (reply.type !== "tokens" || !(part instanceof Uint16Array) || !part.length || part.length > BODY_PART_UNITS || part.byteOffset || part.byteLength !== part.buffer.byteLength) throw unavailable();
       yield part;
       check?.();
       worker.post({ type: "ack" }, []);
