@@ -282,8 +282,13 @@ export class ScopeIndex {
     let ids = this.filtered.get(filter);
     if (ids && crossed.size > 64) ids = undefined;
     if (!ids) {
-      ids = [];
-      for (const t of threads.all()) if (test(t)) ids.push(t.id as number);
+      // A list may already have refreshed this filter: reuse its global members, copying before the ID sort.
+      const order = c.filterOrders[filter];
+      if (order.ready) ids = [...order.current(threads)];
+      else {
+        ids = [];
+        for (const t of threads.all()) if (test(t)) ids.push(t.id as number);
+      }
       ids.sort((x, y) => x - y);
       this.filtered.set(filter, ids);
     } else {
