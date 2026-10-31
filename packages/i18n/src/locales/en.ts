@@ -667,8 +667,6 @@ const en = {
 
   // ── list, reader, sidebar, menus, categories
   // @list
-  "sidebar.countHelp": "Unread conversations saved in Terno. Coverage may be incomplete.",
-  "sidebar.countAccountHelp": "Unread Inbox conversations saved in Terno. Coverage may be incomplete.",
   // a category row's tooltip: its unread count and its pending suggestions (the ✨ badge)
   "sidebar.categoryHelp.unread": { one: "# unread", other: "# unread" },
   "sidebar.categoryHelp.suggested": { one: "# suggested for this category", other: "# suggested for this category" },

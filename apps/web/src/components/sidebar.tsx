@@ -84,7 +84,6 @@ function NavItem({
   expanded,
   controls,
   countHelp,
-  countHelpDisabled,
   shortcut,
   note,
 }: {
@@ -107,9 +106,8 @@ function NavItem({
   /** an account: a disclosure of its folders (plan 67) */
   expanded?: boolean;
   controls?: string;
-  /** what the count means, as the row's tooltip and description; a category's is its own text, described by its element `id` */
-  countHelp?: "general" | "account" | { id: string; text: string };
-  countHelpDisabled?: boolean;
+  /** a category's numbers in words, as the row's tooltip and description (described by its element `id`) */
+  countHelp?: { id: string; text: string };
   shortcut?: string;
   /** a quiet mark after the name (plan 83: a category hidden from the Inbox) */
   note?: React.ReactNode;
@@ -124,7 +122,7 @@ function NavItem({
   const button = (
     <button
       type="button"
-      aria-describedby={countHelp && !countHelpDisabled ? (typeof countHelp === "object" ? countHelp.id : `sidebar-count-${countHelp}`) : undefined}
+      aria-describedby={countHelp?.id}
       data-testid={testId}
       data-active={active || undefined}
       aria-current={active ? "page" : undefined}
@@ -177,10 +175,10 @@ function NavItem({
   );
   if (!countHelp && !shortcut) return button;
   return (
-    <Tooltip disabled={countHelpDisabled}>
+    <Tooltip>
       <TooltipTrigger render={button} />
       <TooltipContent side="right">
-        {countHelp && (typeof countHelp === "object" ? countHelp.text : t(countHelp === "account" ? "sidebar.countAccountHelp" : "sidebar.countHelp"))}
+        {countHelp?.text}
         {shortcut && <Shortcut keys={shortcut} />}
       </TooltipContent>
     </Tooltip>
@@ -412,7 +410,6 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, de
       icon={<FolderIcon className="size-4" />}
       label={name}
       count={count || undefined}
-      countHelp="general"
     />
   );
 });
@@ -565,7 +562,6 @@ function AccountFolders({
                 label={viewLabel(v)}
                 count={v === "inbox" ? unread || undefined : undefined}
                 countTone={v === "inbox" ? countTone : "muted"}
-                countHelp={v === "inbox" ? "general" : undefined}
               />
             );
           })}
@@ -584,7 +580,6 @@ function AccountFolders({
                 icon={<Icon className="size-4" />}
                 label={t(`view.tab.${tab}`)}
                 count={tabUnread[tab] || undefined}
-                countHelp="general"
               />
             );
           })}
@@ -747,8 +742,6 @@ const AccountEntry = memo(function AccountEntry({
           label={a.displayName}
           // open, the count is its Inbox's (with one account, the top Inbox's)
           count={open && many ? undefined : unread || undefined}
-          countHelp="account"
-          countHelpDisabled={open && many}
           reserveEnd={a.syncState.authRequired ? "icon" : undefined}
         />
         {a.syncState.authRequired && <SignInMarker account={a} />}
@@ -842,15 +835,12 @@ export function Sidebar() {
       label={viewLabel(v)}
       count={v === "inbox" ? counts.inboxUnread : undefined}
       countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
-      countHelp={v === "inbox" ? "general" : undefined}
       shortcut={keys}
     />
   );
 
   return (
     <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
-      <span id="sidebar-count-general" className="sr-only">{t("sidebar.countHelp")}</span>
-      <span id="sidebar-count-account" className="sr-only">{t("sidebar.countAccountHelp")}</span>
       <div className="drag-region h-[52px] shrink-0" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">

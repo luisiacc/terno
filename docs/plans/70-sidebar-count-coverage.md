@@ -36,3 +36,9 @@ R2 (native read-only Codex, `gpt-6.1-sol` high, `ccfa0291..043c9ece`; `/tmp/tern
 - `pnpm exec oxlint --deny-warnings apps/web/src/components/sidebar.tsx apps/web/src/lib/count-coverage-config.test.ts apps/web/e2e/count-coverage.dev.ts apps/web/playwright.count-coverage.config.ts packages/i18n/src/locales/en.ts packages/i18n/src/locales/es.ts packages/db/src/count-coverage.test.ts packages/idb/src/count-coverage.test.ts packages/store/src/conformance/count-coverage.fixture.ts`: pass (`/tmp/terno-a13/lint-final.log`).
 
 Four screenshots in `/tmp/terno-a13/screenshots/count-{en,es}-{light,dark}.png` were personally inspected after R1. No production build, full suites, packaged smoke, provider request, real profile or secret was used. Existing batching is unchanged; the cost of the additional tooltip roots was not independently benchmarked. No status field determines provider completeness or freshness.
+
+## Revision: coverage tooltip removed (2026-10-31)
+
+> remove this tooltip when it shows that info, it provides zero value
+
+The shared "Unread conversations saved in Terno. Coverage may be incomplete." tooltip and description (Inbox, account, folder and Gmail tab rows) are gone, with their `en`/`es` keys. Rows with a shortcut keep a tooltip with just the shortcut. A category row keeps its own numbers ("11 unread, 4 suggested for this category"), which do tell the user something. `count-coverage.dev.ts` now asserts the disclaimer is absent.

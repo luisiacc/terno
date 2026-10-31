@@ -8,10 +8,8 @@ import { sqlDb, startDevServer } from "../../backend-dev/src/server";
 import { msg } from "../../../packages/store/src/conformance/fixtures";
 import { E2E_NOW } from "./constants";
 
-const copy = {
-  en: { general: "Unread conversations saved in Terno. Coverage may be incomplete.", account: "Unread Inbox conversations saved in Terno. Coverage may be incomplete." },
-  es: { general: "Conversaciones sin leer guardadas en Terno. La cobertura puede estar incompleta.", account: "Conversaciones sin leer de la bandeja de entrada guardadas en Terno. La cobertura puede estar incompleta." },
-};
+// the coverage disclaimer the counts used to carry (removed: it told the user nothing)
+const gone = { en: "Coverage may be incomplete", es: "La cobertura puede estar incompleta" };
 // a category's row says its own numbers: unread, then suggestions (the ✨ badge)
 const categoryCopy = {
   en: { both: "11 unread, 4 suggested for this category", one: "1 suggested for this category" },
@@ -35,50 +33,25 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       expect((await server.backend.store.threads.counts(E2E_NOW)).folderUnread?.[`${account}:Label_partial`]).toBe(1);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
       await page.locator("[data-ready]").waitFor();
+      // the counts carry no coverage disclaimer: the Inbox's tooltip is just its shortcut
       const inbox = page.getByTestId("nav-inbox");
-      await expect(inbox).toHaveAccessibleDescription(copy[language].general);
-      const counts = await page.evaluate(async () => {
-        const path = "/src/state/app.ts";
-        const state = await import(/* @vite-ignore */ path);
-        const previous = state.getApp().counts;
-        state.setApp({ counts: state.EMPTY_COUNTS });
-        return previous;
-      });
-      await expect(inbox.locator("[data-slot=nav-count]")).toHaveCount(0);
-      await expect(inbox).toHaveAccessibleDescription(copy[language].general);
-      await page.evaluate(async (previous) => {
-        const path = "/src/state/app.ts";
-        const state = await import(/* @vite-ignore */ path);
-        state.setApp({ counts: previous });
-      }, counts);
-      const accountRow = page.getByTestId(`nav-account-${account}`);
-      await expect(accountRow).toHaveAccessibleDescription(copy[language].account);
+      await expect(inbox).toHaveAccessibleDescription("");
       await expect(inbox).toHaveAccessibleName(/Inbox|Entrada/);
       await inbox.hover();
-      await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText(copy[language].general);
-      await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText("G");
-      await expect(inbox).toHaveAccessibleDescription(copy[language].general);
+      const tooltip = page.locator("[data-slot=tooltip-content][data-open]");
+      await expect(tooltip).toContainText("G");
+      await expect(tooltip).not.toContainText(gone[language]);
+      const accountRow = page.getByTestId(`nav-account-${account}`);
+      await expect(accountRow).toHaveAccessibleDescription("");
       await accountRow.focus();
       await page.keyboard.press("Enter");
       await expect(accountRow).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(page.getByTestId(`nav-folder-${account}-inbox`)).toBeFocused();
-      await accountRow.focus();
-      await page.keyboard.press("Space");
-      await expect(accountRow).toBeFocused();
-      await expect(accountRow).toHaveAttribute("aria-expanded", "false");
-      await page.keyboard.press("Space");
-      await expect(accountRow).toBeFocused();
-      await expect(accountRow).toHaveAccessibleDescription("");
-      await expect(page.getByTestId("nav-own-group").filter({ hasText: "Group synthetic" })).toHaveAccessibleDescription("");
-      await expect(page.getByTestId(`nav-folder-${account}-inbox`)).toHaveAccessibleDescription(copy[language].general);
-      await expect(page.getByTestId(`nav-folder-${account}-trash`)).toHaveAccessibleDescription("");
-      const empty = page.getByTestId(`nav-own-${account}-Label_empty`);
-      await expect(empty.locator("[data-slot=nav-count]")).toHaveCount(0);
-      await expect(empty).toHaveAccessibleDescription(copy[language].general);
+      await expect(page.getByTestId(`nav-folder-${account}-inbox`)).toHaveAccessibleDescription("");
       const partial = page.getByTestId(`nav-own-${account}-Label_partial`);
       await expect(partial.locator("[data-slot=nav-count]")).toHaveText("1");
-      await expect(partial).toHaveAccessibleDescription(copy[language].general);
+      await expect(partial).toHaveAccessibleDescription("");
       const category = page.locator('[data-testid^="nav-category-"]').first();
       const categoryId = Number((await category.getAttribute("data-testid"))!.slice("nav-category-".length));
       await page.evaluate(async (id) => {
@@ -97,26 +70,10 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       }, categoryId);
       await expect(category).toHaveAccessibleDescription(categoryCopy[language].one);
       await expect(page.getByTestId(`nav-review-${categoryId}`)).not.toHaveAttribute("aria-describedby", /sidebar-count/);
-      const folder = page.getByTestId(`nav-own-${account}-Label_21`);
-      await expect(folder).toHaveAccessibleDescription(copy[language].general);
       await page.mouse.move(900, 50);
-      await partial.focus();
-      await page.keyboard.press("Tab");
-      await expect(folder).toBeFocused();
-      await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText(copy[language].general);
-      await expect(folder).toHaveAccessibleDescription(copy[language].general);
-      const tooltip = page.locator("[data-slot=tooltip-content][data-open]");
-      expect((await new AxeBuilder({ page }).include("#app-sidebar").include('[data-slot=tooltip-content][data-open]').withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations).toEqual([]);
-      await page.keyboard.press("Escape");
-      await expect(tooltip).toBeHidden();
-      await expect(folder).toBeFocused();
-      await expect(folder).toHaveAccessibleDescription(copy[language].general);
-      await page.getByTestId(`nav-folder-${account}-trash`).focus();
-      await folder.hover();
-      await expect(tooltip).toContainText(copy[language].general);
-      const box = await tooltip.boundingBox();
-      if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await expect(tooltip).toBeVisible();
+      await category.hover();
+      await expect(tooltip).toHaveText(categoryCopy[language].one);
+      expect((await new AxeBuilder({ page }).include("#app-sidebar").include("[data-slot=tooltip-content][data-open]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()).violations).toEqual([]);
       mkdirSync("/tmp/terno-a13/screenshots", { recursive: true });
       await page.screenshot({ path: `/tmp/terno-a13/screenshots/count-${language}-${theme}.png` });
       expect(calls).toEqual([]);
@@ -125,7 +82,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   });
 }
 
-test("single account retains its Inbox description when expanded", async ({ page }) => {
+test("single account rows carry no coverage description", async ({ page }) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-count-single-"));
   const calls: string[] = [];
   const providers: ProviderRegistry = { ...demoRegistry, create(ctx) {
@@ -139,12 +96,12 @@ test("single account retains its Inbox description when expanded", async ({ page
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);
     await page.locator("[data-ready]").waitFor();
     const row = page.getByTestId(`nav-account-${account}`);
-    await expect(row).toHaveAccessibleDescription(copy.en.account);
+    await expect(row).toHaveAccessibleDescription("");
     await expect(row).toHaveAttribute("aria-expanded", "false");
     await row.click();
     await expect(row).toHaveAttribute("aria-expanded", "true");
-    await expect(row).toHaveAccessibleDescription(copy.en.account);
-    await expect(page.getByTestId(`nav-own-${account}-Label_single`)).toHaveAccessibleDescription(copy.en.general);
+    await expect(row).toHaveAccessibleDescription("");
+    await expect(page.getByTestId(`nav-own-${account}-Label_single`)).toHaveAccessibleDescription("");
     expect(calls).toEqual([]);
   } finally { await server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
