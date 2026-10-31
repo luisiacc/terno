@@ -4,8 +4,10 @@ import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 import type { StoreHarness } from "./store";
 import { ingest, msg, threadOf, withAccounts } from "./fixtures";
+import { defineW02ActionConformance } from "./w02-actions";
 
 export function defineFlagIntentConformance(name: string, harness: StoreHarness): void {
+  defineW02ActionConformance(name, harness);
   const stores: MailStore[] = [];
   afterEach(async () => { for (const store of stores.splice(0)) if (store.isOpen) await store.close(); });
   const cases: { action: ThreadAction; initial: Partial<IncomingMessage>; desired: Partial<IncomingMessage>; remote: Partial<IncomingMessage> }[] = [
