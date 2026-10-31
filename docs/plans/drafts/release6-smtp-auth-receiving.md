@@ -62,3 +62,9 @@ codex exec -m gpt-6.1-sol -c 'model_reasoning_effort="high"' -s read-only -C /Us
 ```
 
 They were also wrapped by the same inherited-guard, finite-deadline owned runner. The configured CLI emitted optional connector/marketplace startup warnings; both actual OpenAI native review sessions completed with the requested model/effort/sandbox and exit 0. No alternate review provider or fallback was used. Root should preserve the original milestone RED, serially integrate this atomic fixture correction and run its separately authorized release gates. No fetch, push, landing, main/worklist change, renderer/store/schema/network/incoming-transport edit or live-main copying occurred.
+
+## Root integration — 2026-10-30
+
+Rebased from7bc3b97d onto current main5454699e, preserving the user's Plan83and later committed changes; landed asded6440c. Only the owned fixture/spec changed. Root independently passes33/33in the full auth-isolation, IMAP-IDLE/foreground and re-sign-in files, both backend type configurations, strict owned lint and whitespace. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-smtp6-cebn4s8m` retains commands, actual PID/birth/argv, deadlines, exits and logs. All stages completed naturally.
+
+The existing single native Sol/high review PASS/PASS,0findings applies to the unchanged fixture implementation; no new review or production change. Header and body readiness remain distinct; released durable completion is followed by the exact public-body oracle and independent remote UID/bytes checks. Historical milestone RED is retained as the reproduced fixture-ordering failure, not waived as noise. Full release remains unqualified; UI, model and other performance repairs continue.
