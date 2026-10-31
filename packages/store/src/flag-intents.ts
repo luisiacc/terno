@@ -33,9 +33,15 @@ export function sameLocation(a: LocationState, b: LocationState): boolean {
   return a.inInbox === b.inInbox && a.isTrash === b.isTrash && a.isSpam === b.isSpam;
 }
 
-/** Canonical destinations may need to clear secondary flags hidden by display precedence. */
+/** Restore supported mixed flags without clearing a saved membership as an intermediate step. */
 export function restoreLocationOps(from: LocationState, to: LocationState): ThreadAction[] {
   if (sameLocation(from, to)) return [];
+  if (to.isTrash && to.isSpam && !to.inInbox) {
+    const ops: ThreadAction[] = [];
+    if (!from.isTrash) ops.push("trash");
+    if (!from.isSpam) ops.push("spam");
+    return ops.length ? ops : ["archive"];
+  }
   const source = placeOf(from), destination = placeOf(to);
   const out: ThreadAction[] = source === "trash" || source === "spam" ? ["moveToInbox"] : [];
   if (destination === "inbox") return out.length ? out : ["moveToInbox"];

@@ -59,6 +59,112 @@ export function defineW02ActionConformance(name: string, harness: StoreHarness):
       await store.debug.verify();
     });
 
+    it.each(["success", "unknown", "failed"] as const)("mixed Undo keeps final effects and independent fields after first-step %s and reopen", async (outcome) => {
+      let store = await harness.open(); stores.push(store);
+      const [a, b] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "mixed", inInbox: false, isTrash: true, isSpam: true }), msg({ accountId: b!, providerMsgId: "mixed" })]);
+      await store.sync.beginObservation(a!, { authoritativeFlags: true });
+      const initial = await store.debug.snapshot(), target = initial.messages.find((m) => m.accountId === a)!, sibling = initial.messages.find((m) => m.accountId === b)!;
+      const action = await store.threads.act({ threadIds: [target.threadId], action: "moveToInbox", signal: null, now: 1 });
+      const [moved] = await store.ops.claimReady(2, 20); await store.ops.complete(moved!.id, undefined, 3);
+      const old = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      const undo = await store.threads.restore({ messages: action.before, now: 4 });
+      expect(undo.opIds).toHaveLength(2);
+      const [first] = await store.ops.claimReady(5, 1);
+      expect(first?.kind).toBe("trash");
+      if (outcome === "success") await store.ops.complete(first!.id, undefined, 6);
+      else if (outcome === "unknown") await store.ops.markUnknown(first!.id, "Synthetic uncertainty", 6);
+      else await store.ops.fail(first!.id, "Synthetic refusal", false, 6);
+      for (const action of ["markRead", "star"] as const) await store.threads.act({ threadIds: [target.threadId], action, signal: null, now: 7 });
+      const middle = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(a!, [{ messageId: target.id, expectedProviderMsgId: "mixed", flags: { inInbox: false, isTrash: outcome !== "failed", isSpam: false, isRead: false, isStarred: false } }], middle);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === target.id)).toMatchObject({ isSpam: true, inInbox: false, isRead: true, isStarred: true });
+      store = await harness.reopen(store); stores.push(store);
+      for (const op of await store.ops.claimReady(8, 20)) await store.ops.complete(op.id, undefined, 9);
+      if (outcome === "unknown") {
+        expect((await store.ops.get(first!.id))?.state).toBe("unknown");
+        expect(await store.ops.claimReady(10, 20)).toEqual([]);
+        // Replaying Trash explicitly is safe here: final Inbox/Trash intent still matches and Spam is untouched.
+        await store.ops.resolveUnknown(first!.id, "retry", 11);
+        const [retry] = await store.ops.claimReady(12, 20);
+        expect(retry?.id).toBe(first!.id);
+        expect(JSON.parse(retry!.target_json).messageIds).toEqual([target.id]);
+        await store.ops.complete(retry!.id, undefined, 13);
+      }
+      await store.sync.updateFlags(a!, [{ messageId: target.id, expectedProviderMsgId: "mixed", flags: { inInbox: true, isTrash: false, isSpam: false, isRead: false, isStarred: false } }], old);
+      const beforeFresh = (await store.debug.snapshot()).messages.find((m) => m.id === target.id)!;
+      expect(beforeFresh).toMatchObject({ inInbox: false, isSpam: true, isRead: true, isStarred: true });
+      const fresh = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(a!, [{ messageId: target.id, expectedProviderMsgId: "mixed", flags: { inInbox: false, isTrash: outcome !== "failed", isSpam: true, isRead: true, isStarred: true } }], fresh);
+      const settled = await store.debug.snapshot();
+      expect(settled.messages.find((m) => m.id === target.id)).toMatchObject({ inInbox: false, isTrash: outcome !== "failed", isSpam: true, isRead: true, isStarred: true });
+      expect(settled.messages.find((m) => m.id === sibling.id)).toEqual(sibling);
+      expect(settled.ops.find((op) => op.id === first!.id)).toMatchObject({ state: outcome === "failed" ? "failed" : "succeeded", attempts: outcome === "unknown" ? 2 : 1, messageIds: [target.id] });
+      expect(settled.ops.filter((op) => op.id !== first!.id).every((op) => op.state === "succeeded" && op.attempts === 1 && op.messageIds.every((id) => id === target.id))).toBe(true);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      await store.debug.verify();
+    });
+
+    it("one newer star revision cannot invalidate or broaden the saved mixed-location retry", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "one-newer", inInbox: false, isTrash: true, isSpam: true }), msg({ accountId: a!, providerMsgId: "sibling" })]);
+      await store.sync.beginObservation(a!, { authoritativeFlags: true });
+      const initial = await store.debug.snapshot(), target = initial.messages.find((m) => m.providerMsgId === "one-newer")!, sibling = initial.messages.find((m) => m.providerMsgId === "sibling")!;
+      const move = await store.threads.act({ threadIds: [target.threadId], action: "moveToInbox", signal: null, now: 1 });
+      for (const op of await store.ops.claimReady(2, 20)) await store.ops.complete(op.id, undefined, 3);
+      const old = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.threads.restore({ messages: move.before, now: 4 });
+      const [trash] = await store.ops.claimReady(5, 1); await store.ops.complete(trash!.id, undefined, 6);
+      const [spam] = await store.ops.claimReady(7, 1); await store.ops.markUnknown(spam!.id, "Synthetic uncertainty", 8);
+      await store.threads.act({ threadIds: [target.threadId], action: "star", signal: null, now: 9 });
+      for (const op of await store.ops.claimReady(10, 20)) await store.ops.complete(op.id, undefined, 11);
+      store = await harness.reopen(store); stores.push(store);
+      await store.ops.resolveUnknown(spam!.id, "retry", 12);
+      const retry = await store.ops.claimReady(13, 20);
+      expect(retry.map((op) => op.id)).toEqual([spam!.id]);
+      expect(JSON.parse(retry[0]!.target_json).messageIds).toEqual([target.id]);
+      await store.ops.complete(spam!.id, undefined, 14);
+      await store.sync.updateFlags(a!, [{ messageId: target.id, expectedProviderMsgId: "one-newer", flags: { inInbox: true, isTrash: false, isSpam: false, isStarred: false } }], old);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === target.id)).toMatchObject({ inInbox: false, isTrash: true, isSpam: true, isRead: false, isStarred: true });
+      const fresh = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(a!, [{ messageId: target.id, expectedProviderMsgId: "one-newer", flags: { inInbox: false, isTrash: true, isSpam: true, isRead: false, isStarred: true } }], fresh);
+      expect((await store.debug.snapshot()).messages.find((m) => m.id === sibling.id)).toEqual(sibling);
+      expect((await store.ops.get(spam!.id))).toMatchObject({ state: "succeeded", attempts: 2 });
+      expect(await store.ops.claimReady(15, 20)).toEqual([]);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      await store.debug.verify();
+    });
+
+    it("a newer Spam/Inbox revision preserves saved Trash and invalidates only conflicting unknown effects", async () => {
+      let store = await harness.open(); stores.push(store);
+      const [a] = await withAccounts(store, 1);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "mixed-newer", inInbox: false, isTrash: true, isSpam: true })]);
+      await store.sync.beginObservation(a!, { authoritativeFlags: true });
+      const threadId = await threadOf(store, "mixed-newer");
+      const moved = await store.threads.act({ threadIds: [threadId], action: "moveToInbox", signal: null, now: 1 });
+      for (const op of await store.ops.claimReady(2, 20)) await store.ops.complete(op.id, undefined, 3);
+      const old = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.threads.restore({ messages: moved.before, now: 4 });
+      const [trash] = await store.ops.claimReady(5, 1); await store.ops.complete(trash!.id, undefined, 6);
+      const [spam] = await store.ops.claimReady(7, 1); expect(spam?.kind).toBe("spam");
+      await store.ops.markUnknown(spam!.id, "Synthetic uncertainty", 8);
+      for (const action of ["notSpam", "markRead", "star"] as const) await store.threads.act({ threadIds: [threadId], action, signal: null, now: 9 });
+      store = await harness.reopen(store); stores.push(store);
+      await expect(store.ops.resolveUnknown(spam!.id, "retry", 10)).rejects.toMatchObject({ code: "STALE" });
+      for (const op of await store.ops.claimReady(11, 20)) await store.ops.complete(op.id, undefined, 12);
+      const id = moved.before[0]!.id;
+      await store.ops.complete(spam!.id, undefined, 13);
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "mixed-newer", flags: { inInbox: false, isTrash: false, isSpam: true, isRead: false, isStarred: false } }], old);
+      expect((await store.debug.snapshot()).messages[0]).toMatchObject({ inInbox: true, isTrash: true, isSpam: false, isRead: true, isStarred: true });
+      expect((await store.ops.get(spam!.id))?.state).toBe("unknown");
+      expect(await store.ops.claimReady(14, 20)).toEqual([]);
+      const fresh = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
+      await store.sync.updateFlags(a!, [{ messageId: id, expectedProviderMsgId: "mixed-newer", flags: { inInbox: true, isTrash: true, isSpam: false, isRead: true, isStarred: true } }], fresh);
+      expect((await store.providerStore(a!).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+      await store.debug.verify();
+    });
+
     it("auth-parked older read remains owned while newer independent star/location intent settles", async () => {
       let store = await harness.open(); stores.push(store);
       const [a] = await withAccounts(store, 1);

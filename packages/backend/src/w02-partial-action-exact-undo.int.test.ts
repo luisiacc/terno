@@ -114,4 +114,28 @@ describe.each(["SQL", "IDB"] as const)("W02 supported saved tuple: %s", (kind) =
     expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
     await t.backend.store.debug.verify();
   });
+  it("Undo preserves canonical Spam-only membership through reconciliation", async () => {
+    const t = await setup(kind);
+    for (const action of ["spam"] as const) {
+      await t.client.call("threads.act", { threadIds: [t.target.threadId], action });
+      expect(await t.backend.runWorker()).toBe(1);
+    }
+    expect([...t.remote.get("target")!].sort()).toEqual(["SPAM", "STARRED"]);
+    const restored = await t.client.call("threads.act", { threadIds: [t.target.threadId], action: "moveToInbox" });
+    expect(await t.backend.runWorker()).toBe(1);
+    expect(await t.client.call("threads.undo", { undoId: restored.undoId! })).toEqual({ restored: 1 });
+    const correction = (await t.backend.store.debug.snapshot()).ops.filter((op) => op.state === "queued");
+    for (const op of correction) expect(op.messageIds).toEqual([t.target.id]);
+    await t.reopen();
+    expect(await t.backend.runWorker()).toBe(correction.length);
+    await t.backend.syncAccount(t.account.id);
+    expect([...t.remote.get("target")!].sort()).toEqual(["SPAM", "STARRED"]);
+    const after = await t.backend.store.debug.snapshot();
+    expect(after.messages.find((m) => m.id === t.target.id)).toMatchObject({ inInbox: false, isTrash: false, isSpam: true, isRead: true, isStarred: true });
+    expect(after.messages.find((m) => m.id === t.sibling.id)).toEqual(t.sibling);
+    expect(after.ops.every((op) => op.state === "succeeded" && op.attempts === 1)).toBe(true);
+    expect(t.mutations.every((mutation) => mutation.ids.length === 1 && mutation.ids[0] === "target")).toBe(true);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+  });
+
 });
