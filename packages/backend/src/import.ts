@@ -1,12 +1,13 @@
 import { attachmentFingerprint, portableAttachmentFingerprint, exportAttachment, importAttachments, validateExportedAttachments } from "./attachments";
 import { RpcError, type ExportedAttachment } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, type Condition, type FilterAction, type FilterRule } from "@terno/core";
+import { attachmentFilename, attachmentMime, attachmentCid, decodeText, MAX_RECIPIENTS, snippetSchema, type Snippet, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { draftAddressSchema, exportCategorySchema, exportDraftSchema, exportFilterSchema, settingsPatchSchema, type ExportCategory, type ExportDraftItem, type ExportFilter, type DraftAddress, type ExportedDraft, type ExportFile, type ImportResult, type MailboxExport, type SettingsPatch } from "@terno/core/rpc";
 import type { DraftInput, DraftRow } from "@terno/store";
 import { GAP, textToHtmlChunks } from "@terno/richtext/quote";
 import type { BackendCore as Backend } from "./core";
 import { pinKeyOrigins, readSettings, SettingsError, updateSettings } from "./settings";
+import { importSnippets, listSnippets } from "./snippets";
 
 const GENERAL_KEYS = [
   "theme",
@@ -130,6 +131,7 @@ export async function exportMailbox(b: Backend): Promise<MailboxExport> {
     filters: await store.filters.list(),
     settings: await readSettings(store),
     drafts,
+    snippets: await listSnippets(store),
     ops,
   };
 }
@@ -325,6 +327,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     drafts: await valid<ExportDraftItem>(b, file.drafts, exportDraftSchema, (item) => {
       if (item && typeof item === "object" && "attachments" in item) throw new RpcError("BAD_REQUEST", L("attachments.invalidBackup"));
     }, 8),
+    snippets: await valid<Snippet>(b, file.snippets, snippetSchema),
   };
 
   let attachmentBytes = 0;
@@ -391,6 +394,9 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   const left = mergePending(emptyPending, restored.left);
   if (restored.drafts) b.server.emit("drafts", { reason: "import" });
 
+  // plan 89: snippets whose id and name aren't here (yours win), within the budget
+  const snippets = data.snippets.length ? await importSnippets(store, data.snippets) : 0;
+
   // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies
   let settings = false;
   if (data.settings && typeof data.settings === "object") {
@@ -414,6 +420,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     categories: { added, merged: data.categories.length - added },
     filters: { added: restored.filters, existing: restored.existingFilters, skipped },
     drafts: restored.drafts,
+    snippets,
     pending: { drafts: left.drafts.length, filters: left.filters.length },
     settings,
   };

@@ -30,6 +30,15 @@ describe("resolveKey", () => {
     expect(resolveKey(key("Enter", { meta: true }), { ...typing, composing: true }, null).command).toBe("compose.send");
   });
 
+  it("⌘; (Ctrl+; off Mac) opens the snippets while writing, in the palette too (plan 89)", () => {
+    const writing = { editable: true, composing: true, dialogOpen: false };
+    expect(resolveKey(key(";", { meta: true }), writing, null).command).toBe("snippets.open");
+    expect(resolveKey(key(";", { meta: true }), { ...ctx, editable: true, dialogOpen: true }, null).command).toBe("snippets.open");
+    expect(resolveKey(key(";", { ctrl: true }), ctx, null, undefined, false).command).toBe("snippets.open");
+    // a bare ; is text
+    expect(resolveKey(key(";"), writing, null).command).toBe(null);
+  });
+
   it("⌘, (Ctrl+, off Mac) opens settings from anywhere, also while typing or composing", () => {
     expect(resolveKey(key(",", { meta: true }), ctx, null).command).toBe("settings.open");
     expect(resolveKey(key(",", { meta: true }), { ...ctx, editable: true }, null).command).toBe("settings.open");

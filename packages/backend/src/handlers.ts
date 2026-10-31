@@ -10,6 +10,7 @@ import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
 import { StorageMaintenance } from "./storage";
+import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
@@ -592,6 +593,13 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "counts.get": () => store.threads.counts(b.now()),
+
+    "snippets.list": () => listSnippets(store),
+    "snippets.save": (p) => saveSnippet(store, p, b.now()),
+    "snippets.delete": async ({ id }) => {
+      await deleteSnippet(store, id);
+      return { ok: true as const };
+    },
 
     "filters.list": () => store.filters.list(),
     "filters.save": (p) => store.filters.save(p, b.now()),

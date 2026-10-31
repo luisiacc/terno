@@ -23,6 +23,7 @@ import { SIMILAR_ACTIONS, type SimilarOffers } from "../similar";
 import { REMOVABLE_BUCKETS, STORAGE_AGES, type StorageReport } from "../storage";
 import { filterRuleSchema, type Filter, type FilterRule } from "../rules/schema";
 import { LIST_FILTERS, type ListFilter } from "../list-filter";
+import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets";
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
@@ -273,6 +274,8 @@ export interface MailboxExport {
   filters: Filter[];
   settings: AppSettings;
   drafts: ExportedDraft[];
+  /** plan 89 */
+  snippets: Snippet[];
   /** provider operations not yet done (sends included, with their message) */
   ops: { accountEmail: string | null; kind: string; state: string; createdAt: number; lastError: string | null; target: unknown; payload: unknown }[];
 }
@@ -282,6 +285,8 @@ export interface ImportResult {
   categories: { added: number; merged: number };
   filters: { added: number; existing: number; skipped: string[] };
   drafts: number;
+  /** plan 89: snippets added (one whose id or name is already here is kept as it is) */
+  snippets: number;
   /** drafts and filters of mailboxes not connected here yet: they go in when those are connected */
   pending: { drafts: number; filters: number };
   /** the settings were applied (local mode and agent sending only ever become stricter) */
@@ -466,6 +471,8 @@ const exportFile = z.object({
   /** read field by field on import (each only if valid) */
   settings: z.unknown().optional(),
   drafts: z.array(z.unknown()).max(5000).default([]),
+  /** plan 89 (files from before carry none) */
+  snippets: z.array(z.unknown()).max(1000).default([]),
 });
 export type ExportFile = z.output<typeof exportFile>;
 
@@ -622,6 +629,17 @@ export const contract = {
   "reminders.restore": m<{ ok: true }>()(z.object({ drop: z.array(reminderSchema).max(REMINDERS_MAX), put: z.array(reminderSchema).max(REMINDERS_MAX) })),
   /** plan 87: the reminders' conversations, none in Trash or Spam. `dueOnly`: the due ones (newest due first, the Inbox's top); otherwise all (soonest first) */
   "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
+
+  /** Plan 89: snippets, by name. */
+  "snippets.list": m<Snippet[]>()(empty),
+  /**
+   * Creates or updates one. `base` is the updatedAt the edit started from:
+   * null creates it (or puts back a deleted one, its id kept); otherwise it
+   * must still be the stored one (STALE: changed or deleted elsewhere).
+   * `force` saves over whatever is there ("Keep mine").
+   */
+  "snippets.save": m<Snippet>()(snippetFieldsSchema.extend({ id: snippetIdSchema, base: z.number().int().min(0).nullable(), force: z.boolean().optional() })),
+  "snippets.delete": m<{ ok: true }>()(z.object({ id: snippetIdSchema })),
 
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
   /** Plan 91: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
