@@ -45,3 +45,37 @@ Actual native gpt-6.1-sol/high read-only Standards+Spec R1 reviewed41e7fd76..45d
 4. Source-extracted actual callbacks now exercise stale/retiring message refusal, stale exits, observer timeout then late exit/restart exactly once, shutdown/generation crash-timer refusal, deliberate exit during shutdown, generation/document/retirement readiness refusal and failed-quit restoration. Original-generation wiring negative run and final current controls are retained. These do not boot the full app. Expanded controls pass42/42 across4 files (19 retirement +23 adjacent).
 
 Initial expanded package types found one fixture ProcessEnv inference error; explicit NodeJS.ProcessEnv fixes it. Desktop package types, dedicated config types and seven exact-file lint pass after correction. No product UI or hot path changed. Second/final Standards+Spec review follows coherent corrections; no third review is authorized.
+
+## Exact verification and handoff commands
+
+All commands ran in this isolated checkout; each test/discovery command inherited `NODE_OPTIONS` and appended `--require=/tmp/terno-network-guard.cjs` (not replaced). No unchanged retry for green. Baseline restorations and the one test-only mutant used try/finally and restored exact input bytes.
+
+```sh
+# Focused final source and direct callers: 42 cases / 4 files
+NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" pnpm exec vitest run --project unit apps/desktop/src/backend-retirement.test.ts apps/desktop/src/shutdown.test.ts apps/desktop/src/preload-shutdown.test.ts packages/core/src/rpc/rpc.test.ts --reporter=verbose
+# Explicit native target: 2 cases / 1 file, no application build
+TERNO_TEST_ELECTRON=/Users/Luis/projects/emailclient/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" pnpm exec vitest run -c apps/desktop/vitest.retirement.config.ts --reporter=verbose
+NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" pnpm --filter @terno/desktop typecheck
+NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" pnpm exec tsc --noEmit --skipLibCheck --moduleResolution bundler --module esnext --target es2023 --types node apps/desktop/vitest.retirement.config.ts
+pnpm exec oxlint --deny-warnings apps/desktop/src/app.ts apps/desktop/src/backend-retirement.ts apps/desktop/src/backend-retirement.test.ts apps/desktop/src/backend-retirement.native.ts apps/desktop/src/test-fixtures/retirement-main.cjs apps/desktop/src/test-fixtures/retirement-utility.cjs apps/desktop/vitest.retirement.config.ts
+git diff --check
+```
+
+Each critique/review used exactly `codex exec -s read-only -C "$PWD" -m gpt-6.1-sol -c 'model_reasoning_effort="high"' -o <output> - < <prompt>`; prompt/run logs/output are in /tmp/terno-w05-desktop. One plan critique, R1 then R2 only; no fallback/nested work.
+
+Finite recommendation to Root: A09's desktop single-owner replacement boundary is qualified for logical ACK/kill versus actual exit, conservative held ownership after expiry/failed signalling, late physical exit restart, and native utility/body terminal control. Keep A09 needs-work for foreground/project policy and Web retirement (peer-owned), and do not generalize this into arbitrary crash/send recovery, packaged supervisor/preload proof or release-green. W05 remains open. All existing held round-two findings and branches, W10 repair99836679 and S48 remain held and are not dependencies.
+
+No renderer/UI/copy/assets, backend core/netpolicy/mail/stores, reminders/schema, protected plans, worklist/main, user WIP, real profiles or secrets were touched. No perf hot path changed, so no perf file applies. No full repo gates, production app/Vite build, packaging or smoke ran. Installed Electron45 is only the utility runtime dependency; changed helper is compiled into a disposable fixture, not an old Terno executable. Root owns serial rebase/retest/fast-forward/worklist/removal.
+
+## Final R2 verdict and held findings
+
+Actual native Sol/high read-only Standards+Spec R2 reviewed41e7fd76..ed655d34de23c55dccfdf392999c7b38a141c248, exit0/substantive DONE. Transcript /tmp/terno-w05-desktop/review-r2.txt. No P0/P1/data-loss finding in physical-exit authority. Two residual P2s are **held**, not fixed or approved by this child; no R3/reset:
+
+- Standards P2: native runner installs its failure cleanup deadline after identity capture. If `ps` fails while Electron stays alive, awaiting closure first has no unconditional bound. Arm cleanup before capture while retaining exact-identity signalling rules. R1 pre-ACK cleanup is fixed and proven, but this additional failure boundary means R1 cleanup is only partially closed overall. The actual runs captured identities, joined successfully and removed profiles; arbitrary identity-capture failure is unqualified.
+- Spec P2: connectWindow awaits readiness before rejecting retirement. Retirement before ready suppresses subsequent ready messages; if termination also fails, repeated window creation may retain readiness continuations/documents indefinitely. Cancel/deduplicate readiness waits without releasing physical ownership. Physical no-overlap remains protected, but bounded handoff continuation cleanup is unqualified for this combination.
+
+These are the new R2 lower-severity backlogs explicitly required to remain held. Existing held P2s and exhausted series remain untouched. Earlier R1 “all corrected” refers to the implemented fixes/evidence at that checkpoint; R2's partial cleanup assessment above is authoritative. No source change followed R2.
+
+Final finite disposition: recommend the demonstrated desktop physical-exit/no-reuse sub-boundary as qualified with these two named cleanup limits, **not** closure of all desktop retirement/liveness or A09/W05. Retain A09 needs-work for these cleanup boundaries plus peer-owned Web and foreground/project policy. Neither held P2 grants permission to resume implementation in this exhausted series.
+
+Cleanup audit /tmp/terno-w05-desktop/cleanup-audit.json confirms the recorded parent/utility PIDs absent and synthetic directories removed for original native witness, final body, final pre-ACK and failure mutant. Test-generated packages/backend/dist/incoming.worker.cjs and its newly created directory were removed (directory birth matched first test02:44:22). Original report/working artifact state is restored; dependencies remain installed/ignored. All command sessions were joined; no user process was signalled. No full gates/build/smoke was run. Final handoff is a clean committed branch after this documentation-only record; Root owns all integration.
