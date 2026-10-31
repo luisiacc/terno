@@ -482,14 +482,17 @@
  * SF Symbols keep theirs): a 12 px glyph is no fainter than a 28 px one. The
  * design's stroke is in 24-unit grid terms at 16 px, so 1.5 draws a 1 px line;
  * non-scaling-stroke holds it there whatever the icon's size. A surface tunes
- * it with --icon-line on the svg (:where() keeps these defaults below that).
+ * it with --icon-line on the svg: these defaults sit in the base layer, below
+ * every utility (unlayered, they'd beat them all).
  */
-:where(svg.icon) {
-  --icon-line: calc(var(--icon-stroke) * 2px / 3);
-  --icon-line-toolbar: calc(var(--icon-stroke-toolbar) * 2px / 3);
-}
-:where(svg.icon > [stroke]) {
-  vector-effect: non-scaling-stroke;
-  stroke-width: var(--icon-line);
+@layer base {
+  :where(svg.icon) {
+    --icon-line: calc(var(--icon-stroke) * 2px / 3);
+    --icon-line-toolbar: calc(var(--icon-stroke-toolbar) * 2px / 3);
+  }
+  :where(svg.icon > [stroke]) {
+    vector-effect: non-scaling-stroke;
+    stroke-width: var(--icon-line);
+  }
 }
 

@@ -49,9 +49,9 @@ function Label({ code }: { code: string }) {
       {/* the copy icon makes way and the check draws itself in */}
       <span className="relative size-3 shrink-0">
         <Copy className="code-chip-copy size-3" />
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="code-chip-check size-3">
-          {/* Hugeicons Tick02, inlined: the draw-in needs pathLength on the path itself */}
-          <path d="M5 14L8.5 17.5L19 6.5" pathLength={1} />
+        <svg aria-hidden viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" className="icon code-chip-check size-3">
+          {/* Hugeicons Tick02, inlined: the draw-in needs pathLength on the path; `icon` + its stroke give it the shared line */}
+          <path d="M5 14L8.5 17.5L19 6.5" stroke="currentColor" pathLength={1} />
         </svg>
       </span>
     </>

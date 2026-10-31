@@ -12,12 +12,13 @@
     "./themes/*": "./src/themes/*.ts",
     "./designs/*": "./src/designs/*.ts",
     "./brand/*": "./src/brand/*.tsx",
-    "./icons": "./src/icons.tsx"
+    "./icons": "./src/icons.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "gen:themes": "tsx scripts/gen-themes.ts",
     "gen:designs": "tsx scripts/gen-designs.ts",
+    "gen:icons": "tsx scripts/gen-icons.ts",
     "gen:brand": "tsx scripts/gen-brand.ts"
   },
   "dependencies": {

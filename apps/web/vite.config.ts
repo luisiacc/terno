@@ -141,6 +141,9 @@ export default defineConfig(({ mode }) => {
       sourcemap: "hidden" as const,
       modulePreload: { polyfill: false },
       rollupOptions: {
+        // plan 89: the icon barrel and its per-icon modules have no side effects, so each icon lands in the chunk that
+        // uses it (a composer-only icon in the lazy composer) instead of riding the barrel into the entry
+        treeshake: { moduleSideEffects: (id: string) => (/packages\/ui\/src\/(icons\.ts|iconset\/)/.test(id) ? false : undefined) },
         output: {
           manualChunks: (id: string) => (id.includes("node_modules/react") || id.includes("node_modules/scheduler") ? "react" : undefined),
         },
