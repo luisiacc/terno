@@ -255,3 +255,16 @@ Codex reviewed `main...HEAD` and made eight findings. Each one is fixed, and eac
 6. **"Select all N" checked and acted on rows the Inbox shows only for their reminder.** That means archived rows, or rows in a hidden category. `onlyOnTop` (`state/list.ts`) now leaves them out of `scopeRows` and the rows' scope check. Test: web unit.
 7. **The menu's "Remind me if no reply ▸ Pick date & time…" opened on the existing reminder's kind.** The kind asked for now wins, then the existing reminder's kind, then Remind me. Test: e2e.
 8. **A due reminder's new time didn't reorder the top.** The comparison now includes each due reminder's time. Test: web unit.
+
+### Follow-up: the custom date and time
+
+The browser's native date and time inputs cut off "AM", and their popups ignored the theme. They are replaced with:
+
+- **The date:** a quiet field showing "Fri, Oct 23" that opens shadcn's `Calendar` (react-day-picker, added to `@terno/ui` as `components/calendar.tsx`) in Terno's tokens.
+  - The month is on the left and the arrows on the right.
+  - Today is in the accent's ink and the chosen day is filled.
+  - Days before today are disabled.
+  - Its locale (day names, the week's first day) follows the app's language.
+- **The time:** the UI library's `Select`, listing times every 15 minutes in the locale's format. It drops below the field with the chosen time in view. Times already gone today are dimmed, and choosing one says "Pick a time in the future."
+
+The picker is lazy-loaded, so react-day-picker stays out of the entry chunk. The e2e spec now drives the calendar and the time list.

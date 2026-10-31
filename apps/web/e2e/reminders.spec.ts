@@ -61,11 +61,21 @@ test.describe("remind me", { tag: "@design" }, () => {
     await popover.getByTestId("remind-kind-noReply").click();
     await expect(popover.getByTestId("remind-preset-in3d")).toContainText("Sun 10:00 AM");
     await popover.getByTestId("remind-pick").click();
-    await popover.getByTestId("remind-date").fill("2026-10-21");
+    // the calendar (tomorrow chosen) offers no day before today
+    await expect(popover.getByTestId("remind-date")).toHaveText("Fri, Oct 23");
+    await popover.getByTestId("remind-date").click();
+    const calendar = page.getByTestId("remind-calendar");
+    await expect(calendar.locator('button[data-day="2026-10-21"]')).toBeDisabled();
+    // today at a time already gone: refused, said why
+    await calendar.locator('button[data-day="2026-10-22"]').click();
+    await expect(calendar).toBeHidden();
     await expect(popover.getByTestId("remind-past")).toHaveText("Pick a time in the future.");
     await expect(popover.getByTestId("remind-set")).toBeDisabled();
-    await popover.getByTestId("remind-date").fill("2026-10-30");
-    await popover.getByTestId("remind-time").fill("14:00");
+    await popover.getByTestId("remind-date").click();
+    await calendar.locator('button[data-day="2026-10-30"]').click();
+    await popover.getByTestId("remind-time").click();
+    await page.getByTestId("remind-times").getByRole("option", { name: "2:00 PM", exact: true }).click();
+    await expect(popover.getByTestId("remind-time")).toContainText("2:00 PM");
     await popover.getByTestId("remind-set").click();
     await expect(popover).toBeHidden();
     await expect(snackWith(page, "I'll remind you on Oct 30 at 2:00 PM if they don't answer")).toBeVisible();
