@@ -92,8 +92,9 @@ up or adding evidence. Feel free to update it and ask again, or open a smaller p
 
 ## Contributor License Agreement
 
-Terno is source-available under the AGPL-3.0 with additional conditions (see
-[LICENSE](LICENSE)), and commercial licenses are sold alongside it. So that
+Terno is source-available under the Business Source License 1.1 (see
+[LICENSE](LICENSE)), each version becomes AGPL-3.0 three years after its
+release, and commercial licenses are sold alongside it. So that
 contributed code can ship under both, every contributor signs the
 [Contributor License Agreement](CLA.md) once. You keep the copyright in your
 work.

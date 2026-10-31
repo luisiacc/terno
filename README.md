@@ -308,11 +308,11 @@ Contributions are welcome! Have a look at [CONTRIBUTING.md](CONTRIBUTING.md) bef
 
 ## License
 
-Terno is **source-available** under the [GNU AGPL-3.0 with additional conditions](LICENSE): the Commons Clause and a business-use limit.
+Terno is **source-available** under the [Business Source License 1.1](LICENSE). Each version becomes open source under the GNU AGPL-3.0 three years after its release.
 
-- **Allowed:** using Terno for personal use or for work, by individuals and by organizations with fewer than five business users; reading, changing and forking it. Forks and modified versions, including ones offered over a network, must publish their full source under the same license, with the `Required Notice` line and the conditions.
-- **Needs a commercial license:** organizations with five or more business users.
-- **Not allowed without the author's permission:** selling Terno or a fork, or offering a paid product, hosting or support service whose value comes mainly from it. Forks must also use a different name than "Terno".
+- **Free:** personal use, and work use by individuals and by organizations with up to 15 people using Terno; trying it out at any size; reading, changing and forking the code.
+- **Needs a commercial license:** organizations with more than 15 people using Terno for work. Only the people who use it count, not the whole company.
+- **Not allowed without the author's permission:** selling Terno or a fork, or offering a paid product, hosting or support service whose value comes mainly from it. Forks must use a different name than "Terno" (see [TRADEMARKS.md](TRADEMARKS.md)).
 
 For a commercial license or permission to sell, contact the author. Contributions need a one-time [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
 

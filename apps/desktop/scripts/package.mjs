@@ -129,7 +129,7 @@ await build({
       { from: join(dist, "mcp"), to: "mcp" },
       // plan 19: the macOS 26 (Liquid Glass) icon, compiled by `pnpm brand` from resources/icon.icon
       { from: join(root, "resources/Assets.car"), to: "Assets.car" },
-      // the AGPL-3.0 and its conditions travel with every copy
+      // the License (BSL 1.1) travels with every copy
       { from: join(root, "../../LICENSE"), to: "LICENSE" },
     ],
     asar: true,
