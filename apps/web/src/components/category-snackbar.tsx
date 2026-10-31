@@ -309,6 +309,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     const scope = scopes()[slot];
     const count = counts[slot];
     if (!scope || !category || count === null || count === "loading") return;
+    // a hidden line's key does nothing: a domain that adds nothing now would still make a filter for everyone there
+    if ((slot === "domain" || slot === "list") && sameAsSender(slot)) return;
     if (isFilterable(scope)) {
       close();
       void fileAlways(filed.categoryId, scope, null, filterNameOf(scope, qa?.sender?.name ?? null, category.name));

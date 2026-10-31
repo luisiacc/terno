@@ -115,3 +115,8 @@ No new requests: the counts are the same lazy `categorize.count` calls. The tool
 9. **Added:** a quiet "+ new mail" on 1–3, so the future part is visible before choosing.
 10. The zero result is scope-neutral: "New mail like this will be added to C".
 11. Backend tests cover domain and list rules, later mail caught, the early failure, and undo of both; the e2e covers the filter row, Undo of both, the sender at 0 and 5 gone.
+
+## What the Codex code review changed (Part 2)
+
+- A hidden domain or list line's key still ran it: pressing 2 under "Everything from GitHub" made a filter for all of @github.com. `run` now ignores a hidden line; the e2e presses 2 there and checks no filter.
+- The "filter already on" Undo name had no test: a unit test now files with `filterUndo: null` and checks "Undo add to Facturas" and no `similar.undo`, plus the zero-added message.

@@ -159,6 +159,10 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
         lecturas,
       )!.c;
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${githubOutside()}`);
+    // plan 81: the hidden domain line's key makes no filter for all of @github.com
+    await page.keyboard.press("2");
+    await expect(snack).toBeVisible();
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%fromDomain%github.com%'")!.c).toBe(0);
     await page.keyboard.press("1");
     await expect.poll(githubOutside).toBe(0);
   });

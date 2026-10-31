@@ -218,6 +218,21 @@ describe("plan 80: always add — one undo for the filter and the batch", () => 
     expect(order).toEqual(["filter 5", "batch 8"]);
   });
 
+  it("plan 81: a filter that was already on stays on, so its Undo only promises the filing; nothing new to file says what it did", async () => {
+    fake.handlers["categorize.apply"] = async () => ({ added: 2, batchId: 8, filter: { id: 2, filterUndo: null }, filterFailed: false });
+    fake.handlers["categorize.undo"] = async () => ({ removed: 2 });
+    await fileAlways(CAT, { kind: "sender", email: "uber@uber.com" }, null, "x");
+    const snack = useSnack.getState().current!;
+    expect(snack.action!.name).toBe("Undo add to Facturas");
+    undoNow(snack.action!.undo!);
+    await settle();
+    expect(fake.calls).not.toContain("similar.undo");
+
+    fake.handlers["categorize.apply"] = async () => ({ added: 0, batchId: null, filter: { id: 3, filterUndo: 6 }, filterFailed: false });
+    await fileAlways(CAT, { kind: "domain", domain: "acme.studio" }, null, "x");
+    expect(useSnack.getState().current).toMatchObject({ message: "New mail like this will be added to Facturas", action: { name: "Undo, and stop adding future mail" } });
+  });
+
   it("the filter's undo failing still undoes the batch; the retry redoes only the filter", async () => {
     fake.handlers["categorize.apply"] = async () => ({ added: 2, batchId: 8, filter: { id: 2, filterUndo: 5 }, filterFailed: false });
     let filterFails = true;
