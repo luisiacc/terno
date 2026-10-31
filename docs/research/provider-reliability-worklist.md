@@ -981,3 +981,12 @@ Landed test-onlyded6440c after rebase onto current committed main. The fixture n
 Root passes33/33scoped tests, both backend type configurations, strict owned lint and whitespace. One actual native Sol/high review: Standards PASS/Spec PASS,0findings; no second round. [Spec and limits](../plans/drafts/release6-smtp-auth-receiving.md). Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-smtp6-cebn4s8m`. This repairs a demonstrated ordering fixture; it does not make the historical sixth milestone green or establish broader UID/sequence divergence. User licensing/package WIP remains untouched.
 
 Next freed worktree slice: richtext hostile-quote conversion stall87.789msagainst25, using current-source reproduction and fail-first bounded-work correction if demonstrated. Store-autocomplete and UI repairs continue independently. SQL/IDB/shared backend performance remains queued serially. Report dispositions/counts and held feature-backlog decisions remain unchanged.
+
+
+## Release repair: UI fixture readiness and artifact ownership — 2026-10-30
+
+Landed the reviewed UI fixture series after local rebase. Attachment evidence uses per-test output paths; drag/read/count witnesses pin the exact row and settle the existing dwell before restoring unread; reply arrival checks scope reader and row witnesses; PageDown waits for observer registration and native scrollend before inspecting visibility. No renderer behavior, snapshots or perf-oracle changes. The single native Sol/high review's P2 ordering race was reproduced and fixed without a second round.
+
+Root passes170/170across all five affected specs/designs, Web types, exact test/config types, strict owned lint and whitespace. Four light/dark attachment/recovery captures personally inspected; keyboard/axe and exact data/Undo checks remain. [Spec, evidence and limits](../plans/drafts/release6-ui-functional.md). Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ui6-i57i8mqx`; shared screenshot directories restored and finished worktree removed after landing. Initial worker overwrite/lost-trace mistakes remain disclosed.
+
+No product ghost fix or production scrolling clearance is claimed: historical absent ghost and700ms list timing remain unattributed, and48UIperf successors remain historically NOTRUN. Phrase model integration is next; richtext and queued storage/backend performance repairs remain. Main is not release-green; no report row/count or held-backlog decision changes.

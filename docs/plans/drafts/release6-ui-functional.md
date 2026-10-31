@@ -80,3 +80,9 @@ Guarded command roots have PID/birth/argv metadata in stage.process.json; descen
 Post-review account-errors:61PASS/0FAIL/0SKIP (1.2m), including the new immediate-scrollend regression and all existing recovery/keyboard/axe cases. Before that one review correction, all five owned files:169PASS/0FAIL/0SKIP. Final scoped test/config types and lint PASS; app types PASS. No further implementation changes or review rounds. Captured owned identity audit: `/tmp/terno-release6-ui/final-process-audit.json` (no matching survivors, no signals).
 
 Safe coherent outcome is a test-fixture repair only: no demonstrated renderer product defect, no new list runtime optimization, no ghost first-use workaround, no release-green claim. Root retains serial integration and full production qualification responsibility.
+
+## Root integration — 2026-10-30
+
+Rebased onto main1a8f21f9with all current user changes preserved, then Root passes the entire five-file set **170/170**, including the post-review PageDown ordering regression. Web main/worker types, exact test/config types, strict owned lint and whitespace pass. Root inspected light/dark attachment controls and long-error end markers; keyboard/axe and exact unread/count/Undo/source-link controls remain. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-ui6-i57i8mqx`, unique browser results referenced there. Shared autocomplete/reply screenshot directories restored to their pre-Root state.
+
+The single native review's P2 received the recorded fail-first fix; no second review or runtime change. Original production700ms list failure and historical ghost absence remain unqualified/unattributed. Root did not rerun the unchanged scroll gate without causal runtime source; worker source-dev16.8ms is only its recorded baseline. The sixth milestone's48NOTRUNsuccessors remain NOTRUN. No snapshots, performance oracle or broad-gate changes. Full release remains not green.
