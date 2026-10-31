@@ -49,6 +49,10 @@ A design (plan 15) is typography, shape, density and a closed set of structural 
 - **Add a design:** add its id to `DESIGN_IDS` (`packages/core/src/themes.ts`) and `theme.js`'s list, copy the closest definition (its type forces every value and variant), give it a palette pair (new palettes go in the registry and must pass the contrast suite), add its `en`/`es` name and description (`design.<id>`, `design.<id>.description`), add it to `DESIGNS` and a Playwright project.
 - **Add a variant value:** add it to the union in `designs/types.ts`; the compiler then points at every `variant(…)` map that must implement it. Keep roles, names, test ids and shortcuts identical across values (`designs.spec.ts` checks the shared parts in every design).
 - **Rules:** no colors or durations in a design (token references only); text only on pairs in `CONTRAST_PAIRS`; sizes, families and radii only from the scale, the ladder and the type roles (`source-scan.test.ts`); motion within `--motion`. Flows that must hold in every design are tagged `@design`.
+- **Icons:** only from `@terno/ui/icons` (Hugeicons, free core set); never import an icon package or paste an SVG icon into a component. A new icon is one line in `packages/ui/src/icons.tsx`, picked by eye at 16 px next to its neighbours.
+  - **One line weight at every size,** as SF Symbols keep theirs: the stroke is non-scaling, so a 12 px glyph draws the same 1 px line as a 28 px one. A design sets it with `icon.stroke` (1.5 = 1 px); a surface tunes it with `--icon-line` on the svg (the toolbars use `--icon-line-toolbar`), never with `stroke-[…]` or a `strokeWidth` prop.
+  - **Sized to the text beside it:** an icon next to a label is `1.15em` (menus, the palette, buttons with text); icon-only buttons keep the 16 px glyph. Don't hard-code a pixel size where the icon sits beside text.
+  - **Quiet:** an icon beside a label is muted and reaches full contrast only on hover, open or active; filled buttons keep icon and label one color.
 
 ## Conventions
 
