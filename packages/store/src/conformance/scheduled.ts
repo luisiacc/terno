@@ -67,6 +67,14 @@ export function defineScheduledConformance(fresh: () => Promise<MailStore>, reop
       expect(await store.scheduled.put(row(one, NOW, "x".repeat(90)), { count: 10, bytes: 100 })).toBe("ok");
     });
 
+    it("counts the budget in UTF-16 units in both stores (an emoji is two)", async () => {
+      const { store, draft } = await setup();
+      const one = await draft("One"), two = await draft("Two");
+      // 30 emoji: 60 units, 30 SQLite characters
+      expect(await store.scheduled.put(row(one, NOW, "😀".repeat(30)), { count: 10, bytes: 100 })).toBe("ok");
+      expect(await store.scheduled.put(row(two, NOW, "😀".repeat(30)), { count: 10, bytes: 100 })).toBe("full");
+    });
+
     it("notes a failure only on the moment it was for; a reschedule forgets it", async () => {
       const { store, draft } = await setup();
       const d = await draft("One");

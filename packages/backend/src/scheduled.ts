@@ -55,10 +55,15 @@ const toInfo = (s: ScheduledSend): ScheduledInfo => ({
   retryAt: s.retryAt,
 });
 
-/** never sent again: the draft changed or went (or its account), or the message it answers did */
+/** refusals that a later try would meet again: what it answers is gone, it's too large, a file is missing */
+const NEVER_GOES = new Set(["errors.replySourceGone", "attachments.tooLarge", "attachments.unavailable"]);
+
+/** never sent again: the draft changed or went (or its account), or the message itself can't go as it is */
 function permanent(error: unknown): boolean {
-  return error instanceof RpcError && (error.code === "STALE" || error.code === "NOT_FOUND");
+  return error instanceof RpcError && (error.code === "STALE" || error.code === "NOT_FOUND" || (error.code === "BAD_REQUEST" && NEVER_GOES.has(error.i18n?.key ?? "")));
 }
+/** a look that failed (the store refused, a disk full) tries again in this long: never left without a timer */
+const LOOK_RETRY_MS = 60_000;
 
 export class ScheduledSends {
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -98,12 +103,13 @@ export class ScheduledSends {
     return run;
   }
 
-  /** a refresh that logs instead of failing (a start, a wake, a focus, a change) */
+  /** a refresh that logs instead of failing (a start, a wake, a focus, a change); a failed one looks again in a minute */
   poke(): void {
     if (this.stopped) return;
     this.refresh().catch((error: unknown) => {
       captureError(error, { code: "scheduled.failed" });
       this.host.log("warn", "scheduled sends couldn't be read", error instanceof Error ? error.message : error);
+      if (!this.stopped && (this.armedAt === null || this.armedAt > this.host.now() + LOOK_RETRY_MS)) this.armIn(LOOK_RETRY_MS);
     });
   }
 
@@ -160,16 +166,23 @@ export class ScheduledSends {
     let list = await store.scheduled.list();
     const due = list.filter((s) => (s.retryAt ?? s.sendAt) <= this.host.now());
     const tried = new Set(due.map((s) => s.draftId));
+    // one that couldn't even note its failure (the store refused) waits a minute, in memory; the others go on
+    const held = new Map<number, number>();
     for (const s of due) {
       if (this.stopped) break;
-      await this.sendOne(s);
+      try {
+        await this.sendOne(s);
+      } catch (error) {
+        captureError(error, { code: "scheduled.failed" });
+        held.set(s.draftId, this.host.now() + LOOK_RETRY_MS);
+      }
     }
     if (due.length) list = await store.scheduled.list();
     const failed = await store.settings.get<ScheduledFailure[]>(FAILED_KEY, []);
     const snapshot: ScheduledSnapshot = { items: list.map(toInfo), failed };
     this.ids = new Set(list.map((s) => s.draftId));
     if (this.stopped) return snapshot;
-    this.arm(list, tried);
+    this.arm(list, tried, held);
     const text = JSON.stringify(snapshot);
     if (text !== this.sent) {
       this.sent = text;
@@ -215,24 +228,30 @@ export class ScheduledSends {
   }
 
   /** One timer, for the soonest one (a failed one at its retry; one just tried and still due, a minute on, never a spin). */
-  private arm(list: readonly ScheduledSend[], tried: ReadonlySet<number>): void {
+  private arm(list: readonly ScheduledSend[], tried: ReadonlySet<number>, held: ReadonlyMap<number, number>): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
     const now = this.host.now();
     let next = Infinity;
     for (const s of list) {
-      const at = s.retryAt ?? s.sendAt;
+      const at = held.get(s.draftId) ?? s.retryAt ?? s.sendAt;
       const when = at <= now && tried.has(s.draftId) ? now + 60_000 : at;
       if (when < next) next = when;
     }
     if (next === Infinity) return;
-    this.armedAt = next;
+    this.armIn(next - now);
+  }
+
+  private armIn(ms: number): void {
+    if (this.timer) clearTimeout(this.timer);
+    const delay = Math.min(MAX_DELAY, Math.max(0, ms));
+    this.armedAt = this.host.now() + delay;
     this.timer = setTimeout(() => {
       this.timer = null;
       this.armedAt = null;
       this.poke();
-    }, Math.min(MAX_DELAY, Math.max(0, next - now)));
+    }, delay);
     // never keeps a quitting process alive
     (this.timer as { unref?: () => void }).unref?.();
   }

@@ -32,9 +32,9 @@ export function putScheduled(db: Db, row: Omit<ScheduledRow, "error" | "retryAt"
   return db.tx(() => {
     const draft = db.get<{ generation: string | null; revision: number }>("SELECT generation, revision FROM drafts WHERE id = ?", row.draftId);
     if (!draft || (draft.generation ?? "") !== row.generation || draft.revision !== row.revision) return "stale";
-    const others = db.get<{ n: number; bytes: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(length(params_json)), 0) AS bytes FROM scheduled_sends WHERE draft_id <> ?", row.draftId)!;
+    const others = db.get<{ n: number; bytes: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(params_len), 0) AS bytes FROM scheduled_sends WHERE draft_id <> ?", row.draftId)!;
     if (others.n >= cap.count || others.bytes + row.paramsJson.length > cap.bytes) return "full";
-    db.run("INSERT OR REPLACE INTO scheduled_sends (draft_id, send_at, set_at, params_json, error, retry_at) VALUES (?, ?, ?, ?, NULL, NULL)", row.draftId, row.sendAt, row.setAt, row.paramsJson);
+    db.run("INSERT OR REPLACE INTO scheduled_sends (draft_id, send_at, set_at, params_json, params_len, error, retry_at) VALUES (?, ?, ?, ?, ?, NULL, NULL)", row.draftId, row.sendAt, row.setAt, row.paramsJson, row.paramsJson.length);
     return "ok";
   });
 }

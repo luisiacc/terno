@@ -169,6 +169,51 @@ describe("scheduled sends (plan 89)", () => {
     expect(events.at(-1)!.items).toEqual([]);
   });
 
+  it("a store that refuses even the failure note keeps a timer (a minute on), and sends once it works", async () => {
+    const { backend, draft, schedule, advance, sends } = await setup();
+    await schedule(await draft(), NOW + HOUR);
+    await settle();
+    const queue = vi.spyOn(backend.store.compose, "queueSend").mockRejectedValueOnce(new Error("disk full"));
+    const fail = vi.spyOn(backend.store.scheduled, "fail").mockRejectedValueOnce(new Error("disk full"));
+    await advance(HOUR);
+    expect(queue).toHaveBeenCalledTimes(1);
+    expect(fail).toHaveBeenCalledTimes(1);
+    expect(backend.scheduled.nextAt).toBe(NOW + HOUR + 60_000);
+    queue.mockRestore();
+    fail.mockRestore();
+    await advance(60_000);
+    expect(await sends()).toHaveLength(1);
+  });
+
+  it("a list that can't be read looks again in a minute", async () => {
+    const { backend, draft, schedule, advance, sends } = await setup();
+    await schedule(await draft(), NOW + HOUR);
+    await settle();
+    vi.spyOn(backend.store.scheduled, "list").mockRejectedValueOnce(new Error("disk full"));
+    await advance(HOUR);
+    expect(backend.scheduled.nextAt).toBe(NOW + HOUR + 60_000);
+    await advance(60_000);
+    expect(await sends()).toHaveLength(1);
+  });
+
+  it("a reply whose original is gone is given back, not retried forever", async () => {
+    const { backend, client, account, advance, drafts } = await setup();
+    const db = sqlDb(backend.store);
+    const { ingestMessages } = await import("@terno/db");
+    const original = ingestMessages(db, [{ accountId: account, providerMsgId: "o1", providerThreadId: null, rfcMessageId: "o1@x", inReplyTo: null, references: [], from: { name: "Ana", email: "ana@friends.com" }, to: [{ name: "Me", email: "me@example.com" }], cc: [], bcc: [], subject: "Lunch", date: NOW - HOUR, snippet: "", bodyText: "Friday?", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 10 }], NOW).inserted[0]!;
+    const d = (await client.call("drafts.save", { accountId: account, to: [{ name: "Ana", email: "ana@friends.com" }], cc: [], subject: "Re: Lunch", bodyText: "Yes", inReplyToMessageId: original }))!;
+    await client.call("compose.schedule", { accountId: account, to: [{ name: "Ana", email: "ana@friends.com" }], subject: "Re: Lunch", bodyText: "Yes", inReplyToMessageId: original, draftId: d.id, draftGeneration: d.generation!, draftRevision: d.revision, sendAt: NOW + HOUR });
+    await settle();
+    db.run("PRAGMA foreign_keys = OFF");
+    db.run("DELETE FROM messages WHERE id = ?", original);
+    db.run("PRAGMA foreign_keys = ON");
+    await advance(HOUR);
+    const snap = await client.call("scheduled.list", {});
+    expect(snap.items).toEqual([]);
+    expect(snap.failed).toEqual([expect.objectContaining({ draftId: d.id })]);
+    expect(drafts).toContainEqual({ reason: "scheduled" });
+  });
+
   it("a wake and a window's focus look again (a timer runs late across sleep)", async () => {
     const { backend, client, clock, draft, schedule, sends } = await setup();
     await schedule(await draft(), NOW + HOUR);

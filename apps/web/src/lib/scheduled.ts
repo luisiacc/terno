@@ -26,7 +26,12 @@ scheduledDrafts.has = (id) => useScheduled.getState().byDraft.has(id);
 const said = new Set<string>();
 
 export function applyScheduled(snapshot: ScheduledSnapshot): void {
-  useScheduled.setState({ items: snapshot.items, byDraft: new Map(snapshot.items.map((s) => [s.draftId, s])) });
+  const before = useScheduled.getState().byDraft;
+  const byDraft = new Map(snapshot.items.map((s) => [s.draftId, s]));
+  useScheduled.setState({ items: snapshot.items, byDraft });
+  // unscheduled (in any window) or given back: a draft again here too. Its `drafts` event may have come first,
+  // while the id was still excluded from hydration; a sent one is simply not there to load
+  if ([...before.keys()].some((id) => !byDraft.has(id))) void loadDrafts().catch(() => {});
   // scheduled in another window: it leaves this one's composers (its edits, if any, win instead)
   const compose = getApp().compose?.key;
   const gone = forgetScheduledDrafts();

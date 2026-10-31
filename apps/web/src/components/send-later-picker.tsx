@@ -24,6 +24,8 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
   const when = useWhen(current?.sendAt && current.sendAt > Date.now() ? current.sendAt : tomorrow);
   const listRef = useRef<HTMLDivElement>(null);
   const pastId = useId();
+  // the moment can pass while the picker stays open: Schedule looks at the clock again (and shows why it refused)
+  const [, recheck] = useState(0);
   // loaded after its popover opened (and focused itself): the keyboard starts on the first choice
   useEffect(() => listRef.current?.querySelector<HTMLElement>("[data-send-later-choice]")?.focus(), []);
 
@@ -78,7 +80,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
                 {t("remind.past")}
               </p>
             )}
-            <Button type="button" size="sm" data-testid="send-later-set" disabled={when.past} className="self-end" onClick={() => !when.past && pick(when.chosen)}>
+            <Button type="button" size="sm" data-testid="send-later-set" disabled={when.past} className="self-end" onClick={() => (when.chosen <= Date.now() ? recheck((n) => n + 1) : pick(when.chosen))}>
               {t("sendLater.schedule")}
             </Button>
           </div>

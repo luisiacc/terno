@@ -1083,6 +1083,8 @@ CREATE TABLE scheduled_sends (
   send_at INTEGER NOT NULL,
   set_at INTEGER NOT NULL,
   params_json TEXT NOT NULL,
+  -- the params' length in UTF-16 units (what the byte budget counts, as IndexedDB does; never a scan of the bodies)
+  params_len INTEGER NOT NULL,
   error TEXT,
   retry_at INTEGER
 );

@@ -26,9 +26,9 @@ export function putScheduled(c: Ctx, row: Omit<ScheduledRow, "error" | "retryAt"
   if (!draft || (draft.generation ?? "") !== row.generation || draft.revision !== row.revision) return "stale";
   const table = T(c, "scheduled_sends");
   let count = 0, bytes = 0;
-  for (const r of table.all()) if (r.draft_id !== row.draftId) { count++; bytes += (r.params_json as string).length; }
+  for (const r of table.all()) if (r.draft_id !== row.draftId) { count++; bytes += r.params_len as number; }
   if (count >= cap.count || bytes + row.paramsJson.length > cap.bytes) return "full";
-  table.put({ draft_id: row.draftId, send_at: row.sendAt, set_at: row.setAt, params_json: row.paramsJson, error: null, retry_at: null });
+  table.put({ draft_id: row.draftId, send_at: row.sendAt, set_at: row.setAt, params_json: row.paramsJson, params_len: row.paramsJson.length, error: null, retry_at: null });
   return "ok";
 }
 

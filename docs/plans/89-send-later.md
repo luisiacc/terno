@@ -94,3 +94,34 @@ One timer only while something is scheduled; no polling. The list is bounded (10
 ## Out of scope
 
 Server-side scheduling (Gmail has no API for it), a Scheduled folder, recurring sends, per-recipient time zones.
+
+## Revisions after the Codex review
+
+The plan critique (`codex exec -s read-only`) raised twelve points; all were taken.
+
+1. **A cancel or new time during the due send.** `SendCommand.scheduledAt` fences `queueSend` inside its transaction: the row must still exist with that exact `send_at`, else STALE `"unscheduled"`, which the sweep treats as nothing to say. Test: a cancel landing between the row's read and the queue sends nothing (fails without the fence).
+2. **Other windows editing a scheduled draft.** `drafts.save` of a scheduled draft unschedules it (the edit wins) and emits `drafts`; a `scheduled` snapshot drops the scheduled drafts from every window's composers unless they hold unsaved edits or are that window's own send in flight (`forgetScheduledDrafts`).
+3. **Writer retirement.** Scheduling runs `send`'s own preparation (`draftForSend` stops the writer) and then `forgetDraft`, exactly as a send does; a failure resumes the draft.
+4. **Old hydrations.** `loadDrafts` skips ids the scheduled snapshot lists (`scheduledDrafts.has`).
+5. **Post-commit effects.** `BackendCore.queueComposeSend` separates the queue (whose failure is the send's) from the announcing (logged, never a failure).
+6. **Transient failures.** Only STALE and NOT_FOUND give a send back. Anything else keeps it scheduled with `error` and `retry_at` (columns on the row) and tries again after 1, 5, 15 then 60 minutes; the strip shows the time in the destructive ink and the picker says why.
+7. **Shutdown.** `ScheduledSends.stop()` clears the timer and awaits the sweep in flight; `BackendCore.stop()` awaits it before the store closes. Test with a send held mid-queue.
+8. **Memory.** A byte budget (`SCHEDULED_BYTES_MAX`, 64 Mi UTF-16 units over all params) beside the count cap. The table stays early in IndexedDB: drafts, which hold the same bodies, are early already, so the budget bounds the duplicate.
+9. **Cascades.** `notifyChanged` and `drafts.delete` call `scheduled.touched()` (a look only while something is scheduled), so a deleted draft or account takes its row out of the windows and disarms the timer.
+10. **`⌘⇧↵`.** Both composers test it before `⌘↵`; the e2e asserts it opens the picker and sends nothing.
+11. **Portaled form.** `SendLaterPicker` has no form; its Schedule button is a plain button.
+12. **Durable failure.** A send given back is kept in the setting `scheduled:failed` (at most 20), carried in every snapshot, shown as a snack with "Open draft" and acknowledged by the window (`scheduled.ackFailed`).
+
+Also: the reader's "Reply scheduled" line (§5) and the `lib/when.ts` split, so the strip doesn't pull the reminders' list code (unit tests run without a DOM).
+
+## Codex code review
+
+One read-only review of the series (`git diff cadc8f0f HEAD`) reported six findings; all are fixed, each with a regression test that fails without its fix:
+
+1. **The byte budget scanned the bodies** (`SUM(length(params_json))`, 26 ms near the cap) and counted SQLite characters, not UTF-16 units as IndexedDB does. A `params_len` column holds the length; both stores sum it. Conformance: 30 emoji are 60 units in both stores.
+2. **A custom moment that passed while the picker stayed open** was sent at once. Schedule (and Remind's Set, same pattern) reads the clock again and shows "Pick a time in the future." Component test with a moving clock.
+3. **A store failure mid-sweep left no timer.** Each row's send is isolated (a row that can't even note its failure waits a minute in memory) and a look that fails re-arms in a minute. Two backend tests.
+4. and 5. **A draft coming back could miss other windows** (a cancel emits no `drafts`; a `drafts` event before the snapshot was skipped by the hydration filter). Any id leaving the snapshot reloads the drafts in every window. Unit test with the event before the snapshot.
+6. **A reply whose original is gone retried forever.** `errors.replySourceGone`, `attachments.tooLarge` and `attachments.unavailable` give the send back like a stale draft. Backend test.
+
+Verification: typecheck and lint clean; store conformance (both stores), backend, core and web unit suites pass; `send-later.spec.ts` passes in all three designs, with `compose`, `composer`, `composer-send` and `reminders` specs. Known failures not from this series (they fail on cadc8f0f too): four IndexedDB version-pinned upgrade tests and `i18n` scan's `w02-action-fixture.ts:69`. Full `test:e2e`, `test:web`, `test:ui-perf` and `test:perf` were not run (relevant specs only).

@@ -24,6 +24,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
   const { chosen, past } = when;
   const listRef = useRef<HTMLDivElement>(null);
   const pastId = useId();
+  const [, recheck] = useState(0);
   const presets = remindPresets(new Date(), kind);
 
   const set = (dueAt: number) => {
@@ -84,7 +85,9 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
             data-testid="remind-custom"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!past) set(chosen);
+              // the moment can pass while the picker stays open: the clock again, and a render that shows why
+              if (chosen > Date.now()) set(chosen);
+              else recheck((n) => n + 1);
             }}
           >
             <WhenFields when={when} testPrefix="remind" describedBy={pastId} />
