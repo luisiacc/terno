@@ -60,17 +60,6 @@ export function lineHtml(line: string): string {
 /** Quote levels past this stay as text (a hostile "> > > …" line can't nest without end). */
 export const MAX_QUOTE_DEPTH = 32;
 
-/** A line's quote depth ("> " per level, capped) and what follows it. */
-function quoteDepth(line: string): [number, string] {
-  let depth = 0;
-  let rest = line;
-  while (depth < MAX_QUOTE_DEPTH && rest.startsWith(">")) {
-    rest = rest.replace(/^> ?/, "");
-    depth++;
-  }
-  return [depth, rest];
-}
-
 /**
  * Where a part of a long line ends: right after a lone space (a link never
  * spans one, and a lone space needs no &nbsp; whichever side it lands on),
@@ -101,30 +90,39 @@ export function* textToHtmlChunks(text: string, budget = 16_384): Generator<stri
     spent = 0;
   };
   for (let pos = 0; pos <= text.length; ) {
-    // CRLF and a lone CR end a line too
-    let nl = pos;
-    while (nl < text.length && text[nl] !== "\n" && text[nl] !== "\r") nl++;
-    const line = text.slice(pos, nl);
-    pos = nl + (text[nl] === "\r" && text[nl + 1] === "\n" ? 2 : 1);
-    const [depth, rest] = quoteDepth(line);
+    const lineStart = pos;
+    let depth = 0;
+    while (depth < MAX_QUOTE_DEPTH && text[pos] === ">") {
+      pos++;
+      if (text[pos] === " ") pos++;
+      depth++;
+    }
+    spent += pos - lineStart;
     for (; open < depth; open++) out.push(`<blockquote style="${QUOTE_STYLE}">`);
     for (; open > depth; open--) out.push("</blockquote>");
-    if (rest.length <= budget) {
-      out.push(`<div>${lineHtml(rest)}</div>`);
-      spent += rest.length + 1;
-    } else {
-      out.push("<div>");
-      for (let i = 0; i < rest.length; ) {
-        const end = cut(rest, i, budget);
-        out.push(partHtml(rest.slice(i, end), i === 0, end >= rest.length));
-        spent += end - i;
-        i = end;
-        yield* flush();
-      }
-      out.push("</div>");
+    out.push("<div>");
+    let first = true;
+    for (;;) {
+      // One bounded window plus the lookahead used by cut(), never a whole line.
+      let nl = pos;
+      const limit = Math.min(text.length, pos + budget);
+      while (nl < limit && text[nl] !== "\n" && text[nl] !== "\r") nl++;
+      const last = nl >= text.length || text[nl] === "\n" || text[nl] === "\r";
+      const end = last ? nl : pos + cut(text.slice(pos, nl + 1), 0, budget);
+      const part = text.slice(pos, end);
+      out.push(first && last ? lineHtml(part) : partHtml(part, first, last));
+      spent += end - pos;
+      pos = end;
+      first = false;
+      if (last) break;
+      yield* flush();
     }
+    out.push("</div>");
+    spent++;
     yield* flush();
-    if (nl >= text.length) break;
+    if (pos >= text.length) break;
+    // CRLF and a lone CR end a line too.
+    pos += text[pos] === "\r" && text[pos + 1] === "\n" ? 2 : 1;
   }
   for (; open > 0; open--) out.push("</blockquote>");
   yield out.join("");
