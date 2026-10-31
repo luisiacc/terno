@@ -3,6 +3,10 @@ import { expect, test, type Page, type Worker as BrowserWorker } from "@playwrig
 
 declare global { interface Window { closeAcknowledgements: number; handleProbe: { worker: Worker; url: string } } }
 
+function trackProbe(task: Promise<unknown>, tasks: Promise<unknown>[], errors: unknown[]) {
+  tasks.push(task.catch((error) => { errors.push(error); }));
+}
+
 interface Stream { source: string; closed: boolean; socketClosed: boolean; response: ServerResponse }
 interface Witness { file: string; source: string; dead: boolean; closed: boolean; socketClosed: boolean; starts: string[] }
 function retired(w: Witness, source: string, file: string) {
@@ -32,6 +36,10 @@ async function handle(worker: BrowserWorker, file: string) {
 
 for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] as const) {
   test(`physical worker retirement: ${mode}`, async ({ page, context, baseURL }, testInfo) => {
+    const successorProbes: Promise<unknown>[] = [], probeErrors: unknown[] = [];
+    const watchers: { page: Page; listener: (worker: BrowserWorker) => void }[] = [];
+    let follower: Page | undefined;
+    let completed = false;
     const blockedDemoImages: string[] = [];
     const successorStarts: { source: string; oldClosed: boolean; oldSocketClosed: boolean }[] = [];
     const streams: Stream[] = [], unexpected: string[] = [], events: string[] = [];
@@ -106,7 +114,7 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
       expect(streams.map((s) => s.source)).toEqual([source]);
       let dead = false;
       old.on("close", () => { dead = true; events.push(`worker-close:${source}`); });
-      const follower = await context.newPage();
+      const waiting = follower = await context.newPage();
       await follower.goto(`/?demo=0&mailbox=w05-${mode}`);
       await expect(follower.getByTestId("web-use-here")).toBeVisible();
       expect(follower.workers()).toHaveLength(0);
@@ -117,7 +125,7 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
         const worker = new Worker(url);
         Object.assign(window, { handleProbe: { worker, url } });
       });
-      const probeHandle = () => follower.evaluate((file) => new Promise<boolean | string>((resolve) => {
+      const probeHandle = () => waiting.evaluate((file) => new Promise<boolean | string>((resolve) => {
         const probe = window.handleProbe;
         probe.worker.onmessage = (event) => resolve(event.data);
         probe.worker.postMessage(file);
@@ -128,21 +136,25 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
       await sibling.goto(`/?demo=0&mailbox=w05-${mode}`);
       await expect(sibling.getByTestId("web-use-here")).toBeVisible();
       expect(sibling.workers()).toHaveLength(0);
-      const successorProbes: Promise<unknown>[] = [];
-      for (const candidate of [page, follower, sibling]) candidate.on("worker", (worker) => {
+      for (const candidate of [page, follower, sibling]) {
+        const listener = (worker: BrowserWorker) => {
         if (!worker.url().includes("backend.worker")) return;
-        successorProbes.push(worker.evaluate(async ({ endpoint, source }) => {
+        trackProbe(worker.evaluate(async ({ endpoint, source }) => {
           const response = await fetch(`${endpoint}?source=${encodeURIComponent(source)}`);
           const reader = response.body!.getReader();
           await reader.read();
           Object.assign(globalThis, { successorReader: reader, successorSource: source });
-        }, { endpoint, source: `${mode}-new` }));
-      });
+        }, { endpoint, source: `${mode}-new` }), successorProbes, probeErrors);
+        };
+        watchers.push({ page: candidate, listener });
+        candidate.on("worker", listener);
+      }
       if (mode === "reload") await page.reload();
       else if (mode === "error") await old.evaluate(() => { setTimeout(() => { throw new Error("synthetic worker retirement"); }, 0); });
       else {
         await follower.getByTestId("web-use-here").click();
-        await expect.poll(() => old.evaluate(() => (globalThis as typeof globalThis & { retirementProbe: { closeRequested: boolean } }).retirementProbe.closeRequested)).toBe(true);
+        if (mode === "graceful") await page.waitForTimeout(1500);
+        if (mode === "stuck" || mode === "late") await expect.poll(() => old.evaluate(() => (globalThis as typeof globalThis & { retirementProbe: { closeRequested: boolean } }).retirementProbe.closeRequested)).toBe(true);
         if (mode === "stuck" || mode === "late") {
           await page.waitForTimeout(9000);
           expect(dead).toBe(false); expect(streams[0]!.closed).toBe(false);
@@ -175,6 +187,7 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
       for (const row of baseline.rows) expect(after.rows).toContainEqual(row);
       expect(after.bytes).toEqual([{ dataBase64: "AP+A" }, { dataBase64: "AP+A" }]);
       await Promise.all(successorProbes);
+      expect(probeErrors).toEqual([]);
       await expect.poll(() => successorStarts.length).toBe(1);
       expect(successorStarts).toEqual([{ source: `${mode}-new`, oldClosed: true, oldSocketClosed: true }]);
       expect(streams.map((s) => s.source)).toEqual([source, `${mode}-new`]);
@@ -184,14 +197,52 @@ for (const mode of ["graceful", "delayed", "stuck", "late", "error", "reload"] a
       expect(() => expect(after.rows).toContainEqual({ ...baseline.rows[0], bodyText: "wrong" })).toThrow();
       expect(unexpected).toEqual([]);
       await testInfo.attach("physical-ledger", { body: JSON.stringify({ source, replacement: replacement.url(), events, witness, successorStarts, blockedDemoImages }), contentType: "application/json" });
-      await follower.evaluate(() => {
-        const p = window.handleProbe;
-        p.worker.terminate(); URL.revokeObjectURL(p.url);
-      });
+      completed = true;
     } finally {
+      for (const watcher of watchers) watcher.page.off("worker", watcher.listener);
+      if (follower && !follower.isClosed()) await follower.evaluate(() => {
+        const p = window.handleProbe;
+        if (p) { p.worker.terminate(); URL.revokeObjectURL(p.url); }
+      }).catch((error) => { probeErrors.push(error); });
       // Only owned fixture connections; terminal assertions above precede all cleanup.
       for (const stream of streams) stream.response.destroy();
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await Promise.all(successorProbes);
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())).catch((error) => { probeErrors.push(error); });
+      if (completed) expect(probeErrors).toEqual([]);
     }
   });
 }
+
+
+test("probe rejection and early assertion preserve the primary failure and join", async ({ page, context, baseURL }) => {
+  const unexpected: string[] = [];
+  await context.route("**/*", (route) => {
+    if (new URL(route.request().url()).origin === baseURL && new URL(route.request().url()).pathname === "/probe-host") return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Owned probe</title>" });
+    unexpected.push(route.request().url()); return route.abort();
+  });
+  await page.goto("/probe-host");
+  const started = page.waitForEvent("worker");
+  await page.evaluate(() => {
+    const url = URL.createObjectURL(new Blob(["onmessage=()=>{}"], { type: "text/javascript" }));
+    window.handleProbe = { worker: new Worker(url), url };
+  });
+  const worker = await started;
+  expect(await worker.evaluate(() => true)).toBe(true);
+  const tasks: Promise<unknown>[] = [], errors: unknown[] = [];
+  let primary: unknown, expectedPrimary: unknown;
+  try {
+    try {
+      trackProbe(worker.evaluate(() => { throw new Error("native worker probe refusal"); }), tasks, errors);
+      try { expect("early observation").toBe("expected observation"); }
+      catch (error) { expectedPrimary = error; throw error; }
+    } finally {
+      try { await Promise.all(tasks); }
+      finally { await page.evaluate(() => { window.handleProbe.worker.terminate(); URL.revokeObjectURL(window.handleProbe.url); }); }
+    }
+  } catch (error) { primary = error; }
+  expect(expectedPrimary).toBeInstanceOf(Error);
+  expect(primary).toBe(expectedPrimary);
+  expect(errors).toHaveLength(1);
+  expect(tasks).toHaveLength(1);
+  expect(unexpected).toEqual([]);
+});
