@@ -17,6 +17,10 @@ Status: deferred by the user; no Outlook adapter, OAuth registration, subscripti
 - Handle lifecycle/permission differences for subscriptions/shared mailboxes only in the integration's explicit local/privacy design; no silent hosted relay.
 - Qualify provider-specific search, exact participants/addresses, poison-page recovery and HTML-only body shapes.
 
+## Product parity to add with the integration
+
+- **Plan 86 (Promotions and Social out of the Inbox).** Gmail accounts keep the mail Gmail puts in its Promotions and Social tabs out of the unified and account Inbox, under the account. Outlook has no such tabs, but it does have **Focused Inbox**: Graph's `message.inferenceClassification` (`focused` / `other`), with user corrections through `inferenceClassification/overrides` (per sender). Do the same for Outlook: an account's "Other" lives under the account and stays out of the Inbox and its counts, "Move to Inbox" writes the classification (and offers the sender override), and the per-account setting matches Gmail's. Reuse plan 86's thread `tab` and its conservative rule (one Focused message keeps the conversation in the Inbox). Confirm first that `inferenceClassification` is returned on delta and that consumer (outlook.com) accounts report it.
+
 ## Deferred report entries
 
 - **A21:** Outlook batch success is not the same as success of each message operation
