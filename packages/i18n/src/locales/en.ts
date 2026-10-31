@@ -1569,6 +1569,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.google.adminPolicy": "Google Workspace policy blocked the requested access. Please contact your Google Workspace administrator.",
   "errors.google.denied": "Google access was denied.",
   "errors.google.error": "Google error: {code}",
+  "errors.google.quota": "Google is limiting sign-ins. Try again later.",
+  "errors.google.capacity": "Google connections are busy on this device. Wait for them to finish, then try again.",
   "errors.google.signInFailed": "Google sign-in failed: {detail}",
   "errors.gmail.reconnect": "Reconnect this Gmail account.",
   "errors.gmail.revoked": "Google’s sign-in for this account expired or was revoked.",

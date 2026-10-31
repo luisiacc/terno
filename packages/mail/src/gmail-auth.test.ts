@@ -219,7 +219,7 @@ describe("Google initial-flow resource bounds", () => {
   });
 
   it.each([401, 403, 429, 503])("checks HTTP %s before parsing a malformed error body", async (status) => {
-    await expect(desktop({ profile: () => new Response("private-provider-error", { status }) }).result).rejects.toMatchObject({ message: `Google sign-in failed: ${status}`, retryable: status >= 429 });
+    await expect(desktop({ profile: () => new Response("private-provider-error", { status }) }).result).rejects.toMatchObject({ message: status === 429 ? "Google is limiting sign-ins. Try again later." : `Google sign-in failed: ${status}`, retryable: status >= 429 });
   });
 
   it("rejects a non-OK profile even if its body contains a valid mailbox", async () => {
@@ -417,4 +417,28 @@ it("cancellation closes active partial callback sockets", async () => {
     await closure;
     expect(socket!.destroyed).toBe(true);
   } finally { socket?.destroy(); }
+});
+
+it("settles a managed forbidden ticket when cancellation wins before response publication", async () => {
+  const abort = new AbortController();
+  const settled = vi.fn(async () => {});
+  const fallback = vi.fn<typeof fetch>(async () => { throw new Error("Unexpected unmanaged transport"); });
+  await expect(inspectGmailToken("synthetic-cancel", fallback, { signal: abort.signal, google: {
+    async request(descriptor) {
+      descriptor.onForbidden!(settled);
+      abort.abort();
+      return new Response("{}", { status: 403 });
+    },
+  } })).rejects.toMatchObject({ i18n: { key: "errors.google.cancelled" } });
+  expect(settled).toHaveBeenCalledExactlyOnceWith("none");
+  expect(fallback).not.toHaveBeenCalled();
+});
+
+it("retains known quota refusal when cancellation interrupts its bounded error body", async () => {
+  const abort = new AbortController();
+  const transport = vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({
+    pull() { abort.abort(); },
+  }, { highWaterMark: 0 }), { status: 429 }));
+  await expect(inspectGmailToken("synthetic-body-cancel", transport, { signal: abort.signal })).rejects.toMatchObject({ i18n: { key: "errors.google.quota" }, retryable: true });
+  expect(transport).toHaveBeenCalledOnce();
 });

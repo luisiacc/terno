@@ -291,7 +291,7 @@ function googleFailureReason(text: string): GmailFailureReason | undefined {
   } catch { /* Invalid bodies carry only their HTTP status. */ }
 }
 
-function isRateLimit(text: string): boolean {
+export function isRateLimit(text: string): boolean {
   try {
     const body: unknown = JSON.parse(text);
     if (!body || typeof body !== "object" || !("error" in body)) return false;

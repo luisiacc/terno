@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/desktop.d.ts", "src/web/connect.ts", "src/web/google.ts", "e2e-web/b41-onboarding/recovery.dev.spec.ts", "playwright.b41-onboarding.config.ts"],
+  "exclude": []
+}

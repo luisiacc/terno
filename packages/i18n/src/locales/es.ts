@@ -1557,6 +1557,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.google.adminPolicy": "La política de Google Workspace bloqueó el acceso solicitado. Por favor, contacta con tu administrador de Google Workspace.",
   "errors.google.denied": "Se denegó el acceso de Google.",
   "errors.google.error": "Error de Google: {code}",
+  "errors.google.quota": "Google está limitando los inicios de sesión. Inténtalo más tarde.",
+  "errors.google.capacity": "Las conexiones de Google están ocupadas en este dispositivo. Espera a que terminen e inténtalo de nuevo.",
   "errors.google.signInFailed": "Falló el inicio de sesión con Google: {detail}",
   "errors.gmail.reconnect": "Vuelve a conectar esta cuenta de Gmail.",
   "errors.gmail.revoked": "El inicio de sesión de Google de esta cuenta caducó o se revocó.",

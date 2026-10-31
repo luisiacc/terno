@@ -668,15 +668,17 @@ export function createHandlers(b: Backend): Handlers {
         throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
       }
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
+      const google = await b.initialGoogleRequests(true);
       const result = await b.options.providers.connectGmail({
         clientId: settings.gmailClientId,
         clientSecret: await b.getSecret("gmailClientSecret"),
         openExternal: b.options.openExternal,
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
+        google,
         // plan 22: photos from Google come on with the account (the user can untick them on Google's screen)
         scopes: [...GMAIL_SCOPES, ...PHOTO_SCOPES],
-      });
+      }).finally(() => google.close());
       googleFlowActive(b);
       validateGoogleConnection(result, "initial");
       if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
@@ -719,9 +721,10 @@ export function createHandlers(b: Backend): Handlers {
       let flow = accountId !== undefined ? beginSignIn(b, accountId) : undefined;
       let flowId = accountId;
       try {
-        const who = await tokens.inspect(accessToken, b.net.fetchFor("mail"), { signal: b.abort.signal }).catch((error: unknown) => {
+        const google = await b.initialGoogleRequests(false, accountId);
+        const who = await tokens.inspect(accessToken, b.net.fetchFor("mail"), { signal: b.abort.signal, google }).catch((error: unknown) => {
           throw new RpcError("BAD_REQUEST", messageOf(error));
-        });
+        }).finally(() => google.close());
         googleFlowActive(b);
         validateGoogleConnection(who);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
@@ -735,6 +738,8 @@ export function createHandlers(b: Backend): Handlers {
         if (accountId !== undefined && existing?.id !== accountId) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
         if (existing) {
           if (existing.kind !== "gmail") throw new RpcError("BAD_REQUEST", L("errors.alreadyConnectedImap", { email: who.email }));
+          const known = await b.initialGoogleRequests(false, existing.id);
+          known.close();
           const snapshot = snapshots.get(existing.id);
           if (!snapshot || snapshot.generation !== b.credentialsOf(existing.id) || (accountId === undefined && snapshot.version !== signInVersion(b, existing.id))) throw new RpcError("BAD_REQUEST", L("errors.google.cancelled"));
           if (accountId === undefined && snapshot.config.googleSubject === undefined) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));

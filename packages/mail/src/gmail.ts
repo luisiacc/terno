@@ -6,7 +6,7 @@ import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
 import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
-import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun } from "./types";
+import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type GoogleRequests } from "./types";
 
 export * from "./gmail-api";
 
@@ -23,6 +23,7 @@ export interface ConnectOptions {
   timeoutMs?: number;
   /** the backend's network-policy fetch (purpose "mail") */
   fetch: typeof fetch;
+  google?: Pick<GoogleRequests, "request">;
   /** pre-selects the account on Google's consent screen (re-verifying an owner) */
   loginHint?: string;
   /** plan 22: the whole list asked for (installed apps get no incremental consent: mail's scopes plus the new ones) */
@@ -56,7 +57,7 @@ export async function callbackPage(): Promise<(ok: boolean, msg: CallbackKey) =>
  * a random state. The redirect is accepted only with the matching state.
  */
 export async function connectGmail(options: ConnectOptions): Promise<GmailConnectResult> {
-  return withGoogleSignIn({ fetch: options.fetch, signal: options.signal, timeoutMs: options.timeoutMs ?? 300_000 }, async (flow) => {
+  return withGoogleSignIn({ fetch: options.fetch, google: options.google, signal: options.signal, timeoutMs: options.timeoutMs ?? 300_000 }, async (flow) => {
     const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
     const requestedScopes = [...(options.scopes ?? SCOPES)];
     const verifier = b64url(randomBytes(48));

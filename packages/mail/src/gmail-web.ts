@@ -1,8 +1,9 @@
 import { isValidEmail } from "@terno/core";
 import { L } from "@terno/i18n";
-import { createGmailApiProvider, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
+import { createGmailApiProvider, isRateLimit, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
-import { ProviderAuthError, ProviderError, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
+import { ProviderAuthError, ProviderError, type GoogleRequests, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
+import { readResponseText } from "./http-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 interface GoogleSignInFlow {
@@ -12,7 +13,7 @@ interface GoogleSignInFlow {
 }
 
 /** One deadline covers headers and bodies, including fetch implementations that ignore abort. */
-export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
+export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeoutMs?: number; fetch: typeof fetch; google?: Pick<GoogleRequests, "request"> }, run: (flow: GoogleSignInFlow) => Promise<T>): Promise<T> {
   const abort = new AbortController();
   const cancel = () => abort.abort(new ProviderError(L("errors.google.cancelled"), false));
   const timer = setTimeout(() => abort.abort(new ProviderError(L("errors.google.timedOut"), false)), options.timeoutMs ?? 30_000);
@@ -34,17 +35,30 @@ export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeo
   const json = async (url: string, init?: RequestInit, httpContext: HttpRequestContext = { endpoint: "unknown", purpose: "unknown" }): Promise<Record<string, unknown>> => {
     signal.throwIfAborted();
     let httpResponse: HttpResponseEvidence | undefined;
-    const response = await wait(options.fetch(url, { ...init, signal }).then((res) => {
+    let settleForbidden: ((kind: "quota" | "policy" | "none") => Promise<void>) | undefined;
+    const wire = { ...init, signal };
+    const response = await wait((options.google ? options.google.request({ request: httpContext, onForbidden: (settle) => {
+      if (signal.aborted) void settle("none");
+      else settleForbidden = settle;
+    } }, url, wire) : options.fetch(url, wire)).then((res) => {
       if (signal.aborted) {
         void res.body?.cancel().catch(() => {});
         throw signal.reason;
       }
       if (!res.ok) httpResponse = captureHttpResponseEvidence(res, httpContext, Date.now());
       return res;
-    }));
+    })).catch(async (error: unknown) => {
+      await settleForbidden?.("none");
+      throw error;
+    });
     if (!response.ok) {
-      void response.body?.cancel().catch(() => {});
-      throw new ProviderError(L("errors.google.signInFailed", { detail: response.status }), response.status === 429 || response.status >= 500, false, false, httpResponse);
+      // Only a bounded, structured Google quota reason can turn 403 into quota admission.
+      let quota = response.status === 429;
+      try {
+        const text = await wait(readResponseText(response, 65_536, signal)).catch(() => "");
+        quota ||= response.status === 403 && !signal.aborted && isRateLimit(text);
+      } finally { await settleForbidden?.(quota && !signal.aborted ? "quota" : "none"); }
+      throw new ProviderError(quota ? L("errors.google.quota") : L("errors.google.signInFailed", { detail: response.status }), quota || response.status >= 500, false, false, httpResponse);
     }
     const reader = response.body?.getReader();
     if (!reader) throw new ProviderError(L("errors.google.invalidResponse"), false);
@@ -77,6 +91,7 @@ export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeo
     signal.throwIfAborted();
     return result;
   } catch (error) {
+    if (error instanceof ProviderError && error.i18n?.key === "errors.google.quota") throw error;
     if (signal.aborted) throw signal.reason;
     if (error instanceof ProviderError) throw error;
     throw new ProviderError(L("errors.google.unavailable"), true);
@@ -101,7 +116,7 @@ export async function readGoogleIdentity(accessToken: string, ep: GmailEndpoints
   return { email, name: (info.name ?? "") as string, sub: info.sub, emailVerified: info.email_verified === true };
 }
 
-export async function inspectGmailToken(accessToken: string, netFetch: typeof fetch, options: { signal?: AbortSignal; timeoutMs?: number; endpoints?: Partial<GmailEndpoints> } = {}) {
+export async function inspectGmailToken(accessToken: string, netFetch: typeof fetch, options: { signal?: AbortSignal; timeoutMs?: number; endpoints?: Partial<GmailEndpoints>; google?: Pick<GoogleRequests, "request"> } = {}) {
   return withGoogleSignIn({ ...options, fetch: netFetch }, (flow) => readGoogleIdentity(accessToken, { ...GOOGLE_ENDPOINTS, ...options.endpoints }, flow));
 }
 
@@ -118,7 +133,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
   const now = o.now ?? Date.now;
   const tokens = new Map<number, { token: string; expiresAt: number }>();
   return {
-    inspect: (accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number }) => inspectGmailToken(accessToken, netFetch, { ...options, endpoints: o.endpoints }),
+    inspect: (accessToken, netFetch, options?: { signal?: AbortSignal; timeoutMs?: number; google?: Pick<GoogleRequests, "request"> }) => inspectGmailToken(accessToken, netFetch, { ...options, endpoints: o.endpoints }),
     set(accountId, accessToken, expiresAt) {
       tokens.set(accountId, { token: accessToken, expiresAt });
     },

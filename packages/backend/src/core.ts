@@ -9,7 +9,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -350,6 +350,39 @@ export class BackendCore {
       for (const id of this.google.keys()) if (this.googleReady(id)) void this.syncAccount(id);
     }, delay);
     this.kickWorker();
+  }
+
+  /** Before mailbox proof, Google admission belongs to the installation, never a claimed address. */
+  async initialGoogleRequests(codeExchange = false, accountId?: number) {
+    await this.ready;
+    const policy = this.cooldown!.requestsFor("installation", () => !this.stopped && !this.abort.signal.aborted);
+    const stamp = accountId === undefined ? null : await this.store.accounts.stamp(accountId);
+    // A known target may refuse admission; unverified proof responses still charge installation only.
+    const bound = stamp && await this.cooldown!.bindingFor(stamp) ? await this.cooldown!.requestsForAccount(stamp, () => !this.stopped && !this.abort.signal.aborted) : undefined;
+    const close = () => { policy.close(); bound?.close(); };
+    const failure = (error: unknown) => {
+      return error instanceof ProviderCooldownError && error.cooldown.kind === "capacity" ? new ProviderError(L("errors.google.capacity"), true) : error;
+    };
+    const check = () => {
+      try {
+        for (const scope of [policy, ...(bound ? [bound] : [])]) {
+          scope.check({ request: { endpoint: "gmail-api", purpose: "identity-proof" } });
+          scope.check({ request: { endpoint: "google-userinfo", purpose: "identity-proof" } });
+          if (codeExchange) scope.check({ request: { endpoint: "oauth-token", purpose: "authorization-code" } });
+        }
+        if (this.net.googlePending() >= 64) throw new ProviderError(L("errors.google.capacity"), true);
+      } catch (error) { throw failure(error); }
+    };
+    try { check(); } catch (error) { close(); throw error; }
+    return {
+      request: (descriptor: RequestDescriptor, input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        check();
+        return this.net.fetchGoogle(policy, descriptor)(input, init).catch((error: unknown) => {
+          throw failure(error);
+        });
+      },
+      close,
+    };
   }
 
   private googleReady(id: number): boolean {
