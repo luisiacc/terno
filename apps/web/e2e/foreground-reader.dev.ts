@@ -27,7 +27,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
         if (url.pathname === "/gmail/history") return Response.json({ historyId: "10" });
         if (url.pathname === "/gmail/labels") return Response.json({ labels: [] });
         if (url.pathname === "/gmail/messages/header" && url.searchParams.get("format") === "raw") {
-          if (++rawRequests === 1) return Response.json({}, { status: 503 });
+          if (++rawRequests === 1) return Response.json({}, { status: language === "es" ? 404 : 503 });
           requested(); await held;
           const raw = Buffer.from("From: sender@example.test\r\nTo: reader@example.test\r\nSubject: Header body\r\nContent-Type: text/plain\r\n\r\nExact selected-reader body.").toString("base64url");
           return Response.json({ id: "header", threadId: "header", raw, labelIds: ["INBOX"] });
@@ -74,7 +74,7 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press("j");
       await expect(page.getByTestId("reader-subject")).toHaveText("Header body");
-      await expect(page.getByText(t("reader.downloadFailed"), { exact: true })).toBeVisible();
+      await expect(page.getByTestId("snack-message").getByText(t("reader.downloadFailed"), { exact: true })).toBeVisible();
       expect((await new AxeBuilder({ page }).include('[data-testid="reader"]').include('[data-testid="snack-dock"]').analyze()).violations).toEqual([]);
       await page.screenshot({ path: `/tmp/terno-w05-foreground/reader-error-${language}-${theme}.png` });
       const retry = page.getByRole("button", { name: t("common.retry"), exact: true });

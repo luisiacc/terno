@@ -1415,7 +1415,13 @@ export class BackendCore {
     const provider = await this.provider(message.accountId);
     check();
     if (!provider?.readBody) return false;
-    const body = await provider.readBody({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal]));
+    const body = await provider.readBody({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal])).catch(async (error: unknown) => {
+      if (error instanceof ProviderAuthError) {
+        check();
+        await this.needsSignIn(message.accountId, "read", error, credentials, life);
+      }
+      throw error;
+    });
     if (!body) return false;
     try {
       check();

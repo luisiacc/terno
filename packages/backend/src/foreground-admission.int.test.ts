@@ -379,7 +379,11 @@ for (const status of [401, 403, 429] as const) it(`reader HTTP${status} does not
   });
   await expect(t.hydrate(target)).rejects.toBeInstanceOf(Error);
   const before = t.paths.length;
-  if (status !== 401) { await expect(t.hydrate(target)).rejects.toBeInstanceOf(Error); expect(t.paths).toHaveLength(before); }
+  if (status === 401) {
+    expect((await t.backend.store.accounts.get(3))!.syncState.authRequired).toBe(true);
+    expect(await t.hydrate(target)).toEqual({ changed: false });
+  } else await expect(t.hydrate(target)).rejects.toBeInstanceOf(Error);
+  expect(t.paths).toHaveLength(before);
   expect((await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!.bodyText).toBeNull();
   expect(t.sourceClosed()).toBe(0);
   expect(t.backend.net.googlePending()).toBe(6);

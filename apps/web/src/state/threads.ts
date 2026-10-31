@@ -69,7 +69,10 @@ export async function hydrateSelectedThread(id: number, selected: () => boolean)
     try {
       const result = await client.call("reader.hydrate", { threadId: id, messageId: message.id });
       if (!selected()) return;
-      if (result.changed) await loadThread(id, true);
+      const refreshed = await loadThread(id, true);
+      if (!selected()) return;
+      const current = refreshed?.messages.find((item) => item.id === message.id);
+      if (!result.changed && current && current.bodyState !== "full" && !current.bodyUnavailable) throw new Error("Body unavailable");
     } catch (error) {
       if (selected()) {
         const notice = snack.error(t("reader.downloadFailed"), {
