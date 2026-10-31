@@ -288,6 +288,8 @@ export interface RequestDescriptor {
   readonly run?: RequestRun;
   readonly generation?: number;
   /** Host-owned synchronous status capture; no I/O, throw or await. */
+  /** Gmail hands back one bounded-body classification; the ticket stays owned until settlement. */
+  readonly onForbidden?: (settle: (kind: "quota" | "policy" | "none") => Promise<void>) => void;
   readonly onHeaders?: (status: number, evidence?: HttpResponseEvidence) => void;
 }
 export interface Observation429 {

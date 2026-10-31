@@ -445,6 +445,10 @@ export class BackendCore {
   /** "Retry now" (the user: every account or one) or a window regaining focus (offline accounts, rate-limited). */
   async retryNow(accountId: number | null, reason: "user" | "focus"): Promise<void> {
     if (this.stopped) return;
+    if (reason === "user") {
+      for (const [id, google] of this.google) if (accountId === null || accountId === id) google.recoverPolicy();
+      this.cooldownChanged();
+    }
     const ids = this.connectivity.retryNow(accountId, reason);
     if (reason === "user") {
       let resumed = false;
@@ -1204,7 +1208,7 @@ export class BackendCore {
   }
 
   syncAccount(accountId: number): Promise<void> {
-    if (this.stopped) return Promise.resolve();
+    if (this.stopped || this.google.get(accountId)?.paused) return Promise.resolve();
     const life = this.lifetime(accountId);
     if (!this.current(life)) return Promise.resolve();
     const running = this.syncing.get(accountId);
@@ -1306,7 +1310,7 @@ export class BackendCore {
             await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
-            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && error.httpResponse?.status === 429)) throw error;
+            if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) throw error;
           }
         } finally { arrivals.end(); }
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
@@ -1346,7 +1350,7 @@ export class BackendCore {
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
         if (!this.store.isOpen) return;
-        if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && error.httpResponse?.status === 429)) {
+        if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
           await setState({ status: "error", lastError: message, lastErrorI18n, connection: null });
           return;
@@ -1454,13 +1458,14 @@ export class BackendCore {
       catch {
         if (active() && confirm) {
           try {
-            if (await confirm() && active()) this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+            if (await confirm() && active()) { this.credentials.set(accountId, this.credentialsOf(accountId) + 1); this.cooldownChanged(); }
           } catch { /* An unreadable result proves neither commit nor rollback. */ }
         }
         throw new RpcError("BAD_REQUEST", L("errors.secret.replaceFailed"));
       }
       if (committed && active()) {
         this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+        this.cooldownChanged();
       }
       return committed;
     });
@@ -1500,6 +1505,7 @@ export class BackendCore {
     const life = this.lifetime(accountId);
     if (flow) this.assertSignIn(accountId, flow);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+    this.cooldownChanged();
     this.connectivity.waitForSignIn(accountId, false);
     await this.accountWrite(life, async () => {
       if (flow) this.assertSignIn(accountId, flow);
@@ -1765,7 +1771,18 @@ export class BackendCore {
         // the server couldn't be reached: wait for the network (plan 20); an outage gives the attempt back
         else if (error instanceof ProviderIdentityError) state = await this.store.ops.fail(op.id, message, true, this.now(), { identity: true, keepAttempt: true });
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
-        else state = await this.store.ops.fail(op.id, message, error instanceof ProviderError ? error.retryable : true, this.now());
+        else {
+          const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
+          state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryAt === undefined ? undefined : { retryAt });
+        }
+        if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && (pe.i18n?.key === "errors.gmail.serviceDisabled" || pe.i18n?.key === "errors.gmail.permissionRequired" || pe.i18n?.key === "errors.gmail.adminPolicy")) {
+          this.connectivity.succeeded(op.account_id);
+          await this.accountWrite(life, async () => {
+            if (credentials !== this.credentialsOf(op.account_id)) return;
+            await this.store.accounts.setSyncState(op.account_id, { status: "error", lastError: pe.message, lastErrorI18n: pe.i18n, connection: null });
+            await this.emitAccounts();
+          });
+        }
         // A permanently failed send answered nobody: recomputed lists and counts follow.
         if (state === "failed" && sending) this.notifyChanged([]);
       };

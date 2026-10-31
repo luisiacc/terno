@@ -272,17 +272,20 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
   if (failure) throw failure.error;
 }
 
+type GmailFailureReason = GoogleFailureReason | "DOMAIN_POLICY";
+
 class GmailApiError extends ProviderError {
-  constructor(readonly resource: string, readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GoogleFailureReason, httpResponse?: HttpResponseEvidence) {
-    super(L("errors.gmail.requestFailed", { status }), retryable, ambiguous, false, httpResponse);
+  constructor(readonly resource: string, readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GmailFailureReason, httpResponse?: HttpResponseEvidence) {
+    super(reason === "DOMAIN_POLICY" ? L("errors.gmail.adminPolicy") : reason === "SERVICE_DISABLED" ? L("errors.gmail.serviceDisabled") : reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" ? L("errors.gmail.permissionRequired") : L("errors.gmail.requestFailed", { status }), retryable, ambiguous, false, httpResponse);
   }
 }
 
-function googleFailureReason(text: string): GoogleFailureReason | undefined {
+function googleFailureReason(text: string): GmailFailureReason | undefined {
   try {
     const value: unknown = JSON.parse(text);
     if (!isRecord(value) || !isRecord(value.error)) return;
     const details = [value.error.details, value.error.errors].flatMap((items) => Array.isArray(items) ? items : []);
+    if (details.some((detail) => isRecord(detail) && detail.reason === "domainPolicy")) return "DOMAIN_POLICY";
     if (details.some((detail) => isRecord(detail) && (detail.reason === "SERVICE_DISABLED" || detail.reason === "accessNotConfigured"))) return "SERVICE_DISABLED";
     if (details.some((detail) => isRecord(detail) && (detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || detail.reason === "insufficientPermissions" || detail.reason === "SCOPE_INSUFFICIENT"))) return "ACCESS_TOKEN_SCOPE_INSUFFICIENT";
   } catch { /* Invalid bodies carry only their HTTP status. */ }
@@ -564,12 +567,16 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       let res: Response;
       let httpResponse: HttpResponseEvidence | undefined;
       let nativeStatus: number | undefined;
+      let settleForbidden: ((kind: "quota" | "policy" | "none") => Promise<void>) | undefined;
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
         deadline.signal.throwIfAborted();
         const url = path.startsWith("https://") ? path : `${ep.api}${path}`;
         const wire = { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } };
-        const responsePromise = ctx.google ? ctx.google.request({ request: context, run: requestRun, generation, onHeaders: (status, evidence) => { nativeStatus = status; httpResponse = evidence; } }, url, wire) : netFetch(url, wire);
+        const responsePromise = ctx.google ? ctx.google.request({ request: context, run: requestRun, generation, onForbidden: (settle) => {
+          if (deadline.signal.aborted) void settle("none");
+          else settleForbidden = settle;
+        }, onHeaders: (status, evidence) => { nativeStatus = status; httpResponse = evidence; } }, url, wire) : netFetch(url, wire);
         res = await untilAborted(responsePromise.then((response) => {
           if (deadline.signal.aborted) { cancelResponse(response); throw deadline.signal.reason; }
           if (!response.ok && !httpResponse) httpResponse = captureHttpResponseEvidence(response, context, Date.now());
@@ -577,6 +584,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         }), deadline.signal);
       } catch (e) {
         if (nativeStatus === 429) throw new GmailApiError(path, 429, true, false, undefined, httpResponse);
+        await settleForbidden?.("none");
         throw failed(e);
       }
       if (res.status === 401) {
@@ -593,8 +601,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       if (!res.ok) {
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
-        const retryable = res.status === 429 || res.status >= 500 || (res.status === 403 && isRateLimit(text));
-        throw new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), googleFailureReason(text), httpResponse);
+        const quota = res.status === 403 && isRateLimit(text);
+        const reason = res.status === 403 ? googleFailureReason(text) : undefined;
+        await settleForbidden?.(deadline.signal.aborted ? "none" : quota ? "quota" : reason ? "policy" : "none");
+        const retryable = res.status === 429 || res.status >= 500 || quota;
+        throw new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), reason, httpResponse);
       }
       if (responseMode === "void") {
         discard(res);
@@ -615,6 +626,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         if (sending) throw invalidResponse(true);
         if (!deadline.signal.aborted && !isFetchNetworkFailure(e)) throw invalidResponse();
         // a read whose body stopped coming (the deadline, a reset, a dead socket) is safe to repeat
+        await settleForbidden?.("none");
         throw failed(e);
       }
     } finally {

@@ -536,7 +536,7 @@ export function failOp(db: Db, id: string, error: string, retryable: boolean, no
     state,
     attempts,
     error,
-    park && state === "queued" ? ("identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay,
+    park && state === "queued" ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay,
     now,
     id,
   );

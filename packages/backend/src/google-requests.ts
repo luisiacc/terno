@@ -7,6 +7,8 @@ const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
 
 export interface SavedGoogleRequests extends GoogleRequests {
   readonly paused: boolean;
+  recoverPolicy(): void;
+  retryAt(): number | undefined;
   close(): void;
 }
 
@@ -27,11 +29,14 @@ export async function savedGoogleRequests(input: {
   const installation = gate.requestsFor("installation", input.live);
   const policies = new Set([scope, installation]);
   let paused = false, closed = false;
+  let policyEpoch: number | undefined;
+  let recoveryRevision = 0;
+  const policyPaused = () => policyEpoch !== undefined && policyEpoch === input.credentials();
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
   const refuse = () => new ProviderCooldownError("gmail-api", "0", "binding");
   const check = (request: HttpRequestContext) => {
-    if (!alive() || paused) throw refuse();
+    if (!alive() || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
     installation.check({ request });
     scope.check({ request });
     if (net.googlePending() >= 64) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
@@ -39,13 +44,20 @@ export async function savedGoogleRequests(input: {
   const pause = () => { paused = true; input.changed(); };
   return {
     generation: input.credentials,
-    get paused() { return paused; },
+    get paused() { return paused || policyPaused(); },
+    recoverPolicy() { recoveryRevision++; if (policyEpoch !== undefined) { policyEpoch = undefined; input.changed(); } },
+    retryAt() {
+      const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
+      const dates = states.flatMap((state) => state.kind === "at" ? [state.atMs] : []);
+      return dates.length ? Math.max(...dates) : undefined;
+    },
     check,
     close() { closed = true; for (const policy of policies) policy.close(); },
     tokenUnavailable: () => scope.tokenUnavailable(),
     accessAvailable: () => scope.accessAvailable(),
     request(descriptor, resource, init) {
       const epoch = descriptor.generation ?? input.credentials();
+      const revision = recoveryRevision;
       const active = () => alive() && input.credentials() === epoch;
       const assert = () => { if (!active()) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "closed"); check(descriptor.request); };
       const policy: ProviderRequests = {
@@ -54,10 +66,14 @@ export async function savedGoogleRequests(input: {
         reserve(d) {
           assert();
           const ticket = scope.reserve(d);
-          return { ...ticket, dispatch: (transport) => ticket.dispatch(() => { assert(); return transport(); }) };
+          return { ...ticket, headers429: (e) => active() ? ticket.headers429(e) : Promise.resolve("unconfirmed"), dispatch: (transport) => ticket.dispatch(() => { assert(); return transport(); }) };
         },
       };
-      return net.fetchGoogle(policy, descriptor)(resource, init);
+      return net.fetchGoogle(policy, { ...descriptor, onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind) => {
+        const current = active() && !init?.signal?.aborted;
+        if (current && revision === recoveryRevision && kind === "policy" && descriptor.request.endpoint === "gmail-api") { policyEpoch = epoch; input.changed(); }
+        await settle(current ? kind : "none");
+      }) : undefined })(resource, init);
     },
     prove(read) {
       if (!alive() || paused) throw refuse();

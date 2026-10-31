@@ -13,6 +13,7 @@ export async function requestHttp(
   policy.check(descriptor);
   const ticket = policy.reserve(descriptor);
   const onHeaders = descriptor.onHeaders;
+  let transferred = false;
   try {
     const response = await ticket.dispatch(transport);
     const evidence = !response.ok ? captureHttpResponseEvidence(response, ticket.request, wallNow()) : undefined;
@@ -21,11 +22,23 @@ export async function requestHttp(
       if (!evidence) throw new Error("Missing HTTP response evidence");
       const durable = ticket.headers429({ received: evidence.received, minimum: resolveRetryMinimum(evidence) });
       await durable;
+    } else if (response.status === 403 && descriptor.onForbidden && evidence) {
+      const observation = { received: evidence.received, minimum: resolveRetryMinimum(evidence) };
+      let settled = false;
+      descriptor.onForbidden(async (kind) => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (kind === "quota") await ticket.headers429(observation);
+          else ticket.headers(403);
+        } finally { ticket.release(); }
+      });
+      transferred = true;
     } else {
       ticket.headers(response.status);
     }
     return response;
   } finally {
-    ticket.release();
+    if (!transferred) ticket.release();
   }
 }

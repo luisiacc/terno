@@ -1679,7 +1679,7 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
-  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? ("identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay, updated_at: now });
+  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay, updated_at: now });
   if (state === "failed") { settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed"); dropTargets(c, id); }
   else if (!(park && "identity" in park) && !yieldToNewerOps(c, id)) return "succeeded";
   return state;

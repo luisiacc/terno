@@ -1,0 +1,58 @@
+# W05 B35/S23 saved Gmail reason-qualified admission
+
+## Request (verbatim)
+
+“New production implementation series: W05 B35/S23 reason-qualified Gmail admission and recovery.” “Finish production+targeted validation+review for this finite B35/S23 slice, not another evidence-only handoff.”
+
+## Existing code and provenance
+
+Actual base acdbb25b550c96eb00eb06f48ff1d902a0f1af43 (expected 3b4f8d31). Read Plans26/28/32/62, exact B35/S23 rows, old committed spec and required-behavior RED source/log in /tmp/terno-w05-policy. Old d554807b remains unchanged/unlanded. Its two reviews cover evidence-only work, not this new implementation. B41 onboarding evidence remains separate and unchanged.
+
+## Design
+
+Extend the existing HTTP ticket observation path with bounded structured failure classification before releasing the ticket. Only structured quota403 publishes the same validated Retry-After observation used by429. No free-text matching, body logging, header-only403 cooldown or new scheduler. Keep physical response tracking in the existing network policy. The saved-account controller fences classification against credential generation and lifetime. A structured disabled-service or insufficient-permission response pauses that controller lifetime. Explicit user Retry now clears this policy pause; focus/network/periodic retry does not. Credential replacement or explicit provider retirement establishes a new lifetime, as Plan62 already specifies for local binding pauses. This policy pause is intentionally not durable; durable quota deadlines remain in the existing ledger and survive restart. Queued work is excluded while paused, without attempts or payload changes. Permanent send rejection remains failed, ambiguous acceptance stays unknown. Actionable en/es copy uses existing errors rather than invalidating OAuth.
+
+## Tests and performance
+
+Ordinary required-behavior REDs first, then focused SQL/IDB worker and sync tests with native Request interception installed before Backend creation. Test quota expiry/reopen, header-only403, policy no periodic spin and explicit recovery, stale credential/lifetime evidence, exact queue fields and independent account admission. Retain direct Gmail/resource/transport controls. All tests append inherited NODE_OPTIONS with the network guard. Only touched-package types and exact-file lint. No changed mailbox/editor hot path or new loop; evaluate existing dispatch perf only if needed. No production/package builds or broad gates. Archive/restore generated worker preparation artifacts.
+
+## Out of scope
+
+B41 initial handlers; incoming processing/MIME; Undo; editor/list/backlog; category defaults/import visibility; shortcuts/packaging; Plans64–68/80/81/83; main/worklist/peer worktrees; real profiles/secrets; fetch/push/landing. At most two actual Sol/high Standards+Spec code reviews for this new series.
+
+## Revisions after the Codex review
+
+One actual native Sol/high read-only critique completed, exit0, nine points (/tmp/terno-w05-activation/plan-review.txt). Adopt all: retain a403 ticket until Gmail's existing single bounded reader settles a structured classification;429 remains pre-body. No second body reader/clone. Abort/oversize settles nonquota and releases the logical ticket without reclaiming physical capacity. Classification publication checks the exact credential generation, consumer cancellation and lifetime. Only Gmail endpoint403 may pause mail; optional People/userinfo and contradictory5xx do not. Separate binding pause from a generation-qualified policy pause; explicit user retry clears only the latter and invalidates admission. Retained-provider credential replacement retires old policy pauses. Early sync admission preserves actionable error and avoids observation/state churn. Both folders and sync catches recognize classified quota/policy outcomes. Already-dispatched requests retain attempts; untouched blocked work does not. Replace contradictory empty-quota-ledger inherited oracle with a persisted-row oracle; retain the requested operation deadline floor using the existing op failure transition with a retry minimum, not falsified timestamps. No retry minimum bypasses ledger admission or acceptance fences.
+
+## Implementation and scoped evidence
+
+Production now transfers only a403 ticket's logical ownership to the existing bounded Gmail error-body reader; the network policy still owns the physical response until EOF/actual terminal. Gmail supplies a structured classification once, then the original ticket publishes quota evidence or finishes without a cooldown. Credential/lifetime/cancellation checks guard that publication. Local policy pause is generation-qualified, separate from binding pause, and Gmail-service-only. User retry retires the policy revision and invalidates admission; focus/periodic/network do not clear it. Credential commits invalidate cached admission even when retaining the provider. New en/es disabled/permission/admin messages expose no provider body. Send-first policy discovery projects the same actionable account error. Definitively rejected operations keep existing permanent-failure behavior; queued siblings remain intact and can resume. Retry now never resurrects failed or unknown sends. Quota retry minimum reuses the existing SQL/IDB running-op failure transition; no new timer, schema, scheduler, or user setting.
+
+Provenance: new focused suite started from /tmp/terno-w05-policy/required-behavior-red.test.ts, not peer-worktree edits. On this actual base the inherited required-behavior run reproduced4fail/10pass. Expanded preimplementation SQL/IDB run10fail/22pass. Contradictory old characterization oracles were replaced with required durable-ledger and admission assertions. Initial postimplementation oracle errors (direct verify pre-pausing sync, accepted-target metadata, optional userinfo synthetic endpoint and15minute send deadline) are fixture/oracle failures, not product RED. A subsequent ordinary Send-first account-projection regression failed2/2 before its production repair.
+
+Current validation:188/188 across six exact files (52new SQL/IDB cases plus136direct controls),4/4 selected original resource404/history cases (39unselected), and4/4 unchanged original Gmail control perf cases in ONE timing run. All six touched-package types including backend lifecycle, exact11TS-file strict lint and whitespace pass. Earlier backend type attempts exposed the new IDB test entering the non-DOM config; fixed by registering it in the existing lifecycle config, without modifying unrelated test code. Original test-worker artifact is archived for restoration. No broad release gates/builds, real accounts/profiles, fetched refs, push or landing.
+
+Evidence directory: /tmp/terno-w05-activation. Commands are retained in the final handoff; temporary exact-include Vitest configs are archived there. All tests append inherited NODE_OPTIONS with --require=/tmp/terno-network-guard.cjs. No budget/workload/warmup changes or repeated unchanged timing run. B41 dependency remains deferred to its later serialized handler fix. Source feature review R1 remains pending; prior evidence-only R1/R2 remain historical and are NOT a production verdict.
+
+Final test additions: same-credential explicit-recovery stale-policy control passes on both stores; focused suite54/54 (`same-generation.log`). Original accepted-send before/after completion plus rollback/reopen controls3/3 pass (`acceptance-controls.log`,43unselected). Backend normal+lifecycle types and new test strict lint pass again after that test addition. No additional perf run.
+
+### Reproduction commands
+
+From this checkout, restore the archived configs to `.w05-activation-vitest.config.ts` and `.w05-activation-perf.config.ts` for exact test discovery. Every test/type command below used `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs"` as its environment prefix.
+
+- `pnpm exec vitest run --config .w05-activation-vitest.config.ts packages/backend/src/gmail-policy-admission.int.test.ts` (54latest).
+- `pnpm exec vitest run --config .w05-activation-vitest.config.ts packages/backend/src/gmail-policy-admission.int.test.ts packages/backend/src/gmail-cooldown.int.test.ts packages/backend/src/google-transport.test.ts packages/mail/src/gmail-net.test.ts packages/mail/src/gmail-outcomes.test.ts packages/mail/src/provider-http.test.ts` (188before final2test additions;136unchanged direct controls).
+- `pnpm exec vitest run --config .w05-activation-vitest.config.ts packages/backend/src/gmail.int.test.ts -t 'incremental raw-message 404s|history expiry on a continuation page|raw-message .* retains its checkpoint'` (4selected).
+- `pnpm exec vitest run --config .w05-activation-vitest.config.ts packages/backend/src/backend.test.ts -t 'accepted send is never|transaction rollback after submission'` (3selected).
+- `pnpm exec vitest run --config .w05-activation-perf.config.ts packages/mail/src/gmail-control.perf.test.ts` (4,one run).
+- `pnpm --filter @terno/backend --filter @terno/mail --filter @terno/store --filter @terno/db --filter @terno/idb --filter @terno/i18n typecheck` (all pass, plus final backend-only repeat after test additions).
+- `pnpm exec oxlint --deny-warnings packages/backend/src/core.ts packages/backend/src/google-requests.ts packages/backend/src/gmail-policy-admission.int.test.ts packages/mail/src/gmail-api.ts packages/mail/src/provider-http.ts packages/mail/src/types.ts packages/store/src/types.ts packages/db/src/repos.ts packages/idb/src/mail.ts packages/i18n/src/locales/en.ts packages/i18n/src/locales/es.ts` (pass).
+- `git diff --check` (pass).
+
+Finite Root integration recommendations: serial rebase and these focused regressions only; preserve B41 patch evidence and implement its initial-handler managed-admission seam separately; keep renderer/desktop/held backlog qualification separate. The local permanent-policy pause lasts until explicit recovery, credential generation change or controller retirement; a restart can make one fresh attempt. Quota deadlines remain durable and cannot be bypassed by user retry, restart or credential replacement. No claim of physical cross-worker/process retirement or full W05 closure.
+
+## Production code review R1 and repairs
+
+Actual native `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C <this checkout> -` completed naturally, exit0, Standards PASS; Spec CHANGES REQUESTED, oneP2. It identified cancellation winning before a late403 settlement callback is registered, leaking the logical reservation. Transcript /tmp/terno-w05-activation/review-r1.txt (separate from historical evidence-only reviews).
+
+Ordinary R1 regression failed1/1 with tickets1instead of0 (`r1-red.log`,54unselected). Repair: immediately settle a late callback as nonquota when the request deadline/cancellation has already won; keep physical canceled-response capacity charged. Regression now asserts both zero logical tickets and one retained physical response, with no provider cooldown evidence. Final postrepair six-file run191/191 (55focused +136direct controls), mail/backend normal+lifecycle types and two changed-file strict lint pass; earlier other-package types/resource/acceptance/perf results remain applicable. No second unchanged timing run. R2 is pending and will be the final review; no clean verdict is inferred from repairs.
