@@ -58,3 +58,8 @@ git diff --check
 ```
 
 Temporary config is `export default { test: { include: ['packages/backend/src/attachment-limits-interruption.int.test.ts','packages/backend/src/attachments.test.ts','packages/backend/src/send-attachments.int.test.ts','packages/mail/src/compose-wire.test.ts'], environment: 'node', testTimeout: 20000 } };`. It changes no native timeout/budget and avoids unrelated worker builds/discovery. All tests append the inherited guard; only synthetic temp databases and exact intercepted Google requests are used. No app/Vite/production/package build, broad suite, timing gate, UI, main/worklist or held-series edits, fetch/push/landing. No tracked user/peer artifact was changed; no generated dist existed or was produced. Root must serially rebase, rerun targeted checks/types and ff-only land, then separately disposition the worklist and remove the worktree. This series alone does not close S47 or change28needs-work counts.
+
+
+## Root integration
+
+Rebased onto current committedmain66228197, including user's3c86e662hiddencategorydefault and66228197shortcutchanges; no conflicts or production edits. Root50/50same four exact testfiles, backend both typeprograms, strict owned lint/whitespace pass. Exact source-onlyconfig and guarded PID/argv/results in `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-w08-s47-kgdj9nz4`; no worker/appbuild. Processes naturally joined. Fast-forwardlanded afterchecks. Two native reviews, finalPASS0forfinitequalification, no later code/testchanges or furtherreview. S47remains partial per originalheldfindings and explicit limits; Rootupdates evidence, not rowcompletion. No broadreleaseclaim.
