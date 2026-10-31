@@ -1,4 +1,6 @@
 import { iterateBodyTokens, type TextOp } from "@terno/core";
+import { RpcError } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
 import { BODY_PART_UNITS, bodyPreview, validateBodyInput, assembleBody, bodyPartWrites, bodyTestKey, matchBodyParts, prepareBodyTokens, prepareBodySnippet, browserBodyPreparationFactory, type BodyPartSource, type IncomingMessage } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -77,28 +79,39 @@ export async function hydrateBody(db: Db, messageId: number, yieldTo: () => Prom
 }
 
 export type PreparedBodyMatches = Map<string, Map<string, boolean>>;
-
+const preparedRevisions = new WeakMap<PreparedBodyMatches, { epoch: string; seq: number }>();
+const bodyRevision = (db: Db) => db.get<{ epoch: string; seq: number }>("SELECT epoch,seq FROM search_state WHERE id=1")!;
+function checkBodyRevision(db: Db, matches: PreparedBodyMatches): void {
+  const expected = preparedRevisions.get(matches);
+  if (!expected) return;
+  const current = bodyRevision(db);
+  if (current.epoch !== expected.epoch || current.seq !== expected.seq) throw new RpcError("STALE", L("errors.mail.processingBusy"), { reason: "revision" });
+}
 
 export async function prepareBodyMatches(db: Db, tests: readonly { op: TextOp; value: string; prefix?: boolean }[], yieldTo: () => Promise<void>, extra: readonly string[] = [], published = true): Promise<PreparedBodyMatches> {
   const prepared: PreparedBodyMatches = new Map();
   if (!tests.length) return prepared;
+  if (published) preparedRevisions.set(prepared, bodyRevision(db));
+  const yieldCurrent = async () => { await yieldTo(); checkBodyRevision(db, prepared); };
   let after = "";
   while (published) {
     const rows = db.all<{ id: string }>("SELECT DISTINCT c.id FROM body_captures c JOIN body_heads b ON b.capture_id=c.id WHERE c.id>? AND c.ready=1 ORDER BY c.id LIMIT 32", after);
     if (!rows.length) break;
     for (const row of rows) { prepared.set(row.id, new Map()); after = row.id; }
-    await yieldTo();
+    await yieldCurrent();
   }
   for (const id of extra) prepared.set(id, new Map());
   for (const [id, results] of prepared) for (const test of tests) {
     const key = bodyTestKey(test.op, test.value, test.prefix);
-    if (!results.has(key)) results.set(key, await matchBodyParts(sqlBodyParts(db, id, 2, yieldTo), test.op, test.value, test.prefix));
+    if (!results.has(key)) results.set(key, await matchBodyParts(sqlBodyParts(db, id, 2, yieldCurrent), test.op, test.value, test.prefix));
   }
+  checkBodyRevision(db, prepared);
   return prepared;
 }
 
 const active = new WeakMap<Db, PreparedBodyMatches>();
 export function withBodyMatches<T>(db: Db, matches: PreparedBodyMatches, work: () => T): T {
+  checkBodyRevision(db, matches);
   const prior = active.get(db); active.set(db, matches);
   try { return work(); } finally { if (prior) active.set(db, prior); else active.delete(db); }
 }
