@@ -1,4 +1,8 @@
 import { normalizeText } from "../text";
+import { isFullEmail } from "../search/parse";
+
+/** A from condition that names one address exactly matches the address only, never a display name (SQL rules too). */
+export const fromIsAddress = (op: TextOp, normalized: string): boolean => op === "equals" && isFullEmail(normalized);
 import type { Condition, FilterRule, TextOp } from "./schema";
 
 /**
@@ -169,6 +173,8 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
       return bodyMatches(c.op, msg.bodyText, c.value);
     case "from": {
       const v = normalizeText(c.value);
+      // "is exactly this address" is the address: a display name made to look like it doesn't pass (plan 80)
+      if (fromIsAddress(c.op, v)) return normalizeText(msg.fromEmail) === v;
       return textOp(c.op, normalizeText(msg.fromName), v) || textOp(c.op, normalizeText(msg.fromEmail), v);
     }
     case "fromDomain": {

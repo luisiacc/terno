@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, normalizeText, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
+import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, normalizeText, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
@@ -35,6 +35,7 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
       return c.op === "gt" ? "m.date < ?" : "m.date > ?";
     case "from": {
       const v = normalizeText(c.value);
+      if (fromIsAddress(c.op, v)) return textSql(c.op, "m.from_email", v, params);
       return `(${textSql(c.op, "m.from_name_norm", v, params)} OR ${textSql(c.op, "m.from_email", v, params)})`;
     }
     case "fromDomain":

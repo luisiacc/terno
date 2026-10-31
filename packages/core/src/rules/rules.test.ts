@@ -36,6 +36,14 @@ describe("evaluateRule", () => {
     expect(evaluateRule(rule([{ field: "from", op: "equals", value: "tienda.es" }]), msg(), NOW)).toBe(false);
   });
 
+  it("plan 80: from equals an address is the address: a display name made to look like it doesn't match", () => {
+    const spoof = { ...msg(), fromName: "ofertas@tienda.es", fromEmail: "x@evil.example" };
+    expect(evaluateRule(rule([{ field: "from", op: "equals", value: "Ofertas@Tienda.es" }]), spoof, NOW)).toBe(false);
+    expect(evaluateRule(rule([{ field: "from", op: "equals", value: "Ofertas@Tienda.es" }]), msg(), NOW)).toBe(true);
+    // contains still reads both
+    expect(evaluateRule(rule([{ field: "from", op: "contains", value: "ofertas@tienda.es" }]), spoof, NOW)).toBe(true);
+  });
+
   it("fromDomain compares the domain part only", () => {
     expect(evaluateRule(rule([{ field: "fromDomain", op: "equals", value: "tienda.es" }]), msg(), NOW)).toBe(true);
     expect(evaluateRule(rule([{ field: "fromDomain", op: "endsWith", value: ".es" }]), msg(), NOW)).toBe(true);
