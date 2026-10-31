@@ -104,7 +104,7 @@ function languageFromLines(lines: readonly (readonly string[])[]): number {
 const firstName = (name: string) => fold(name.trim().split(/[\s,]+/)[0] ?? "");
 
 /** Two independent 32-bit hashes of a context (order, word ids, language when it starts a sentence). */
-function hashContext(ids: readonly number[], from: number, to: number, lang: number): [number, number] {
+function hashContext(ids: readonly number[], from: number, to: number, lang: number, out: Uint32Array): void {
   let h1 = 0x811c9dc5 ^ (to - from);
   let h2 = 0x9e3779b9 ^ ((to - from) * 0x85ebca6b);
   for (let i = from; i < to; i++) {
@@ -121,7 +121,8 @@ function hashContext(ids: readonly number[], from: number, to: number, lang: num
   h1 = Math.imul(h1, 0x85ebca6b);
   h1 ^= h1 >>> 13;
   h2 ^= h2 >>> 16;
-  return [h1 >>> 0 || 1, h2 >>> 0];
+  out[0] = h1 >>> 0 || 1;
+  out[1] = h2 >>> 0;
 }
 
 export interface PhraseSuggestInput {
@@ -164,6 +165,8 @@ export function setPhrasesSlowdownForTests(ms: number): void {
 
 export class PhraseModel {
   private table: Table;
+  /** Hash results are consumed synchronously before another context is examined. */
+  private readonly contextHash = new Uint32Array(2);
   private readonly vocab = new Map<string, number>();
   private words: string[] = [...RESERVED];
   /** how each word is written mid-sentence: lowercase, Capitalized, UPPER, otherwise (then `mixed`) */
@@ -357,8 +360,8 @@ export class PhraseModel {
     if (next === UNK) return;
     for (let order = 1; order <= MAX_ORDER && i - order >= 0; order++) {
       if (ids[i - order] === UNK) break;
-      const [h1, h2] = hashContext(ids, i - order, i, lang);
-      this.observe(h1, h2, next);
+      hashContext(ids, i - order, i, lang, this.contextHash);
+      this.observe(this.contextHash[0]!, this.contextHash[1]!, next);
     }
   }
 
@@ -401,8 +404,8 @@ export class PhraseModel {
       let unknown = false;
       for (let i = from; i < ids.length; i++) if (ids[i] === UNK) unknown = true;
       if (unknown) continue;
-      const [h1, h2] = hashContext(ids, from, ids.length, lang);
-      const slot = this.find(t, h1, h2, false);
+      hashContext(ids, from, ids.length, lang, this.contextHash);
+      const slot = this.find(t, this.contextHash[0]!, this.contextHash[1]!, false);
       if (slot < 0) continue;
       const total = t.tot[slot]!;
       let best = -1;
@@ -509,7 +512,7 @@ export class PhraseModel {
 
   allocatedBytes(): number {
     const t = this.table;
-    return t.k1.byteLength + t.k2.byteLength + t.tot.byteLength + t.nid.byteLength + t.ncnt.byteLength + t.nerr.byteLength + this.lower.byteLength * 4 + this.wordChars * 2 + this.words.length * 40 + this.vocab.size * 64 + this.mixed.size * 80 + this.learned.byteLength;
+    return this.contextHash.byteLength + t.k1.byteLength + t.k2.byteLength + t.tot.byteLength + t.nid.byteLength + t.ncnt.byteLength + t.nerr.byteLength + this.lower.byteLength * 4 + this.wordChars * 2 + this.words.length * 40 + this.vocab.size * 64 + this.mixed.size * 80 + this.learned.byteLength;
   }
 
   async snapshot(identity: string, clock: SliceClock): Promise<Uint8Array> {

@@ -178,6 +178,23 @@ describe("suggestions", () => {
 });
 
 describe("learning token work", () => {
+  it("does not materialize an iterable hash pair for every learned context", () => {
+    const m = new PhraseModel();
+    const iterate = Array.prototype[Symbol.iterator];
+    let pairs = 0;
+    Array.prototype[Symbol.iterator] = function (this: unknown[]) {
+      if (this.length === 2 && typeof this[0] === "number" && typeof this[1] === "number") pairs++;
+      return iterate.call(this);
+    };
+    try {
+      m.learn(msg("Thanks for the quick reply. Let me know if you have any questions."));
+    } finally {
+      Array.prototype[Symbol.iterator] = iterate;
+    }
+    expect(pairs).toBe(0);
+    expect(m.messages).toBe(1);
+  });
+
   it("tokenizes short own text once for language and learning", () => {
     const m = new PhraseModel();
     const match = vi.spyOn(String.prototype, "match");
@@ -220,4 +237,28 @@ describe("learning token work", () => {
     expect(await restored.restore(bytes, "synthetic", clock())).toBe(true);
     expect(await restored.snapshot("synthetic", clock())).toEqual(bytes);
   });
+});
+
+
+it("preserves compatibility forms and continuation errors through repeated pruning", async () => {
+  const m = new PhraseModel({ slots: 64, words: 100 });
+  let prunes = 0;
+  for (let i = 0; i < 128; i++) {
+    const text = `Hi José,\nThe Kelvin ﬃ team and the CAFÉ iPhone NASA team.\nWe should meet word${i} tomorrow.\nBest,\nŁukasz`;
+    const t: SentText = { id: i + 1, accountId: 1, date: 0, fromName: "Łukasz Smith", to: to("José Ruiz"), text };
+    m.learn(t);
+    if (i % 16 === 15 && m.needsPrune()) {
+      await m.prune(clock());
+      prunes++;
+    }
+  }
+  expect(prunes).toBeGreaterThan(0);
+  m.revision = { epoch: "compatibility", seq: 128 };
+  const bytes = await m.snapshot("synthetic", clock());
+  const { crypto } = globalThis as typeof globalThis & { crypto: { subtle: { digest(algorithm: string, data: Uint8Array): Promise<ArrayBuffer> } } };
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  expect(Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")).toBe("5fe96872f700c98376518faa81ad6f9b463e6db54d18748e4250b48f36d06304");
+  const restored = new PhraseModel({ slots: 64, words: 100 });
+  expect(await restored.restore(bytes, "synthetic", clock())).toBe(true);
+  expect(await restored.snapshot("synthetic", clock())).toEqual(bytes);
 });
