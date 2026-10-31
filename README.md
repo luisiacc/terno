@@ -310,9 +310,10 @@ Contributions are welcome! Have a look at [CONTRIBUTING.md](CONTRIBUTING.md) bef
 
 Terno is **source-available** under the [Business Source License 1.1](LICENSE). Each version becomes open source under the GNU AGPL-3.0 three years after its release.
 
-- **Free:** personal and work use, by individuals and by organizations of any size; reading, changing and forking the code.
+- **Free:** personal use, and work use at organizations with fewer than 100 employees and contractors and less than US$5 million in annual revenue; trying it out at any size for 30 days; reading, changing and forking the code.
+- **Needs a paid seat:** work use at larger organizations. Each person who uses Terno for work there needs a Pro subscription (which includes the AI features) or a Business subscription. Any paid subscription covers business use, at any company size.
 - **Not allowed without the author's permission:** selling Terno or a fork, or offering a paid product, hosting or support service whose value comes mainly from it. Forks must use a different name than "Terno" (see [TRADEMARKS.md](TRADEMARKS.md)).
 
-For permission to sell, contact the author. Contributions need a one-time [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
+For subscriptions for a larger organization or permission to sell, contact the author. Contributions need a one-time [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 The bundled fonts (Geist, Geist Mono, Figtree, Instrument Sans and Instrument Serif, from [Fontsource](https://fontsource.org)) are under the [SIL Open Font License 1.1](https://openfontlicense.org); their license texts ship in their packages.
