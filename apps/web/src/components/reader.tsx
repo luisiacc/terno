@@ -553,7 +553,7 @@ export function Reader() {
         <ToolButton label={t("actions.category")} keys="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} testId="action-category">
           <Tag />
         </ToolButton>
-        <ToolButton label={t("actions.markUnread")} keys="u" onClick={() => act("markUnread")} testId="action-unread">
+        <ToolButton label={t("actions.markUnread")} onClick={() => act("markUnread")} testId="action-unread">
           <MailOpen />
         </ToolButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}

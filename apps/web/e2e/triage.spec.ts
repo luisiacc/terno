@@ -42,12 +42,18 @@ test.describe("keyboard triage", { tag: "@design" }, () => {
     await expect(page.locator(`[data-thread-id="${starred}"]`)).toHaveCount(1);
   });
 
-  test("u marks the open thread unread", async ({ app: page }) => {
+  test("⇧U shows unread, ⇧A shows all; u marks nothing", async ({ app: page }) => {
     const id = await openRow(page, 0);
     const row = page.locator(`[data-thread-id="${id}"]`);
     await expect(row).not.toHaveAttribute("data-unread", "true");
     await page.keyboard.press("u");
-    await expect(row).toHaveAttribute("data-unread", "true");
+    await expect(row).not.toHaveAttribute("data-unread", "true");
+    const read = page.locator("[data-testid=thread-row]:not([data-unread=true])");
+    await page.keyboard.press("Shift+U");
+    // the open thread stays (it's being read); every other row is unread
+    await expect.poll(() => read.evaluateAll((els) => els.map((e) => e.getAttribute("data-thread-id")))).toEqual([id]);
+    await page.keyboard.press("Shift+A");
+    await expect.poll(() => read.count()).toBeGreaterThan(1);
   });
 
   test("x selects several threads and e archives them together", async ({ app: page }) => {

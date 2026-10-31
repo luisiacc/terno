@@ -196,6 +196,21 @@ test.describe("the List layout: what stays put", () => {
     for (const id of ids.filter((x) => x !== open)) await expect(page.locator(`[data-thread-id="${id}"]`)).toHaveCount(1);
   });
 
+  test("⇧U and ⇧A filter the list on the list, and do nothing on a conversation's page", async ({ app: page }) => {
+    const read = page.locator("[data-testid=thread-row]:not([data-unread=true])");
+    const unfiltered = await read.count();
+    expect(unfiltered).toBeGreaterThan(1);
+    await openRow(page, read.first());
+    await page.keyboard.press("Shift+U");
+    await page.keyboard.press("Escape");
+    await expect(listPage(page)).toHaveCount(0);
+    await expect.poll(() => read.count()).toBe(unfiltered);
+    await page.keyboard.press("Shift+U");
+    await expect.poll(() => read.count()).toBeLessThanOrEqual(1);
+    await page.keyboard.press("Shift+A");
+    await expect.poll(() => read.count()).toBe(unfiltered);
+  });
+
   test("on the list, j and k move the cursor without opening or fetching a conversation (R12)", async ({ app: page }) => {
     const calls = rpcLog(page);
     await page.reload();

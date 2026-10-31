@@ -32,7 +32,7 @@ Existing bindings stay (j/k ↑/↓, Enter/o, x, Esc, e, #, ⌫, !, s, u, l, c, 
 | Delete (⌦), ⌘⌫ | Trash (beside # and ⌫) |
 | ⌃⌘A | Archive (Apple Mail) |
 | ⇧I | Mark read |
-| ⇧U | Mark unread (beside u) |
+| ~~⇧U~~ | ~~Mark unread (beside u)~~: since plan 12's addendum, ⇧U is the Unread filter and u is unbound; Mark unread is in the menus |
 | ⌘⇧U | Toggle read/unread (Apple Mail) |
 | ⌘⇧J | Spam (Apple Mail) |
 | ⌘⇧L | Star toggle (Apple Mail) |

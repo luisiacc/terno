@@ -1109,6 +1109,8 @@ const es = {
   "shortcuts.next": "Siguiente conversación",
   "shortcuts.prev": "Conversación anterior",
   "shortcuts.unreadOnly": "Solo no leídos",
+  "shortcuts.filterUnread": "Mostrar no leídos",
+  "shortcuts.filterAll": "Mostrar todo",
   "shortcuts.palette": "Paleta de comandos",
   "shortcuts.focusSnack": "Ir al aviso",
   "shortcuts.goInbox": "Ir a Entrada",

@@ -78,7 +78,7 @@ export function CommandPalette() {
               <CommandItem onSelect={() => run(() => void act("trash"))} keywords={english("palette.trash")}><Trash2 /> {t("palette.trash")}<CommandShortcut>⌫</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => void act("spam"))} keywords={english("palette.spam")}><OctagonAlert /> {t("palette.spam")}<CommandShortcut>!</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => void act("markRead"))} keywords={english("palette.markRead")}><MailOpen /> {t("palette.markRead")}<CommandShortcut>⇧I</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => void act("markUnread"))} keywords={english("palette.markUnread")}><Mail /> {t("palette.markUnread")}<CommandShortcut>⇧U</CommandShortcut></CommandItem>
+              <CommandItem onSelect={() => run(() => void act("markUnread"))} keywords={english("palette.markUnread")}><Mail /> {t("palette.markUnread")}</CommandItem>
               <CommandItem onSelect={() => run(() => toggleStar())} keywords={english("palette.star")}><Star /> {t("palette.star")}<CommandShortcut>S</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => setApp({ dialog: "categoryPicker", pickerMode: "move" }))} keywords={english("palette.move")}><FolderInput /> {t("palette.move")}<CommandShortcut>V</CommandShortcut></CommandItem>
             </>
@@ -97,7 +97,7 @@ export function CommandPalette() {
           )}
           {filter && active && active !== "unread" && (
             <CommandItem data-testid="palette-filter-all" value={`${t("palette.showAll")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAll"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(undefined))}>
-              <ListFilter /> {t("palette.showAll")}
+              <ListFilter /> {t("palette.showAll")}<CommandShortcut>⇧A</CommandShortcut>
             </CommandItem>
           )}
           {filter && active !== "people" && supported.includes("people") && (

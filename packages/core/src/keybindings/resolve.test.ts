@@ -138,12 +138,18 @@ describe("selection and triage bindings (plan 06)", () => {
     expect(run([key("Backspace", { ctrl: true })], ctx, false)).toBe("thread.trash");
   });
 
-  it("read state: ⇧I read, u and ⇧U unread, ⌘⇧U toggles", () => {
+  it("read state: ⇧I read, ⌘⇧U toggles; u marks nothing", () => {
     expect(run([key("I", { shift: true })])).toBe("thread.markRead");
-    expect(run([key("u")])).toBe("thread.markUnread");
-    expect(run([key("U", { shift: true })])).toBe("thread.markUnread");
     expect(run([key("u", { meta: true, shift: true })])).toBe("thread.toggleRead");
+    expect(run([key("u")])).toBeNull();
     expect(run([key("i")])).toBeNull();
+  });
+
+  it("the quick filters: ⇧U Unread, ⇧A All; a stays Reply All", () => {
+    expect(run([key("U", { shift: true })])).toBe("list.filterUnread");
+    expect(run([key("A", { shift: true })])).toBe("list.filterAll");
+    expect(run([key("a")])).toBe("compose.replyAll");
+    expect(run([key("A", { shift: true })], { ...ctx, editable: true })).toBeNull();
   });
 
   it("Apple Mail's chords: ⌃⌘A archive, ⌘⇧J spam, ⌘⇧L star; e, !, s stay", () => {

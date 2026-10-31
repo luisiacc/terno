@@ -12,6 +12,8 @@ export type Command =
   | "list.extendPrev"
   | "list.menu"
   | "list.toggleUnread"
+  | "list.filterUnread"
+  | "list.filterAll"
   | "reader.close"
   | "nav.back"
   | "nav.forward"
@@ -104,6 +106,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "contextmenu", command: "list.menu" },
   // Apple Mail's message filter; resolves everywhere (else the browser's ⌘L takes the address bar), the handler decides
   { keys: "mod+l", command: "list.toggleUnread", inEditable: true, inDialog: true },
+  // the list's quick filters by name: ⇧U Unread, ⇧A All (a plain u marks nothing: Mark as unread is in the menus)
+  { keys: "shift+u", command: "list.filterUnread" },
+  { keys: "shift+a", command: "list.filterAll" },
   { keys: "escape", command: "reader.close" },
   // plan 24: the List layout's Back and Forward (the browser's and the desktop menu's too); nothing in Split
   { keys: "mod+[", command: "nav.back" },
@@ -120,8 +125,6 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "s", command: "thread.star" },
   { keys: "mod+shift+l", command: "thread.star" },
   { keys: "shift+i", command: "thread.markRead" },
-  { keys: "u", command: "thread.markUnread" },
-  { keys: "shift+u", command: "thread.markUnread" },
   { keys: "mod+shift+u", command: "thread.toggleRead" },
   { keys: "l", command: "thread.category" },
   { keys: "v", command: "thread.move" },

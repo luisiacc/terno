@@ -174,3 +174,15 @@ A Playwright-driven ⌘L in the Electron dev build toggles once, and Ver → Fil
   - `pnpm test:ui-perf`: 17/17.
   - `pnpm test:perf` (on `aaa789b`): 106 of 107; `load.perf.test.ts`'s slow-disk case fails on this machine with or without the v11 indexes (checked by building without them).
   - Desktop: `unread.smoke.ts` on the dev build.
+
+## Addendum: ⇧U Unread, ⇧A All
+
+Request: "when on the thread list, the shortcut pressing 'U' uppercase should put the 'Unread' filter, and 'A' uppercase should do the 'All' filter. Currently pressing u marks something as unread, just remove that, nobody cares about marking something as unread."
+
+- `shift+u` → `list.filterUnread`, `shift+a` → `list.filterAll` (`setListFilter`, so the same rules as ⌘L: no dialog or menu, not in Review). They act only while the list is on screen: in the List layout, a conversation's page leaves the filter alone. `a` stays Reply All.
+- `u` and `shift+u` no longer mark unread. Mark as unread stays in the context menu, the selection bar, the reader's button and the palette (their `U` hints are gone); ⌘⇧U still toggles read.
+- The shortcuts help lists Show unread (⇧U) and Show all (⇧A), and drops Mark as unread; the palette's Show all shows ⇧A.
+
+Tests: resolver (⇧U, ⇧A, u unbound, a still Reply All, nothing while typing), e2e in Split (u marks nothing; ⇧U leaves only unread rows and the open one; ⇧A brings the rest back) and in List (nothing on a conversation's page; fails without the guard).
+
+Codex review: plan 06's table still listed ⇧U as Mark unread (fixed). Not changed: Caps Lock letters resolve as plain keys (as for every shortcut: Caps-Lock J moves, it doesn't extend), and single keys typed inside an HTML mail's frame stay the frame's (only ⌘L is forwarded, as before).

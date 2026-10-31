@@ -12,7 +12,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { focusSearch, listScroller } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
-import { toggleUnreadFilter } from "~/lib/unread";
+import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
@@ -80,6 +80,12 @@ function reply(mode: DraftMode) {
   void openCompose(mode);
 }
 
+/** ⇧U / ⇧A: the list's quick filter, while the list is what's on screen (List's conversation page shows none). */
+function filterList(filter: "unread" | undefined) {
+  if (listLayout() && currentPage() !== "list") return;
+  setListFilter(filter);
+}
+
 /** Esc: Back from a page (List), else the multi-selection ends. */
 function escape() {
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
@@ -109,6 +115,8 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.extendPrev": () => extendSelection(-1),
   "list.menu": () => openMenuForSelection(),
   "list.toggleUnread": toggleUnreadFilter,
+  "list.filterUnread": () => filterList("unread"),
+  "list.filterAll": () => filterList(undefined),
   "reader.close": escape,
   "nav.back": goBack,
   "nav.forward": goForward,
