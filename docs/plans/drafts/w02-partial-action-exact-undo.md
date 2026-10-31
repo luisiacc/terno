@@ -1,5 +1,7 @@
 # W02 partial action and exact Undo qualification
 
+Current status (2026-10-31): minimal saved Trash+Spam production correction complete; targeted functional/types/lint and one unchanged affected perf case pass; final coherent R2 Standards + Spec PASS, no actionable findings. Earlier REDs, ownership holds and checkpoint verdicts below are historical and preserved. Root owns integration/landing.
+
 Actual base: `acdbb25b550c96eb00eb06f48ff1d902a0f1af43` (expected `3b4f8d31`). Tests/docs ownership only; Root owns landing.
 
 ## Request (verbatim task)
@@ -141,3 +143,18 @@ All test commands use inherited `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--
 - `pnpm exec oxlint --deny-warnings packages/store/src/flag-intents.ts packages/store/src/restore-location.test.ts packages/store/src/conformance/flag-intents.ts packages/store/src/conformance/w02-actions.ts packages/backend/src/w02-partial-action-exact-undo.int.test.ts packages/backend/src/w02-canonical-actions.int.test.ts packages/backend/src/w02-action-fixture.ts`: exit 0 (`lint.log`). `git diff --check`: exit 0.
 
 W05's inherited `OpPark.retryAt` handling, migration33/IDB20, user defaults and all held scope remain untouched. No mail, core/types/schema, renderer, i18n or protected-plan production edit. Critique and evidence-only R1 are historical, not fresh approval of this production change; exactly one full coherent native Sol/high R2 follows. Post-R2 only high correctness/data-loss findings may be repaired, lesser findings go to finite backlog; no R3.
+
+
+### Final coherent R2 and finite disposition
+
+The single final native review completed exit **0**: `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C <this checkout> -`, evidence `/tmp/terno-w02-fix/code-review-r2.log`. Reviewed **all eight files**, complete coherent diff from `9754e6b7008abe56ae95bd6ee7b2109652d03376` through production commit `e4c1f6bd04787eccce51d5b293de14e8247c210b`, including both prior evidence commits. Exact verdict: **No actionable findings; Standards PASS; Spec PASS for the documented finite W02 scope.** Reviewer confirmed ordered steps/saved-version binding in both unchanged callers and the distinction between terminal partial delivery and unknown work. No R2 repair, lesser-findings backlog or R3; R1 remains the earlier evidence-only checkpoint, not retroactive production approval.
+
+Recommended separate row dispositions:
+
+- **A06 finite supported local contract: qualified.** Captured old Gmail history/minimal observations, success/refusal ACKs, auth-parked ownership, unknown stale/current retries, newer independent read/star/location intent and exact source identity are covered in the scoped public and shared-adapter evidence. This does not certify arbitrary post-ACK stale replicas, IMAP-specific live behavior, A19 reconnect or every crash/interleaving.
+- **A07 finite synchronized-selection contract: qualified.** Actual 1,000+1 batchModify partial terminal refusal, exact saved targets/attempts, newer canonical Restore/Undo, sibling/account isolation, queue reopen and local later-slice admission responsibility pass. Remote partial outcomes are explicit; local admission is per slice. Provider-implied **Terno category-label synchronization is N/A**, because categories are local. Uncached provider-wide discovery and universal remote rollback/atomicity remain outside scope.
+- **A36 reproduced saved Trash+Spam defect: fixed and qualified.** Original ordinary safety assertions are GREEN without alteration, actual remote dual membership and reconciled persisted state agree, queued correction survives graceful reopen, and canonical/partial/unknown/newer-field controls pass across SQL/native, fake-IDB modes and real SQLite-WASM shared adapters. The five stable effective tuples are the bounded saved-location contract. No arbitrary provider-label snapshot, durable UI UndoJournal, Send Undo or raw INBOX-with-Trash effective-Inbox guarantee is claimed. Browser/hardware/crash qualification is not implied.
+
+No new production dependency remains for this finite slice. Root owns serial rebase/retest/ff-only landing and worklist disposition. Main advanced independently during review; this reviewed branch remains based on the explicitly recorded `9754e6b7` and was not silently rebased after R2. W03/W10 files and all held source/plans remained untouched.
+
+Final cleanup: normal Vitest preparation's `packages/backend/dist/incoming.worker.cjs` and its initially absent directory restored to absent; scope perf report/directory state restored to its captured prior state and evidence report retained in `/tmp/terno-w02-fix/scope-result.json`. Every captured test/type/perf/review process joined; none killed. No full gates, second unchanged perf run, app/Vite/package build, real profile/secret read, external fixture traffic, fetch/push/landing/main/worklist edit or child agent. Post-review change is documentation of the actual verdict and cleanup only; no source changes after the reviewed production commit.
