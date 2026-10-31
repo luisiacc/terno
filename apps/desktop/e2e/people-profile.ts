@@ -1,5 +1,7 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { renameSync, rmSync } from "node:fs";
+import { MIGRATIONS } from "../../../packages/db/src/migrations";
 import { Db } from "../../../packages/db/src/sqlite";
 import { nodeSqliteDriver } from "../../../packages/db/src/node-driver";
 import { writeLegacyCopy } from "../../../packages/db/src/test/legacy";
@@ -36,4 +38,29 @@ export function toV13(path: string): void {
   } finally { db.close(); }
   for (const suffix of ["-wal", "-shm", ".search"]) rmSync(path + suffix, { force: true });
   renameSync(legacy, path);
+}
+
+/** Independent witnesses for the two schema changes that made the old literal stale. */
+export function assertUpgradeSchema(db: Db): void {
+  assert.equal(db.all<{ name: string }>("PRAGMA table_info(categories)").some((column) => column.name === "show_in_inbox"), true);
+  assert.deepEqual(db.all<{ name: string }>("PRAGMA index_info(threads_category_counts)").map((column) => column.name),
+    ["id", "unread_count"]);
+  assert.match(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'threads_category_counts'")?.sql ?? "", /WHERE in_trash = 0 AND in_spam = 0$/i);
+}
+
+export function packagedSchemaVersion(sourceMigrations = MIGRATIONS): number {
+  const db = new Db(nodeSqliteDriver, ":memory:");
+  try {
+    sourceMigrations.forEach((migration, i) => {
+      assert.equal(migration.version, i + 1, "source migrations must be contiguous");
+      db.exec(migration.sql);
+    });
+    assertUpgradeSchema(db);
+    return sourceMigrations.at(-1)!.version;
+  } finally { db.close(); }
+}
+
+export function assertPackagedUpgrade(path: string): void {
+  const db = new Db(nodeSqliteDriver, path, { readonly: true });
+  try { assertUpgradeSchema(db); } finally { db.close(); }
 }
