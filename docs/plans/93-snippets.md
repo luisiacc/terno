@@ -1,4 +1,4 @@
-# 89: Snippets
+# 93: Snippets
 
 ## Request (verbatim)
 
@@ -91,7 +91,7 @@ The editor in Settings has an **Insert variable** menu, so nobody has to remembe
 
 ### 7. Settings → Snippets
 
-A new tab (`snippets`, icon `TextQuote`), between Filters and AI.
+A new tab (`snippets`, icon `NotepadText`), between Filters and AI.
 
 - **The list**: one row per snippet: name (or "Untitled snippet"), a muted one-line preview, and small tags for what it fills ("Subject", "To"). Click or Enter on a row edits it; a trash button deletes it at once with a snack offering **Undo** (no confirmation dialog: undo is exact). **New snippet** at the bottom; a short empty state explaining ⌘; when there are none.
 - **The editor** replaces the list inside the tab (a back arrow "Snippets" returns):
@@ -102,7 +102,7 @@ A new tab (`snippets`, icon `TextQuote`), between Filters and AI.
 
 ### 8. Look
 
-Hairline rows like Filters; the editor reuses the composer's field style (borderless, hairline below each field). No new colors, durations or motion. Icons: `TextQuote` for snippets.
+Hairline rows like Filters; the editor reuses the composer's field style (borderless, hairline below each field). No new colors, durations or motion. Icons: `NotepadText` for snippets.
 
 ## Tests
 
@@ -185,3 +185,12 @@ Requested afterwards: "when i'm doing a draft, pressing cmd+k is bring up the 'i
 - **The unread filter has no key** (plan 12's ⌘L is gone): no `mod+l` binding, no desktop View-menu accelerator (it would take ⌘L before the editor), no forwarding from a mail's frame, and no ⌘L on its tooltip, its palette row or the shortcuts dialog. The header button, Lumen's chips, ⇧U/⇧A, the palette and View → Filter by Unread still set it. On the web, ⌘L outside a draft is the browser's again (the address bar).
 - Tests: `resolve.test.ts` (⌘L resolves to nothing anywhere, ⌘K to the palette in a draft), `menu.test.ts` (nothing in the menu claims ⌘L), `composer.spec.ts` (⌘L opens the link popover, ⌘K the palette with Insert snippet…), `unread-filter.spec.ts` (⌘L leaves the filter alone; no key on its palette row), `palette.spec.ts`, `snippets.spec.ts`, and the specs that toggled the filter with ⌘L now use the palette or the button. The desktop `unread.smoke.ts` checks that the View item toggles once per click and that ⌘L toggles nothing.
 - Codex code review of this change: no functional findings; two stale descriptions fixed: the README's "unread (⌘L)" (now ⇧U, ⇧A for all) and `tabs.test.ts`/`tabs.ts`, which still called the Unread tab "⌘L" (with the palette's, `page.ts`'s and `unread-filter.ts`'s comments).
+
+## After rebasing onto main's Hugeicons (plan 92)
+
+- **Renumbered from 89 to 93:** main took 89 for word and pattern filters, and 92 is Hugeicons.
+- **Icons come from `@terno/ui/icons`,** as plan 92 requires: and the editor uses Pencil, Plus, Trash2 and the chevrons.
+- **Three icons added to the catalog,** picked by eye at 16 px:
+  - `NotepadText` → `Note01Icon`, for snippets in Settings and the palette. TextQuote is now Hugeicons' “66”, the same as the composer's blockquote button, so snippets get an icon of their own.
+  - `BookmarkPlus` → `BookmarkAdd01Icon` (Hugeicons' own alias), for Save as snippet….
+  - `Braces` → `ThirdBracketIcon`, for Insert variable. It draws `{ }`, the variables' own syntax. Hugeicons' `Braces` alias draws parentheses.

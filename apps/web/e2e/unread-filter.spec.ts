@@ -1,6 +1,6 @@
 /**
  * Plan 12: the unread filter, like Mail's message filter. The header button
- * and the palette (⌘L is the composer's link since plan 89); per mailbox and across a reload; the open thread stays
+ * and the palette (⌘L is the composer's link since plan 93); per mailbox and across a reload; the open thread stays
  * while it is open; select-all and actions reach only the unread threads;
  * the empty state; axe and baselines of the header and the empty state.
  */

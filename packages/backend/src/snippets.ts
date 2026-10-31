@@ -4,7 +4,7 @@ import { L } from "@terno/i18n";
 import type { SettingsStore } from "./settings";
 
 /**
- * Plan 89: snippets, one array under the settings key "snippets" (both
+ * Plan 93: snippets, one array under the settings key "snippets" (both
  * stores have it; no migration). Every write is one read-modify-write, and
  * the budget keeps the value small to parse and write.
  */

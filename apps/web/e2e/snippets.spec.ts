@@ -1,5 +1,5 @@
 /**
- * Plan 89: snippets. Written in Settings → Snippets with the composer's own
+ * Plan 93: snippets. Written in Settings → Snippets with the composer's own
  * editor (autosaved), inserted with ⌘; or from ⌘K at the caret (variables
  * filled, the unfilled one selected, one undo step), filling only empty
  * fields, a new message from one, a draft saved as one, delete with Undo.

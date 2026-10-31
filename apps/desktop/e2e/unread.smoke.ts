@@ -1,7 +1,7 @@
 /**
  * Plan 12 on the desktop: Ver → Filter by Unread reaches the renderer and
  * toggles once per click; ⌘L is no longer the filter's (it is the composer's
- * link, plan 89), so a ⌘L press leaves the list as it is. Runs against the dev build
+ * link, plan 93), so a ⌘L press leaves the list as it is. Runs against the dev build
  * (`pnpm build`) with TERNO_UNREAD_SMOKE_DEV=1, or the packaged app.
  */
 import { execFileSync } from "node:child_process";

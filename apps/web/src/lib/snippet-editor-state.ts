@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Undo } from "./snack";
 
 /**
- * Plan 89: which snippet Settings → Snippets is editing (null: the list).
+ * Plan 93: which snippet Settings → Snippets is editing (null: the list).
  * Set from outside too (Save as snippet…, New snippet… in the palette).
  */
 export interface SnippetEditorState {

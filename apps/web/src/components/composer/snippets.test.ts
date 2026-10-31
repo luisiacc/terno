@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Plan 89: a snippet into the text: variables filled across formatting (each
+ * Plan 93: a snippet into the text: variables filled across formatting (each
  * keeping its first character's marks), the unfilled one selected, an empty
  * body replaced whole, a one-line snippet joining the caret's line, one undo
  * step, and never an image.

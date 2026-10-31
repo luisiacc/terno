@@ -29,7 +29,7 @@ export async function boot(): Promise<void> {
   trackDraftComposition();
   installNativeReload();
   // Registered before readiness: an update cannot miss a document still starting.
-  // plan 89: snippets an editor hasn't saved yet go too
+  // plan 93: snippets an editor hasn't saved yet go too
   window.ternoDesktop?.onFlushDrafts?.(async () => (await Promise.all([draftsSaved(4000), snippetsSaved(4000)])).every(Boolean), acquireDraftHold);
   try {
     await connectBackend();

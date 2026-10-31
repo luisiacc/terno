@@ -45,7 +45,7 @@ export function importSummary(r: ImportResult): string {
     t("settings.data.summary.categories", { count: r.categories.added }),
     t("settings.data.summary.filters", { count: r.filters.added }),
     r.drafts ? t("settings.data.summary.drafts", { count: r.drafts }) : null,
-    // plan 89 (a file's result from an older backend has none)
+    // plan 93 (a file's result from an older backend has none)
     r.snippets ? t("settings.data.summary.snippets", { count: r.snippets }) : null,
     r.settings ? t("settings.data.summary.settings") : null,
   ].filter((x) => x !== null);

@@ -65,6 +65,7 @@ export { Mails } from "./iconset/generated/Mails";
 export { MessageSquareReply } from "./iconset/generated/MessageSquareReply";
 export { MessageSquareText } from "./iconset/generated/MessageSquareText";
 export { Moon } from "./iconset/generated/Moon";
+export { NotepadText } from "./iconset/generated/NotepadText";
 export { OctagonAlert } from "./iconset/generated/OctagonAlert";
 export { OctagonX } from "./iconset/generated/OctagonX";
 export { Palette } from "./iconset/generated/Palette";

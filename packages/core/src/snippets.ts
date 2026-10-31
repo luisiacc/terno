@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Plan 89: snippets, saved pieces of an email (Superhuman's): a name, a rich
+ * Plan 93: snippets, saved pieces of an email (Superhuman's): a name, a rich
  * body and, optionally, the subject and recipients they fill in. Kept on this
  * device with the rest of the settings; they never leave it but in a backup.
  */

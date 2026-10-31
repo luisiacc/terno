@@ -70,6 +70,8 @@ export const ICONS = {
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",
   Moon: "MoonIcon",
+  // snippets: a note, apart from the blockquote's quote marks (TextQuote)
+  NotepadText: "Note01Icon",
   OctagonAlert: "SpamIcon",
   OctagonX: "OctagonXIcon",
   Palette: "PaintBoardIcon",

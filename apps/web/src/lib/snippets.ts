@@ -4,7 +4,7 @@ import { client } from "~/rpc/connection";
 import { registerUndo, snack, type Undo } from "./snack";
 
 /**
- * Plan 89: the snippets, loaded on first need (the palette, ⌘;, Settings) and
+ * Plan 93: the snippets, loaded on first need (the palette, ⌘;, Settings) and
  * kept; each open lists them again (a local call), so another window's edits
  * show. Saves go one at a time per snippet, the latest content winning.
  */

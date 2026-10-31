@@ -1,5 +1,5 @@
 /**
- * Plan 89 (Codex plan review 8): one save in flight per snippet, the latest
+ * Plan 93 (Codex plan review 8): one save in flight per snippet, the latest
  * content winning; a failure keeps it; a conflict waits for the user; delete
  * waits for the save in flight, and its Undo puts back the same snippet.
  */

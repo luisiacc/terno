@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, TextQuote } from "@terno/ui/icons";
+import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, NotepadText } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
@@ -36,7 +36,7 @@ export const SETTINGS_TABS: readonly { readonly value: SettingsTab; readonly lab
   tab("accounts", AtSign),
   tab("categories", Tag),
   tab("filters", ListFilter),
-  tab("snippets", TextQuote),
+  tab("snippets", NotepadText),
   tab("ai", Sparkles),
   tab("agents", Bot),
   tab("data", Database),

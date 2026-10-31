@@ -20,7 +20,7 @@ import { FormatBar, LinkPopover, type LinkDraft } from "./rich";
 import { snippetDoc, withoutImages } from "./snippets";
 
 /**
- * Plan 89: Settings → Snippets' editor. The composer's own editor and format
+ * Plan 93: Settings → Snippets' editor. The composer's own editor and format
  * bar on a snippet (no draft behind it: no ghost text, no files), autosaved
  * like a draft through lib/snippets (one save in flight, the latest wins,
  * flushed when the editor goes).

@@ -274,7 +274,7 @@ export interface MailboxExport {
   filters: Filter[];
   settings: AppSettings;
   drafts: ExportedDraft[];
-  /** plan 89 */
+  /** plan 93 */
   snippets: Snippet[];
   /** provider operations not yet done (sends included, with their message) */
   ops: { accountEmail: string | null; kind: string; state: string; createdAt: number; lastError: string | null; target: unknown; payload: unknown }[];
@@ -285,7 +285,7 @@ export interface ImportResult {
   categories: { added: number; merged: number };
   filters: { added: number; existing: number; skipped: string[] };
   drafts: number;
-  /** plan 89: snippets added (one whose id or name is already here is kept as it is) */
+  /** plan 93: snippets added (one whose id or name is already here is kept as it is) */
   snippets: number;
   /** drafts and filters of mailboxes not connected here yet: they go in when those are connected */
   pending: { drafts: number; filters: number };
@@ -471,7 +471,7 @@ const exportFile = z.object({
   /** read field by field on import (each only if valid) */
   settings: z.unknown().optional(),
   drafts: z.array(z.unknown()).max(5000).default([]),
-  /** plan 89 (files from before carry none) */
+  /** plan 93 (files from before carry none) */
   snippets: z.array(z.unknown()).max(1000).default([]),
 });
 export type ExportFile = z.output<typeof exportFile>;
@@ -630,7 +630,7 @@ export const contract = {
   /** plan 87: the reminders' conversations, none in Trash or Spam. `dueOnly`: the due ones (newest due first, the Inbox's top); otherwise all (soonest first) */
   "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
 
-  /** Plan 89: snippets, by name. */
+  /** Plan 93: snippets, by name. */
   "snippets.list": m<Snippet[]>()(empty),
   /**
    * Creates or updates one. `base` is the updatedAt the edit started from:

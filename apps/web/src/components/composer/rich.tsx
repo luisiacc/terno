@@ -1092,5 +1092,5 @@ function FormatGroup({ group, c, s, last }: { group: Group; c: ComposerControlle
 }
 
 export default RichBody;
-// plan 89: a new message made from a snippet starts with its body filled in
+// plan 93: a new message made from a snippet starts with its body filled in
 export { filledBody } from "./snippets";

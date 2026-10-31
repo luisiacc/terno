@@ -159,7 +159,7 @@ describe("palette groups", () => {
     expect(names(arrange(all, "move", "", new Map(), 0))).toEqual([["move", ["move:1"]]]);
   });
 
-  it("plan 89: the snippets page lists them, then New snippet; at the root a snippet shows only by its name", () => {
+  it("plan 93: the snippets page lists them, then New snippet; at the root a snippet shows only by its name", () => {
     const snippets = [
       ...all,
       cmd("draft.snippet", "draft", { label: "Insert snippet…", page: "snippets" }),

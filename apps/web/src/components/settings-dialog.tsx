@@ -50,7 +50,7 @@ export function SettingsDialog() {
       onOpenChange={(o) => {
         if (o || fatalModal) return;
         setApp({ dialog: null });
-        // plan 89: Settings opens again on the list (the editor's save is flushed as it unmounts)
+        // plan 93: Settings opens again on the list (the editor's save is flushed as it unmounts)
         closeSnippetEditor();
         setDeletedSnippet(null);
       }}

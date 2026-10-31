@@ -7,7 +7,7 @@
 ## 1. What Mail does
 
 - A filter button in the list header. Off: a grey icon. On: the icon turns accent-blue and the subtitle under the mailbox name reads "Filtered by: Unread".
-- ⌘L toggles it (View → Filter → Enable Message Filter). *Since plan 89 it has no key: ⌘L is the composer's link, so ⌘K can be the palette in a draft.*
+- ⌘L toggles it (View → Filter → Enable Message Filter). *Since plan 93 it has no key: ⌘L is the composer's link, so ⌘K can be the palette in a draft.*
 - It is per mailbox: Inbox can be filtered while Archive isn't, and each keeps its state across launches.
 - A message that becomes read while the filter is on (you opened it) stays in the list while it is selected, and disappears once the selection moves off it. Nothing jumps under the cursor.
 - An empty filtered mailbox says so, with a way to turn the filter off.

@@ -10,7 +10,7 @@ import { createSnippet, newSnippetId } from "./snippets";
 import { openSnippetEditor } from "./snippet-editor-state";
 
 /**
- * Plan 89: a snippet into a draft (its fields only where the draft's are
+ * Plan 93: a snippet into a draft (its fields only where the draft's are
  * empty, its text at the caret), a new message from one, and a draft saved
  * as one. Entry chunk; the editor's part goes through the composer controller.
  */

@@ -437,7 +437,7 @@ let openingNow = 0;
 setForwardOpenProbe(() => openingNow > 0);
 
 /**
- * `prefill` (plan 89, a new message from a snippet): the fields the new
+ * `prefill` (plan 93, a new message from a snippet): the fields the new
  * message starts with, in the same step that creates it.
  */
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>): Promise<void> {

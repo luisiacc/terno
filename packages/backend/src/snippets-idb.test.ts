@@ -1,4 +1,4 @@
-/** Plan 89: snippets in the IndexedDB store (the web's): the same module as SQLite, the cap and the byte budget. */
+/** Plan 93: snippets in the IndexedDB store (the web's): the same module as SQLite, the cap and the byte budget. */
 import "fake-indexeddb/auto";
 import { SNIPPETS_MAX, type Snippet } from "@terno/core";
 import { IdbMailStore } from "@terno/idb";

@@ -394,7 +394,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   const left = mergePending(emptyPending, restored.left);
   if (restored.drafts) b.server.emit("drafts", { reason: "import" });
 
-  // plan 89: snippets whose id and name aren't here (yours win), within the budget
+  // plan 93: snippets whose id and name aren't here (yours win), within the budget
   const snippets = data.snippets.length ? await importSnippets(store, data.snippets) : 0;
 
   // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies

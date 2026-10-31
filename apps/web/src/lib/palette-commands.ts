@@ -46,7 +46,7 @@ export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
   move: ["move"],
   addTo: ["addTo"],
   remind: ["remindAlways", "remindNoReply", "remindClear"],
-  // plan 89: the snippets, then New snippet…
+  // plan 93: the snippets, then New snippet…
   snippets: ["snippets", "snippetsManage"],
 };
 

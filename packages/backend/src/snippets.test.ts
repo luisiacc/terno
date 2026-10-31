@@ -1,4 +1,4 @@
-/** Plan 89: snippets over RPC (SQLite), saved with a base version, exported and imported (IndexedDB: snippets-idb.test.ts). */
+/** Plan 93: snippets over RPC (SQLite), saved with a base version, exported and imported (IndexedDB: snippets-idb.test.ts). */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

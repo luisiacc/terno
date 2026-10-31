@@ -23,7 +23,7 @@ export function togglePalette(): void {
 }
 
 /**
- * Plan 89, ⌘;: the palette on its snippets page (insert into the focused
+ * Plan 93, ⌘;: the palette on its snippets page (insert into the focused
  * draft, or a new message from one). Open on another page it switches there,
  * keeping the draft it was opened from (focus is in the palette by then); on
  * the snippets page it closes.

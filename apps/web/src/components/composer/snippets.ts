@@ -7,7 +7,7 @@ import { Transform } from "prosemirror-transform";
 import { isEmpty, serialize } from "./editor";
 
 /**
- * Plan 89: a snippet into the text. Lazy (the composer chunk): the document a
+ * Plan 93: a snippet into the text. Lazy (the composer chunk): the document a
  * snippet is, its variables filled across formatting, and the one transaction
  * (one undo step) that puts it at the caret.
  */

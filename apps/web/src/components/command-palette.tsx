@@ -3,7 +3,7 @@ import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, TextQuote, Trash2, Undo2, Users, X } from "@terno/ui/icons";
+import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users, X } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
@@ -116,7 +116,7 @@ export function CommandPalette() {
     setWasPage(page);
     if (open) setValue("");
   }
-  // plan 89: the snippets, listed again on each opening (a local call; another window's edits show)
+  // plan 93: the snippets, listed again on each opening (a local call; another window's edits show)
   useEffect(() => {
     if (open) loadSnippets();
   }, [open]);
@@ -163,8 +163,8 @@ export function CommandPalette() {
     // ── the draft the palette was opened from
     if (draft && draftState) {
       if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send", english("common.send")), draft: true, run: inDraft((d) => d.send()) });
-      // plan 89: snippets, while the text can change
-      if (draftState.link) add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
+      // plan 93: snippets, while the text can change
+      if (draftState.link) add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <NotepadText />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
       if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
       if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", keywords: english("palette.addCc"), draft: true, run: inDraft((d) => d.showCc()) });
       if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", keywords: english("palette.addBcc"), draft: true, run: inDraft((d) => d.showBcc()) });
@@ -173,9 +173,9 @@ export function CommandPalette() {
       if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard", english("compose.discard")), draft: true, run: inDraft((d) => d.discard()) });
     }
 
-    // ── plan 89: snippets (the page's rows, and each reached from the root by typing its name)
+    // ── plan 93: snippets (the page's rows, and each reached from the root by typing its name)
     const inDraftNow = draft !== null && draftState?.link === true;
-    if (!inDraftNow) add({ id: "snippet.newMessage", group: "actions", label: t("palette.newFromSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-new-from-snippet", ...synonyms("palette.alias.snippet", english("palette.newFromSnippet")), page: "snippets" });
+    if (!inDraftNow) add({ id: "snippet.newMessage", group: "actions", label: t("palette.newFromSnippet"), icon: <NotepadText />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-new-from-snippet", ...synonyms("palette.alias.snippet", english("palette.newFromSnippet")), page: "snippets" });
     const newSnippet = () => {
       openSnippetEditor(newSnippetId(), { fresh: true });
       setApp({ dialog: "settings", settingsTab: "snippets" });
@@ -186,8 +186,8 @@ export function CommandPalette() {
       const name = s.name || t("snippets.untitled");
       const use = inDraftNow ? () => draftKey && runInDraft(draftKey, () => insertSnippetInto(draftKey, s)) : () => void newMessageFromSnippet(s);
       const id = `snippet:${s.id}`;
-      add({ id, group: "snippets", label: name, search: `${name} ${s.bodyText.slice(0, 200)}`, icon: <TextQuote />, hint: snippetPreview(s, 60), testId: `palette-snippet-${s.id}`, draft: inDraftNow, run: use });
-      add({ id, group: inDraftNow ? "draft" : "actions", label: t(inDraftNow ? "palette.snippet.insert" : "palette.snippet.newFrom", { name }), search: name, icon: <TextQuote />, hint: snippetPreview(s, 40), keywords: [...english("palette.search.snippet").map((w) => `${w} ${name}`), `${t("palette.search.snippet")} ${name}`], searchOnly: true, scale: inDraftNow ? 1 : 0.5, draft: inDraftNow, run: use });
+      add({ id, group: "snippets", label: name, search: `${name} ${s.bodyText.slice(0, 200)}`, icon: <NotepadText />, hint: snippetPreview(s, 60), testId: `palette-snippet-${s.id}`, draft: inDraftNow, run: use });
+      add({ id, group: inDraftNow ? "draft" : "actions", label: t(inDraftNow ? "palette.snippet.insert" : "palette.snippet.newFrom", { name }), search: name, icon: <NotepadText />, hint: snippetPreview(s, 40), keywords: [...english("palette.search.snippet").map((w) => `${w} ${name}`), `${t("palette.search.snippet")} ${name}`], searchOnly: true, scale: inDraftNow ? 1 : 0.5, draft: inDraftNow, run: use });
     }
     add({ id: "snippet.new", group: "snippetsManage", label: t("palette.newSnippet"), icon: <Plus />, testId: "palette-snippet-new", keywords: english("palette.newSnippet"), run: newSnippet });
 
