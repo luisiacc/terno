@@ -44,3 +44,8 @@ Fail-first oracle repair: a temporary test-only write resets the cursor to base 
 
 
 R2 completed naturally exit0: reviewed prepared base..f9616a90 across the four owned files, **Standards PASS / Spec PASS**, R1 resolved, no high correctness/data-loss findings and no lesser backlog. Actual verdict /tmp/terno-w03-a08/code-review-r2.txt and full transcript code-review-r2.log. Reviewer inspected the fail-first oracle evidence and final validation; reviewer did not execute tests. Final supervised targeted run passes127/127, backend package types and touched-file lint exit0 (final-targeted.log, final-types.log, final-lint.log). All owned execution sessions joined/reaped naturally; no signals used. The only later change is this evidence record, not an independently re-reviewed implementation change. Two code review rounds total; no fallback model or child agents. Worktree contains no outstanding implementation dependency or production fix. Root retains final serialized integration, row accounting and landing; this is not release clearance.
+
+
+## Root integration
+
+Rebased complete series onto current maincb26c38c, no conflicts or production changes. Root passed127/127exact targeted/direct-caller tests, backend both types, strict owned lint and whitespace; all guarded processes naturally joined. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-w03-a08-0v1s01v9`, including exact-file config and PID/argv/results. Fast-forward landedca98a11e. Two native reviews, final clear; no Root source/testchanges or additional review. Root records A08alreadyprotected with all explicit graceful-reopen, runtime and provider consistency limits above. No full gates/builds/perf or releaseclearance.
