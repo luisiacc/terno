@@ -70,6 +70,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["compose.replyAll", "shortcuts.replyAll"],
       ["compose.forward", "shortcuts.forward"],
       ["compose.send", "common.send"],
+      ["snippets.open", "shortcuts.insertSnippet"],
     ],
   },
 ];

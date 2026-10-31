@@ -136,7 +136,7 @@ describe("palette groups", () => {
       archive: "palette.archive", trash: "palette.trash", spam: "palette.spam", markRead: "palette.markRead", markUnread: "palette.markUnread",
       star: "palette.star", move: "palette.move", remind: "palette.remind", compose: "palette.compose", reply: "palette.reply",
       forward: "palette.forward", undo: "common.undo", theme: "palette.theme", shortcuts: "shortcuts.title", print: "palette.print",
-      aiFilter: "palette.aiFilter", discard: "compose.discard", attach: "attachments.attach", send: "common.send",
+      aiFilter: "palette.aiFilter", discard: "compose.discard", attach: "attachments.attach", send: "common.send", snippet: "palette.insertSnippet",
     };
     const labelOf = (catalog: Record<string, unknown>, key: string) => {
       const v = catalog[key];
@@ -157,5 +157,20 @@ describe("palette groups", () => {
 
   it("shows only its own groups on a page", () => {
     expect(names(arrange(all, "move", "", new Map(), 0))).toEqual([["move", ["move:1"]]]);
+  });
+
+  it("plan 89: the snippets page lists them, then New snippet; at the root a snippet shows only by its name", () => {
+    const snippets = [
+      ...all,
+      cmd("draft.snippet", "draft", { label: "Insert snippet…", page: "snippets" }),
+      cmd("snippet:s_a", "snippets", { label: "Intro call", search: "Intro call Hi there" }),
+      cmd("snippet:s_b", "snippets", { label: "Thanks" }),
+      cmd("snippet.new", "snippetsManage", { label: "New snippet…" }),
+      cmd("snippet:s_a", "draft", { label: "Insert snippet: Intro call", search: "Intro call", searchOnly: true }),
+    ];
+    expect(names(arrange(snippets, "snippets", "", new Map(), 0))).toEqual([["snippets", ["snippet:s_a", "snippet:s_b"]], ["snippetsManage", ["snippet.new"]]]);
+    expect(names(arrange(snippets, "snippets", "hi there", new Map(), 0))).toEqual([["snippets", ["snippet:s_a"]]]);
+    expect(names(arrange(snippets, "root", "", new Map(), 0)).find(([g]) => g === "draft")).toEqual(["draft", ["draft.send", "draft.snippet"]]);
+    expect(names(arrange(snippets, "root", "intro", new Map(), 0))[0]).toEqual(["draft", ["snippet:s_a"]]);
   });
 });

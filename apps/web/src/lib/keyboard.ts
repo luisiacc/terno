@@ -18,7 +18,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { noteOpen, openRemind } from "~/lib/reminders";
-import { togglePalette } from "~/lib/palette-open";
+import { togglePalette, toggleSnippets } from "~/lib/palette-open";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
@@ -152,6 +152,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
     focusSearch();
   },
   "palette.open": togglePalette,
+  "snippets.open": toggleSnippets,
   "go.inbox": () => goToFolder("inbox"),
   "go.starred": () => goToFolder("starred"),
   "go.sent": () => goToFolder("sent"),

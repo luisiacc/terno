@@ -33,7 +33,7 @@ import {
   Unlink,
 } from "@terno/ui/icons";
 import { TextSelection, type EditorState } from "prosemirror-state";
-import { undoDepth, redoDepth } from "prosemirror-history";
+import { closeHistory, undo, undoDepth, redoDepth } from "prosemirror-history";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -54,6 +54,7 @@ import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, ty
 import { attachFilesInTurn } from "~/lib/attachments";
 import { imageUrl, isInlineImage, newImageCid, seedImageUrl } from "~/lib/inline-images";
 import { snack } from "~/lib/snack";
+import { insertSnippetTr, snippetDoc, withoutImages } from "./snippets";
 import { appendTyped, applyLink, COMMANDS, createEditor, docOf, formatState, isEmpty, keepState, linkAt, newState, removeLink, sameFormat, serialize, setAlign, setMark } from "./editor";
 
 /**
@@ -136,7 +137,7 @@ exposeForTests({
   parseMailHtml: (html: string) => parseHtml(html).toJSON(),
 });
 
-interface LinkDraft {
+export interface LinkDraft {
   from: number;
   to: number;
   text: string;
@@ -284,6 +285,18 @@ export function RichBody({ draftKey, placeholder, className, checkpoint, focusOw
           openLink: () => openLinkRef.current(),
           dropFiles: (files, coords) => void placeFiles(draftKey, view, files, coords, canMutate),
           dropCaret: (coords) => showDropCaret(view, caretRef.current, wrapRef.current, coords),
+          insertSnippet: (html, text, values) => {
+            if (!canMutate()) return null;
+            dismissGhost(view);
+            view.dispatch(insertSnippetTr(view.state, snippetDoc(html, text), values));
+            // and what's typed next is a step of its own
+            view.dispatch(closeHistory(view.state.tr));
+            focusedOnce = true;
+            view.focus();
+            const after = view.state.doc;
+            return { undo: () => viewRef.current === view && view.state.doc === after && canMutate() && undo(view.state, view.dispatch) };
+          },
+          snapshot: () => serialize(withoutImages(view.state.doc)),
           focus,
           dom: view.dom as HTMLElement,
           getState: () => format,
@@ -579,7 +592,8 @@ const serializeEmpty = (state: EditorState): boolean => isEmpty(state.doc);
 
 // ── links
 
-function LinkPopover({ view, draft, onClose, canEdit }: { view: EditorView; draft: LinkDraft; onClose: () => void; canEdit: () => boolean }) {
+/** `palette`: a second ⌘K goes on to the palette (a draft's; not the snippet editor's, inside Settings) */
+export function LinkPopover({ view, draft, onClose, canEdit, palette = true }: { view: EditorView; draft: LinkDraft; onClose: () => void; canEdit: () => boolean; palette?: boolean }) {
   const id = useId();
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
@@ -612,7 +626,7 @@ function LinkPopover({ view, draft, onClose, canEdit }: { view: EditorView; draf
     // the popover owns Enter and Escape: never the composer's send or collapse
     if (e.nativeEvent.isComposing) return;
     // plan 88: a second ⌘K goes on to the palette, for this draft (focus back in its text first)
-    if (e.key.toLowerCase() === "k" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey) {
+    if (palette && e.key.toLowerCase() === "k" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -1078,3 +1092,5 @@ function FormatGroup({ group, c, s, last }: { group: Group; c: ComposerControlle
 }
 
 export default RichBody;
+// plan 89: a new message made from a snippet starts with its body filled in
+export { filledBody } from "./snippets";

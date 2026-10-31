@@ -14,7 +14,7 @@ import { answered, convertFields, forwardAccountMismatch, newFields, replyFields
 import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
-import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type LocalDraft } from "./drafts";
+import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type EarlyComposeInput } from "./compose-focus-move";
 
 /**
@@ -436,7 +436,11 @@ type OpenOutcome = "stale" | "failed" | undefined;
 let openingNow = 0;
 setForwardOpenProbe(() => openingNow > 0);
 
-export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0): Promise<void> {
+/**
+ * `prefill` (plan 89, a new message from a snippet): the fields the new
+ * message starts with, in the same step that creates it.
+ */
+export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
@@ -456,7 +460,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   );
   let outcome: OpenOutcome;
   openingNow++;
-  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null); } finally {
+  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null, prefill); } finally {
     openingNow--;
     lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
     lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
@@ -468,11 +472,11 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   // nothing newer was asked for: a refresh that replaced the conversation mid-open (a sync, its own read state, a send
   // landing) is retried with it, and a failure says so instead of leaving the click without an answer
   if (mine !== intent || !outcome) return;
-  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1);
+  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1, prefill);
   snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
 }
 
-async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null): Promise<OpenOutcome> {
+async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null, prefill?: (accountId: number) => Partial<DraftFields>): Promise<OpenOutcome> {
   const focusAllowed = () => !lease || (lease.valid && focusLease === lease && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
@@ -492,7 +496,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (mode === "new" || threadId === null) {
     // a new message takes the reader pane; a bulk selection steps aside for it
     // (List: the new message is the page, and leaving it lands on the list, not on the conversation it was opened over; plan 24, R1)
-    const key = createDraft(newFields(defaultAccount));
+    const key = createDraft({ ...newFields(defaultAccount), ...prefill?.(defaultAccount) });
     if (mine !== intent) return;
     setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
     return;

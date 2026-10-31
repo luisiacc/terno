@@ -1,4 +1,5 @@
 import type { ImportResult } from "@terno/core/rpc";
+import { reloadSnippets } from "./snippets";
 import { formatList, t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
@@ -34,6 +35,7 @@ export async function importFile(file: File): Promise<ImportResult> {
   const boot = await client.call("app.bootstrap", {});
   adoptSettings(boot.settings);
   setApp({ categories: boot.categories });
+  if (result.snippets) void reloadSnippets();
   return result;
 }
 
@@ -43,6 +45,8 @@ export function importSummary(r: ImportResult): string {
     t("settings.data.summary.categories", { count: r.categories.added }),
     t("settings.data.summary.filters", { count: r.filters.added }),
     r.drafts ? t("settings.data.summary.drafts", { count: r.drafts }) : null,
+    // plan 89 (a file's result from an older backend has none)
+    r.snippets ? t("settings.data.summary.snippets", { count: r.snippets }) : null,
     r.settings ? t("settings.data.summary.settings") : null,
   ].filter((x) => x !== null);
   const sentences = [t("settings.data.summary", { items: formatList(items) })];

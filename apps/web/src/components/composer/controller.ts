@@ -1,3 +1,4 @@
+import type { SnippetValues } from "@terno/core";
 import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 
@@ -77,6 +78,14 @@ export interface ComposerController {
   dropFiles(files: File[], coords: { x: number; y: number }): void;
   /** plan 76: shows where images dropped at these coordinates would go (null hides it) */
   dropCaret(coords: { x: number; y: number } | null): void;
+  /**
+   * Plan 89: a snippet at the caret, its variables filled, as one undo step
+   * (null when the draft can't change now); `undo` takes it back while it is
+   * still the text's last change.
+   */
+  insertSnippet(html: string, text: string, values: SnippetValues): { undo(): boolean } | null;
+  /** plan 89: the text as the editor has it now, without images (Save as snippet…) */
+  snapshot(): { html: string; text: string };
   /** focus the editor, its caret where it was (or at the end the first time) */
   focus(where?: "end" | "keep"): void;
   /** the editable root */

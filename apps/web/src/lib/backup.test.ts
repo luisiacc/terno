@@ -11,10 +11,11 @@ vi.mock("./drafts", () => ({ loadDrafts: vi.fn() }));
 
 const { importSummary, importFile } = await import("./backup");
 
-const result = (o: { categories?: number; filters?: number; skipped?: string[]; drafts?: number; settings?: boolean; pending?: ImportResult["pending"] } = {}): ImportResult => ({
+const result = (o: { categories?: number; filters?: number; skipped?: string[]; drafts?: number; snippets?: number; settings?: boolean; pending?: ImportResult["pending"] } = {}): ImportResult => ({
   categories: { added: o.categories ?? 0, merged: 0 },
   filters: { added: o.filters ?? 0, existing: 0, skipped: o.skipped ?? [] },
   drafts: o.drafts ?? 0,
+  snippets: o.snippets ?? 0,
   pending: o.pending ?? { drafts: 0, filters: 0 },
   settings: o.settings ?? false,
 });

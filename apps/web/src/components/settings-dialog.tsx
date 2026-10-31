@@ -13,6 +13,8 @@ import { AccountsTab } from "./settings/accounts-tab";
 import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
 import { FiltersTab } from "./settings/filters-tab";
+import { SnippetsTab } from "./settings/snippets-tab";
+import { closeSnippetEditor } from "~/lib/snippet-editor-state";
 import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
 import { SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
@@ -43,7 +45,15 @@ export function SettingsDialog() {
   if (!settings) return null;
 
   return (
-    <Dialog open={open && !fatalModal} onOpenChange={(o) => !o && !fatalModal && setApp({ dialog: null })}>
+    <Dialog
+      open={open && !fatalModal}
+      onOpenChange={(o) => {
+        if (o || fatalModal) return;
+        setApp({ dialog: null });
+        // plan 89: Settings opens again on the list (the editor's save is flushed as it unmounts)
+        closeSnippetEditor();
+      }}
+    >
       <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={switchFocus}>
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full flex-row gap-0">
@@ -86,6 +96,10 @@ export function SettingsDialog() {
 
               <TabsContent value="filters">
                 <FiltersTab />
+              </TabsContent>
+
+              <TabsContent value="snippets">
+                <SnippetsTab />
               </TabsContent>
 
               <TabsContent value="ai">

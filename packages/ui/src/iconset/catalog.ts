@@ -13,7 +13,10 @@ export const ICONS = {
   Bell: "Notification01Icon",
   BellOff: "NotificationOff01Icon",
   Bold: "TextBoldIcon",
+  BookmarkPlus: "BookmarkAdd01Icon",
   Bot: "BotIcon",
+  // the {variable} syntax itself: Hugeicons' Braces alias is parentheses
+  Braces: "ThirdBracketIcon",
   CalendarClock: "TimeScheduleIcon",
   CalendarDays: "Calendar03Icon",
   CaseSensitive: "TextFontIcon",

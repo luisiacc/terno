@@ -1,10 +1,10 @@
 import { goToAccount, goToFolder } from "~/lib/account-folders";
-import { normalizeText, remindPresets, separatesTabs, TABS, type CategoryColor, type ReminderKind } from "@terno/core";
+import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, Trash2, Undo2, Users, X } from "@terno/ui/icons";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, TextQuote, Trash2, Undo2, Users, X } from "@terno/ui/icons";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -19,7 +19,10 @@ import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, reminderShort, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
-import { paletteFrom } from "~/lib/palette-open";
+import { paletteFrom, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
+import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
+import { openSnippetEditor } from "~/lib/snippet-editor-state";
 import { arrange, itemValue, words, type PaletteCommand, type PaletteGroup, type PalettePage } from "~/lib/palette-commands";
 import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
 import { reply } from "~/lib/keyboard";
@@ -74,6 +77,8 @@ const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
   remindAlways: () => t("remind.kind.always"),
   remindNoReply: () => t("remind.kind.noReply"),
   remindClear: () => undefined,
+  snippets: () => t("palette.group.snippets"),
+  snippetsManage: () => undefined,
 };
 
 export function CommandPalette() {
@@ -100,16 +105,22 @@ export function CommandPalette() {
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
-  const [page, setPage] = useState<PalettePage>("root");
-  // every opening starts at the root with nothing typed, however it was closed (⌘K closes from the keyboard handler)
+  // the page: set by whoever opened it (⌘K the root, ⌘; the snippets), changed inside
+  const page = usePalettePage((s) => s.page);
+  const setPage = setPalettePage;
+  // every opening starts with nothing typed, however it was closed (⌘K closes from the keyboard handler); a page switch too (⌘; on a page)
   const [wasOpen, setWasOpen] = useState(open);
-  if (open !== wasOpen) {
+  const [wasPage, setWasPage] = useState(page);
+  if (open !== wasOpen || page !== wasPage) {
     setWasOpen(open);
-    if (open) {
-      setValue("");
-      setPage("root");
-    }
+    setWasPage(page);
+    if (open) setValue("");
   }
+  // plan 89: the snippets, listed again on each opening (a local call; another window's edits show)
+  useEffect(() => {
+    if (open) loadSnippets();
+  }, [open]);
+  const snippets = useSnippets((s) => (open ? (s.list ?? NONE) : NONE)) as readonly Snippet[];
   // read once per open: what was run, when, and the draft it was opened from
   const usage = useMemo(() => (open ? readUsage() : NO_USAGE), [open]);
   const now = useMemo(() => (open ? Date.now() : 0), [open]);
@@ -152,12 +163,35 @@ export function CommandPalette() {
     // ── the draft the palette was opened from
     if (draft && draftState) {
       if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send", english("common.send")), draft: true, run: inDraft((d) => d.send()) });
+      // plan 89: snippets, while the text can change
+      if (draftState.link) {
+        add({ id: "draft.snippet", group: "draft", label: t("palette.insertSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-draft-snippet", ...synonyms("palette.alias.snippet", english("palette.insertSnippet")), page: "snippets" });
+        add({ id: "draft.saveSnippet", group: "draft", label: t("palette.saveAsSnippet"), icon: <BookmarkPlus />, testId: "palette-draft-save-snippet", keywords: english("palette.saveAsSnippet"), draft: true, run: () => draftKey && runInDraft(draftKey, () => void saveDraftAsSnippet(draftKey)) });
+      }
       if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach", english("attachments.attach")), draft: true, run: inDraft((d) => d.attach()) });
       if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", keywords: english("palette.addCc"), draft: true, run: inDraft((d) => d.showCc()) });
       if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", keywords: english("palette.addBcc"), draft: true, run: inDraft((d) => d.showBcc()) });
       if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", keywords: english("compose.link.insert"), draft: true, run: inDraft((d) => d.link()) });
       if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard", english("compose.discard")), draft: true, run: inDraft((d) => d.discard()) });
     }
+
+    // ── plan 89: snippets (the page's rows, and each reached from the root by typing its name)
+    const inDraftNow = draft !== null && draftState?.link === true;
+    if (!inDraftNow) add({ id: "snippet.newMessage", group: "actions", label: t("palette.newFromSnippet"), icon: <TextQuote />, shortcut: isMac ? "⌘;" : "Ctrl+;", testId: "palette-new-from-snippet", ...synonyms("palette.alias.snippet", english("palette.newFromSnippet")), page: "snippets" });
+    const newSnippet = () => {
+      openSnippetEditor(newSnippetId(), { fresh: true });
+      setApp({ dialog: "settings", settingsTab: "snippets" });
+    };
+    // most used first, then by name
+    const used = (s: Snippet) => usage.get(`snippet:${s.id}`)?.n ?? 0;
+    for (const s of [...snippets].sort((a, b) => used(b) - used(a))) {
+      const name = s.name || t("snippets.untitled");
+      const use = inDraftNow ? () => draftKey && runInDraft(draftKey, () => insertSnippetInto(draftKey, s)) : () => void newMessageFromSnippet(s);
+      const id = `snippet:${s.id}`;
+      add({ id, group: "snippets", label: name, search: `${name} ${s.bodyText.slice(0, 200)}`, icon: <TextQuote />, hint: snippetPreview(s, 60), testId: `palette-snippet-${s.id}`, draft: inDraftNow, run: use });
+      add({ id, group: inDraftNow ? "draft" : "actions", label: t(inDraftNow ? "palette.snippet.insert" : "palette.snippet.newFrom", { name }), search: name, icon: <TextQuote />, hint: snippetPreview(s, 40), keywords: [...english("palette.search.snippet").map((w) => `${w} ${name}`), `${t("palette.search.snippet")} ${name}`], searchOnly: true, scale: inDraftNow ? 1 : 0.5, draft: inDraftNow, run: use });
+    }
+    add({ id: "snippet.new", group: "snippetsManage", label: t("palette.newSnippet"), icon: <Plus />, testId: "palette-snippet-new", keywords: english("palette.newSnippet"), run: newSnippet });
 
     // ── go to
     const folder = (id: string, key: "view.inbox" | "view.starred" | "view.sent" | "view.archive" | "view.spam" | "view.trash" | "view.all", icon: ReactNode, run: () => void, shortcut?: string, testId?: string) =>
@@ -302,6 +336,7 @@ export function CommandPalette() {
         run: () => setApp({ dialog: "settings", settingsTab: tab }),
       });
     }
+    add({ id: "settings.newSnippet", group: "settings", label: t("palette.newSnippet"), icon: <Plus />, testId: "palette-settings-new-snippet", keywords: english("palette.newSnippet"), run: newSnippet });
   }
 
   const query = value.trim();
@@ -332,8 +367,9 @@ export function CommandPalette() {
     move: t("category.picker.moveTitle"),
     addTo: t("palette.group.addTo", { count: targets }),
     remind: t("remind.title"),
+    snippets: t("palette.group.snippets"),
   };
-  const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : t("category.picker.placeholder");
+  const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
     <CommandDialog open={open} onOpenChange={(o) => !o && close()} title={t("palette.title")} description={t("palette.description")}>
@@ -374,7 +410,7 @@ export function CommandPalette() {
           <CommandEmpty>{t("palette.empty")}</CommandEmpty>
           {groups.map(({ group, commands: list }) => (
             // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
-            <CommandGroup key={group} value={group} heading={HEADINGS[group](targets)} data-group={group}>
+            <CommandGroup key={group} value={group} heading={group === "snippetsManage" && snippets.length === 0 && !query ? t("palette.snippets.empty") : HEADINGS[group](targets)} data-group={group}>
               {list.map(({ command: c, alias }) => {
                 return (
                   <CommandItem key={`${group}:${c.id}`} value={itemValue(c)} disabled={c.disabled} data-testid={c.testId} data-command={c.id} onSelect={() => select(c)}>
