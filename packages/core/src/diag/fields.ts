@@ -41,7 +41,7 @@ export const FIELD_TYPES = {
   count: int(0, 10_000_000),
   delayMs: int(0, 3_600_000),
   deliberate: bool,
-  dialog: enumOf("settings", "shortcuts", "palette", "categoryPicker", "filters", "addAccount", "print", "other"),
+  dialog: enumOf("settings", "shortcuts", "palette", "categoryPicker", "filters", "addAccount", "print", "remind", "other"),
   durationMs: int(0, 86_400_000),
   engine: enumOf("node-sqlite", "wasm-opfs", "wasm-memory", "idb", "other"),
   errno: id,

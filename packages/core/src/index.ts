@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./reminders";
 export * from "./text";
 export * from "./rules";
 export * from "./search";

@@ -1,7 +1,7 @@
 import { listFilterOf, matchesFilter, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
-import { Paperclip, Star } from "lucide-react";
+import { Bell, Paperclip, Star } from "lucide-react";
 import { memo } from "react";
 import { formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
@@ -15,6 +15,7 @@ import { SenderAvatar } from "./sender-avatar";
 import { CodeChip } from "./code-chip";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
+import { reminderShort, useReminders } from "~/lib/reminders";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
@@ -67,6 +68,10 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const hasDraft = useHasDraft(thread.id);
   /** plan 72: a verification code in fresh mail, one click from the clipboard */
   const code = useThreadCode(thread);
+  /** plan 87: its reminder (one Map read; a row without one never re-renders for them) */
+  const reminder = useReminders((s) => s.byThread.get(thread.id));
+  /** the Reminders list's date is the reminder's */
+  const remindersList = useApp((s) => s.reminders);
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -88,6 +93,15 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       ))}
       {thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />}
       {thread.starred && <Star className="size-3 fill-star text-star" />}
+      {reminder && (
+        // plan 87: due, in the accent (the Inbox's top); set, quiet
+        <Bell
+          aria-hidden
+          data-testid="row-reminder"
+          data-due={reminder.due || undefined}
+          className={cn("size-3", selected ? "" : checked ? "text-accent-foreground" : reminder.due ? "text-primary" : "text-muted-foreground")}
+        />
+      )}
       {place && (
         // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
         <span aria-hidden data-testid="row-place" data-place={place} className={cn("text-2xs", checked && !selected ? "text-accent-foreground" : "text-muted-foreground")}>
@@ -122,8 +136,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
     </span>
   );
   const date = (
-    <span data-testid="row-date" className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
-      {listDate(thread.lastDate)}
+    <span data-testid="row-date" title={remindersList && reminder?.kind === "noReply" ? t("remind.noReplySuffix") : undefined} className={cn("text-xs tabular", thread.unread ? "text-foreground" : "text-muted-foreground")}>
+      {remindersList && reminder ? reminderShort(reminder.dueAt) : listDate(thread.lastDate)}
     </span>
   );
   const draft = hasDraft && <span className="shrink-0 font-medium text-draft-foreground">{t("list.draft")}</span>;
@@ -270,6 +284,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
       {code && <span className="sr-only">{t("codes.sr", { code })}</span>}
+      {reminder && <span className="sr-only">{reminder.due ? t("remind.due") : t("remind.pending")}</span>}
     </div>
   );
 });

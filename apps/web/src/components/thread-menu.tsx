@@ -1,4 +1,4 @@
-import { shortcutsFor, type CategoryColor, type Command, type SimilarAction, type SimilarOffers, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { remindPresets, shortcutsFor, type CategoryColor, type ReminderKind, type Command, type SimilarAction, type SimilarOffers, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -14,6 +14,9 @@ import {
 } from "@terno/ui/components/context-menu";
 import {
   Archive,
+  Bell,
+  BellOff,
+  CalendarClock,
   Check,
   CheckCheck,
   Copy,
@@ -23,6 +26,7 @@ import {
   Inbox,
   Mail,
   MailOpen,
+  MessageSquareReply,
   OctagonAlert,
   Plus,
   Printer,
@@ -59,6 +63,7 @@ import { client } from "~/rpc/connection";
 import { codeKey, copyCode, threadCode } from "~/lib/codes";
 import { listScroller } from "./thread-list";
 import { useAlwaysOffers } from "./review-actions";
+import { clearReminder, openRemind, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
 interface MenuTarget {
@@ -228,6 +233,46 @@ function placeItems(view: View, run: (a: ThreadAction) => void) {
     default:
       return [archive, trash, spam, toInbox(t("actions.moveToInbox"))];
   }
+}
+
+/** Plan 87: "Remind me ▸" / "Remind me if no reply ▸": the presets with their moments, a moment of your own, Clear. */
+function RemindSub({ kind, ids, disabled }: { kind: ReminderKind; ids: number[]; disabled: boolean }) {
+  const current = useReminders((s) => (ids.length === 1 ? s.byThread.get(ids[0]!) : undefined));
+  const anySet = useReminders((s) => ids.some((id) => s.byThread.has(id)));
+  const presets = remindPresets(new Date(), kind);
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid={`menu-remind-${kind}`} disabled={disabled}>
+        {kind === "noReply" ? <MessageSquareReply /> : <Bell />}
+        <span className="min-w-0 flex-1 truncate">{t(kind === "noReply" ? "remind.menuNoReply" : "remind.menu")}</span>
+        {kind === "always" && hint("thread.remind")}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-max min-w-60" data-testid={`menu-remind-${kind}-list`}>
+        {current && (
+          <div className="max-w-72 px-1.5 py-1 text-xs text-muted-foreground" data-testid="menu-remind-current">
+            {t(current.kind === "noReply" ? "remind.currentNoReply" : "remind.current", { when: reminderWhen(current.dueAt) })}
+          </div>
+        )}
+        {presets.map((p) => (
+          <ContextMenuItem key={p.id} data-testid={`menu-remind-${kind}-${p.id}`} onClick={() => void setReminder(ids, p.at, kind)}>
+            <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
+            <ContextMenuShortcut className="tracking-normal tabular-nums">{reminderShort(p.at)}</ContextMenuShortcut>
+          </ContextMenuItem>
+        ))}
+        <ContextMenuSeparator />
+        <ContextMenuItem data-testid={`menu-remind-${kind}-pick`} onClick={() => openRemind({ kind, custom: true, ids })}>
+          <CalendarClock />
+          <span className="min-w-0 flex-1 truncate">{t("remind.pick")}</span>
+        </ContextMenuItem>
+        {anySet && (
+          <ContextMenuItem data-testid={`menu-remind-${kind}-clear`} onClick={() => void clearReminder(ids)}>
+            <BellOff />
+            <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
+          </ContextMenuItem>
+        )}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
 }
 
 /** "Archive similar ▸" / "Mark similar as spam ▸": its offers are read when it opens. */
@@ -429,6 +474,10 @@ function MenuItems() {
           <ContextMenuSeparator />
         </>
       )}
+      {/* plan 87: near the top; a "select all N" has no ids to set them on */}
+      <RemindSub kind="always" ids={ids} disabled={scope !== null} />
+      <RemindSub kind="noReply" ids={ids} disabled={scope !== null} />
+      <ContextMenuSeparator />
       {anyUnread && <Item icon={<MailOpen />} label={t("actions.markRead")} command="thread.markRead" onClick={() => run("markRead")} testId="menu-read" />}
       {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.markUnread" onClick={() => run("markUnread")} testId="menu-unread" />}
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}

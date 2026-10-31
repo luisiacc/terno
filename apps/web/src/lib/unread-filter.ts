@@ -23,6 +23,8 @@ export interface Mailbox {
   reviewCategoryId: number | null;
   /** plan 68: one of the account's own folders */
   folder?: string | null;
+  /** plan 87: the Reminders list (never filtered) */
+  reminders?: boolean;
 }
 
 /** "inbox||", "all||7", "inbox|2|", and a folder's "all|2||Work" (plan 68) */
@@ -37,12 +39,12 @@ export function supportedFilters(said: readonly unknown[] | undefined): readonly
 }
 
 /**
- * The current list's filter, if any. "Revisar" (a category's suggestions) is
- * never filtered, and a remembered filter the backend doesn't know reads as
- * none (it would be refused).
+ * The current list's filter, if any. "Revisar" (a category's suggestions) and
+ * Reminders are never filtered, and a remembered filter the backend doesn't
+ * know reads as none (it would be refused).
  */
 export function activeFilter(m: Mailbox & { listFilters: ListFilters; supportedFilters?: readonly ListFilter[] }): ListFilter | undefined {
-  const f = m.reviewCategoryId === null ? m.listFilters.get(mailboxKey(m)) : undefined;
+  const f = m.reviewCategoryId === null && !m.reminders ? m.listFilters.get(mailboxKey(m)) : undefined;
   return f && (m.supportedFilters ?? LIST_FILTERS).includes(f) ? f : undefined;
 }
 

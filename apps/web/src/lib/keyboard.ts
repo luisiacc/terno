@@ -4,7 +4,7 @@ import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/action
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openMenuForSelection } from "~/components/thread-menu";
-import { getApp, markSelectionIntent, setApp } from "~/state/app";
+import { getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
@@ -17,6 +17,7 @@ import { closePage, currentPage, goBack, goForward, listLayout, openThread, unco
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
+import { noteOpen, openRemind } from "~/lib/reminders";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
@@ -53,6 +54,8 @@ export function move(delta: number) {
   }
   const next = Math.max(0, Math.min(items.length - 1, current + delta));
   const id = items[next]!.id;
+  // plan 87: the user stepped onto it (Split shows it; in List's list page the dwell finds no reader and nothing ends)
+  noteOpen(id);
   if (id === s.selectedId) { markSelectionIntent(); return; }
   // the cursor moves; in Split that opens it, in List's list page it's only the cursor (Enter opens)
   setApp({ selectedId: id });
@@ -69,7 +72,13 @@ export function move(delta: number) {
 /** Enter / o: in List the cursor's conversation becomes the page. */
 function openCurrent() {
   const id = getApp().selectedId;
-  if (!listLayout()) { if (id !== null) markSelectionIntent(); return setApp({ readerOpen: true }); }
+  if (!listLayout()) {
+    if (id !== null) {
+      markSelectionIntent();
+      noteOpen(id);
+    }
+    return setApp({ readerOpen: true });
+  }
   if (id !== null) openThread(id);
 }
 
@@ -129,6 +138,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "thread.toggleRead": () => toggleRead(),
   "thread.category": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "toggle" }),
   "thread.move": () => hasTargets() && setApp({ dialog: "categoryPicker", pickerMode: "move" }),
+  "thread.remind": () => hasTargets() && openRemind(),
   "action.undo": undoLast,
   "thread.print": () => printCommand("print"),
   "thread.exportPdf": () => printCommand("pdf"),
@@ -146,6 +156,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "go.sent": () => goToFolder("sent"),
   "go.archive": () => goToFolder("archive"),
   "go.trash": () => goToFolder("trash"),
+  "go.reminders": () => navigate({ reminders: true }),
   "help.shortcuts": () => setApp({ dialog: "shortcuts" }),
   "settings.open": () => setApp({ dialog: "settings", settingsTab: "general" }),
   "suggestion.accept": () => answerSuggestion(true),

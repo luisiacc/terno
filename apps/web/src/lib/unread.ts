@@ -11,9 +11,9 @@ import { activeFilter, isUnreadOnly, mailboxKey, saveListFilters, withFilter } f
 import { getApp, setApp, useApp } from "~/state/app";
 import { patchRows, useList } from "~/state/list";
 
-/** The toggle applies: the app is up, nothing modal is open, and the list is a mailbox ("Revisar" isn't). */
+/** The toggle applies: the app is up, nothing modal is open, and the list is a mailbox ("Revisar" and Reminders aren't). */
 export function canToggleUnread(s = getApp()): boolean {
-  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !document.getElementById("root")?.inert;
+  return s.ready && s.dialog === null && !s.menuOpen && s.reviewCategoryId === null && !s.reminders && !document.getElementById("root")?.inert;
 }
 
 /** The current mailbox's quick filter (none: everything); remembered across launches. */

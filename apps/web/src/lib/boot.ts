@@ -20,6 +20,7 @@ import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
+import { applyReminders, loadReminders } from "~/lib/reminders";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -83,6 +84,10 @@ export async function boot(): Promise<void> {
     });
     client.on("categories", (categories) => setCategories(categories));
     client.on("folders", (folders) => setFolders(folders));
+    // plan 87: the reminders (bells, the sidebar's count, the Inbox's top); a failure leaves the Inbox as it is
+    client.on("reminders", applyReminders);
+    // before the first list, so the Inbox opens with its due ones on top (one local call)
+    const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
     client.on("drafts", () => void loadDrafts());
@@ -114,6 +119,7 @@ export async function boot(): Promise<void> {
     // plan 24: history and pages; a reload on a conversation (List) reopens it before the list's first answer can pick row 0
     installPage();
     const reopened = bootPage();
+    await reminders;
     await reloadList({ keepSelection: reopened !== null });
     // plan 41: the badge and notifications; a click main held for this window opens now, after the first list
     startAttention();

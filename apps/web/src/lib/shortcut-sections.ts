@@ -27,6 +27,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["go.sent", "shortcuts.goSent"],
       ["go.archive", "shortcuts.goArchive"],
       ["go.trash", "shortcuts.goTrash"],
+      ["go.reminders", "shortcuts.goReminders"],
     ],
   },
   {
@@ -55,6 +56,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["thread.star", "shortcuts.star"],
       ["thread.category", "shortcuts.categories"],
       ["thread.move", "shortcuts.move"],
+      ["thread.remind", "shortcuts.remind"],
       ["action.undo", "common.undo"],
       ["thread.print", "shortcuts.print"],
       ["thread.exportPdf", "shortcuts.exportPdf"],

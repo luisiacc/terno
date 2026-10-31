@@ -10,6 +10,7 @@ import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
 import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
 import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/state/app";
 import { flushDeferredRefresh, listKey, refreshPolicy } from "~/state/list";
+import { noteOpen } from "~/lib/reminders";
 
 export type { Page };
 
@@ -41,6 +42,8 @@ export const readerShown = (): boolean => !listLayout() || currentPage() === "th
  */
 export function openThread(id: number): void {
   const s = getApp();
+  // plan 87: the user opened it (a due reminder ends after the dwell)
+  noteOpen(id);
   if (!listLayout()) return void setApp({ selectedId: id, readerOpen: true });
   if (s.compose) leaveNewDraft();
   setApp({ selectedId: id, readerOpen: true, anchorId: id, ...(s.checked.size || s.scope ? { checked: EMPTY, scope: null } : {}) });
@@ -82,7 +85,7 @@ refreshPolicy.keepWindow = listLayout;
 // the list shows, with its rows; a new message is left the way Esc leaves it (kept if written).
 useApp.subscribe((s, p) => {
   // a folder of the same account is another list too (plan 68, Codex R5)
-  const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.reviewCategoryId !== p.reviewCategoryId;
+  const otherList = s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders;
   if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
 });
 // Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.

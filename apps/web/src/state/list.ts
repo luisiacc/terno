@@ -7,7 +7,8 @@ import { matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, getSelectionWriteRevision, setApp, setListAutoSelection, useApp } from "./app";
+import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
+import { anyDue } from "./reminders";
 
 interface ListState {
   key: string;
@@ -61,7 +62,8 @@ export function listKey(): string {
   const s = getApp();
   // the query stays last (the UI perf gate reads it from data-results-for)
   // plan 68: a folder goes before the query, only when there is one (every other list's key is as it was)
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), s.query.trim()]);
+  // plan 87: Reminders, only when it's that list (every other list's key is as it was)
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.reminders ? ["reminders"] : []), s.query.trim()]);
 }
 
 let seq = 0;
@@ -80,8 +82,46 @@ export function keptIds(s = getApp()): number[] {
   return [...ids].slice(0, 500);
 }
 
+/**
+ * Plan 87: the plain Inbox's top, the conversations whose reminder is due
+ * (newest due first), wherever they live. They lead the first page and every
+ * later page leaves them out. One the user opened stays there while it's
+ * open (its reminder ended), so it doesn't jump away under the reader.
+ */
+export const inboxTop: { ids: readonly number[] } = { ids: [] };
+
+async function withTop<P extends { items: ThreadSummary[]; nextCursor: { lastDate: number; id: number } | null }>(page: Promise<P>, first: boolean): Promise<P> {
+  const s = getApp();
+  if (!inPlainInbox(s)) {
+    inboxTop.ids = [];
+    return page;
+  }
+  if (!first) {
+    const top = new Set(inboxTop.ids);
+    const p = await page;
+    return top.size ? { ...p, items: p.items.filter((t) => !top.has(t.id)) } : p;
+  }
+  const held = s.selectedId !== null && inboxTop.ids.includes(s.selectedId) ? useList.getState().items.find((t) => t.id === s.selectedId) : undefined;
+  const due = anyDue() ? client.call("reminders.threads", { dueOnly: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
+  const [p, dueRows] = await Promise.all([page, due]);
+  const top = [...dueRows];
+  if (held && !top.some((t) => t.id === held.id)) top.splice(Math.min(inboxTop.ids.indexOf(held.id), top.length), 0, held);
+  inboxTop.ids = top.map((t) => t.id);
+  if (top.length === 0) return p;
+  const ids = new Set(inboxTop.ids);
+  // the row as the page has it, when it's there (fresher than the reminder's read)
+  const fresh = new Map(p.items.filter((t) => ids.has(t.id)).map((t) => [t.id, t]));
+  return { ...p, items: [...top.map((t) => fresh.get(t.id) ?? t), ...p.items.filter((t) => !ids.has(t.id))] };
+}
+
 async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE) {
   const s = getApp();
+  if (s.reminders) {
+    // plan 87: one bounded page, soonest first
+    if (cursor) return { items: [], nextCursor: null };
+    const { items } = await client.call("reminders.threads", { dueOnly: false });
+    return { items, nextCursor: null };
+  }
   if (s.reviewCategoryId !== null) {
     // one bounded page of suggestions (each row carries its prediction)
     if (cursor) return { items: [], nextCursor: null };
@@ -91,7 +131,7 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
   const scope = currentScope()!;
   if (scope.kind === "search") return client.call("threads.search", { query: scope.query, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, filter: scope.filter });
   const keepIds = scope.filter ? keptIds(s) : [];
-  return client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, filter: scope.filter, keepIds: keepIds.length ? keepIds : undefined });
+  return withTop(client.call("threads.list", { view: scope.view, cursor, limit, accountId: scope.accountId, categoryId: scope.categoryId, folder: scope.folder, filter: scope.filter, keepIds: keepIds.length ? keepIds : undefined }), !cursor);
 }
 
 /**
@@ -101,7 +141,8 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
 function heldOnly(items: ThreadSummary[]): ThreadSummary[] {
   const filter = activeFilter(getApp());
   if (items.every((t) => matchesFilter(filter, t))) return items;
-  const held = new Set(keptIds());
+  // plan 87: the Inbox's top stays under any quick filter
+  const held = new Set([...keptIds(), ...inboxTop.ids]);
   return items.filter((t) => matchesFilter(filter, t) || held.has(t.id));
 }
 
@@ -121,7 +162,8 @@ function keepSearchRows<P extends { items: ThreadSummary[]; nextCursor: { lastDa
 /** Every thread the current list shows, as a scope the backend can act on ("select all N"); null for "Revisar". */
 export function currentScope(): ThreadScope | null {
   const s = getApp();
-  if (s.reviewCategoryId !== null) return null;
+  // Revisar, Reminders: lists of their own, no "select all N"
+  if (s.reviewCategoryId !== null || s.reminders) return null;
   const filter = activeFilter(s);
   const q = s.query.trim();
   // plan 64: a search looks everywhere (every account, category and place, Spam and Trash too); in:, account:, category: narrow it
@@ -348,7 +390,7 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
-  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.reviewCategoryId !== prev.reviewCategoryId || s.query !== prev.query) {
+  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();

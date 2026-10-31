@@ -3,7 +3,7 @@ import type { CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, Reply, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2, Users } from "lucide-react";
+import { Archive, Bell, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, Reply, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2, Users } from "lucide-react";
 import { useState } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory } from "~/lib/categorize";
@@ -17,6 +17,7 @@ import { designName } from "~/lib/design";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
 import { navigate, setApp, useApp } from "~/state/app";
+import { openRemind } from "~/lib/reminders";
 import { SETTINGS_TABS } from "./settings/tabs";
 
 export function CommandPalette() {
@@ -27,9 +28,11 @@ export function CommandPalette() {
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
+  // plan 87: reminders need ids ("select all N" has none)
+  const scoped = useApp((s) => s.scope !== null);
   // the unread filter applies to a mailbox (not "Review")
   // ⌘L's state: Unread on or not (another filter on: ⌘L switches to Unread)
-  const filter = useApp((s) => (open && s.reviewCategoryId === null ? (isUnreadOnly(s) ? "on" : "off") : null));
+  const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders ? (isUnreadOnly(s) ? "on" : "off") : null));
   const active = useApp((s) => (open ? activeFilter(s) : undefined));
   const supported = useApp((s) => s.supportedFilters);
   const design = useApp((s) => (open ? (s.settings?.design ?? null) : null));
@@ -54,6 +57,7 @@ export function CommandPalette() {
           <CommandItem onSelect={() => run(() => goToFolder("sent"))} keywords={english("view.sent")}><Send /> {t("view.sent")}<CommandShortcut>G T</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => goToFolder("archive"))} keywords={english("view.archive")}><Archive /> {t("view.archive")}<CommandShortcut>G A</CommandShortcut></CommandItem>
           <CommandItem onSelect={() => run(() => goToFolder("trash"))} keywords={english("view.trash")}><Trash2 /> {t("view.trash")}</CommandItem>
+          <CommandItem data-testid="palette-go-reminders" onSelect={() => run(() => navigate({ reminders: true }))} keywords={english("palette.goReminders")}><Bell /> {t("palette.goReminders")}<CommandShortcut>G R</CommandShortcut></CommandItem>
           {categories.map((c) => (
             <CommandItem key={c.id} value={`${t("palette.search.category")} ${c.name}`} keywords={english("palette.search.category")} onSelect={() => run(() => navigate({ categoryId: c.id, accountId: null }))}>
               <CategoryDot color={c.color as CategoryColor} /> {c.name}
@@ -81,6 +85,7 @@ export function CommandPalette() {
               <CommandItem onSelect={() => run(() => void act("markUnread"))} keywords={english("palette.markUnread")}><Mail /> {t("palette.markUnread")}</CommandItem>
               <CommandItem onSelect={() => run(() => toggleStar())} keywords={english("palette.star")}><Star /> {t("palette.star")}<CommandShortcut>S</CommandShortcut></CommandItem>
               <CommandItem onSelect={() => run(() => setApp({ dialog: "categoryPicker", pickerMode: "move" }))} keywords={english("palette.move")}><FolderInput /> {t("palette.move")}<CommandShortcut>V</CommandShortcut></CommandItem>
+              {!scoped && <CommandItem data-testid="palette-remind" onSelect={() => run(() => openRemind())} keywords={english("palette.remind")}><Bell /> {t("palette.remind")}<CommandShortcut>H</CommandShortcut></CommandItem>}
             </>
           )}
           {printable && (

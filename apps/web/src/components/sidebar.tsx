@@ -6,13 +6,14 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
+import { Archive, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Trash2 } from "lucide-react";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
-import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
+import { useReminders } from "~/lib/reminders";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, setOpenAccount, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
@@ -264,34 +265,46 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
  * under the pointer. A hidden slot is inert: not focusable, not clickable, not
  * in the accessibility tree.
  */
-function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode }) {
+/** A row behind More: one of the views, or Reminders (plan 87) */
+type MoreSlot = View | "reminders";
+
+/** The More row you're in (none inside an account, a category or its suggestions) */
+function moreSlotOf(s: AppState): MoreSlot | null {
+  if (s.reminders) return "reminders";
+  return s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && MORE_VIEWS.includes(s.view) ? s.view : null;
+}
+
+function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (f: (typeof VIEWS)[number]) => React.ReactNode; reminders: React.ReactNode }) {
   const open = useSidebarMore((s) => s.open);
+  const inReminders = useApp((s) => s.reminders);
+  // a due reminder shows its row even with More closed: its count is never behind a fold
+  const due = useReminders((s) => s.due > 0);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
   // folders shown only because you were in them, kept after a click in the sidebar took you elsewhere
-  const [held, setHeld] = useState<View[]>([]);
+  const [held, setHeld] = useState<MoreSlot[]>([]);
   useEffect(() => {
     const aside = toggleRef.current?.closest("aside");
     const group = groupRef.current;
     if (!aside || !group) return;
     let over = false;
     /** the hidden folder you were in when a mouse click landed here; held only if that click takes you elsewhere */
-    let armed: View | null = null;
+    let armed: MoreSlot | null = null;
     const drop = () => setHeld((h) => (h.length ? [] : h));
     // captured, so it runs before the click's own handler: with a mouse or pen (a keyboard's click or a tap has no pointer resting here)
     const click = (e: MouseEvent) => {
       const type = (e as PointerEvent).pointerType;
       if ((type !== "mouse" && type !== "pen") || useSidebarMore.getState().open) return;
-      const { view: v, accountId, categoryId, reviewCategoryId } = getApp();
-      if (accountId !== null || categoryId !== null || reviewCategoryId !== null || !MORE_VIEWS.includes(v)) return;
-      armed = v;
+      const slot = moreSlotOf(getApp());
+      if (slot === null) return;
+      armed = slot;
     };
     // the click's dispatch is over (the window hears it last): one that went nowhere (the folder's own row, the + of
     // Categories) holds nothing. A key or a press disarms too, in case a handler stopped the click on its way up
     const disarm = () => (armed = null);
     // the click navigated (synchronously, inside its handler): the hold joins that render
     const unsubscribe = useApp.subscribe((s) => {
-      if (armed === null || (s.accountId === null && s.categoryId === null && s.reviewCategoryId === null && s.view === armed)) return;
+      if (armed === null || moreSlotOf(s) === armed) return;
       const left = armed;
       armed = null;
       setHeld((h) => (h.includes(left) ? h : [...h, left]));
@@ -349,6 +362,20 @@ function MoreFolders({ view, folder }: { view: View | null; folder: (f: (typeof 
         <span className="min-w-0 flex-1 truncate">{open ? t("sidebar.less") : t("sidebar.more")}</span>
       </button>
       <div ref={groupRef} id="sidebar-more-folders" role="group" aria-label={t("sidebar.moreFolders")}>
+        {(() => {
+          const shown = open || inReminders || due || held.includes("reminders");
+          return (
+            <div
+              data-more-slot="reminders"
+              data-active-slot={inReminders || undefined}
+              data-shown={shown || undefined}
+              inert={!shown}
+              className="invisible grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,visibility] duration-base ease-motion data-shown:visible data-shown:grid-rows-[1fr] data-shown:opacity-100 data-shown:duration-slow data-shown:[transition-timing-function:var(--ease-drawer),linear,var(--ease-drawer)]"
+            >
+              <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">{reminders}</div>
+            </div>
+          );
+        })()}
         {VIEWS.slice(PINNED).map((f) => {
           const active = view === f.view;
           const shown = open || active || held.includes(f.view);
@@ -695,6 +722,8 @@ export function Sidebar() {
   const accountId = useApp((s) => s.accountId);
   const categoryId = useApp((s) => s.categoryId);
   const reviewCategoryId = useApp((s) => s.reviewCategoryId);
+  const inReminders = useApp((s) => s.reminders);
+  const dueReminders = useReminders((s) => s.due);
   const accounts = useApp((s) => s.accounts);
   const folders = useApp((s) => s.folders);
   const ownFolder = useApp((s) => s.folder);
@@ -745,7 +774,7 @@ export function Sidebar() {
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null ? view : null;
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
@@ -769,7 +798,22 @@ export function Sidebar() {
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {VIEWS.slice(0, PINNED).map(folder)}
-        <MoreFolders view={folderView} folder={folder} />
+        <MoreFolders
+          view={folderView}
+          folder={folder}
+          reminders={
+            <NavItem
+              testId="nav-reminders"
+              active={inReminders}
+              onClick={() => navigate({ reminders: true })}
+              icon={<Bell className="size-4" />}
+              label={t("view.reminders")}
+              count={dueReminders}
+              countTone={design.surfaces.inboxCount}
+              shortcut="g r"
+            />
+          }
+        />
 
         {/* what slides when More opens or closes: its own layer, so the slide moves it without repainting it (plan 40) */}
         <div data-more-below className="will-change-transform">

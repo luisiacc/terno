@@ -13,6 +13,7 @@ import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
 import { listCovered, listLayout, openThread } from "~/lib/page";
+import { noteOpen } from "~/lib/reminders";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -70,6 +71,7 @@ export function pressRow(id: number, m: PressModifiers): void {
     return;
   }
   const patch: Partial<AppState> = { selectedId: id, readerOpen: true, anchorId: id };
+  noteOpen(id);
   if (s.checked.size || s.scope) Object.assign(patch, { checked: EMPTY, scope: null });
   // a new message in the reader steps aside for the conversation clicked (it stays in the drafts strip)
   if (s.compose) patch.compose = null;
@@ -84,6 +86,7 @@ export function releaseRow(id: number): void {
   }
   if (collapseOnClick !== id) return;
   collapseOnClick = null;
+  noteOpen(id);
   setApp({ checked: EMPTY, scope: null, selectedId: id, readerOpen: true });
 }
 

@@ -29,6 +29,7 @@ export type Command =
   | "thread.category"
   | "thread.print"
   | "thread.exportPdf"
+  | "thread.remind"
   | "compose.new"
   | "compose.reply"
   | "compose.replyAll"
@@ -41,6 +42,7 @@ export type Command =
   | "go.sent"
   | "go.archive"
   | "go.trash"
+  | "go.reminders"
   | "help.shortcuts"
   | "settings.open"
   | "snackbar.action1"
@@ -128,6 +130,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "mod+shift+u", command: "thread.toggleRead" },
   { keys: "l", command: "thread.category" },
   { keys: "v", command: "thread.move" },
+  // plan 87: Superhuman's "remind me"
+  { keys: "h", command: "thread.remind" },
   { keys: "z", command: "action.undo" },
   { keys: "mod+z", command: "action.undo" },
   { keys: "c", command: "compose.new" },
@@ -142,6 +146,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "g t", command: "go.sent" },
   { keys: "g a", command: "go.archive" },
   { keys: "g #", command: "go.trash" },
+  { keys: "g r", command: "go.reminders" },
   { keys: "?", command: "help.shortcuts" },
   // the platform's Settings shortcut: from anywhere, also while typing or writing a draft (a chord types nothing)
   { keys: "mod+,", command: "settings.open", inEditable: true, inDialog: true },

@@ -7,8 +7,10 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
+import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
 import { Expand } from "./expand";
@@ -36,6 +38,49 @@ import { move } from "~/lib/keyboard";
 import { viewLabel } from "~/lib/format";
 import { useList } from "~/state/list";
 import { useSnack } from "~/lib/snack";
+
+const RemindPicker = lazy(() => import("./remind-picker").then((m) => ({ default: m.RemindPicker })));
+
+/** Plan 87: the bell. Set: filled, in the accent, its tooltip says when. Opens the picker below it (h too). */
+function RemindButton({ threadId }: { threadId: number }) {
+  const open = useRemindPopover((s) => s.open);
+  const reminder = useReminders((s) => s.byThread.get(threadId));
+  const label = reminder ? t("remind.buttonSet", { when: reminderShort(reminder.dueAt) }) : t("remind.button");
+  const close = () => useRemindPopover.setState({ open: false });
+  return (
+    <Popover open={open} onOpenChange={(o) => useRemindPopover.setState({ open: o })}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={label}
+                  data-testid="action-remind"
+                  data-set={reminder ? true : undefined}
+                  className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", reminder && "text-primary hover:text-primary")}
+                />
+              }
+            />
+          }
+        >
+          <Bell className={cn(reminder?.due && "fill-current")} />
+        </TooltipTrigger>
+        <TooltipContent className="flex items-center gap-2">
+          {label}
+          <Shortcut keys="h" />
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent side="bottom" align="start" sideOffset={6} className="w-72 gap-2 p-2" data-testid="remind-popover" aria-label={t("remind.title")}>
+        <Suspense fallback={<div className="h-48" />}>
+          <RemindPicker threadIds={[threadId]} done={close} />
+        </Suspense>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function ToolButton({ label, keys, onClick, children, testId, active, disabled, busy }: { label: string; keys?: string; onClick: () => void; children: React.ReactNode; testId?: string; active?: boolean; disabled?: boolean; busy?: boolean }) {
   return (
@@ -560,6 +605,7 @@ export function Reader() {
         <ToolButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} keys="s" onClick={() => toggleStar()} testId="action-star" active={thread?.starred}>
           <Star className={cn(thread?.starred && "fill-star")} />
         </ToolButton>
+        <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         </div>
         <div className="ml-auto flex items-center gap-0.5" role="group" aria-label={t("reader.group.respond")}>
           {design.variants.replyAction === "pill" ? (

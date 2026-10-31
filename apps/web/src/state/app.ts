@@ -1,10 +1,10 @@
-import type { Account, Category, Counts, Filter, FilterRule, Folder, ListFilter, View } from "@terno/core";
+import type { Account, Category, Counts, Filter, FilterRule, Folder, ListFilter, ReminderKind, View } from "@terno/core";
 import type { AppSettings, HostInfo, OwnerIdentity, ThreadScope } from "@terno/core/rpc";
 import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
 import { LEGACY_FILTERS, loadListFilters } from "~/lib/unread-filter";
 
-export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | null;
+export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | "remind" | null;
 export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "ai" | "agents" | "data" | "storage";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */
@@ -48,6 +48,8 @@ export interface AppState {
   folders: Folder[];
   /** "Revisar": the engine's pending suggestions for this category */
   reviewCategoryId: number | null;
+  /** plan 87: the Reminders list (view "all", no account, category, folder or review) */
+  reminders: boolean;
   query: string;
   /** mailboxes with the unread filter on (lib/unread-filter: the current list's flag is derived from this) */
   /** each mailbox's quick filter (plan 12's unread filter, generalized in plan 15) */
@@ -76,6 +78,8 @@ export interface AppState {
   dialog: DialogName;
   /** what the print sheet prints (set with dialog "print") */
   printTarget: PrintTarget | null;
+  /** plan 87: what the reminder dialog sets a reminder on (set with dialog "remind") */
+  remindTarget: { ids: number[]; kind: ReminderKind; custom: boolean } | null;
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";
   settingsTab: SettingsTab;
@@ -104,6 +108,7 @@ export const useApp = create<AppState>(() => ({
   folder: null,
   folders: [],
   reviewCategoryId: null,
+  reminders: false,
   query: "",
   listFilters: loadListFilters(),
   supportedFilters: LEGACY_FILTERS,
@@ -120,6 +125,7 @@ export const useApp = create<AppState>(() => ({
   draftShown: null,
   dialog: null,
   printTarget: null,
+  remindTarget: null,
   pickerMode: "toggle",
   settingsTab: "general",
   pendingKeys: null,
@@ -154,8 +160,17 @@ export function setApp(partial: AppState | Partial<AppState> | ((state: AppState
  * scope across accounts, a tab back to the Inbox) leaves the folder too, so a list is never asked for an invalid one.
  */
 function keepFolderValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  next = keepRemindersValid(state, next);
   const m = { ...state, ...next };
-  return m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.view !== "all") ? { ...next, folder: null } : next;
+  return m.folder !== null && (m.accountId === null || m.categoryId !== null || m.reviewCategoryId !== null || m.reminders || m.view !== "all") ? { ...next, folder: null } : next;
+}
+
+/** Plan 87: any other list (a tab, an account, a search: a search looks everywhere) leaves Reminders. */
+function keepRemindersValid(state: AppState, next: AppState | Partial<AppState>): AppState | Partial<AppState> {
+  if (!state.reminders || Object.hasOwn(next, "reminders")) return next;
+  const m = { ...state, ...next };
+  const other = m.view !== "all" || m.accountId !== null || m.categoryId !== null || m.reviewCategoryId !== null || m.folder !== null || m.query.trim() !== "";
+  return other ? { ...next, reminders: false } : next;
 }
 
 /** First-page selection is passive; nested explicit writes still use setApp. */
@@ -164,14 +179,17 @@ export function setListAutoSelection(selectedId: number | null): void {
 }
 export const getApp = useApp.getState;
 
-export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null }): void {
+export function navigate(to: { view?: View; accountId?: number | null; categoryId?: number | null; reviewCategoryId?: number | null; folder?: string | null; reminders?: boolean }): void {
   // plan 68: a folder is its account's, alone (no category, no review), its view "all"; anywhere else leaves it
   const folder = to.folder ?? null;
+  // plan 87: Reminders is a list of its own, of every account
+  const reminders = !folder && to.reminders === true;
   setApp((s) => ({
-    reviewCategoryId: folder ? null : (to.reviewCategoryId ?? null),
-    view: folder ? "all" : (to.view ?? (to.categoryId ? "all" : s.view)),
-    accountId: to.accountId === undefined ? s.accountId : to.accountId,
-    categoryId: folder || to.categoryId === undefined ? null : to.categoryId,
+    reviewCategoryId: folder || reminders ? null : (to.reviewCategoryId ?? null),
+    reminders,
+    view: folder || reminders ? "all" : (to.view ?? (to.categoryId ? "all" : s.view)),
+    accountId: reminders ? null : to.accountId === undefined ? s.accountId : to.accountId,
+    categoryId: folder || reminders || to.categoryId === undefined ? null : to.categoryId,
     folder,
     query: "",
     selectedId: null,
