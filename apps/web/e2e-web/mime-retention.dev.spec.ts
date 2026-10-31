@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 test("real browser incoming worker transfers exact backing ownership across failures and reuse", async ({ page, context }) => {
@@ -48,5 +49,36 @@ test("real browser incoming worker transfers exact backing ownership across fail
     { detached: 0, length: 256 * 1024 + 7, backing: 256 * 1024 + 7, offset: 0, exact: true, subject: `cycle-${cycle}` },
     { refused: "input-limit", retainedBacking: 1024 * 1024 }, "AbortError", "malformed-json",
   ]).flat());
+  expect(unexpected).toEqual([]);
+});
+
+test("measures finite real IndexedDB body/index preparation for a captured-text policy decision", async ({ page, context }) => {
+  const unexpected: string[] = [];
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const records = await page.evaluate(async () => {
+    const module = "/e2e-web/mime-retention/policy.ts";
+    return (await import(/* @vite-ignore */ module)).measurePolicy();
+  });
+  writeFileSync("/tmp/terno-w11-s48/browser-policy-samples.json", JSON.stringify(records, null, 2));
+  expect(records).toHaveLength(48);
+  expect(unexpected).toEqual([]);
+  await test.info().attach("finite-policy-samples.json", { body: JSON.stringify(records), contentType: "application/json" });
+});
+
+
+for (const limit of [65536, 131072]) test(`measures the exact proposed ${limit}-unit boundary in real IndexedDB`, async ({ page, context }) => {
+  const unexpected: string[] = [];
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  await context.route("**/*", async (route) => { if (new URL(route.request().url()).origin === origin) await route.continue(); else { unexpected.push("Unexpected external route"); await route.abort(); } });
+  await page.goto("/e2e-web/mime-retention/index.html");
+  const records = await page.evaluate(async (limit) => {
+    const module = "/e2e-web/mime-retention/policy.ts";
+    return (await import(/* @vite-ignore */ module)).measurePolicy(limit === 65536 ? "boundary64" : "boundary");
+  }, limit);
+  writeFileSync(`/tmp/terno-w11-s48/browser-policy-boundary-${limit}.json`, JSON.stringify(records, null, 2));
+  expect(records).toHaveLength(12);
+  expect(records.every((row: { combined: number }) => row.combined === limit)).toBe(true);
   expect(unexpected).toEqual([]);
 });
