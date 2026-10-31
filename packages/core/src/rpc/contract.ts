@@ -14,7 +14,7 @@ import {
   type PresetDescriptor,
   type ProviderDescriptor,
 } from "../ai";
-import type { CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
+import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
 import type { LearnedProposal } from "../learning/propose";
@@ -466,6 +466,7 @@ export type ExportFile = z.output<typeof exportFile>;
 
 const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("sender"), email: z.string().trim().email().max(320) }),
+  z.object({ kind: z.literal("subject"), email: z.string().trim().email().max(320), subject: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("domain"), domain: z.string().trim().min(1).max(253) }),
   z.object({ kind: z.literal("list"), listId: z.string().trim().min(1).max(400) }),
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
@@ -657,8 +658,18 @@ export const contract = {
   "categorize.preview": m<{ count: number; capped: boolean; sample: ThreadSummary[] }>()(
     z.object({ categoryId: id, scope: categorizeScope, limit: z.number().int().min(0).max(50).default(20) }),
   ),
-  /** Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. */
-  "categorize.apply": m<{ batchId: number | null; added: number }>()(z.object({ categoryId: id, scope: categorizeScope }), { timeoutMs: 120_000 }),
+  /**
+   * Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. A failure
+   * partway carries `{ batchId }` in its details. Plan 80: `always` (sender and subject scopes) also ensures the
+   * filter that files future mail there; `filterUndo` lets similar.undo take it back.
+   */
+  "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
+    // only who sent it (and the subject) make a filter: other scopes can't be filed always
+    z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind === "sender" || p.scope.kind === "subject"),
+    { timeoutMs: 120_000 },
+  ),
+  /** Plan 80: "Always file here" for one thread: same subject from its sender, then all from them, with how many each files now. */
+  "categorize.alwaysOffers": m<{ senderName: string | null; offers: { scope: AlwaysScope; count: number; capped: boolean }[] }>()(z.object({ categoryId: id, threadId: id })),
   /** Takes back one batch; for a move, atomically restores the source too (`restored`). Idempotent. */
   "categorize.undo": m<{ removed: number; restored?: number }>()(z.object({ batchId: id }), { timeoutMs: 300_000 }),
   "categorize.predict": m<Prediction[]>()(z.object({ threadId: id })),

@@ -7,6 +7,8 @@ export const COUNT_CAP = 1000;
 /** What a bulk categorization covers. Every scope leaves out threads already filed, trash/spam and threads the user removed. */
 export type CategorizeScope =
   | { kind: "sender"; email: string }
+  /** plan 80: the same sender and exactly this subject (normalized), as plan 63's similar scope */
+  | { kind: "subject"; email: string; subject: string }
   | { kind: "domain"; domain: string }
   | { kind: "list"; listId: string }
   /** search language, e.g. `"factura" "uber" from:@uber.com` */
@@ -47,4 +49,16 @@ export interface CategoryModelStats {
 export function termsQuery(terms: readonly string[], categoryName: string): string {
   const category = /\s/.test(categoryName) ? `"${categoryName.replaceAll('"', "")}"` : categoryName;
   return [...terms.map((t) => `"${t.replaceAll('"', "")}"`), `-category:${category}`].join(" ");
+}
+
+/** Plan 80: the scopes "Always file here" offers, and the filter that does it to future mail. */
+export type AlwaysScope = Extract<CategorizeScope, { kind: "sender" | "subject" }>;
+
+export function categoryRule(scope: AlwaysScope, categoryId: number): FilterRule {
+  const from = { field: "from" as const, op: "equals" as const, value: scope.email };
+  return {
+    match: "all",
+    conditions: scope.kind === "subject" ? [from, { field: "subject" as const, op: "equals" as const, value: scope.subject }] : [from],
+    actions: [{ type: "addCategory", categoryId }],
+  };
 }

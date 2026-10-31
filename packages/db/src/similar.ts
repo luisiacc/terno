@@ -79,6 +79,28 @@ function rootFacts(db: Db, threadIds: readonly number[], own: OwnAddresses) {
   );
 }
 
+function sharedScopes(db: Db, targets: readonly number[], own: OwnAddresses) {
+  const roots = targets.length <= OFFER_TARGETS_MAX ? rootFacts(db, targets, own) : null;
+  if (!roots) return null;
+  const scopes = similarScopes(
+    roots.map((r) => ({
+      sender: normalizeText(r.from_email.trim()),
+      subject: r.subject,
+      domain: r.from_domain && !own.domains.has(r.from_domain) ? r.from_domain : null,
+      list: r.list_id ? normalizeText(r.list_id.trim()) : null,
+    })),
+  );
+  return { roots, scopes };
+}
+
+/** Plan 80: what the threads' root inbound messages share, without counting; the sender's display name. */
+export function similarScopesOf(db: Db, threadIds: readonly number[]): { senderName: string | null; scopes: SimilarScope[] } {
+  const shared = sharedScopes(db, [...new Set(threadIds)], ownAddresses(db));
+  if (!shared) return { senderName: null, scopes: [] };
+  const { roots, scopes } = shared;
+  return { senderName: scopes[0]?.kind === "sender" ? roots[0]!.from_name || roots[0]!.from_email : null, scopes };
+}
+
 /** More targets than this and nothing is offered (each one is checked, never a sample). */
 export const OFFER_TARGETS_MAX = 200;
 
@@ -90,16 +112,9 @@ export const OFFER_TARGETS_MAX = 200;
 export function similarOffers(db: Db, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
   const own = ownAddresses(db);
   const targets = [...new Set(threadIds)];
-  const roots = targets.length <= OFFER_TARGETS_MAX ? rootFacts(db, targets, own) : null;
-  if (!roots) return { senderName: null, offers: [] };
-  const scopes = similarScopes(
-    roots.map((r) => ({
-      sender: normalizeText(r.from_email.trim()),
-      subject: r.subject,
-      domain: r.from_domain && !own.domains.has(r.from_domain) ? r.from_domain : null,
-      list: r.list_id ? normalizeText(r.list_id.trim()) : null,
-    })),
-  );
+  const shared = sharedScopes(db, targets, own);
+  if (!shared) return { senderName: null, offers: [] };
+  const { roots, scopes } = shared;
   // every target matches every shared scope: those in place count once
   const placed = inPlace(db, targets, action);
   const explicit = new Set(targets);

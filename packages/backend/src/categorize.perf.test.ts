@@ -206,6 +206,10 @@ it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 0
     "SELECT from_email FROM messages WHERE is_sent = 0 AND from_email NOT IN (SELECT email FROM accounts) GROUP BY from_email ORDER BY count(*) DESC LIMIT 1",
   )!.from_email;
   run(`count: busiest sender (${busiest})`, 5, () => countScope(db, lecturas, { kind: "sender", email: busiest }, NOW));
+  // plan 80: the same subject from them (a rare one walks the whole sender) is bounded like the sender
+  const subject = db.get<{ subject: string }>("SELECT subject FROM messages WHERE from_email = ? AND is_sent = 0 LIMIT 1", busiest)!.subject;
+  run(`count: busiest sender, same subject`, 5, () => countScope(db, lecturas, { kind: "subject", email: busiest, subject }, NOW));
+  run(`count: busiest sender, rare subject`, 5, () => countScope(db, lecturas, { kind: "subject", email: busiest, subject: "nothing has this subject" }, NOW));
   run("count: topic \"factura\" (common word, capped)", 25, () => countScope(db, facturas, { kind: "query", query: '"factura" -category:Facturas' }, NOW));
   run("count: topic \"semana\" \"reunion\" (AND)", 25, () => countScope(db, facturas, { kind: "query", query: '"semana" "reunion" -category:Facturas' }, NOW));
   run("count: topic, rare word", 25, () => countScope(db, facturas, { kind: "query", query: '"cfdi" -category:Facturas' }, NOW));

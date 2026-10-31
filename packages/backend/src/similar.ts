@@ -4,7 +4,7 @@
  * make two filters; Undo takes back only what it did, and only while the
  * filter is still exactly that.
  */
-import { capFilterName, LEARNED_FILTER_NAME, sameRule, similarLearnedKey, similarRule, similarValue, type Filter, type SimilarAction, type SimilarScope } from "@terno/core";
+import { capFilterName, LEARNED_FILTER_NAME, sameRule, similarLearnedKey, similarRule, similarValue, type Filter, type FilterRule, type SimilarAction, type SimilarScope } from "@terno/core";
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 
@@ -45,8 +45,14 @@ export class SimilarFilters {
 
   /** The scope's filter, enabled: an identical one is reused (a disabled one enabled), else a new one. `filterUndo` is null when nothing changed. */
   ensure(scope: SimilarScope, action: SimilarAction, name?: string): Promise<{ filter: Filter; filterUndo: number | null }> {
+    const key = similarLearnedKey(scope, action);
+    // the learned banner won't propose what this already does (a subject rule covers less: no key)
+    return this.ensureRule(similarRule(scope, action), name ?? L(LEARNED_FILTER_NAME[action], { value: similarValue(scope) }).message, key ?? undefined);
+  }
+
+  /** Plan 80: any rule, the same way (identical reused, a disabled one enabled, else created). */
+  ensureRule(rule: FilterRule, name: string, learnedKey?: string): Promise<{ filter: Filter; filterUndo: number | null }> {
     return this.serial(async () => {
-      const rule = similarRule(scope, action);
       const same = (await this.store.filters.list()).filter((f) => sameRule(f.rule, rule));
       const on = same.find((f) => f.enabled);
       if (on) return { filter: on, filterUndo: null };
@@ -55,16 +61,8 @@ export class SimilarFilters {
         const filter = await this.store.filters.save({ id: off.id, name: off.name, enabled: true, source: off.source, rule: off.rule }, this.now());
         return { filter, filterUndo: this.remember({ filterId: filter.id, change: "enabled", snapshot: snapshotOf(filter) }) };
       }
-      const key = similarLearnedKey(scope, action);
       const filter = await this.store.filters.save(
-        {
-          name: capFilterName(name ?? L(LEARNED_FILTER_NAME[action], { value: similarValue(scope) }).message),
-          enabled: true,
-          source: "manual",
-          rule,
-          // the learned banner won't propose what this already does (a subject rule covers less: no key)
-          learnedKey: key ?? undefined,
-        },
+        { name: capFilterName(name), enabled: true, source: "manual", rule, learnedKey },
         this.now(),
       );
       return { filter, filterUndo: this.remember({ filterId: filter.id, change: "created", snapshot: snapshotOf(filter) }) };

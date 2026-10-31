@@ -34,20 +34,23 @@ function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: st
     AND t.id NOT IN (SELECT thread_id FROM thread_categories INDEXED BY thread_categories_c WHERE category_id = ?)
     AND NOT EXISTS (SELECT 1 FROM cls_examples e WHERE e.thread_id = t.id AND e.category_id = ? AND e.label < 0)`;
   const own = JSON.stringify([...ownAddresses(db).emails]);
-  const by = (index: string, predicate: string, value: string) => ({
+  const by = (index: string, predicate: string, values: Param[]) => ({
     sql: `SELECT t.id FROM threads t
           WHERE t.id IN (SELECT m.thread_id FROM messages m INDEXED BY ${index}
                          WHERE ${predicate} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)))
             AND ${exclusions}`,
-    params: [value, own, categoryId, categoryId] as Param[],
+    params: [...values, own, categoryId, categoryId] as Param[],
   });
   switch (scope.kind) {
     case "sender":
-      return by("messages_from", "m.from_email = ?", normalizeText(scope.email.trim()));
+      return by("messages_from", "m.from_email = ?", [normalizeText(scope.email.trim())]);
+    case "subject":
+      // what the filter's rule compares: the normalized subject (plan 63's similar scope does the same)
+      return by("messages_from", "m.from_email = ? AND m.subject_norm = ?", [normalizeText(scope.email.trim()), normalizeText(scope.subject)]);
     case "domain":
-      return by("messages_domain", "m.from_domain = ?", normalizeText(scope.domain.trim().replace(/^@/, "")));
+      return by("messages_domain", "m.from_domain = ?", [normalizeText(scope.domain.trim().replace(/^@/, ""))]);
     case "list":
-      return by("messages_list", "m.list_id = ?", normalizeText(scope.listId.trim()));
+      return by("messages_list", "m.list_id = ?", [normalizeText(scope.listId.trim())]);
     case "query":
       return null;
   }

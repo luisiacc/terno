@@ -515,6 +515,8 @@ export interface MailStore {
   similar: {
     /** what the threads' root inbound messages share (≤ 200 read), with eligible counts; targets still in place count too */
     offers(threadIds: readonly number[], action: SimilarAction): Promise<SimilarOffers>;
+    /** plan 80: the same shared scopes, not counted (the sender's display name with them) */
+    scopes(threadIds: readonly number[]): Promise<{ senderName: string | null; scopes: SimilarScope[] }>;
     /**
      * One page of what a sweep acts on, examining at most `limit` of the scope's messages from
      * `cursor` (this store's own token from the last page's `next`; null: from the start, and the

@@ -1,4 +1,4 @@
-import { evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
+import { CategorizerModel, evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
@@ -1264,6 +1264,102 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await ingest(store, many);
         expect(await store.categorize.countScope(cat, { kind: "list", listId: "daily.morningbrew.com" }, NOW)).toEqual({ count: 1000, capped: true });
         expect(await store.categorize.resolveScope(cat, { kind: "list", listId: "Daily.Morningbrew.com" }, NOW)).toHaveLength(1003);
+      });
+    });
+
+    describe("always add (plan 80)", () => {
+      async function setup() {
+        const store = await fresh();
+        const [acct] = await withAccounts(store, 1);
+        const cat = (await store.categories.create("Facturas", "amber")).id;
+        const thread = async (over: Partial<Parameters<typeof msg>[0]> = {}) => {
+          const m = msg({ accountId: acct!, from: { name: "Uber Receipts", email: "uber.receipts@uber.com" }, subject: "Tu recibo", date: NOW - DAY, ...over });
+          await ingest(store, [m]);
+          return threadOf(store, m.providerMsgId!);
+        };
+        return { store, acct: acct!, cat, thread };
+      }
+
+      it("a subject scope is that sender's received mail with exactly that subject (normalized), with every bulk exclusion", async () => {
+        const { store, acct, cat, thread } = await setup();
+        const [a, b] = [await thread(), await thread({ subject: "TU RECIBO" })];
+        const [filed, removed] = [await thread(), await thread()];
+        const other = await thread({ subject: "Tu recibo · $24.00" });
+        const reply = await thread({ subject: "Re: Tu recibo" });
+        const elsewhere = await thread({ from: { name: "Rappi", email: "recibos@rappi.com" } });
+        await thread({ isSpam: true, inInbox: false });
+        await thread({ isTrash: true, inInbox: false });
+        await store.categories.add({ categoryId: cat, threadIds: [filed, removed], addedBy: "user", now: NOW });
+        await store.categories.remove({ categoryId: cat, threadIds: [removed], reason: "user", now: NOW });
+        // the user's own mail with that subject is never a match
+        await ingest(store, [msg({ accountId: acct, from: { name: "Me", email: "me0@example.com" }, isSent: true, subject: "Tu recibo", to: [{ name: "Uber", email: "uber.receipts@uber.com" }] })]);
+        const scope = { kind: "subject", email: "Uber.Receipts@uber.com", subject: "Tu recibo" } as const;
+        expect((await store.categorize.resolveScope(cat, scope, NOW)).sort()).toEqual([a, b].sort());
+        expect(await store.categorize.countScope(cat, scope, NOW)).toEqual({ count: 2, capped: false });
+        expect(await store.categorize.resolveScope(cat, { ...scope, subject: "Nothing has this" }, NOW)).toEqual([]);
+        // the sender scope is wider: every subject, still not elsewhere
+        const all = await store.categorize.resolveScope(cat, { kind: "sender", email: scope.email }, NOW);
+        expect(all.sort()).toEqual([a, b, other, reply].sort());
+        expect(all).not.toContain(elsewhere);
+      });
+
+      it("the sender filter matches the address, not a display name made to look like it", async () => {
+        const { store, acct } = await setup();
+        await ingest(store, [
+          msg({ accountId: acct, providerMsgId: "real", from: { name: "Uber Receipts", email: "uber.receipts@uber.com" } }),
+          msg({ accountId: acct, providerMsgId: "spoof", from: { name: "uber.receipts@uber.com", email: "x@evil.example" } }),
+        ]);
+        const range = (await store.filters.messageIdRange())!;
+        const rule = { match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "archive" }] } as FilterRule;
+        const matched = await store.filters.matchWindow(rule, NOW, { from: range.lo, to: range.hi });
+        const real = (await store.debug.snapshot()).messages.find((m) => m.fromEmail === "uber.receipts@uber.com")!.id;
+        expect(matched).toEqual([real]);
+      });
+
+      it("undoing a filing puts the suggestion it answered back in Review", async () => {
+        const { store, cat, thread } = await setup();
+        const a = await thread({ date: NOW - 60_000 });
+        const suggest = () =>
+          store.categorize.recordAiSuggestion({ threadId: a, categoryId: cat, p: 0.9, explain: [], sender: "uber.receipts@uber.com", encoded: new Uint32Array(), model: new CategorizerModel({ decayRef: NOW }), now: NOW });
+        expect(await suggest()).toBe(true);
+        const pending = async () => (await store.categorize.pendingSuggestions({ categoryId: cat, limit: 10 })).map((p) => p.threadId);
+        expect(await pending()).toEqual([a]);
+        const batchId = await store.categories.createBatch(cat, "always", { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" }, NOW);
+        await store.categories.add({ categoryId: cat, threadIds: [a], addedBy: "bulk", now: NOW, batchId });
+        expect(await pending()).toEqual([]);
+        expect((await store.categories.undoBatchPart(batchId, [a], NOW)).removed).toEqual([a]);
+        expect(await pending()).toEqual([a]);
+        // a suggestion the user rejected stays answered
+        await store.categorize.reject(a, cat, NOW);
+        const again = await store.categories.createBatch(cat, "snackbar", { kind: "sender", email: "uber.receipts@uber.com" }, NOW);
+        await store.categories.add({ categoryId: cat, threadIds: [a], addedBy: "bulk", now: NOW, batchId: again });
+        await store.categories.undoBatchPart(again, [a], NOW);
+        expect(await pending()).toEqual([]);
+      });
+
+      it("scopes are the root inbound message's sender and subject, without counting; none without received mail", async () => {
+        const { store, acct, thread } = await setup();
+        const a = await thread();
+        expect(await store.similar.scopes([a])).toEqual({
+          senderName: "Uber Receipts",
+          scopes: [
+            { kind: "sender", email: "uber.receipts@uber.com" },
+            { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" },
+            { kind: "domain", domain: "uber.com" },
+          ],
+        });
+        // a conversation the user started: its first received message decides
+        await ingest(store, [
+          msg({ accountId: acct, providerMsgId: "mine", providerThreadId: "started", from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: false, subject: "Pregunta", date: NOW - 2 * DAY }),
+          msg({ accountId: acct, providerMsgId: "answer", providerThreadId: "started", from: { name: "Ana", email: "ana@gmail.com" }, subject: "Re: Pregunta", date: NOW - DAY }),
+        ]);
+        const started = await threadOf(store, "answer");
+        expect((await store.similar.scopes([started])).scopes).toEqual([
+          { kind: "sender", email: "ana@gmail.com" },
+          { kind: "subject", email: "ana@gmail.com", subject: "Re: Pregunta" },
+        ]);
+        await ingest(store, [msg({ accountId: acct, providerMsgId: "alone", from: { name: "Me", email: "me0@example.com" }, isSent: true, inInbox: false })]);
+        expect(await store.similar.scopes([await threadOf(store, "alone")])).toEqual({ senderName: null, scopes: [] });
       });
     });
 

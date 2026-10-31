@@ -270,6 +270,12 @@ export function undoBatchPart(c: Ctx, batchId: number, threadIds: readonly numbe
         deltas.push({ op: "untrain", example: toExample(e), key: [e.thread_id, e.category_id] });
       }
     }
+    // plan 80: a suggestion the add answered is waiting again (Review lists it), as before the add
+    const decisions = T(c, "cls_decisions");
+    for (const t of removed) {
+      const d = decisions.get(t, batch.category_id);
+      if (d && d.kind === "suggest" && d.outcome === "accepted") decisions.update(d, { outcome: null });
+    }
     deltas.push(...backgroundDeltas(c, removed, now));
     return { categoryId: batch.category_id, removed, deltas };
   });
@@ -859,7 +865,7 @@ function decideThreads(c: Ctx, roots: Map<number, RootMessage>, req: { now: numb
 // ───────────────────────────── bulk scopes, quick actions, predictions ─────────────────────────────
 
 /** Sender/domain/list scopes (received mail only, outside trash and spam, not filed, not removed); null for query scopes. */
-export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope): number[] | null {
+export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope, count?: number): number[] | null {
   const own = ownAddresses(c);
   const messages = T(c, "messages");
   let rows: R[];
@@ -867,6 +873,12 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope)
     case "sender":
       rows = messages.by("from", normalizeText(scope.email.trim()));
       break;
+    case "subject": {
+      // what the filter's rule compares: the normalized subject (plan 63's similar scope does the same)
+      const subject = normalizeText(scope.subject);
+      rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => m.subject_norm === subject);
+      break;
+    }
     case "domain":
       rows = messages.by("domain", normalizeText(scope.domain.trim().replace(/^@/, "")));
       break;
@@ -876,13 +888,18 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope)
     case "query":
       return null;
   }
-  const ids = new Set<number>();
-  for (const m of rows) if (m.is_sent === 0 && !own.emails.has(m.from_email)) ids.add(m.thread_id);
   const threads = T(c, "threads");
-  return sortByRecency(
-    c,
-    [...ids].filter((t) => scopeOpen(c, categoryId, threads.get(t))),
-  );
+  const ids = new Set<number>();
+  const seen = new Set<number>();
+  for (const m of rows) {
+    if (m.is_sent !== 0 || own.emails.has(m.from_email) || seen.has(m.thread_id)) continue;
+    seen.add(m.thread_id);
+    if (!scopeOpen(c, categoryId, threads.get(m.thread_id))) continue;
+    ids.add(m.thread_id);
+    // a count (plan 80) stops past what it shows, and needs no order: a dominant sender costs what its first matches do
+    if (count !== undefined && ids.size >= count) return [...ids];
+  }
+  return count !== undefined ? [...ids] : sortByRecency(c, [...ids]);
 }
 
 /** what every bulk scope leaves out */

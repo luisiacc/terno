@@ -6,7 +6,7 @@ import { idbSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { addMessageLabels, confirmRebuilt, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
-import { keptThreads, resolveSimilarPage, similarOffers } from "./similar";
+import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { removeStorage, storageThreads } from "./storage";
 import { assetAccounting } from "./asset-accounting";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -1473,6 +1473,7 @@ export class IdbMailStore implements MailStore {
   readonly similar: MailStore["similar"] = {
     // the message indexes (late tables) must be in
     offers: (threadIds, action) => this.read(() => similarOffers(this.c, threadIds, action)),
+    scopes: (threadIds) => this.read(() => similarScopesOf(this.c, threadIds)),
     resolvePage: (scope, action, targets, cursor, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, cursor, limit)),
     kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
   };
@@ -1507,7 +1508,10 @@ export class IdbMailStore implements MailStore {
         return quickActions(this.c, categoryId, threadIds, model);
       });
     },
-    countScope: async (categoryId, scope, now) => countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length),
+    countScope: async (categoryId, scope, now) => {
+      if (scope.kind === "query") return countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length);
+      return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1)))!.length);
+    },
     resolveScope: async (categoryId, scope, now, limit = -1) => {
       // sender/domain/list scopes read the message indexes: the late tables must be in
       const prepared = await this.read(() => {

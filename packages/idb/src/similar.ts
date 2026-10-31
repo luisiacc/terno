@@ -90,15 +90,9 @@ export function keptThreads(c: Ctx, threadIds: readonly number[]): number[] {
   });
 }
 
-/** More targets than this and nothing is offered (each one is checked, never a sample). */
-export const OFFER_TARGETS_MAX = 200;
-
-/** Plan 63's offers: what every target shares, each with how many threads it would move now (at least that many when capped). */
-export function similarOffers(c: Ctx, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
-  const own = ownAddresses(c);
-  const targets = [...new Set(threadIds)];
+function sharedScopes(c: Ctx, targets: readonly number[], own: ReturnType<typeof ownAddresses>) {
   const refs = targets.length <= OFFER_TARGETS_MAX ? rootRefs(c, targets, own) : [];
-  if (refs.length === 0 || refs.length < targets.length) return { senderName: null, offers: [] };
+  if (refs.length === 0 || refs.length < targets.length) return null;
   const messages = T(c, "messages");
   const roots = refs.map((r) => messages.get(r.messageId)!);
   const scopes = similarScopes(
@@ -109,6 +103,27 @@ export function similarOffers(c: Ctx, threadIds: readonly number[], action: Simi
       list: m.list_id ? normalizeText(String(m.list_id).trim()) : null,
     })),
   );
+  return { roots, scopes };
+}
+
+/** Plan 80: what the threads' root inbound messages share, without counting; the sender's display name. */
+export function similarScopesOf(c: Ctx, threadIds: readonly number[]): { senderName: string | null; scopes: SimilarScope[] } {
+  const shared = sharedScopes(c, [...new Set(threadIds)], ownAddresses(c));
+  if (!shared) return { senderName: null, scopes: [] };
+  const { roots, scopes } = shared;
+  return { senderName: scopes[0]?.kind === "sender" ? roots[0]!.from_name || roots[0]!.from_email : null, scopes };
+}
+
+/** More targets than this and nothing is offered (each one is checked, never a sample). */
+export const OFFER_TARGETS_MAX = 200;
+
+/** Plan 63's offers: what every target shares, each with how many threads it would move now (at least that many when capped). */
+export function similarOffers(c: Ctx, threadIds: readonly number[], action: SimilarAction): SimilarOffers {
+  const own = ownAddresses(c);
+  const targets = [...new Set(threadIds)];
+  const shared = sharedScopes(c, targets, own);
+  if (!shared) return { senderName: null, offers: [] };
+  const { roots, scopes } = shared;
   const explicit = new Set(targets);
   const placed = placedOf(c, targets, action);
   return {

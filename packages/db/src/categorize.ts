@@ -391,6 +391,13 @@ export function undoBatchPart(db: Db, batchId: number, threadIds: readonly numbe
         ids,
       )
       .map((r) => ({ op: "untrain", example: toExample(r), key: [r.thread_id, r.category_id] }));
+    // plan 80: a suggestion the add answered is waiting again (Review lists it), as before the add
+    db.run(
+      `UPDATE cls_decisions SET outcome = NULL WHERE category_id = ? AND kind = 'suggest' AND outcome = 'accepted'
+         AND thread_id IN (SELECT value FROM json_each(?))`,
+      batch.category_id,
+      JSON.stringify(removed),
+    );
     deltas.push(...backgroundDeltas(db, removed, now));
     return { categoryId: batch.category_id, removed, deltas };
   });

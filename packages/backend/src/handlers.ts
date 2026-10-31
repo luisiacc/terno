@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, COUNT_CAP, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
+import { capFilterName, categoryRule, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -406,20 +406,47 @@ export function createHandlers(b: Backend): Handlers {
       const ids = await store.categorize.resolveScope(categoryId, scope, b.now(), COUNT_CAP + 1);
       return { count: Math.min(ids.length, COUNT_CAP), capped: ids.length > COUNT_CAP, sample: await store.threads.summaries(ids.slice(0, limit)) };
     },
-    "categorize.apply": async ({ categoryId, scope }, ctx) => {
+    "categorize.apply": async ({ categoryId, scope, always, filterName }, ctx) => {
       await requireCategory(categoryId);
+      // plan 80: the filter first, so mail that arrives while the set is filed is caught by it (the set is fixed below)
+      let filter: { id: number; filterUndo: number | null } | null = null;
+      let filterFailed = false;
+      if (always && (scope.kind === "sender" || scope.kind === "subject")) {
+        try {
+          const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? similarValue(scope));
+          filter = { id: f.filter.id, filterUndo: f.filterUndo };
+        } catch (error) {
+          // the mail is still filed and undoable: the result says the filter is missing
+          filterFailed = true;
+          b.log("warn", "category filter failed", error instanceof Error ? error.message : error);
+        }
+      }
       // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
       const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
-      const batchId = await store.categories.createBatch(categoryId, "snackbar", scope, b.now());
+      const batchId = await store.categories.createBatch(categoryId, always ? "always" : "snackbar", scope, b.now());
       const addedBy = ctx.origin === "mcp" ? "agent" : "bulk";
       let added = 0;
-      await b.runSliced(ids, 100, async (chunk) => {
-        const r = await store.categories.add({ categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
-        b.categorizer.apply(r.deltas);
-        added += r.added.length;
-        b.notifyChanged(r.added);
-      });
-      return { batchId: added ? batchId : null, added };
+      try {
+        await b.runSliced(ids, 100, async (chunk) => {
+          const r = await store.categories.add({ categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
+          b.categorizer.apply(r.deltas);
+          added += r.added.length;
+          b.notifyChanged(r.added);
+        });
+      } catch (error) {
+        // what committed stays filed, and the filter stays: the renderer can still undo both
+        const details = { batchId: added ? batchId : null, filterUndo: filter?.filterUndo ?? null };
+        throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), details, { expected: false, cause: error });
+      }
+      return { batchId: added ? batchId : null, added, filter, filterFailed };
+    },
+    "categorize.alwaysOffers": async ({ categoryId, threadId }) => {
+      await requireCategory(categoryId);
+      const { senderName, scopes } = await store.similar.scopes([threadId]);
+      // the narrower first: the same subject from them, then everything from them
+      const always = (["subject", "sender"] as const).flatMap((kind) => scopes.filter((s): s is AlwaysScope => s.kind === kind));
+      const offers = await Promise.all(always.map(async (scope) => ({ scope, ...(await store.categorize.countScope(categoryId, scope, b.now())) })));
+      return { senderName, offers };
     },
     "categorize.predict": async ({ threadId }) => {
       const model = b.categorizer.model;

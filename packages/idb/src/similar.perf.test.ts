@@ -81,3 +81,19 @@ it("one sender sent everything: offers (dominant, nothing in place) and a sweep'
   const late = pages.slice(-5).sort((a, b) => a - b);
   expect(late[2]!, `late pages ${pages.slice(-5).map((ms) => ms.toFixed(2)).join(", ")}`).toBeLessThanOrEqual(FRAME * MULT);
 });
+
+it("plan 80: the Review list's Always offers (scopes, a subject and a sender count) within a frame, for the busiest sender and one that sent everything", async () => {
+  const offers = async (s: IdbMailStore, threadId: number, categoryId: number) => {
+    const { scopes } = await s.similar.scopes([threadId]);
+    for (const scope of scopes) if (scope.kind === "subject" || scope.kind === "sender") await s.categorize.countScope(categoryId, scope, NOW);
+  };
+  const cat = (await store.categories.create(`Perf ${Date.now()}`, "amber")).id;
+  const busy = await timed(() => offers(store, busiest.threadId, cat));
+  expect(busy, `always offers, busiest sender: ${busy.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  // a count stops at the cap: a dominant sender (the snackbar's "All from" chip too) costs what its first matches do
+  const dcat = (await dominant.categories.create(`Perf ${Date.now()}`, "amber")).id;
+  const all = await timed(() => offers(dominant, dominantThread, dcat));
+  expect(all, `always offers, one sender: ${all.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  const rare = await timed(() => dominant.categorize.countScope(dcat, { kind: "subject", email: "bot@notify.example", subject: "nothing has this subject" }, NOW));
+  expect(rare, `rare subject count, one sender: ${rare.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+}, 300_000);

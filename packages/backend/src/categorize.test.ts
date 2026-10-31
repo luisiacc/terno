@@ -234,6 +234,96 @@ describe("categorizer: training hooks", () => {
     expect(sqlDb(backend.store).all("SELECT thread_id, category_id, added_by, added_at, batch_id FROM thread_categories ORDER BY thread_id")).toEqual(before);
   });
 
+  describe("plan 80: always add to a category", () => {
+    async function world() {
+      const { backend, client } = setup();
+      const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+      const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
+      const ingest = (over: Partial<IncomingMessage>[]) => [...ingestMessages(sqlDb(backend.store), over.map((o) => incoming(acct, o))).touchedThreads];
+      const members = () => sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_categories WHERE category_id = ? ORDER BY thread_id", cat).map((r) => r.thread_id);
+      return { backend, client, acct, cat, ingest, members };
+    }
+
+    it("offers the same subject from the sender first, then all from them, counted", async () => {
+      const { client, cat, ingest } = await world();
+      const [a] = ingest([{ subject: "Tu recibo" }, { subject: "Tu recibo" }, { subject: "Otro asunto" }]);
+      expect(await client.call("categorize.alwaysOffers", { categoryId: cat, threadId: a! })).toEqual({
+        senderName: "Uber Receipts",
+        offers: [
+          { scope: { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" }, count: 2, capped: false },
+          { scope: { kind: "sender", email: "uber.receipts@uber.com" }, count: 3, capped: false },
+        ],
+      });
+      await expect(client.call("categorize.alwaysOffers", { categoryId: 999, threadId: a! })).rejects.toThrow(/no longer exists/);
+    });
+
+    it("files the scope now and saves the filter for future mail; a second time reuses it; undo takes back both", async () => {
+      const { client, cat, ingest, members } = await world();
+      const [a, b, other] = ingest([{ subject: "Tu recibo" }, { subject: "Tu recibo" }, { subject: "Otro asunto" }]);
+      const scope = { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" } as const;
+      const r = await client.call("categorize.apply", { categoryId: cat, scope, always: true, filterName: "Uber Receipts · Tu recibo → Facturas" });
+      expect(r).toMatchObject({ added: 2, batchId: expect.any(Number), filter: { id: expect.any(Number), filterUndo: expect.any(Number) }, filterFailed: false });
+      expect(members()).toEqual([a, b].sort((x, y) => x! - y!));
+      const filters = await client.call("filters.list", {});
+      expect(filters).toEqual([
+        expect.objectContaining({
+          name: "Uber Receipts · Tu recibo → Facturas",
+          enabled: true,
+          rule: { match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }, { field: "subject", op: "equals", value: "Tu recibo" }], actions: [{ type: "addCategory", categoryId: cat }] },
+        }),
+      ]);
+      // the same again: nothing new to file, the filter is reused (nothing to undo there)
+      expect(await client.call("categorize.apply", { categoryId: cat, scope, always: true })).toEqual({ added: 0, batchId: null, filter: { id: filters[0]!.id, filterUndo: null }, filterFailed: false });
+      // Undo: the filter first, then the batch
+      await client.call("similar.undo", { undoId: null, filterUndo: r.filter!.filterUndo });
+      expect(await client.call("filters.list", {})).toEqual([]);
+      expect(await client.call("categorize.undo", { batchId: r.batchId! })).toEqual({ removed: 2 });
+      expect(members()).toEqual([]);
+      // without `always`, a bulk apply makes no filter (the snackbar's chips)
+      expect(await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" } })).toMatchObject({ added: 3, filter: null });
+      expect(await client.call("filters.list", {})).toEqual([]);
+      expect(members()).toContain(other);
+    });
+
+    it("an edited filter survives the undo; the filter failing keeps the mail filed; only sender and subject scopes", async () => {
+      const { backend, client, cat, ingest, members } = await world();
+      const [a] = ingest([{ subject: "Tu recibo" }]);
+      const r = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" });
+      const [f] = await client.call("filters.list", {});
+      await client.call("filters.save", { id: f!.id, name: "Mine now", enabled: true, source: "manual", rule: f!.rule });
+      await client.call("similar.undo", { undoId: null, filterUndo: r.filter!.filterUndo });
+      expect((await client.call("filters.list", {})).map((x) => x.name)).toEqual(["Mine now"]);
+      await client.call("categorize.undo", { batchId: r.batchId! });
+
+      sqlDb(backend.store).exec("CREATE TRIGGER no_filters BEFORE INSERT ON filters BEGIN SELECT RAISE(ABORT, 'boom'); END");
+      const failed = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" }, always: true });
+      expect(failed).toMatchObject({ added: 1, filter: null, filterFailed: true });
+      expect(members()).toEqual([a]);
+      sqlDb(backend.store).exec("DROP TRIGGER no_filters");
+
+      await expect(client.call("categorize.apply", { categoryId: cat, scope: { kind: "domain", domain: "uber.com" }, always: true })).rejects.toThrow();
+    });
+
+    it("a filing that fails partway names its batch, and its undo takes back what was filed", async () => {
+      const { backend, client, cat, ingest, members } = await world();
+      const threads = ingest(Array.from({ length: 130 }, (_, i) => ({ subject: "Tu recibo", date: NOW - DAY - i * 60_000 })));
+      // the oldest (filed last, in the second slice) can't be filed
+      sqlDb(backend.store).exec(`CREATE TRIGGER fail_last BEFORE INSERT ON thread_categories WHEN NEW.thread_id = ${threads.at(-1)} BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+      const error = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" }, always: true }).catch((e: unknown) => e as { details?: { batchId?: number } });
+      const { batchId, filterUndo } = (error as { details: { batchId: number; filterUndo: number } }).details;
+      expect(batchId).toEqual(expect.any(Number));
+      expect(members().length).toBeGreaterThan(0);
+      // the filter was made first (mail arriving while the set is filed is caught): it is part of the undo
+      expect(filterUndo).toEqual(expect.any(Number));
+      expect(await client.call("filters.list", {})).toHaveLength(1);
+      sqlDb(backend.store).exec("DROP TRIGGER fail_last");
+      await client.call("similar.undo", { undoId: null, filterUndo });
+      await client.call("categorize.undo", { batchId });
+      expect(members()).toEqual([]);
+      expect(await client.call("filters.list", {})).toEqual([]);
+    });
+  });
+
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
     const { backend, client } = setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
@@ -1346,7 +1436,7 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     const preview = await client.call("categorize.preview", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" }, limit: 5 });
     expect(preview.sample).toHaveLength(5);
     const applied = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" } });
-    expect(applied).toEqual({ batchId: expect.any(Number), added: 639 });
+    expect(applied).toEqual({ batchId: expect.any(Number), added: 639, filter: null, filterFailed: false });
     const decoyThread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE provider_msg_id = ?", decoy.providerMsgId)!.thread_id;
     expect(sqlDb(backend.store).get("SELECT 1 FROM thread_categories WHERE thread_id = ?", decoyThread)).toBeUndefined();
     // bulk adds weigh half and teach content for at most 50 threads of the sender
@@ -1357,7 +1447,7 @@ describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
     expect(sqlDb(backend.store).get<{ n: number }>("SELECT count(*) AS n FROM thread_categories")!.n).toBe(1);
     expect(backend.categorizer.model!.positives(cat)).toBe(1);
     // nothing left to add: no undo handle
-    expect(await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "nobody@nowhere.io" } })).toEqual({ batchId: null, added: 0 });
+    expect(await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "nobody@nowhere.io" } })).toEqual({ batchId: null, added: 0, filter: null, filterFailed: false });
   });
 
   it("quick actions come from the filed threads; topic queries count what is left", async () => {
