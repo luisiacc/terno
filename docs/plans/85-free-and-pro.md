@@ -57,14 +57,18 @@ Not adopted from the document: **Teams** (later plan) and **§7, the Business Us
 
 ### 1. The plans
 
-| | Free | Pro |
-|---|---|---|
-| Price | $0, forever | **$12/month** or **$108/year** |
-| Everything the app does today (accounts, unified inbox, search, categories, AI filters and categorization with your own key or a local model, themes, shortcuts, codes, snooze, …) | ✓ | ✓ |
-| AI summaries | | ✓ |
-| Personal Writing AI (with per-contact style) | | ✓ |
-| Ask Your Inbox | | ✓ |
-| Managed AI allowance ($3 of provider cost per month) | | ✓ |
+| | Free | Business | Pro |
+|---|---|---|---|
+| Price | $0, forever | **$49/user/year** (proposed) | **$12/month** or **$108/year** |
+| Who needs it | individuals; organizations under 100 employees and contractors **and** under US$5M revenue | people using Terno for work at a larger organization who don't need AI | anyone who wants the AI features |
+| Everything the app does today (accounts, unified inbox, search, categories, AI filters and categorization with your own key or a local model, themes, shortcuts, codes, snooze, …) | ✓ | ✓ | ✓ |
+| Business use at any company size (LICENSE grant (c)) | under the limit only | ✓ | ✓ |
+| AI summaries | | | ✓ |
+| Personal Writing AI (with per-contact style) | | | ✓ |
+| Ask Your Inbox | | | ✓ |
+| Managed AI allowance ($3 of provider cost per month) | | | ✓ |
+
+**Business** unlocks no features; it is the right to use Terno for work at an organization that isn't a Small Organization (LICENSE). **Pro includes business use**: a Pro subscriber never needs a Business seat too. Both are stated in the subscription terms shown at checkout and on terno.app/pricing: "Every paid subscription includes the right to use Terno for work, at a company of any size."
 
 Rules that every change keeps:
 
@@ -100,7 +104,8 @@ type Entitlement =
 - **Webhook reconciliation** exactly as plan 50 rev. 6; `active`, `trialing`, `past_due` (until grace) mint Pro.
 - **Renewal**: the token refreshes on existing wake-ups within 7 days of `periodEnd`; the allowance period resets on the Worker at each billing month (yearly plans reset monthly too, on the subscription's anniversary day).
 - **Cancel / change plan / update card**: the provider's customer portal, linked from Settings → Pro. Cancelling keeps Pro until `periodEnd`; the token says `renews: false` and the section says "Pro until 12 March. You won't be charged again."
-- **Records**: D1 `subscriptions` (plan 50) for Pro, and nothing else. Contributions (plan 84) never touch it.
+- **Business seats** are a provider product too, bought one seat per person (a company buys N seats with one invoice; the provider's quantity field). There is **no enforcement in the app**: no license keys, no seat checks, no prompts based on company size (we can't know it, and local mode sends nothing). Compliance is the company's, as with Docker Desktop. A Business subscriber may sign in to show "Business" in Settings → Pro, but nothing depends on it. Seat assignment, admin and SSO are out of scope (Teams/Enterprise later).
+- **Records**: D1 `subscriptions` (plan 50) for Pro and Business (`plan` column), and nothing else. Contributions (plan 84) never touch it.
 - **Refunds and chargebacks** end Pro at the next refresh (reconciled state), never delete data.
 
 ### 5. Managed AI and the allowance
@@ -174,7 +179,7 @@ The Worker's D1 `ai_usage` table aggregates `(accountId, period, feature, model)
 
 ## Out of scope
 
-Teams (comments, shared drafts, assignments, admin, per-seat billing); the Business Use license (§7 of the document); prepaid AI top-ups; non-USD pricing; embeddings/semantic search; product analytics; the three features' detailed designs (their own plans).
+Teams (comments, shared drafts, assignments, admin, seat management, SSO); prepaid AI top-ups; non-USD pricing; embeddings/semantic search; product analytics; the three features' detailed designs (their own plans).
 
 ## Later
 
@@ -199,7 +204,7 @@ Teams (comments, shared drafts, assignments, admin, per-seat billing); the Busin
 4. **Launch scope:** Pro launches with all three AI features, not one at a time.
 5. **Trial allowance:** $0.50 of provider cost.
 6. **Free AI tasks:** managed AI never runs filters or categorization, even for Pro users without a provider.
-7. **Organization limit removed.** The BSL 1.1 stays, but its Additional Use Grant now allows production use by organizations of any size; only selling or hosting Terno for others still needs permission. Companies pay only through Pro seats; there is no business plan.
+7. **Organization limit (Docker-style).** The BSL 1.1 grant allows free production use for individuals and Small Organizations (fewer than 100 employees and contractors **and** less than US$5M annual revenue), 30-day evaluation at any size, and any use by someone holding an active paid subscription. Larger organizations need a paid seat per person who uses Terno for work: **Pro** (AI included) or **Business** ($49/user/year proposed, no features). Pro's terms state it covers business use. Enforcement is the license alone, never the app.
 
 ## Revisions after the Codex review
 
