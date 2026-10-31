@@ -486,8 +486,11 @@ function AccountFolders({
   const focusedAt = useRef<{ key: string; index: number } | null>(null);
   const placesToGo = visible.filter((r) => r.selectable && r.key !== null);
   const morePrefix = `nav-own-more-${account.id}`;
+  // plan 86 (Codex code review #6): a focused Gmail tab row that goes (its account stops keeping them apart)
+  const focusedTab = useRef(false);
   const trackFocus = (e: React.FocusEvent) => {
     const id = (e.target as HTMLElement).dataset.testid;
+    focusedTab.current = !!id?.startsWith(`nav-tab-${account.id}-`);
     const key = id?.startsWith(ownPrefix) ? id.slice(ownPrefix.length) : null;
     setFocusedKey(key);
     // "N more folders" too: a catalog update that takes it away hands focus to the last folder shown (Codex R54)
@@ -497,6 +500,10 @@ function AccountFolders({
   const dropFocus = (e: React.FocusEvent) => {
     if (groupRef.current?.contains(e.relatedTarget as Node | null)) return;
     setFocusedKey(null);
+    const tab = e.target as HTMLElement;
+    requestAnimationFrame(() => {
+      if (tab.isConnected) focusedTab.current = false;
+    });
     // left on purpose (Tab away, a click elsewhere) unless the row itself went: told apart a frame later
     const left = e.target as HTMLElement;
     requestAnimationFrame(() => {
@@ -512,6 +519,14 @@ function AccountFolders({
     const target = next ? groupRef.current?.querySelector<HTMLElement>(`[data-testid="${ownPrefix}${CSS.escape(next.key!)}"]`) : document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`);
     target?.focus({ preventScroll: true });
   }, [rows]);
+  // its rows gone under the keyboard's focus: the account's Inbox takes it (its row, with one account)
+  useLayoutEffect(() => {
+    if (tabs || !focusedTab.current) return;
+    focusedTab.current = false;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const inbox = groupRef.current?.querySelector<HTMLElement>(`[data-testid="nav-folder-${account.id}-inbox"]`);
+    (inbox ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`))?.focus({ preventScroll: true });
+  }, [tabs, account.id]);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {

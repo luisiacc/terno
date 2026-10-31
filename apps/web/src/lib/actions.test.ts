@@ -30,7 +30,7 @@ vi.mock("~/rpc/connection", () => ({
 const { act, said } = await import("./actions");
 const { getApp, navigate, setAccounts, setApp } = await import("~/state/app");
 const { useList } = await import("~/state/list");
-const { resetSnacks, useSnack } = await import("~/lib/snack");
+const { resetSnacks, undoLast, useSnack } = await import("~/lib/snack");
 
 const row = (id: number): ThreadSummary => ({ id, unread: false, starred: false, categoryIds: [] }) as unknown as ThreadSummary;
 
@@ -126,19 +126,14 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
     useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
   });
 
-  it("Move to Inbox on rows in a tab takes them out of it (Gmail learns); the rest move as before", async () => {
+  it("Move to Inbox on a mix of rows in a tab and others is one action, one snack and one Undo (the backend takes them out of the tab)", async () => {
+    const undone: number[] = [];
+    fake.handlers["threads.undo"] = async (p) => (undone.push((p as { undoId: number }).undoId), { restored: 3 });
     await act("moveToInbox", [1, 2, 3]);
-    expect(sent).toEqual([
-      { action: "toPrimary", threadIds: [1] },
-      { action: "moveToInbox", threadIds: [2, 3] },
-    ]);
-    expect(useSnack.getState().current?.message).toBe("Moved to Inbox · 2 conversations");
-  });
-
-  it("a row in a tab its account shows in the Inbox (the setting off) moves as before", async () => {
-    setApp({ accounts: [account(1, "gmail", false), account(2, "imap")] });
-    await act("moveToInbox", [1]);
-    expect(sent).toEqual([{ action: "moveToInbox", threadIds: [1] }]);
+    expect(sent).toEqual([{ action: "moveToInbox", threadIds: [1, 2, 3] }]);
+    expect(useSnack.getState().current?.message).toBe("Moved to Inbox · 3 conversations");
+    await undoLast();
+    await vi.waitFor(() => expect(undone).toEqual([1]));
   });
 
   it("in Promotions, Move to Promotions keeps the row and Move to Inbox takes it away; in the Inbox, Move to Promotions does", async () => {
@@ -155,7 +150,7 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
     useList.setState({ items: inbox, index: new Map(inbox.map((t, i) => [t.id, i])) });
     await act("toSocial", [5]);
     expect(useList.getState().items).toEqual([]);
-    expect(sent.map((s) => s.action)).toEqual(["toPromotions", "toPrimary", "toSocial"]);
+    expect(sent.map((s) => s.action)).toEqual(["toPromotions", "moveToInbox", "toSocial"]);
   });
 
   it("a tab is its account's Inbox, alone: anywhere else leaves it; an account that stops separating sends you to its Inbox", () => {

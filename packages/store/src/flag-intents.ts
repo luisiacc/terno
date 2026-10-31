@@ -26,6 +26,19 @@ const EFFECTS = {
   toNoCategory: ["category"],
 } as const satisfies Record<ThreadAction, readonly LocalFlagField[]>;
 
+/**
+ * Plan 86: one undo for an action and the category move it brought (Move to Inbox out of a Gmail tab): each
+ * message's place as the action found it, its category as the move found it.
+ */
+export function mergeBefore(first: readonly MessageState[], then: readonly MessageState[]): MessageState[] {
+  const out = new Map(first.map((m) => [m.id, { ...m }]));
+  for (const m of then) {
+    const was = out.get(m.id);
+    out.set(m.id, was ? { ...was, category: m.category } : m);
+  }
+  return [...out.values()];
+}
+
 /** Sends and other operations do not own incoming message flags. */
 export function operationFlagFields(kind: string): readonly LocalFlagField[] {
   return Object.hasOwn(EFFECTS, kind) ? EFFECTS[kind as ThreadAction] : [];

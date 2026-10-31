@@ -16,6 +16,22 @@ type Row = TabMessage & { from_email: string };
 export const CATEGORY_SQL = `CASE WHEN instr(gmail_labels, '"CATEGORY_PROMOTIONS"') THEN 2 WHEN instr(gmail_labels, '"CATEGORY_SOCIAL"') THEN 3
   WHEN instr(gmail_labels, '"CATEGORY_UPDATES"') THEN 4 WHEN instr(gmail_labels, '"CATEGORY_FORUMS"') THEN 5 WHEN instr(gmail_labels, '"CATEGORY_PERSONAL"') THEN 1 ELSE 0 END`;
 
+/** A thread's tab from its messages (what recomputeThreads folds), written when it changed; the messages read. */
+function writeTab(db: Db, threadId: number, own: ReadonlySet<string>): number {
+  const messages = db.all<Row>("SELECT id, date, category, in_inbox, is_trash, is_spam, is_sent, is_draft, from_email FROM messages INDEXED BY messages_thread WHERE thread_id = ?", threadId);
+  const tab = threadTab(messages, (m) => own.has(addressKey((m as Row).from_email)));
+  db.run("UPDATE threads SET tab = ? WHERE id = ? AND tab != ?", tab, threadId, tab);
+  return messages.length;
+}
+
+/**
+ * The facts' passes over threads (a rescan after your addresses changed, the first pass once they're known):
+ * an Inbox thread of Gmail's gets its tab again, since mail of yours never decides it (Codex code review #3).
+ */
+export function refreshTab(db: Db, threadId: number, own: ReadonlySet<string>): void {
+  if (db.get("SELECT 1 FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND t.in_inbox = 1 AND a.kind = 'gmail'", threadId)) writeTab(db, threadId, own);
+}
+
 export function tabsIdle(db: Db): boolean {
   return !db.get("SELECT 1 FROM settings WHERE key = ?", KEY);
 }
@@ -42,16 +58,18 @@ export function tabsSlice(db: Db, limit: number): { processed: number; more: boo
     .all<{ id: number }>("SELECT t.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id > ? AND t.id <= ? AND t.in_inbox = 1 AND a.kind = 'gmail'", state.after, to)
     .map((r) => r.id);
   let read = 0;
+  let last = to;
   if (ids.length) {
     const own = ownAddresses(db);
-    const mine = (m: TabMessage) => own.has(addressKey((m as Row).from_email));
     for (const id of ids) {
-      const messages = db.all<Row>("SELECT id, date, category, in_inbox, is_trash, is_spam, is_sent, is_draft, from_email FROM messages INDEXED BY messages_thread WHERE thread_id = ?", id);
-      read += messages.length;
-      const tab = threadTab(messages, mine);
-      db.run("UPDATE threads SET tab = ? WHERE id = ? AND tab != ?", tab, id, tab);
+      read += writeTab(db, id, own);
+      // the messages read bound the slice too (Codex code review #4): the window's rest waits for the next one
+      if (read >= n && id < to) {
+        last = id;
+        break;
+      }
     }
   }
-  save(to >= max ? null : { phase: "threads", after: to });
-  return { processed: Math.max(1, to - state.after, read), more: to < max };
+  save(last >= max ? null : { phase: "threads", after: last });
+  return { processed: Math.max(1, last - state.after, read), more: last < max };
 }

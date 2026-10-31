@@ -40,7 +40,8 @@ export function openTab(tab: Tab): void {
     if (s.categoryId !== tab || s.reviewCategoryId !== null) navigate({ categoryId: tab });
     return;
   }
-  const inbox = { view: "inbox" as const, accountId: s.accountId, categoryId: null, reviewCategoryId: null };
+  // plan 86 (Codex code review #5): in a Gmail tab, All and Unread are that tab's
+  const inbox = { view: "inbox" as const, accountId: s.accountId, categoryId: null, reviewCategoryId: null, gmailTab: s.gmailTab };
   const listFilters = withFilter(s.listFilters, mailboxKey(inbox), tab === "unread" ? "unread" : undefined);
   const same = activeFilter({ ...inbox, listFilters: s.listFilters }) === (tab === "unread" ? "unread" : undefined);
   const inInbox = s.view === "inbox" && s.categoryId === null && s.reviewCategoryId === null && s.query === "";
@@ -52,7 +53,7 @@ export function openTab(tab: Tab): void {
 
 /** What navigate({ view: "inbox" }) writes, to go in the same setApp as the filter. */
 function navigatePatch(s: AppState): Partial<AppState> {
-  return { view: "inbox", categoryId: null, reviewCategoryId: null, accountId: s.accountId, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false };
+  return { view: "inbox", categoryId: null, reviewCategoryId: null, accountId: s.accountId, gmailTab: s.gmailTab, folder: null, query: "", selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false };
 }
 
 /**

@@ -10,7 +10,7 @@ import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCop
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
@@ -39,7 +39,7 @@ import {
   type StoreSearchPage,
 } from "@terno/store";
 import { InstantSearch, type InstantSearchOptions } from "@terno/store/instant";
-import { applyMessageAction, applyThreadAction, restoreMessages, type ActionResult } from "./actions";
+import { applyMessageAction, applyThreadAction, restoreMessages, untabThreads, type ActionResult } from "./actions";
 import {
   addToCategory,
   backfillCandidates,
@@ -327,10 +327,15 @@ export class SqlMailStore implements MailStore {
     act: async ({ threadIds, action, signal, now }) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
-        const r = applyThreadAction(this.db, [...new Set(threadIds)], action);
+        const ids = [...new Set(threadIds)];
+        const r = applyThreadAction(this.db, ids, action);
         // only actions that changed something feed learned filters (repeats must not manufacture support)
         if (signal && r.threadIds.length) recordUserActions(this.db, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        const opIds = this.queueActionOps(r, action, now);
+        if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
+        // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
+        const u = untabThreads(this.db, ids);
+        return { threadIds: [...new Set([...r.threadIds, ...u.threadIds])], opIds: [...opIds, ...this.queueActionOps(u, "toPrimary", now)], before: mergeBefore(r.before, u.before), ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       }),
     restore: async ({ messages, now }) =>
       this.db.tx(() => {

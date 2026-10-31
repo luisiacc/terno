@@ -7,7 +7,7 @@ import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "@ter
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
-import { matchesFilter, type ListFilter as QuickFilter } from "@terno/core";
+import { matchesFilter, tabRef, type ListFilter as QuickFilter } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { Button } from "@terno/ui/components/button";
@@ -337,7 +337,18 @@ function useWaitingCount(): number | null {
 function Subtitle({ filter, search, greeting }: { filter: QuickFilter | undefined; search: boolean; greeting: boolean }) {
   const quick = useQuickFilters();
   const unread = useApp((s) =>
-    s.reviewCategoryId !== null ? null : s.categoryId !== null ? (s.counts.categoryUnread[s.categoryId] ?? 0) : s.view === "inbox" ? (s.accountId !== null ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0) : s.counts.inboxUnread) : null,
+    s.reviewCategoryId !== null
+      ? null
+      : s.categoryId !== null
+        ? (s.counts.categoryUnread[s.categoryId] ?? 0)
+        : // plan 86 (Codex code review #7): a Gmail tab's own count, not its account's Inbox's
+          s.gmailTab !== null && s.accountId !== null
+          ? (s.counts.tabUnread?.[tabRef(s.accountId, s.gmailTab)] ?? 0)
+          : s.view === "inbox"
+            ? s.accountId !== null
+              ? (s.counts.inboxUnreadByAccount[s.accountId] ?? 0)
+              : s.counts.inboxUnread
+            : null,
   );
   const counted = useWaitingCount();
   const waiting = greeting && counted ? counted : 0;

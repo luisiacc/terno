@@ -148,3 +148,17 @@ describe("what fits on the row", () => {
     expect(fitTabs({ ...base, widths: [80, 80], available: 250, selected: 1 }).visible).toEqual([1]);
   });
 });
+
+describe("in a Gmail tab (plan 86, Codex code review #5)", () => {
+  it("Unread and All filter that tab, never the account's Inbox", () => {
+    at({ accountId: 2, gmailTab: "promotions" });
+    openTab("unread");
+    expect(getApp()).toMatchObject({ view: "inbox", accountId: 2, gmailTab: "promotions" });
+    expect([...getApp().listFilters]).toEqual([["inbox|2||~promotions", "unread"]]);
+    expect(selectedTab(getApp())).toBe("unread");
+    openTab("all");
+    expect(getApp().gmailTab).toBe("promotions");
+    expect(getApp().listFilters.get("inbox|2|")).toBeUndefined();
+    expect(selectedTab(getApp())).toBe("all");
+  });
+});

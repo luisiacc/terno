@@ -60,6 +60,8 @@ test.describe("Gmail's Promotions and Social (plan 86)", { tag: "@design" }, () 
     await expect(page.getByTestId(`nav-tab-${personal}-promotions`)).toHaveAttribute("aria-current", "page");
     await expect(page.locator("#app-sidebar [aria-current=page]")).toHaveCount(1);
     await expect(page.getByTestId("thread-list")).toContainText("Promotions");
+    // its own unread count under the title, where the design shows one, not the account's Inbox's (Codex code review #7)
+    if (await page.getByTestId("list-subtitle").count()) await expect(page.getByTestId("list-subtitle")).toContainText(`${unreadPromotions} unread`);
     await expect(row(page, promo)).toBeVisible();
     const members = new Set(sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND in_inbox = 1 AND tab = 1", personal).map((r) => r.id));
     expect((await rowIds(page)).every((id) => members.has(id))).toBe(true);
@@ -88,6 +90,17 @@ test.describe("Gmail's Promotions and Social (plan 86)", { tag: "@design" }, () 
     await expect(only).toBeFocused();
     await expect(only).not.toHaveAttribute("aria-expanded");
     await expect.poll(() => listFor(page)).toEqual(["inbox", personal, null, null, null, ""]);
+  });
+
+  test("a focused Promotions row that goes (the setting off elsewhere) hands focus to the account's Inbox row", async ({ app: page, server }) => {
+    const personal = accountOf(server, "Personal");
+    await page.getByTestId(`nav-account-${personal}`).click();
+    const promotions = page.getByTestId(`nav-tab-${personal}-promotions`);
+    await promotions.focus();
+    await expect(promotions).toBeFocused();
+    await server.backend.server.invoke("accounts.update", { id: personal, separateTabs: false }, { clientId: "setup", origin: "dev" as const });
+    await expect(promotions).toHaveCount(0);
+    await expect(page.getByTestId(`nav-folder-${personal}-inbox`)).toBeFocused();
   });
 
   test("Move to Inbox takes a promotion out of its tab into the Inbox; Undo puts it back", async ({ app: page, server }) => {

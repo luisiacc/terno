@@ -109,6 +109,31 @@ export function applyThreadAction(db: Db, threadIds: readonly number[], action: 
   });
 }
 
+/**
+ * Plan 86: Move to Inbox also takes these threads out of Gmail's Promotions and Social, where their account keeps
+ * them apart (else they'd land in the tab again): their tabbed messages of someone else's go to Primary.
+ */
+export function untabThreads(db: Db, threadIds: readonly number[]): ActionResult {
+  return db.tx(() => {
+    const ids: number[] = [];
+    for (let i = 0; i < threadIds.length; i += 500) {
+      const chunk = threadIds.slice(i, i + 500);
+      for (const r of db.all<{ id: number }>(
+        `SELECT m.id FROM messages m JOIN accounts a ON a.id = m.account_id
+         WHERE m.thread_id IN (${placeholders(chunk.length)}) AND a.kind = 'gmail' AND coalesce(json_extract(a.provider_config, '$.separateTabs'), 1) != 0
+           AND (m.category IN (2, 3) OR (m.category IS NULL AND m.gmail_labels IS NOT NULL))`,
+        ...chunk,
+      )) ids.push(r.id);
+    }
+    const msgs: Msg[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      msgs.push(...withCategory(db.all<Msg>(`SELECT ${MSG_COLUMNS} FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)));
+    }
+    return applyToMessages(db, msgs.filter((m) => m.category === 2 || m.category === 3), "toPrimary", true);
+  });
+}
+
 /** Same as applyThreadAction, but for explicit messages (filters act per message). */
 export function applyMessageAction(db: Db, messageIds: readonly number[], action: ThreadAction): ActionResult {
   return db.tx(() => {

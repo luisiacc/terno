@@ -386,13 +386,32 @@ function loadThread(db: Db, threadId: number): ThreadDetail | null {
 export function getCounts(db: Db, now: number): Counts {
   const byAccount: Record<number, number> = {};
   let inboxUnread = 0;
-  const shown = inboxShown(db);
-  for (const r of db.all<{ account_id: number; c: number }>(
-    `SELECT account_id, count(*) AS c FROM threads WHERE in_inbox = 1 AND unread_count > 0${shown.where} GROUP BY account_id`,
-    ...shown.params,
-  )) {
-    byAccount[r.account_id] = r.c;
-    inboxUnread += r.c;
+  // read once for every count (plans 83, 86)
+  const hiding = inboxHiding(db);
+  let tabUnread: Record<string, number>;
+  if (!hiding.categories.length) {
+    // plan 86: one walk of the unread Inbox's (account, tab) index gives the Inbox's counts and each tab's
+    tabUnread = {};
+    const off = new Set(hiding.tabsOff ?? []);
+    for (const r of db.all<{ account_id: number; tab: number; c: number }>(
+      "SELECT account_id, tab, count(*) AS c FROM threads INDEXED BY threads_unread_tab WHERE in_inbox = 1 AND unread_count > 0 GROUP BY account_id, tab",
+    )) {
+      const tab = tabOfCode(r.tab);
+      if (tab) tabUnread[tabRef(r.account_id, tab)] = r.c;
+      if (tab && hiding.tabsOff !== null && !off.has(r.account_id)) continue;
+      byAccount[r.account_id] = (byAccount[r.account_id] ?? 0) + r.c;
+      inboxUnread += r.c;
+    }
+  } else {
+    const shown = shownSql(hiding);
+    for (const r of db.all<{ account_id: number; c: number }>(
+      `SELECT account_id, count(*) AS c FROM threads WHERE in_inbox = 1 AND unread_count > 0${shown.where} GROUP BY account_id`,
+      ...shown.params,
+    )) {
+      byAccount[r.account_id] = r.c;
+      inboxUnread += r.c;
+    }
+    tabUnread = tabUnreadCounts(db);
   }
   const categoryUnread: Record<number, number> = {};
   const categoryTotal: Record<number, number> = {};
@@ -404,12 +423,12 @@ export function getCounts(db: Db, now: number): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now), folderUnread: folderUnreadCounts(db), tabUnread: tabUnreadCounts(db) };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now, hiding), folderUnread: folderUnreadCounts(db), tabUnread };
 }
 
 /** The Inbox counts' extra tests (plans 83, 86): none while nothing is hidden. */
-function inboxShown(db: Db): { where: string; params: Param[] } {
-  const h = hidingSql("threads", inboxHiding(db));
+function shownSql(hiding: InboxHiding): { where: string; params: Param[] } {
+  const h = hidingSql("threads", hiding);
   return { where: h.where.map((w) => ` AND ${w}`).join(""), params: h.params };
 }
 
@@ -439,14 +458,15 @@ export function folderUnreadCounts(db: Db): Record<string, number> {
  * Inbox threads waiting for your reply (plan 17), per account: the window's range of
  * threads_waiting. Unknown (null) while any thread's facts are pending.
  */
-export function waitingCounts(db: Db, now: number): Pick<Counts, "inboxWaiting" | "inboxWaitingByAccount"> {
+export function waitingCounts(db: Db, now: number, hiding = inboxHiding(db)): Pick<Counts, "inboxWaiting" | "inboxWaitingByAccount"> {
   if (!factsReady(db)) return { inboxWaiting: null, inboxWaitingByAccount: {} };
   const byAccount: Record<number, number> = {};
   let total = 0;
-  const shown = inboxShown(db);
+  const shown = shownSql(hiding);
   // threads_waiting_inbox holds only the inbox's waiting threads: the window is its range (waiting_since <= last_date, so no date test)
   for (const r of db.all<{ account_id: number; c: number }>(
-    `SELECT account_id, count(*) AS c FROM threads INDEXED BY threads_waiting_inbox WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ?${shown.where} GROUP BY account_id`,
+    // plan 86: with Gmail's tabs apart, the index that also holds the tab (never a row read per waiting thread)
+    `SELECT account_id, count(*) AS c FROM threads INDEXED BY ${hiding.tabsOff === null ? "threads_waiting_inbox" : "threads_waiting_inbox_tab"} WHERE in_inbox = 1 AND waiting_since IS NOT NULL AND waiting_since >= ?${shown.where} GROUP BY account_id`,
     waitingCutoff(now),
     ...shown.params,
   )) {

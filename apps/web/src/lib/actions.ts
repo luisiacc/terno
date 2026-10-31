@@ -15,8 +15,9 @@ import { placeActions } from "~/lib/places";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
-  // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs
+  // plan 86: a Gmail tab holds its own category only; the Inbox none of the tabs (Move to Inbox takes a thread out of them)
   if (isCategoryAction(action)) return s.gmailTab ? action === TAB_ACTION[s.gmailTab] : !(inPlainInbox(s) && (action === "toPromotions" || action === "toSocial"));
+  if (action === "moveToInbox" && s.gmailTab) return false;
   const view = s.view;
   switch (action) {
     case "archive":
@@ -130,7 +131,8 @@ export function patched(t: ThreadSummary, action: ThreadAction): ThreadSummary {
       // still no sender icon until the backend's row says it isn't spam (plan 22)
       return { ...t, inSpam: false, hasSpam: false, inInbox: t.inTrash ? t.inInbox : true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
     case "moveToInbox":
-      return { ...t, inSpam: false, inTrash: false, hasSpam: false, inInbox: true, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
+      // plan 86: out of Gmail's tabs too
+      return { ...t, inSpam: false, inTrash: false, hasSpam: false, inInbox: true, tab: 0, spamHeld: t.inSpam || t.hasSpam || t.spamHeld || undefined };
     // plan 86: the tab it's in now (the stores decide for a thread with several senders)
     case "toPrimary":
       return { ...t, tab: 0 };
@@ -164,20 +166,8 @@ const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnr
 export async function act(action: ThreadAction, ids?: number[], options: { quiet?: boolean; automation?: "none" } = {}): Promise<void> {
   if (!ids) {
     const target = currentTargets();
-    // plan 86: Move to Inbox from Promotions or Social takes the tab's threads out of it (Gmail learns from it)
-    if ("scope" in target) return actScope(action === "moveToInbox" && getApp().gmailTab ? "toPrimary" : action, target.scope);
+    if ("scope" in target) return actScope(action, target.scope);
     ids = target.ids;
-  }
-  if (action === "moveToInbox") {
-    // plan 86: a thread in a tab its account keeps apart is out of the Inbox by its category, not its place
-    const accounts = getApp().accounts;
-    const tabbed = new Set(targetRows(ids).filter((r) => inSeparateTab(r, accounts)).map((r) => r.id));
-    if (tabbed.size) {
-      const rest = ids.filter((id) => !tabbed.has(id));
-      await act("toPrimary", [...tabbed], options);
-      if (!rest.length) return;
-      ids = rest;
-    }
   }
   // plan 64: a search's rows can span places: a place action takes the rows it fits, read now (buttons, menu and keys alike)
   const targets = fitting(action, ids);

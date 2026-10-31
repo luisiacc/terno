@@ -51,7 +51,7 @@ it("a mailbox from before gets its tabs once, in slices that resume after a clos
   const promos = Array.from({ length: 5 }, (_, i) => msg({ accountId: gmail!, providerMsgId: `promo${i}`, from: { name: "", email: `deals${i}@shop.com` }, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] }));
   await ingest(store, [...promos, msg({ accountId: gmail!, providerMsgId: "person", gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }), msg({ accountId: imap!, providerMsgId: "imap" })]);
   const person = await threadOf(store, "person");
-  const tabbed = await Promise.all(promos.map((m) => threadOf(store, m.providerMsgId)));
+  const tabbed = await Promise.all(promos.map((m) => threadOf(store, m.providerMsgId!)));
   expect((await store.threads.list({ view: "inbox", limit: 20 })).items).toHaveLength(2);
   await store.close();
   await rewrite(factory, name, { messages: (r) => void delete r.category, threads: (r) => void delete r.tab }, 36);
@@ -92,5 +92,27 @@ it("a mailbox without a Gmail account has nothing to backfill", async () => {
   await store.close();
   await rewrite(factory, name, {}, 36);
   store = await open(factory, name);
+  expect(await store.tabs.idle()).toBe(true);
+});
+
+it("a slice stops once it has read its share of messages, mid-window, and the next goes on from there", async () => {
+  const factory = new IDBFactory();
+  const name = "tabs-budget";
+  let store = await open(factory, name);
+  const [gmail] = await withAccounts(store, 1);
+  for (let t = 0; t < 4; t++) await ingest(store, [0, 1, 2].map((i) => msg({ accountId: gmail!, providerMsgId: `t${t}m${i}`, providerThreadId: `gt${t}`, from: { name: "", email: `deals${t}@shop.com` }, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] })));
+  const threads = await Promise.all([0, 1, 2, 3].map((t) => threadOf(store, `t${t}m0`)));
+  await store.close();
+  await rewrite(factory, name, { threads: (r) => void delete r.tab }, 33);
+  store = await open(factory, name);
+  await store.whenLoaded();
+  // the messages phase first (twelve ids, in one slice)
+  await store.tabs.backfill({ limit: 100 });
+  const tabbed = async () => (await store.threads.list({ view: "inbox", accountId: gmail!, tab: "promotions", limit: 10 })).items.length;
+  for (let slice = 1; slice <= threads.length; slice++) {
+    const r = await store.tabs.backfill({ limit: 2 });
+    expect(await tabbed()).toBe(slice);
+    expect(r.more).toBe(slice < threads.length);
+  }
   expect(await store.tabs.idle()).toBe(true);
 });

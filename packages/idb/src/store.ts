@@ -12,7 +12,7 @@ import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from 
 import { removeStorage, storageThreads } from "./storage";
 import { assetAccounting } from "./asset-accounting";
 import { attachmentMessageBudgetAsync } from "@terno/core";
-import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
+import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
@@ -92,6 +92,7 @@ import {
   applyMessageAction,
   applyThreadAction,
   restoreMessages,
+  untabThreads,
   awaitAuthOp,
   releaseOp,
   deferOp,
@@ -832,9 +833,14 @@ export class IdbMailStore implements MailStore {
     act: ({ threadIds, action, signal, now }) =>
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
-        const r = applyThreadAction(this.c, [...new Set(threadIds)], action);
+        const ids = [...new Set(threadIds)];
+        const r = applyThreadAction(this.c, ids, action);
         if (signal && r.threadIds.length) recordUserActions(this.c, r.threadIds, signal, now);
-        return { threadIds: r.threadIds, opIds: this.queueActionOps(r, action, now), before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+        const opIds = this.queueActionOps(r, action, now);
+        if (action !== "moveToInbox") return { threadIds: r.threadIds, opIds, before: r.before, ...flagReconciliation(idbFlags(this.c), flagBefore) };
+        // plan 86: into the Inbox means out of Gmail's tabs too, in the same command and the same undo
+        const u = untabThreads(this.c, ids);
+        return { threadIds: [...new Set([...r.threadIds, ...u.threadIds])], opIds: [...opIds, ...this.queueActionOps(u, "toPrimary", now)], before: mergeBefore(r.before, u.before), ...flagReconciliation(idbFlags(this.c), flagBefore) };
       }),
     restore: ({ messages, now }) =>
       this.command(() => {

@@ -25,6 +25,23 @@ export function startTabsBackfill(db: MemDb): void {
   if ([...t(db, "accounts").all()].some((a) => a.kind === "gmail")) t(db, "settings").put({ key: KEY, value_json: JSON.stringify({ phase: "messages", after: 0 } satisfies Progress) });
 }
 
+/** A thread's tab from its messages (what recomputeThreads folds), written when it changed; the messages read. */
+function writeTab(db: MemDb, thread: R, own: ReadonlySet<string>): number {
+  const rows = t(db, "messages").by("fk_thread_id", thread.id);
+  const tab = threadTab(rows as unknown as TabMessage[], (m) => own.has(addressKey((m as unknown as R).from_email)));
+  if ((thread.tab ?? 0) !== tab) t(db, "threads").update(thread, { tab });
+  return rows.length;
+}
+
+/**
+ * The facts' passes over threads (a rescan after your addresses changed, the first pass once they're known):
+ * an Inbox thread of Gmail's gets its tab again, since mail of yours never decides it (Codex code review #3).
+ */
+export function refreshTab(db: MemDb, threadId: number, own: ReadonlySet<string>): void {
+  const thread = t(db, "threads").get(threadId);
+  if (thread?.in_inbox === 1 && t(db, "accounts").get(thread.account_id)?.kind === "gmail") writeTab(db, thread, own);
+}
+
 export function tabsIdle(db: MemDb): boolean {
   return !t(db, "settings").get(KEY);
 }
@@ -50,22 +67,23 @@ export function tabsSlice(db: MemDb, limit: number): { processed: number; more: 
     return { processed: Math.max(1, to - state.after), more: true };
   }
   const threads = t(db, "threads");
-  const messages = t(db, "messages");
   const gmail = new Set([...t(db, "accounts").all()].filter((a) => a.kind === "gmail").map((a) => a.id as number));
   const max = state.max ?? lastId(threads.rows.keys());
   const to = Math.min(max, state.after + n);
   let read = 0;
+  let last = to;
   let own: Set<string> | null = null;
   for (let id = state.after + 1; id <= to; id++) {
     const thread = threads.get(id);
     if (!thread || thread.in_inbox !== 1 || !gmail.has(thread.account_id as number)) continue;
     own ??= ownAddresses(db);
-    const mine = own;
-    const rows = messages.by("fk_thread_id", id);
-    read += rows.length;
-    const tab = threadTab(rows as unknown as TabMessage[], (m) => mine.has(addressKey((m as unknown as R).from_email)));
-    if ((thread.tab ?? 0) !== tab) threads.update(thread, { tab });
+    read += writeTab(db, thread, own);
+    // the messages read bound the slice too (Codex code review #4): the window's rest waits for the next one
+    if (read >= n && id < to) {
+      last = id;
+      break;
+    }
   }
-  save(to >= max ? null : { phase: "threads", after: to, max });
-  return { processed: Math.max(1, to - state.after, read), more: to < max };
+  save(last >= max ? null : { phase: "threads", after: last, max });
+  return { processed: Math.max(1, last - state.after, read), more: last < max };
 }

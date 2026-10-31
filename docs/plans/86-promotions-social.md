@@ -129,3 +129,15 @@ The mock data gives Gmail accounts promotion and social senders with the labels,
 - **Demo data.** Gmail mail from others carries `CATEGORY_PERSONAL`; promo threads carry `CATEGORY_PROMOTIONS`. Social has no demo mail; the conformance tests cover it.
 - **No first-run snack (deviation).** The one-time "Promotions and Social now live under…" notice was dropped. Terno hasn't launched, so there are no existing users to tell, and on a fresh mailbox the sidebar rows and the setting say it. A notice shown on every first load also took the snack dock from whatever the user did next.
 - **Pre-existing failures (unrelated, failing on the base commit too).** In IndexedDB: the physical-upgrade tests in `cached-refresh`, `imap-identity` and `idb.uncertain-upgrade`. In the backend: `store-boundary` and the i18n scan (both flag `w02-action-fixture.ts`), `gmail-cooldown` and `imap-idle-foreground`.
+
+### Code review (Codex)
+
+1. *Undo was split: on a mix of tabbed and other rows, Move to Inbox ran two actions with two undos.* Move to Inbox is now one store command in both stores: `moveToInbox` also moves the threads' Promotions/Social messages to Primary (`untabThreads`) when their account keeps tabs apart. It returns one merged snapshot (`mergeBefore`: the place as the move found it, the category as the untab found it), so there is one snack and one exact undo. Web unit test: one call, one undo.
+2. *An archived promotion moved to the Inbox went straight back to Promotions.* Fixed by the same change (conformance: archive, then Move to Inbox, lands it in the Inbox; undo restores both place and category).
+3. *A tab went stale when an address became yours.* The facts passes (the first pass once your addresses are known, and the rescan after they change) refresh each Gmail Inbox thread's tab in both stores. Conformance test: a promotion from an alias you then send from returns to the Inbox. It fails without the fix.
+4. *Backfill slices weren't bounded by messages.* The threads phase now stops once a slice has read its share of messages, mid-window, and saves its cursor. Both stores have a test with 3-message conversations and 2-message slices. One conversation is still read whole, as every ingest already does.
+5. *In the List layout, All/Unread in a tab changed the account Inbox's filter.* `openTab` keeps `gmailTab`. Unit test.
+6. *A focused tab row that went away dropped focus to the document.* Focus moves to the account's Inbox row (or the account row). e2e.
+7. *A tab's subtitle showed the account Inbox's unread count.* It now uses `tabUnread`. e2e, in the designs that show a subtitle.
+
+Perf (found by the gate): with tabs, the 50k counts went over budget (5.7 ms p95 against 5 ms). `getCounts` now reads the hiding once, takes the Inbox's and every tab's unread counts from one walk of `threads_unread_tab` (when no category is hidden), and the waiting count uses a covering `threads_waiting_inbox_tab` (v34). The gate reruns at 2.9–3.8 ms p95.

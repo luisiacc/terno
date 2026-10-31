@@ -34,7 +34,7 @@ it("a mailbox from before gets its tabs once, in slices that resume after a clos
   const promos = Array.from({ length: 5 }, (_, i) => msg({ accountId: gmail!, providerMsgId: `promo${i}`, from: { name: "", email: `deals${i}@shop.com` }, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] }));
   await ingest(store, [...promos, msg({ accountId: gmail!, providerMsgId: "person", gmailLabels: ["INBOX", "CATEGORY_PERSONAL"] }), msg({ accountId: imap!, providerMsgId: "imap" })]);
   const person = await threadOf(store, "person");
-  const tabbed = await Promise.all(promos.map((m) => threadOf(store, m.providerMsgId)));
+  const tabbed = await Promise.all(promos.map((m) => threadOf(store, m.providerMsgId!)));
   expect((await store.threads.list({ view: "inbox", limit: 20 })).items).toHaveLength(2);
   // what v37 found: no category, no tab, the backfill marked
   const db = sqlDb(store);
@@ -66,4 +66,25 @@ it("the migration marks the backfill only with a Gmail account", () => {
   const db = openDatabase(join(dir, "fresh.db"));
   expect(db.get("SELECT 1 FROM settings WHERE key = 'tabs_backfill'")).toBeUndefined();
   db.close();
+});
+
+it("a slice stops once it has read its share of messages, mid-window, and the next goes on from there", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "terno-tabs-"));
+  dirs.push(dir);
+  const store = open(join(dir, "s.db"));
+  const [gmail] = await withAccounts(store, 1);
+  // four conversations of three promotions each
+  for (let t = 0; t < 4; t++) await ingest(store, [0, 1, 2].map((i) => msg({ accountId: gmail!, providerMsgId: `t${t}m${i}`, providerThreadId: `gt${t}`, from: { name: "", email: `deals${t}@shop.com` }, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] })));
+  const db = sqlDb(store);
+  const threads = db.all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
+  db.run("UPDATE threads SET tab = 0");
+  db.run(`INSERT INTO settings (key, value_json) VALUES ('tabs_backfill', '{"phase":"threads","after":0}')`);
+  const tabs = () => threads.map((id) => db.get<{ tab: number }>("SELECT tab FROM threads WHERE id = ?", id)!.tab);
+  // slices of 2 messages: each reads one conversation (3 messages), never the whole window
+  for (let slice = 1; slice <= threads.length; slice++) {
+    const r = await store.tabs.backfill({ limit: 2 });
+    expect(tabs().filter((t) => t === 1)).toHaveLength(slice);
+    expect(r.more).toBe(slice < threads.length);
+  }
+  expect(await store.tabs.idle()).toBe(true);
 });

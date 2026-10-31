@@ -1044,6 +1044,23 @@ export function applyThreadAction(c: Ctx, threadIds: readonly number[], action: 
   return c.db.tx(() => applyToMessages(c, threadIds.flatMap((t) => messages.by("fk_thread_id", t)).sort((x, y) => x.id - y.id), action, false));
 }
 
+/**
+ * Plan 86 (SQLite's untabThreads): Move to Inbox also takes these threads out of Gmail's Promotions and Social,
+ * where their account keeps them apart: their tabbed messages of someone else's go to Primary.
+ */
+export function untabThreads(c: Ctx, threadIds: readonly number[]): ActionResult {
+  const messages = T(c, "messages");
+  const accounts = T(c, "accounts");
+  const separating = (id: number) => {
+    const a = accounts.get(id);
+    return !!a && a.kind === "gmail" && (JSON.parse(a.provider_config as string) as AccountPrefs).separateTabs !== false;
+  };
+  return c.db.tx(() => {
+    const msgs = threadIds.flatMap((t) => messages.by("fk_thread_id", t)).filter((m) => separating(m.account_id) && [2, 3].includes(categoryOfRow(m) ?? -1));
+    return applyToMessages(c, msgs.sort((x, y) => x.id - y.id), "toPrimary", true);
+  });
+}
+
 export function applyMessageAction(c: Ctx, messageIds: readonly number[], action: ThreadAction): ActionResult {
   const messages = T(c, "messages");
   return c.db.tx(() => applyToMessages(c, messageIds.map((id) => messages.get(id)).filter((m): m is R => !!m), action, true));

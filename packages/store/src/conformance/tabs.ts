@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
-import { ingest, msg, threadOf, withAccounts } from "./fixtures";
+import { backfillFacts, ingest, msg, threadOf, withAccounts } from "./fixtures";
 
 const NOW = Date.UTC(2026, 9, 31, 12);
 const DAY = 86_400_000;
@@ -104,6 +104,19 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       expect(await ids(store, { view: "inbox", limit: 10 })).toEqual([bulk, mixed, person]);
     });
 
+    it("a promotion from an address that becomes yours (an alias you send from) goes back to the Inbox once the facts know it", async () => {
+      const { store, gmail } = await setup();
+      await backfillFacts(store);
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "alias-promo", from: addr("me.alias@example.com"), gmailLabels: PROMO, date: NOW })]);
+      const thread = await threadOf(store, "alias-promo");
+      expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).toContain(thread);
+      // you send from it: it's yours, and mail of yours never decides a tab
+      await ingest(store, [msg({ accountId: gmail, providerMsgId: "alias-sent", from: addr("me.alias@example.com"), to: [addr("bo@friends.com")], isSent: true, inInbox: false, gmailLabels: ["SENT"], date: NOW + 1 })]);
+      await backfillFacts(store);
+      expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).not.toContain(thread);
+      expect(await ids(store, { view: "inbox", accountId: gmail, limit: 10 })).toContain(thread);
+    });
+
     it("a new arrival in a tab isn't Inbox mail to notify about", async () => {
       const { store, gmail } = await setup();
       const r = await ingest(store, [msg({ accountId: gmail, providerMsgId: "new-promo", from: addr("sale@shop.com"), gmailLabels: PROMO, date: NOW }), msg({ accountId: gmail, providerMsgId: "new-person", from: addr("bo@friends.com"), gmailLabels: PRIMARY, date: NOW })]);
@@ -128,6 +141,34 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).toEqual([promo]);
       const back = await store.ops.claimReady(NOW + 3, 10);
       expect(back.map((o) => o.kind)).toEqual(["toPromotions"]);
+    });
+
+    it("Move to Inbox on an archived promotion lands it in the Inbox (not back in its tab); one undo puts back its place and its category", async () => {
+      const { store, gmail, promo, bulk } = await setup();
+      await store.threads.act({ threadIds: [promo, bulk], action: "archive", signal: null, now: NOW });
+      const moved = await store.threads.act({ threadIds: [promo, bulk], action: "moveToInbox", signal: null, now: NOW + 1 });
+      expect(new Set(moved.threadIds)).toEqual(new Set([promo, bulk]));
+      expect(await ids(store, { view: "inbox", accountId: gmail, limit: 10 })).toContain(promo);
+      expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).toEqual([]);
+      expect((await store.ops.claimReady(NOW + 2, 10)).map((o) => o.kind)).toContain("toPrimary");
+      await store.threads.restore({ messages: moved.before, now: NOW + 3 });
+      expect(await ids(store, { view: "inbox", limit: 10 })).not.toContain(promo);
+      expect(await ids(store, { view: "archive", limit: 10 })).toEqual(expect.arrayContaining([promo, bulk]));
+      // its category came back too: Gmail's own Move to Inbox would land it in Promotions now
+      const id = (await store.threads.get(promo))!.messages[0]!.id;
+      expect(moved.before.find((m) => m.id === id)).toMatchObject({ inInbox: false, category: 2 });
+    });
+
+    it("Move to Inbox on a thread in a tab takes it out; with the account's tabs in the Inbox it leaves the category alone", async () => {
+      const { store, gmail, promo, social } = await setup();
+      const r = await store.threads.act({ threadIds: [promo], action: "moveToInbox", signal: null, now: NOW });
+      expect(r.threadIds).toEqual([promo]);
+      expect(await ids(store, { view: "inbox", accountId: gmail, tab: "promotions", limit: 10 })).toEqual([]);
+      await store.accounts.update(gmail, { separateTabs: false });
+      const s = await store.threads.act({ threadIds: [social], action: "moveToInbox", signal: null, now: NOW + 1 });
+      expect(s.threadIds).toEqual([]);
+      await store.accounts.update(gmail, { separateTabs: true });
+      expect(await ids(store, { view: "inbox", accountId: gmail, tab: "social", limit: 10 })).toEqual([social]);
     });
 
     it("an archive's undo never touches the category Gmail changed meanwhile", async () => {
