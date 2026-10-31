@@ -116,3 +116,12 @@ All test/type/lint/review commands run through `/tmp/terno-release6-sql/run.py`,
 - Original qualification: exact command above (`db-qualification`: 34 passed). `git diff --check` passed.
 
 No remaining failure in the selected checks. This is a bounded SQL repair, not full release qualification. No broad tests, other perf files, app/Vite builds, UI/E2E/web/packaged smoke, full-package lint or repository-wide typecheck ran. Historical milestone failures, broader release readiness and the 153-row goal remain incomplete. Root owns integration/retests/worklist; no main/worklist, user WIP, other-owner edits, fetch, push or landing.
+
+
+## Root integration and qualification
+
+Root confirmed the complete series is already based on current committed main `19b048b3`; no conflict or source changes were needed. Reviewed source `87caea99` and final evidence `40230eeb` fast-forward landed after Root's checks. The single native Sol/high review reported no Standards/Spec findings; no source or test changes followed that review.
+
+Root passed 68 native/WASM correctness cases, 10 selected Plan83 hidden-category contract cases (620 unselected are not pass credit), DB types, strict owned-file lint and whitespace. The unchanged guarded ingest file passed once at 1.012491 times reference throughput against the original 0.970 minimum. The unchanged full DB perf file passed 34/34 once in 64.41 seconds. Everyone counts p95 was 3.425334 ms and No-one 2.950708 ms against 5 ms; all downstream assertions reached. No retries, budget or oracle changes. Report JSON and command/PID/results records are archived under `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-sql6-1gv9_155`; supervised execution completed and was joined normally.
+
+The covering-index work, durable migration32, exact count semantics and measured ingest gate are qualified for this committed source. Historical folder/sidebar timing causes remain unproven; earlier failures remain recorded. This is not full release clearance. Root will run the seventh complete release milestone on a committed-main snapshot, preserving live user WIP. Broader153-row dispositions and held feature backlog remain unchanged.
