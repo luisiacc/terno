@@ -20,6 +20,33 @@ afterEach(async () => {
 const context = (store: IdbMailStore) => (store as unknown as { c: Ctx }).c;
 const columns: Partial<Record<ListFilter, string>> = { unread: "unread_count", people: "person", attachments: "has_attachments", starred: "is_starred" };
 
+it.each(["unread", "people", "attachments", "starred"] as const)("%s first scope refreshes a ready order's pending memberships without a table scan", async (filter) => {
+  const store = await open();
+  const c = context(store);
+  const threads = c.db.table("threads");
+  const column = columns[filter]!;
+  for (let id = 1; id <= 192; id++) threads.load({ id, last_date: id, [column]: id <= 96 ? 1 : 0, in_trash: 0, in_spam: 0 });
+  const order = c.filterOrders[filter];
+  const initial = [...order.current(threads)];
+  expect(initial).toEqual(Array.from({ length: 96 }, (_, i) => 96 - i));
+  c.db.tx(() => {
+    for (const id of [1, 2, 3, 4]) threads.update(threads.get(id)!, { [column]: 0 });
+    for (const id of [97, 98, 99, 100]) threads.update(threads.get(id)!, { [column]: 1 });
+    threads.update(threads.get(5)!, { last_date: 1000 });
+  });
+  expect(order.ready).toBe(true);
+  const { ScopeIndex } = await import("./mail");
+  const fresh = new ScopeIndex(c.db);
+  const current = vi.spyOn(order, "current");
+  const scan = vi.spyOn(threads, "all");
+  const gets = vi.spyOn(threads, "get");
+  expect(fresh.matching(c, filter)).toEqual(Array.from({ length: 96 }, (_, i) => i + 5));
+  expect(current).toHaveBeenCalledExactlyOnceWith(threads);
+  expect(scan).not.toHaveBeenCalled();
+  expect(gets.mock.calls.length).toBeGreaterThan(0);
+  expect(gets.mock.calls.length).toBeLessThanOrEqual(64);
+});
+
 it.each(["unread", "people", "attachments", "starred"] as const)("%s scope reuses a refreshed list index after dense, empty and sparse crossings", async (filter) => {
   const store = await open();
   const [account, other] = await withAccounts(store);
@@ -69,8 +96,19 @@ it("cold and reopened scopes preserve hidden Inbox, account, category and ascend
     expect(await store.threads.scopeIds({ ...p, categoryId: category.id })).toEqual(all.slice(0, 70));
     const own = (await store.threads.list({ ...p, view: "all", accountId: account })).items.map(t => t.id).sort((a, b) => a - b);
     expect(await store.threads.scopeIds({ ...p, view: "all", accountId: account })).toEqual(own);
-    const page = await store.threads.list({ ...p, limit: 1 });
-    expect((await store.threads.list({ ...p, cursor: page.nextCursor! })).items.every(t => t.id < page.items[0]!.id)).toBe(true);
+    const expected = all.slice(70).reverse();
+    const checkPages = async () => {
+      const first = await store.threads.list({ ...p, limit: 5 });
+      expect(first.items.map(t => t.id)).toEqual(expected.slice(0, 5));
+      expect(first.nextCursor).not.toBeNull();
+      const next = await store.threads.list({ ...p, cursor: first.nextCursor!, limit: 5 });
+      expect(next.items.map(t => t.id)).toEqual(expected.slice(5, 10));
+      return { first, next };
+    };
+    const pages = await checkPages();
+    const { ScopeIndex } = await import("./mail");
+    expect(new ScopeIndex(context(store).db).matching(context(store), "starred")).toEqual(all);
+    expect(await checkPages()).toEqual(pages);
     await store.categories.update(category.id, { showInInbox: true });
     expect(await store.threads.scopeIds(p)).toEqual(all);
     await store.categories.update(category.id, { showInInbox: false });
