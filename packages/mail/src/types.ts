@@ -144,7 +144,7 @@ export interface SyncSink {
    * UIDs past a known uidnext), not a first sync, a resync or a re-fetch. Only live mail may notify.
    */
   ingest(messages: IncomingMessage[], o?: { live?: boolean }): Promise<void>;
-  setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket }): Promise<void>;
+  setBody(messageId: number, text: string | null, html: string | null, attachments?: import("@terno/store").IncomingAttachment[], capture?: { signal?: AbortSignal; bodyParts?: import("@terno/core").ExactBodyParts; preparedBodyTokens?: Uint16Array[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket }): Promise<void>;
   removeMessages(messageIds: number[]): Promise<void>;
   /** Applies provider state, preserving fields affected by queued/running local operations. */
   updateFlags(updates: FlagUpdate[], o?: { authoritative?: false }): Promise<void>;

@@ -1652,10 +1652,11 @@ export class BackendCore {
           this.notifyChanged(touched);
         },
         setBody: async (messageId, text, html, attachments, capture) => {
-          this.assertCurrent(life);
+          const checkBody = () => { checkCurrent(); capture?.signal?.throwIfAborted(); };
+          checkBody();
           const classifier = await this.classifier();
-          checkCurrent();
-          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkCurrent }));
+          checkBody();
+          const r = await this.accountWrite(life, () => this.store.sync.setBody(messageId, text, html, { now: this.now(), classifier, attachments, bodyParts: capture?.bodyParts, preparedBodyTokens: capture?.preparedBodyTokens, captureUnavailable: capture?.captureUnavailable, repair: capture?.repair, check: checkBody }));
           this.categorizer.apply(r.deltas);
           this.announceAuto(r.auto);
           this.opsQueued(r.opIds);

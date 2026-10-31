@@ -875,7 +875,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Retry only while no non-idempotent message mutation could have reached the server. */
-  async function withConnection<T>(fn: (c: ImapFlow, beforeMutation: () => void) => Promise<T>): Promise<T> {
+  async function withConnection<T>(fn: (c: ImapFlow, beforeMutation: () => void) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const run = async (session: ImapFlow): Promise<T> => {
       let mutated = false;
       try {
@@ -899,7 +899,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     };
     let c: ImapFlow | null = null;
     try {
+      signal?.throwIfAborted();
       c = await connection();
+      signal?.throwIfAborted();
       return await run(c);
     } catch (error) {
       const e = toProviderError(error);
@@ -911,6 +913,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (client === c) client = null;
         c.close();
       }
+      signal?.throwIfAborted();
       try {
         return await run(await connection());
       } catch (again) {
@@ -1530,7 +1533,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // UIDs are only meaningful with their UIDVALIDITY: skip stale ones (the next sync remaps them)
         const items = all.filter((i) => i.uidvalidity === Number(c.mailbox && c.mailbox.uidValidity));
         const reset = incomingReset.signal;
-        const check = () => { sink.signal.throwIfAborted(); reset.throwIfAborted(); };
+        const signal = AbortSignal.any([sink.signal, reset]);
+        const check = () => signal.throwIfAborted();
         for (const item of items) {
           check();
           const locator = { kind: "imap" as const, messageId: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity };
@@ -1559,7 +1563,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
                 if (source.byteLength > MAX_INCOMING_MIME_BYTES + 1 || source.buffer.byteLength > MAX_INCOMING_MIME_BYTES + 65536) throw new IncomingProcessingError("input-limit");
                 const owned = new Uint8Array(source);
                 source = undefined;
-                const result = await ctx.incomingProcessor.run({ kind: "mime", profile: "imap", bodyFormat: "parts", chunks: [owned] }, AbortSignal.any([sink.signal, reset]));
+                const result = await ctx.incomingProcessor.run({ kind: "mime", profile: "imap", bodyFormat: "parts", chunks: [owned] }, signal);
                 if (result.kind !== "mime") throw new IncomingProcessingError("worker-fault");
                 parsed = result.message;
               } else parsed = await parseRaw(source);
@@ -1571,7 +1575,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               continue;
             }
             check();
-            await locations.dispatch([item.id], (await locations.of([item.id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity, flags: "[]" }]), () => { check(); return sink.setBody(item.id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { bodyParts: parsed.bodyParts, preparedBodyTokens: parsed.preparedBodyTokens, ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }); });
+            await locations.dispatch([item.id], (await locations.of([item.id])).filter((l) => l.mailbox !== mailbox).concat([{ message_id: item.id, mailbox, uid: item.uid, uidvalidity: item.uidvalidity, flags: "[]" }]), () => { check(); return sink.setBody(item.id, parsed.text, parsed.html, parsed.captureUnavailable ? undefined : parsed.attachments, { signal, bodyParts: parsed.bodyParts, preparedBodyTokens: parsed.preparedBodyTokens, ...(parsed.captureUnavailable && { captureUnavailable: parsed.captureUnavailable }), ...(repair && { repair: { key: repair.key, revision: repair.revision } }) }); });
           } finally { releaseLarge?.(); releaseRead?.(); }
         }
       } finally {
@@ -1740,6 +1744,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     },
 
     async sync(sink) {
+      sink = { ...sink, signal: AbortSignal.any([sink.signal, incomingReset.signal]) };
       await withConnection(async (c) => {
         const passGeneration = generation;
         const check = () => {
@@ -2113,7 +2118,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // plan 101: older mail, after everything new and its bodies
         await backfillMailboxes(c, cursor, sink, check);
         if (authoritative) await locations.resumeResolved();
-      });
+      }, sink.signal);
     },
 
     repairSentCopy,
