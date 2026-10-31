@@ -143,8 +143,9 @@ describe.each(["SQL", "IndexedDB"] as const)("%s managed Gmail deletion observat
     t.deleteB(); await t.backend.store.accounts.setCursor(t.account.id, { historyId: base }); await t.sync();
     const fresh = await t.rows(); expect(fresh).toEqual([a]); expect(await t.cursor()).toEqual({ historyId: terminal });
     held.release.release(); await held.settled.promise; await old;
+    expect(await t.cursor()).toEqual({ historyId: terminal });
     expect(await t.rows()).toEqual(fresh); expect(await t.asset(a.id)).toEqual(asset); expect(await t.backend.store.attachments.current(t.account.id, { id: b.id })).toEqual([]);
-    await t.reopen(); await t.sync(); expect(await t.rows()).toEqual(fresh); expect(await t.cursor()).toEqual({ historyId: terminal });
+    await t.reopen(); expect(await t.cursor()).toEqual({ historyId: terminal }); await t.sync(); expect(await t.rows()).toEqual(fresh); expect(await t.cursor()).toEqual({ historyId: terminal });
   });
 
   it("does not infer deletion from window omission, but a resource404 removes only its message", async () => {
