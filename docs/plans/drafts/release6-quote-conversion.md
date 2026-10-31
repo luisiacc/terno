@@ -49,3 +49,9 @@ An initial throwaway profile preparation attempted the TypeScript package's JS A
 ## Handoff
 
 One atomic correction commit on the prepared branch; no fetch/push/rebase/landing, no other-owner changes or main/worklist edits. Original richtext test and all workload/threshold/clock/timeout settings unchanged. Final worktree must be clean. No new UI strings or visible output changes. No shared artifacts replaced; unique diagnostics retained in `/tmp/terno-release6-quote-7bae/`. All captured command processes exited and were joined; final PID check found none surviving. Root owns serial rebase/retest/FF landing and whole-release qualification. Broader gates and backend import/performance coverage are explicitly not cleared.
+
+## Root integration — 2026-10-30
+
+Rebased onto mainb561534eafter UI/phrase integrations, preserving user changes. Root passes156/156in the six exact richtext/direct-caller files, including the unchanged original hostile2MBtiming test, richtext types, strict package lint and whitespace. One invocation of that full targeted set; no retry or timing waiver. Evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-quote6-rdusp7un` retains commands, PID/birth/argv/deadlines/exits/logs. No source changes after the one native Sol/high Standards+Spec review PASS/0.
+
+The bounded-read regression proves removal of unbounded line scanning; exact HTML corpus/edge tests remain. Historical87.8mscause stays unproven; diagnostic total CPU was higher, so this is a bounded-step correction, not a total-CPU improvement or full-release clearance. Backend import validation does not reach this converter and remains queued separately.
