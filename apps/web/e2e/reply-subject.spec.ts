@@ -240,7 +240,8 @@ test("untouched Reply to Reply all keeps its original source when new mail arriv
   await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
   const next = await server.backend.store.sync.ingest([{ ...source, providerMsgId: "untouched-newer", rfcMessageId: "untouched-newer@example.test", inReplyTo: source.rfcMessageId, references: [source.rfcMessageId!], from: old, bodyText: "new source", snippet: "new source", date: E2E_NOW }], { applyFilters: false, now: E2E_NOW, classifier: null });
   server.backend.notifyChanged(next.touched);
-  await expect(page.getByText("new source", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("reader").getByText("new source", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("row-snippet")).toHaveText("new source");
   await page.getByTestId("action-reply-all").click();
   await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
   expect(await recipientEmails(page, "compose-cc")).toEqual([teammate.email]);

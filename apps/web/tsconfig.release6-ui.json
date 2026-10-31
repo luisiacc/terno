@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","include":["src/desktop.d.ts","e2e/attachment-controls.spec.ts","e2e/dnd.spec.ts","e2e/reply-subject.spec.ts","e2e/account-errors.spec.ts","e2e/autocomplete.spec.ts","playwright.release6-ui.config.ts"]}

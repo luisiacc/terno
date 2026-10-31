@@ -346,7 +346,7 @@ test.describe("ghost text", { tag: "@design" }, () => {
     await page.keyboard.press("Enter");
     await page.keyboard.type("Below.");
     if (blockedUp) await body(page).evaluate((root) => root.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowUp") event.preventDefault();
+      if (event instanceof KeyboardEvent && event.key === "ArrowUp") event.preventDefault();
     }));
     // Native ArrowUp can stay in the second paragraph; measure the authored line, never an empty BR.
     await body(page).evaluate((root) => {

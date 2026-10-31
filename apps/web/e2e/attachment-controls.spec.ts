@@ -15,7 +15,7 @@ test("reader attachment controls include all visible labels and localized downlo
   await expect(cached).toBeVisible();
   // Capture the unchanged whole-page landmark baseline independently of the control's label rule.
   const baseline = await new AxeBuilder({ page }).analyze();
-  writeFileSync(`/tmp/terno-attachments-r3-evidence/reader-global-${testInfo.project.name}.json`, JSON.stringify(baseline.violations, null, 2));
+  writeFileSync(testInfo.outputPath("reader-global.json"), JSON.stringify(baseline.violations, null, 2));
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme }); await stabilize(page);
     expect((await new AxeBuilder({ page }).include("[data-testid=attachment]").analyze()).violations).toEqual([]);
@@ -23,7 +23,7 @@ test("reader attachment controls include all visible labels and localized downlo
     await expect(cached).toHaveAccessibleDescription("application/octet-stream");
     await expect(page.getByTestId("attachment").getByRole("button", { name: /Download empty.txt/ })).toHaveAccessibleName("Download empty.txt 0 B");
     await expect(page.getByTestId("attachment").getByRole("button", { name: /Download unavailable.pdf/ })).toHaveAccessibleName("Download unavailable.pdf 1 KB · Unavailable offline");
-    await page.screenshot({ path: `/tmp/terno-attachments-r3-evidence/reader-controls-${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`reader-controls-${theme}.png`) });
   }
   await page.keyboard.press("Meta+Comma");
   await page.getByTestId("language-select").click(); await page.getByTestId("language-es").click();

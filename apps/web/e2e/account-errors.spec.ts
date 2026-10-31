@@ -27,6 +27,31 @@ async function tabTo(page: Page, target: Locator, key = "Tab") {
   }
   await expect(target).toBeFocused();
 }
+async function pageDown(page: Page, scrollport: Locator) {
+  const completion = await scrollport.evaluateHandle((el) => ({
+    done: new Promise<void>((resolve) => el.addEventListener("scrollend", () => resolve(), { once: true })),
+  }));
+  try {
+    await page.keyboard.press("PageDown");
+    await completion.evaluate(({ done }) => done);
+  } finally {
+    await completion.dispose();
+  }
+}
+
+test("PageDown waits for locator readiness before a synchronous scroll completion", async ({ page }) => {
+  await page.setContent('<div id="scrollport"></div>');
+  await page.evaluate(() => {
+    const port = document.querySelector<HTMLElement>("#scrollport")!;
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "PageDown") port.dispatchEvent(new Event("scrollend"));
+    });
+    // Synthetic delayed locator readiness; the scroll itself completes synchronously.
+    setTimeout(() => { port.dataset.ready = ""; }, 100);
+  });
+  await pageDown(page, page.locator("#scrollport[data-ready]"));
+});
+
 async function inViewport(page: Page, element: Locator) {
   const box = await element.boundingBox();
   expect(box).not.toBeNull();
@@ -168,7 +193,11 @@ for (const design of ["macos", "lumen"] as const) for (const language of ["en", 
         const clip = port.getBoundingClientRect();
         return rect.top >= clip.top && rect.bottom <= clip.bottom;
       });
-      for (let i = 0; i < 20 && !await endVisible(); i++) await page.keyboard.press("PageDown");
+      for (let i = 0; i < 20 && !await endVisible(); i++) {
+        if (await scrollport.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight)) break;
+        // Inspect the completed native page, rather than queuing keys during smooth scrolling.
+        await pageDown(page, scrollport);
+      }
       await expect.poll(endVisible).toBe(true);
       expect(await scrollport.evaluate((el) => el.scrollTop)).toBeGreaterThan(before);
       expect(await list.evaluate((el) => el.scrollTop)).toBe(scroll);

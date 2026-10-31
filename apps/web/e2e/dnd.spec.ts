@@ -42,10 +42,17 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     const viajes = categoryId(server, "Viajes");
     const target = page.getByTestId(`nav-category-${viajes}`);
     // an unread one, so the sidebar's unread count moves too
-    const row = page.locator(`[data-testid=thread-row][data-unread]:not(:has([data-cat-dot="${viajes}"]))`).first();
-    const id = (await row.getAttribute("data-thread-id"))!;
-    const before = await navCount(page, viajes);
+    const candidate = page.locator(`[data-testid=thread-row][data-unread]:not(:has([data-cat-dot="${viajes}"]))`).first();
+    const id = (await candidate.getAttribute("data-thread-id"))!;
+    const row = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
     const subject = (await row.getByTestId("row-subject").textContent())!;
+    // Settle the reader's one-shot read dwell before restoring the unread fixture.
+    await row.dispatchEvent("mousedown");
+    await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+    await expect(row).not.toHaveAttribute("data-unread");
+    await server.backend.server.invoke("threads.act", { threadIds: [Number(id)], action: "markUnread" }, ctx);
+    await expect(row).toHaveAttribute("data-unread");
+    const before = await navCount(page, viajes);
 
     await dragTo(page, row, target);
     const ghost = page.getByTestId("drag-ghost");
@@ -61,6 +68,7 @@ test.describe("drag and drop to a category", { tag: "@design" }, () => {
     const dropped = page.locator(`[data-thread-id="${id}"]`);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);
+    await expect(dropped).toHaveAttribute("data-unread");
     await expect.poll(() => navCount(page, viajes)).toBe(before + 1);
     await expect(target).not.toHaveAttribute("data-drop-state");
     await expect(page.locator("html")).not.toHaveAttribute("data-dragging");
