@@ -366,7 +366,7 @@ export interface MailStore {
     /** Point-read only send control/target metadata, without materializing the immutable wire payload. */
     sendSubmission(id: string): Promise<{ state: OpState; accepted: boolean } | null>;
     /** success, including adopting the provider's ids for a sent message */
-    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] }>;
+    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number): Promise<{ touched: number[]; deltas: ModelDelta[] } & FlagReconciliation>;
     /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
     fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
     markUnknown(id: string, error: string, now: number, sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence): Promise<void>;

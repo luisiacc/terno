@@ -112,6 +112,7 @@ import {
   getOwner,
   getSetting,
   getThread,
+  requireIdbGmailRefresh,
   ingestMessages,
   findIngestMessage,
   listAccounts,
@@ -1056,17 +1057,21 @@ export class IdbMailStore implements MailStore {
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(idbSendCopies(this.db), id, result.sendAccepted.warning);
         const ops = T(this.c, "ops");
         if (result?.warning) ops.update(ops.get(id)!, { last_error: result.warning });
+        let refreshNeeded = false;
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         if (op.kind === "send" && result && localId) {
           const messages = T(this.c, "messages");
           const local = messages.get(localId);
-          if (result.providerMsgId && local && String(local.provider_msg_id ?? "").startsWith("local:")) messages.update(local, { provider_msg_id: result.providerMsgId });
+          if (result.providerMsgId && local && String(local.provider_msg_id ?? "").startsWith("local:")) {
+            messages.update(local, { provider_msg_id: result.providerMsgId });
+            refreshNeeded = requireIdbGmailRefresh(this.c, [localId]);
+          }
           if (result.providerThreadId) {
             const row = messages.get(localId);
             if (row) touched.push(adoptProviderThread(this.c, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas));
           }
         }
-        return { touched, deltas };
+        return { touched, deltas, ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
       }),
     fail: (id, error, retryable, now, park) =>
       this.preparedFlagOutcome(id, () => {

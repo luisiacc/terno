@@ -18,3 +18,5 @@ export * from "./send-submission";
 export * from "./reply-context";
 
 export * from "./recipient-receipts";
+
+export * from "./gmail-refresh";

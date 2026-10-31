@@ -157,6 +157,8 @@ export interface GoogleRequests {
 }
 
 export interface ProviderContext {
+  /** Give interactive work a turn after a page that produced no sliced effects. */
+  yield?(): Promise<void>;
   /** Installed by BackendCore for every saved Gmail account; standalone transports own their policy. */
   google?: GoogleRequests;
   /** The backend owns durable flag observations and committed snapshot paging. */

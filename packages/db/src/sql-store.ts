@@ -1,3 +1,4 @@
+import { requireSqlGmailRefresh } from "./ingest";
 import { prepareRecipientCorrespondents, prepareRecipientFts } from "./recipient-fts-preparation";
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
 import { sqlRecipientReceipts } from "./recipient-receipts";
@@ -541,10 +542,12 @@ export class SqlMailStore implements MailStore {
         const receipt = sqlSendCopies(this.db).get(id);
         if (op.kind === "send" && result?.sendAccepted && receipt?.submission === "pending" && (receipt.copyRequested || receipt.ready)) acceptCopySubmission(sqlSendCopies(this.db), id, result.sendAccepted.warning);
         if (result?.warning) this.db.run("UPDATE ops SET last_error = ? WHERE id = ?", result.warning, id);
+        let refreshNeeded = false;
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         if (op.kind === "send" && result && localId) {
           if (result.providerMsgId) {
-            this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
+            const changed = this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
+            if (changed.changes) refreshNeeded = requireSqlGmailRefresh(this.db, [localId]);
           }
           if (result.providerThreadId) {
             // a conversation we started gets its Gmail thread id, so replies land in it
@@ -552,7 +555,7 @@ export class SqlMailStore implements MailStore {
             if (row) touched.push(adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas));
           }
         }
-        return { touched, deltas };
+        return { touched, deltas, ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
       })),
     fail: async (id, error, retryable, now, park) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {

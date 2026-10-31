@@ -479,6 +479,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   const netFetch = ctx.fetch;
   const store = ctx.store;
   const accountId = ctx.account.id;
+  const yieldPage = () => ctx.yield?.() ?? new Promise<void>((resolve) => setTimeout(resolve, 0));
   const tokens = options.tokens;
 
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
@@ -882,6 +883,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       // All effects precede this independent durable command. A rejected write is resolved by reopening.
       await save({ ...current, stage: next ? "enumerate" : "refresh", next, pages: current.pages + 1 });
+      if (!ids.length) await yieldPage();
     }
     if (state.stage === "refresh") {
       sink.check();
@@ -906,6 +908,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         if (gone.length) await sink.removeMessages(gone);
         await save({ ...state, refreshAfter: page.next });
+        if (!updates.length) await yieldPage();
       }
       await save({ ...state, stage: "catchup" });
     }

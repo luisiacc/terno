@@ -1072,6 +1072,7 @@ export class BackendCore {
       if (!this.current(life)) { google?.close(); return null; }
       if (google) this.google.set(accountId, google);
       const provider = this.options.providers.create({
+        yield: () => this.platform.yield(),
         google,
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
@@ -1739,6 +1740,7 @@ export class BackendCore {
           else if (stored?.copy === "saved") while (!this.stopped && await this.store.sendCopies.pruneSavedSlice(op.id)) await this.platform.yield();
         } catch { /* Saved wire remains charged for deliberate cleanup; submission is complete. */ }
       }
+      for (const id of done.flagReconcileAccounts ?? []) reconciliations.add(id);
       this.categorizer.apply(done.deltas);
       if (done.touched.length) this.notifyChanged(done.touched);
     } catch (caught) {

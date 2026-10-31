@@ -1,6 +1,6 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
-import { copyOpAdmission, type OpAdmission } from "@terno/store";
+import { requireGmailRefresh, copyOpAdmission, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -827,6 +827,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }
+    if (!observation || batch.some((message) => message.accountId !== observation.accountId) || !flagObservationValid(idbFlags(c), observation.accountId, observation)) requireIdbGmailRefresh(c, [...result.inserted, ...result.updated], observation);
     recomputeThreads(c, result.touchedThreads);
     ids.persist();
   });
@@ -2008,4 +2009,11 @@ export function threadDoc(c: Ctx, t: R): SearchThreadDoc {
 export function deferOp(c: Ctx, id: string, now: number, refundClaim: boolean): void {
   const ops = T(c, "ops"), op = ops.get(id);
   if (op?.state === "running") ops.update(op, { state: "queued", attempts: Math.max(op.attempts - (refundClaim ? 1 : 0), 0), updated_at: now });
+}
+
+export function requireIdbGmailRefresh(c: Ctx, ids: readonly number[], observation?: FlagObservation): boolean {
+  return requireGmailRefresh(idbFlags(c), ids, (id) => {
+    const row = T(c, "accounts").get(id);
+    return row ? { kind: row.kind as string, cursor: (JSON.parse(row.provider_config as string) as { cursor?: unknown }).cursor } : null;
+  }, observation);
 }

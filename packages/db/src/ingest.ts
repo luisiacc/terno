@@ -1,7 +1,7 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, emailDomain, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
-import { acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
+import { requireGmailRefresh, acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
@@ -361,6 +361,7 @@ export function ingestMessages(db: Db, messages: readonly IncomingMessage[], now
       result.inserted.push(id);
       result.touchedThreads.add(threadId);
     }
+    if (!observation || messages.some((message) => message.accountId !== observation.accountId) || !flagObservationValid(sqlFlags(db), observation.accountId, observation)) requireSqlGmailRefresh(db, [...result.inserted, ...result.updated], observation);
     flushRefs();
     // the search outbox (other message writes are marked by triggers)
     if (result.inserted.length) db.run("INSERT OR IGNORE INTO search_dirty (kind, id) SELECT 0, value FROM json_each(?)", JSON.stringify(result.inserted));
@@ -586,4 +587,11 @@ export function deleteMessages(db: Db, messageIds: readonly number[]): Set<numbe
     recomputeThreads(db, touched);
   });
   return touched;
+}
+
+export function requireSqlGmailRefresh(db: Db, ids: readonly number[], observation?: FlagObservation): boolean {
+  return requireGmailRefresh(sqlFlags(db), ids, (id) => {
+    const row = db.get<{ kind: string; provider_config: string }>("SELECT kind,provider_config FROM accounts WHERE id=?", id);
+    return row ? { kind: row.kind, cursor: (JSON.parse(row.provider_config) as { cursor?: unknown }).cursor } : null;
+  }, observation);
 }
