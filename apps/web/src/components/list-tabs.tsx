@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { formatNumber, t } from "@terno/i18n";
-import { Check, ChevronDown, Plus } from "lucide-react";
+import { Check, ChevronDown, Plus } from "@terno/ui/icons";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { useDesign, variant } from "~/lib/design";
 import { renderProbe } from "~/lib/render-probe";

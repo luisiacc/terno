@@ -31,7 +31,7 @@ export interface DesignDefinition {
   /** where designs actually differ in type: components use `type-<role>` (and `type-<role>-strong` for the emphasized weight) */
   type: Record<TypeRole, TypeSpec>;
   icon: {
-    /** lucide stroke width everywhere */
+    /** icon line weight everywhere, on the 24-unit grid as drawn at 16 px (1.5 → a 1 px line at any size) */
     stroke: number;
     /** the reader toolbar's */
     toolbar: number;

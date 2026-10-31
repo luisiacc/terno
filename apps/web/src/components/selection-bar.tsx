@@ -2,7 +2,7 @@ import { shortcutsFor, type Command, type ThreadAction } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, Tag, Trash2, X } from "@terno/ui/icons";
 import { formatNumber, t } from "@terno/i18n";
 import { act, targetRows } from "~/lib/actions";
 import { actionView, placeActions } from "~/lib/places";

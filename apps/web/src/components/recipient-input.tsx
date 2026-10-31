@@ -2,7 +2,7 @@ import type { Address } from "@terno/core";
 import { t } from "@terno/i18n";
 import { fold } from "@terno/store/fold";
 import { cn } from "@terno/ui/lib/utils";
-import { CircleAlert, X } from "lucide-react";
+import { CircleAlert, X } from "@terno/ui/icons";
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { prefetchRecipientInitials, recipientInitials, suggestRecipients, warmAutocomplete } from "~/lib/autocomplete";

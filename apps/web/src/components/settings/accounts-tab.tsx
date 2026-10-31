@@ -7,7 +7,7 @@ import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, Loader2, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";

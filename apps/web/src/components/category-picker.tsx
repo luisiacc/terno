@@ -3,7 +3,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@terno/ui/components/command";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { t } from "@terno/i18n";
-import { Check, Plus } from "lucide-react";
+import { Check, Plus } from "@terno/ui/icons";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";

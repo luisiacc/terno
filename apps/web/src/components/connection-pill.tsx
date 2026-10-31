@@ -3,7 +3,7 @@ import { localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Loader2, RotateCw, WifiOff } from "lucide-react";
+import { Loader2, RotateCw, WifiOff } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";

@@ -1,6 +1,6 @@
 import { capFilterName, LEARNED_FILTER_NAME, type LearnedProposal } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
-import { Sparkles, X } from "lucide-react";
+import { Sparkles, X } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { richT } from "~/lib/i18n";

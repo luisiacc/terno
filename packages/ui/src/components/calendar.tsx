@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "cn"
 import { DayPicker, getDefaultClassNames, type DayButton } from "react-day-picker"
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from "@terno/ui/icons"
 import { enUS, es } from "react-day-picker/locale"
 
 /** the app's languages, for `locale` (names, the week's first day); another falls back to English */

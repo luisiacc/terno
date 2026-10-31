@@ -2,7 +2,7 @@ import { localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
-import { ArrowDown, ChevronDown, RotateCw, TriangleAlert } from "lucide-react";
+import { ArrowDown, ChevronDown, RotateCw, TriangleAlert } from "@terno/ui/icons";
 import { useId, useState } from "react";
 import { formatBytes } from "~/lib/format";
 import { checkForUpdates, downloadUpdate, errorText, installUpdate, openReleaseNotes, updateLater, usePill, useUpdates, type PillModel } from "~/lib/updates";

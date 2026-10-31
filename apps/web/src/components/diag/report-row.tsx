@@ -1,7 +1,7 @@
 import type { PendingReport } from "@terno/core/diag";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { LifeBuoy, X } from "lucide-react";
+import { LifeBuoy, X } from "@terno/ui/icons";
 import { useState } from "react";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";

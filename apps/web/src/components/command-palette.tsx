@@ -3,7 +3,7 @@ import { normalizeText, remindPresets, type CategoryColor, type ReminderKind } f
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, Trash2, Undo2, Users, X } from "lucide-react";
+import { Archive, AtSign, Bell, BellOff, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, Trash2, Undo2, Users, X } from "@terno/ui/icons";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";

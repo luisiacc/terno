@@ -7,7 +7,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "lucide-react";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronUp, Forward, Inbox, Layers, MailOpen, OctagonAlert, Printer, Reply, ReplyAll, Star, Tag, Trash2, X } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -60,7 +60,7 @@ function RemindButton({ threadId }: { threadId: number }) {
                   aria-label={label}
                   data-testid="action-remind"
                   data-set={reminder ? true : undefined}
-                  className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", reminder && "text-primary hover:text-primary")}
+                  className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", reminder && "text-primary hover:text-primary")}
                 />
               }
             />
@@ -87,7 +87,7 @@ function ToolButton({ label, keys, onClick, children, testId, active, disabled, 
     <Tooltip>
       <TooltipTrigger
         render={
-          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]", active && "text-star hover:text-star", className)}>
+          <Button variant="ghost" size="icon-sm" aria-label={label} data-testid={testId} onClick={onClick} disabled={disabled} aria-busy={busy || undefined} className={cn("no-drag rounded-md text-muted-foreground hover:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]", active && "text-star hover:text-star", className)}>
             {children}
           </Button>
         }
@@ -613,7 +613,7 @@ export function Reader() {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <Button variant="outline" size="sm" data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]">
+                  <Button variant="outline" size="sm" data-testid="action-reply" onClick={() => openCompose("reply")} className="no-drag mr-1 h-8 gap-2 rounded-full px-3.5 font-semibold shadow-none @max-[560px]:w-8 @max-[560px]:px-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]">
                     <Reply />
                     {/* the name is the visible label (still read when a narrow reader shows the icon alone); the key is decoration */}
                     <span className="@max-[560px]:sr-only">{t("actions.reply")}</span>

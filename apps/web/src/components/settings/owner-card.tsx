@@ -3,7 +3,7 @@ import type { OwnerIdentity } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { BadgeCheck, Loader2, UserRound } from "lucide-react";
+import { BadgeCheck, Loader2, UserRound } from "@terno/ui/icons";
 import { localeTag, t } from "@terno/i18n";
 import { useState } from "react";
 import { snack } from "~/lib/snack";

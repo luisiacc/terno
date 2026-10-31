@@ -1,7 +1,7 @@
 import type { AlwaysScope } from "@terno/core";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@terno/ui/components/dropdown-menu";
 import { t } from "@terno/i18n";
-import { Check, ChevronDown, MessageSquareText, UserRound } from "lucide-react";
+import { Check, ChevronDown, MessageSquareText, UserRound } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { answerReview, fileAlways, filterNameOf } from "~/lib/categorize";

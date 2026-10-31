@@ -2,7 +2,7 @@ import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { KeyRound, X } from "lucide-react";
+import { KeyRound, X } from "@terno/ui/icons";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { clearAttemptError, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
 import { useApp } from "~/state/app";

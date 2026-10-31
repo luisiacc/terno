@@ -1,7 +1,7 @@
 import { patternTemplate, type Condition, type Filter } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { t, type TextKey } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { snack } from "~/lib/snack";

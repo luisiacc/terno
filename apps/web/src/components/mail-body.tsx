@@ -1,7 +1,7 @@
 import type { AttachmentInfo } from "@terno/core";
 import DOMPurify from "dompurify";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImageOff } from "lucide-react";
+import { ImageOff } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
 import { csp, hasOwnColors, hasRemoteContent } from "~/lib/mail";

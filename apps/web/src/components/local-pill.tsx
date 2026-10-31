@@ -1,5 +1,5 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Cloud, LaptopMinimalCheck } from "lucide-react";
+import { Cloud, LaptopMinimalCheck } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { providerName } from "~/lib/ai";
 import { setApp, useApp } from "~/state/app";

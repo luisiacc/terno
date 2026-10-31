@@ -3,7 +3,7 @@ import { Input } from "@terno/ui/components/input";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "lucide-react";
+import { Bell, ChevronDown, Inbox, ListFilter, Search, SquarePen, X } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -555,7 +555,7 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
   const [title, body] = emptyCopy(filter, search);
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-8 text-center" data-testid="unread-empty" data-filter={filter}>
-      <ListFilter className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
+      <ListFilter className="mb-2 size-7 text-muted-foreground" aria-hidden />
       <p className="text-lg font-semibold tracking-tight">{title}</p>
       <p className="text-xs text-muted-foreground">{body}</p>
       <Button
@@ -592,14 +592,14 @@ function EmptyState() {
   if (reminders)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <Bell className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
+        <Bell className="mb-2 size-7 text-muted-foreground" aria-hidden />
         <p className="text-lg font-semibold tracking-tight">{t("remind.empty")}</p>
         <p className="text-xs text-muted-foreground">{t("remind.emptyHint")}</p>
       </div>
     );
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      <Inbox className="mb-2 size-7 stroke-[1.25] text-muted-foreground" aria-hidden />
+      <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />
       <p className="text-lg font-semibold tracking-tight">{query ? t("list.empty.searchTitle") : view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
       <p className="text-xs text-muted-foreground">
         {query ? t("list.empty.searchBody") : view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}

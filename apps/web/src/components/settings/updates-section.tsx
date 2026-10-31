@@ -4,7 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@terno/ui/icons";
 import { useState } from "react";
 import { checkForUpdates, errorText, setUpdatePrefs, unsupportedText, useUpdates } from "~/lib/updates";
 import { SettingsGroup, SettingsRow } from "./parts";

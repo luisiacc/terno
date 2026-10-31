@@ -2,7 +2,7 @@ import { RecoveryReload } from "~/components/diag/recovery-reload";
 import { t, type TextKey } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { requestTakeover, takeBack } from "./connect";

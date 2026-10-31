@@ -5,7 +5,7 @@ import { Kbd } from "@terno/ui/components/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { formatList, t } from "@terno/i18n";
-import { Check, Search } from "lucide-react";
+import { Check, Search } from "@terno/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { fileAlways, filterNameOf, stopFiling, undoFiled, type Filed } from "~/lib/categorize";
 import { chainUndo, isLatest, orderOffers, unchain } from "~/lib/offers";

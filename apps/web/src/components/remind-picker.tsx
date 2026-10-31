@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
-import { BellOff, CalendarClock, CalendarDays, Clock } from "lucide-react";
+import { BellOff, CalendarClock, CalendarDays, Clock } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
 import { clearReminder, presetLabel, reminderShort, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 

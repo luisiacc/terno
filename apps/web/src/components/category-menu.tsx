@@ -1,7 +1,7 @@
 import type { Category } from "@terno/core";
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { Inbox, Trash2 } from "lucide-react";
+import { Inbox, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useState, type ReactElement } from "react";
 import { setShowInInbox } from "~/lib/categorize";
 import { setApp } from "~/state/app";

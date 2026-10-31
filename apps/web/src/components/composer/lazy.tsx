@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { CaseSensitive, Link2 } from "lucide-react";
+import { CaseSensitive, Link2 } from "@terno/ui/icons";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { encodeSpaces, escapeHtml } from "@terno/richtext/quote";
 import { attachBody, useDrafts, type BodyCheckpoint } from "~/lib/drafts";
@@ -164,7 +164,7 @@ export function ComposerFormatBar({ draftKey, id, className }: { draftKey: strin
   );
 }
 
-const quiet = "text-muted-foreground hover:text-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]";
+const quiet = "text-muted-foreground hover:text-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 // a click here mustn't take the selection away from the text it formats
 const keepSelection = (e: React.MouseEvent) => e.preventDefault();
 

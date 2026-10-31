@@ -1,5 +1,5 @@
 import { cn } from "@terno/ui/lib/utils";
-import { Copy } from "lucide-react";
+import { Copy } from "@terno/ui/icons";
 import { codeKey, copyCode, useCodeState } from "~/lib/codes";
 import "./code-chip.css";
 
@@ -50,7 +50,8 @@ function Label({ code }: { code: string }) {
       <span className="relative size-3 shrink-0">
         <Copy className="code-chip-copy size-3" />
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="code-chip-check size-3">
-          <path d="M4 12.5 9 17.5 20 6.5" pathLength={1} />
+          {/* Hugeicons Tick02, inlined: the draw-in needs pathLength on the path itself */}
+          <path d="M5 14L8.5 17.5L19 6.5" pathLength={1} />
         </svg>
       </span>
     </>

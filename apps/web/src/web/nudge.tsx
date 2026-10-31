@@ -1,7 +1,7 @@
 import { t } from "@terno/i18n";
 import { buttonVariants } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
-import { Laptop, Lock, X } from "lucide-react";
+import { Laptop, Lock, X } from "@terno/ui/icons";
 import { useState } from "react";
 import { richT } from "~/lib/i18n";
 

@@ -1,6 +1,6 @@
 import { client } from "~/rpc/connection";
 import { useRef, useState } from "react";
-import { Download, Paperclip, X } from "lucide-react";
+import { Download, Paperclip, X } from "@terno/ui/icons";
 import type { AttachmentInfo } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";

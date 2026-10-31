@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
-import { PenLine } from "lucide-react";
+import { PenLine } from "@terno/ui/icons";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { openStoredDraft } from "~/lib/compose";

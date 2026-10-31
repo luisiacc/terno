@@ -1,7 +1,7 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@terno/ui/icons";
 import { useState } from "react";
 import { richT } from "~/lib/i18n";
 import { closePreview, decideReports, resetInstallId, useDiag } from "~/state/diag";

@@ -2,7 +2,7 @@ import { t } from "@terno/i18n";
 import { Kbd } from "@terno/ui/components/kbd";
 import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
-import { CircleCheck, Loader2, OctagonX, TriangleAlert, X } from "lucide-react";
+import { CircleCheck, Loader2, OctagonX, TriangleAlert, X } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
 import { clock, dismissSnack, elapsedAt, pause, resume, runAction, useSnack, zHolds, type Snack, type SnackAction } from "~/lib/snack";

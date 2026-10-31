@@ -5,7 +5,7 @@ import { cn } from "cn"
 import { t } from "@terno/i18n"
 
 import { Button } from "@terno/ui/components/button"
-import { XIcon } from "lucide-react"
+import { X as XIcon } from "@terno/ui/icons"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />

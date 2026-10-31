@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
+import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {

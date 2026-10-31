@@ -1,7 +1,7 @@
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound } from "@terno/ui/icons";
 import { localeTag, t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";

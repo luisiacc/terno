@@ -1,6 +1,6 @@
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { Copy, FileDown, Printer } from "lucide-react";
+import { Copy, FileDown, Printer } from "@terno/ui/icons";
 import { useState, type ReactElement } from "react";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
 import { isMac } from "~/lib/select";

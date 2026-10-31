@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@terno/ui/icons";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";

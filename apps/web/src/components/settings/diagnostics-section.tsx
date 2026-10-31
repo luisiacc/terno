@@ -2,7 +2,7 @@ import type { AppSettings } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
 import { BUILD, DESKTOP_DIAG } from "~/lib/diag";
 import { exportDiagnostics, openPreview, refreshDiag, showLogs, useDiag } from "~/state/diag";

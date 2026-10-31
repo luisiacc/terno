@@ -5,7 +5,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@terno/ui/icons";
 import { useEffect, useId, useState } from "react";
 import { canStart, clearAttemptError, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
 

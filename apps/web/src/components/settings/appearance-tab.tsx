@@ -6,7 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group"
 import { contrastFailures } from "@terno/ui/themes/contrast";
 import { builtinTheme, resolveCustomTheme, themeName, themesFor, type Theme } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Copy, Pencil, Play, Trash2, Upload } from "lucide-react";
+import { Check, Copy, Pencil, Play, Trash2, Upload } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useId, useRef, useState } from "react";
 import { snack } from "~/lib/snack";

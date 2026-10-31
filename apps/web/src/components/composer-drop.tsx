@@ -1,6 +1,6 @@
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
-import { ImagePlus, Paperclip } from "lucide-react";
+import { ImagePlus, Paperclip } from "@terno/ui/icons";
 import { useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { attachFilesInTurn } from "~/lib/attachments";
 import { isInlineImage } from "~/lib/inline-images";

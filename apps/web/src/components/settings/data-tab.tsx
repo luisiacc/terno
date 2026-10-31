@@ -1,5 +1,5 @@
 import { Button } from "@terno/ui/components/button";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useRef, useState } from "react";
 import { snack } from "~/lib/snack";

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "lucide-react";
+import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";

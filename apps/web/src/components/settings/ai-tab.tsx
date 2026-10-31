@@ -6,7 +6,7 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { cn } from "@terno/ui/lib/utils";
-import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "@terno/ui/icons";
 import { refText, t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";

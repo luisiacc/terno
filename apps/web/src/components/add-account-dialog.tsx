@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@terno/ui/components/input";
 import { Label } from "@terno/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2, Mail } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";

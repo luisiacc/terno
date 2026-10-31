@@ -6,7 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group"
 import { cn } from "@terno/ui/lib/utils";
 import { PRINT_INK } from "@terno/ui/themes/print";
 import { t } from "@terno/i18n";
-import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "lucide-react";
+import { CircleAlert, FileDown, ImageOff, Info, LoaderCircle, Printer } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
 import { hasRemoteContent } from "~/lib/mail";

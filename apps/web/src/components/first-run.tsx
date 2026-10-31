@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { cn } from "@terno/ui/lib/utils";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
-import { Cloud, LaptopMinimalCheck } from "lucide-react";
+import { Cloud, LaptopMinimalCheck } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";

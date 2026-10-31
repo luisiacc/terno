@@ -14,7 +14,7 @@ import {
   InputGroup,
   InputGroupAddon,
 } from "@terno/ui/components/input-group"
-import { SearchIcon, CheckIcon } from "lucide-react"
+import { Search as SearchIcon, Check as CheckIcon } from "@terno/ui/icons"
 
 function Command({
   className,
@@ -160,7 +160,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 h-9 rounded-sm px-2 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-md! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/command-item relative flex cursor-default items-center gap-2 h-9 rounded-sm px-2 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-md! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}

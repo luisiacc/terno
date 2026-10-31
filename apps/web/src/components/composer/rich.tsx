@@ -31,7 +31,7 @@ import {
   Underline,
   Undo2,
   Unlink,
-} from "lucide-react";
+} from "@terno/ui/icons";
 import { TextSelection, type EditorState } from "prosemirror-state";
 import { undoDepth, redoDepth } from "prosemirror-history";
 import { Fragment, type Node as PMNode } from "prosemirror-model";
@@ -712,7 +712,7 @@ function LinkBubble({ href, top, left, onOpen, onEdit, onRemove }: { href: strin
 // ── the format bar
 
 const tool =
-  "inline-flex h-7 min-w-7 shrink-0 items-center justify-center gap-0.5 rounded-md px-1 text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-accent-foreground data-[popup-open]:bg-foreground/[0.06] data-[popup-open]:text-foreground data-disabled:pointer-events-none data-disabled:opacity-35 [&_svg]:size-4 [&_svg]:[stroke-width:var(--icon-stroke-toolbar)]";
+  "inline-flex h-7 min-w-7 shrink-0 items-center justify-center gap-0.5 rounded-md px-1 text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-accent-foreground data-[popup-open]:bg-foreground/[0.06] data-[popup-open]:text-foreground data-disabled:pointer-events-none data-disabled:opacity-35 [&_svg]:size-4 [&_svg]:[--icon-line:var(--icon-line-toolbar)]";
 const keepFocus = (e: React.MouseEvent) => e.preventDefault();
 
 function Tip({ label, keys, children }: { label: string; keys?: string; children: React.ReactElement }) {

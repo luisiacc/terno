@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Columns2, Keyboard, Rows3 } from "lucide-react";
+import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { updateAppearance } from "~/lib/appearance";
 import { Suspense, useEffect, useReducer, useRef, useState } from "react";

@@ -6,7 +6,7 @@ import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";

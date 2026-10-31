@@ -1,7 +1,7 @@
 import { listFilterOf, matchesFilter, type CategoryColor, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
-import { Bell, Paperclip, Star } from "lucide-react";
+import { Bell, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";

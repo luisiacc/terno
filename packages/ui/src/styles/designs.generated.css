@@ -393,8 +393,8 @@
   --type-compose-strong: 600;
   --type-compose-tracking: 0em;
   --type-compose-style: normal;
-  --icon-stroke: 2;
-  --icon-stroke-toolbar: 1.75;
+  --icon-stroke: 1.5;
+  --icon-stroke-toolbar: 1.5;
   --sidebar-w: 232px;
   --list-min: 340px;
   --list-max: 400px;

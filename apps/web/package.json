@@ -32,7 +32,6 @@
     "@terno/ui": "workspace:*",
     "cmdk": "^1.1.1",
     "dompurify": "^3.4.16",
-    "lucide-react": "^1.61.0",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-history": "^1.5.1",
     "prosemirror-inputrules": "^1.5.1",

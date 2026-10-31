@@ -1,6 +1,6 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@terno/ui/icons";
 import { windowLabel } from "~/lib/settings-values";
 import { useApp } from "~/state/app";
 

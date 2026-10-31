@@ -5,7 +5,7 @@ import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Send, Trash2 } from "lucide-react";
+import { Send, Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";

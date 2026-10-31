@@ -40,7 +40,7 @@ import {
   Tag,
   Trash2,
   UserRound,
-} from "lucide-react";
+} from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
