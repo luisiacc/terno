@@ -83,12 +83,18 @@ export function tokenize(text: string): string[] {
 
 /** en / es / other from stopword hits (at least two, and more than the other language's). */
 export function detectLanguage(text: string): number {
+  return languageFromLines([tokenize(text.slice(-2000))]);
+}
+
+function languageFromLines(lines: readonly (readonly string[])[]): number {
   let en = 0;
   let es = 0;
-  for (const w of tokenize(text.slice(-2000))) {
-    const l = w.toLowerCase();
-    if (EN.has(l)) en++;
-    else if (ES.has(l)) es++;
+  for (const tokens of lines) {
+    for (const w of tokens) {
+      const l = w.toLowerCase();
+      if (EN.has(l)) en++;
+      else if (ES.has(l)) es++;
+    }
   }
   if (en >= 2 && en > es) return LANG_EN;
   if (es >= 2 && es > en) return LANG_ES;
@@ -295,11 +301,14 @@ export class PhraseModel {
     if (slowForTests) for (const end = performance.now() + slowForTests; performance.now() < end; );
     const text = ownText(m.text);
     if (!text.trim()) return;
-    const lang = detectLanguage(text);
+    const lines = text.split("\n");
+    // Short messages share the same bounded token scratch for language and learning.
+    // Longer ones still detect from the exact tail, even when it starts inside a word.
+    const tokenLines = text.length <= 2000 ? lines.map(tokenize) : null;
+    const lang = tokenLines ? languageFromLines(tokenLines) : detectLanguage(text);
     this.langs[lang]!++;
     const recipients = new Set(m.to.map((a) => firstName(a.name)).filter((n) => n.length > 1));
     const me = firstName(m.fromName);
-    const lines = text.split("\n");
     // a sign-off's name: the sender's first name in the last three lines with text
     let signoffFrom = lines.length;
     for (let i = lines.length - 1, seen = 0; i >= 0 && seen < 3; i--) {
@@ -310,7 +319,7 @@ export class PhraseModel {
     }
     const ids: number[] = [];
     for (let li = 0; li < lines.length; li++) {
-      const tokens = tokenize(lines[li]!);
+      const tokens = tokenLines ? tokenLines[li]! : tokenize(lines[li]!);
       if (tokens.length === 0) continue;
       ids.length = 0;
       ids.push(S);

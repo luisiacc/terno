@@ -1,5 +1,5 @@
 import type { Address } from "@terno/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SentText } from "../autocomplete-source";
 import { SliceClock } from "../instant/slices";
 import { detectLanguage, ownText, PhraseModel, tokenize } from "./phrases";
@@ -174,5 +174,50 @@ describe("suggestions", () => {
     const bad = bytes.slice();
     bad[bad.length - 5]! ^= 0x55;
     expect(await new PhraseModel().restore(bad, "t", clock())).toBe(false);
+  });
+});
+
+describe("learning token work", () => {
+  it("tokenizes short own text once for language and learning", () => {
+    const m = new PhraseModel();
+    const match = vi.spyOn(String.prototype, "match");
+    try {
+      m.learn(msg("Thanks for the update.\nGracias por la respuesta."));
+      const scans = match.mock.calls.filter(([r]) => r instanceof RegExp && r.source.startsWith("\\p{L}"));
+      expect(scans).toHaveLength(2);
+    } finally {
+      match.mockRestore();
+    }
+  });
+
+  it("keeps the complete learned state across language windows and line boundaries", async () => {
+    const m = new PhraseModel({ slots: 256, words: 80 });
+    const texts = [
+      "Hi José,\nThanks for the quick reply.\nBest,\nLuís",
+      "Hola Ana,\nGracias por la respuesta.\nSaludos,\nLuís",
+      "\n\nThe CAFÉ iPhone NASA team is ready! Is it?\n\n",
+      "x".repeat(1960) + " the and you for gracias por la que de",
+      "e\u0301".repeat(1000) + "the and you\nGracias por la respuesta.",
+      " the and you for gracias por la que de".padStart(2000, "x"),
+      " the and you for gracias por la que de".padStart(2001, "x"),
+      "word ".repeat(450) + "thanks for the update\nLuís",
+      "Thanks!\n> ignored words\n-- \nPrivate signature",
+      "3:30 1,000.50 unknown-word question? Next!",
+    ];
+    for (let i = 0; i < 96; i++) {
+      const t: SentText = { id: i + 1, accountId: 1, date: 0, fromName: "Luís Cordero", to: to(i % 2 ? "Ana Ruiz" : "José Pérez"), text: texts[i % texts.length]! };
+      m.learn(t);
+      m.learn(t);
+      if (i % 16 === 15 && m.needsPrune()) await m.prune(clock());
+    }
+    m.revision = { epoch: "equivalence", seq: 96 };
+    const bytes = await m.snapshot("synthetic", clock());
+    // Complete snapshot captured from the committed base, including counts and learned bits.
+    const { crypto } = globalThis as typeof globalThis & { crypto: { subtle: { digest(algorithm: string, data: Uint8Array): Promise<ArrayBuffer> } } };
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    expect(Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")).toBe("fcec639be3d7674651983ef68074fbbe7b21e985552fea41a29492f16ac55238");
+    const restored = new PhraseModel({ slots: 256, words: 80 });
+    expect(await restored.restore(bytes, "synthetic", clock())).toBe(true);
+    expect(await restored.snapshot("synthetic", clock())).toEqual(bytes);
   });
 });
