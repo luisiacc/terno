@@ -2009,7 +2009,7 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
   const showSourceContext = Boolean(intent && selectedSource && selectedThread && selectedSource.account_id === selectedThread.account_id);
   const unchangedReply = row && row.mode !== "new" && row.mode !== "forward" && mode !== "new" && mode !== "forward" && row.in_reply_to_message_id === reply;
   const newContext = Boolean(d.replyContext?.contextId && d.replyContext.contextId !== retainedContext?.contextId);
-  const candidate = unchangedReply && sameRevision && !newContext ? retainedContext : d.replyContext ?? null;
+  const candidate = unchangedReply && ((sameRevision && !newContext) || d.replyContext === undefined) ? retainedContext : d.replyContext ?? null;
   if (candidate && (candidate.sourceId !== reply || (selectedSource && selectedSource.account_id !== candidate.sourceAccountId))) throw new RpcError("BAD_REQUEST", L("errors.replySourceGone"));
   const replyContext = mode === "reply" || mode === "replyAll" ? candidate : null;
   const values = {
