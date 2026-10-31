@@ -60,6 +60,7 @@ export { Loader2 } from "./iconset/generated/Loader2";
 export { Lock } from "./iconset/generated/Lock";
 export { Mail } from "./iconset/generated/Mail";
 export { MailCheck } from "./iconset/generated/MailCheck";
+export { MailMinus } from "./iconset/generated/MailMinus";
 export { MailOpen } from "./iconset/generated/MailOpen";
 export { Mails } from "./iconset/generated/Mails";
 export { MessageSquareReply } from "./iconset/generated/MessageSquareReply";

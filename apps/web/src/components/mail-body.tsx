@@ -10,11 +10,8 @@ import { forwardPrintKey, wantsNativeMenu } from "~/lib/print-open";
 import { forwardMouseNav, forwardNavKey } from "~/lib/page";
 import { allowRemoteFor, remoteAllowed, useRemoteConsent } from "~/lib/remote-consent";
 
-export function openLink(href: string) {
-  if (!/^(https?:|mailto:)/i.test(href)) return;
-  if (window.ternoDesktop) window.ternoDesktop.openExternal(href);
-  else window.open(href, "_blank", "noopener,noreferrer");
-}
+import { openLink } from "~/lib/open-link";
+export { openLink };
 
 const MAX_HEIGHT = 20000;
 const WEB = import.meta.env.VITE_TARGET === "web";

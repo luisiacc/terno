@@ -65,6 +65,7 @@ export const ICONS = {
   Lock: "SquareLock02Icon",
   Mail: "Mail01Icon",
   MailCheck: "MailValidation01Icon",
+  MailMinus: "MailMinus01Icon",
   MailOpen: "MailOpen01Icon",
   Mails: "MailsIcon",
   MessageSquareReply: "MessageSquareReplyIcon",

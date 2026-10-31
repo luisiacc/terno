@@ -123,6 +123,13 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
   };
 }
 
+/** plan 94: the one-click POSTs a test's backend made (none leave the machine), and the status they get */
+export interface UnsubscribeRecorder {
+  posted: string[];
+  status: number;
+  post(url: URL): Promise<{ status: number }>;
+}
+
 /** the `server` fixture: the dev backend and the test's knobs */
 export type DevServerFixture = Fixtures["server"];
 
@@ -137,7 +144,7 @@ interface Fixtures {
   layout: "split" | "list" | null;
   /** plan 22: website icons are on by default; tests keep them off (stable baselines) unless they opt in */
   siteIcons: boolean;
-  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub };
+  server: DevServer & { smtp: CapturedMail[]; net: TestNetwork; icons: IconStub; unsubscribes: UnsubscribeRecorder };
   /** the app, loaded, connected and showing the inbox */
   app: Page;
 }
@@ -164,9 +171,11 @@ export const test = base.extend<Fixtures>({
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
     // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
     const icons = iconStub();
-    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, openExternal: backendOptions.network ? async () => {} : undefined });
+    // plan 94: one-click unsubscribes never reach the internet either: recorded, answered 200
+    const unsubscribes: UnsubscribeRecorder = { posted: [], status: 200, post: async (url) => (unsubscribes.posted.push(url.href), { status: unsubscribes.status }) };
+    const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
-    await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons }));
+    await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };
     for (let i = 0; i < 100 && b.workerRunning; i++) await new Promise((r) => setTimeout(r, 20));

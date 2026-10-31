@@ -1,4 +1,4 @@
-import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type View } from "@terno/core";
+import { remindPresets, separatesTabs, shortcutsFor, subjectTemplate, TAB_CODE, type CategoryColor, type ReminderKind, type Tab, type Command, type SimilarAction, type SimilarOffers, type SimilarScope, type ThreadAction, type ThreadSummary, type UnsubscribeOffer, type View } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
@@ -25,6 +25,7 @@ import {
   FolderInput,
   Inbox,
   Mail,
+  MailMinus,
   MailOpen,
   MessageSquareReply,
   OctagonAlert,
@@ -45,6 +46,7 @@ import {
 import { t } from "@terno/i18n";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { snack } from "~/lib/snack";
+import { openLink } from "~/lib/open-link";
 import { create } from "zustand";
 import { act, openCompose, tabbedTest, targetRows } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
@@ -352,6 +354,55 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
   );
 }
 
+/**
+ * Plan 94: "Unsubscribe", shown once the conversation is known to offer it (read from the store when the menu
+ * opens, no network). At the end of the sender group, so appearing moves nothing above it.
+ */
+function UnsubscribeItem({ threadId }: { threadId: number }) {
+  const [offer, setOffer] = useState<UnsubscribeOffer | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void client.call("unsubscribe.find", { threadId }).then(
+      (o) => alive && setOffer(o),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [threadId]);
+  if (!offer) return null;
+  return (
+    <ContextMenuItem data-testid="menu-unsubscribe" onClick={() => unsubscribe(threadId, offer)}>
+      <MailMinus />
+      <span className="min-w-0 flex-1 truncate">
+        {t("threadMenu.unsubscribe")}
+        <span className="text-muted-foreground"> {offer.target}</span>
+      </span>
+    </ContextMenuItem>
+  );
+}
+
+function unsubscribe(threadId: number, offer: UnsubscribeOffer) {
+  // a page opens in the click itself: a browser blocks a window opened after a wait
+  if (offer.method === "page" && offer.url) {
+    openLink(offer.url);
+    snack(t("unsubscribe.opened", { host: offer.target }));
+    return;
+  }
+  void client.call("unsubscribe.run", { threadId, messageId: offer.messageId, method: offer.method, target: offer.target }).then(
+    (r) => {
+      if (r.outcome === "open") {
+        // after a wait: the user opens it (an action is a click of its own)
+        const url = r.url;
+        return snack({ message: t(r.failed ? "unsubscribe.notTaken" : "unsubscribe.onPage", { host: r.target }), action: { label: t("unsubscribe.openPage"), onClick: () => openLink(url) } });
+      }
+      if (r.outcome === "queued") return snack(t("unsubscribe.queued", { address: r.target }));
+      return snack(r.outcome === "unsubscribed" ? t("unsubscribe.done", { name: offer.name }) : t("unsubscribe.requested", { host: r.target }));
+    },
+    (error: unknown) => snack.error(error instanceof Error ? error.message : String(error)),
+  );
+}
+
 /** Plan 64: a search's rows, each action for the rows it fits (a selection can span places). */
 function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn: (a: ThreadAction, ids: number[]) => void) {
   const item = (action: ThreadAction, ids: number[], o: { icon: ReactNode; label: string; testId: string; command?: Command; variant?: "destructive" }) => ({ ...o, onClick: () => runOn(action, ids), disabled: ids.length === 0 });
@@ -594,6 +645,7 @@ function MenuItems() {
           />
         </>
       )}
+      {single && <UnsubscribeItem threadId={single.id} />}
       <ContextMenuSeparator />
       <Item icon={<CheckCheck />} label={t("actions.selectAll")} command="list.selectAll" onClick={selectAll} testId="menu-select-all" />
     </>
