@@ -43,6 +43,7 @@ import type { MenuCommand } from "./print-commands";
 import { LEGACY_STORAGE_PENDING } from "./profile";
 import { coordinateShutdown, type BackendOutcome, type ShutdownOutcome } from "./shutdown";
 import { DraftFlushRequests, type DraftFlush } from "./draft-flush";
+import { BackendRetirement } from "./backend-retirement";
 import { NativeReloads, nativeReloadKey } from "./native-reload";
 import type { UpdateController } from "./updates/controller";
 import { startUpdates } from "./updates/main";
@@ -132,6 +133,7 @@ function installNetworkBackstop() {
 // ───────────────────────────── backend utility process ─────────────────────────────
 
 let backend: UtilityProcess | null = null;
+let backendRetirement: BackendRetirement | null = null;
 let backendReady: Promise<void> = Promise.resolve();
 let releaseReadyWaiters: () => void = () => {};
 let clientSeq = 0;
@@ -145,7 +147,7 @@ const networkWatch = new NetworkWatch({
   spawn: (command, args, options) => spawn(command, args, options),
   interfaces: () => networkInterfaces(),
   isOnline: () => net.isOnline(),
-  onChange: (change) => backend?.postMessage({ type: "network", ...change } satisfies MainToBackend),
+  onChange: (change) => !backendRetirement?.retiring && backend?.postMessage({ type: "network", ...change } satisfies MainToBackend),
   onFailure: (f) => diagLog.warn("net.watch_failed", { attempt: f.attempt, ...(f.errno && { errno: f.errno }), ...(f.exitCode !== null && { exitCode: f.exitCode }) }),
 });
 
@@ -165,18 +167,22 @@ function log(level: "info" | "warn" | "error", message: string) {
 }
 
 function startBackend() {
+  if (backend || quitState !== "running") return;
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
   const instance = ++backendInstance;
   const startedAt = Date.now();
   const child = utilityProcess.fork(join(__dirname, "backend.cjs"), [], { serviceName: "Terno Mail Engine", stdio: "inherit" });
+  const retirement = new BackendRetirement(child);
   backend = child;
+  backendRetirement = retirement;
   restarts.started(startedAt);
   diagLog.info("backend.started", { attempt: restarts.attempt });
   let resolveReady!: () => void;
   backendReady = new Promise((r) => (resolveReady = r));
   releaseReadyWaiters = () => resolveReady();
   child.on("message", (msg: BackendToMain) => {
+    if (backend !== child || retirement.retiring) return;
     switch (msg.type) {
       case "ready":
         resolveReady();
@@ -191,8 +197,7 @@ function startBackend() {
           shutdownWaiters.delete(msg.id);
         } else if (msg.outcome !== "sending" && quitState === "running") {
           // it closed after main stopped waiting (an install put off on a timeout): a fresh backend takes over
-          stopBackend();
-          restartEngine();
+          void stopBackend();
         }
         break;
       case "sends-idle":
@@ -242,13 +247,18 @@ function startBackend() {
     }
   });
   child.on("exit", (code) => {
+    if (backend !== child) return;
+    backend = null;
+    backendRetirement = null;
+    resolveReady();
     // nothing is sending any more, and a shutdown it didn't answer won't be
     for (const resolve of shutdownWaiters.values()) resolve("forced");
     shutdownWaiters.clear();
     for (const cb of sendsIdleWaiters.splice(0)) cb();
-    // a deliberate stop (quit, restart) cleared `backend` first: nothing to record
-    if (backend !== child) return;
-    backend = null;
+    if (retirement.retiring) {
+      if (quitState === "running") restartEngine();
+      return;
+    }
     // windows waiting for this backend stop waiting (they reconnect to the next one)
     releaseReadyWaiters();
     mainDiag.backendExited(instance, code, restarts.attempt);
@@ -261,7 +271,7 @@ function startBackend() {
     mainDiag.setEngine("restarting");
     diagLog.info("backend.restart_scheduled", { attempt: restarts.attempt, delayMs: delay });
     setTimeout(() => {
-      if (backend) return;
+      if (backend || quitState !== "running" || instance !== backendInstance) return;
       startBackend();
       for (const w of windows) void connectWindow(w);
     }, delay);
@@ -375,22 +385,25 @@ function shutdownBackend(o: { deadlineMs: number; force: boolean }): Promise<Bac
   });
 }
 
-/** The backend is done (closed, or given up on): it goes, deliberately (its exit is nothing to record). */
-function stopBackend() {
-  const child = backend;
-  backend = null;
-  child?.kill();
+/** Keep authority owned until the captured utility's exit event, even if kill fails. */
+function stopBackend(): Promise<boolean> {
+  const retirement = backendRetirement;
+  return retirement ? retirement.retire() : Promise.resolve(true);
 }
 
 async function shutdown(force: boolean, trigger: "quit" | "restart"): Promise<ShutdownOutcome> {
   const started = Date.now();
   const r = await coordinateShutdown({ flushWindows, releaseWindows: releaseFlushWindows, shutdownBackend, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, { force });
+  if (r.outcome === "closed" || r.outcome === "forced" || (r.outcome === "timeout" && force)) {
+    if (!(await stopBackend())) {
+      releaseFlushWindows();
+      return "timeout";
+    }
+  }
   for (const request of shutdownFlushes) request.commit();
   shutdownWaiters.clear();
   if (r.draftsTimedOut) diagLog.warn("shutdown.drafts_timeout", { count: r.draftsTimedOut });
   diagLog.info("shutdown.done", { outcome: r.outcome, durationMs: Date.now() - started, trigger });
-  // an update's restart never kills a backend that didn't answer (it may be mid-send): the install waits instead
-  if (r.outcome === "closed" || r.outcome === "forced" || (r.outcome === "timeout" && force)) stopBackend();
   return r.outcome;
 }
 
@@ -408,19 +421,20 @@ function enableReload(enabled: boolean): void {
 
 /** "Restart now": a send in flight defers installation and restores editing. */
 async function shutdownForInstall(): Promise<ShutdownOutcome> {
-  if (quitState !== "running") return "closed";
+  if (quitState !== "running") return quitState === "stopped" ? "closed" : "timeout";
   quitState = "stopping";
   enableReload(false);
   const outcome = await shutdown(false, "restart");
   quitState = outcome === "closed" ? "stopped" : "running";
   enableReload(quitState === "running");
+  if (quitState === "running" && !backend) restartEngine();
   return outcome;
 }
 
 /** "Reintentar" after the engine stopped: a fresh series of attempts. */
 function restartEngine() {
+  if (backend || quitState !== "running") return;
   restarts.reset();
-  if (backend) return;
   diagLog.info("engine.restarted");
   startBackend();
   for (const w of windows) void connectWindow(w);
@@ -428,11 +442,16 @@ function restartEngine() {
 
 /** Gives the window's renderer a direct MessagePort to the backend. */
 async function connectWindow(win: BrowserWindow) {
+  const child = backend;
+  const retirement = backendRetirement;
+  const document = win.webContents.mainFrame;
   await backendReady;
-  if (!backend || win.isDestroyed()) return;
+  if (!child || backend !== child || retirement?.retiring || win.isDestroyed() || win.webContents.mainFrame !== document) return;
   const { port1, port2 } = new MessageChannelMain();
-  backend.postMessage({ type: "port", clientId: `renderer-${++clientSeq}` } satisfies MainToBackend, [port1]);
-  win.webContents.postMessage("terno:backend-port", null, [port2]);
+  try {
+    child.postMessage({ type: "port", clientId: `renderer-${++clientSeq}` } satisfies MainToBackend, [port1]);
+    win.webContents.postMessage("terno:backend-port", null, [port2]);
+  } catch { port1.close(); port2.close(); }
 }
 
 // ───────────────────────────── Dock badge and notifications (plan 41, attention.ts) ─────────────────────────────
@@ -760,7 +779,13 @@ if (!app.requestSingleInstanceLock()) {
     if (quitState === "stopping") return;
     quitState = "stopping";
     for (const w of windows) if (!w.isDestroyed()) w.hide();
-    void shutdown(true, "quit").finally(() => {
+    void shutdown(true, "quit").then(() => {
+      if (backend) {
+        quitState = "running";
+        enableReload(true);
+        for (const w of windows) if (!w.isDestroyed()) w.show();
+        return;
+      }
       updates?.quitting();
       quitState = "stopped";
       app.quit();
