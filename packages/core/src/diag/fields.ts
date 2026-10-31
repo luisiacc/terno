@@ -60,8 +60,10 @@ export const FIELD_TYPES = {
   ok: bool,
   /** plan 20: what the host says about the network */
   online: bool,
+  // plan 95: why the mailbox couldn't open
+  openFailure: enumOf("newer", "no-room-backup", "no-room-migrate", "migration", "corrupt", "unwritable", "backup", "other"),
   /** how a quit ended: the database closed, a send kept it open (deferred), or the deadline passed */
-  outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved"),
+  outcome: enumOf("closed", "sending", "forced", "timeout", "other", "unsaved", "rolled-back", "completed"),
   op: enumOf("encrypt", "decrypt", "legacy", "sync", "send", "move", "import", "export", "persist", "rebuild", "restore", "generate", "test", "classify", "other"),
   opKind: enumOf(...THREAD_ACTIONS, "send", "move", "other"),
   packaged: bool,
@@ -71,6 +73,8 @@ export const FIELD_TYPES = {
   stage: enumOf("check", "download", "verify", "install", "other"),
   source: enumOf("backend", "store", "search", "categorizer", "keychain", "main", "renderer", "worker", "mcp", "other"),
   status: int(0, 999),
+  schema: int(0, 100_000),
+  step: int(0, 100_000),
   tab: enumOf("general", "appearance", "accounts", "categories", "filters", "snippets", "ai", "agents", "data", "storage", "other"),
   threadId: int(0, Number.MAX_SAFE_INTEGER),
   tool: id,

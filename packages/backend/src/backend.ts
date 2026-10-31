@@ -1,5 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
+import { nodePlatform, openDatabase, SqlMailStore, type Db } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
@@ -41,6 +41,16 @@ export function resetFetchSockets(): void {
   void old.close().catch(() => {});
 }
 
+/** The store a Node backend runs on, over a database already open (and migrated): checkpoints on a worker, the instant index. */
+export function nodeStore(db: Db, options: Pick<BackendOptions, "platform" | "instantSearch" | "log">): SqlMailStore {
+  return new SqlMailStore(db, {
+    checkpointWorker: true,
+    instantSearch: options.instantSearch ?? true,
+    platform: options.platform ?? nodePlatform,
+    log: (level, message, extra) => options.log?.(level, message, extra),
+  });
+}
+
 /**
  * The backend on Node (Electron's utility process, backend-dev, tests):
  * node:sqlite with WAL checkpoints on a worker and the instant index,
@@ -53,12 +63,7 @@ export class Backend extends BackendCore {
     let store = options.store;
     if (!store) {
       if (!options.dbPath) throw new Error("Backend needs a store or a dbPath");
-      store = new SqlMailStore(openDatabase(options.dbPath, { uuid: () => platform.uuid() }), {
-        checkpointWorker: true,
-        instantSearch: options.instantSearch ?? true,
-        platform,
-        log: (level, message, extra) => options.log?.(level, message, extra),
-      });
+      store = nodeStore(openDatabase(options.dbPath, { uuid: () => platform.uuid() }), options);
     }
     // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
     const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;

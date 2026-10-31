@@ -31,6 +31,8 @@ interface FakeEngine extends Engine {
   handlers: EngineHandlers | null;
   allowed: ((url: string) => boolean) | null;
   next: EngineInfo | null | Error;
+  /** the channel file's minimumVersion (plan 95) */
+  minimum: unknown;
   /** a check whose answer hasn't come yet (GitHub is slow): cancel() cuts it like closeAllConnections */
   slowCheck: boolean;
   checks: number;
@@ -48,6 +50,7 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
     handlers: null,
     allowed: null,
     next: null,
+    minimum: null,
     slowCheck: false,
     checks: 0,
     pendingCheck: null,
@@ -64,7 +67,7 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
       }
       const n = engine.next;
       if (n instanceof Error) throw n;
-      return n;
+      return { update: n, minimum: engine.minimum };
     },
     download() {
       return new Promise<void>((resolve, reject) => (engine.dl = { resolve, reject }));
@@ -484,5 +487,147 @@ describe("main: the update controller", () => {
       expect(h.ctl.view).toMatchObject({ channel: "stable", mode: "manual", status: "ready" });
       expect(h.engine.cancelled).toBe(0);
     });
+  });
+});
+
+describe("required updates and Update Terno (plan 95)", () => {
+  const wire = (h: Harness) => h.engine.checks;
+
+  it("a feed's minimum above this version requires the update, persists it, and a relaunch in local mode keeps it without a request", async () => {
+    const h = harness({ localMode: true });
+    h.engine.next = release("0.3.0");
+    h.engine.minimum = "0.3.0";
+    await h.ctl.check("manual");
+    expect(h.ctl.view.required).toBe("0.3.0");
+    expect(h.prefs.requiredMinimum).toBe("0.3.0");
+    const again = harness({ localMode: true, prefs: h.prefs });
+    again.ctl.start();
+    await vi.advanceTimersByTimeAsync(DELAY + CHECK_EVERY_MS);
+    expect(again.ctl.view.required).toBe("0.3.0");
+    expect(wire(again)).toBe(0);
+    expect(again.loads).toBe(0);
+  });
+
+  it("a minimum no published version meets is ignored (no lock-out), and one this version meets lifts the requirement", async () => {
+    const h = harness({ prefs: { requiredMinimum: "0.2.0" } });
+    expect(h.ctl.view.required).toBe("0.2.0");
+    h.engine.next = release("0.2.0");
+    h.engine.minimum = "0.5.0";
+    await h.ctl.check("manual");
+    expect(h.ctl.view.required).toBeNull();
+    expect(h.prefs.requiredMinimum).toBeNull();
+    h.engine.minimum = "garbage";
+    await h.ctl.check("manual");
+    expect(h.ctl.view.required).toBeNull();
+    // a version past the minimum starts unblocked, and forgets it
+    const newer = harness({ version: "0.2.0", prefs: { requiredMinimum: "0.2.0" } });
+    expect(newer.ctl.view.required).toBeNull();
+  });
+
+  it("a failed check keeps the requirement (offline isn't a way out)", async () => {
+    const h = harness({ prefs: { requiredMinimum: "0.2.0" } });
+    h.engine.next = Object.assign(new Error("net::ERR_INTERNET_DISCONNECTED"), {});
+    await h.ctl.check("manual");
+    expect(h.ctl.view.required).toBe("0.2.0");
+  });
+
+  it("Update Terno in local mode: one click checks, downloads and installs once Squirrel has the bundle; nothing outlives it", async () => {
+    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" } });
+    h.engine.next = release("0.2.0");
+    h.engine.minimum = "0.2.0";
+    const done = h.ctl.updateNow();
+    await flush();
+    expect(wire(h)).toBe(1);
+    expect(h.ctl.view.status).toBe("downloading");
+    expect(h.ctl.view.updatingNow).toBe(true);
+    h.engine.dl!.resolve();
+    await done;
+    expect(h.allowed()).toBe(false);
+    expect(h.engine.installs).toBe(0);
+    h.engine.handlers!.ready();
+    await flush();
+    expect(h.shutdowns).toBe(1);
+    expect(h.engine.installs).toBe(1);
+    expect(h.pending).toMatchObject({ from: "0.1.0", to: "0.2.0" });
+  });
+
+  it("a staged update below the requirement isn't installed: the required one downloads over it first", async () => {
+    const h = harness();
+    h.engine.next = release("0.1.5");
+    await h.ctl.check("manual");
+    h.engine.dl!.resolve();
+    await flush();
+    h.engine.handlers!.ready();
+    expect(h.ctl.view.ready?.version).toBe("0.1.5");
+    h.engine.next = release("0.2.0");
+    h.engine.minimum = "0.2.0";
+    h.ctl.setLocalMode(true);
+    await h.ctl.check("manual");
+    expect(h.ctl.view.required).toBe("0.2.0");
+    const done = h.ctl.updateNow();
+    await flush();
+    expect(h.engine.installs).toBe(0);
+    expect(h.ctl.view.status).toBe("downloading");
+    h.engine.dl!.resolve();
+    await done;
+    h.engine.handlers!.ready();
+    await flush();
+    expect(h.engine.installs).toBe(1);
+    expect(h.pending?.to).toBe("0.2.0");
+  });
+
+  it("a refused bundle or a failed download ends Update Terno with the reason, and Try Again starts over", async () => {
+    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" } });
+    h.engine.next = release("0.2.0");
+    h.engine.minimum = "0.2.0";
+    void h.ctl.updateNow();
+    await flush();
+    h.engine.dl!.reject(Object.assign(new Error("net::ERR_CONNECTION_RESET"), {}));
+    await flush();
+    expect(h.ctl.view).toMatchObject({ updatingNow: false, error: { stage: "download", kind: "offline" } });
+    void h.ctl.updateNow();
+    await flush();
+    h.engine.dl!.resolve();
+    await flush();
+    h.engine.handlers!.squirrelError(new Error("SQRLCodeSignatureErrorDomain"));
+    expect(h.ctl.view).toMatchObject({ updatingNow: false, error: { stage: "verify", kind: "integrity" } });
+    expect(h.engine.installs).toBe(0);
+  });
+
+  it("nothing newer to install (a mailbox from a newer Terno, but this is the latest): says so, installs nothing", async () => {
+    const h = harness({ localMode: true });
+    h.engine.next = null;
+    const s = await h.ctl.updateNow();
+    expect(s).toMatchObject({ status: "up-to-date", updatingNow: false });
+    expect(h.engine.dl).toBeNull();
+  });
+
+  it("a copy that can't update itself never checks (the window offers the download page)", async () => {
+    const h = harness({ unsupported: "dmg", prefs: { requiredMinimum: "0.2.0" } });
+    const s = await h.ctl.updateNow();
+    expect(s).toMatchObject({ status: "unsupported", required: "0.2.0" });
+    expect(wire(h)).toBe(0);
+  });
+
+  it("an update whose mailbox didn't open: installed, not healthy, said once; the record stays for the open that works", () => {
+    const h = harness({ version: "0.2.0", pending: { from: "0.1.0", to: "0.2.0", txId: "tx1", at: 1 } });
+    const gate = { kind: "failed", reason: "migration", step: 38, backup: null, restoreFailed: null } as const;
+    h.ctl.mailboxFailed(gate);
+    h.ctl.mailboxFailed(gate);
+    expect(h.logs.filter(([c]) => c === "update.installed")).toHaveLength(1);
+    expect(h.captures).toEqual([["update.mailbox_failed", { fromVersion: "0.1.0", toVersion: "0.2.0", openFailure: "migration", step: 38 }, false]]);
+    expect(h.logs.some(([c]) => c === "update.applied")).toBe(false);
+    expect(h.ctl.view.justUpdated).toBeNull();
+    expect(h.pending).not.toBeNull();
+    // a retry (or a fix release) that opens it settles the record with the usual note
+    h.ctl.backendReady();
+    expect(h.ctl.view.justUpdated).toBe("0.2.0");
+    expect(h.pending).toBeNull();
+  });
+
+  it("a mailbox that fails without an update behind it says nothing about updates", () => {
+    const h = harness({ pending: null });
+    h.ctl.mailboxFailed({ kind: "newer", schema: 40, supported: 38 });
+    expect(h.captures).toEqual([]);
   });
 });

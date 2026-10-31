@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, constants } from "node:fs";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { app, BrowserWindow, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
@@ -89,9 +89,14 @@ export function startUpdates(deps: UpdatesMainDeps): UpdateController {
         write: (p) => {
           try {
             mkdirSync(dir, { recursive: true });
-            writeFileSync(pendingFile, JSON.stringify(p), { mode: 0o600 });
+            // plan 95: durable (the next run ties a mailbox that won't open to this install), through a temp file
+            const tmp = `${pendingFile}.tmp`;
+            writeFileSync(tmp, JSON.stringify(p), { mode: 0o600 });
+            const fd = openSync(tmp, "r");
+            try { fsyncSync(fd); } finally { closeSync(fd); }
+            renameSync(tmp, pendingFile);
           } catch (error) {
-            log.warn("update.failed", { stage: "install", errno: (error as { code?: string }).code });
+            captureError(error, { code: "update.failed", fields: { stage: "install", errno: (error as { code?: string }).code }, expected: false });
           }
         },
         clear: () => rmSync(pendingFile, { force: true }),
@@ -114,6 +119,7 @@ export function startUpdates(deps: UpdatesMainDeps): UpdateController {
   ipcMain.handle("terno:updates-check", (e) => (deps.trusted(e) ? controller.check("manual") : null));
   ipcMain.handle("terno:updates-download", (e) => (deps.trusted(e) ? controller.download("manual") : null));
   ipcMain.handle("terno:updates-install", (e) => (deps.trusted(e) ? controller.install() : null));
+  ipcMain.handle("terno:updates-now", (e) => (deps.trusted(e) ? controller.updateNow() : null));
   ipcMain.handle("terno:updates-prefs", (e, value: unknown) => {
     if (!deps.trusted(e) || !value || typeof value !== "object") return null;
     const v = value as Record<string, unknown>;

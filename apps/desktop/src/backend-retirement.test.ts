@@ -155,6 +155,8 @@ function exitHost(o: { stale?: boolean; stopping?: boolean; retiring?: boolean }
     shutdownWaiters: new Map(), sendsIdleWaiters: [], quitState: o.stopping ? "stopping" : "running",
     restartEngine: restart, startBackend: start, instance: 3, backendInstance: 3,
     mainDiag: { backendExited: vi.fn(), setEngine: vi.fn() }, restarts: { attempt: 1, exited: () => 500 },
+    // plan 95: these backends never explained a mailbox failure, so their exits are crashes as before
+    mailbox: { exited: () => false },
     diagLog: { info: vi.fn(), error: vi.fn() }, windows: [],
     setTimeout: (fn: () => void) => timers.push(fn),
   }, "{ owner: () => backend, stopping: () => { quitState = 'stopping'; }, replaceGeneration: () => { backendInstance++; } }");

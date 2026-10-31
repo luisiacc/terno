@@ -66,10 +66,24 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
     install: () => ipcRenderer.invoke("terno:updates-install"),
     setPrefs: (p: { mode: string; channel: string }) => ipcRenderer.invoke("terno:updates-prefs", { mode: String(p?.mode), channel: String(p?.channel) }),
     seen: () => ipcRenderer.send("terno:updates-seen"),
+    // plan 95: "Update Terno" (check if needed, download, restart once Squirrel has it)
+    updateNow: () => ipcRenderer.invoke("terno:updates-now"),
     onState: (listener: (state: unknown) => void) => {
       const relay = (_e: unknown, state: unknown) => listener(state);
       ipcRenderer.on("terno:updates-event", relay);
       return () => ipcRenderer.removeListener("terno:updates-event", relay);
+    },
+  },
+  // plan 95: the mailbox gate (being upgraded, or why it can't open); main decides, the page asks
+  mailbox: {
+    state: () => ipcRenderer.invoke("terno:mailbox-state"),
+    retry: () => ipcRenderer.invoke("terno:mailbox-retry"),
+    skipBackup: () => ipcRenderer.invoke("terno:mailbox-skip-backup"),
+    restore: () => ipcRenderer.invoke("terno:mailbox-restore"),
+    onState: (listener: (gate: unknown) => void) => {
+      const relay = (_e: unknown, gate: unknown) => listener(gate);
+      ipcRenderer.on("terno:mailbox-event", relay);
+      return () => ipcRenderer.removeListener("terno:mailbox-event", relay);
     },
   },
   // before any quit or update: main asks, the page saves every draft and answers (main waits 5 s at most)

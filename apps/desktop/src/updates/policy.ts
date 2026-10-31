@@ -4,7 +4,7 @@
  * grants), where it may go (GitHub's release hosts, or a test build's own
  * feed), which copies can update themselves, and the feed itself.
  */
-import type { UnsupportedReason, UpdateChannel, UpdateErrorKind, UpdateMode } from "@terno/core/updates";
+import { compareVersions, validVersion, type UnsupportedReason, type UpdateChannel, type UpdateErrorKind, type UpdateMode } from "@terno/core/updates";
 
 // ───────────────────────────── when: local mode × setting × grants ─────────────────────────────
 
@@ -208,9 +208,11 @@ export interface UpdatePrefs {
   mode: UpdateMode;
   channel: UpdateChannel;
   checkedAt: number | null;
+  /** plan 95: the minimum version the feed last required (quitting doesn't escape it) */
+  requiredMinimum: string | null;
 }
 
-export const DEFAULT_PREFS: UpdatePrefs = { mode: "auto", channel: "stable", checkedAt: null };
+export const DEFAULT_PREFS: UpdatePrefs = { mode: "auto", channel: "stable", checkedAt: null, requiredMinimum: null };
 
 export function parsePrefs(value: unknown): UpdatePrefs {
   const v = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
@@ -218,6 +220,7 @@ export function parsePrefs(value: unknown): UpdatePrefs {
     mode: v.mode === "manual" ? "manual" : "auto",
     channel: v.channel === "nightly" ? "nightly" : "stable",
     checkedAt: typeof v.checkedAt === "number" && Number.isFinite(v.checkedAt) ? v.checkedAt : null,
+    requiredMinimum: validVersion(v.requiredMinimum) ? v.requiredMinimum : null,
   };
 }
 
@@ -248,4 +251,19 @@ export function installOutcome(p: PendingInstall, running: string): "applied" | 
   if (running === p.to) return "applied";
   if (running === p.from) return "not-applied";
   return null;
+}
+
+// ───────────────────────────── required updates (plan 95) ─────────────────────────────
+
+/**
+ * The minimum a check's feed asks for, or null. A minimum no published
+ * version satisfies (above the offered update, or with no update offered)
+ * is ignored: requiring an update that can't be installed would only lock
+ * the user out.
+ */
+export function feedMinimum(minimum: unknown, offered: string | null, current: string): string | null {
+  if (!validVersion(minimum)) return null;
+  if (compareVersions(current, minimum) >= 0) return null;
+  if (!offered || compareVersions(offered, minimum) < 0) return null;
+  return minimum;
 }

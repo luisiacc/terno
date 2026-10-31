@@ -15,28 +15,18 @@
  * - Bounded: one generation, removed 14 days after it was made once the
  *   mailbox opened upgraded; stray partial folders go at the next start.
  */
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statfsSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, statfsSync, writeFileSync } from "node:fs";
 import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./migrations";
+import { BACKUP_RETENTION_MS, fileSize, listBackups, readManifest, remove, type BackupInfo } from "./backups";
 import { BackupError, NoRoomError, SchemaNewerError } from "./open-errors";
 
+export { BACKUP_RETENTION_MS, listBackups, type BackupInfo } from "./backups";
+
 const MiB = 2 ** 20;
-export const BACKUP_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 /** pages per backup step: ~1 MB with 4 KB pages, then the event loop gets a turn */
 const PAGES_PER_STEP = 256;
-
-export interface BackupInfo {
-  /** the generation's folder name */
-  id: string;
-  dir: string;
-  file: string;
-  fromSchema: number;
-  toSchema: number;
-  appVersion: string;
-  size: number;
-  createdAt: number;
-}
 
 export interface UpgradeOptions {
   backupsDir: string;
@@ -67,14 +57,6 @@ export function diskFree(dir: string): number {
   return Number(s.bavail) * Number(s.bsize);
 }
 
-const fileSize = (path: string) => {
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
-};
-
 /** What a migration may need beyond the file (an estimate: a real SQLITE_FULL is caught and said the same way). */
 export function migrateHeadroom(size: number): number {
   return 64 * MiB + Math.ceil(size / 2);
@@ -83,51 +65,6 @@ export function migrateHeadroom(size: number): number {
 /** The mailbox's bytes as they stand: the file and its WAL. */
 export function mailboxBytes(path: string): number {
   return fileSize(path) + fileSize(`${path}-wal`);
-}
-
-/** Housekeeping never fails an open: a folder that won't go is tried again next start. */
-function remove(path: string): void {
-  try {
-    rmSync(path, { recursive: true, force: true });
-  } catch {
-    /* next start */
-  }
-}
-
-function readManifest(dir: string, id: string): BackupInfo | null {
-  try {
-    const m = JSON.parse(readFileSync(join(dir, id, "manifest.json"), "utf8")) as Record<string, unknown>;
-    const file = join(dir, id, "terno.db");
-    const ok = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
-    if (!ok(m.fromSchema) || !ok(m.toSchema) || !ok(m.size) || !ok(m.createdAt) || typeof m.appVersion !== "string") return null;
-    // the manifest names its own file: one of another size is a different (or broken) copy
-    if (m.file !== "terno.db" || fileSize(file) !== m.size) return null;
-    return { id, dir: join(dir, id), file, fromSchema: m.fromSchema, toSchema: m.toSchema, appVersion: m.appVersion, size: m.size, createdAt: m.createdAt };
-  } catch {
-    return null;
-  }
-}
-
-/** The valid generations, newest first; partial and broken folders removed. */
-export function listBackups(backupsDir: string): BackupInfo[] {
-  let names: string[];
-  try {
-    names = readdirSync(backupsDir);
-  } catch {
-    return [];
-  }
-  const out: BackupInfo[] = [];
-  for (const name of names) {
-    if (name.startsWith(".")) {
-      // a backup a crash or a quit cut short (".partial-…"); nothing else of ours starts with a dot
-      if (name.startsWith(".partial-")) remove(join(backupsDir, name));
-      continue;
-    }
-    const info = readManifest(backupsDir, name);
-    if (info) out.push(info);
-    else remove(join(backupsDir, name));
-  }
-  return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function fsyncPath(path: string, fsync: (fd: number) => void): void {

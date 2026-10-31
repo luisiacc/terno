@@ -1,3 +1,4 @@
+import type { MailboxGate } from "@terno/core/mailbox";
 import type { Channel, DiagView, ReportEvent } from "@terno/core/diag";
 import type { UpdateChannel, UpdateMode, UpdateState } from "@terno/core/updates";
 
@@ -51,6 +52,8 @@ export interface DesktopBridge {
   diag?: DesktopDiag;
   /** in-app updates (main owns the state and the install); older shells don't have it */
   updates?: DesktopUpdates;
+  /** plan 95: the mailbox gate; older shells don't have it */
+  mailbox?: DesktopMailbox;
   /** before a quit or an update main asks the page to save its drafts, and waits for the promise (5 s at most) */
   onFlushDrafts?(flush: () => Promise<boolean>, acquire?: () => (() => void) | null): () => void;
   /** A refused native reload; the action is bound to that exact disclosed window/document request. */
@@ -69,7 +72,21 @@ export interface DesktopUpdates {
   setPrefs(prefs: { mode: UpdateMode; channel: UpdateChannel }): Promise<UpdateState | null>;
   /** "Terno updated to …" was shown */
   seen(): void;
+  /** plan 95: "Update Terno": a check if needed, the download, then the restart once Squirrel has it (older shells don't have it) */
+  updateNow?(): Promise<UpdateState | null>;
   onState(listener: (state: UpdateState) => void): () => void;
+}
+
+/** Plan 95: the mailbox gate through main (apps/desktop/src/mailbox/host.ts refuses what doesn't apply). */
+export interface DesktopMailbox {
+  state(): Promise<MailboxGate | null>;
+  /** Try Again: a fresh start of the mail engine */
+  retry(): Promise<boolean>;
+  /** Update Without a Backup (only where the backup is what failed or didn't fit) */
+  skipBackup(): Promise<boolean>;
+  /** Restore the backup over a damaged mailbox */
+  restore(): Promise<boolean>;
+  onState(listener: (gate: MailboxGate) => void): () => void;
 }
 
 declare global {

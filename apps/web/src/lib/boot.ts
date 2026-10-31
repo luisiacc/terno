@@ -16,6 +16,7 @@ import { applyAppearance, installAppearanceListeners, reconcileSettings, updateA
 import { exposeForTests, regressions } from "~/lib/render-probe";
 import { captureUi } from "~/lib/diag";
 import { startDiag } from "~/state/diag";
+import { setMailboxBridgeForTests } from "~/lib/mailbox";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
@@ -58,6 +59,7 @@ export async function boot(): Promise<void> {
       // the reader specs wait on what the cache holds (a refetch that changes nothing on screen)
       threadDetail: (id: number) => useThreads.getState().details.get(id),
       updatesBridge: setBridgeForTests,
+      mailboxBridge: setMailboxBridgeForTests,
       // the perf gate times the switch itself (no save, no font wait)
       setDesign: (design: DesignId) => {
         const settings = { ...getApp().settings!, design };

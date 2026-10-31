@@ -5,7 +5,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { ArrowDown, ChevronDown, RotateCw, TriangleAlert } from "@terno/ui/icons";
 import { useId, useState } from "react";
 import { formatBytes } from "~/lib/format";
-import { checkForUpdates, downloadUpdate, errorText, installUpdate, openReleaseNotes, updateLater, usePill, useUpdates, type PillModel } from "~/lib/updates";
+import { checkForUpdates, downloadUpdate, errorText, installUpdate, openReleaseNotes, updateLater, updateNow, usePill, useUpdates, type PillModel } from "~/lib/updates";
 import { useWeb } from "~/web/lifecycle";
 
 /**
@@ -61,12 +61,14 @@ function label(pill: Exclude<PillModel, { kind: "hidden" } | { kind: "web" }>): 
       return t(pill.deferred ? "updates.pill.waiting" : "updates.pill.restart");
     case "error":
       return t(pill.stage === "install" ? "updates.pill.notInstalled" : "updates.pill.failed");
+    case "required":
+      return t("updates.pill.required");
   }
 }
 
 function DesktopPill({ pill }: { pill: Exclude<PillModel, { kind: "hidden" } | { kind: "web" }> }) {
   const [open, setOpen] = useState(false);
-  const loud = pill.kind === "ready" && !pill.quiet && !pill.deferred;
+  const loud = (pill.kind === "ready" && !pill.quiet && !pill.deferred) || pill.kind === "required";
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -79,6 +81,7 @@ function DesktopPill({ pill }: { pill: Exclude<PillModel, { kind: "hidden" } | {
         {pill.kind === "verifying" && <ProgressRing percent={25} spinning />}
         {pill.kind === "ready" && (pill.deferred ? <ProgressRing percent={25} spinning /> : <RotateCw className={cn("size-3.5 shrink-0", !loud && "text-sidebar-primary")} aria-hidden />)}
         {pill.kind === "error" && <TriangleAlert className="size-3.5 shrink-0" aria-hidden />}
+        {pill.kind === "required" && <ArrowDown className="size-3.5 shrink-0" aria-hidden />}
         <span className="truncate tabular-nums">{label(pill)}</span>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" sideOffset={6} className="w-80 gap-3" data-testid="update-popover">
@@ -97,7 +100,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
   if (!state) return null;
   const version = info?.version ?? "";
   const subtitle =
-    state.error?.kind === "unsaved" ? errorText("unsaved") : pill.kind === "ready"
+    state.error?.kind === "unsaved" ? errorText("unsaved") : pill.kind === "required" ? `${t("updates.required.body", { current: state.current })} ${t("updates.required.consent")}` : pill.kind === "ready"
       ? pill.deferred
         ? t("updates.popover.deferred")
         : t("updates.popover.ready")
@@ -171,6 +174,11 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
               {t("updates.download")}
             </Button>
           </>
+        )}
+        {pill.kind === "required" && (
+          <Button size="sm" disabled={busy || state.updatingNow} onClick={() => act(updateNow)} data-testid="update-now">
+            {t("updates.required.action")}
+          </Button>
         )}
         {pill.kind === "error" && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => act(pill.stage === "install" || !state.available ? checkForUpdates : downloadUpdate)} data-testid="update-retry">

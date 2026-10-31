@@ -1,6 +1,8 @@
+import type { MailboxGate } from "@terno/core/mailbox";
+
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; online: boolean }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; online: boolean; /** plan 95: "Update Without a Backup" (this start only) */ skipBackup?: boolean }
   | { type: "port"; clientId: string }
   /** plan 20: the network changed (network-watch.ts), or the Mac woke up */
   | { type: "network"; online: boolean; reason: "network" | "wake" | "online" | "offline" }
@@ -15,6 +17,10 @@ export type MainToBackend =
 
 export type BackendToMain =
   | { type: "ready" }
+  /** plan 95: the mailbox is being upgraded (a backup, then the migration), or it opened (once restored, said so) */
+  | { type: "gate"; gate: MailboxGate }
+  /** plan 95: the mailbox can't open, for a reason the window explains (the process exits next; main doesn't restart it) */
+  | { type: "open-failed"; gate: MailboxGate }
   | { type: "shutdown-result"; id: number; outcome: "closed" | "forced" | "sending" }
   | { type: "sends-idle" }
   | { type: "secret"; id: number; op: "encrypt"; plain: string }

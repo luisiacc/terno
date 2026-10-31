@@ -3,12 +3,16 @@
  * database and sync; the renderer talks to it over a direct MessagePort, so
  * mail data never hops through the main process.
  */
-import { Backend, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { dirname, join } from "node:path";
+import { Backend, nodeStore, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
+import { classifyOpenError, diskFree, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
+import { clearRestoredMarker, readRestoredMarker } from "./mailbox/restore";
 
 type PortMain = {
   on(event: "message", l: (e: { data: unknown }) => void): void;
@@ -140,6 +144,9 @@ parentPort.on("message", async (event) => {
   }
   if (msg.type === "init") {
     installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
+    // plan 95: the mailbox first (a backup before a migration, a restored copy quarantined); what goes wrong here
+    // is explained by the window, not restarted
+    if (!(await openMailbox(msg))) return;
     try {
       const registry = createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {});
       backend = new Backend({
@@ -158,13 +165,11 @@ parentPort.on("message", async (event) => {
         onPolicy: (policy) => send({ type: "policy", ...policy }),
         // plan 41: main owns the Dock and the notifications (they work with every window closed)
         attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },
-        // free-form lines (the store, the search engine): the log keeps that one happened, never its text
-        // (it can quote a provider's or a model's answer); a dev build also prints it
-        log: (level, message, extra) => {
-          log[level]("log.message", { source: "backend" });
-          if (msg.dev) console[level](`[backend] ${message}`, extra ?? "");
-        },
+        log: storeLog(msg.dev),
+        store: mailbox ?? undefined,
       });
+      mailbox = null;
+      send({ type: "gate", gate: { kind: "open", restoredFrom } });
       if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
         await backend.store.settings.set("app", { ai: { provider: "fake" } });
       }
@@ -192,6 +197,83 @@ parentPort.on("message", async (event) => {
     }
   }
 });
+
+// ───────────────────────────── plan 95: opening the mailbox ─────────────────────────────
+
+let mailbox: SqlMailStore | null = null;
+
+/** free-form lines (the store, the search engine): the log keeps that one happened, never its text (it can quote a
+ * provider's or a model's answer); a dev build also prints it */
+const storeLog =
+  (dev: boolean) =>
+  (level: "info" | "warn" | "error", message: string, extra?: unknown): void => {
+    log[level]("log.message", { source: "backend" });
+    if (dev) console[level](`[backend] ${message}`, extra ?? "");
+  };
+let restoredFrom: number | null = null;
+
+const summary = (b: BackupInfo | null | undefined): BackupSummary | null => (b ? { createdAt: b.createdAt, appVersion: b.appVersion, fromSchema: b.fromSchema } : null);
+
+/**
+ * Backs the mailbox up when a migration is due, quarantines a restored one,
+ * then opens (and migrates) it. A classified failure becomes the window's
+ * gate and ends this process without a restart; anything else is a crash.
+ */
+async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promise<boolean> {
+  const backupsDir = join(dirname(msg.dbPath), "backups");
+  let plan: UpgradePlan | null = null;
+  const startedAt = Date.now();
+  try {
+    plan = await prepareUpgrade(msg.dbPath, {
+      backupsDir,
+      appVersion: msg.version,
+      skipBackup: msg.skipBackup,
+      onBackup: () => send({ type: "gate", gate: { kind: "upgrading", phase: "backup", from: plan?.from ?? 0, to: SCHEMA_VERSION } }),
+    });
+    if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, durationMs: Date.now() - startedAt });
+    const migrating = plan.from !== null && plan.from < plan.to;
+    if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
+    if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
+    const restored = readRestoredMarker(msg.dbPath);
+    const db = openDatabase(msg.dbPath, { uuid: () => nodePlatform.uuid() });
+    try {
+      if (restored) {
+        quarantineRestored(db);
+        clearRestoredMarker(msg.dbPath);
+        restoredFrom = restored.createdAt;
+      }
+      mailbox = nodeStore(db, { log: storeLog(msg.dev) });
+    } catch (error) {
+      try { db.close(); } catch { /* the open's error explains it */ }
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    const failure = classifyOpenError(error, () => {
+      const size = mailboxBytes(msg.dbPath);
+      let free = 0;
+      try { free = diskFree(dirname(msg.dbPath)); } catch { /* unknown */ }
+      return { needBytes: migrateHeadroom(size), freeBytes: free };
+    });
+    if (!failure) {
+      die(error, "backend.init_failed");
+      return false;
+    }
+    let backup: BackupSummary | null = null;
+    try {
+      backup = summary(plan?.backup ?? listBackups(backupsDir)[0]);
+    } catch { /* none to offer */ }
+    const gate: MailboxGate = failure.kind === "failed" ? { ...failure, backup, restoreFailed: null } : failure;
+    const kind = failure.kind === "failed" ? failure.reason : failure.kind === "no-room" ? (failure.stage === "backup" ? "no-room-backup" : "no-room-migrate") : "newer";
+    // the world's doing (a newer copy, a full or read-only disk) is logged; a step that failed or a damaged file is ours to fix
+    const expected = kind === "newer" || kind === "no-room-backup" || kind === "no-room-migrate" || kind === "unwritable";
+    captureError(error, { code: "mailbox.open_failed", fields: { openFailure: kind, schema: plan?.from ?? undefined, step: failure.kind === "failed" ? (failure.step ?? undefined) : undefined }, expected });
+    send({ type: "open-failed", gate });
+    flushDiag();
+    setTimeout(() => process.exit(75), 100);
+    return false;
+  }
+}
 
 let closing: Promise<void> | null = null;
 

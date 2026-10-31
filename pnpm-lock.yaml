@@ -242,6 +242,9 @@ importers:
       '@terno/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@terno/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@terno/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n

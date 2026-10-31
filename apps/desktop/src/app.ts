@@ -47,6 +47,8 @@ import { BackendRetirement } from "./backend-retirement";
 import { NativeReloads, nativeReloadKey } from "./native-reload";
 import type { UpdateController } from "./updates/controller";
 import { startUpdates } from "./updates/main";
+import { MailboxHost } from "./mailbox/host";
+import type { MailboxGate } from "@terno/core/mailbox";
 
 // V8 compile cache for the main bundle (t3code trick): faster subsequent boots.
 try {
@@ -151,6 +153,18 @@ const networkWatch = new NetworkWatch({
   onFailure: (f) => diagLog.warn("net.watch_failed", { attempt: f.attempt, ...(f.errno && { errno: f.errno }), ...(f.exitCode !== null && { exitCode: f.exitCode }) }),
 });
 
+/** Plan 95: the mailbox gate (being upgraded, or why it can't open), pushed to every window. */
+const mailbox = new MailboxHost({
+  dbPath: () => join(app.getPath("userData"), DB_FILE),
+  publish: (gate: MailboxGate) => {
+    for (const w of windows) if (!w.isDestroyed()) w.webContents.send("terno:mailbox-event", gate);
+  },
+  start: () => restartEngine(),
+  alive: () => backend !== null,
+  log: (code, fields) => diagLog[code === "mailbox.restore_failed" ? "warn" : "info"](code, fields as never),
+  now: Date.now,
+});
+
 function agentPaths() {
   const userData = app.getPath("userData");
   return { socketPath: join(userData, "agent.sock"), tokenPath: join(userData, "agent.token") };
@@ -170,6 +184,8 @@ function startBackend() {
   if (backend || quitState !== "running") return;
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
+  // a restore a crash cut short is settled before anything opens the file
+  const flags = mailbox.beforeStart();
   const instance = ++backendInstance;
   const startedAt = Date.now();
   const child = utilityProcess.fork(join(__dirname, "backend.cjs"), [], { serviceName: "Terno Mail Engine", stdio: "inherit" });
@@ -190,6 +206,13 @@ function startBackend() {
         diagLog.info("backend.ready", { attempt: restarts.attempt, durationMs: Date.now() - startedAt });
         // migrations are done and the mailbox opened: an install that just happened counts as applied now
         updates?.backendReady();
+        break;
+      case "gate":
+        mailbox.reported(msg.gate);
+        break;
+      case "open-failed":
+        mailbox.failed(instance, msg.gate);
+        updates?.mailboxFailed(msg.gate);
         break;
       case "shutdown-result":
         if (shutdownWaiters.has(msg.id)) {
@@ -261,6 +284,11 @@ function startBackend() {
     }
     // windows waiting for this backend stop waiting (they reconnect to the next one)
     releaseReadyWaiters();
+    // plan 95: it explained why the mailbox can't open; the window says so, and nothing restarts it on a timer
+    if (mailbox.exited(instance)) {
+      if (!backend) mainDiag.setEngine("stopped");
+      return;
+    }
     mainDiag.backendExited(instance, code, restarts.attempt);
     const delay = restarts.exited(Date.now());
     if (delay === null) {
@@ -288,6 +316,7 @@ function startBackend() {
     testImapInsecure: testImapInsecure(process.env, demo) || undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
+    ...flags,
   } satisfies MainToBackend);
 }
 
@@ -760,6 +789,11 @@ if (!app.requestSingleInstanceLock()) {
         restartEngine();
       },
     });
+    // plan 95: the window reads the gate and asks; main decides (and refuses what doesn't apply)
+    ipcMain.handle("terno:mailbox-state", (e) => (trusted(e) ? mailbox.gate : null));
+    ipcMain.handle("terno:mailbox-retry", (e) => trusted(e) && mailbox.retry());
+    ipcMain.handle("terno:mailbox-skip-backup", (e) => trusted(e) && mailbox.skipBackup());
+    ipcMain.handle("terno:mailbox-restore", (e) => (trusted(e) ? mailbox.restore() : false));
     await carryLegacyLocalStorage();
     createWindow();
     app.on("activate", () => {

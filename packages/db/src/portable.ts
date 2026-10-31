@@ -22,6 +22,7 @@ export * from "./owner";
 export * from "./categorize";
 export * from "./categorize-bulk";
 export * from "./outbox";
+export * from "./restore";
 
 /** Opens (and migrates, unless read-only) the Terno database on any driver. */
 export function openDatabaseWith(driver: SqliteDriver, path: string, options: OpenOptions = {}): Db {

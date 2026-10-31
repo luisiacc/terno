@@ -60,11 +60,14 @@ export type PillModel =
   | { kind: "verifying"; version: string }
   | { kind: "ready"; version: string; deferred: boolean; quiet: boolean }
   | { kind: "error"; stage: "download" | "verify" | "install" }
+  /** plan 95: below the feed's minimum (the window is covered once drafts are saved; until then, this) */
+  | { kind: "required"; version: string }
   | { kind: "web" };
 
 export function pillModel(state: UpdateState | null, o: { later: boolean; webUpdate: boolean }): PillModel {
   if (o.webUpdate) return { kind: "web" };
   if (!state) return { kind: "hidden" };
+  if (state.required) return { kind: "required", version: state.required };
   // a ready update wins over anything a later check or download is doing
   if (state.ready && state.status !== "installing") return { kind: "ready", version: state.ready.version, deferred: state.deferred === "sending", quiet: o.later };
   if (state.status === "installing" && state.ready) return { kind: "ready", version: state.ready.version, deferred: false, quiet: false };
@@ -142,6 +145,13 @@ const ERRORS = {
 
 export function errorText(kind: UpdateErrorKind): string {
   return t(ERRORS[kind] ?? "updates.error.unknown");
+}
+
+/** Plan 95's "Update Terno": a check if needed, the download, then the restart (main runs the whole of it). */
+export async function updateNow(): Promise<void> {
+  if (!bridge?.updateNow) return;
+  const state = await bridge.updateNow().catch(() => null);
+  if (state) useUpdates.setState({ state });
 }
 
 export async function downloadUpdate(): Promise<void> {

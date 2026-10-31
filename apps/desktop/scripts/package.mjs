@@ -174,6 +174,22 @@ assertIcon(app);
 const channelFile = readdirSync(release).find((f) => /^[a-z]+-mac\.yml$/.test(f));
 if (!channelFile) throw new Error("no update channel file (latest-mac.yml) was written");
 
+// plan 95: a required update. Copies below `minimumVersion` cover their window with "Update Terno" once a check reads
+// this (TERNO_MINIMUM_VERSION, or apps/desktop/release-policy.json's minimumVersion); it must not exceed this release
+const policyFile = join(root, "release-policy.json");
+const minimum = process.env.TERNO_MINIMUM_VERSION || (existsSync(policyFile) ? JSON.parse(readFileSync(policyFile, "utf8")).minimumVersion : null);
+if (minimum) {
+  const semver = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
+  if (!semver.test(minimum)) throw new Error(`minimumVersion ${minimum} isn't x.y.z`);
+  const core = (v) => semver.exec(v).slice(1, 4).map(Number);
+  const [a, b] = [core(minimum), core(version)];
+  const above = a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+  if (above) throw new Error(`minimumVersion ${minimum} is above this release (${version}): no copy could meet it`);
+  const yml = join(release, channelFile);
+  writeFileSync(yml, `${readFileSync(yml, "utf8").replace(/^minimumVersion:.*\n?/m, "").trimEnd()}\nminimumVersion: '${minimum}'\n`);
+  console.log(`✓ ${channelFile} requires ${minimum} or later`);
+}
+
 if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
   const dmg = join(release, `${productName}-${version}-arm64.dmg`);
   if (existsSync("/usr/bin/SetFile")) {

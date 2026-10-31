@@ -4,6 +4,7 @@ import { Loader2 } from "@terno/ui/icons";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
+import { useGateBlocks } from "~/lib/mailbox";
 import { registerNativeReloadModal } from "~/lib/native-reload";
 import { exportDiagnostics, restartEngine, useDiag } from "~/state/diag";
 
@@ -18,7 +19,9 @@ export function EngineStopped() {
   const [retrying, setRetrying] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const stopped = engine === "stopped" && !reviewing;
+  // plan 95: a mailbox that can't open says why on its own screen (the engine is stopped on purpose then)
+  const gated = useGateBlocks();
+  const stopped = engine === "stopped" && !reviewing && !gated;
   useLayoutEffect(() => {
     if (!stopped) {
       setRetrying(false);

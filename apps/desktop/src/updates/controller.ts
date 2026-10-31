@@ -9,9 +9,10 @@
  * is scheduled only while automatic checks are allowed (never in local
  * mode), and electron-updater isn't even loaded before the first check.
  */
-import { initialUpdateState, notesText, reduceUpdate, type UnsupportedReason, type UpdateChannel, type UpdateEvent, type UpdateMode, type UpdateState } from "@terno/core/updates";
+import type { MailboxGate } from "@terno/core/mailbox";
+import { compareVersions, initialUpdateState, notesText, reduceUpdate, type UnsupportedReason, type UpdateChannel, type UpdateEvent, type UpdateMode, type UpdateState } from "@terno/core/updates";
 import type { Engine, EngineHandlers, EngineInfo } from "./engine";
-import { errorKind, expectedKind, Grants, installOutcome, mayCheck, mayDownload, updateRequestAllowed, type FeedConfig, type PendingInstall, type Trigger, type UpdatePrefs } from "./policy";
+import { errorKind, expectedKind, feedMinimum, Grants, installOutcome, mayCheck, mayDownload, updateRequestAllowed, type FeedConfig, type PendingInstall, type Trigger, type UpdatePrefs } from "./policy";
 
 /** the first check waits this long after launch, so a cold start never pays for it */
 export const STARTUP_CHECK_DELAY_MS = 30_000;
@@ -37,8 +38,8 @@ export interface ControllerDeps {
   /** the install didn't happen after the shutdown closed the backend: bring it back */
   recover(): void;
   publish(state: UpdateState): void;
-  log(code: "update.check" | "update.available" | "update.not_available" | "update.downloaded" | "update.ready" | "update.unsupported" | "update.install" | "update.deferred" | "update.applied" | "update.blocked", fields?: Record<string, string | number | boolean | undefined>): void;
-  capture(error: unknown, code: "update.failed" | "update.not_applied", fields: Record<string, string | number | boolean | undefined>, expected: boolean): void;
+  log(code: "update.check" | "update.available" | "update.not_available" | "update.downloaded" | "update.ready" | "update.unsupported" | "update.install" | "update.deferred" | "update.applied" | "update.blocked" | "update.installed", fields?: Record<string, string | number | boolean | undefined>): void;
+  capture(error: unknown, code: "update.failed" | "update.not_applied" | "update.mailbox_failed", fields: Record<string, string | number | boolean | undefined>, expected: boolean): void;
   newId(): string;
   now(): number;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -59,6 +60,7 @@ export class UpdateController {
   private checkGrant: number | null = null;
   private downloadStartedAt = 0;
   private healthChecked = false;
+  private mailboxFailureSaid = false;
   private waitingForSends = false;
   /** a grant revoked while its request ran: its failure is a cancellation, not an error */
   private revoked = new Set<number>();
@@ -71,6 +73,16 @@ export class UpdateController {
   ) {
     this.prefs = deps.prefs.read();
     this.state = initialUpdateState({ current: deps.version, mode: this.prefs.mode, channel: this.prefs.channel, localMode, checkedAt: this.prefs.checkedAt });
+    // plan 95: a requirement from an earlier run still holds (never a request: only what the last check said)
+    if (this.prefs.requiredMinimum) this.setRequired(this.prefs.requiredMinimum);
+  }
+
+  /** The feed's minimum (validated), applied and kept for the next launch; met or lifted, it's forgotten. */
+  private setRequired(minimum: string | null): void {
+    this.dispatch({ type: "policy", minimum });
+    if (this.prefs.requiredMinimum === this.state.required) return;
+    this.prefs = { ...this.prefs, requiredMinimum: this.state.required };
+    this.deps.prefs.write(this.prefs);
   }
 
   get view(): UpdateState {
@@ -140,12 +152,15 @@ export class UpdateController {
         ready: () => {
           this.dispatch({ type: "ready" });
           this.deps.log("update.ready", { toVersion: this.state.ready?.version });
+          // "Update Terno" asked for exactly this: it installs now
+          if (this.state.updatingNow) void this.install();
         },
         squirrelError: (error) => {
           const kind = errorKind(error) === "unknown" ? "integrity" : errorKind(error);
           if (this.state.status === "installing") this.failInstall(error, kind);
           else if (this.state.status === "verifying" || this.state.status === "downloading") {
             this.dispatch({ type: "verify-failed", kind });
+            this.dispatch({ type: "update-now", on: false });
             this.deps.capture(error, "update.failed", { stage: "verify" }, expectedKind(kind));
           }
         },
@@ -176,8 +191,9 @@ export class UpdateController {
     this.dispatch({ type: "check-start" });
     this.deps.log("update.check", { updateChannel: this.state.channel, trigger });
     let info: EngineInfo | null;
+    let minimum: unknown = null;
     try {
-      info = await this.ensureEngine().check(this.state.channel);
+      ({ update: info, minimum } = await this.ensureEngine().check(this.state.channel));
     } catch (error) {
       if (this.revoked.has(grant)) {
         this.dispatch({ type: "cancelled" });
@@ -201,6 +217,7 @@ export class UpdateController {
       this.dispatch({ type: "not-available", at });
       this.deps.log("update.not_available", { updateChannel: this.state.channel });
     }
+    this.setRequired(feedMinimum(minimum, info?.version ?? null, this.deps.version));
     this.saveCheckedAt();
     // automatic mode downloads what it found (a manual check in automatic mode too, as long as local mode is off)
     if (this.state.available && this.state.available.version !== this.state.ready?.version && mayDownload({ localMode: this.state.localMode, mode: this.state.mode, trigger: "auto" })) void this.download("auto");
@@ -240,6 +257,7 @@ export class UpdateController {
       // Squirrel's refusal may surface here as well as through its own event
       if (this.state.status === "verifying") this.dispatch({ type: "verify-failed", kind: kind === "unknown" ? "integrity" : kind });
       else this.dispatch({ type: "download-failed", kind });
+      this.dispatch({ type: "update-now", on: false });
       this.deps.capture(error, "update.failed", { stage: this.state.error?.stage ?? "download" }, expectedKind(kind));
     }
     return this.state;
@@ -252,6 +270,7 @@ export class UpdateController {
     this.dispatch({ type: "install-start" });
     const outcome = await this.deps.shutdown();
     if (outcome === "unsaved") {
+      this.dispatch({ type: "update-now", on: false });
       this.dispatch({ type: "install-failed", kind: "unsaved" });
       this.deps.log("update.deferred", { reason: "drafts" });
       return this.state;
@@ -285,7 +304,32 @@ export class UpdateController {
     return this.state;
   }
 
+  /**
+   * Plan 95's "Update Terno" (a required update, a mailbox from a newer
+   * Terno): one click is the user's grant for exactly this: a check if no
+   * offer is known (or the known one is below the requirement), the
+   * download, and the restart as soon as Squirrel has the bundle. Each
+   * request still goes through its own grant, in local mode too.
+   */
+  async updateNow(): Promise<UpdateState> {
+    if (!(await this.supported())) return this.state;
+    const enough = (v: string | undefined) => !!v && (!this.state.required || compareVersions(v, this.state.required) >= 0);
+    if (enough(this.state.ready?.version)) return this.install();
+    this.dispatch({ type: "update-now", on: true });
+    if (!enough(this.state.available?.version)) await this.check("manual");
+    if (enough(this.state.ready?.version)) return this.install();
+    if (!enough(this.state.available?.version) || this.state.status === "error") {
+      // nothing newer to install (or the check failed): the window says which
+      this.dispatch({ type: "update-now", on: false });
+      return this.state;
+    }
+    await this.download("manual");
+    // Squirrel's "ready" (its own check of the bundle) starts the install; a refusal ended updatingNow already
+    return this.state;
+  }
+
   private failInstall(error: unknown, kind: ReturnType<typeof errorKind>): void {
+    this.dispatch({ type: "update-now", on: false });
     try {
       try { this.deps.pending.clear(); }
       catch (cleanup) { this.deps.capture(cleanup, "update.failed", { stage: "install" }, false); }
@@ -322,6 +366,22 @@ export class UpdateController {
       this.dispatch({ type: "not-applied", version: pending.to });
       this.deps.capture(Object.assign(new Error("update not applied"), { name: "UpdateNotApplied" }), "update.not_applied", { fromVersion: pending.from, toVersion: pending.to }, false);
     }
+  }
+
+  /**
+   * Plan 95: the mailbox didn't open. When this run is the version an
+   * install just put in place, the binary is installed but not healthy: said
+   * once per run, and the record stays so a later open (a retry, a fix
+   * release) settles it with the usual "Terno updated" note.
+   */
+  mailboxFailed(gate: MailboxGate): void {
+    if (this.mailboxFailureSaid || gate.kind === "open" || gate.kind === "upgrading" || gate.kind === "restoring") return;
+    const pending = this.deps.pending.read();
+    if (!pending || installOutcome(pending, this.deps.version) !== "applied") return;
+    this.mailboxFailureSaid = true;
+    const openFailure = gate.kind === "failed" ? gate.reason : gate.kind === "no-room" ? (gate.stage === "backup" ? "no-room-backup" : "no-room-migrate") : "newer";
+    this.deps.log("update.installed", { fromVersion: pending.from, toVersion: pending.to });
+    this.deps.capture(Object.assign(new Error("mailbox didn't open after an update"), { name: "UpdateMailboxFailed" }), "update.mailbox_failed", { fromVersion: pending.from, toVersion: pending.to, openFailure, step: gate.kind === "failed" ? (gate.step ?? undefined) : undefined }, false);
   }
 
   setLocalMode(on: boolean): void {

@@ -25,6 +25,8 @@ import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
+import { startMailbox, useGateBlocks } from "./lib/mailbox";
+import { useRequiredCover } from "./lib/required-cover";
 import { PaneBoundary, RecoveryBoundary } from "./components/diag/error-boundary";
 import { ReportPreview } from "./components/diag/report-preview";
 
@@ -45,6 +47,21 @@ const WebGate = import.meta.env.VITE_TARGET === "web" ? lazy(() => import("./web
 /** Fresh install: no mailboxes, no owner, not a demo, and the first-run steps not finished. */
 function needsFirstRun(): boolean {
   return localStorage.getItem("terno:first-run") !== "done";
+}
+
+// plan 95 (desktop): what covers the window while the mailbox can't be used, or an update is required; lazy, rarely loaded
+const MailboxCover = lazy(() => import("./components/mailbox-cover"));
+
+function Covers() {
+  const blocks = useGateBlocks();
+  const required = useRequiredCover();
+  useEffect(() => startMailbox(), []);
+  if (!blocks && !required) return null;
+  return (
+    <Suspense>
+      <MailboxCover required={required} />
+    </Suspense>
+  );
 }
 
 function Fatal({ message }: { message: string }) {
@@ -116,6 +133,7 @@ export function App() {
         <>
           <Fatal message={fatal} />
           <EngineStopped />
+          <Covers />
         </>
       )
     );
@@ -167,6 +185,7 @@ export function App() {
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}
       <EngineStopped />
+      <Covers />
       <DragGhost />
     </TooltipProvider>
   );

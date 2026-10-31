@@ -9,6 +9,7 @@ import {
   mayCheck,
   mayDownload,
   parsePending,
+  feedMinimum,
   parsePrefs,
   resolveFeed,
   signedFromCodesign,
@@ -137,9 +138,18 @@ describe("updates: the feed, prefs and the install record", () => {
   });
 
   it("prefs default to automatic and stable, and anything malformed falls back", () => {
-    expect(parsePrefs(undefined)).toEqual({ mode: "auto", channel: "stable", checkedAt: null });
-    expect(parsePrefs({ mode: "manual", channel: "nightly", checkedAt: 5 })).toEqual({ mode: "manual", channel: "nightly", checkedAt: 5 });
-    expect(parsePrefs({ mode: "x", channel: 1, checkedAt: "now" })).toEqual({ mode: "auto", channel: "stable", checkedAt: null });
+    expect(parsePrefs(undefined)).toEqual({ mode: "auto", channel: "stable", checkedAt: null, requiredMinimum: null });
+    expect(parsePrefs({ mode: "manual", channel: "nightly", checkedAt: 5, requiredMinimum: "0.3.0" })).toEqual({ mode: "manual", channel: "nightly", checkedAt: 5, requiredMinimum: "0.3.0" });
+    expect(parsePrefs({ mode: "x", channel: 1, checkedAt: "now", requiredMinimum: "latest" })).toEqual({ mode: "auto", channel: "stable", checkedAt: null, requiredMinimum: null });
+  });
+
+  it("a feed's minimum counts only when a published version meets it (plan 95)", () => {
+    expect(feedMinimum("0.3.0", "0.3.0", "0.2.0")).toBe("0.3.0");
+    expect(feedMinimum("0.3.0", "0.4.0", "0.2.0")).toBe("0.3.0");
+    expect(feedMinimum("0.3.0", "0.2.5", "0.2.0")).toBeNull();
+    expect(feedMinimum("0.3.0", null, "0.2.0")).toBeNull();
+    expect(feedMinimum("0.2.0", "0.3.0", "0.2.0")).toBeNull();
+    expect(feedMinimum(3, "0.3.0", "0.2.0")).toBeNull();
   });
 
   it("the install record: applied when the target runs, not applied when the old one still does, silent otherwise", () => {

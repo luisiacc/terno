@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialUpdateState, notesText, reduceUpdate, type UpdateEvent, type UpdateInfo, type UpdateState } from "./state";
+import { compareVersions, initialUpdateState, notesText, reduceUpdate, type UpdateEvent, type UpdateInfo, type UpdateState } from "./state";
 
 const info = (version: string): UpdateInfo => ({ version, notes: "", size: 100, releaseDate: null });
 const start = () => initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable", localMode: false });
@@ -136,5 +136,36 @@ describe("updates: release notes as plain text", () => {
     expect(notesText([{ version: "0.2.0", note: "A" }, { version: "0.1.9", note: "B&#0;" }])).toBe("A\n\nB");
     expect(notesText("x".repeat(5000)).length).toBe(4000);
     expect(notesText(null)).toBe("");
+  });
+});
+
+describe("required updates (plan 95)", () => {
+  const s0 = initialUpdateState({ current: "0.2.0", mode: "auto", channel: "stable", localMode: true });
+
+  it("a minimum above this version requires the update; at or below it, or none, doesn't", () => {
+    expect(reduceUpdate(s0, { type: "policy", minimum: "0.3.0" }).required).toBe("0.3.0");
+    expect(reduceUpdate(s0, { type: "policy", minimum: "0.2.0" }).required).toBeNull();
+    expect(reduceUpdate(s0, { type: "policy", minimum: "0.1.9" }).required).toBeNull();
+    const required = reduceUpdate(s0, { type: "policy", minimum: "0.3.0" });
+    // a later check whose feed no longer asks lifts it
+    expect(reduceUpdate(required, { type: "policy", minimum: null }).required).toBeNull();
+  });
+
+  it("ignores what isn't a version", () => {
+    for (const minimum of ["", "latest", "1.2", "1.2.3.4", "v1.2.3", "1.2.3-", "99999999999.0.0"]) expect(reduceUpdate(s0, { type: "policy", minimum }).required).toBeNull();
+  });
+
+  it("holds for a copy that can't update itself (it offers the download page)", () => {
+    const unsupported = reduceUpdate(s0, { type: "unsupported", reason: "dmg" });
+    expect(reduceUpdate(unsupported, { type: "policy", minimum: "1.0.0" }).required).toBe("1.0.0");
+  });
+
+  it("orders versions as semver does, prereleases before their release", () => {
+    const sorted = ["0.2.0-nightly.2", "0.2.0-nightly.10", "0.2.0", "0.2.1", "0.10.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta", "1.0.0"];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      expect(compareVersions(sorted[i]!, sorted[i + 1]!)).toBe(-1);
+      expect(compareVersions(sorted[i + 1]!, sorted[i]!)).toBe(1);
+    }
+    expect(compareVersions("1.2.3", "1.2.3")).toBe(0);
   });
 });

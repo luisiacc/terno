@@ -37,9 +37,15 @@ export interface EngineHandlers {
   squirrelError(error: Error): void;
 }
 
+/** A check's answer: the newest release if it's newer than this one (never a downgrade), and the feed's policy. */
+export interface EngineCheck {
+  update: EngineInfo | null;
+  /** plan 95: the channel file's `minimumVersion`, as written (validated by the controller), read even with no update */
+  minimum: unknown;
+}
+
 export interface Engine {
-  /** the newest release if it's newer than this one (never a downgrade), else null */
-  check(channel: UpdateChannel): Promise<EngineInfo | null>;
+  check(channel: UpdateChannel): Promise<EngineCheck>;
   /** resolves once the zip is verified and handed to Squirrel (its verdict comes as ready / squirrelError) */
   download(): Promise<void>;
   cancel(): void;
@@ -78,10 +84,12 @@ export function createEngine(o: { feed: FeedConfig; allowed(url: string): boolea
       updater.allowDowngrade = false;
       updater.allowPrerelease = channel === "nightly";
       const result = await updater.checkForUpdates();
-      if (!result?.isUpdateAvailable) return null;
+      // the channel file keeps keys electron-updater doesn't know (release.mjs writes minimumVersion there)
+      const minimum = (result?.updateInfo as { minimumVersion?: unknown } | undefined)?.minimumVersion ?? null;
+      if (!result?.isUpdateAvailable) return { update: null, minimum };
       const info = result.updateInfo;
       const file = info.files?.find((f) => f.url.endsWith(".zip")) ?? info.files?.[0];
-      return { version: info.version, releaseNotes: info.releaseNotes ?? null, releaseDate: info.releaseDate ?? null, size: typeof file?.size === "number" ? file.size : null };
+      return { update: { version: info.version, releaseNotes: info.releaseNotes ?? null, releaseDate: info.releaseDate ?? null, size: typeof file?.size === "number" ? file.size : null }, minimum };
     },
     async download() {
       token = new CancellationToken();

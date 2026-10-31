@@ -52,6 +52,14 @@ export interface UpdateState {
   localMode: boolean;
   /** this run is the version an update just installed (once, for "Terno updated to …") */
   justUpdated: string | null;
+  /**
+   * Plan 95: the feed's minimum version when this one is below it: the window covers itself with "Update Terno"
+   * until the update is installed. Kept across launches (quitting doesn't escape it); a check whose feed no longer
+   * asks for it lifts it.
+   */
+  required: string | null;
+  /** the one-click update (Update Terno) is under way: it installs as soon as Squirrel has the bundle */
+  updatingNow: boolean;
 }
 
 export type UpdateEvent =
@@ -77,7 +85,10 @@ export type UpdateEvent =
   | { type: "install-failed"; kind: UpdateErrorKind }
   | { type: "applied"; version: string }
   | { type: "not-applied"; version: string }
-  | { type: "seen" };
+  | { type: "seen" }
+  /** plan 95: the feed's minimum version (null: none), from a check or as persisted */
+  | { type: "policy"; minimum: string | null }
+  | { type: "update-now"; on: boolean };
 
 export function initialUpdateState(o: { current: string; mode: UpdateMode; channel: UpdateChannel; localMode: boolean; checkedAt?: number | null }): UpdateState {
   return {
@@ -95,6 +106,8 @@ export function initialUpdateState(o: { current: string; mode: UpdateMode; chann
     deferred: null,
     localMode: o.localMode,
     justUpdated: null,
+    required: null,
+    updatingNow: false,
   };
 }
 
@@ -107,7 +120,8 @@ function settled(s: UpdateState): UpdateState {
 
 export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
   // an unsupported copy stays unsupported: nothing else can happen to it
-  if (s.status === "unsupported" && e.type !== "prefs" && e.type !== "local-mode" && e.type !== "seen") return s;
+  // (a requirement persisted from before still applies: the window offers the download page instead)
+  if (s.status === "unsupported" && e.type !== "prefs" && e.type !== "local-mode" && e.type !== "seen" && e.type !== "policy") return s;
   switch (e.type) {
     case "unsupported":
       return { ...s, status: "unsupported", unsupported: e.reason, available: null, target: null, ready: null, percent: null, error: null };
@@ -168,7 +182,43 @@ export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
       return { ...s, status: "error", error: { stage: "install", kind: "not-applied", canRetry: true } };
     case "seen":
       return { ...s, justUpdated: null };
+    case "policy": {
+      const required = validVersion(e.minimum) && compareVersions(s.current, e.minimum) < 0 ? e.minimum : null;
+      return required === s.required ? s : { ...s, required };
+    }
+    case "update-now":
+      return e.on === s.updatingNow ? s : { ...s, updatingNow: e.on };
   }
+}
+
+const VERSION = /^(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?:-([0-9A-Za-z.-]{1,64}))?$/;
+
+/** x.y.z or x.y.z-pre (what the release script publishes); anything else is no version at all. */
+export function validVersion(v: unknown): v is string {
+  return typeof v === "string" && VERSION.test(v);
+}
+
+/** Semver order (a prerelease sorts before its release; prerelease identifiers compared numerically or as text). */
+export function compareVersions(a: string, b: string): number {
+  const x = VERSION.exec(a);
+  const y = VERSION.exec(b);
+  if (!x || !y) return 0;
+  for (let i = 1; i <= 3; i++) {
+    const d = Number(x[i]) - Number(y[i]);
+    if (d) return Math.sign(d);
+  }
+  if (!x[4] || !y[4]) return x[4] ? -1 : y[4] ? 1 : 0;
+  const p = x[4].split(".");
+  const q = y[4].split(".");
+  for (let i = 0; i < Math.max(p.length, q.length); i++) {
+    if (p[i] === undefined) return -1;
+    if (q[i] === undefined) return 1;
+    const m = /^\d+$/.test(p[i]!), n = /^\d+$/.test(q[i]!);
+    if (m && n && Number(p[i]) !== Number(q[i])) return Math.sign(Number(p[i]) - Number(q[i]));
+    if (m !== n) return m ? -1 : 1;
+    if (p[i] !== q[i]) return p[i]! < q[i]! ? -1 : 1;
+  }
+  return 0;
 }
 
 /** Plain text from release notes (GitHub sends HTML): tags dropped, entities decoded, blank runs folded, bounded. */
