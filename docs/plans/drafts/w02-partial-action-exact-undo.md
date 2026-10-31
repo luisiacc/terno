@@ -1,0 +1,59 @@
+# W02 partial action and exact Undo qualification
+
+Actual base: `acdbb25b550c96eb00eb06f48ff1d902a0f1af43` (expected `3b4f8d31`). Tests/docs ownership only; Root owns landing.
+
+## Request (verbatim task)
+
+> determine actual supported saved location tuple/label and Undo semantics, then qualify exact newer intent through partial chunks, held ACKs and reopen. Report's provider-implied category labels may be N/A because Terno categories are local; verify against code and qualify genuine Gmail Inbox/Trash/Spam membership rather than adding provider-label sync. Establish arbitrary supported tuple restoration (not just display-precedence), retained read/star intent and exact operation targets through public RPCs on real SQLite/fake-IDB adapters. A bounded 1,001-ID selection should exercise actual1,000-boundary chunk behavior and a later-chunk failure/terminal, ensuring no silent prefix loss, newer restore/Undo not erased and actual effects/queued targets/attempts/history settled according to the public contract. Differentiate local admission atomicity from remote partial outcomes; unknown mutations cannot replay. Include independent sibling selection/account and shared-thread/latest-message scope controls, and graceful reopen. For A06 examine parked history/terminal acknowledgements after newer independent flag/label revisions; exact source version checks, no broad optimistic reset. Use existing intent/transaction/deletion fences and assert authoritative persisted states, not mere Undo tracker closure.
+
+## Existing code
+
+Read Plans 38, 45, 68 and exact A06/A07/A36 report/baseline rows. Landed 0a45033c qualifies canonical secondary flag clearing and late Trash/newer Restore; it is prior evidence. `handlers.ts` snapshots five booleans in an in-memory UndoJournal. Public action admission uses independent transactions per budgeted slice, not a selection-wide transaction. `gmail-api.ts` batchModify splits one operation at 1,000 IDs; Trash instead sends individual requests. `actions.ts` and IDB use shared `restoreLocationOps`, which chooses destinations by display precedence. Categories are local membership, not Gmail label synchronization.
+
+## Design
+
+First qualify a supported noncanonical tuple created using public Trash then Spam: Undo of moveToInbox must restore both flags, including after queued correction reopens. Compare actual remote labels and persisted state; independent sibling is untouched. This differs from the landed canonical Trash-only fix. A necessary production defect ends implementation at ordinary safety RED plus exact dependency handoff; shared production files belong to W05. No workaround or unsafe passing claim.
+
+If that prerequisite passes, proceed to bounded 1,001-message provider chunks, held acknowledgements, independent field revisions and terminal/history reconciliation. No generic journal, provider-label sync or mutation API.
+
+## Tests and performance
+
+Dedicated backend public RPC integration file with native Request/fetch fixture installed before Backend creation, unexpected-route rejection, synthetic stores only. Shared conformance assertions run native SQL, SQL WASM and fake-IDB modes. Tests-only safety regressions use ordinary failing assertions; passing protections need discriminating sibling/canonical controls. Every test command appends inherited NODE_OPTIONS with the network guard. Archive/restore incoming-worker preparation artifacts. Exact files/tests only, touched package types, exact-file lint; no production hot-path change or perf timing workload.
+
+## Out of scope
+
+Production changes while W05 owns hot files; reconnect/snackbar; Plans64–68/80/81/83; renderer/editor/list performance; send Undo; provider-wide remote atomicity; crash hardware/browser/live mailbox tests; all broad suites/builds and held backlog. Failed prerequisite means remaining qualification stays explicitly open.
+
+## Revisions after the Codex review
+
+Native read-only gpt-6.1-sol/high plan critique exited 0, six points (`/tmp/terno-w02-partial/plan-review.log`). Accept all: saved tuple is `(false,true,true)`; assert remote labels and persisted reconciled state, not optimistic state; public Undo occurs before graceful close and its queued operations survive reopen (journal survival is unsupported). Exact handoff records adapters, assertions, commands and base. A later 1,001-ID test needs one shared thread/one operation to cross the provider boundary; separately qualify admission prefix failures without assuming ordinary RPCs return partial Undo. Prior canonical/late-ACK controls stay prior evidence. No child agents or production edits.
+
+## Executed prerequisite and dependency handoff
+
+Ordinary safety RED on actual base, no production edits: public Trash→Spam creates saved `(inInbox=false,isTrash=true,isSpam=true)`. After settled moveToInbox, public Undo says `{restored:1}`, immediately restores the local saved tuple and queues only Trash. Graceful close/reopen retains that exact operation. Dispatch succeeds with one attempt; fresh successful sync drains pending snapshots, but remote labels are `STARRED,TRASH` instead of `SPAM,STARRED,TRASH`, and persisted `isSpam` becomes false. Read/star and independent sibling selection remain unchanged. This is a genuine reachable tuple, not arbitrary invented provider labels or an oracle mutation. Canonical Trash-only controls pass. No false passing protection or expected-failure marker is used.
+
+Dependency: W05/Root must correct shared `packages/store/src/flag-intents.ts:restoreLocationOps` and verify both `packages/db/src/actions.ts:restoreMessages` and `packages/idb/src/mail.ts` restore callers, including ordered final-effect ownership. Existing operations can represent Trash+Spam (Trash then Spam); this defect needs no generic journal/API. Current planner drops Spam by choosing Trash display precedence. Preserve canonical corrective clearing, unknown replay fences and newer field generations. Tests are `W02 supported saved tuple` in the dedicated backend file and `W02 saved destination` in shared flag conformance. Ownership forbids the necessary production repair here; commit these ordinary failing safety assertions for the serial owner.
+
+Evidence directory `/tmp/terno-w02-partial`:
+
+- `safety-red.log`, exit 1: `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=/tmp/terno-network-guard.cjs" pnpm exec vitest run --project unit packages/backend/src/w02-partial-action-exact-undo.int.test.ts packages/db/src/store.conformance.test.ts packages/idb/src/idb.conformance.test.ts -t 'W02 supported saved tuple|W02 saved destination'`: **5 failed / 5 passed / 996 filtered**. Failing: two public SQL/IDB remote+persisted outcomes; SQL and both IDB modes omit Spam corrective operation.
+- `wasm-red.log`, exit 1: same guard, `pnpm exec vitest run --project db-wasm packages/db/src/store.conformance.test.ts -t 'W02 saved destination'`: **1 failed / 1 passed / 316 filtered**. Same missing operation on real SQLite-WASM.
+- Earlier `red.log` and `red-corrected.log` include fixture-authoring failures (summary-only history, absent label catalog, wrong debug projection); these are **not** product RED. Final safety-red fixture has a typed history event, explicit catalog and exact target projection; unexpected routes fail in teardown. Native Request/fetch interception is installed before Backend creation, no external endpoints or socket server.
+
+Finite disposition: **A36 stays open, reproduced exact saved-tuple loss**; canonical recovery from 0a45033c stays prior evidence. **A07 partial/open** pending this dependency and chunk qualification. The report's implied Terno category-label transition is **N/A** (local categories), not a request to add provider label sync. **A06 remains open/unqualified by this series**: no parked-history/new independent version or held ACK experiment completed. The 1,001-ID boundary, later-chunk failure/terminal, unknown replay, local admission prefix failure, shared-thread latest-message scope and independent-account public control remain unexecuted after the necessary production prerequisite failed. A different-account store sibling is covered; it is not an all-account RPC qualification. No universal remote atomicity or exhaustive W02 closure claimed.
+
+Recommended finite continuation after the owner repair: rerun these exact safety assertions; then one 1,001-message synchronized shared-thread moveToInbox operation with partitions 1,000+1, hold/refuse the second batch and assert actual partial labels, all queued target IDs, terminal attempts and post-Undo reopen settlement; separately inject local second-slice admission failure and report actual persisted prefix/error contract; finally independent read/star revisions around held old ACK/history and mixed received/sent/latest scope controls. Do not widen to 50k or live mailboxes.
+
+
+Targeted verification (same base; no production change):
+
+- `direct-callers.log`, exit 1: same inherited guard, `pnpm exec vitest run --project unit packages/store/src/restore-location.test.ts packages/backend/src/flag-observation.int.test.ts packages/db/src/store.conformance.test.ts packages/idb/src/idb.conformance.test.ts -t 'W02|exact Trash Undo|canonical destination|representable Undo|final Undo archive|uncertain intermediate Undo|unknown retry|saved Undo'`: **73 passed / 3 new safety failures / 1008 filtered**. Existing canonical, late-ACK, partial Trash, unknown and exact-target controls pass; no new timing qualification claimed.
+- `pnpm --filter @terno/store typecheck`: exit 0 (`store-types.log`). `pnpm exec tsc -p /tmp/terno-w02-partial/backend-types.json`: exit 0 (`backend-types.log`); temporary config extends backend lifecycle types and includes only the exact dedicated new test, with workspace absolute typeRoots. No prohibited baseline included/read.
+- `pnpm exec oxlint --deny-warnings packages/backend/src/w02-partial-action-exact-undo.int.test.ts packages/store/src/conformance/flag-intents.ts`: exit 0. `git diff --check`: exit 0.
+- Normal Vitest preparation created `packages/backend/dist/incoming.worker.cjs` in an initially absent `dist`; removed that generated file/directory to restore its prior absent state before handoff. No app/Vite/package build or release/perf/full-suite command.
+
+## Standards + Spec review
+
+One native CODE review R1 completed exit 0, `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C <this checkout> -` (`code-review-r1.log`). Verdict: **no actionable findings; Standards PASS; Spec PASS for the bounded prerequisite and handoff**. The review explicitly accepts ordinary failing assertions and leaves chunk/held-ACK/A06 scope unqualified. No repair or second review was needed; no invented post-repair clean verdict. The plan critique was separate (six accepted points). Production prerequisite remains unfixed and final safety tests remain RED intentionally for the production owner; this is not a completed exact-Undo implementation or a landing approval.
+
+Final branch `t3/partial-action-undo`; atomic tests/docs commit only. Actual base is above. Root owns serial rebase, the shared-file dependency, targeted retesting, ff-only landing and worklist updates. No main/worklist edits, fetch, push, landing, child agents, real profile/secret reads or unjoined verification.

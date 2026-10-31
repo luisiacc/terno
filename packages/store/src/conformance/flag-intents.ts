@@ -20,6 +20,30 @@ export function defineFlagIntentConformance(name: string, harness: StoreHarness)
     { action: "moveToInbox", initial: { isTrash: true, isSpam: true, inInbox: false }, desired: { isTrash: false, isSpam: false, inInbox: true }, remote: { isRead: true, isStarred: true } },
   ];
   describe(`pending field intent: ${name}`, () => {
+    it.each([false, true])("W02 saved destination queues exact Trash+Spam=%s after reopen", async (spam) => {
+      let store = await harness.open(); stores.push(store);
+      const [accountId, other] = await withAccounts(store);
+      await ingest(store, [msg({ accountId: accountId!, providerMsgId: "saved-tuple", isRead: true, isStarred: true }), msg({ accountId: other!, providerMsgId: "sibling-tuple" })]);
+      const threadId = await threadOf(store, "saved-tuple");
+      for (const action of ["trash", ...(spam ? ["spam" as const] : [])] as const) {
+        await store.threads.act({ threadIds: [threadId], action, signal: null, now: 1 });
+        for (const op of await store.ops.claimReady(2, 20)) await store.ops.complete(op.id, undefined, 3);
+      }
+      const before = await store.debug.snapshot();
+      const action = await store.threads.act({ threadIds: [threadId], action: "moveToInbox", signal: null, now: 4 });
+      for (const op of await store.ops.claimReady(5, 20)) await store.ops.complete(op.id, undefined, 6);
+      expect(action.before).toHaveLength(1);
+      expect(action.before[0]).toMatchObject({ inInbox: false, isTrash: true, isSpam: spam, isRead: true, isStarred: true });
+      const restore = await store.threads.restore({ messages: action.before, now: 7 });
+      store = await harness.reopen(store); stores.push(store);
+      const after = await store.debug.snapshot();
+      expect(after.messages).toEqual(before.messages);
+      const correction = after.ops.filter((op) => restore.opIds.includes(op.id));
+      for (const op of correction) expect(op.messageIds).toEqual([action.before[0]!.id]);
+      expect(correction.map((op) => op.kind)).toEqual(spam ? ["trash", "spam"] : ["trash"]);
+      await store.debug.verify();
+    });
+
     it("exact Trash Undo clears a secondary spam flag through reopen", async () => {
       let store = await harness.open(); stores.push(store);
       const [accountId] = await withAccounts(store);
