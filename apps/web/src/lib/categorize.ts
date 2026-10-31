@@ -238,7 +238,7 @@ export async function removeSenderFromCategory(categoryId: number, email: string
   const batch = deferred<number | null>();
   const undo = registerUndo(() =>
     batch.promise.then((batchId) =>
-      batchId === null ? undefined : undoFiled({ categoryId, addedIds: [], threadIds: left, batchId, moved: true }).then(() => void snack(t("category.undone", { category: name }), { background: true })),
+      batchId === null ? undefined : undoFiled({ categoryId, addedIds: [], threadIds: left, batchId, moved: true }).then(() => void snack(t("category.undone", { category: name }), { background: true, duration: 3000 })),
     ),
   );
   const id = snack.loading(t("category.removing", { category: name }));
@@ -374,7 +374,7 @@ export async function fileAlways(categoryId: number, scope: FilterableScope, thr
         }
       }
       if (failed !== null) throw failed;
-      void snack(t("category.undone", { category: name }), { background: true });
+      void snack(t("category.undone", { category: name }), { background: true, duration: 3000 });
     }),
   );
   const id = snack.loading(t("category.adding", { category: name }));
