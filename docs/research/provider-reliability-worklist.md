@@ -1,5 +1,8 @@
 # Provider reliability worklist
 
+> **Active user course correction:** resume the34provider needs-work rows. No new full typecheck/lint/unit/e2e/Web/UI-perf/backend-perf/dist/packaged-smoke runs until every needs-work row is complete or has a recorded disposition. Older release-milestone/continuation instructions below are historical and superseded. Editor/list performance is parked outside this goal.
+
+
 Updated 2026-10-29 after the isolated-worktree workflow correction. Triage base: local main `775a34f5`. Sources: [report](provider-reliability-report.md), [original test/coverage index](provider-reliability-baseline.md), and the linked implementation plans. This is a source/evidence reconciliation, not a fresh release-gate run.
 
 The **12 workgroups are the units of work**. The 153 T/A/B/S rows below are scenarios or evidence, not 153 implementation tasks. Every row has exactly one disposition and one primary workgroup. A needs-work row can contain reviewed prerequisites: finish only its stated remainder. Absence of a hosted architecture is a reason not to build one; an external historical fix is not proof of a current Terno bug.
@@ -1077,3 +1080,30 @@ Root next assigns supported ProseMirror reconciliation: actual-editor first-para
 Candidate5ee9a729on isolated t3/prosemirror-view-reconciliation is NOT landed. Existing preMatch suffix identities supply nodes to decoration iteration, removing a duplicate read pass for non-composing supported groups; native suffix verification and reconciliation remain authoritative. First-edit witness8000distant reads becomes4000, not constant-time. Composition keeps the original path.88focused tests,5browser controls, Web/source/test types, lint and frozen offline ESM/CJS/parity/idempotence checks pass. Single nativeSol/high production review Standards/SpecPASS,0findings; no later source changes.
 
 One original source-dev qualification:5MBallpositions/request/placementPASS,2MBPASS,10MBREDatstart(median1.478>1.173,tail1.524>1.302); later10MBassertions unreached. Baseline10MBalso failed; no regression cause or noise exemption is established. Historical production5MBRED remains unresolved. Shared config typing retains inherited errors; no new type clearance for those. [Scoped spec](../plans/drafts/release7-pm-reconciliation.md) is on the unlanded branch; evidence `/tmp/terno-r7-pm-7b6ccbf2/`. Root continues the same implementation to investigate remaining critical-path work, preserves allREDs and the consumed review cap, no unchanged retry or gate relaxation. Main is not release-green; report counts and held feature backlog unchanged.
+
+
+## User course correction: return to provider rows — 2026-10-30
+
+“Make main green” referred to the originally listed inherited fixtures, not a repeated full release loop. No more full release milestones until the needs-work rows land or every row has a recorded disposition. Any already-running editor command may finish or stop safely only to preserve a clean parking checkpoint. No new editor investigation, tests or review. Existing landed work is retained; no unrelated rollback.
+
+The trivial packaged schema expectation is already fixed and landed inc519c833, documented27b41d02: source-derived expected schema plus independent column/index ownership witnesses, five targeted fixture tests and archived004cf999People smoke passing. It is not a claim that release gates are green or that the archived binary qualifies later SQL. No additional build/smoke run is needed for this instruction.
+
+### Known release issues, outside the provider rows
+
+| Issue | Preserved evidence | Status |
+|---|---|---|
+| Dropped-image order a.png,c.jpg,d.gif versus a.png,d.gif,c.jpg | `/tmp/terno-release-milestone7-o5i3u5d5/04-e2e.log` and traces; fixture diagnosis `/tmp/terno-r7-editor-a894bf8b/`; Root `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-editor7-8jwst2m3` | Known release issue. Fixture correction already landed693af4e4; original milestoneRED retained, no overallgreen claim or further work in this goal. |
+|5MBpaired suggestion typing median1.183>1.178 | `/tmp/terno-release-milestone7-o5i3u5d5/06-ui-perf.log`; `/tmp/terno-r7-pm-7b6ccbf2/qualification.log` additionally records10MBRED | Known release issue; editor/dependency work parked unlanded. No relaxed budgets or further editor work in this goal. |
+| Sustained-j150ms maximum frame against50 | `/tmp/terno-release-milestone7-o5i3u5d5/06-ui-perf.log`; source-dev evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-list7-m2k6ubyu` | Known release issue. Stable virtualizer callback already landed7b125dc3; historicalRED and50NOTRUNsuccessors retained, no productiongreen claim or more list work here. |
+|v23migration slice20.139583ms against16 | `/tmp/terno-release-milestone7-o5i3u5d5/07-perf.log`; Root `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-migration7-kjj9xafg` | Known release issue. Candidate deduplication already landedc519c833; historicalRED retained, fresh release qualification deferred until provider rows dispositioned. |
+
+### Parked editor branches: unlanded, no continuation in this goal
+
+| Branch | Preserved checkpoint | Note |
+|---|---|---|
+| `t3/prosemirror-view-reconciliation` |5ee9a729plus any wind-down WIP checkpoint | Existing continuation steered to stop cleanly, join owned work and commit/park all WIP only. Evidence `/tmp/terno-r7-pm-7b6ccbf2/`; Root will record final parking acknowledgement. No new tests/reviews/qualification. |
+| `t3/huge-editor-rendering-boundary` |9d32eb72 | Existing evidence-only rendering/mapping boundary; preserve branch/worktree unlanded. |
+| `t3/prosemirror-position-bounds-dependency` |211c7f6d | Existing dependency experiment; preserve unlanded, historical104.8ms/50REDunwaived. |
+| `t3/large-editor-typing-performance` |0f5cbefb | Existing editor experiment; preserve unlanded, timing/content evidence unchanged. |
+
+Priority remains W06,W01,W03,W05,W02,W08,W10,W09,W11. Next three slices: W06 uniquely evidenced IMAP identity recovery(A28/S11), W01 request/body/send lifetime interruption(S27), W03 omitted Gmail batch results(B13). W06 exclusively owns any hot core/types/SQL/IDB/store changes; W01 starts in dedicated protocol/lifetime qualification files, W03 in mail-only batch outcome code/tests. No parallel hot-file edits; dependencies queue serially. Same isolated worktrees, targeted tests/touched-package types and lint only, affected perf file only for changed hot path, at most two actual native Codex code-review rounds per series, serial rebase/FF landing plus separate worklist commit. Every landing updates exact affected scenario dispositions rather than leaving provider progress implicit.34needs-work stays the starting count until evidence supports individual changes.
