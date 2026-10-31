@@ -1006,3 +1006,10 @@ Landed the quote-converter series after local rebase onto current UI/phrase main
 Root passes156/156in six exact richtext/direct-caller files, including the unchanged hostile2MBtiming case, plus richtext types/strict lint/whitespace. One native Sol/high Standards+Spec review PASS/0, no later source changes or second review. [Spec, diagnostic limits and commands](../plans/drafts/release6-quote-conversion.md). Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-quote6-rdusp7un`. Historical87.8msis unreplicated/unattributed; diagnostic total CPU did not improve and remains recorded. No total-CPU or broad-release clearance.
 
 Current targeted unit/UI/phrase repairs pass; SQL/IDB and shared backend perf failures remain to address. No full gates/builds until remaining scopes are ready; report row/counts and held feature-backlog decisions unchanged.
+
+
+## Release repair: IDB scope reuses ready filter membership — 2026-10-30
+
+Landed465f0643/7dfb8ac5. Ascending scope rebuilding copies a ready filter's global current membership instead of rescanning wide thread rows; unready orders keep the original fallback. Pending memberships, copied date order, hidden-Inbox/account/category predicates, cursor order, rollback and physical reopen remain. The single native review returned Standards PASS/Spec FAIL with two first-round test gaps; Root corrected both rather than treating them as post-cap backlog. Four stale-order inverses and one in-place-sort inverse fail the added exact/work assertions; mutations were restored before verification. No second review or invented final-review PASS.
+
+Root passes62scoped unit tests, IDB types/owned lint and both unchanged original perf files20/20once in112.68s. All assertions reached; no new timings printed or numeric speedup claimed. [Spec and corrected review disposition](../plans/drafts/release6-idb-navigation.md). Root evidence `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-idb6-4kifpxs2`. Historical timings remain unreproduced/unattributed. Finished worktree removed after landing; main is not release-green and held feature backlog/report counts are unchanged.
