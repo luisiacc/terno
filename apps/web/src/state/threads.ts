@@ -1,3 +1,5 @@
+import { t } from "@terno/i18n";
+import { dismissSnack, snack } from "~/lib/snack";
 import type { ThreadDetail } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { create } from "zustand";
@@ -55,6 +57,29 @@ export function invalidateThreadConnection(): void {
   staleSince.clear();
   if (retained) staleSince.set(selected!, ++seq);
   useThreads.setState((s) => ({ details: retained ? new Map([[selected!, retained]]) : new Map(), gone: new Set(), version: s.version + 1 }));
+}
+
+/** Selection owns this completion, even when its header came from the cache. */
+export async function hydrateSelectedThread(id: number, selected: () => boolean): Promise<void> {
+  const detail = await loadThread(id);
+  if (!detail || !selected()) return;
+  for (const message of detail.messages) {
+    if (!selected()) return;
+    if (message.bodyState === "full" || message.bodyUnavailable) continue;
+    try {
+      const result = await client.call("reader.hydrate", { threadId: id, messageId: message.id });
+      if (!selected()) return;
+      if (result.changed) await loadThread(id, true);
+    } catch (error) {
+      if (selected()) {
+        const notice = snack.error(t("reader.downloadFailed"), {
+          description: error instanceof RpcError ? error.message : undefined,
+          action: { label: t("common.retry"), onClick: () => { dismissSnack(notice); if (selected()) void hydrateSelectedThread(id, selected); } },
+        });
+      }
+      return;
+    }
+  }
 }
 
 export function loadThread(id: number, force = false): Promise<ThreadDetail | null> {

@@ -353,7 +353,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     await (await h.backend.provider(h.account.id))!.verify();
     const responses: Response[] = [];
     try {
-      for (let i = 0; i < 64; i++) responses.push(await h.context.google!.request({ request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold"));
+      for (let i = 0; i < 64; i++) responses.push(await h.context.google!.request({ admission: i < 62 ? "background" : "send", request: { endpoint: "gmail-api", purpose: "mail" } }, "https://synthetic.invalid/hold"));
       const { opId } = await h.send();
       const original = await h.backend.store.ops.get(opId);
       const ledger = await h.backend.store.providerCooldown.read();
@@ -362,7 +362,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       expect(await h.backend.store.ops.get(opId)).toEqual(original);
       expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
       expect(h.requests).toHaveLength(66);
-      expect(await responses.shift()!.text()).toBe("held");
+      expect(await responses.pop()!.text()).toBe("held");
       expect(await h.backend.runWorker()).toBe(1);
       expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: original!.payload_json });
     } finally { await Promise.all(responses.map((r) => r.text())); }

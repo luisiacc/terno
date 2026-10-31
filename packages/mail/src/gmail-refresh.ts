@@ -1,6 +1,6 @@
 import { L } from "@terno/i18n";
 import { isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError, type GoogleRequests, type RequestRun, type HttpResponseEvidence } from "./types";
+import { ProviderAuthError, ProviderError, type GoogleRequests, type RequestRun, type HttpResponseEvidence, type MailAdmission } from "./types";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 
 export interface GmailRefreshExchange {
@@ -23,6 +23,7 @@ export async function exchangeGmailRefresh(options: {
   google?: GoogleRequests;
   run?: RequestRun;
   generation?: number;
+  admission?: MailAdmission;
   url: string;
   clientId: string;
   clientSecret: string | null;
@@ -54,7 +55,7 @@ export async function exchangeGmailRefresh(options: {
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: options.refreshToken, client_id: options.clientId });
     if (options.clientSecret) body.set("client_secret", options.clientSecret);
     const init = { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body, signal };
-    const dispatched = options.google ? options.google.request({ request: { endpoint: "oauth-token", purpose: "refresh" }, run: options.run, generation: options.generation ?? options.google.generation(), onHeaders: (status, evidence) => { responseStatus = status; httpResponse = evidence; } }, options.url, init) : options.fetch(options.url, init);
+    const dispatched = options.google ? options.google.request({ request: { endpoint: "oauth-token", purpose: "refresh" }, admission: options.admission, run: options.run, generation: options.generation ?? options.google.generation(), onHeaders: (status, evidence) => { responseStatus = status; httpResponse = evidence; } }, options.url, init) : options.fetch(options.url, init);
     const response = await wait(dispatched.then((res) => {
       if (signal.aborted) {
         void res.body?.cancel().catch(() => {});

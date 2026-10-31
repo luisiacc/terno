@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/desktop.d.ts", "e2e/foreground-reader.dev.ts", "playwright.foreground.dev.config.ts"],
+  "exclude": []
+}

@@ -1,3 +1,6 @@
+import "fake-indexeddb/auto";
+import { IdbMailStore } from "@terno/idb";
+import { IDBFactory } from "fake-indexeddb";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,28 +10,38 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanups: (() => Promise<void>)[] = [];
+const heldTerminals: (() => void)[] = [];
 afterEach(async () => {
-  try { for (const close of cleanups.splice(0).reverse()) await close(); }
+  try { for (const finish of heldTerminals.splice(0)) finish(); for (const close of cleanups.splice(0).reverse()) await close(); }
   finally { vi.restoreAllMocks(); }
 });
 
-async function setup(refresh = false) {
+async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false, autoSync = false) {
+  let override: ((request: Request) => Response | undefined | Promise<Response | undefined>) | undefined;
+  let firstPromoted!: () => void;
+  const initialPromotion = new Promise<void>((resolve) => { firstPromoted = resolve; });
+  const promoted: number[] = [], processed: number[] = [];
+  let readerQueued!: () => void;
+  const readerPromotion = new Promise<void>((resolve) => { readerQueued = resolve; });
   const backgroundAccounts = refresh ? 11 : 2;
   const sender = refresh ? 12 : 3;
-  const capacity = refresh ? 64 : 6;
+  const capacity = refresh ? 62 : 6;
   const paths: string[] = [], unexpected: string[] = [];
+  const admissions: { path: string; lane: string }[] = [];
   const bodies: { finish(): void }[] = [];
   let first!: () => void;
   const firstNativeBody = new Promise<void>((resolve) => { first = resolve; });
   let witness!: () => void;
   const sixNativeBodies = new Promise<void>((resolve) => { witness = resolve; });
   let sourceClosed = 0, holding = true;
-  const raw = Buffer.from("From: Sender <sender@example.test>\r\nTo: reader@example.test\r\nSubject: Body\r\nMessage-ID: <body@example.test>\r\nContent-Type: text/plain\r\n\r\nExact downloaded body").toString("base64url");
+  const raw = Buffer.from("From: Sender <sender@example.test>\r\nTo: reader@example.test\r\nSubject: Body\r\nMessage-ID: <body@example.test>\r\nContent-Type: text/plain\r\n\r\nExact downloaded body" + (large ? "x".repeat(300_000) : "")).toString("base64url");
   const envelope = (id: string) => JSON.stringify({ id, threadId: id, raw, labelIds: ["INBOX"], internalDate: "1000" });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     if (!(input instanceof Request)) throw new Error("Expected managed native Request");
     const url = new URL(input.url), path = url.pathname;
     paths.push(path);
+    const replaced = await override?.(input);
+    if (replaced) return replaced;
     if (url.origin === "https://foreground.invalid" && /^\/\d+\/token$/.test(path)) return Response.json({ access_token: "synthetic-access", token_type: "Bearer", expires_in: 3600 });
     const mailbox = /^\/(\d+)\/gmail\//.exec(path)?.[1];
     if (url.origin === "https://foreground.invalid" && mailbox) {
@@ -47,11 +60,13 @@ async function setup(refresh = false) {
         if (!holding || Number(mailbox) === sender) return new Response(envelope(id));
         let controller!: ReadableStreamDefaultController<Uint8Array>;
         let finished = false;
-        const response = new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; } }, { highWaterMark: 0 }));
+        const bytes = new TextEncoder().encode(envelope(id));
+        const prefix = large ? 262_145 : 0;
+        const response = new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; if (prefix) { for (let i = 0; i < prefix; i += 65_536) c.enqueue(bytes.slice(i, Math.min(i + 65_536, prefix))); } } }, { highWaterMark: 0 }));
         bodies.push({ finish() {
           if (finished) return;
           finished = true;
-          controller.enqueue(new TextEncoder().encode(envelope(id)));
+          controller.enqueue(bytes.slice(prefix));
           controller.close(); sourceClosed++;
         } });
         if (bodies.length === 1) first();
@@ -63,19 +78,34 @@ async function setup(refresh = false) {
     throw new Error("Unexpected synthetic route");
   });
   const providers: ProviderRegistry = {
-    create(ctx) { return createGmailProvider(ctx, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } }); },
+    create(ctx) {
+      const incoming = ctx.incoming!;
+      const processor = ctx.incomingProcessor!;
+      return createGmailProvider({ ...ctx,
+        google: ctx.google && { ...ctx.google, request(descriptor, input, init) { admissions.push({ path: new URL(input instanceof Request ? input.url : String(input)).pathname, lane: descriptor.admission ?? "background" }); return ctx.google!.request(descriptor, input, init); } },
+        incoming: { ...incoming, promote: async (id, signal, reset, admission) => {
+          if (admission === "reader") readerQueued();
+          const release = await incoming.promote!(id, signal, reset, admission);
+          promoted.push(id); if (promoted.length === 1) firstPromoted(); return release;
+        } },
+        incomingProcessor: { run: async (input, signal) => { const result = await processor.run(input, signal); processed.push(ctx.account.id); return result; } },
+      }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } }); },
     async verifyImap() {}, async connectGmail() { throw new Error("Unexpected OAuth"); },
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-foreground-"));
-  const backend = new Backend({ dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  const factory = new IDBFactory();
+  const store = kind === "IDB" ? await IdbMailStore.open({ name: crypto.randomUUID(), factory, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) }, instantSearch: false }) : undefined;
+  const backend = new Backend({ store, dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, version: "test", autoSync, instantSearch: false, iconTransport: null });
   const syncs: Promise<void>[] = [];
   const [local, remote] = createMemoryTransportPair();
   backend.connect(remote, { clientId: "foreground-test", origin: "renderer" });
   const rpc = new RpcClient(local);
+  const pending: Promise<unknown>[] = [];
+  const hydrate = (target: { threadId: number; messageId: number }) => { const call = rpc.call("reader.hydrate", target); void call.catch(() => {}); pending.push(call); return call; };
   cleanups.push(async () => {
     holding = false;
     for (const body of bodies) body.finish();
-    rpc.close(); await backend.stop(); await Promise.allSettled(syncs);
+    await backend.stop(); await Promise.allSettled([...syncs, ...pending]); rpc.close();
     rmSync(dir, { recursive: true, force: true });
     expect(unexpected).toEqual([]);
   });
@@ -99,9 +129,9 @@ async function setup(refresh = false) {
   }
   for (let id = 1; id <= backgroundAccounts; id++) {
     syncs.push(backend.syncAccount(id));
-    if (!refresh && id === 1) await firstNativeBody;
+    if (!refresh && id === 1) { await firstNativeBody; if (large) await initialPromotion; }
   }
-  return { backend, rpc, paths, sixNativeBodies, bodies, sender, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
+  return { backend, rpc, hydrate, paths, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
 }
 
 it("public Send completes through the shared physical pool while six multi-account backfill bodies remain held", async () => {
@@ -132,24 +162,291 @@ it("public header-only open hydrates its body without waiting for held multi-acc
     isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
   }]);
   const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const cached = await t.rpc.call("threads.get", { threadId: thread.id });
+  expect(cached.messages[0]!.bodyText).toBeNull();
+  await t.hydrate( { threadId: thread.id, messageId: cached.messages[0]!.id });
   const opened = await t.rpc.call("threads.get", { threadId: thread.id });
   expect(t.backend.net.googlePending()).toBe(6);
   expect(t.sourceClosed()).toBe(0);
-  expect(opened.messages[0]!.bodyText).toBe("Exact downloaded body");
+  expect(opened.messages[0]!.bodyText).toBe("Exact downloaded body\n");
 });
 
 it("public Send receives an admission opportunity during actual multi-account cached backfill refresh", async () => {
   const t = await setup(true);
   await t.sixNativeBodies;
-  expect(t.bodies).toHaveLength(64);
-  expect(t.backend.net.googlePending()).toBe(64);
+  expect(t.bodies).toHaveLength(62);
+  expect(t.backend.net.googlePending()).toBe(62);
   expect(new Set(t.paths.filter((p) => /\/messages\/m\d+$/.test(p)).map((p) => p.split("/")[1])).size).toBe(11);
   const sent = await t.rpc.call("compose.send", { accountId: t.sender, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" });
   await t.backend.runWorker();
   const op = (await t.rpc.call("ops.list", {})).find((row) => row.id === sent.opId);
-  expect(op!.attempts).toBeLessThanOrEqual(1);
-  console.info("synthetic saturation outcome", { state: op!.state, attempts: op!.attempts, submissions: t.paths.filter((p) => p === `/${t.sender}/gmail/messages/send`).length });
+  expect(op).toMatchObject({ state: "succeeded", attempts: 1 });
+  expect(t.paths.filter((p) => p === `/${t.sender}/gmail/messages/send`)).toHaveLength(1);
+  expect(t.backend.net.googlePending()).toBe(62);
   expect(t.sourceClosed()).toBe(0);
-  // Desired opportunity fails while the real native pool is monopolized by refresh.
   expect(op?.state).toBe("succeeded");
+});
+
+for (const kind of ["SQL", "IDB"] as const) {
+  it(`${kind} keyed large body waits for actual sole processor retirement, then precedes queued background promotion`, async () => {
+    const t = await setup(false, kind, true);
+    await t.sixNativeBodies;
+    await t.backend.ingestSliced([header(3)]);
+    const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+    const cached = await t.rpc.call("threads.get", { threadId: thread.id });
+    const hydration = t.hydrate( { threadId: thread.id, messageId: cached.messages[0]!.id });
+    await t.readerPromotion;
+    expect(t.promoted).toEqual([1]);
+    expect(t.processed).toEqual([]);
+    const sent = await t.rpc.call("compose.send", { accountId: 3, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" });
+    await t.backend.runWorker();
+    expect((await t.rpc.call("ops.list", {})).find((op) => op.id === sent.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+    expect(t.sourceClosed()).toBe(0);
+    for (const body of t.bodies) body.finish();
+    await hydration;
+    const opened = await t.rpc.call("threads.get", { threadId: thread.id });
+    expect(opened.messages[0]!.bodyText).toBe("Exact downloaded body" + "x".repeat(300_000) + "\n");
+    expect(t.promoted.slice(0, 3)).toEqual([1, 3, 2]);
+    expect(t.processed.slice(0, 2)).toEqual([1, 3]);
+  });
+
+  it(`${kind} cache reads and non-renderer origins do not hydrate; duplicate keyed actions join one native body`, async () => {
+    const t = await setup(false, kind);
+    await t.sixNativeBodies;
+    await t.backend.ingestSliced([header(3)]);
+    const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+    const cached = await t.rpc.call("threads.get", { threadId: thread.id });
+    const target = { threadId: thread.id, messageId: cached.messages[0]!.id };
+    const before = t.paths.length;
+    for (const origin of ["dev", "mcp"] as const) {
+      const [local, remote] = createMemoryTransportPair();
+      t.backend.connect(remote, { clientId: "observer", origin });
+      const observer = new RpcClient(local);
+      try { await expect(observer.call("reader.hydrate", target)).rejects.toMatchObject({ code: "FORBIDDEN" }); }
+      finally { observer.close(); }
+    }
+    expect(t.paths).toHaveLength(before);
+    expect(cached.messages[0]!.bodyText).toBeNull();
+    await Promise.all([t.hydrate( target), t.hydrate( target)]);
+    expect(t.paths.filter((path) => path === "/3/gmail/messages/header")).toHaveLength(1);
+    expect((await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!.bodyText).toBe("Exact downloaded body\n");
+  });
+}
+
+function header(accountId: number) {
+  return {
+    accountId, providerMsgId: "header", providerThreadId: "header", rfcMessageId: "header@example.test",
+    inReplyTo: null, references: [], from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], bcc: [],
+    subject: "Header", date: 1000, snippet: "", bodyText: null, bodyHtml: null, bodyState: "partial" as const, listId: null,
+    isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100,
+  };
+}
+
+for (const kind of ["SQL", "IDB"] as const) {
+  for (const change of ["removed", "completed", "evicted", "credentials"] as const) it(`${kind} late selected body cannot publish after ${change}`, async () => {
+    const t = await setup(false, kind);
+    await t.sixNativeBodies;
+    await t.backend.ingestSliced([header(3)]);
+    const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+    const cached = await t.rpc.call("threads.get", { threadId: thread.id });
+    const messageId = cached.messages[0]!.id;
+    const held = heldBody();
+    t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? held.response : undefined);
+    const hydration = t.hydrate({ threadId: thread.id, messageId });
+    await held.started;
+    if (change === "removed") await t.backend.store.sync.remove([messageId]);
+    if (change === "completed") await t.backend.store.sync.setBody(messageId, "Newer authoritative body", null, { now: 100, classifier: null });
+    if (change === "evicted") { t.backend.evictions.begin(); t.backend.evictions.end(); }
+    if (change === "credentials") await t.backend.signedIn(3);
+    held.finish();
+    const outcome = await Promise.allSettled([hydration]);
+    if (change === "evicted" || change === "credentials") expect(outcome[0]!.status).toBe("rejected");
+    const detail = await t.backend.store.threads.get(thread.id);
+    if (change === "removed") expect(detail).toBeNull();
+    else expect(detail!.messages[0]!.bodyText).toBe(change === "completed" ? "Newer authoritative body" : null);
+    expect(t.paths.filter((p) => p === "/3/gmail/messages/header")).toHaveLength(1);
+    expect(t.backend.net.googlePending()).toBe(6);
+  });
+
+  it(`${kind} exact message404 retains the cached header and healthy sibling`, async () => {
+    const t = await setup(false, kind);
+    await t.sixNativeBodies;
+    await t.backend.ingestSliced([header(3), { ...header(3), providerMsgId: "sibling", providerThreadId: "sibling", rfcMessageId: "sibling@example.test", bodyText: "Exact sibling", bodyState: "full" }]);
+    const threads = await t.rpc.call("threads.list", { view: "inbox", accountId: 3 });
+    const details = await Promise.all(threads.items.map((thread) => t.rpc.call("threads.get", { threadId: thread.id })));
+    const target = details.find((detail) => detail.messages[0]!.bodyText === null)!;
+    t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? Response.json({}, { status: 404 }) : undefined);
+    expect(await t.hydrate({ threadId: target.thread.id, messageId: target.messages[0]!.id })).toEqual({ changed: false });
+    expect(await Promise.all(threads.items.map((thread) => t.rpc.call("threads.get", { threadId: thread.id })))).toEqual(details);
+  });
+
+  it(`${kind} duplicate observer cap refuses before any extra native dispatch`, async () => {
+    const t = await setup(false, kind);
+    await t.sixNativeBodies;
+    await t.backend.ingestSliced([header(3)]);
+    const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+    const cached = await t.rpc.call("threads.get", { threadId: thread.id });
+    const target = { threadId: thread.id, messageId: cached.messages[0]!.id };
+    const held = heldBody();
+    t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? held.response : undefined);
+    const joined = Array.from({ length: 8 }, () => t.hydrate(target));
+    await held.started;
+    await expect(t.hydrate(target)).rejects.toMatchObject({ code: "UNAVAILABLE", i18n: { key: "attachments.busy" } });
+    expect(t.paths.filter((p) => p === "/3/gmail/messages/header")).toHaveLength(1);
+    held.finish();
+    expect(await Promise.all(joined)).toEqual(Array.from({ length: 8 }, () => ({ changed: true })));
+    expect(t.backend.net.googlePending()).toBe(6);
+  });
+}
+
+function heldBody() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let started!: () => void;
+  const signal = new Promise<void>((resolve) => { started = resolve; });
+  const response = new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; }, pull() { started(); } }, { highWaterMark: 0 }));
+  return { response, started: signal, finish() {
+    const raw = Buffer.from("From: sender@example.test\r\nTo: account3@example.test\r\nSubject: Header\r\nContent-Type: text/plain\r\n\r\nExact downloaded body").toString("base64url");
+    controller.enqueue(new TextEncoder().encode(JSON.stringify({ id: "header", threadId: "header", raw, labelIds: ["INBOX"] })));
+    controller.close();
+  } };
+}
+
+it("62 background bodies plus reader and Send retain64; native EOF advances queued Send without another worker call", async () => {
+  const t = await setup(true);
+  await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(t.sender)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: t.sender })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  const reader = heldJson({ id: "header", threadId: "header", raw: Buffer.from("From: sender@example.test\r\nContent-Type: text/plain\r\n\r\nExact body").toString("base64url") });
+  const sending = heldJson({ id: "sent", threadId: "sent" });
+  let submitted!: () => void;
+  const submission = new Promise<void>((resolve) => { submitted = resolve; });
+  let posts = 0;
+  t.override(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/header")) return reader.response;
+    if (path.endsWith("/messages/send")) {
+      const wire = await request.json() as { raw: string };
+      const text = Buffer.from(wire.raw, "base64url").toString();
+      expect(text).toContain("Exact subject"); expect(text).toContain("Exact body"); expect(text).toContain("recipient@example.test");
+      if (++posts === 1) return sending.response;
+      submitted(); return Response.json({ id: "sent2", threadId: "sent2" });
+    }
+  });
+  const hydration = t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
+  await reader.started;
+  const payload = { to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" };
+  const first = await t.rpc.call("compose.send", { accountId: t.sender, ...payload });
+  const worker = t.backend.runWorker();
+  void worker.catch(() => {});
+  await sending.started;
+  expect(t.backend.net.googlePending()).toBe(64);
+  const sent = await t.rpc.call("compose.send", { accountId: t.sender - 1, ...payload });
+  const original = await t.backend.store.ops.get(sent.opId);
+  expect(original).toMatchObject({ state: "queued", attempts: 0 });
+  expect(posts).toBe(1);
+  sending.finish();
+  await submission;
+  await worker;
+  expect(await t.backend.store.ops.get(first.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+  expect(await t.backend.store.ops.get(sent.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: original!.payload_json });
+  expect(posts).toBe(2);
+  expect(t.sourceClosed()).toBe(0);
+  reader.finish(); await hydration;
+  expect(t.backend.net.googlePending()).toBe(62);
+});
+
+function heldJson(value: unknown) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let start!: () => void, closed = false;
+  const started = new Promise<void>((resolve) => { start = resolve; });
+  const response = new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c; }, pull() { start(); }, cancel() { closed = true; } }, { highWaterMark: 0 }));
+  const finish = () => { if (closed) return; closed = true; controller.enqueue(new TextEncoder().encode(JSON.stringify(value))); controller.close(); };
+  heldTerminals.push(finish);
+  return { response, started, finish };
+}
+
+for (const status of [401, 403, 429] as const) it(`reader HTTP${status} does not publish a body or bypass actual policy`, async () => {
+  const t = await setup();
+  await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  const target = { threadId: thread.id, messageId: detail.messages[0]!.id };
+  t.override((request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/3/gmail/messages/header") return Response.json({ error: { errors: [{ reason: status === 403 ? "accessNotConfigured" : "rateLimitExceeded" }] } }, { status, headers: { "retry-after": "120" } });
+  });
+  await expect(t.hydrate(target)).rejects.toBeInstanceOf(Error);
+  const before = t.paths.length;
+  if (status !== 401) { await expect(t.hydrate(target)).rejects.toBeInstanceOf(Error); expect(t.paths).toHaveLength(before); }
+  expect((await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!.bodyText).toBeNull();
+  expect(t.sourceClosed()).toBe(0);
+  expect(t.backend.net.googlePending()).toBe(6);
+});
+
+for (const kind of ["SQL", "IDB"] as const) it(`${kind} keyed body writer rejects a foreign current provider identity`, async () => {
+  const t = await setup(false, kind);
+  await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  const result = await t.backend.store.sync.setBody(detail.messages[0]!.id, "Foreign bytes", null, {
+    now: 1, classifier: null, expected: { accountId: 3, threadId: thread.id, providerMsgId: "foreign" },
+  });
+  expect(result.touched).toEqual([]);
+  expect(await t.rpc.call("threads.get", { threadId: thread.id })).toEqual(detail);
+});
+
+it("foreground joins an already issued background refresh without duplicating or upgrading its native request", async () => {
+  const t = await setup(false, "SQL", false, true);
+  await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  const token = heldJson({ access_token: "synthetic-shared", token_type: "Bearer", expires_in: 3600 });
+  let sentNative!: () => void;
+  const sentRequest = new Promise<void>((resolve) => { sentNative = resolve; });
+  t.override((request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/3/token") return token.response;
+    if (path === "/3/gmail/messages/send") { sentNative(); return Response.json({ id: "sent", threadId: "sent" }); }
+  });
+  const background = t.sync(3);
+  await token.started;
+  expect(t.backend.net.googlePending()).toBe(7);
+  const hydration = t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
+  const sent = await t.rpc.call("compose.send", { accountId: 3, to: [{ email: "recipient@example.test", name: "" }], subject: "Shared refresh", bodyText: "Exact body" });
+  expect(t.paths.filter((path) => path === "/3/token")).toHaveLength(1);
+  expect(t.paths.filter((path) => path === "/3/gmail/messages/header")).toHaveLength(0);
+  expect(t.admissions.filter((entry) => entry.path === "/3/token")).toEqual([{ path: "/3/token", lane: "background" }]);
+  token.finish();
+  await hydration; await sentRequest; await t.backend.sendsIdle();
+  expect(t.paths.filter((path) => path === "/3/token")).toHaveLength(1);
+  expect(t.paths.filter((path) => path === "/3/gmail/messages/header")).toHaveLength(1); // keyed raw read; sync remains behind incoming backfill admission
+  expect((await t.rpc.call("ops.list", {})).find((op) => op.id === sent.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+  expect((await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!.bodyText).toBe("Exact downloaded body\n");
+  void background;
+});
+
+for (const kind of ["SQL", "IDB"] as const) it(`${kind} keyed capture stages exact attachment bytes and preserves independent queued flag intent`, async () => {
+  const t = await setup(false, kind);
+  await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  await t.rpc.call("threads.act", { threadIds: [thread.id], action: "star" });
+  const ops = await t.rpc.call("ops.list", {});
+  const raw = Buffer.from([
+    "From: sender@example.test", "To: account3@example.test", "Subject: Header", 'Content-Type: multipart/mixed; boundary="exact"', "",
+    "--exact", "Content-Type: text/plain", "", "Exact downloaded body", "--exact", "Content-Type: application/octet-stream", 'Content-Disposition: attachment; filename="exact.bin"', "Content-Transfer-Encoding: base64", "", "AP+ADQo=", "--exact--", "",
+  ].join("\r\n")).toString("base64url");
+  t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? Response.json({ id: "header", threadId: "header", raw, labelIds: ["INBOX"] }) : undefined);
+  await t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
+  const message = (await t.rpc.call("threads.get", { threadId: thread.id })).messages[0]!;
+  expect(message).toMatchObject({ isStarred: true, isRead: false, bodyText: "Exact downloaded body" });
+  expect(message.attachments).toHaveLength(1);
+  expect(message.attachments[0]).toMatchObject({ filename: "exact.bin", size: 5 });
+  expect(await t.rpc.call("attachments.read", { accountId: 3, assetId: message.attachments[0]!.assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
+  expect(await t.rpc.call("ops.list", {})).toEqual(ops);
 });

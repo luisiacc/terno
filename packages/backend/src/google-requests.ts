@@ -1,4 +1,4 @@
-import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type ProviderRequests } from "@terno/mail/portable";
+import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
 import { mailboxDigest, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
@@ -35,11 +35,11 @@ export async function savedGoogleRequests(input: {
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
   const refuse = () => new ProviderCooldownError("gmail-api", "0", "binding");
-  const check = (request: HttpRequestContext) => {
+  const check = (request: HttpRequestContext, admission: MailAdmission = "background") => {
     if (!alive() || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
     installation.check({ request });
     scope.check({ request });
-    if (net.googlePending() >= 64) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
+    if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
   };
   const pause = () => { paused = true; input.changed(); };
   return {
@@ -59,7 +59,7 @@ export async function savedGoogleRequests(input: {
       const epoch = descriptor.generation ?? input.credentials();
       const revision = recoveryRevision;
       const active = () => alive() && input.credentials() === epoch;
-      const assert = () => { if (!active()) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "closed"); check(descriptor.request); };
+      const assert = () => { if (!active()) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "closed"); check(descriptor.request, descriptor.admission); };
       const policy: ProviderRequests = {
         ...scope,
         check(d) { assert(); scope.check(d); },
@@ -69,16 +69,16 @@ export async function savedGoogleRequests(input: {
           return { ...ticket, headers429: (e) => active() ? ticket.headers429(e) : Promise.resolve("unconfirmed"), dispatch: (transport) => ticket.dispatch(() => { assert(); return transport(); }) };
         },
       };
-      return net.fetchGoogle(policy, { ...descriptor, onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind) => {
+      return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind) => {
         const current = active() && !init?.signal?.aborted;
         if (current && revision === recoveryRevision && kind === "policy" && descriptor.request.endpoint === "gmail-api") { policyEpoch = epoch; input.changed(); }
         await settle(current ? kind : "none");
       }) : undefined })(resource, init);
     },
-    prove(read) {
+    prove(read, admission) {
       if (!alive() || paused) throw refuse();
       if (owner) return Promise.resolve();
-      check(mail);
+      check(mail, admission);
       if (proving) return proving;
       const epoch = input.credentials();
       const active = () => alive() && input.credentials() === epoch;
@@ -90,7 +90,7 @@ export async function savedGoogleRequests(input: {
         if (!active()) throw refuse();
         // Do not interleave a bind with an unconfirmed cooldown writer.
         if (await gate.drain(5000) !== "drained" || !active()) { pause(); throw refuse(); }
-        check(mail);
+        check(mail, admission);
         try {
           if (!await input.write(() => input.store.bind(stamp, key, active)) || !active()) throw refuse();
           if (await gate.refreshAfterBind() !== "confirmed" || !active()) throw refuse();
@@ -108,7 +108,7 @@ export async function savedGoogleRequests(input: {
           pause();
           throw error instanceof ProviderCooldownError ? error : refuse();
         }
-        check(mail);
+        check(mail, admission);
       })().finally(() => { proving = undefined; });
       return proving;
     },

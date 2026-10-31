@@ -364,7 +364,7 @@ export interface MailStore {
     beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
     ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void }): Promise<IngestOutcome>;
-    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
+    setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
     remove(messageIds: readonly number[], check?: () => void): Promise<{ touched: number[] }>;

@@ -25,7 +25,7 @@ import { t } from "@terno/i18n";
 import { fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
 import { inSeparateTab, setApp, useApp } from "~/state/app";
-import { loadThread, useThread, useThreadGone } from "~/state/threads";
+import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MessageMenu } from "./message-menu";
@@ -536,9 +536,10 @@ export function Reader() {
   useEffect(() => {
     if (selectedId === null) return;
     // the header renders from the cached row immediately; the body follows (debounced while holding j)
-    const t = setTimeout(() => void loadThread(selectedId), detail ? 0 : 40);
+    let current = true;
+    const t = setTimeout(() => void hydrateSelectedThread(selectedId, () => current), detail ? 0 : 40);
     scheduleMarkRead(selectedId);
-    return () => clearTimeout(t);
+    return () => { current = false; clearTimeout(t); };
   }, [selectedId]);
 
   // a dwell only counts while the reader shows the thread

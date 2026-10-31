@@ -42,6 +42,8 @@ export interface OpAdmission {
   verifiedAccountIds: readonly number[];
   blockUnverifiedGoogle: boolean;
   blockAllGoogle: boolean;
+  blockGoogleSends?: boolean;
+  blockGoogleBackground?: boolean;
 }
 
 const integer = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v);
@@ -157,5 +159,6 @@ export function copyOpAdmission(input?: OpAdmission): OpAdmission {
   };
   if (!input) return Object.freeze({ blockedAccountIds: Object.freeze([]), verifiedAccountIds: Object.freeze([]), blockUnverifiedGoogle: false, blockAllGoogle: false });
   if (typeof input.blockAllGoogle !== "boolean" || typeof input.blockUnverifiedGoogle !== "boolean") throw new Error("Invalid private admission");
-  return Object.freeze({ blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), blockUnverifiedGoogle: input.blockUnverifiedGoogle, blockAllGoogle: input.blockAllGoogle });
+  if ((input.blockGoogleSends !== undefined && typeof input.blockGoogleSends !== "boolean") || (input.blockGoogleBackground !== undefined && typeof input.blockGoogleBackground !== "boolean")) throw new Error("Invalid private lane admission");
+  return Object.freeze({ blockGoogleSends: input.blockGoogleSends, blockGoogleBackground: input.blockGoogleBackground, blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), blockUnverifiedGoogle: input.blockUnverifiedGoogle, blockAllGoogle: input.blockAllGoogle });
 }

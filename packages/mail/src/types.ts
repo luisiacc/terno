@@ -149,12 +149,14 @@ export interface SyncSink {
 }
 
 
+export type MailAdmission = "background" | "send" | "reader";
+
 export interface GoogleRequests {
   generation(): number;
-  check(request: HttpRequestContext): void;
+  check(request: HttpRequestContext, admission?: MailAdmission): void;
   request(descriptor: RequestDescriptor, input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response>;
   /** The host invokes read with a generation-fenced, shared proof starter. */
-  prove(read: () => Promise<string>): Promise<void>;
+  prove(read: () => Promise<string>, admission?: MailAdmission): Promise<void>;
   tokenUnavailable(): void;
   accessAvailable(): void;
 }
@@ -198,6 +200,8 @@ export interface MailProvider {
   flagSnapshotSource?: "locations";
   verify(): Promise<void>;
   sync(sink: SyncSink): Promise<void>;
+  /** Explicit cached-message body read; never enumerates mail or loads embedded resources. */
+  readBody?(target: { id: number; providerMsgId: string }, signal: AbortSignal): Promise<{ parsed: import("./mime").ParsedMessage; release(): void } | null>;
   /**
    * Plan 68: after a pass that worked, the account's own folders when the provider keeps them apart from its
    * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.
@@ -287,8 +291,9 @@ export interface ProviderRegistry {
   beginGmailRenewal?(options: GmailRenewalOptions): Promise<GmailRenewalProof>;
 }
 
-export interface RequestRun { markDispatched(): void }
+export interface RequestRun { markDispatched(): void; markSubmissionDispatched?(): void }
 export interface RequestDescriptor {
+  readonly admission?: MailAdmission;
   readonly request: HttpRequestContext;
   readonly run?: RequestRun;
   readonly generation?: number;

@@ -97,3 +97,23 @@ it("retains promoted capacity until the captured processor has actually retired"
     expect(entered).toBe(true);
   } finally { finish(); pipeline.close(); }
 });
+
+it("gives queued background promotion a turn after two reader grants while retaining actual retirement ownership", async () => {
+  let finish!: () => void;
+  let retiring = false;
+  const retired = new Promise<void>((resolve) => { finish = resolve; });
+  const pipeline = new IncomingPipeline({ whenIdle: () => retiring ? retired : Promise.resolve() });
+  const first = await pipeline.promote(1, signal());
+  const order: string[] = [];
+  const background = pipeline.promote(2, signal()).then((release) => { order.push("background"); return release; });
+  const reader1 = pipeline.promote(3, signal(), undefined, "reader").then((release) => { order.push("reader1"); return release; });
+  const reader2 = pipeline.promote(3, signal(), undefined, "reader").then((release) => { order.push("reader2"); return release; });
+  const reader3 = pipeline.promote(3, signal(), undefined, "reader").then((release) => { order.push("reader3"); return release; });
+  retiring = true; first();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(order).toEqual([]);
+  retiring = false; finish();
+  (await reader1)(); (await reader2)(); (await background)(); (await reader3)();
+  expect(order).toEqual(["reader1", "reader2", "background", "reader3"]);
+  pipeline.close();
+});

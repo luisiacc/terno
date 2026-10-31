@@ -1722,7 +1722,7 @@ function admittedOps(c: Ctx, input?: OpAdmission): (o: R) => boolean {
   const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds);
   return (o) => {
     if (T(c, "accounts").get(o.account_id)?.kind !== "gmail") return true;
-    return !a.blockAllGoogle && !blocked.has(o.account_id as number) && (!a.blockUnverifiedGoogle || verified.has(o.account_id as number));
+    return !a.blockAllGoogle && !(o.kind === "send" ? a.blockGoogleSends : a.blockGoogleBackground) && !blocked.has(o.account_id as number) && (!a.blockUnverifiedGoogle || verified.has(o.account_id as number));
   };
 }
 export function claimReadyOps(c: Ctx, now: number, limit: number, admission?: OpAdmission): OpRow[] {

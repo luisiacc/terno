@@ -20,6 +20,8 @@ const COMPACT_SLICE = { ...BULK_SLICE, initial: 64, ceiling: 8192 };
  * removed, and gone after the next pass.
  */
 export class Evictions {
+  private revision = 0;
+  get generation(): number { return this.revision; }
   private seq = 0;
   /** passes started at or below this ran while a removal did (null: none ran yet) */
   private endSeq = 0;
@@ -39,6 +41,7 @@ export class Evictions {
   }
 
   begin(): void {
+    this.revision++;
     this.running = true;
   }
 
@@ -64,8 +67,12 @@ export class Evictions {
 
   /** a sync pass's slice: once no unit is in flight, what was removed is left out and `write` runs with it */
   async ingest<T>(accountId: number, pass: number, messages: IncomingMessage[], write: (admitted: IncomingMessage[]) => Promise<T>): Promise<T> {
+    return this.write(() => write(this.admit(accountId, pass, messages)));
+  }
+
+  async write<T>(write: () => Promise<T>): Promise<T> {
     while (this.current) await this.current.catch(() => {});
-    const p = write(this.admit(accountId, pass, messages));
+    const p = write();
     this.writes.add(p);
     try {
       return await p;

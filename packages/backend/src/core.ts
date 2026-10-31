@@ -10,7 +10,7 @@ import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/di
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
-import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type SendPayload, type SyncSink } from "@terno/mail/portable";
+import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
@@ -181,6 +181,9 @@ export class BackendCore {
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
+  private readonly capacitySync = new Set<number>();
+  private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<boolean> }>();
+  private bodyWaiters = 0;
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
   private readonly flagSyncAgain = new Set<number>();
@@ -385,6 +388,11 @@ export class BackendCore {
       for (const id of this.google.keys()) if (this.googleReady(id)) void this.syncAccount(id);
     }, delay);
     this.kickWorker();
+    for (const id of this.capacitySync) {
+      if (!this.googleReady(id)) continue;
+      this.capacitySync.delete(id);
+      void this.syncAccount(id);
+    }
   }
 
   /** Before mailbox proof, Google admission belongs to the installation, never a claimed address. */
@@ -431,8 +439,8 @@ export class BackendCore {
     return this.admissionSnapshot = (async () => {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
       const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([, google]) => google.paused).map(([id]) => id)];
-      const all = snapshot.blockAllGoogle || this.net.googlePending() >= 64 || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
-      return copyOpAdmission({ ...snapshot, blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion });
+      const all = snapshot.blockAllGoogle || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
+      return copyOpAdmission({ ...snapshot, blockGoogleSends: !this.net.googleAvailable("send"), blockGoogleBackground: !this.net.googleAvailable("background"), blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion });
     })();
   }
 
@@ -657,6 +665,7 @@ export class BackendCore {
     for (const off of this.unwatch.values()) off();
     await accountsClosed;
     await scheduledStopped;
+    await Promise.allSettled([...this.bodyJobs.values()].map((job) => job.promise));
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await this.ready.catch(() => {});
@@ -1240,8 +1249,8 @@ export class BackendCore {
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
         incoming: {
-          acquire: (id, signal, reset) => this.incoming.acquire(id, signal, reset),
-          promote: (id, signal, reset) => this.promote(life, id, signal, reset),
+          acquire: (id, signal, reset, admission) => this.incoming.acquire(id, signal, reset, admission),
+          promote: (id, signal, reset, admission) => this.promote(life, id, signal, reset, admission),
           retainCompleted: (bytes) => { this.assertCurrent(life); return this.incoming.retainCompleted(bytes); },
         },
         incomingProcessor: this.processing(life),
@@ -1294,10 +1303,10 @@ export class BackendCore {
     } };
   }
 
-  private async promote(life: AccountLifetime, accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
+  private async promote(life: AccountLifetime, accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void> {
     this.assertCurrent(life);
     const stop = AbortSignal.any(reset ? [signal, reset, life.abort.signal, this.abort.signal] : [signal, life.abort.signal, this.abort.signal]);
-    const release = await this.incoming.promote(accountId, stop);
+    const release = await this.incoming.promote(accountId, stop, undefined, admission);
     try {
       stop.throwIfAborted();
       this.assertCurrent(life);
@@ -1366,9 +1375,62 @@ export class BackendCore {
     if (!life?.abort.signal.aborted) return;
     this.lifetimes.delete(accountId);
     this.credentials.delete(accountId);
+    this.capacitySync.delete(accountId);
     this.cooldownAccounts.delete(accountId);
     this.cooldownChanged();
     this.options.providers.gmailTokens?.forget?.(accountId);
+  }
+
+  hydrateBody(threadId: number, messageId: number): Promise<boolean> {
+    const existing = this.bodyJobs.get(messageId);
+    if (existing && existing.threadId !== threadId) return Promise.resolve(false);
+    if (this.bodyWaiters >= 8 || (!existing && this.bodyJobs.size >= 2)) return Promise.reject(new RpcError("UNAVAILABLE", L("attachments.busy")));
+    const job = existing ?? { threadId, promise: Promise.resolve(false) };
+    if (!existing) {
+      job.promise = Promise.resolve().then(() => this.readSelectedBody(threadId, messageId)).finally(() => { if (this.bodyJobs.get(messageId) === job) this.bodyJobs.delete(messageId); });
+      this.bodyJobs.set(messageId, job);
+    }
+    this.bodyWaiters++;
+    return job.promise.finally(() => { this.bodyWaiters--; });
+  }
+
+  private async readSelectedBody(threadId: number, messageId: number): Promise<boolean> {
+    await this.ready;
+    const detail = await this.store.threads.get(threadId);
+    const message = detail?.messages.find((m) => m.id === messageId);
+    if (!message || message.bodyState === "full" || message.bodyUnavailable) return false;
+    const life = this.lifetime(message.accountId);
+    const credentials = this.credentialsOf(message.accountId);
+    const eviction = this.evictions.generation;
+    const check = () => {
+      this.assertCurrent(life);
+      if (life.abort.signal.aborted || credentials !== this.credentialsOf(message.accountId) || eviction !== this.evictions.generation) throw new RequestNotDispatchedError(L("errors.accountGone"));
+    };
+    check();
+    const account = await this.accountRead(life, () => this.store.accounts.get(message.accountId));
+    if (!account || needsWholeSignIn(account.syncState)) return false;
+    const ids = await this.providerStore(life).providerIds([messageId]);
+    const providerMsgId = ids.get(messageId);
+    if (!providerMsgId || providerMsgId.startsWith("local:")) return false;
+    const provider = await this.provider(message.accountId);
+    check();
+    if (!provider?.readBody) return false;
+    const body = await provider.readBody({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal]));
+    if (!body) return false;
+    try {
+      check();
+      const classifier = await this.classifier();
+      const result = await this.evictions.write(() => this.accountWrite(life, () => this.store.sync.setBody(messageId, body.parsed.text, body.parsed.html, {
+        now: this.now(), classifier, attachments: body.parsed.captureUnavailable ? undefined : body.parsed.attachments, captureUnavailable: body.parsed.captureUnavailable,
+        expected: { accountId: message.accountId, threadId, providerMsgId }, check,
+      })));
+      this.categorizer.apply(result.deltas);
+      this.announceAuto(result.auto);
+      this.opsQueued(result.opIds);
+      this.reconcileFlags(result.flagReconcileAccounts);
+      this.notifyChanged(result.touched, false);
+      return result.touched.length > 0;
+    } finally { body.release(); }
   }
 
   syncAccount(accountId: number, captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number; check(): void }): Promise<void> {
@@ -1523,6 +1585,7 @@ export class BackendCore {
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
         const retryable = error instanceof ProviderError && error.retryable;
+        if (error instanceof ProviderCooldownError && error.cooldown.kind === "capacity") this.capacitySync.add(accountId);
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
         this.log("warn", `sync failed for account ${accountId}`, message);
@@ -1819,7 +1882,7 @@ export class BackendCore {
     if (sending) this.sendsInFlight.add(op.id);
     let target = JSON.parse(op.target_json) as { messageIds?: number[]; recoveryParentId?: string };
     const started = performance.now();
-    let accepted = false, transportStarted = false, remoteDispatched = false;
+    let accepted = false, transportStarted = false, remoteDispatched = false, submissionDispatched = false;
     let sendAccepted: import("@terno/store").AcceptedRecipientEvidence | undefined;
     try {
       if (!provider) throw new ProviderError(L("errors.accountGone"), false);
@@ -1877,7 +1940,7 @@ export class BackendCore {
       if (sending && (!currentSend || currentSend.state !== "running")) return;
       if (!this.current(life) || hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) { await this.store.ops.release(op.id, this.now()); return; }
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
-        requestRun: { markDispatched: () => { remoteDispatched = true; } },
+        requestRun: { markDispatched: () => { remoteDispatched = true; }, markSubmissionDispatched: () => { submissionDispatched = true; } },
         submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
         recipientOutcomes: (outcomes) => { if (sendAccepted) sendAccepted = { ...sendAccepted, outcomes }; },
         submissionWarning: (warning) => { if (sendAccepted) sendAccepted = { ...sendAccepted, warning: warning ? encodeText(warning) : null }; },
@@ -1935,7 +1998,7 @@ export class BackendCore {
         let state: OpState | null = null;
         // plan 25: refused with credentials a sign-in replaced meanwhile: it goes again with the new ones
         if (sending && accepted) await this.store.ops.markUnknown(op.id, message, this.now(), sendAccepted);
-        else if (error instanceof ProviderCooldownError && !remoteDispatched && this.current(life)) {
+        else if (error instanceof ProviderCooldownError && (!remoteDispatched || (sending && !submissionDispatched)) && this.current(life)) {
           await this.store.ops.release(op.id, this.now());
           this.cooldownChanged();
         }

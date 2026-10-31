@@ -1,14 +1,15 @@
 import { L } from "@terno/i18n";
 import type { IncomingProcessor } from "./incoming-processing";
-import { ProviderError } from "./types";
+import { type MailAdmission, ProviderError } from "./types";
 
 export interface IncomingReadAdmission {
-  acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void>;
-  promote?(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void>;
+  acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void>;
+  promote?(accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void>;
   retainCompleted?(bytes: number): (() => void) | undefined;
 }
 
 interface Waiter {
+  reader: boolean;
   signal: AbortSignal;
   reset?: AbortSignal;
   resolve(release: () => void): void;
@@ -21,6 +22,7 @@ export class IncomingReads implements IncomingReadAdmission {
   private active = 0;
   private queued = 0;
   private closed = false;
+  private readerTurns = 0;
   private readonly accounts = new Map<number, Waiter[]>();
   private readonly order: number[] = [];
 
@@ -28,14 +30,14 @@ export class IncomingReads implements IncomingReadAdmission {
     if (!Number.isSafeInteger(capacity) || capacity < 1 || !Number.isSafeInteger(queueLimit) || queueLimit < 0) throw new RangeError("Invalid incoming capacity");
   }
 
-  acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
+  acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void> {
     if (signal.aborted) return Promise.reject(signal.reason);
     if (reset?.aborted) return Promise.reject(reset.reason);
     if (this.closed) return Promise.reject(new DOMException("Mail processing stopped", "AbortError"));
     if (this.active < this.capacity && !this.queued) return Promise.resolve(this.lease());
     if (this.queued >= this.queueLimit) return Promise.reject(new IncomingCapacityError());
     return new Promise((resolve, reject) => {
-      const waiter: Waiter = { signal, reset, resolve, reject, abort: () => {
+      const waiter: Waiter = { reader: admission === "reader", signal, reset, resolve, reject, abort: () => {
         this.remove(accountId, waiter);
         reject(signal.aborted ? signal.reason : reset?.reason);
         this.pump();
@@ -92,11 +94,18 @@ export class IncomingReads implements IncomingReadAdmission {
 
   private pump(): void {
     while (!this.closed && this.active < this.capacity && this.order.length) {
-      const accountId = this.order[0]!;
+      let accountId = this.order[0]!;
+      let waiter = this.accounts.get(accountId)![0]!;
+      const wantReader = this.readerTurns < 2;
+      outer: for (const id of this.order) {
+        for (const pending of this.accounts.get(id)!) {
+          if (pending.reader === wantReader) { accountId = id; waiter = pending; break outer; }
+        }
+      }
       const queue = this.accounts.get(accountId)!;
-      const waiter = queue[0]!;
+      this.readerTurns = waiter.reader ? Math.min(2, this.readerTurns + 1) : 0;
       this.remove(accountId, waiter);
-      if (queue.length) this.order.push(this.order.shift()!);
+      if (queue.length) { this.order.splice(this.order.indexOf(accountId), 1); this.order.push(accountId); }
       if (waiter.signal.aborted) waiter.reject(waiter.signal.reason);
       else if (waiter.reset?.aborted) waiter.reject(waiter.reset.reason);
       else waiter.resolve(this.lease());
@@ -113,13 +122,18 @@ export class IncomingCapacityError extends ProviderError {
 /** One backend owns read slots, a promoted pipeline and completed-small byte credits. */
 export class IncomingPipeline extends IncomingReads {
   private readonly promoted = new IncomingReads(1);
+  private readonly reader = new IncomingReads(1, 2);
   private retained = 0;
   private pipelineClosed = false;
 
   constructor(private readonly processor?: Pick<IncomingProcessor, "whenIdle">) { super(); }
 
-  async promote(accountId: number, signal: AbortSignal, reset?: AbortSignal): Promise<() => void> {
-    const release = await this.promoted.acquire(accountId, signal, reset);
+  override acquire(accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void> {
+    return admission === "reader" ? this.reader.acquire(accountId, signal, reset) : super.acquire(accountId, signal, reset);
+  }
+
+  async promote(accountId: number, signal: AbortSignal, reset?: AbortSignal, admission?: MailAdmission): Promise<() => void> {
+    const release = await this.promoted.acquire(accountId, signal, reset, admission);
     try {
       await this.processor?.whenIdle();
       signal.throwIfAborted();
@@ -151,6 +165,7 @@ export class IncomingPipeline extends IncomingReads {
   override close(): void {
     this.pipelineClosed = true;
     this.promoted.close();
+    this.reader.close();
     super.close();
   }
 }

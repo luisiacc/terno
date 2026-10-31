@@ -637,6 +637,7 @@ export const contract = {
     }),
   ),
   "threads.get": m<ThreadDetail>()(z.object({ threadId: id })),
+  "reader.hydrate": m<{ changed: boolean }>()(z.object({ threadId: id, messageId: id })),
   /** `undoId` (null when nothing changed) puts back exactly the messages it changed (threads.undo) */
   "threads.act": m<{ affected: number; undoId: number | null }>()(
     z.object({

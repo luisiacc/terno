@@ -984,14 +984,16 @@ export class IdbMailStore implements MailStore {
         { durability: "relaxed", check },
       );
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check, expected }) => {
       const accountId = await this.read(() => T(this.c, "messages").get(messageId)?.account_id as number | undefined);
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.o.platform.yield, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.command(
         () => {
           check?.();
-          if (accountId !== undefined) completeCapture(idbCaptureStorage(this.c), accountId, repair);
           const flagBefore = flagEpochs(idbFlags(this.c));
+          const current = expected ? T(this.c, "messages").get(messageId) : undefined;
+          if (expected && (!current || current.body_state === "full" || current.account_id !== expected.accountId || current.thread_id !== expected.threadId || current.provider_msg_id !== expected.providerMsgId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
+          if (accountId !== undefined) completeCapture(idbCaptureStorage(this.c), accountId, repair);
           if (T(this.c, "imap_identity_holds").has(messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
           if (!captureUnavailable) setMessageBody(this.c, messageId, text, html, "full");
           if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);

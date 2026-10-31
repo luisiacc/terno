@@ -882,6 +882,7 @@ const es = {
   "codes.sr": "Código de verificación {code}",
   "reader.to": "Para:",
   "reader.cc": "Cc:",
+  "reader.downloadFailed": "No se pudo descargar este mensaje.",
   "reader.downloading": "Descargando el contenido…",
   "reader.attachments": "Adjuntos",
   "reader.moreMessages": { one: "# mensaje más", other: "# mensajes más" },

@@ -459,13 +459,15 @@ export class SqlMailStore implements MailStore {
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
       });
     },
-    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check }) => {
+    setBody: async (messageId, text, html, { now, classifier, attachments, captureUnavailable, repair, check, expected }) => {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       return this.db.tx(() => {
         check?.();
-          if (accountId !== undefined) completeCapture(sqlCaptureStorage(this.db), accountId, repair);
-          const flagBefore = flagEpochs(sqlFlags(this.db));
+        const current = expected ? this.db.get<{ account_id: number; thread_id: number; provider_msg_id: string; body_state: string }>("SELECT account_id,thread_id,provider_msg_id,body_state FROM messages WHERE id=?", messageId) : undefined;
+        if (expected && (!current || current.body_state === "full" || current.account_id !== expected.accountId || current.thread_id !== expected.threadId || current.provider_msg_id !== expected.providerMsgId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
+        if (accountId !== undefined) completeCapture(sqlCaptureStorage(this.db), accountId, repair);
+        const flagBefore = flagEpochs(sqlFlags(this.db));
         if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
         if (!captureUnavailable) setMessageBody(this.db, messageId, text, html, "full");
         if (staged !== undefined && !captureUnavailable) replaceAttachments(this.db, messageId, staged);

@@ -429,10 +429,10 @@ const NOT_BLOCKED = `NOT EXISTS (
              AND o2.seq < ops.seq AND o2.state IN ('queued', 'running'))`;
 
 const ADMITTED = `NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = ops.account_id AND a.kind = 'gmail' AND
-  (? OR a.id IN (SELECT value FROM json_each(?)) OR (? AND a.id NOT IN (SELECT value FROM json_each(?)))))`;
+  (? OR a.id IN (SELECT value FROM json_each(?)) OR (? AND a.id NOT IN (SELECT value FROM json_each(?))) OR (? AND ops.kind = 'send') OR (? AND ops.kind != 'send')))`;
 function admissionParams(admission?: OpAdmission): Param[] {
   const a = copyOpAdmission(admission);
-  return [a.blockAllGoogle ? 1 : 0, JSON.stringify(a.blockedAccountIds), a.blockUnverifiedGoogle ? 1 : 0, JSON.stringify(a.verifiedAccountIds)];
+  return [a.blockAllGoogle ? 1 : 0, JSON.stringify(a.blockedAccountIds), a.blockUnverifiedGoogle ? 1 : 0, JSON.stringify(a.verifiedAccountIds), a.blockGoogleSends ? 1 : 0, a.blockGoogleBackground ? 1 : 0];
 }
 
 export function claimReadyOps(db: Db, now = Date.now(), limit = 20, accountId?: number, admission?: OpAdmission): OpRow[] {

@@ -10,7 +10,7 @@ import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
-import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
   auth: string;
@@ -332,7 +332,7 @@ const LABEL_OPS: Record<string, { add?: string[]; remove?: string[] }> = {
 /** Where the provider gets access tokens: a refresh token on desktop, Google's token model (memory only) on the web. */
 export interface GmailTokenSource {
   /** a valid access token, renewed as the platform can (throws ProviderError when the user must reconnect) */
-  get(run?: RequestRun): Promise<string>;
+  get(run?: RequestRun, admission?: MailAdmission): Promise<string>;
   /**
    * the API refused `token` (401): forget it so the next get() renews. Only that one (plan 25, Codex review #5):
    * a request that left before a renew mustn't drop the token the renew just brought.
@@ -493,7 +493,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   let reads = new AbortController();
   let parser: Promise<typeof import("./mime")> | undefined;
 
-  async function incomingResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal): Promise<IncomingResource> {
+  async function incomingResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal, admission?: MailAdmission): Promise<IncomingResource> {
     let body: IncomingBody | undefined;
     try {
       body = await readIncomingBody(response, {
@@ -502,7 +502,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           const resume = deadline.pause();
           try {
             if (!ctx.incoming?.promote) throw new IncomingProcessingError("worker-unavailable");
-            return await ctx.incoming.promote(accountId, signal);
+            return await ctx.incoming.promote(accountId, signal, undefined, admission);
           } finally { resume(); }
         },
       });
@@ -537,22 +537,22 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     void readResponseText(response, 65_536, deadline.signal).catch(() => "").finally(() => deadline.done());
   }
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, ...request } = init;
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, ...request } = init;
     const context = httpContext ?? (path.startsWith("https://") ? { endpoint: "unknown", purpose: "unknown" } as const : { endpoint: "gmail-api", purpose: "mail" } as const);
-    ctx.google?.check(context);
+    ctx.google?.check(context, admission);
     const generation = requestGeneration ?? ctx.google?.generation();
     preparationSignal?.throwIfAborted();
-    const token = proofToken ?? (preparationSignal ? await untilAborted(tokens.get(requestRun), preparationSignal) : await tokens.get(requestRun));
+    const token = proofToken ?? (preparationSignal ? await untilAborted(tokens.get(requestRun, admission), preparationSignal) : await tokens.get(requestRun, admission));
     let profile: unknown;
     if (ctx.google && !proofToken) {
       try {
         await ctx.google.prove(async () => {
-          profile = await api<unknown>("/profile", { proofToken: token, requestRun, requestGeneration: generation, signal: request.signal, readReset, preparationSignal, httpContext: { endpoint: "gmail-api", purpose: "identity-proof" } }, retried);
+          profile = await api<unknown>("/profile", { proofToken: token, requestRun, requestGeneration: generation, signal: request.signal, readReset, preparationSignal, admission, httpContext: { endpoint: "gmail-api", purpose: "identity-proof" } }, retried);
           readBaseline(profile);
           if (!isRecord(profile) || typeof profile.emailAddress !== "string" || profile.emailAddress.length > 254 || !isValidEmail(profile.emailAddress) || /[\s\p{Cc}]/u.test(profile.emailAddress)) throw invalidResponse();
           return profile.emailAddress;
-        });
+        }, admission);
       } catch (error) {
         if (error instanceof ProofTokenExpired && !retried) return api<T>(path, init, true);
         throw error;
@@ -581,7 +581,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         deadline.signal.throwIfAborted();
         const url = path.startsWith("https://") ? path : `${ep.api}${path}`;
         const wire = { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } };
-        const responsePromise = ctx.google ? ctx.google.request({ request: context, run: requestRun, generation, onForbidden: (settle) => {
+        const responsePromise = ctx.google ? ctx.google.request({ request: context, admission, run: sending && requestRun ? { markDispatched() { requestRun.markDispatched(); requestRun.markSubmissionDispatched?.(); } } : requestRun, generation, onForbidden: (settle) => {
           if (deadline.signal.aborted) void settle("none");
           else settleForbidden = settle;
         }, onHeaders: (status, evidence) => { nativeStatus = status; httpResponse = evidence; } }, url, wire) : netFetch(url, wire);
@@ -620,7 +620,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         return undefined as T;
       }
       try {
-        if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal) as T;
+        if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal, admission) as T;
         if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
         if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal)) as T;
         if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal)) as T;
@@ -1028,6 +1028,19 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   return {
     flagSnapshots: true,
+    async readBody(target, signal) {
+      const path = `/messages/${encodeURIComponent(target.providerMsgId)}?format=raw`;
+      const release = await ctx.incoming?.acquire(accountId, signal, reads.signal, "reader");
+      try {
+        const resource = await api<IncomingResource>(path, { signal, preparationSignal: signal, responseMode: "incoming", incomingId: target.providerMsgId, admission: "reader" });
+        let released = false;
+        return { parsed: resource.parsed, release() { if (released) return; released = true; resource.release(); release?.(); } };
+      } catch (error) {
+        release?.();
+        if (error instanceof GmailApiError && error.status === 404 && error.resource === path) return null;
+        throw error;
+      }
+    },
     async verify() {
       readBaseline(await api<unknown>("/profile"));
     },
@@ -1108,7 +1121,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     },
 
     async execute(op: ProviderOp) {
-      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
+      ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" }, op.kind === "send" ? "send" : "background");
       if (op.kind === "send") {
         const payload = op.payload as SendPayload;
         const raw = await options.buildRaw(payload);
@@ -1116,6 +1129,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           method: "POST",
           body: await gmailSendBody(raw, payload.providerThreadId),
           ambiguousOnFailure: true,
+          admission: "send",
           requestRun: op.requestRun,
         });
         if (!isRecord(res) || !nonempty(res.id) || (res.threadId !== undefined && !nonempty(res.threadId))) throw invalidResponse(true);

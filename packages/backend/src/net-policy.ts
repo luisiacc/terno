@@ -40,6 +40,7 @@ export interface NetworkPolicy {
   isLoopbackEndpoint(url: string): Promise<boolean>;
   fetchGoogle(policy: ProviderRequests, descriptor: RequestDescriptor): typeof fetch;
   googlePending(): number;
+  googleAvailable(admission?: RequestDescriptor["admission"]): boolean;
 }
 
 export type LookupAll = (host: string) => Promise<{ address: string; family: number }[]>;
@@ -112,6 +113,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   const NativeResponse = globalThis.Response;
 
   let googlePending = 0;
+  let backgroundPending = 0, foregroundPending = 0;
+  const available = (admission?: RequestDescriptor["admission"]) => googlePending < 64 && (admission === "background" ? backgroundPending < 62 : admission ? foregroundPending < 2 : true);
+  const availability = () => [available(), available("background"), available("reader")].join();
   const physical = (request: Request, release: () => void) => (response: Response): Response => {
     if (!response.body) { release(); return response; }
     const reader = response.body.getReader();
@@ -183,6 +187,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   return {
     assert,
     googlePending: () => googlePending,
+    googleAvailable: available,
     fetchGoogle(policy, descriptor) {
       return (input, init) => {
         // Snapshot mutable init/Headers/body before the first asynchronous policy step.
@@ -196,16 +201,21 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
           try {
             const response = await requestHttp(policy, descriptor, () => {
               if (request.signal.aborted) throw new RequestNotDispatchedError(L("errors.accountGone"));
-              if (googlePending >= 64) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
+              if (!available(descriptor.admission)) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "capacity");
+              const before = availability();
               googlePending++;
-              if (googlePending === 64) options.googleChanged?.();
+              if (descriptor.admission === "background") backgroundPending++;
+              else if (descriptor.admission) foregroundPending++;
+              if (before !== availability()) options.googleChanged?.();
               let released = false;
               release = () => {
                 if (released) return;
                 released = true;
-                const wasFull = googlePending === 64;
+                const before = availability();
                 googlePending--;
-                if (wasFull) options.googleChanged?.();
+                if (descriptor.admission === "background") backgroundPending--;
+                else if (descriptor.admission) foregroundPending--;
+                if (before !== availability()) options.googleChanged?.();
               };
               return baseFetch(request).then((response) => {
                 received = true;
