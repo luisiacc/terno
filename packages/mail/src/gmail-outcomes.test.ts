@@ -248,6 +248,7 @@ it.each(["raw", "minimal", "history", "list", "refresh"] as const)("profile404 c
   expect(completedGmailCursors(box.checkpoints)).toEqual([]);
   expect(box.requests.filter((u) => u.pathname.endsWith("/messages"))).toHaveLength(["raw", "list", "refresh"].includes(phase) ? 1 : 0);
   expect(histories).toBe(["minimal", "history"].includes(phase) ? 1 : 0);
+  if (phase === "history") expect(box.requests.map((u) => u.pathname.split("/").at(-1))).toEqual(["history", "profile"]);
 });
 
 it("retains acknowledged neighbors when a later local batch mixes success, absence and failure", async () => {
