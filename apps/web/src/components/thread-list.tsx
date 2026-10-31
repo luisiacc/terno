@@ -187,8 +187,8 @@ function QuickChips({ filter }: { filter: QuickFilter | undefined }) {
 
 /**
  * Search behind a button (Lumen): open while asked for or while there's a
- * query. It closes on Esc in an empty field, or when another mailbox opens
- * with nothing typed; never on blur, so focus that leaves for a moment (F6 to
+ * query. It closes on Esc in an empty field, on its button (which clears the
+ * query too), or when another mailbox opens with nothing typed; never on blur, so focus that leaves for a moment (F6 to
  * the snack, a menu) comes back to it.
  */
 const useSearchOpen = create<{ open: boolean }>(() => ({ open: false }));
@@ -200,6 +200,13 @@ useApp.subscribe((s, prev) => {
 export function focusSearch(): void {
   if (!searchInputRef.current) flushSync(() => useSearchOpen.setState({ open: true }));
   searchInputRef.current?.focus();
+}
+
+/** The search button: opens the field, or, while it shows, clears the query and closes it. */
+function toggleSearch(): void {
+  if (!searchInputRef.current) return focusSearch();
+  if (getApp().query) setApp({ query: "" });
+  useSearchOpen.setState({ open: false });
 }
 
 function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
@@ -397,7 +404,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
         <Tooltip>
           <TooltipTrigger
             render={
-              <Button data-testid="search-button" variant="ghost" size="icon-sm" aria-label={t("common.search")} aria-expanded={showField} className="no-drag shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={focusSearch}>
+              <Button data-testid="search-button" variant="ghost" size="icon-sm" aria-label={t("common.search")} aria-expanded={showField} className="no-drag shrink-0 rounded-full text-muted-foreground hover:text-foreground" onClick={toggleSearch}>
                 <Search />
               </Button>
             }

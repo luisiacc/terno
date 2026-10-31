@@ -298,6 +298,16 @@ test.describe("Lumen: search behind a button", () => {
     await expect(page.getByTestId("search-stats")).toBeVisible();
     await focusList(page);
     await expect(input).toHaveValue("factura");
+    // the button closes it again, and the query goes with it
+    await page.getByTestId("search-button").click();
+    await expect(input).toHaveCount(0);
+    await expect(page.getByTestId("search-button")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("search-stats")).toHaveCount(0);
+    await page.getByTestId("search-button").click();
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue("");
+    await page.getByTestId("search-button").click();
+    await expect(input).toHaveCount(0);
   });
 });
 
