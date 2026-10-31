@@ -293,3 +293,14 @@ describe("the undo token", () => {
     expect(useSnack.getState().undo).toBe(undo);
   });
 });
+
+it("withdrawal removes private text from the fading body and announcement without losing Undo", async () => {
+  const { withdrawSnack, snackRetentionForTests } = await import("./snack");
+  const undo = registerUndo(() => {});
+  snack.warning("Recipient refused", { id: "private-receipt", description: "private@example.test" });
+  withdrawSnack("private-receipt");
+  expect(useSnack.getState().current).toBeNull();
+  expect(useSnack.getState().last).toBeNull();
+  expect(useSnack.getState().undo).toBe(undo);
+  expect(snackRetentionForTests()).toEqual({ queued: [], displaced: [] });
+});

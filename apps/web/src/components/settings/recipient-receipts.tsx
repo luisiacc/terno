@@ -2,6 +2,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { useEffect, useRef, useState } from "react";
 import type { ResultOf } from "@terno/core/rpc";
+import { clearRecipientDetails } from "~/lib/send-warning";
 import { client } from "~/rpc/connection";
 import { SettingsRow } from "./parts";
 
@@ -62,7 +63,7 @@ export function RecipientReceipts({ accountId }: { accountId: number }) {
   };
   const action = async (row: Receipt, kind: "recover" | "clear") => {
     generation.current++; setBusy(true); setError(false); setSelected(null);
-    try { if (kind === "clear") await client.call("ops.forgetRecipientReceipt", { opId: row.opId }); else await client.call("ops.recoverRejectedRecipients", { opId: row.opId }); await refresh(generation.current); }
+    try { if (kind === "clear") await clearRecipientDetails(row.opId); else await client.call("ops.recoverRejectedRecipients", { opId: row.opId }); await refresh(generation.current); }
     catch { if (mounted.current) { setError(true); void refresh(generation.current).catch(() => {}); } }
     finally { if (mounted.current) setBusy(false); }
   };

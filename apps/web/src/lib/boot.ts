@@ -1,4 +1,4 @@
-import { sendWarningTitle } from "./send-warning";
+import { installSendWarnings } from "./send-warning";
 import { reconcileAccounts } from "~/lib/account-folders";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
@@ -115,15 +115,12 @@ export async function boot(): Promise<void> {
         secondary: { label: t("common.view"), name: t("category.view", { category: name }), onClick: () => navigate({ categoryId }) },
       });
     });
+    installSendWarnings();
     client.on("op", (op) => {
       // plan 25: a send waiting for its account's sign-in says so (once per account, until it signs in)
       if (op.kind === "send" && op.awaitingAuth) {
         const account = getApp().accounts.find((a) => a.id === op.accountId);
         if (account) announceParkedSend(account);
-      }
-      if (op.kind === "send" && op.state === "succeeded") {
-        if (op.lastError) snack.warning(t(sendWarningTitle(op)), { description: localized(op.lastError, op.lastErrorI18n), duration: 12_000, background: true });
-        else snack.success(t("actions.send.sent"), { background: true });
       }
       if (op.state === "unknown") snack.warning(t("actions.send.unknown", { summary: localized(op.summary, op.summaryI18n) }), { description: t("actions.send.unknownHint"), duration: 10_000, background: true });
       if (op.state === "failed") snack.error(t("actions.send.failed", { summary: localized(op.summary, op.summaryI18n) }), { description: localized(op.lastError, op.lastErrorI18n) ?? undefined, background: true });

@@ -216,6 +216,7 @@ export function withdrawSnack(id: string): void {
   queue = queue.filter((q) => q.id !== id);
   displaced.delete(id);
   dismissSnack(id);
+  if (useSnack.getState().last?.id === id) useSnack.setState({ last: null });
 }
 
 /** A click on an action: the snack closes first, so whatever the action shows next stays. */

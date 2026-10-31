@@ -5,7 +5,8 @@ import { L } from "@terno/i18n";
 import { expect, test } from "./fixtures";
 
 for (const language of ["en", "es"] as const) for (const theme of ["light", "dark"] as const) test(`recipient outcomes remain discoverable (${language}, ${theme})`, async ({ app: page, server }) => {
-  await page.route("**/*", (route) => { const url = new URL(route.request().url()); return url.hostname === "127.0.0.1" || url.hostname === "localhost" ? route.continue() : route.abort(); });
+  const externalRoutes: string[] = [];
+  await page.route("**/*", (route) => { const url = new URL(route.request().url()); if (url.hostname === "127.0.0.1" || url.hostname === "localhost") return route.continue(); externalRoutes.push(url.origin); return route.abort(); });
   const ctx = { clientId: "recipient-ui", origin: "dev" as const }, store = server.backend.store;
   let recoveryCalls = 0, clearCalls = 0, releaseRecovery!: () => void;
   const gate = new Promise<void>((resolve) => { releaseRecovery = resolve; });
@@ -22,14 +23,24 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   await store.ops.complete(queued.opId, { warning, sendAccepted: { warning, outcomes: [{ email: "accepted@example.test", outcome: "accepted" }, { email: "refused@example.test", outcome: "rejected" }, { email: "unknown@example.test", outcome: "unknown" }] } }, Date.now());
   await server.backend.server.invoke("settings.update", { theme, language, senderIcons: false }, ctx);
   await page.addInitScript((value) => localStorage.setItem("terno:language", value), language);
-  await page.reload(); await page.locator("[data-ready]").waitFor(); await page.getByTestId("open-settings").click(); await page.getByTestId("tab-accounts").click();
+  await page.reload(); await page.locator("[data-ready]").waitFor();
+  const warningOp = server.backend.opInfo((await store.ops.get(queued.opId))!);
+  if (theme === "dark") await page.evaluate(`import("/src/lib/snack.ts").then(({ snack, registerUndo }) => {
+    snack.loading("Unrelated loading", { id: "unrelated-loading" });
+    snack("Unrelated Undo", { action: { label: "Undo", undo: registerUndo(() => {}) } });
+  })`);
+  server.backend.server.emit("op", warningOp);
+  const dock = page.getByTestId("snack-dock");
+  if (theme === "light") await expect(dock).toContainText("refused@example.test");
+  else await expect.poll(() => page.evaluate(`import("/src/lib/snack.ts").then(({ snackRetentionForTests }) => snackRetentionForTests().queued.length)`)).toBe(1);
+  await page.getByTestId("open-settings").click(); await page.getByTestId("tab-accounts").click();
   const editor = page.locator(`[data-testid=settings-account][data-account-id="${account.id}"]`); await editor.getByTestId("account-toggle").click();
   const recovery = editor.getByTestId("recipient-recovery"); await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(1);
   await recovery.getByRole("button", { name: language === "en" ? "Show recipients" : "Mostrar destinatarios" }).click();
   await expect(recovery).toContainText("accepted@example.test"); await expect(recovery).toContainText("refused@example.test"); await expect(recovery).toContainText("unknown@example.test");
   await expect(recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" })).toBeEnabled();
   expect((await new AxeBuilder({ page }).include("[data-testid=settings-dialog]").analyze()).violations).toEqual([]);
-  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-recipient-ui", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-recipient-ui/${language}-${theme}.png` });
+  await recovery.scrollIntoViewIfNeeded(); mkdirSync("/tmp/terno-w01-snack/screenshots", { recursive: true }); await page.getByTestId("settings-dialog").screenshot({ path: `/tmp/terno-w01-snack/screenshots/${language}-${theme}.png` });
   await recovery.getByRole("button", { name: language === "en" ? "Send to refused recipients" : "Enviar a destinatarios rechazados" }).focus(); await page.keyboard.press("Enter");
   await expect.poll(() => recoveryCalls).toBe(1);
   const clear = recovery.getByRole("button", { name: language === "en" ? "Clear details" : "Borrar detalles" });
@@ -39,8 +50,23 @@ for (const language of ["en", "es"] as const) for (const theme of ["light", "dar
   await clear.focus(); await page.keyboard.press("Enter");
   await expect(recovery.getByTestId("recipient-receipt-row")).toHaveCount(0); expect(clearCalls).toBe(1);
   expect((await store.ops.get(queued.opId))?.last_error).not.toContain("refused@example.test");
+  await page.keyboard.press("Escape");
+  if (theme === "dark") {
+    await expect(dock).toContainText("Unrelated Undo");
+    await page.getByTestId("snack-close").click();
+  }
+  await expect(dock).not.toContainText("refused@example.test");
+  let checks = 0;
+  const readPart = store.recipientReceipts.readPart.bind(store.recipientReceipts);
+  store.recipientReceipts.readPart = async (...args) => { checks++; return readPart(...args); };
+  server.backend.server.emit("op", warningOp);
+  await expect.poll(() => checks).toBeGreaterThan(0);
+  await expect(dock).not.toContainText("refused@example.test");
   expect((await store.ops.sendSubmission(queued.opId))?.accepted).toBe(true);
   expect(await store.sendCopies.list(account.id)).toEqual([]);
+  expect(externalRoutes).toEqual([]);
+  expect((await new AxeBuilder({ page }).include("[data-testid=snack-dock]").analyze()).violations).toEqual([]);
+  await page.screenshot({ path: `/tmp/terno-w01-snack/screenshots/${language}-${theme}-cleared.png` });
 });
 
 test("recipient history refreshes after account and operation events while reads are delayed", async ({ app: page, server }) => {
