@@ -1,8 +1,14 @@
 import { L, type TextKey } from "@terno/i18n";
 import { z } from "zod";
 
-export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId"] as const;
-export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith"] as const;
+import { checkPattern, type PatternIssue } from "./pattern";
+
+/** plan 84: `text` is the subject or the body, by words (it only "mentions") */
+export const TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "text"] as const;
+/** plan 84: `matches` is a regular expression over the field's normalized text */
+export const TEXT_OPS = ["contains", "equals", "startsWith", "endsWith", "matches"] as const;
+/** The fields a pattern may run on: not bodies (large, and FTS-backed). */
+export const PATTERN_FIELDS = ["from", "fromDomain", "recipients", "subject", "listId"] as const;
 export const LOCATION_ACTIONS = ["archive", "trash", "spam"] as const;
 
 export type TextField = (typeof TEXT_FIELDS)[number];
@@ -61,6 +67,15 @@ export const filterRuleSchema = z
       (LOCATION_ACTIONS as readonly string[]).includes(a.type),
     );
     if (locations.length > 1) ctx.addIssue(ruleIssue("filters.invalid.oneLocation", ["actions"]));
+    rule.conditions.forEach((c, i) => {
+      if (c.field === "text" && (c.op !== "contains" || c.negate)) ctx.addIssue(ruleIssue("filters.invalid.text", ["conditions", i]));
+      if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays" || c.op !== "matches") return;
+      if (!(PATTERN_FIELDS as readonly string[]).includes(c.field)) ctx.addIssue(ruleIssue("filters.invalid.patternField", ["conditions", i]));
+      else {
+        const issue = checkPattern(c.value);
+        if (issue) ctx.addIssue(ruleIssue(PATTERN_ISSUE[issue], ["conditions", i, "value"]));
+      }
+    });
     const seen = new Set<string>();
     rule.actions.forEach((action, i) => {
       const key = action.type === "addCategory" ? `cat:${action.categoryId}` : action.type;
@@ -69,7 +84,20 @@ export const filterRuleSchema = z
     });
   });
 
-const RULE_ISSUES = ["filters.invalid.oneLocation", "filters.invalid.duplicate"] as const satisfies readonly TextKey[];
+const PATTERN_ISSUE = {
+  syntax: "filters.invalid.pattern.syntax",
+  length: "filters.invalid.pattern.length",
+  unsupported: "filters.invalid.pattern.unsupported",
+  complex: "filters.invalid.pattern.complex",
+} as const satisfies Record<PatternIssue, TextKey>;
+
+const RULE_ISSUES = [
+  "filters.invalid.oneLocation",
+  "filters.invalid.duplicate",
+  "filters.invalid.text",
+  "filters.invalid.patternField",
+  ...Object.values(PATTERN_ISSUE),
+] as const satisfies readonly TextKey[];
 type RuleIssueKey = (typeof RULE_ISSUES)[number];
 
 /** A rule check's issue: English text for the AI's repair loop and agents, the key for the filter builder (it says it in the user's language). */

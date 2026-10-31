@@ -3,6 +3,7 @@ import { isFullEmail } from "../search/parse";
 
 /** A from condition that names one address exactly matches the address only, never a display name (SQL rules too). */
 export const fromIsAddress = (op: TextOp, normalized: string): boolean => op === "equals" && isFullEmail(normalized);
+import { patternMatches, patternTemplate } from "./pattern";
 import type { Condition, FilterRule, TextOp } from "./schema";
 
 /**
@@ -96,8 +97,13 @@ function textOp(op: TextOp, haystack: string, needle: string): boolean {
       return haystack.startsWith(needle);
     case "endsWith":
       return haystack.endsWith(needle);
+    case "matches":
+      return patternMatches(needle, haystack);
   }
 }
+
+/** A condition's value as the evaluators compare it: normalized text, or a pattern with its accents folded by the matcher. */
+export const ruleValue = (op: TextOp, value: string): string => (op === "matches" ? value : normalizeText(value));
 
 /** Index of a whitespace character at or before `at` (or -1). Whitespace is a separator for every tokenizer we mirror. */
 function whitespaceBefore(text: string, at: number): number {
@@ -136,7 +142,7 @@ const sameTokens = (a: string[], b: string[]) => a.length === b.length && a.ever
  * Anchored ops only normalize the head/tail of the body (filters over 50k mails).
  */
 export function bodyMatches(op: TextOp, body: string | null, value: string): boolean {
-  if (body === null) return false;
+  if (body === null || op === "matches") return false;
   const needle = tokenize(value);
   if (needle.length === 0) return false;
   switch (op) {
@@ -171,24 +177,38 @@ function evaluateCondition(c: Condition, msg: RuleMessage, now: number): boolean
     }
     case "body":
       return bodyMatches(c.op, msg.bodyText, c.value);
+    case "text":
+      // what a search word means (the FTS columns): the subject, the sender, the recipients now; the body once it's complete.
+      // A text condition is never negated: it only turns true, so deciding before the body is never wrong.
+      return (
+        bodyMatches("contains", msg.subject, c.value) ||
+        bodyMatches("contains", `${msg.fromName} ${msg.fromEmail}`, c.value) ||
+        bodyMatches("contains", msg.recipients, c.value) ||
+        (msg.bodyComplete !== false && bodyMatches("contains", msg.bodyText, c.value))
+      );
     case "from": {
-      const v = normalizeText(c.value);
+      const v = ruleValue(c.op, c.value);
       // "is exactly this address" is the address: a display name made to look like it doesn't pass (plan 80)
       if (fromIsAddress(c.op, v)) return normalizeText(msg.fromEmail) === v;
       return textOp(c.op, normalizeText(msg.fromName), v) || textOp(c.op, normalizeText(msg.fromEmail), v);
     }
     case "fromDomain": {
       const at = msg.fromEmail.lastIndexOf("@");
-      return textOp(c.op, normalizeText(at === -1 ? "" : msg.fromEmail.slice(at + 1)), normalizeText(c.value));
+      return textOp(c.op, normalizeText(at === -1 ? "" : msg.fromEmail.slice(at + 1)), ruleValue(c.op, c.value));
     }
     case "recipients":
-      return textOp(c.op, normalizeText(msg.recipients), normalizeText(c.value));
+      return textOp(c.op, normalizeText(msg.recipients), ruleValue(c.op, c.value));
     case "subject":
-      return textOp(c.op, normalizeText(msg.subject), normalizeText(c.value));
+      return textOp(c.op, normalizeText(msg.subject), ruleValue(c.op, c.value));
     case "listId":
-      return textOp(c.op, normalizeText(msg.listId), normalizeText(c.value));
+      return textOp(c.op, normalizeText(msg.listId), ruleValue(c.op, c.value));
   }
 }
+
+/** A body rule waits for the whole body (it is never decided on part of one). */
+export const ruleNeedsBody = (rule: FilterRule): boolean => rule.conditions.some((c) => c.field === "body");
+/** The rule looks at bodies (body or text): it runs again when a body completes, and its evaluator needs the body read. */
+export const ruleReadsBody = (rule: FilterRule): boolean => rule.conditions.some((c) => c.field === "body" || c.field === "text");
 
 export function evaluateRule(rule: FilterRule, msg: RuleMessage, now: number): boolean {
   if (msg.bodyComplete === false && rule.conditions.some((c) => c.field === "body")) return false;
@@ -212,8 +232,12 @@ export function describeCondition(c: Condition): string {
         equals: "is",
         startsWith: "starts with",
         endsWith: "ends with",
+        matches: "matches",
       };
-      return `${c.field} ${not}${ops[c.op]} “${c.value}”`;
+      if (c.field === "text") return `${not}mentions “${c.value}”`;
+      // a generated subject pattern reads as its template ("Tu pedido # está en camino")
+      const template = c.op === "matches" ? patternTemplate(c.value) : null;
+      return template !== null ? `${c.field} ${not}is like “${template}”` : `${c.field} ${not}${ops[c.op]} “${c.value}”`;
     }
   }
 }

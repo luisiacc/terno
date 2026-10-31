@@ -19,6 +19,8 @@ import {
   BODY_TAIL_TOKENS,
   emailDomain,
   evaluateRule,
+  ruleNeedsBody,
+  ruleReadsBody,
   featuresFromBlob,
   normalizeText,
   trailingTokens,
@@ -1463,18 +1465,20 @@ export function ruleMessage(m: R, bodyText: string | null): RuleMessage {
   return { accountId: m.account_id, fromName: m.from_name, fromEmail: m.from_email, recipients: m.recipients_text, subject: m.subject, bodyText, bodyComplete: m.body_state === "full", listId: m.list_id, hasAttachments: m.has_attachments === 1, date: m.date };
 }
 
-export const ruleNeedsBody = (rule: FilterRule) => rule.conditions.some((cond) => cond.field === "body");
+export { ruleNeedsBody, ruleReadsBody } from "@terno/core";
 
 /** Messages (not in trash) matching a rule among the given ones (their bodies read ahead when the rule needs them). */
 export function findRuleMatches(c: Ctx, rule: FilterRule, now: number, messageIds: readonly number[]): { messageIds: number[]; threadIds: number[] } {
   const messages = T(c, "messages");
   const needsBody = ruleNeedsBody(rule);
+  // a text rule (plan 84) reads a complete body, and decides an incomplete one on its subject
+  const readsBody = ruleReadsBody(rule);
   const ids: number[] = [];
   const threads = new Set<number>();
   for (const id of messageIds) {
     const m = messages.get(id);
     if (!m || m.is_trash || (needsBody && m.body_state !== "full")) continue;
-    if (!evaluateRule(rule, ruleMessage(m, needsBody ? (c.body(id)?.body_text ?? null) : null), now)) continue;
+    if (!evaluateRule(rule, ruleMessage(m, readsBody && m.body_state === "full" ? (c.body(id)?.body_text ?? null) : null), now)) continue;
     ids.push(id);
     threads.add(m.thread_id);
   }

@@ -1,4 +1,4 @@
-import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
+import { COUNT_CAP, normalizeText, similarScopes, subjectTest, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
 import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import type { Db, Param } from "./sqlite";
 
@@ -26,16 +26,22 @@ export function pageSql(scope: SimilarScope, action: SimilarAction, own: OwnAddr
     scope.kind === "domain" ? ["messages_domain", "m.from_domain", normalizeText(scope.domain.trim().replace(/^@/, ""))]
     : scope.kind === "list" ? ["messages_list", "m.list_id", normalizeText(scope.listId.trim())]
     : ["messages_from", "m.from_email", normalizeText(scope.email.trim())];
-  // exactly what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding)
-  const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
+  // what the rule's evaluators compare: the normalized subject, untrimmed (an offer never has padding); with numbers, its key (plan 84)
+  const subject = scope.kind === "subject" ? subjectSql(scope.subject) : null;
   return {
-    sql: `SELECT m.id, m.thread_id, (? IS NULL OR m.subject_norm = ?) AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AS match,
+    sql: `SELECT m.id, m.thread_id, ${subject?.sql ?? "1"} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AS match,
                  ${PLACE[action]} AS placed, ${KEPT} AS kept
           FROM messages m INDEXED BY ${index} JOIN threads t ON t.id = m.thread_id
           WHERE ${column} = ?${cursor === null ? "" : " AND m.id > ?"}
           ORDER BY m.id LIMIT ?`,
-    params: [subject, subject, JSON.stringify([...own.emails]), value, ...(cursor === null ? [] : [cursor]), limit],
+    params: [...(subject?.params ?? []), JSON.stringify([...own.emails]), value, ...(cursor === null ? [] : [cursor]), limit],
   };
+}
+
+/** A subject scope's test on `m.subject_norm`: equality, or (with numbers) the same key. */
+export function subjectSql(subject: string): { sql: string; params: Param[] } {
+  const test = subjectTest(subject);
+  return test.kind === "key" ? { sql: "terno_subject_key(m.subject_norm) = ?", params: [test.key] } : { sql: "m.subject_norm = ?", params: [test.normalized] };
 }
 
 function page(db: Db, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, cursor: number | null, limit: number) {

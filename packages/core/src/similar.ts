@@ -5,7 +5,8 @@
  */
 import { CONSUMER_DOMAINS } from "./categorize/features";
 import { proposalKey, type DestructiveAction } from "./learning/propose";
-import type { FilterRule } from "./rules/schema";
+import { foldPattern, subjectGeneralizes, subjectKey, subjectPattern } from "./rules/pattern";
+import type { FilterRule, TextCondition } from "./rules/schema";
 import { normalizeText } from "./text";
 
 export const SIMILAR_ACTIONS = ["archive", "trash", "spam"] as const;
@@ -13,7 +14,7 @@ export type SimilarAction = DestructiveAction;
 
 export type SimilarScope =
   | { kind: "sender"; email: string }
-  /** the same sender and exactly this subject */
+  /** the same sender and this subject, any numbers in it standing for any number (plan 84) */
   | { kind: "subject"; email: string; subject: string }
   | { kind: "domain"; domain: string }
   | { kind: "list"; listId: string };
@@ -54,7 +55,8 @@ export function similarScopes(roots: readonly { sender: string; subject: string;
   };
   const email = shared((r) => r.sender || null);
   // a filter value is trimmed and non-empty: only a subject that is already so means the same in the rule
-  const subject = email ? shared((r) => (r.subject && r.subject === r.subject.trim() && r.subject.length <= RULE_VALUE_MAX ? normalizeText(r.subject) : null)) : null;
+  // compared by key: "Tu pedido 43790" and "Tu pedido 3052" are one subject (plan 84)
+  const subject = email ? shared((r) => (r.subject && r.subject === r.subject.trim() && r.subject.length <= RULE_VALUE_MAX ? subjectIdentity(normalizeText(r.subject)) : null)) : null;
   const domain = shared((r) => (r.domain && !CONSUMER_DOMAINS.has(r.domain) ? r.domain : null));
   const list = shared((r) => r.list);
   const out: SimilarScope[] = [];
@@ -66,6 +68,32 @@ export function similarScopes(roots: readonly { sender: string; subject: string;
   return out;
 }
 
+/** A subject scope's condition: exactly the subject, or (with numbers in it) the pattern of its key. */
+export function subjectCondition(subject: string): TextCondition {
+  const normalized = normalizeText(subject);
+  return subjectGeneralizes(normalized) ? { field: "subject", op: "matches", value: subjectPattern(normalized) } : { field: "subject", op: "equals", value: subject };
+}
+
+/** What a scope's subject is compared by: its key when its numbers generalize, else itself (exact). */
+export function subjectIdentity(normalized: string): string {
+  return subjectGeneralizes(normalized) ? `#${subjectKey(normalized)}` : `=${normalized}`;
+}
+
+/**
+ * How the stores test a scope's subject against a message's normalized one:
+ * the key (computed for each message) or exact equality.
+ */
+export function subjectTest(scopeSubject: string): { kind: "key"; key: string } | { kind: "exact"; normalized: string } {
+  const normalized = normalizeText(scopeSubject);
+  return subjectGeneralizes(normalized) ? { kind: "key", key: subjectKey(normalized) } : { kind: "exact", normalized };
+}
+
+/** Does this normalized subject belong to the scope's subject? */
+export function sameSubject(scopeSubject: string, normalized: string): boolean {
+  const test = subjectTest(scopeSubject);
+  return test.kind === "key" ? subjectKey(normalized) === test.key : normalized === test.normalized;
+}
+
 /** The filter rule that does the same to future mail. */
 export function similarRule(scope: SimilarScope, action: SimilarAction): FilterRule {
   const conditions: FilterRule["conditions"] = (() => {
@@ -75,7 +103,7 @@ export function similarRule(scope: SimilarScope, action: SimilarAction): FilterR
       case "subject":
         return [
           { field: "from" as const, op: "equals" as const, value: scope.email },
-          { field: "subject" as const, op: "equals" as const, value: scope.subject },
+          subjectCondition(scope.subject),
         ];
       case "domain":
         return [{ field: "fromDomain" as const, op: "equals" as const, value: scope.domain }];
@@ -119,7 +147,8 @@ export function sameRule(a: FilterRule, b: FilterRule): boolean {
   const canon = (r: FilterRule) =>
     JSON.stringify({
       match: r.match,
-      conditions: r.conditions.map((c) => ({ ...c, value: typeof c.value === "string" ? normalizeText(c.value.trim()) : c.value, negate: Boolean(c.negate) })).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y))),
+      // a pattern compares by its accent fold only: case and escapes are its meaning (\D isn't \d)
+      conditions: r.conditions.map((c) => ({ ...c, value: typeof c.value === "string" ? (c.op === "matches" ? foldPattern(c.value.trim()) : normalizeText(c.value.trim())) : c.value, negate: Boolean(c.negate) })).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y))),
       actions: r.actions.map((x) => JSON.stringify(x)).sort(),
     });
   return canon(a) === canon(b);

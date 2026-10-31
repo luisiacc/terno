@@ -472,6 +472,8 @@ const categorizeScope = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("subject"), email: z.string().trim().email().max(320), subject: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("domain"), domain: z.string().trim().min(1).max(253) }),
   z.object({ kind: z.literal("list"), listId: z.string().trim().min(1).max(400) }),
+  // plan 84: up to 6 words (the snackbar's), each a rule value; the sender optional
+  z.object({ kind: z.literal("words"), terms: z.array(z.string().trim().min(1).max(100)).min(1).max(6), email: z.string().trim().email().max(320).nullable() }),
   z.object({ kind: z.literal("query"), query: z.string().trim().min(1).max(500) }),
 ]);
 
@@ -692,7 +694,7 @@ export const contract = {
    * filter that files future mail there; `filterUndo` lets similar.undo take it back.
    */
   "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
-    // a filter says who sent it (and the subject), the domain or the list (plan 81); words can't be filed always
+    // a filter says who sent it (and the subject), the domain or the list (plan 81), or words (plan 84); a search can't be filed always
     z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind !== "query"),
     { timeoutMs: 120_000 },
   ),

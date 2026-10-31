@@ -1,3 +1,4 @@
+import { subjectSql } from "./similar";
 import {
   CONSUMER_DOMAINS,
   COUNT_CAP,
@@ -6,6 +7,7 @@ import {
   parseReasons,
   fnv1a,
   normalizeText,
+  resolvable,
   valvePaused,
   type AutoCategorize,
   type CategorizerModel,
@@ -44,13 +46,16 @@ function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: st
   switch (scope.kind) {
     case "sender":
       return by("messages_from", "m.from_email = ?", [normalizeText(scope.email.trim())]);
-    case "subject":
-      // what the filter's rule compares: the normalized subject (plan 63's similar scope does the same)
-      return by("messages_from", "m.from_email = ? AND m.subject_norm = ?", [normalizeText(scope.email.trim()), normalizeText(scope.subject)]);
+    case "subject": {
+      // what the filter's rule compares: the normalized subject, or its key with numbers (plan 63's similar scope does the same)
+      const subject = subjectSql(scope.subject);
+      return by("messages_from", `m.from_email = ? AND ${subject.sql}`, [normalizeText(scope.email.trim()), ...subject.params]);
+    }
     case "domain":
       return by("messages_domain", "m.from_domain = ?", [normalizeText(scope.domain.trim().replace(/^@/, ""))]);
     case "list":
       return by("messages_list", "m.list_id = ?", [normalizeText(scope.listId.trim())]);
+    case "words":
     case "query":
       return null;
   }
@@ -64,14 +69,16 @@ const QUERY_EXCLUSIONS = [
 ];
 
 /** Matching thread ids, newest first; `limit` -1 resolves every one (bulk apply). */
-export function resolveScope(db: Db, categoryId: number, scope: CategorizeScope, now: number, limit = -1): number[] {
+export function resolveScope(db: Db, categoryId: number, given: CategorizeScope, now: number, limit = -1): number[] {
+  const scope = resolvable(given);
   const s = scopeSql(db, categoryId, scope);
   if (s) return db.all<{ id: number }>(`${s.sql} ORDER BY t.last_date DESC, t.id DESC LIMIT ?`, ...s.params, limit).map((r) => r.id);
   if (scope.kind !== "query") return [];
   return searchThreadIds(db, { query: scope.query, now, limit, where: QUERY_EXCLUSIONS, whereParams: [categoryId, categoryId] }).ids;
 }
 
-export function countScope(db: Db, categoryId: number, scope: CategorizeScope, now: number): { count: number; capped: boolean } {
+export function countScope(db: Db, categoryId: number, given: CategorizeScope, now: number): { count: number; capped: boolean } {
+  const scope = resolvable(given);
   const s = scopeSql(db, categoryId, scope);
   const n = s
     ? db.get<{ c: number }>(`SELECT count(*) AS c FROM (${s.sql} LIMIT ?)`, ...s.params, COUNT_CAP + 1)!.c
@@ -80,7 +87,7 @@ export function countScope(db: Db, categoryId: number, scope: CategorizeScope, n
 }
 
 /** The SQL a scope count runs (query-plan tests). */
-export function scopeCountSql(db: Db, categoryId: number, scope: Exclude<CategorizeScope, { kind: "query" }>): { sql: string; params: Param[] } {
+export function scopeCountSql(db: Db, categoryId: number, scope: Exclude<CategorizeScope, { kind: "query" | "words" }>): { sql: string; params: Param[] } {
   const s = scopeSql(db, categoryId, scope)!;
   return { sql: `SELECT count(*) AS c FROM (${s.sql} LIMIT ?)`, params: [...s.params, COUNT_CAP + 1] };
 }

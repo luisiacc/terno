@@ -12,6 +12,8 @@ export type CategorizeScope =
   | { kind: "subject"; email: string; subject: string }
   | { kind: "domain"; domain: string }
   | { kind: "list"; listId: string }
+  /** plan 84: conversations that mention every word (as a search word does), from one sender or anyone; a filter can say it */
+  | { kind: "words"; terms: string[]; email: string | null }
   /** search language, e.g. `"factura" "uber" from:@uber.com` */
   | { kind: "query"; query: string };
 
@@ -52,17 +54,32 @@ export function termsQuery(terms: readonly string[], categoryName: string): stri
   return [...terms.map((t) => `"${t.replaceAll('"', "")}"`), `-category:${category}`].join(" ");
 }
 
+/** The search a words scope files now: every word quoted (a search word, what its rule's `text` means), from the sender if any. */
+export function wordsQuery(scope: { terms: readonly string[]; email: string | null }): string {
+  return [...scope.terms.map((t) => `"${t.replaceAll('"', "")}"`), ...(scope.email ? [`from:${scope.email}`] : [])].join(" ");
+}
+
+/** A scope as the stores resolve it: words are their search. */
+export const resolvable = <S extends CategorizeScope>(scope: S): Exclude<S, { kind: "words" }> | { kind: "query"; query: string } =>
+  scope.kind === "words" ? { kind: "query", query: wordsQuery(scope as Extract<CategorizeScope, { kind: "words" }>) } : (scope as Exclude<S, { kind: "words" }>);
+
 /** Plan 80: the scopes "Always file here" offers, and the filter that does it to future mail. */
 export type AlwaysScope = Extract<CategorizeScope, { kind: "sender" | "subject" }>;
-/** Plan 81: every scope a filter can say (the snackbar's 1–3 file now and catch future mail); words can't. */
-export type FilterableScope = Extract<CategorizeScope, { kind: "sender" | "subject" | "domain" | "list" }>;
+/** Plan 81: every scope a filter can say (the snackbar's 1–3 file now and catch future mail); plan 84: words too, a search can't. */
+export type FilterableScope = Extract<CategorizeScope, { kind: "sender" | "subject" | "domain" | "list" | "words" }>;
 
 export const isFilterable = (scope: CategorizeScope): scope is FilterableScope => scope.kind !== "query";
 
 /** The filter that files the scope's future mail here: the same conditions as plan 63's similar filters. */
 export function categoryRule(scope: FilterableScope, categoryId: number): FilterRule {
+  const actions: FilterRule["actions"] = [{ type: "addCategory", categoryId }];
+  if (scope.kind === "words") {
+    const conditions: FilterRule["conditions"] = scope.terms.map((value) => ({ field: "text" as const, op: "contains" as const, value }));
+    if (scope.email) conditions.push({ field: "from", op: "equals", value: scope.email });
+    return { match: "all", conditions, actions };
+  }
   // as the stores resolve the scope now: "@acme.studio " files acme.studio, so the filter must say acme.studio
-  const canonical: FilterableScope =
-    scope.kind === "domain" ? { kind: "domain", domain: scope.domain.trim().replace(/^@/, "") } : scope.kind === "list" ? { kind: "list", listId: scope.listId.trim() } : scope;
-  return { match: "all", conditions: similarRule(canonical, "archive").conditions, actions: [{ type: "addCategory", categoryId }] };
+  const canonical =
+    scope.kind === "domain" ? { kind: "domain" as const, domain: scope.domain.trim().replace(/^@/, "") } : scope.kind === "list" ? { kind: "list" as const, listId: scope.listId.trim() } : scope;
+  return { match: "all", conditions: similarRule(canonical, "archive").conditions, actions };
 }

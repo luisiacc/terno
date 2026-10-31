@@ -14,7 +14,7 @@ import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flag
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { COUNT_CAP, LIST_FILTERS, parseSearch, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { COUNT_CAP, LIST_FILTERS, parseSearch, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -134,6 +134,7 @@ import {
   resumeNetworkOps,
   nextOpAttemptAt,
   ruleNeedsBody,
+  ruleReadsBody,
   saveDraft,
   saveFilter,
   setMessageBody,
@@ -853,7 +854,7 @@ export class IdbMailStore implements MailStore {
     if (messageIds.length === 0) return touched;
     for (const filter of listFilters(this.c)) {
       if (!filter.enabled) continue;
-      if (onlyBodyFilters && !filter.rule.conditions.some((cond) => cond.field === "body")) continue;
+      if (onlyBodyFilters && !ruleReadsBody(filter.rule)) continue;
       const matches = findRuleMatches(this.c, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {
@@ -1339,6 +1340,7 @@ export class IdbMailStore implements MailStore {
     return this.exclusive(async () => {
       const messages = T(this.c, "messages");
       const needsBody = ruleNeedsBody(rule);
+      const readsBody = ruleReadsBody(rule);
       const ids = [...messages.rows.keys()].map(Number).filter((id) => !window || (id >= window.from && id <= window.to)).sort((a, b) => a - b);
       const out = { messageIds: [] as number[], threadIds: new Set<number>() };
       for (let i = 0; i < ids.length; i += SLICE) {
@@ -1347,7 +1349,9 @@ export class IdbMailStore implements MailStore {
           const message = messages.get(id);
           return message?.body_state === "full" && !message.is_trash;
         }) : candidates;
-        if (needsBody && slice.length) await this.readBodies(slice);
+        // a text rule (plan 84) reads the complete bodies only
+        const full = readsBody && !needsBody ? slice.filter((id) => messages.get(id)?.body_state === "full") : slice;
+        if (readsBody && full.length) await this.readBodies(full);
         const m = findRuleMatches(this.c, rule, now, slice);
         out.messageIds.push(...m.messageIds);
         for (const t of m.threadIds) out.threadIds.add(t);
@@ -1524,11 +1528,13 @@ export class IdbMailStore implements MailStore {
         return quickActions(this.c, categoryId, threadIds, model);
       });
     },
-    countScope: async (categoryId, scope, now) => {
+    countScope: async (categoryId, given, now) => {
+      const scope = resolvable(given);
       if (scope.kind === "query") return countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length);
       return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1)))!.length);
     },
-    resolveScope: async (categoryId, scope, now, limit = -1) => {
+    resolveScope: async (categoryId, given, now, limit = -1) => {
+      const scope = resolvable(given);
       // sender/domain/list scopes read the message indexes: the late tables must be in
       const prepared = await this.read(() => {
         const direct = scopeThreads(this.c, categoryId, scope);

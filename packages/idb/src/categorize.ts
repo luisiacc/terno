@@ -28,6 +28,7 @@ import {
   type QuickActions,
   type TrainExample,
   type Vetoes,
+  sameSubject,
 } from "@terno/core";
 import type { AddedBy, ClassifyResult, ExampleKey, ModelDelta, MovePhase, PendingSuggestion, RootMessage, ThreadFeatureSet } from "@terno/store";
 import { pendingSuggestionCounts, T, type Ctx, type R } from "./mail";
@@ -874,9 +875,8 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
       rows = messages.by("from", normalizeText(scope.email.trim()));
       break;
     case "subject": {
-      // what the filter's rule compares: the normalized subject (plan 63's similar scope does the same)
-      const subject = normalizeText(scope.subject);
-      rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => m.subject_norm === subject);
+      // what the filter's rule compares: the normalized subject, or its key with numbers (plan 84; plan 63's similar scope does the same)
+      rows = messages.by("from", normalizeText(scope.email.trim())).filter((m) => sameSubject(scope.subject, m.subject_norm));
       break;
     }
     case "domain":
@@ -885,6 +885,7 @@ export function scopeThreads(c: Ctx, categoryId: number, scope: CategorizeScope,
     case "list":
       rows = messages.by("list", normalizeText(scope.listId.trim()));
       break;
+    case "words":
     case "query":
       return null;
   }

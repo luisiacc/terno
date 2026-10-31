@@ -1,4 +1,4 @@
-import { CategorizerModel, evaluateRule, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
+import { CategorizerModel, categoryRule, evaluateRule, normalizeText, subjectGeneralizes, subjectPattern, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
@@ -862,7 +862,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           expect(preview.count).toBe(new Set(live.filter((m) => expected.includes(m.id)).map((m) => m.threadId)).size);
         }
         expect(nonTrivial).toBeGreaterThan(60);
-      });
+        // 160+ rules, each a full scan (a text rule reads every complete body in IDB)
+      }, 30_000);
     });
 
     describe("categorization", () => {
@@ -1435,6 +1436,31 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect(done.next).toEqual(expect.any(Number));
         expect(await store.similar.kept([a, starred, replied, other])).toEqual(expect.arrayContaining([starred, replied]));
         expect(sorted(await store.similar.kept([a, starred, replied]))).toEqual(sorted([starred, replied]));
+      });
+
+      it("plan 84: a subject's numbers stand for any number, in sweeps, offers, category scopes and its filter", async () => {
+        const { store, thread } = await setup();
+        const a = await thread({ subject: "Tu pedido 43790 está en camino" });
+        const b = await thread({ subject: "Tu pedido 3052 está en camino" });
+        const other = await thread({ subject: "Tu pedido 3052 fue cancelado" });
+        const exact = await thread({ subject: "Tu pedido está en camino" });
+        const scope = { kind: "subject", email: "receipts@uber.com", subject: "Tu pedido 43790 está en camino" } as const;
+        expect((await resolveAll(store, scope, "archive", [])).ids).toEqual(sorted([a, b]));
+        // without numbers, the subject is exact as before
+        expect((await resolveAll(store, { ...scope, subject: "Tu pedido está en camino" }, "archive", [])).ids).toEqual([exact]);
+        // two targets with different numbers share the subject
+        expect((await store.similar.offers([a, b], "archive")).offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 2 });
+        const category = await store.categories.create("Pedidos", "blue");
+        expect(sorted(await store.categorize.resolveScope(category.id, scope, NOW))).toEqual(sorted([a, b]));
+        expect(await store.categorize.countScope(category.id, scope, NOW)).toEqual({ count: 2, capped: false });
+        // the filter says the same: its pattern matches both, and not the cancelled one
+        const rule = categoryRule(scope, category.id);
+        expect(rule.conditions).toContainEqual({ field: "subject", op: "matches", value: "^tu pedido [0-9]+ esta en camino$" });
+        const range = (await store.filters.messageIdRange())!;
+        const matched = await store.filters.matchWindow(rule, NOW, { from: range.lo, to: range.hi });
+        const threadsOf = new Set((await store.threads.summaries([a, b, other, exact])).map((t) => t.id));
+        expect(threadsOf.size).toBe(4);
+        expect(matched.length).toBe(2);
       });
 
       it("offers what every target shares, with counts; nothing for a target without received mail or over 200 targets", async () => {
@@ -2089,6 +2115,31 @@ function generateRules(messages: readonly SnapshotMessage[]): FilterRule[] {
           conditions.push({ field: "account", op: "is", value: m.accountId, negate });
       }
     }
+    rules.push({ match: rand() < 0.7 ? "all" : "any", conditions, actions: [{ type: "archive" }] });
+  }
+  // plan 84: patterns (generated subjects and a fixed safe set) and text words, on their own seed so the rules above stay as they were
+  seed = 84;
+  const patterns: [Extract<FilterRule["conditions"][number], { op: string }>["field"], string][] = [
+    ["subject", "^re:"], ["subject", "[0-9]{3,}"], ["subject", "\\b(factura|pedido|orden)\\b"], ["subject", ".*"], ["subject", "^$"],
+    ["from", "@gmail\\.com$"], ["from", "^[a-m]"], ["fromDomain", "^(gmail|outlook)\\."], ["listId", ".+"], ["recipients", "luis|ana"],
+  ];
+  for (let i = 0; i < 40; i++) {
+    const m = pick(messages);
+    const conditions: FilterRule["conditions"] = [];
+    const negate = rand() < 0.2;
+    const kind = Math.floor(rand() * 3);
+    if (kind === 0) {
+      const subject = normalizeText(m.subject);
+      conditions.push(subjectGeneralizes(subject) ? { field: "subject", op: "matches", value: subjectPattern(subject), negate } : { field: "subject", op: "equals", value: m.subject.trim() || "x", negate });
+    } else if (kind === 1) {
+      const [field, value] = pick(patterns);
+      conditions.push({ field, op: "matches", value, negate } as FilterRule["conditions"][number]);
+    } else {
+      const words = tokenize(`${m.subject} ${m.fromName} ${rand() < 0.5 ? (m.bodyText ?? "") : ""}`);
+      const start = Math.floor(rand() * Math.max(1, words.length - 1));
+      conditions.push({ field: "text", op: "contains", value: words.slice(start, start + 1 + Math.floor(rand() * 2)).join(" ") || "hola" });
+    }
+    if (rand() < 0.4) conditions.push({ field: "from", op: "equals", value: m.fromEmail });
     rules.push({ match: rand() < 0.7 ? "all" : "any", conditions, actions: [{ type: "archive" }] });
   }
   // anchored body ops exercise the verification path

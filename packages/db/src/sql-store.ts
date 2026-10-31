@@ -12,7 +12,7 @@ import { sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flag
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { sqlAssets, replaceAttachments } from "./attachments";
-import { senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { ruleReadsBody, senderVetoed, type Address, type FilterAction, type FilterRule, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -363,7 +363,7 @@ export class SqlMailStore implements MailStore {
     if (messageIds.length === 0) return touched;
     for (const filter of listFilters(this.db)) {
       if (!filter.enabled) continue;
-      if (onlyBodyFilters && !filter.rule.conditions.some((c) => c.field === "body")) continue;
+      if (onlyBodyFilters && !ruleReadsBody(filter.rule)) continue;
       const matches = findRuleMatches(this.db, filter.rule, now, messageIds);
       if (matches.messageIds.length === 0) continue;
       try {

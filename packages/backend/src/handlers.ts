@@ -467,7 +467,7 @@ export function createHandlers(b: Backend): Handlers {
       let filterFailed = false;
       if (always && isFilterable(scope)) {
         try {
-          const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? similarValue(scope));
+          const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? (scope.kind === "words" ? scope.terms.join(", ") : similarValue(scope)));
           filter = { id: f.filter.id, filterUndo: f.filterUndo };
         } catch (error) {
           // the mail is still filed and undoable: the result says the filter is missing

@@ -1,4 +1,4 @@
-import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, normalizeText, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
+import { BODY_TAIL_TOKENS, bodyMatches, fromIsAddress, normalizeText, patternMatches, ruleValue, subjectKey, tokenize, type Condition, type FilterRule, type TextOp } from "@terno/core";
 import type { Db, Param } from "./sqlite";
 
 const DAY_MS = 86_400_000;
@@ -19,7 +19,23 @@ function textSql(op: TextOp, column: string, value: string, params: Param[]): st
     case "endsWith":
       params.push(value, value);
       return `substr(${column}, -length(?)) = ?`;
+    case "matches":
+      // plan 84: the same matcher as core's (checked pattern, cut input), as a function
+      params.push(value);
+      return `terno_matches(?, ${column}) = 1`;
   }
+}
+
+/** Messages whose FTS row matches `query`, bounded like the rule (a scoped probe, an id range, or all). */
+function ftsSql(query: string, params: Param[], range?: { from: number; to: number }, scoped = false): string {
+  params.push(query);
+  // Exact probes also bound sparse batches of repaired, older messages.
+  if (scoped) return "EXISTS (SELECT 1 FROM messages_fts WHERE messages_fts MATCH ? AND rowid = m.id)";
+  if (range) {
+    params.push(Math.trunc(range.from), Math.trunc(range.to));
+    return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid BETWEEN ? AND ?)";
+  }
+  return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
 }
 
 function conditionSql(c: Condition, now: number, params: Param[], range?: { from: number; to: number }, scoped = false): string {
@@ -34,31 +50,30 @@ function conditionSql(c: Condition, now: number, params: Param[], range?: { from
       params.push(now - c.value * DAY_MS);
       return c.op === "gt" ? "m.date < ?" : "m.date > ?";
     case "from": {
-      const v = normalizeText(c.value);
+      const v = ruleValue(c.op, c.value);
       if (fromIsAddress(c.op, v)) return textSql(c.op, "m.from_email", v, params);
       return `(${textSql(c.op, "m.from_name_norm", v, params)} OR ${textSql(c.op, "m.from_email", v, params)})`;
     }
     case "fromDomain":
-      return textSql(c.op, "m.from_domain", normalizeText(c.value), params);
+      return textSql(c.op, "m.from_domain", ruleValue(c.op, c.value), params);
     case "recipients":
-      return textSql(c.op, "m.recipients_norm", normalizeText(c.value), params);
+      return textSql(c.op, "m.recipients_norm", ruleValue(c.op, c.value), params);
     case "subject":
-      return textSql(c.op, "m.subject_norm", normalizeText(c.value), params);
+      return textSql(c.op, "m.subject_norm", ruleValue(c.op, c.value), params);
     case "listId":
-      return textSql(c.op, "coalesce(m.list_id, '')", normalizeText(c.value), params);
+      return textSql(c.op, "coalesce(m.list_id, '')", ruleValue(c.op, c.value), params);
+    case "text": {
+      // plan 84: a search word's columns: subject, sender and recipients now, the body once it's complete (token semantics, like body)
+      const phrase = c.value.replaceAll('"', '""');
+      return `(${ftsSql(`{subject from_text recipients} : "${phrase}"`, params, range, scoped)} OR (m.body_state = 'full' AND ${ftsSql(`body : "${phrase}"`, params, range, scoped)}))`;
+    }
     case "body": {
       const phrase = c.value.replaceAll('"', '""');
-      const fts = (query: string) => {
-        params.push(query);
-        // Exact probes also bound sparse batches of repaired, older messages.
-        if (scoped) return "EXISTS (SELECT 1 FROM messages_fts WHERE messages_fts MATCH ? AND rowid = m.id)";
-        if (range) {
-          params.push(Math.trunc(range.from), Math.trunc(range.to));
-          return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid BETWEEN ? AND ?)";
-        }
-        return "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)";
-      };
+      const fts = (query: string) => ftsSql(query, params, range, scoped);
       switch (c.op) {
+        // refused by the schema: never a match (as core's bodyMatches)
+        case "matches":
+          return "0";
         case "contains":
           return fts(`body : "${phrase}"`);
         case "startsWith":
@@ -111,6 +126,8 @@ export function registerFunctions(db: Db): void {
   db.function("terno_body_match", { deterministic: true }, (op, body, value) =>
     bodyMatches(op as TextOp, (body as string | null) ?? null, String(value)) ? 1 : 0,
   );
+  db.function("terno_matches", { deterministic: true }, (pattern, text) => (patternMatches(String(pattern), String(text ?? "")) ? 1 : 0));
+  db.function("terno_subject_key", { deterministic: true }, (subject) => subjectKey(String(subject ?? "")));
 }
 
 export interface RuleMatches {

@@ -141,7 +141,14 @@ describe("filterRuleSchema", () => {
     expect(parse({ field: "hasAttachment", op: "contains", value: true })).toBe(false);
     expect(parse({ field: "ageDays", op: "contains", value: 3 })).toBe(false);
     expect(parse({ field: "subject", op: "contains", value: "   " })).toBe(false);
-    expect(parse({ field: "subject", op: "matches", value: ".*" })).toBe(false);
+    // plan 84: a pattern on a pattern field is a rule; a bad one, on the body, or an unknown op is not
+    expect(parse({ field: "subject", op: "matches", value: ".*" })).toBe(true);
+    expect(parse({ field: "subject", op: "matches", value: "(a" })).toBe(false);
+    expect(parse({ field: "body", op: "matches", value: "a" })).toBe(false);
+    expect(parse({ field: "subject", op: "regex", value: "a" })).toBe(false);
+    expect(parse({ field: "text", op: "contains", value: "pedido" })).toBe(true);
+    expect(parse({ field: "text", op: "equals", value: "pedido" })).toBe(false);
+    expect(parse({ field: "text", op: "contains", value: "pedido", negate: true })).toBe(false);
     expect(parse({ field: "ageDays", op: "gt", value: 30 })).toBe(true);
   });
 

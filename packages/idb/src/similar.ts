@@ -1,4 +1,4 @@
-import { COUNT_CAP, normalizeText, similarScopes, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
+import { COUNT_CAP, normalizeText, sameSubject, similarScopes, type SimilarAction, type SimilarOffers, type SimilarPage, type SimilarScope } from "@terno/core";
 import { ownAddresses, rootRefs, type OwnAddresses } from "./categorize";
 import { T, type Ctx, type R } from "./mail";
 
@@ -52,7 +52,8 @@ function keepWalk(c: Ctx, walk: Iterator<unknown>): number {
 function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, targets: ReadonlySet<number>, cursor: number | null, limit: number, keep = true): SimilarPage {
   const messages = T(c, "messages");
   const threads = T(c, "threads");
-  const subject = scope.kind === "subject" ? normalizeText(scope.subject) : null;
+  // with numbers, the subject's key (plan 84): "Tu pedido 1" and "Tu pedido 2" are one subject
+  const subject = scope.kind === "subject" ? scope.subject : null;
   const walk = walkOf(c, scope, cursor);
   const ids = new Set<number>();
   const left = new Set<number>();
@@ -61,7 +62,7 @@ function page(c: Ctx, scope: SimilarScope, action: SimilarAction, own: OwnAddres
     const step = walk.next();
     if (step.done) return { ids: [...ids], kept: [...left], next: null };
     const m = messages.get(step.value as number);
-    if (!m || m.is_sent || own.emails.has(m.from_email) || (subject !== null && m.subject_norm !== subject)) continue;
+    if (!m || m.is_sent || own.emails.has(m.from_email) || (subject !== null && !sameSubject(subject, m.subject_norm))) continue;
     const t = threads.get(m.thread_id);
     if (!inPlace(t, action)) continue;
     if (kept(t) && !targets.has(t.id)) left.add(t.id);
