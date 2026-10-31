@@ -109,6 +109,56 @@ describe("stable explicit filter actions (native SQLite)", () => {
     expect((await t.backend.store.debug.snapshot()).memberships).toEqual([{ threadId: before.messages[0]!.threadId, categoryId: replacement.id, addedBy: "filter", batchId: null }]);
   });
 
+  it("cancels an edited rule at transaction time without claiming or partially acting", async () => {
+    const t = await setup(); const saved = await t.save();
+    const replacement = await t.client.call("categories.create", { name: "Other destination", color: "amber" });
+    const changed = { ...saved.rule, actions: [{ type: "addCategory" as const, categoryId: replacement.id }] };
+    const before = await t.backend.store.debug.snapshot();
+    const matchWindow = t.backend.store.filters.matchWindow.bind(t.backend.store.filters);
+    t.backend.store.filters.matchWindow = async (...args) => {
+      const ids = await matchWindow(...args);
+      expect(ids).toHaveLength(1);
+      await t.client.call("filters.save", { ...saved, rule: changed });
+      return ids;
+    };
+    try { await expect(t.client.call("filters.apply", { id: saved.id })).rejects.toMatchObject({ code: "CANCELLED" }); }
+    finally { t.backend.store.filters.matchWindow = matchWindow; }
+    await t.reopen();
+    expect(await t.backend.store.debug.snapshot()).toEqual(before);
+    expect(await t.client.call("filters.list", {})).toEqual([{ ...saved, rule: changed }]);
+    expect(await t.history(saved.id)).toEqual({ claims: [], at: null });
+  });
+
+  it("remaps a backup into a new category lifetime without rebinding the retained original rule", async () => {
+    const t = await setup();
+    const saved = await t.save();
+    const backup = await t.client.call("app.export", {});
+    await t.client.call("categories.delete", { id: t.category.id });
+    await t.reopen();
+    await t.client.call("app.import", { data: backup });
+    const categories = await t.backend.store.categories.list();
+    expect(categories).toHaveLength(1);
+    expect(categories[0]!.id).not.toBe(t.category.id);
+    const filters = await t.client.call("filters.list", {});
+    expect(filters).toHaveLength(2);
+    expect(filters.find((f) => f.id === saved.id)).toEqual(saved);
+    const restored = filters.find((f) => f.id !== saved.id)!;
+    expect(restored.rule).toEqual({ ...saved.rule, actions: [{ type: "markRead" }, { type: "addCategory", categoryId: categories[0]!.id }] });
+    const before = await t.backend.store.debug.snapshot();
+    await expect(t.client.call("filters.apply", { id: saved.id })).rejects.toBeDefined();
+    expect(await t.backend.store.debug.snapshot()).toEqual(before);
+    expect(await t.history(saved.id)).toEqual({ claims: [], at: null });
+    expect(await t.client.call("filters.apply", { id: restored.id })).toEqual({ matchedMessages: 1, affectedThreads: 1 });
+    const after = await t.backend.store.debug.snapshot();
+    expect(after.messages[1]).toEqual(before.messages[1]);
+    expect(after.memberships).toEqual([{ threadId: before.messages[0]!.threadId, categoryId: categories[0]!.id, addedBy: "filter", batchId: null }]);
+    await t.client.call("app.import", { data: backup });
+    await t.reopen();
+    expect(await t.backend.store.categories.list()).toEqual(categories);
+    expect(await t.client.call("filters.list", {})).toHaveLength(2);
+    expect(await t.backend.store.debug.snapshot()).toEqual(after);
+  });
+
   it.each([
     { type: "addCategory" }, { type: "addCategory", categoryId: "Receipts" },
     { type: "addCategory", categoryId: 0 }, { type: "addCategory", categoryId: -1 },

@@ -1,3 +1,4 @@
+import { categoryReferenceCeiling } from "./category-identities";
 import { IDB_VERSION, OP_STORAGE_VERSION, OP_PART_STORES, decodeOpImage, inspectOpLayout, prepareOpWrites, type OpPartImage, type OpPartStore } from "./op-storage";
 import { installAssetAccounting } from "./asset-accounting";
 import { MemDb, type Committed, type ForeignKey, type Key, type Row, type Table, type TableSpec } from "./mem";
@@ -17,7 +18,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 30;
+export const LOGICAL_SCHEMA = 33;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -49,6 +50,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "attachment_bytes", key: ["chunk_id"], lazy: true },
   { name: "attachment_links", key: ["id"], indexes: { ...fk("asset_id"), ...fk("draft_id"), ...fk("message_id"), ...fk("op_id") } },
   { name: "attachments", key: ["id"], autoId: true, indexes: fk("message_id") },
+  { name: "category_counter", early: true, key: ["id"] },
   { name: "categories", early: true, key: ["id"], autoId: true },
   // plan 68: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
   { name: "folders", early: true, key: ["account_id", "key"], indexes: fk("account_id") },
@@ -282,6 +284,27 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 15) for (const name of ["recipient_receipts", "recipient_receipt_parts"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
+      if (event.oldVersion < 20) {
+        const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");
+        let ceiling = 0;
+        track(counter.put({ id: 1, last_id: 0 }, 1));
+        const reserve = (id: unknown) => {
+          if (typeof id === "number" && Number.isSafeInteger(id) && id > ceiling) {
+            ceiling = id; track(counter.put({ id: 1, last_id: ceiling }, 1));
+          }
+        };
+        for (const name of ["categories", "filters", "settings", "cat_batches", "cat_move_rows", "cat_move_examples", "cat_move_decisions"]) {
+          scan(tx.objectStore(name).openCursor(), (cursor) => {
+            const row = cursor.value as Row;
+            if (name === "categories") reserve(row.id);
+            else if (name === "filters") reserve(categoryReferenceCeiling(String(row.rule_json)));
+            else if (name === "settings") { if (row.key === "import:pending") reserve(categoryReferenceCeiling(String(row.value_json))); }
+            else if (name === "cat_batches") {
+              try { reserve((JSON.parse(String(row.scope_json)) as { from?: unknown }).from); } catch { /* Preserve malformed legacy journals for their existing recovery path. */ }
+            } else reserve(row.category_id);
+          });
+        }
+      }
       if (event.oldVersion < 8) {
         open.transaction!.objectStore("ops").createIndex("flag_account_seq", ["account_id", "seq", "id"]);
         open.transaction!.objectStore("message_flag_intents").createIndex("flag_snapshots", ["snapshot_account_id", "message_id"]);

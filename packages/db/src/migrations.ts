@@ -1006,6 +1006,33 @@ ALTER TABLE categories ADD COLUMN show_in_inbox INTEGER NOT NULL DEFAULT 1;
   { version: 32, name: "cover category counts without wide thread reads", sql: `
 CREATE INDEX threads_category_counts ON threads(id, unread_count) WHERE in_trash = 0 AND in_spam = 0;
 ` },
+  { version: 33, name: "durable category identities", sql: `
+CREATE TABLE category_counter (id INTEGER PRIMARY KEY CHECK(id = 1), last_id INTEGER NOT NULL CHECK(last_id BETWEEN 0 AND 9007199254740991));
+INSERT INTO category_counter VALUES (1, (SELECT COALESCE(MAX(id), 0) FROM (
+ SELECT id FROM categories
+ UNION ALL SELECT category_id FROM cat_move_rows
+ UNION ALL SELECT category_id FROM cat_move_examples
+ UNION ALL SELECT category_id FROM cat_move_decisions
+ UNION ALL SELECT atom FROM cat_batches, json_tree(CASE WHEN json_valid(scope_json) THEN scope_json ELSE '{}' END) WHERE key='from' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991
+ UNION ALL SELECT atom FROM filters, json_tree(CASE WHEN json_valid(rule_json) THEN rule_json ELSE '{}' END) WHERE key='categoryId' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991
+ UNION ALL SELECT atom FROM settings, json_tree(CASE WHEN json_valid(value_json) THEN value_json ELSE '{}' END) WHERE settings.key='import:pending' AND json_tree.key='categoryId' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991
+)));
+CREATE TRIGGER category_fresh_id BEFORE INSERT ON categories BEGIN
+ SELECT CASE WHEN new.id <= (SELECT last_id FROM category_counter WHERE id=1) OR new.id > 9007199254740991 THEN RAISE(ABORT, 'Category identity is retired or invalid') END;
+END;
+CREATE TRIGGER category_reserve_id AFTER INSERT ON categories BEGIN
+ UPDATE category_counter SET last_id=new.id WHERE id=1;
+END;
+CREATE TRIGGER category_immutable_id BEFORE UPDATE OF id ON categories WHEN new.id != old.id BEGIN
+ SELECT RAISE(ABORT, 'Category identity cannot change');
+END;
+CREATE TRIGGER category_filter_insert AFTER INSERT ON filters BEGIN
+ UPDATE category_counter SET last_id=MAX(last_id, COALESCE((SELECT MAX(atom) FROM json_tree(CASE WHEN json_valid(new.rule_json) THEN new.rule_json ELSE '{}' END) WHERE key='categoryId' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991), 0)) WHERE id=1;
+END;
+CREATE TRIGGER category_filter_update AFTER UPDATE OF rule_json ON filters BEGIN
+ UPDATE category_counter SET last_id=MAX(last_id, COALESCE((SELECT MAX(atom) FROM json_tree(CASE WHEN json_valid(new.rule_json) THEN new.rule_json ELSE '{}' END) WHERE key='categoryId' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991), 0)) WHERE id=1;
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

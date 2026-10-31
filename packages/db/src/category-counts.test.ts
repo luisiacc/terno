@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { openDatabase, sqliteDriver } from "./index";
-import { MIGRATIONS, migrate } from "./migrations";
+import { MIGRATIONS, migrate, SCHEMA_VERSION } from "./migrations";
 import { getCounts } from "./queries";
 import { Db } from "./sqlite";
 
@@ -94,7 +94,7 @@ it("upgrades v31 with hidden categories intact and reopens the durable index", (
   expect(upgraded.get("SELECT name FROM sqlite_schema WHERE name='threads_category_counts'")).toBeDefined();
   expect(upgraded.get("SELECT show_in_inbox FROM categories WHERE id=2")).toEqual({ show_in_inbox: 0 });
   expect(upgraded.all<Count>(original)).toEqual(before); check(upgraded);
-  expect(migrate(upgraded)).toEqual({ from: 32, to: 32 }); upgraded.close();
+  expect(migrate(upgraded)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION }); upgraded.close();
   const reopened = openDatabase(path); opened.push(reopened); check(reopened);
   expect(reopened.get("SELECT name FROM sqlite_schema WHERE name='threads_category_counts'")).toBeDefined();
 });

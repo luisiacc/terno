@@ -157,9 +157,13 @@ export function listCategories(db: Db): Category[] {
 }
 
 export function createCategory(db: Db, name: string, color: CategoryColor, { showInInbox = true }: { showInInbox?: boolean } = {}): Category {
-  const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM categories")!.p;
-  const id = db.run("INSERT INTO categories (name, color, position, show_in_inbox) VALUES (?, ?, ?, ?)", name, color, position, showInInbox ? 1 : 0).lastInsertRowid;
-  return { id, name, color, position, autoApply: true, showInInbox };
+  return db.tx(() => {
+    const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM categories")!.p;
+    const id = db.get<{ last_id: number }>("SELECT last_id FROM category_counter WHERE id = 1")!.last_id + 1;
+    if (!Number.isSafeInteger(id)) throw new Error("Category identity space exhausted");
+    db.run("INSERT INTO categories (id, name, color, position, show_in_inbox) VALUES (?, ?, ?, ?, ?)", id, name, color, position, showInInbox ? 1 : 0);
+    return { id, name, color, position, autoApply: true, showInInbox };
+  });
 }
 
 export function updateCategory(

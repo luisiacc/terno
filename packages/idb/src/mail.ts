@@ -1,3 +1,4 @@
+import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { copyOpAdmission, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
@@ -1376,7 +1377,7 @@ export function createCategory(c: Ctx, name: string, color: CategoryColor, { sho
   const categories = T(c, "categories");
   let position = -1;
   for (const r of categories.all()) position = Math.max(position, r.position);
-  const row: R = { id: undefined, name, color, position: position + 1, auto_apply: 1, show_in_inbox: showInInbox ? 1 : 0 };
+  const row: R = { id: nextCategoryId(c.db), name, color, position: position + 1, auto_apply: 1, show_in_inbox: showInInbox ? 1 : 0 };
   categories.insert(row);
   return { id: row.id, name, color, position: position + 1, autoApply: true, showInInbox };
 }
@@ -1419,17 +1420,20 @@ export function getFilter(c: Ctx, id: number): Filter | null {
 export function saveFilter(c: Ctx, f: { id?: number; name: string; enabled: boolean; source: Filter["source"]; rule: FilterRule; learnedKey?: string }, now: number): Filter {
   const filters = T(c, "filters");
   return c.db.tx(() => {
+    const ruleJson = JSON.stringify(f.rule);
     if (f.id !== undefined) {
       const previous = filters.get(f.id);
       if (!previous) return getFilter(c, f.id)!;
-      if (previous.rule_json !== JSON.stringify(f.rule)) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
-      filters.update(previous, { name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: JSON.stringify(f.rule) });
+      if (previous.rule_json !== ruleJson) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
+      filters.update(previous, { name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson });
+      reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
       return getFilter(c, f.id)!;
     }
     let position = -1;
     for (const r of filters.all()) position = Math.max(position, r.position);
-    const row: R = { id: undefined, name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: JSON.stringify(f.rule), learned_key: f.learnedKey ?? null, hits: 0, position: position + 1, created_at: now, last_applied_at: null };
+    const row: R = { id: undefined, name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson, learned_key: f.learnedKey ?? null, hits: 0, position: position + 1, created_at: now, last_applied_at: null };
     filters.insert(row);
+    reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
     return getFilter(c, row.id)!;
   });
 }
