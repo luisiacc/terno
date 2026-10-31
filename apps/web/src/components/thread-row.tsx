@@ -13,6 +13,7 @@ import { accountLabels } from "~/lib/account-labels";
 import type { DesignVariants } from "@terno/ui/designs/index";
 import { SenderAvatar } from "./sender-avatar";
 import { CodeChip } from "./code-chip";
+import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
@@ -39,6 +40,8 @@ interface Props {
   icons: boolean;
   /** the design's row layout (plan 15) */
   layout: DesignVariants["row"];
+  /** plan 80: the category whose suggestions this list reviews (its rows answer them) */
+  review?: number | null;
 }
 
 /**
@@ -48,7 +51,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -135,6 +138,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
     </span>
   );
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
+  const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
+  const answer = reviewed && <ReviewControls threadId={thread.id} categoryId={reviewed.id} category={reviewed.name} />;
   const avatar = !classic && (
     <span className={cn("relative shrink-0", !line && !big && "self-start mt-0.5")}>
       <SenderAvatar
@@ -206,7 +211,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
           </span>
           {accountTag}
           {!wide && chip}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {answer}
+          <span className={cn("flex shrink-0 items-center gap-1.5", !answer && "ml-auto")}>
             {marks}
             {date}
           </span>
@@ -229,6 +235,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
               {snippet}
             </span>
             {accountTag}
+            {answer}
           </div>
         </>
       ) : (
@@ -254,6 +261,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
             <div className={cn("flex min-w-0 items-center gap-1.5", big && "mt-0.5")}>
               {snippet}
               {big && <span className="ml-auto flex shrink-0 items-center gap-1.5">{marks}</span>}
+              {answer && <span className={cn("flex shrink-0", !big && "ml-auto")}>{answer}</span>}
             </div>
           </div>
         </div>

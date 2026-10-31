@@ -7,7 +7,7 @@ import { openMenuForSelection } from "~/components/thread-menu";
 import { getApp, markSelectionIntent, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
-import { acceptSuggestion, rejectSuggestion } from "~/lib/categorize";
+import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { focusSearch, listScroller } from "~/components/thread-list";
@@ -86,9 +86,10 @@ function escape() {
   else clearSelection();
 }
 
-/** y / n answer the reader's first "¿Categoría?" chip. */
+/** y / n answer the reader's first "¿Categoría?" chip; in a category's Review list, that category's (plan 80). */
 function answerSuggestion(yes: boolean) {
-  const id = getApp().selectedId;
+  const { selectedId: id, reviewCategoryId: review } = getApp();
+  if (id !== null && review !== null && useList.getState().index.has(id)) return void answerReview(id, review, yes);
   const s = id === null ? undefined : useThreads.getState().details.get(id)?.categorization?.suggestions[0];
   if (id === null || !s) return;
   void (yes ? acceptSuggestion(id, s.categoryId) : rejectSuggestion(id, s.categoryId));

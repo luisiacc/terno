@@ -30,7 +30,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { addToCategory, removeSenderFromCategory } = await import("./categorize");
+const { addToCategory, answerReview, fileAlways, filterNameOf, removeSenderFromCategory } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 const { registerUndo, undoLast, undoNow, useSnack } = await import("~/lib/snack");
@@ -155,5 +155,131 @@ describe("removeSenderFromCategory (plan 77): undo", () => {
     undoNow(snack.action!.undo!);
     await settle();
     expect(undoCalls()).toBe(1);
+  });
+});
+
+describe("plan 80: answering from the Review list", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const ids = () => useList.getState().items.map((t) => t.id);
+  beforeEach(() => {
+    setApp({ categories: [{ id: CAT, name: "Facturas" }] as never, reviewCategoryId: CAT, selectedId: 1, counts: { ...EMPTY_COUNTS, categoryUnread: { [CAT]: 4 }, categorySuggestions: { [CAT]: 3 } } });
+    fake.handlers["categorize.suggestions"] = async () => ({ items: [] });
+  });
+
+  it("✓ files it as an accepted suggestion; the row leaves at once, the selection moves on, both counts move", async () => {
+    let release!: (v: unknown) => void;
+    fake.handlers["categories.addThreads"] = () => new Promise((r) => (release = r));
+    const done = answerReview(1, CAT, true);
+    expect(ids()).toEqual([2, 3]);
+    expect(getApp().selectedId).toBe(2);
+    expect(getApp().counts.categorySuggestions[CAT]).toBe(2);
+    // the unread row joined the category's unread count, read before it left
+    expect(getApp().counts.categoryUnread[CAT]).toBe(5);
+    release({ added: 1, addedIds: [1], batchId: 4 });
+    await done;
+    expect(fake.calls).not.toContain("counts.get");
+  });
+
+  it("a failed answer brings the real counts and the list back", async () => {
+    fake.handlers["categorize.feedback"] = async () => {
+      throw new Error("refused");
+    };
+    fake.handlers["counts.get"] = async () => ({ ...EMPTY_COUNTS, categorySuggestions: { [CAT]: 3 } });
+    await answerReview(2, CAT, false);
+    await settle();
+    expect(fake.calls).toEqual(expect.arrayContaining(["categorize.feedback", "counts.get", "categorize.suggestions"]));
+    expect(getApp().counts.categorySuggestions[CAT]).toBe(3);
+    expect(useSnack.getState().current?.message).toBe("Couldn’t save: refused");
+  });
+});
+
+describe("plan 80: always add — one undo for the filter and the batch", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const scope = { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu recibo" } as const;
+  beforeEach(() => {
+    setApp({ categories: [{ id: CAT, name: "Facturas" }] as never, reviewCategoryId: CAT, selectedId: 1 });
+    fake.handlers["categorize.suggestions"] = async () => ({ items: [] });
+  });
+
+  it("files now, says future mail too; Undo takes back the filter first, then the batch", async () => {
+    fake.handlers["categorize.apply"] = async (p) => {
+      expect(p).toEqual({ categoryId: CAT, scope, always: true, filterName: "Uber · Tu recibo → Facturas" });
+      return { added: 3, batchId: 8, filter: { id: 2, filterUndo: 5 }, filterFailed: false };
+    };
+    const order: string[] = [];
+    fake.handlers["similar.undo"] = async (p) => (order.push(`filter ${(p as { filterUndo: number }).filterUndo}`), { restored: 0 });
+    fake.handlers["categorize.undo"] = async (p) => (order.push(`batch ${(p as { batchId: number }).batchId}`), { removed: 3 });
+    await fileAlways(CAT, scope, 1, "Uber · Tu recibo → Facturas");
+    expect(useList.getState().items.map((t) => t.id)).not.toContain(1);
+    const snack = useSnack.getState().current!;
+    expect(snack.message).toBe("3 added to Facturas, future mail too");
+    undoNow(snack.action!.undo!);
+    await settle();
+    expect(order).toEqual(["filter 5", "batch 8"]);
+  });
+
+  it("the filter's undo failing still undoes the batch; the retry redoes only the filter", async () => {
+    fake.handlers["categorize.apply"] = async () => ({ added: 2, batchId: 8, filter: { id: 2, filterUndo: 5 }, filterFailed: false });
+    let filterFails = true;
+    const order: string[] = [];
+    fake.handlers["similar.undo"] = async () => {
+      order.push("filter");
+      if (filterFails) throw new Error("disk full");
+      return { restored: 0 };
+    };
+    fake.handlers["categorize.undo"] = async () => (order.push("batch"), { removed: 2 });
+    await fileAlways(CAT, scope, 1, "x");
+    const undo = useSnack.getState().current!.action!.undo!;
+    undoNow(undo);
+    await settle();
+    expect(order).toEqual(["filter", "batch"]);
+    expect(undo.state).toBe("ready");
+    filterFails = false;
+    undoNow(undo);
+    await settle();
+    expect(order).toEqual(["filter", "batch", "filter"]);
+    expect(undo.state).toBe("done");
+  });
+
+  it("the filter failing keeps the mail filed and says so; a failure partway still offers Undo for its batch", async () => {
+    fake.handlers["categorize.apply"] = async () => ({ added: 2, batchId: 8, filter: null, filterFailed: true });
+    await fileAlways(CAT, scope, 1, "x");
+    expect(useSnack.getState().current).toMatchObject({ message: "2 added to Facturas", description: "Couldn’t set up the filter for future mail. You can add it in Settings → Filters." });
+    fake.handlers["categorize.apply"] = async () => {
+      throw Object.assign(new Error("boom"), { details: { batchId: 9 } });
+    };
+    fake.handlers["categorize.undo"] = async () => ({ removed: 1 });
+    await fileAlways(CAT, scope, 2, "x");
+    const snack = useSnack.getState().current!;
+    expect(snack.message).toBe("Couldn’t add: boom");
+    undoNow(snack.action!.undo!);
+    await settle();
+    expect(fake.calls.filter((m) => m === "categorize.undo")).toHaveLength(1);
+    expect(fake.calls).not.toContain("similar.undo");
+  });
+});
+
+describe("plan 80: the filter's name", () => {
+  it("fits the filter name cap: a long subject shortens, the category stays at the end", () => {
+    const scope = { kind: "subject", email: "a@b.com", subject: "x".repeat(400) } as const;
+    const name = filterNameOf(scope, "Rappi", "Facturas");
+    expect([...name].length).toBeLessThanOrEqual(120);
+    expect(name).toMatch(/^Rappi · x+… → Facturas$/);
+    expect(filterNameOf({ kind: "sender", email: "a@b.com" }, null, "Facturas")).toBe("a@b.com → Facturas");
+    expect([...filterNameOf({ kind: "sender", email: "a@b.com" }, "y".repeat(300), "z".repeat(300))].length).toBeLessThanOrEqual(120);
+  });
+
+  it("a failure partway that already made the filter offers the one Undo for both", async () => {
+    setApp({ categories: [{ id: CAT, name: "Facturas" }] as never, reviewCategoryId: CAT, selectedId: 1 });
+    fake.handlers["categorize.suggestions"] = async () => ({ items: [] });
+    fake.handlers["categorize.apply"] = async () => {
+      throw Object.assign(new Error("boom"), { details: { batchId: null, filterUndo: 4 } });
+    };
+    await fileAlways(CAT, { kind: "sender", email: "a@b.com" }, 1, "x");
+    const snack = useSnack.getState().current!;
+    undoNow(snack.action!.undo!);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fake.calls).toContain("similar.undo");
+    expect(fake.calls).not.toContain("categorize.undo");
   });
 });

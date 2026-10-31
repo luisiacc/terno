@@ -1,3 +1,4 @@
+import { capFilterName, FILTER_NAME_MAX, type AlwaysScope } from "@terno/core";
 import type { CategorizeSource } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -262,12 +263,119 @@ export function acceptSuggestion(threadId: number, categoryId: number): Promise<
   return addToCategory(categoryId, [threadId], { source: "suggestion" });
 }
 
-/** "No": a negative example of weight 1 for that category. */
-export async function rejectSuggestion(threadId: number, categoryId: number): Promise<void> {
+/** "No": a negative example of weight 1 for that category. False when it failed (the user was told). */
+export async function rejectSuggestion(threadId: number, categoryId: number): Promise<boolean> {
   try {
     await client.call("categorize.feedback", { threadId, categoryId, verdict: "reject" });
     refreshReader([threadId]);
+    return true;
   } catch (error) {
     snack.error(t("category.saveFailed", { error: errorText(error) }));
+    return false;
+  }
+}
+
+/** The sidebar's ✨ count moves in the same frame; the backend's counts event confirms it. */
+function bumpSuggestions(categoryId: number, n: number): void {
+  const counts = getApp().counts;
+  const left = Math.max(0, (counts.categorySuggestions[categoryId] ?? 0) + n);
+  setApp({ counts: { ...counts, categorySuggestions: { ...counts.categorySuggestions, [categoryId]: left } } });
+}
+
+/** A failed answer: the real numbers, and the list as it is (the row comes back). */
+async function recover(): Promise<void> {
+  void reloadList({ keepSelection: true });
+  try {
+    setApp({ counts: await client.call("counts.get", {}) });
+  } catch {
+    /* the next counts event corrects them */
+  }
+}
+
+/**
+ * Plan 80: an answer in the Review list (its row's ✓, the thread menu, y/n).
+ * The row leaves in this frame, as archive's does (the selection moves on);
+ * a failure brings it back. Accepting shows the category snackbar as anywhere.
+ */
+export async function answerReview(threadId: number, categoryId: number, yes: boolean): Promise<void> {
+  // the add reads the row (its unread count moves) before it leaves
+  const answered = yes ? acceptSuggestion(threadId, categoryId).then((f) => f !== null) : rejectSuggestion(threadId, categoryId);
+  bumpSuggestions(categoryId, -1);
+  if (useList.getState().index.has(threadId)) leaveView([threadId]);
+  if (!(await answered)) await recover();
+}
+
+/** What a filter made here is called: who (and the subject) → the category. */
+export function filterNameOf(scope: AlwaysScope, senderName: string | null, category: string): string {
+  const who = senderName || scope.email;
+  const tail = ` → ${category}`;
+  // a filter's name has a cap: a long subject shortens, the category stays readable at the end
+  const head = [...(scope.kind === "subject" ? `${who} · ${scope.subject}` : who)];
+  const room = Math.max(1, FILTER_NAME_MAX - [...tail].length);
+  return capFilterName(`${head.length <= room ? head.join("") : `${head.slice(0, room - 1).join("").trimEnd()}…`}${tail}`);
+}
+
+/** What one "always" filing left to take back: each part once (a retry after a failure redoes only what failed). */
+interface AlwaysUndo {
+  batchId: number | null;
+  filterUndo: number | null;
+}
+
+/**
+ * Plan 80: "Always add to C" from the Review list: every conversation the
+ * scope matches now (this one included) and a filter for future mail. The
+ * row leaves at once; the rest when the list reloads. One Undo (and z) takes
+ * back the filter first (no new mail is caught meanwhile), then the batch;
+ * the filter's failing never keeps the mail filed.
+ */
+export async function fileAlways(categoryId: number, scope: AlwaysScope, threadId: number, filterName: string): Promise<void> {
+  const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
+  if (getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) leaveView([threadId]);
+  const outcome = deferred<AlwaysUndo>();
+  const undo = registerUndo(() =>
+    outcome.promise.then(async (u) => {
+      let failed: unknown = null;
+      if (u.filterUndo !== null) {
+        try {
+          await client.call("similar.undo", { undoId: null, filterUndo: u.filterUndo });
+          u.filterUndo = null;
+        } catch (error) {
+          failed = error;
+        }
+      }
+      if (u.batchId !== null) {
+        try {
+          await undoFiled({ categoryId, addedIds: [], batchId: u.batchId });
+          u.batchId = null;
+        } catch (error) {
+          failed ??= error;
+        }
+      }
+      if (failed !== null) throw failed;
+      void snack(t("category.undone", { category: name }), { background: true });
+    }),
+  );
+  const id = snack.loading(t("category.adding", { category: name }));
+  try {
+    const r = await client.call("categorize.apply", { categoryId, scope, always: true, filterName });
+    outcome.resolve({ batchId: r.batchId, filterUndo: r.filter?.filterUndo ?? null });
+    // undone with z before the answer came: its own snacks say so
+    if (undo.state !== "ready") return dismissSnack(id);
+    const undoable = r.batchId !== null || r.filter?.filterUndo != null;
+    snack[r.filterFailed ? "warning" : "success"](t(r.filterFailed ? "category.added" : "review.always.done", { count: r.added, category: name }), {
+      id,
+      duration: 10_000,
+      description: r.filterFailed ? t("similar.filterFailed") : undefined,
+      action: undoable ? undoAction(undo, t("review.always.undoName")) : undefined,
+    });
+  } catch (error) {
+    // part of it may be filed, and the filter made (the backend says which): Undo still takes those back
+    const details = (error as { details?: { batchId?: unknown; filterUndo?: unknown } }).details;
+    const u = { batchId: typeof details?.batchId === "number" ? details.batchId : null, filterUndo: typeof details?.filterUndo === "number" ? details.filterUndo : null };
+    outcome.resolve(u);
+    const undoable = u.batchId !== null || u.filterUndo !== null;
+    snack.error(t("category.addFailed", { error: errorText(error) }), { id, action: undoable ? undoAction(undo, t("review.always.undoName")) : undefined });
+  } finally {
+    void reloadList({ keepSelection: true });
   }
 }

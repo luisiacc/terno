@@ -14,6 +14,7 @@ import {
 } from "@terno/ui/components/context-menu";
 import {
   Archive,
+  Check,
   CheckCheck,
   Copy,
   Filter,
@@ -25,6 +26,7 @@ import {
   OctagonAlert,
   Plus,
   Printer,
+  Repeat,
   Reply,
   ReplyAll,
   Search,
@@ -40,7 +42,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type R
 import { snack } from "~/lib/snack";
 import { create } from "zustand";
 import { act, openCompose, targetRows } from "~/lib/actions";
-import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
+import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
@@ -56,6 +58,7 @@ import { actSimilar, scopeLabel, shownCount, visibleOffers } from "~/lib/similar
 import { client } from "~/rpc/connection";
 import { codeKey, copyCode, threadCode } from "~/lib/codes";
 import { listScroller } from "./thread-list";
+import { useAlwaysOffers } from "./review-actions";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
 interface MenuTarget {
@@ -307,6 +310,49 @@ function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn
   return items;
 }
 
+/**
+ * Plan 80: a Review row's answers, the keyboard's way to its ✓ and Always ▾
+ * (one conversation only: the offers are what its own mail shares).
+ */
+function ReviewItems({ thread }: { thread: ThreadSummary }) {
+  const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
+  const offers = useAlwaysOffers(category ? thread.id : null, category?.id ?? null);
+  if (!category) return null;
+  return (
+    <>
+      <Item icon={<Check />} label={t("review.accept", { category: category.name })} testId="menu-review-accept" onClick={() => void answerReview(thread.id, category.id, true)} />
+      <ContextMenuSub>
+        <ContextMenuSubTrigger data-testid="menu-review-always">
+          <Repeat />
+          <span className="min-w-0 flex-1 truncate">{t("review.always", { category: category.name })}</span>
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-64" data-testid="menu-review-always-list">
+          {offers === null ? (
+            <ContextMenuItem disabled>
+              <span className="h-3 w-40 animate-pulse rounded bg-muted" />
+            </ContextMenuItem>
+          ) : offers.offers.length === 0 ? (
+            <ContextMenuItem disabled>{t("review.always.none")}</ContextMenuItem>
+          ) : (
+            offers.offers.map((o) => (
+              <ContextMenuItem
+                key={o.scope.kind}
+                data-testid={`menu-review-always-${o.scope.kind}`}
+                title={o.scope.kind === "subject" ? o.scope.subject : undefined}
+                onClick={() => void fileAlways(category.id, o.scope, thread.id, filterNameOf(o.scope, offers.senderName, category.name))}
+              >
+                <span className="min-w-0 flex-1 truncate">{scopeLabel(o.scope, offers.senderName)}</span>
+                <span className="font-mono text-2xs text-muted-foreground tabular">{formatCount(o)}</span>
+              </ContextMenuItem>
+            ))
+          )}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuSeparator />
+    </>
+  );
+}
+
 function MenuItems() {
   renderProbe("ThreadMenu");
   const { ids, scope } = useMenuTarget();
@@ -361,6 +407,7 @@ function MenuItems() {
           {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
         </div>
       )}
+      {single && <ReviewItems thread={single} />}
       {single && code && (
         <>
           <Item

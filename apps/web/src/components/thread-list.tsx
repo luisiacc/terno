@@ -29,6 +29,7 @@ import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
+import { ReviewAlwaysMenu } from "./review-actions";
 import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner } from "./learned-banner";
@@ -607,6 +608,8 @@ export function ThreadList() {
   const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
   const layout = design.variants.row;
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
+  // plan 80: a category's Review list, whose rows answer its suggestions
+  const review = useApp((s) => s.reviewCategoryId);
   const tabs = useApp((s) => list && tabsShown(s));
   const tab = useApp(selectedTab);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -789,12 +792,13 @@ export function ThreadList() {
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} />
             ))}
           </div>
         )}
       </div>
       </ThreadMenu>
+      {review !== null && <ReviewAlwaysMenu />}
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       </div>
     </section>

@@ -17,7 +17,7 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
 import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, scheduleMarkRead, toggleStar } from "~/lib/actions";
-import { acceptSuggestion, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
+import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
 import { fullDate, listDate } from "~/lib/format";
 import { SenderAvatar } from "./sender-avatar";
@@ -275,6 +275,11 @@ function AccountChip({ account, full }: { account: Account; full: boolean }) {
 /** The account, the categories (with why and how to undo) and the engine's suggestions (y / n): the same in every design. */
 function ThreadChips({ detail, account, cats, accountChip, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; accountChip: false | "address" | "name"; className?: string }) {
   const categories = useApp((s) => s.categories);
+  /** plan 80: in a category's Review list, its chip is the one y and n answer, and an answer takes the row out of the list */
+  const reviewing = useApp((s) => s.reviewCategoryId);
+  const answer = (categoryId: number, yes: boolean) =>
+    categoryId === reviewing ? answerReview(detail.thread.id, categoryId, yes) : yes ? acceptSuggestion(detail.thread.id, categoryId) : rejectSuggestion(detail.thread.id, categoryId);
+  const keyed = (i: number, categoryId: number) => (reviewing !== null && detail.categorization?.suggestions.some((x) => x.categoryId === reviewing) ? categoryId === reviewing : i === 0);
   const thread = detail.thread;
   return (
     <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground", className)}>
@@ -315,14 +320,14 @@ function ThreadChips({ detail, account, cats, accountChip, className }: { detail
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <button type="button" data-testid="suggestion-accept" onClick={() => void acceptSuggestion(thread.id, c.id)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
-                    <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{i === 0 && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
+                  <button type="button" data-testid="suggestion-accept" onClick={() => void answer(c.id, true)} className="inline-flex h-full items-center gap-1 rounded-l-full pr-1 pl-1.5 hover:bg-accent">
+                    <CategoryDot color={c.color as CategoryColor} />{t("reader.suggestion", { category: c.name })}{keyed(i, c.id) && <Shortcut keys="y" className="ml-0.5 [&_kbd]:h-3.5 [&_kbd]:min-w-3.5 [&_kbd]:text-[10px]" />}
                   </button>
                 }
               />
-              <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={i === 0 ? t("reader.suggestion.hint") : undefined} />
+              <Reasons title={t("reader.suggestion.title", { category: c.name, percent: Math.round(sg.p * 100) })} reasons={sg.reasons} hint={keyed(i, c.id) ? t("reader.suggestion.hint") : undefined} />
             </Tooltip>
-            <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void rejectSuggestion(thread.id, c.id)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+            <button type="button" aria-label={t("reader.category.notIt", { category: c.name })} data-testid="suggestion-reject" onClick={() => void answer(c.id, false)} className="inline-flex h-full items-center rounded-r-full px-1 text-muted-foreground hover:bg-accent hover:text-foreground">
               <X className="size-3" />
             </button>
           </span>
