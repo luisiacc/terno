@@ -229,6 +229,22 @@ export interface Counts {
   folderUnread?: Record<string, number>;
 }
 
+/** Plan 87: "always" comes back at its time; "noReply" only if nobody but you wrote in the thread since it was set. */
+export const REMINDER_KINDS = ["always", "noReply"] as const;
+export type ReminderKind = (typeof REMINDER_KINDS)[number];
+
+/** Plan 87: a thread's reminder. Local: no provider keeps them (they don't sync, a backup doesn't carry them). */
+export interface Reminder {
+  threadId: ThreadId;
+  dueAt: number;
+  kind: ReminderKind;
+  /** when it was set: a "noReply" one counts only answers after it */
+  setAt: number;
+}
+
+/** Plan 87: how many reminders a mailbox holds at once (bounds every read of them) */
+export const REMINDERS_MAX = 1000;
+
 export type ThreadAction =
   | "archive"
   | "trash"

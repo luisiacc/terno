@@ -156,6 +156,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
+import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
 import { contactOf, isLearnable, sentOf } from "./autocomplete";
@@ -1441,6 +1442,15 @@ export class IdbMailStore implements MailStore {
       }
       return r;
     },
+  };
+
+  readonly reminders: MailStore["reminders"] = {
+    list: () => this.early(() => listReminders(this.c)),
+    put: (rows, cap) => this.command(() => putReminders(this.c, rows, cap), { early: true }),
+    delete: (threadIds, o) => this.command(() => deleteReminders(this.c, threadIds, o?.dueBy), { early: true }),
+    deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
+    // reads messages: waits for them
+    answered: (rows) => this.read(() => answeredReminders(this.c, rows)),
   };
 
   readonly categories: MailStore["categories"] = {

@@ -54,6 +54,7 @@ import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operati
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
+import { mergeReminder } from "./reminders";
 
 /**
  * The store commands' building blocks, ported from packages/db (same names,
@@ -716,6 +717,7 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
   for (const [categoryId, e] of winners) if (e.label < 0) memberships.delete(into, categoryId);
   const decisions = T(c, "cls_decisions");
   for (const d of decisions.by("fk_thread_id", from)) if (!decisions.has(into, d.category_id)) decisions.update(d, { thread_id: into });
+  mergeReminder(c, into, from);
   T(c, "threads").delete(from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);

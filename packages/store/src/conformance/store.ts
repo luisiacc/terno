@@ -12,6 +12,7 @@ import { defineSearchConformance } from "./search";
 import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
+import { defineReminderConformance } from "./reminders";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
@@ -66,6 +67,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineHiddenInboxConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineReminderConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

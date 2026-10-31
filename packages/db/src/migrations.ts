@@ -1033,6 +1033,14 @@ CREATE TRIGGER category_filter_update AFTER UPDATE OF rule_json ON filters BEGIN
  UPDATE category_counter SET last_id=MAX(last_id, COALESCE((SELECT MAX(atom) FROM json_tree(CASE WHEN json_valid(new.rule_json) THEN new.rule_json ELSE '{}' END) WHERE key='categoryId' AND type='integer' AND atom BETWEEN 1 AND 9007199254740991), 0)) WHERE id=1;
 END;
 ` },
+  { version: 34, name: "reminders (plan 87)", sql: `
+CREATE TABLE reminders (
+  thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  due_at INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('always', 'noReply')),
+  set_at INTEGER NOT NULL
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

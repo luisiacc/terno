@@ -21,6 +21,7 @@ import type {
   Prediction,
   QuickActions,
   Reason,
+  Reminder,
   SimilarAction,
   SimilarOffers,
   SimilarPage,
@@ -439,6 +440,32 @@ export interface MailStore {
     matchWindow(rule: FilterRule, now: number, window: { from: number; to: number }): Promise<number[]>;
     /** claims + actions + ops for one chunk; refuses (CANCELLED) if the filter changed since `ruleJson` */
     applyChunk(id: number, ruleJson: string, messageIds: readonly number[], now: number): Promise<{ applied: number; touched: number[]; opIds: string[] } & FlagReconciliation>;
+  };
+
+  /**
+   * Plan 87: a thread's reminder (one per thread). A thread that goes takes its
+   * reminder with it; a merge keeps the survivor's, or the vanished one's when
+   * the survivor had none (the earlier when both had one).
+   */
+  reminders: {
+    /** every reminder (at most REMINDERS_MAX), by thread id */
+    list(): Promise<Reminder[]>;
+    /**
+     * Sets these, replacing what those threads had, all or nothing: refused
+     * (`ok: false`) when the reminders not among them plus these would pass
+     * `cap`. Threads that are gone are skipped. `replaced`: what they had.
+     */
+    put(rows: readonly Reminder[], cap: number): Promise<{ ok: true; put: number[]; replaced: Reminder[] } | { ok: false }>;
+    /** removes these threads' reminders (`dueBy`: only those due by then); what it removed */
+    delete(threadIds: readonly number[], o?: { dueBy?: number }): Promise<Reminder[]>;
+    /** removes these reminders only if they are still exactly these (a replacement meanwhile stays) */
+    deleteExact(rows: readonly Reminder[]): Promise<Reminder[]>;
+    /**
+     * The threads among these "noReply" reminders that were answered: a
+     * message after `setAt` that is not a draft, spam or trash, and not from
+     * one of your addresses.
+     */
+    answered(rows: readonly Reminder[]): Promise<number[]>;
   };
 
   /** plan 68: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */

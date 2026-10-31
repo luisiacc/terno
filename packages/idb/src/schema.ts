@@ -15,10 +15,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 10 fences older adapters from mailboxes with incomplete-save markers.
  * Version 12 adds an account's own folders and their memberships (SQL v24, plan 68).
  * Version 14 fences adapters that cannot preserve reply subject context (SQL v26).
+ * Version 21 adds reminders (SQL v34, plan 87).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 33;
+export const LOGICAL_SCHEMA = 34;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -57,6 +58,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "folder_rebuilds", key: ["account_id", "key"], indexes: fk("account_id") },
   { name: "thread_folders", early: true, key: ["thread_id", "folder"], indexes: { ...fk("thread_id"), folder: ["account_id", "folder"], unread: { columns: ["account_id", "folder"], where: (r) => r.unread === 1 } } },
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
+  // plan 87: a thread's reminder (a handful; the renderer reads them at startup)
+  { name: "reminders", early: true, key: ["thread_id"] },
   { name: "filters", early: true, key: ["id"], autoId: true },
   { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
   { name: "ops", early: true, key: ["id"], indexes: { ...fk("account_id"), state: ["state"] }, track: ["seq"] },
@@ -118,6 +121,7 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("folder_rebuilds", "account_id", "accounts"),
   c("thread_folders", "thread_id", "threads"),
   c("thread_categories", "thread_id", "threads"),
+  c("reminders", "thread_id", "threads"),
   c("thread_categories", "category_id", "categories"),
   c("filter_applications", "filter_id", "filters"),
   c("filter_applications", "message_id", "messages"),
@@ -284,6 +288,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 15) for (const name of ["recipient_receipts", "recipient_receipt_parts"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
+      if (event.oldVersion >= 1 && event.oldVersion < 21) db.createObjectStore("reminders");
       if (event.oldVersion < 20) {
         const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");
         let ceiling = 0;

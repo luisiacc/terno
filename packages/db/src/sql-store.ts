@@ -74,6 +74,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
+import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
@@ -901,6 +902,14 @@ export class SqlMailStore implements MailStore {
     undoMoveBegin: async (batchId, now) => undoMoveBegin(this.db, batchId, now),
     undoMoveSlice: async (batchId, threadIds, now) => undoMoveSlice(this.db, batchId, threadIds, now),
     restoreMoveSlice: async (batchId, threadIds) => restoreMoveSlice(this.db, batchId, threadIds),
+  };
+
+  readonly reminders: MailStore["reminders"] = {
+    list: async () => listReminders(this.db),
+    put: async (rows, cap) => putReminders(this.db, rows, cap),
+    delete: async (threadIds, o) => deleteReminders(this.db, threadIds, o?.dueBy),
+    deleteExact: async (rows) => deleteExactReminders(this.db, rows),
+    answered: async (rows) => answeredReminders(this.db, rows),
   };
 
   readonly similar: MailStore["similar"] = {
