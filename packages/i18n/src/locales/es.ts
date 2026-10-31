@@ -1649,6 +1649,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.suggestionGone": "Esa sugerencia ya no está disponible.",
   "errors.tooManyThreads": "Demasiadas conversaciones: acota la vista o la búsqueda",
   "errors.remindersFull": "Puedes tener hasta {max} recordatorios. Quita alguno en Recordatorios para añadir más.",
+  "errors.scheduledFull": "Puedes programar hasta {max} mensajes, o menos si son muy grandes. Envía o desprograma alguno para programar este.",
+  "errors.scheduledGone": "Ese mensaje ya no está programado. Se envió o volvió a tus borradores.",
   "errors.undoGone": "Esta acción ya no se puede deshacer",
   "errors.moveExpired": "Este movimiento ya no se puede deshacer",
   "errors.replySourceGone": "El mensaje original ya no está disponible. Copia tu borrador en un mensaje nuevo para enviarlo.",

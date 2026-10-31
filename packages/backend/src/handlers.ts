@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX } from "@terno/core";
+import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -685,27 +685,30 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "compose.send": async (p, ctx) => {
-      const { opId, threadId, deltas } = await store.compose.queueSend({
-        accountId: p.accountId,
-        to: p.to,
-        cc: p.cc,
-        bcc: p.bcc,
-        subject: p.subject,
-        bodyText: p.bodyText,
-        // HTML only from the renderer, which builds it from a document (agents send text)
-        bodyHtml: ctx.origin === "renderer" && p.bodyHtml ? p.bodyHtml : undefined,
-        inReplyToMessageId: p.inReplyToMessageId,
-        draftId: p.draftId,
-        draftRevision: p.draftRevision,
-        draftGeneration: p.draftGeneration,
-        attachments: p.attachments,
-        recordReply: ctx.origin === "renderer",
-        now: b.now(),
-      });
-      b.categorizer.apply(deltas);
-      b.notifyChanged([threadId]);
-      b.kickWorker();
-      return { opId, threadId };
+      const r = await b.queueComposeSend(p, { renderer: ctx.origin === "renderer" });
+      // a scheduled draft sent now (another window's Send): its row went with it
+      if (p.draftId !== undefined && b.scheduled.has(p.draftId)) b.scheduled.poke();
+      return r;
+    },
+    "compose.schedule": async ({ sendAt, ...p }, ctx) => {
+      const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined };
+      const r = await b.scheduled.schedule(params, sendAt);
+      if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
+      if (r === "full") throw new RpcError("BAD_REQUEST", L("errors.scheduledFull", { max: SCHEDULED_MAX }));
+      return { ok: true as const };
+    },
+    "scheduled.list": () => b.scheduled.refresh(),
+    "scheduled.reschedule": async ({ draftId, sendAt }) => {
+      if (!(await b.scheduled.reschedule(draftId, sendAt))) throw new RpcError("NOT_FOUND", L("errors.scheduledGone"));
+      return { ok: true as const };
+    },
+    "scheduled.cancel": async ({ draftId }) => {
+      if (!(await b.scheduled.cancel(draftId))) throw new RpcError("NOT_FOUND", L("errors.scheduledGone"));
+      return { ok: true as const };
+    },
+    "scheduled.ackFailed": async ({ ids }) => {
+      await b.scheduled.ackFailed(ids);
+      return { ok: true as const };
     },
 
     "captureRepairs.list": (p, ctx) => attachmentCall(ctx.origin, () => store.captureRepairs.list(p.accountId, p.after)),
@@ -724,6 +727,11 @@ export function createHandlers(b: Backend): Handlers {
     "drafts.save": async (p, ctx) => {
       // a rich body only from the renderer (an agent's save is plain text, and rewrites the body)
       const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "" }, b.now());
+      // plan 89: an edit to a scheduled draft (another window still had it open) wins: it is a draft again
+      if (saved && (b.scheduled.has(saved.id) || (p.id !== undefined && b.scheduled.has(p.id)))) {
+        if (await store.scheduled.delete(saved.id)) b.server.emit("drafts", { reason: "scheduled" });
+        b.scheduled.poke();
+      }
       return saved ? toDraft(saved) : null;
     },
     "compose.warm": async () => {
@@ -749,10 +757,15 @@ export function createHandlers(b: Backend): Handlers {
       if (!b.autocomplete.warmed) void b.warmAutocomplete();
       return { text: b.autocomplete.suggestText({ before, names, me }) };
     },
-    "drafts.list": async () => (await store.drafts.list()).map(toDraft),
+    // plan 89: a scheduled draft isn't for editing (it shows as scheduled)
+    "drafts.list": async () => {
+      const scheduled = new Set((await store.scheduled.list()).map((x) => x.draftId));
+      return (await store.drafts.list()).filter((d) => !scheduled.has(d.id)).map(toDraft);
+    },
     "drafts.sourceContext": ({ messageId }) => store.drafts.sourceContext(messageId),
     "drafts.delete": async ({ id, generation }) => {
       await store.drafts.delete(id, generation ?? "");
+      b.scheduled.touched();
       return { ok: true as const };
     },
 
@@ -1006,7 +1019,10 @@ export function createHandlers(b: Backend): Handlers {
 
     "sync.now": async ({ accountId, reason }) => {
       // plan 87: a window's focus looks at reminders too (a timer runs late while a laptop sleeps; the web hears of no wake)
-      if (reason === "focus") b.refreshReminders();
+      if (reason === "focus") {
+        b.refreshReminders();
+        b.scheduled.poke();
+      }
       await b.retryNow(accountId ?? null, reason);
       return { ok: true as const };
     },

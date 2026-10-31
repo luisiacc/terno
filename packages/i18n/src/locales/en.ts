@@ -1661,6 +1661,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.suggestionGone": "That suggestion is no longer available.",
   "errors.tooManyThreads": "Too many conversations. Narrow the view or the search.",
   "errors.remindersFull": "You can have up to {max} reminders. Clear some in Reminders to add more.",
+  "errors.scheduledFull": "You can schedule up to {max} messages, or fewer when they are very large. Send or unschedule one to schedule this.",
+  "errors.scheduledGone": "That message isn't scheduled anymore. It was sent or is back in your drafts.",
   "errors.undoGone": "This action can no longer be undone.",
   "errors.moveExpired": "This move can no longer be undone.",
   "errors.replySourceGone": "The original message is no longer available. Copy your draft into a new message to send it.",

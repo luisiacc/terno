@@ -100,6 +100,10 @@ export const CODES = {
   "notify.failed": c("errorClass"),
   // reminders (plan 87): a failed read, never a thread or a time
   "reminders.failed": c("errorClass"),
+  // scheduled sends (plan 89): a failed read, a send that will be tried again or given back; never a subject or an address
+  "scheduled.failed": c("errorClass"),
+  "scheduled.send_failed": c("errorClass"),
+  "scheduled.given_back": c("errorClass"),
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
   "icons.batch": c("count", "durationMs"),
   "icons.trimmed": c("count", "bytes"),

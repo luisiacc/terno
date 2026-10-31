@@ -21,6 +21,7 @@ import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
 import { Reminders } from "./reminders";
 import { TabsBackfill } from "./tabs";
+import { ScheduledSends, type ComposeSendParams } from "./scheduled";
 import { createHandlers } from "./handlers";
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
@@ -234,6 +235,8 @@ export class BackendCore {
   readonly attention: Attention;
   /** plan 87: reminders: one timer for the next one, a snapshot to the windows when they change */
   readonly reminders: Reminders;
+  /** plan 89: scheduled sends: one timer for the next one, sent through compose.send's own path */
+  readonly scheduled: ScheduledSends;
   private warming: Promise<void> | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   /** auto-filed threads waiting to be announced, per category */
@@ -260,6 +263,14 @@ export class BackendCore {
       log: (level, message, extra) => this.log(level, message, extra),
     });
     this.tabs = new TabsBackfill(this);
+    this.scheduled = new ScheduledSends({
+      store: this.store,
+      now: () => this.now(),
+      emit: (snapshot) => this.server.emit("scheduled", snapshot),
+      send: async (p) => void (await this.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt })),
+      draftsBack: () => this.server.emit("drafts", { reason: "scheduled" }),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
     const web = options.host?.kind === "web";
     this.autocomplete = new Autocomplete({
       source: this.store.autocomplete,
@@ -452,6 +463,8 @@ export class BackendCore {
     this.refreshReminders();
     // plan 86: the Gmail tabs of mail stored before them, once (and again whenever what's yours changes)
     this.tabs.start();
+    // plan 89: what came due while Terno was closed goes now
+    this.scheduled.poke();
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -493,7 +506,10 @@ export class BackendCore {
   networkChanged(online: boolean, reason: NetReason): void {
     if (this.stopped) return;
     // plan 87: a timer runs late across sleep: a wake looks at once (sync or not)
-    if (reason === "wake") this.refreshReminders();
+    if (reason === "wake") {
+      this.refreshReminders();
+      this.scheduled.poke();
+    }
     if (this.options.autoSync === false) return;
     breadcrumb("sync", "net.changed", { netReason: reason, online });
     this.connectivity.network(online, reason);
@@ -622,6 +638,8 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     this.attention.stop();
     this.reminders.stop();
+    // plan 89: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
+    const scheduledStopped = this.scheduled.stop();
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
@@ -631,6 +649,7 @@ export class BackendCore {
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     for (const off of this.unwatch.values()) off();
     await accountsClosed;
+    await scheduledStopped;
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
     await this.ready.catch(() => {});
@@ -713,6 +732,41 @@ export class BackendCore {
     });
   }
 
+  /**
+   * compose.send's own path (plan 89's scheduled sends take it too): queued
+   * (the draft deleted with it), then announced. Once queued, nothing after
+   * it can fail the send: the announcing is logged instead.
+   */
+  async queueComposeSend(p: ComposeSendParams, o: { renderer: boolean; scheduledAt?: number }): Promise<{ opId: string; threadId: number }> {
+    const { opId, threadId, deltas } = await this.store.compose.queueSend({
+      accountId: p.accountId,
+      to: p.to,
+      cc: p.cc,
+      bcc: p.bcc,
+      subject: p.subject,
+      bodyText: p.bodyText,
+      // HTML only from the renderer, which builds it from a document (agents send text)
+      bodyHtml: o.renderer && p.bodyHtml ? p.bodyHtml : undefined,
+      inReplyToMessageId: p.inReplyToMessageId,
+      draftId: p.draftId,
+      draftRevision: p.draftRevision,
+      draftGeneration: p.draftGeneration,
+      attachments: p.attachments,
+      recordReply: o.renderer,
+      ...(o.scheduledAt !== undefined && { scheduledAt: o.scheduledAt }),
+      now: this.now(),
+    });
+    try {
+      this.categorizer.apply(deltas);
+      this.notifyChanged([threadId]);
+      this.kickWorker();
+    } catch (error) {
+      captureError(error, { code: "send.failed", expected: false });
+      this.log("warn", "a queued send couldn't be announced", error instanceof Error ? error.message : error);
+    }
+    return { opId, threadId };
+  }
+
   /** Coalesces change notifications within one turn of the event loop. */
   notifyChanged(threadIds: Iterable<number>, views = true): void {
     for (const id of threadIds) this.pendingThreadIds.add(id);
@@ -728,6 +782,7 @@ export class BackendCore {
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
       this.reminders.touched();
+      this.scheduled.touched();
       this.emitCounts();
       this.autocomplete.notify();
       this.facts.wake();

@@ -260,6 +260,12 @@ export interface Reminder {
 /** Plan 87: how many reminders a mailbox holds at once (bounds every read of them) */
 export const REMINDERS_MAX = 1000;
 
+/** Plan 89: how many sends can be scheduled at once, and how much their prepared messages may hold together (UTF-16 units) */
+export const SCHEDULED_MAX = 100;
+export const SCHEDULED_BYTES_MAX = 64 * 1024 * 1024;
+/** Plan 89: the "Tomorrow" choice's hour */
+export const SEND_LATER_MORNING = 8;
+
 export type ThreadAction =
   | "archive"
   | "trash"

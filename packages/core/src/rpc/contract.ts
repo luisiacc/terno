@@ -539,6 +539,31 @@ export interface RemindersSnapshot {
   reminders: ReminderInfo[];
 }
 
+/** Plan 89: a scheduled send as the renderer sees it (who and what from its draft; `error`: why the last try didn't go) */
+export interface ScheduledInfo {
+  draftId: number;
+  sendAt: number;
+  accountId: number;
+  threadId: number | null;
+  mode: "new" | "reply" | "replyAll" | "forward";
+  to: { name: string; email: string }[];
+  subject: string;
+  error: string | null;
+  retryAt: number | null;
+}
+/** Plan 89: a scheduled send that couldn't go and won't be tried again (its draft is a draft again), until the user saw it */
+export interface ScheduledFailure {
+  id: string;
+  draftId: number;
+  subject: string;
+  message: string;
+  at: number;
+}
+export interface ScheduledSnapshot {
+  items: ScheduledInfo[];
+  failed: ScheduledFailure[];
+}
+
 function m<R>() {
   return <P extends z.ZodType>(params: P, options: { timeoutMs?: number } = {}) => ({
     params,
@@ -548,6 +573,24 @@ function m<R>() {
 }
 
 const empty = z.object({}).strict();
+
+/** compose.send's parameters (plan 89's compose.schedule adds the moment and requires the draft) */
+const composeSend = z.object({
+  accountId: id,
+  to: z.array(address).min(1).max(MAX_RECIPIENTS),
+  cc: z.array(address).max(MAX_RECIPIENTS).default([]),
+  bcc: z.array(address).max(MAX_RECIPIENTS).default([]),
+  subject: z.string().max(998),
+  // what was written, the signature and the quote (plan 16: an HTML alternative from the renderer only)
+  bodyText: z.string().max(10_000_000),
+  bodyHtml: z.string().max(25_000_000).optional(),
+  inReplyToMessageId: id.optional(),
+  forwardOfMessageId: id.optional(),
+  draftId: id.optional(),
+  draftGeneration: z.string().max(64).optional(),
+  draftRevision: z.number().int().positive().optional(),
+  attachments: attachmentRefs.optional(),
+});
 
 export const contract = {
   "app.bootstrap": m<Bootstrap>()(empty),
@@ -782,24 +825,15 @@ export const contract = {
   "learning.accept": m<Filter>()(z.object({ key: z.string().max(400), name: z.string().trim().min(1).max(120).optional() })),
   "learning.dismiss": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
 
-  "compose.send": m<{ opId: string; threadId: number }>()(
-    z.object({
-      accountId: id,
-      to: z.array(address).min(1).max(MAX_RECIPIENTS),
-      cc: z.array(address).max(MAX_RECIPIENTS).default([]),
-      bcc: z.array(address).max(MAX_RECIPIENTS).default([]),
-      subject: z.string().max(998),
-      // what was written, the signature and the quote (plan 16: an HTML alternative from the renderer only)
-      bodyText: z.string().max(10_000_000),
-      bodyHtml: z.string().max(25_000_000).optional(),
-      inReplyToMessageId: id.optional(),
-      forwardOfMessageId: id.optional(),
-      draftId: id.optional(),
-      draftGeneration: z.string().max(64).optional(),
-      draftRevision: z.number().int().positive().optional(),
-      attachments: attachmentRefs.optional(),
-    }),
-  ),
+  "compose.send": m<{ opId: string; threadId: number }>()(composeSend),
+  /** plan 89: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
+  "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
+  "scheduled.list": m<ScheduledSnapshot>()(empty),
+  "scheduled.reschedule": m<{ ok: true }>()(z.object({ draftId: id, sendAt: z.number().int().nonnegative() }).strict()),
+  /** the draft is an ordinary draft again */
+  "scheduled.cancel": m<{ ok: true }>()(z.object({ draftId: id }).strict()),
+  /** failures the user has seen */
+  "scheduled.ackFailed": m<{ ok: true }>()(z.object({ ids: z.array(z.string().max(64)).max(100) }).strict()),
   /** null: the draft is gone (sent or discarded elsewhere). A stale baseRevision never overwrites: it saves a new draft. */
   "captureRepairs.list": m<import("../capture-repair").CaptureRepairPage>()(z.object({ accountId: id, after: z.string().max(1048576).optional() }).strict()),
   "captureRepairs.retry": m<{ repair: import("../capture-repair").CaptureRepair | null }>()(z.object({ accountId: id, key: z.string().max(1048576), revision: z.number().int().nonnegative() }).strict(), { timeoutMs: 120_000 }),
@@ -997,8 +1031,8 @@ export interface Events {
   owner: OwnerIdentity | null;
   /** progress of a scope action (threads.actScope / undoScope, categories.addScope), at most ~10 per second */
   bulkProgress: { jobId: string; done: number; total: number };
-  /** drafts were added outside this window (an import): reload them */
-  drafts: { reason: "import" };
+  /** drafts were added outside this window (an import, a scheduled send given back): reload them */
+  drafts: { reason: "import" | "scheduled" };
   /** the engine filed new mail on its own (coalesced per category, at most every 30 s) */
   categorized: { categoryId: number; threadIds: number[]; by: "auto" };
   /** plan 22: icons that arrived for addresses asked about; `reset`: forget every icon (turned off, forgotten) */
@@ -1007,5 +1041,7 @@ export interface Events {
   notify: MailNotice;
   /** plan 87: the reminders changed, or one came due */
   reminders: RemindersSnapshot;
+  /** plan 89: the scheduled sends changed (scheduled, sent, failed) */
+  scheduled: ScheduledSnapshot;
 }
 export type EventName = keyof Events;
