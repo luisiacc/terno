@@ -15,6 +15,7 @@ import { DraftFieldsForm, focusSoon, Quote, SaveState, SignaturePreview } from "
 import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 import { warmAutocomplete } from "~/lib/autocomplete";
+import { DraftCommandsHost } from "~/lib/draft-commands";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
@@ -83,6 +84,7 @@ export function NewMessage() {
       ref={rootRef}
       aria-label={t("compose.newMessage")}
       data-testid="composer"
+      data-draft-key={key}
       data-mode="new"
       className="relative flex h-full min-h-0 flex-col bg-background animate-in fade-in-0 slide-in-from-bottom-1 duration-base"
       {...drop.handlers}
@@ -149,6 +151,7 @@ export function NewMessage() {
         </div>
       </div>
       {drop.layer}
+      <DraftCommandsHost draftKey={key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />
     </form>
   );
 }

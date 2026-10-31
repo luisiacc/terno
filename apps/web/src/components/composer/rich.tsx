@@ -46,6 +46,8 @@ import { parseAddressList, type AttachmentRef } from "@terno/core";
 import { dismissGhost, withoutGhost, type GhostHooks } from "./ghost";
 import { exposeForTests } from "~/lib/render-probe";
 import { openLink } from "../mail-body";
+import { togglePalette } from "~/lib/palette-open";
+import { isMac } from "~/lib/select";
 import { takeEarly, takeStandInFocus } from "./lazy";
 import { EMPTY_FORMAT, registerController, useController, useFormatState, type Align, type ComposerController, type FormatCommand, type FormatState } from "./controller";
 import { addPlaceholders, dropPlaceholders, dropPos, inlineFile, placeImages, type ImageHooks } from "./images";
@@ -609,6 +611,14 @@ function LinkPopover({ view, draft, onClose, canEdit }: { view: EditorView; draf
   const keys = (e: React.KeyboardEvent) => {
     // the popover owns Enter and Escape: never the composer's send or collapse
     if (e.nativeEvent.isComposing) return;
+    // plan 88: a second ⌘K goes on to the palette, for this draft (focus back in its text first)
+    if (e.key.toLowerCase() === "k" && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+      togglePalette();
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();

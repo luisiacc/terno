@@ -20,6 +20,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { Expand } from "./expand";
 import { controllerFor, popupOpen } from "./composer/controller";
+import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 
 export { focusSoon } from "~/lib/compose-focus-move";
@@ -472,6 +473,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               </span>
             </div>
             {state === "open" && drop.layer}
+            {state === "open" && <DraftCommandsHost draftKey={d.key} root={rootRef} send={() => void send()} discard={() => void discard()} sending={d.sending} />}
           </form>
         )}
       </Expand>

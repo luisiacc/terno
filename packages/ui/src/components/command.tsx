@@ -67,8 +67,12 @@ function CommandDialog({
 
 function CommandInput({
   className,
+  addon,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & {
+  /** before the text, after the search icon (a page's name in the palette) */
+  addon?: React.ReactNode
+}) {
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
       <InputGroup className="h-11! rounded-none! border-0! border-b! border-b-hairline! bg-transparent! shadow-none! *:data-[slot=input-group-addon]:pl-3!">
@@ -82,6 +86,7 @@ function CommandInput({
         />
         <InputGroupAddon>
           <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+          {addon}
         </InputGroupAddon>
       </InputGroup>
     </div>
@@ -161,7 +166,7 @@ function CommandItem({
       {...props}
     >
       {children}
-      <CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
+      <CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-has-data-[slot=command-hint]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
     </CommandPrimitive.Item>
   )
 }

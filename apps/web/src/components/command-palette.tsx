@@ -1,12 +1,12 @@
 import { goToAccount, goToFolder } from "~/lib/account-folders";
-import type { CategoryColor } from "@terno/core";
-import { t } from "@terno/i18n";
+import { normalizeText, remindPresets, type CategoryColor, type ReminderKind } from "@terno/core";
+import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, Bell, CheckCheck, FileDown, FolderInput, Palette, Paperclip, Inbox, Layers, ListFilter, Mail, MailOpen, Moon, OctagonAlert, PenLine, Printer, RefreshCw, Reply, RotateCw, Search, Send, Sparkles, Star, Sun, Trash2, Undo2, Users } from "lucide-react";
-import { useState } from "react";
+import { Archive, AtSign, Bell, BellOff, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, Trash2, Undo2, Users, X } from "lucide-react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
-import { addScopeToCategory, addToCategory } from "~/lib/categorize";
+import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
 import { updateAppearance } from "~/lib/appearance";
 import { printCommand } from "~/lib/print-open";
@@ -16,20 +16,80 @@ import { DESIGNS } from "@terno/ui/designs/index";
 import { designName } from "~/lib/design";
 import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib/updates";
 import { englishWords as english } from "~/lib/palette-words";
-import { navigate, setApp, useApp } from "~/state/app";
-import { openRemind } from "~/lib/reminders";
+import { getApp, navigate, setApp, useApp } from "~/state/app";
+import { openRemind, presetLabel, reminderShort, setReminder, clearReminder, useReminders } from "~/lib/reminders";
+import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
+import { paletteFrom } from "~/lib/palette-open";
+import { arrange, itemValue, words, type PaletteCommand, type PaletteGroup, type PalettePage } from "~/lib/palette-commands";
+import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
+import { reply } from "~/lib/keyboard";
+import { createCategory } from "./category-picker";
 import { SETTINGS_TABS } from "./settings/tabs";
+
+const NONE: readonly never[] = [];
+const NO_USAGE: Usage = new Map();
+/** how long a draft command waits for focus to come back into its composer */
+const DRAFT_FOCUS_MS = 300;
+
+/** A command's synonyms: the language's own, and in another language the English ones too (matched, not shown). */
+type AliasKey = Extract<TextKey, `palette.alias.${string}`>;
+type FilterKey = "palette.showAll" | "palette.showUnread" | "palette.showPeople" | "palette.showWaiting" | "palette.showAttachments" | "palette.showStarred";
+const synonyms = (key: AliasKey) => ({ aliases: words(t(key)), keywords: english(key).flatMap(words) });
+
+/**
+ * A draft command runs once the palette has closed and focus is back in that
+ * composer (or soon after): only if nothing else happened meanwhile (another
+ * dialog, another conversation or new message, the draft gone or replaced).
+ */
+function runInDraft(key: string, fn: (c: DraftCommands) => void) {
+  const commands = draftCommands(key);
+  if (!commands) return;
+  const { selectedId, compose } = getApp();
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener("focusin", onFocus, true);
+    clearTimeout(timer);
+    const s = getApp();
+    if (draftCommands(key) !== commands || s.dialog !== null || s.selectedId !== selectedId || s.compose !== compose) return;
+    fn(commands);
+  };
+  const onFocus = (e: FocusEvent) => {
+    if ((e.target as Element | null)?.closest?.(`[data-testid=composer][data-draft-key="${CSS.escape(key)}"]`)) go();
+  };
+  document.addEventListener("focusin", onFocus, true);
+  const timer = setTimeout(go, DRAFT_FOCUS_MS);
+}
+
+const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
+  draft: () => t("palette.group.draft"),
+  recent: () => t("palette.group.recent"),
+  goTo: () => t("palette.group.goTo"),
+  actions: () => t("palette.group.actions"),
+  settings: () => t("common.settings"),
+  move: () => t("category.picker.moveTitle"),
+  addTo: (count) => t("palette.group.addTo", { count }),
+  remindAlways: () => t("remind.kind.always"),
+  remindNoReply: () => t("remind.kind.noReply"),
+  remindClear: () => undefined,
+};
 
 export function CommandPalette() {
   const open = useApp((s) => s.dialog === "palette");
-  const categories = useApp((s) => s.categories);
-  const accounts = useApp((s) => s.accounts);
+  // closed means idle: no re-render for category or account changes
+  const categories = useApp((s) => (open ? s.categories : NONE));
+  const accounts = useApp((s) => (open ? s.accounts : NONE));
   // what the actions and "Add to" apply to: all N of a view, the checked threads, else the selected one
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   // printing takes the conversation the reader shows (one, with no new message in the pane)
   const printable = useApp((s) => open && s.selectedId !== null && !s.scope && s.checked.size < 2 && s.compose === null);
+  // Reply, Reply all and Forward: the selected conversation, when it's the one target
+  const replyable = useApp((s) => open && s.selectedId !== null && !s.scope && (s.checked.size === 0 || (s.checked.size === 1 && s.checked.has(s.selectedId))));
   // plan 87: reminders need ids ("select all N" has none)
   const scoped = useApp((s) => s.scope !== null);
+  const single = useApp((s) => (open && !s.scope && s.checked.size === 0 ? s.selectedId : null));
+  const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
   // the unread filter applies to a mailbox (not "Review")
   // ⌘L's state: Unread on or not (another filter on: ⌘L switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders ? (isUnreadOnly(s) ? "on" : "off") : null));
@@ -39,160 +99,284 @@ export function CommandPalette() {
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");
-  const run = (fn: () => void) => {
-    setApp({ dialog: null });
+  const [page, setPage] = useState<PalettePage>("root");
+  // read once per open: what was run, when, and the draft it was opened from
+  const usage = useMemo(() => (open ? readUsage() : NO_USAGE), [open]);
+  const now = useMemo(() => (open ? Date.now() : 0), [open]);
+  const draftKey = open ? paletteFrom.draftKey : null;
+  const draft = open ? draftCommands(draftKey) : null;
+  const draftState = draft?.state();
+
+  const reset = () => {
     setValue("");
-    fn();
+    setPage("root");
   };
+  const close = () => {
+    setApp({ dialog: null });
+    reset();
+  };
+  const listRef = useRef<HTMLDivElement>(null);
+  const goTo = (next: PalettePage) => {
+    setPage(next);
+    setValue("");
+    // a page starts at its top, wherever the list it came from was scrolled
+    listRef.current?.scrollTo({ top: 0 });
+  };
+  const select = (c: PaletteCommand) => {
+    if (c.page) return goTo(c.page);
+    noteUse(c.id);
+    close();
+    c.run?.();
+  };
+  const inDraft = (fn: (d: DraftCommands) => void) => () => {
+    if (draftKey) runInDraft(draftKey, fn);
+  };
+  const ids = () => {
+    const target = currentTargets();
+    return "ids" in target ? target.ids : [];
+  };
+
+  const commands: PaletteCommand[] = [];
+  const add = (c: PaletteCommand) => commands.push(c);
+  if (open) {
+    // ── the draft the palette was opened from
+    if (draft && draftState) {
+      if (draftState.send) add({ id: "draft.send", group: "draft", label: t("common.send"), icon: <Send />, shortcut: isMac ? "⌘↵" : "Ctrl+↵", testId: "palette-draft-send", ...synonyms("palette.alias.send"), draft: true, run: inDraft((d) => d.send()) });
+      if (draftState.attach) add({ id: "draft.attach", group: "draft", label: t("attachments.attach"), icon: <Paperclip />, testId: "palette-draft-attach", ...synonyms("palette.alias.attach"), draft: true, run: inDraft((d) => d.attach()) });
+      if (draftState.addCc) add({ id: "draft.cc", group: "draft", label: t("palette.addCc"), icon: <AtSign />, testId: "palette-draft-cc", draft: true, run: inDraft((d) => d.showCc()) });
+      if (draftState.addBcc) add({ id: "draft.bcc", group: "draft", label: t("palette.addBcc"), icon: <AtSign />, testId: "palette-draft-bcc", draft: true, run: inDraft((d) => d.showBcc()) });
+      if (draftState.link) add({ id: "draft.link", group: "draft", label: t("compose.link.insert"), icon: <Link />, shortcut: isMac ? "⌘K" : "Ctrl+K", testId: "palette-draft-link", draft: true, run: inDraft((d) => d.link()) });
+      if (draftState.discard) add({ id: "draft.discard", group: "draft", label: t("compose.discard"), icon: <Trash2 />, testId: "palette-draft-discard", ...synonyms("palette.alias.discard"), draft: true, run: inDraft((d) => d.discard()) });
+    }
+
+    // ── go to
+    const folder = (id: string, key: "view.inbox" | "view.starred" | "view.sent" | "view.archive" | "view.spam" | "view.trash" | "view.all", icon: ReactNode, run: () => void, shortcut?: string, testId?: string) =>
+      add({ id, group: "goTo", label: t(key), icon, shortcut, testId, keywords: english(key), run });
+    folder("go.inbox", "view.inbox", <Inbox />, () => goToFolder("inbox"), "G I");
+    folder("go.starred", "view.starred", <Star />, () => goToFolder("starred"), "G S");
+    folder("go.sent", "view.sent", <Send />, () => goToFolder("sent"), "G T");
+    folder("go.archive", "view.archive", <Archive />, () => goToFolder("archive"), "G A");
+    folder("go.spam", "view.spam", <OctagonAlert />, () => goToFolder("spam"), undefined, "palette-go-spam");
+    folder("go.trash", "view.trash", <Trash2 />, () => goToFolder("trash"));
+    folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
+    add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: "G R", testId: "palette-go-reminders", keywords: english("palette.goReminders"), run: () => navigate({ reminders: true }) });
+    for (const c of categories) {
+      add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });
+    }
+    if (accounts.length > 1) {
+      add({ id: "account:all", group: "goTo", label: t("sidebar.allAccounts"), search: `${t("palette.search.account")} ${t("sidebar.allAccounts")}`, icon: <Layers />, keywords: english("palette.search.account"), run: () => navigate({ view: "inbox", accountId: null }) });
+    }
+    for (const a of accounts) {
+      add({ id: `account:${a.id}`, group: "goTo", label: a.displayName, hint: a.email, search: `${t("palette.search.account")} ${a.displayName} ${a.email}`, icon: <Layers />, keywords: english("palette.search.account"), run: () => goToAccount(a.id) });
+    }
+
+    // ── actions
+    add({ id: "compose.new", group: "actions", label: t("palette.compose"), icon: <PenLine />, shortcut: "C", ...synonyms("palette.alias.compose"), keywords: [...english("palette.compose"), ...english("palette.alias.compose").flatMap(words)], run: () => void openCompose("new") });
+    if (replyable) {
+      add({ id: "compose.reply", group: "actions", label: t("palette.reply"), icon: <Reply />, shortcut: "R", testId: "palette-reply", ...synonyms("palette.alias.reply"), run: () => reply("reply") });
+      add({ id: "compose.replyAll", group: "actions", label: t("palette.replyAll"), icon: <ReplyAll />, shortcut: "A", testId: "palette-reply-all", keywords: english("palette.replyAll"), run: () => reply("replyAll") });
+      add({ id: "compose.forward", group: "actions", label: t("palette.forward"), icon: <Forward />, shortcut: "F", testId: "palette-forward", ...synonyms("palette.alias.forward"), run: () => reply("forward") });
+    }
+    if (targets > 0) {
+      const withEnglish = (words: string[], alias: AliasKey) => {
+        const s = synonyms(alias);
+        return { aliases: s.aliases, keywords: [...words, ...s.keywords] };
+      };
+      add({ id: "thread.archive", group: "actions", label: t("palette.archive", { count: targets }), icon: <Archive />, shortcut: "E", ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
+      add({ id: "thread.trash", group: "actions", label: t("palette.trash"), icon: <Trash2 />, shortcut: "⌫", ...withEnglish(english("palette.trash"), "palette.alias.trash"), run: () => void act("trash") });
+      add({ id: "thread.spam", group: "actions", label: t("palette.spam"), icon: <OctagonAlert />, shortcut: "!", ...withEnglish(english("palette.spam"), "palette.alias.spam"), run: () => void act("spam") });
+      add({ id: "thread.markRead", group: "actions", label: t("palette.markRead"), icon: <MailOpen />, shortcut: "⇧I", ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead") });
+      add({ id: "thread.markUnread", group: "actions", label: t("palette.markUnread"), icon: <Mail />, ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread") });
+      add({ id: "thread.star", group: "actions", label: t("palette.star"), icon: <Star />, shortcut: "S", ...withEnglish(english("palette.star"), "palette.alias.star"), run: () => toggleStar() });
+      // a "select all N" moves nothing in the palette: the picker says why (moves need selected conversations)
+      add({ id: "thread.move", group: "actions", label: t("palette.move"), icon: <FolderInput />, shortcut: "V", testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
+      add({ id: "thread.addTo", group: "actions", label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
+      if (!scoped) add({ id: "thread.remind", group: "actions", label: t("palette.remind"), icon: <Bell />, shortcut: "H", testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
+
+      const targetIds = scoped ? [] : ids();
+      for (const c of categories) {
+        const dot = <CategoryDot color={c.color as CategoryColor} />;
+        if (!scoped) {
+          const moveTo = () => void moveToCategory(c.id, ids(), { source: "picker" });
+          const disabled = targetIds.length > 0 && isExclusivelyIn(c.id, targetIds);
+          add({ id: `move:${c.id}`, group: "move", label: c.name, icon: dot, testId: `palette-move-${c.id}`, disabled, run: moveTo });
+          add({ id: `move:${c.id}`, group: "actions", label: t("palette.moveTo", { name: c.name }), search: `${t("palette.search.moveTo")} ${c.name}`, icon: dot, keywords: english("palette.search.moveTo").map((w) => `${w} ${c.name}`), disabled, searchOnly: true, scale: 0.5, run: moveTo });
+        }
+        const addTo = () => {
+          const target = currentTargets();
+          if ("scope" in target) void addScopeToCategory(c.id, target.scope);
+          else void addToCategory(c.id, target.ids, { source: "picker" });
+        };
+        add({ id: `addTo:${c.id}`, group: "addTo", label: c.name, icon: dot, testId: `palette-add-page-${c.id}`, run: addTo });
+        add({ id: `addTo:${c.id}`, group: "actions", label: t("palette.addTo", { name: c.name }), search: `${t("palette.search.addTo")} ${c.name}`, icon: dot, testId: `palette-add-${c.id}`, keywords: english("palette.search.addTo").map((w) => `${w} ${c.name}`), searchOnly: true, scale: 0.5, run: addTo });
+      }
+
+      if (!scoped) {
+        const kinds: [ReminderKind, PaletteGroup, "remind.menu" | "remind.menuNoReply"][] = [["always", "remindAlways", "remind.menu"], ["noReply", "remindNoReply", "remind.menuNoReply"]];
+        for (const [kind, group, kindKey] of kinds) {
+          for (const p of remindPresets(new Date(now), kind)) {
+            const id = `remind:${kind}:${p.id}`;
+            const set = () => void setReminder(ids(), p.at, kind);
+            const hint = reminderShort(p.at, now);
+            add({ id, group, label: presetLabel(p.id), icon: <Bell />, hint, testId: `palette-remind-${kind}-${p.id}`, run: set });
+            add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <Bell />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, run: set });
+          }
+          add({ id: `remind:${kind}:custom`, group, label: t("remind.pick"), icon: <CalendarClock />, testId: `palette-remind-${kind}-custom`, run: () => openRemind({ kind, custom: true }) });
+        }
+        if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <BellOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
+      }
+    }
+    if (printable) {
+      add({ id: "thread.print", group: "actions", label: t("palette.print"), icon: <Printer />, shortcut: isMac ? "⌘P" : "Ctrl+P", testId: "palette-print", ...synonyms("palette.alias.print"), keywords: english("palette.print"), run: () => printCommand("print") });
+      add({ id: "thread.exportPdf", group: "actions", label: t("palette.exportPdf"), icon: <FileDown />, shortcut: isMac ? "⇧⌘P" : "Ctrl+Shift+P", testId: "palette-pdf", keywords: english("palette.exportPdf"), run: () => printCommand("pdf") });
+    }
+    add({ id: "list.selectAll", group: "actions", label: t("palette.selectAll"), icon: <CheckCheck />, shortcut: "⌘A", keywords: english("palette.selectAll"), run: selectAll });
+    if (filter) {
+      const filterWords = (key: FilterKey) => [...english(key), ...english("palette.search.unreadFilter")];
+      const filterSearch = (key: FilterKey) => `${t(key)} ${t("palette.search.unreadFilter")}`;
+      const toggle = filter === "on" ? "palette.showAll" : "palette.showUnread";
+      add({ id: "filter.unread", group: "actions", label: t(toggle), search: filterSearch(toggle), icon: <ListFilter />, shortcut: isMac ? "⌘L" : "Ctrl+L", testId: "palette-unread-filter", keywords: filterWords(toggle), run: toggleUnreadFilter });
+      if (active && active !== "unread") add({ id: "filter.all", group: "actions", label: t("palette.showAll"), search: filterSearch("palette.showAll"), icon: <ListFilter />, shortcut: "⇧A", testId: "palette-filter-all", keywords: filterWords("palette.showAll"), run: () => setListFilter(undefined) });
+      if (active !== "people" && supported.includes("people")) add({ id: "filter.people", group: "actions", label: t("palette.showPeople"), search: filterSearch("palette.showPeople"), icon: <Users />, testId: "palette-filter-people", keywords: filterWords("palette.showPeople"), run: () => setListFilter("people") });
+      if (active !== "waiting" && supported.includes("waiting")) add({ id: "filter.waiting", group: "actions", label: t("palette.showWaiting"), search: filterSearch("palette.showWaiting"), icon: <Reply />, testId: "palette-filter-waiting", keywords: filterWords("palette.showWaiting"), run: () => setListFilter("waiting") });
+      if (active !== "attachments") add({ id: "filter.attachments", group: "actions", label: t("palette.showAttachments"), search: filterSearch("palette.showAttachments"), icon: <Paperclip />, testId: "palette-filter-attachments", keywords: filterWords("palette.showAttachments"), run: () => setListFilter("attachments") });
+      if (active !== "starred") add({ id: "filter.starred", group: "actions", label: t("palette.showStarred"), search: filterSearch("palette.showStarred"), icon: <Star />, testId: "palette-filter-starred", keywords: filterWords("palette.showStarred"), run: () => setListFilter("starred") });
+    }
+    if (design) {
+      for (const d of DESIGNS) {
+        if (d.id === design) continue;
+        add({ id: `design:${d.id}`, group: "actions", label: t("palette.style", { name: designName(d.id) }), icon: <Palette />, testId: `palette-design-${d.id}`, keywords: [...english("palette.styleKeyword"), t("palette.styleKeyword"), designName(d.id)], run: () => void updateAppearance({ design: d.id }) });
+      }
+    }
+    add({ id: "action.undo", group: "actions", label: t("common.undo"), icon: <Undo2 />, shortcut: "Z", ...synonyms("palette.alias.undo"), keywords: [...english("common.undo"), ...english("palette.alias.undo").flatMap(words)], run: undoLast });
+    add({ id: "filters.ai", group: "actions", label: t("palette.aiFilter"), icon: <Sparkles />, ...synonyms("palette.alias.aiFilter"), keywords: [...english("palette.aiFilter"), ...english("palette.alias.aiFilter").flatMap(words)], run: () => setApp({ dialog: "filters" }) });
+    add({
+      id: "appearance.theme",
+      group: "actions",
+      label: t("palette.theme"),
+      icon: (
+        <>
+          <Moon className="dark:hidden" />
+          <Sun className="hidden dark:block" />
+        </>
+      ),
+      ...synonyms("palette.alias.theme"),
+      keywords: [...english("palette.theme"), ...english("palette.alias.theme").flatMap(words)],
+      run: () => void updateAppearance({ theme: document.documentElement.classList.contains("dark") ? "light" : "dark" }),
+    });
+    add({ id: "help.shortcuts", group: "actions", label: t("shortcuts.title"), icon: <Keyboard />, shortcut: "?", testId: "palette-shortcuts", ...synonyms("palette.alias.shortcuts"), keywords: [...english("shortcuts.title"), ...english("palette.alias.shortcuts").flatMap(words)], run: () => setApp({ dialog: "shortcuts" }) });
+    if (updatesAvailable) add({ id: "updates.check", group: "actions", label: t("updates.palette.check"), icon: <RefreshCw />, testId: "palette-check-updates", keywords: english("updates.palette.check"), run: () => void checkForUpdates() });
+    if (readyVersion) add({ id: "updates.restart", group: "actions", label: t("updates.pill.restart"), search: `${t("updates.pill.restart")} ${readyVersion}`, icon: <RotateCw />, testId: "palette-restart-update", keywords: english("updates.pill.restart"), run: () => void installUpdate() });
+
+    // ── settings
+    for (const { value: tab, label, icon: Icon } of SETTINGS_TABS) {
+      add({
+        id: `settings:${tab}`,
+        group: "settings",
+        label: `${t("common.settings")} ${label}`,
+        display: (
+          <>
+            {t("common.settings")} <span aria-hidden>→</span> {label}
+          </>
+        ),
+        icon: <Icon />,
+        shortcut: tab === "general" ? (isMac ? "⌘," : "Ctrl+,") : undefined,
+        testId: `palette-settings-${tab}`,
+        keywords: english("common.settings"),
+        run: () => setApp({ dialog: "settings", settingsTab: tab }),
+      });
+    }
+  }
+
+  const query = value.trim();
+  const groups = open ? arrange(commands, page, value, usage, now) : [];
+  // a page's create row, and the root's search: always there while typing, last (Enter on a match wins)
+  const exact = categories.some((c) => normalizeText(c.name) === normalizeText(query));
+  const create = (page === "move" || page === "addTo") && query !== "" && !exact;
+  const createAnd = async () => {
+    const name = query;
+    const intoMove = page === "move";
+    close();
+    const id = await createCategory(name);
+    const target = currentTargets();
+    if (intoMove && "ids" in target) void moveToCategory(id, target.ids, { source: "picker" });
+    else if ("scope" in target) void addScopeToCategory(id, target.scope);
+    else void addToCategory(id, target.ids, { source: "picker" });
+  };
+
+  const back = () => goTo("root");
+  const pageName: Record<Exclude<PalettePage, "root">, string> = {
+    move: t("category.picker.moveTitle"),
+    addTo: t("palette.group.addTo", { count: targets }),
+    remind: t("remind.title"),
+  };
+  const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : t("category.picker.placeholder");
+
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && setApp({ dialog: null })} title={t("palette.title")} description={t("palette.description")}>
+    <CommandDialog open={open} onOpenChange={(o) => !o && close()} title={t("palette.title")} description={t("palette.description")}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
-      <Command>
-      <CommandInput placeholder={t("palette.placeholder")} value={value} onValueChange={setValue} data-testid="palette-input" />
-      <CommandList label={t("palette.results")}>
-        <CommandEmpty>{t("palette.empty")}</CommandEmpty>
-        <CommandGroup heading={t("palette.group.goTo")}>
-          <CommandItem onSelect={() => run(() => goToFolder("inbox"))} keywords={english("view.inbox")}><Inbox /> {t("view.inbox")}<CommandShortcut>G I</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => goToFolder("starred"))} keywords={english("view.starred")}><Star /> {t("view.starred")}<CommandShortcut>G S</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => goToFolder("sent"))} keywords={english("view.sent")}><Send /> {t("view.sent")}<CommandShortcut>G T</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => goToFolder("archive"))} keywords={english("view.archive")}><Archive /> {t("view.archive")}<CommandShortcut>G A</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => goToFolder("trash"))} keywords={english("view.trash")}><Trash2 /> {t("view.trash")}</CommandItem>
-          <CommandItem data-testid="palette-go-reminders" onSelect={() => run(() => navigate({ reminders: true }))} keywords={english("palette.goReminders")}><Bell /> {t("palette.goReminders")}<CommandShortcut>G R</CommandShortcut></CommandItem>
-          {categories.map((c) => (
-            <CommandItem key={c.id} value={`${t("palette.search.category")} ${c.name}`} keywords={english("palette.search.category")} onSelect={() => run(() => navigate({ categoryId: c.id, accountId: null }))}>
-              <CategoryDot color={c.color as CategoryColor} /> {c.name}
-            </CommandItem>
+      <Command
+        // cmdk's Ctrl+J/K/N/P: off the Mac Ctrl+K is the palette's own chord (it closes it)
+        vimBindings={isMac}
+        // the palette filters and orders (arrange): cmdk keeps the selection and the keys
+        shouldFilter={false}
+        onKeyDownCapture={(e) => {
+          if (page === "root") return;
+          // a page: Esc, or Backspace with nothing typed, goes back to all commands (Esc at the root closes)
+          if (e.key === "Escape" || (e.key === "Backspace" && value === "")) {
+            e.preventDefault();
+            e.stopPropagation();
+            back();
+          }
+        }}
+      >
+        <CommandInput
+          placeholder={placeholder}
+          value={value}
+          onValueChange={setValue}
+          data-testid="palette-input"
+          addon={
+            page !== "root" && (
+              <button type="button" onClick={back} data-testid="palette-page" className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                {pageName[page]}
+                <span className="sr-only">, {t("palette.back")}</span>
+                <X className="size-3" aria-hidden />
+              </button>
+            )
+          }
+        />
+        <CommandList ref={listRef} label={t("palette.results")}>
+          <CommandEmpty>{t("palette.empty")}</CommandEmpty>
+          {groups.map(({ group, commands: list }) => (
+            // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
+            <CommandGroup key={group} value={group} heading={HEADINGS[group](targets)} data-group={group}>
+              {list.map(({ command: c, alias }) => {
+                return (
+                  <CommandItem key={`${group}:${c.id}`} value={itemValue(c)} disabled={c.disabled} data-testid={c.testId} data-command={c.id} onSelect={() => select(c)}>
+                    {c.icon} <span className="truncate">{c.display ?? c.label}</span>
+                    {alias && <span className="shrink-0 text-muted-foreground" data-testid="palette-alias">({alias})</span>}
+                    {c.hint && <span data-slot="command-hint" className="ml-auto truncate pl-3 text-muted-foreground">{c.hint}</span>}
+                    {c.shortcut && <CommandShortcut className={c.hint ? "ml-3" : undefined}>{c.shortcut}</CommandShortcut>}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
           ))}
-          {accounts.length > 1 && (
-            <CommandItem value={`${t("palette.search.account")} ${t("sidebar.allAccounts")}`} keywords={english("palette.search.account")} onSelect={() => run(() => navigate({ view: "inbox", accountId: null }))}>
-              <Layers /> {t("sidebar.allAccounts")}
-            </CommandItem>
-          )}
-          {accounts.map((a) => (
-            <CommandItem key={a.id} value={`${t("palette.search.account")} ${a.displayName} ${a.email}`} keywords={english("palette.search.account")} onSelect={() => run(() => goToAccount(a.id))}>
-              <Layers /> {a.displayName} <span className="text-muted-foreground">{a.email}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        <CommandGroup heading={t("palette.group.actions")}>
-          <CommandItem onSelect={() => run(() => openCompose("new"))} keywords={english("palette.compose")}><PenLine /> {t("palette.compose")}<CommandShortcut>C</CommandShortcut></CommandItem>
-          {targets > 0 && (
-            <>
-              <CommandItem onSelect={() => run(() => void act("archive"))} keywords={english("palette.archive", { count: targets })}><Archive /> {t("palette.archive", { count: targets })}<CommandShortcut>E</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => void act("trash"))} keywords={english("palette.trash")}><Trash2 /> {t("palette.trash")}<CommandShortcut>⌫</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => void act("spam"))} keywords={english("palette.spam")}><OctagonAlert /> {t("palette.spam")}<CommandShortcut>!</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => void act("markRead"))} keywords={english("palette.markRead")}><MailOpen /> {t("palette.markRead")}<CommandShortcut>⇧I</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => void act("markUnread"))} keywords={english("palette.markUnread")}><Mail /> {t("palette.markUnread")}</CommandItem>
-              <CommandItem onSelect={() => run(() => toggleStar())} keywords={english("palette.star")}><Star /> {t("palette.star")}<CommandShortcut>S</CommandShortcut></CommandItem>
-              <CommandItem onSelect={() => run(() => setApp({ dialog: "categoryPicker", pickerMode: "move" }))} keywords={english("palette.move")}><FolderInput /> {t("palette.move")}<CommandShortcut>V</CommandShortcut></CommandItem>
-              {!scoped && <CommandItem data-testid="palette-remind" onSelect={() => run(() => openRemind())} keywords={english("palette.remind")}><Bell /> {t("palette.remind")}<CommandShortcut>H</CommandShortcut></CommandItem>}
-            </>
-          )}
-          {printable && (
-            <>
-              <CommandItem data-testid="palette-print" onSelect={() => run(() => printCommand("print"))} keywords={english("palette.print")}><Printer /> {t("palette.print")}<CommandShortcut>{isMac ? "⌘P" : "Ctrl+P"}</CommandShortcut></CommandItem>
-              <CommandItem data-testid="palette-pdf" onSelect={() => run(() => printCommand("pdf"))} keywords={english("palette.exportPdf")}><FileDown /> {t("palette.exportPdf")}<CommandShortcut>{isMac ? "⇧⌘P" : "Ctrl+Shift+P"}</CommandShortcut></CommandItem>
-            </>
-          )}
-          <CommandItem onSelect={() => run(selectAll)} keywords={english("palette.selectAll")}><CheckCheck /> {t("palette.selectAll")}<CommandShortcut>⌘A</CommandShortcut></CommandItem>
-          {filter && (
-            <CommandItem data-testid="palette-unread-filter" value={`${t(filter === "on" ? "palette.showAll" : "palette.showUnread")} ${t("palette.search.unreadFilter")}`} keywords={[...english(filter === "on" ? "palette.showAll" : "palette.showUnread"), ...english("palette.search.unreadFilter")]} onSelect={() => run(toggleUnreadFilter)}>
-              <ListFilter /> {t(filter === "on" ? "palette.showAll" : "palette.showUnread")}<CommandShortcut>{isMac ? "⌘L" : "Ctrl+L"}</CommandShortcut>
-            </CommandItem>
-          )}
-          {filter && active && active !== "unread" && (
-            <CommandItem data-testid="palette-filter-all" value={`${t("palette.showAll")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAll"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter(undefined))}>
-              <ListFilter /> {t("palette.showAll")}<CommandShortcut>⇧A</CommandShortcut>
-            </CommandItem>
-          )}
-          {filter && active !== "people" && supported.includes("people") && (
-            <CommandItem data-testid="palette-filter-people" value={`${t("palette.showPeople")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showPeople"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("people"))}>
-              <Users /> {t("palette.showPeople")}
-            </CommandItem>
-          )}
-          {filter && active !== "waiting" && supported.includes("waiting") && (
-            <CommandItem data-testid="palette-filter-waiting" value={`${t("palette.showWaiting")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showWaiting"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("waiting"))}>
-              <Reply /> {t("palette.showWaiting")}
-            </CommandItem>
-          )}
-          {filter && active !== "attachments" && (
-            <CommandItem data-testid="palette-filter-attachments" value={`${t("palette.showAttachments")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showAttachments"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("attachments"))}>
-              <Paperclip /> {t("palette.showAttachments")}
-            </CommandItem>
-          )}
-          {filter && active !== "starred" && (
-            <CommandItem data-testid="palette-filter-starred" value={`${t("palette.showStarred")} ${t("palette.search.unreadFilter")}`} keywords={[...english("palette.showStarred"), ...english("palette.search.unreadFilter")]} onSelect={() => run(() => setListFilter("starred"))}>
-              <Star /> {t("palette.showStarred")}
-            </CommandItem>
-          )}
-          {design &&
-            DESIGNS.filter((d) => d.id !== design).map((d) => (
-              <CommandItem key={d.id} data-testid={`palette-design-${d.id}`} value={t("palette.style", { name: designName(d.id) })} keywords={[...english("palette.styleKeyword"), designName(d.id)]} onSelect={() => run(() => void updateAppearance({ design: d.id }))}>
-                <Palette /> {t("palette.style", { name: designName(d.id) })}
+          {create && (
+            <CommandGroup value="create" forceMount>
+              <CommandItem forceMount value={`create\u0000${query}`} data-testid="palette-create" onSelect={() => void createAnd()}>
+                <Plus /> {t(page === "move" ? "category.picker.createAndMove" : "category.picker.create", { name: query })}
               </CommandItem>
-            ))}
-          <CommandItem onSelect={() => run(undoLast)} keywords={english("common.undo")}><Undo2 /> {t("common.undo")}<CommandShortcut>Z</CommandShortcut></CommandItem>
-          <CommandItem onSelect={() => run(() => setApp({ dialog: "filters" }))} keywords={english("palette.aiFilter")}><Sparkles /> {t("palette.aiFilter")}</CommandItem>
-          <CommandItem
-            keywords={english("palette.theme")}
-            onSelect={() =>
-              run(() => {
-                void updateAppearance({ theme: document.documentElement.classList.contains("dark") ? "light" : "dark" });
-              })
-            }
-          >
-            <Moon className="dark:hidden" />
-            <Sun className="hidden dark:block" /> {t("palette.theme")}
-          </CommandItem>
-          {updatesAvailable && (
-            <CommandItem data-testid="palette-check-updates" value={t("updates.palette.check")} keywords={english("updates.palette.check")} onSelect={() => run(() => void checkForUpdates())}>
-              <RefreshCw /> {t("updates.palette.check")}
-            </CommandItem>
+            </CommandGroup>
           )}
-          {readyVersion && (
-            <CommandItem data-testid="palette-restart-update" value={`${t("updates.pill.restart")} ${readyVersion}`} keywords={english("updates.pill.restart")} onSelect={() => run(() => void installUpdate())}>
-              <RotateCw /> {t("updates.pill.restart")}
-            </CommandItem>
-          )}
-        </CommandGroup>
-        <CommandGroup heading={t("common.settings")}>
-          {SETTINGS_TABS.map(({ value, label, icon: Icon }) => (
-            <CommandItem key={value} value={`${t("common.settings")} ${label}`} keywords={english("common.settings")} data-testid={`palette-settings-${value}`} onSelect={() => run(() => setApp({ dialog: "settings", settingsTab: value }))}>
-              <Icon /> {t("common.settings")} <span aria-hidden>→</span> {label}
-              {value === "general" && <CommandShortcut>{isMac ? "⌘," : "Ctrl+,"}</CommandShortcut>}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        {targets > 0 && (
-          <CommandGroup heading={t("palette.group.addTo", { count: targets })}>
-            {categories.map((c) => (
-              <CommandItem
-                key={c.id}
-                value={`${t("palette.search.addTo")} ${c.name}`}
-                keywords={english("palette.search.addTo")}
-                data-testid={`palette-add-${c.id}`}
-                onSelect={() =>
-                  run(() => {
-                    const target = currentTargets();
-                    if ("scope" in target) void addScopeToCategory(c.id, target.scope);
-                    else void addToCategory(c.id, target.ids, { source: "picker" });
-                  })
-                }
-              >
-                <CategoryDot color={c.color as CategoryColor} /> {t("palette.addTo", { name: c.name })}
+          {page === "root" && query && (
+            <CommandGroup value="search" heading={t("common.search")} forceMount>
+              <CommandItem forceMount value={`search\u0000${value}`} onSelect={() => { close(); setApp({ query: value }); }}>
+                <Search /> {t("palette.searchAll", { query: value })}
               </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        {/* last, so Enter on an exact command/category match wins; always shown */}
-        {value.trim() && (
-          <CommandGroup heading={t("common.search")} forceMount>
-            <CommandItem forceMount value={`${t("common.search")} ${value}`} onSelect={() => run(() => setApp({ query: value }))}>
-              <Search /> {t("palette.searchAll", { query: value })}
-            </CommandItem>
-          </CommandGroup>
-        )}
-      </CommandList>
+            </CommandGroup>
+          )}
+        </CommandList>
       </Command>
     </CommandDialog>
   );

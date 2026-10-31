@@ -18,6 +18,7 @@ import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { snack } from "~/lib/snack";
 import { noteOpen, openRemind } from "~/lib/reminders";
+import { togglePalette } from "~/lib/palette-open";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["list.toggleUnread", "nav.back", "nav.forward"]);
@@ -82,8 +83,8 @@ function openCurrent() {
   if (id !== null) openThread(id);
 }
 
-/** r / a / f: on List's list page, the conversation opens first (its draft is in it; R3). */
-function reply(mode: DraftMode) {
+/** r / a / f (and the palette's Reply): on List's list page, the conversation opens first (its draft is in it; R3). */
+export function reply(mode: DraftMode) {
   const id = getApp().selectedId;
   if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
   void openCompose(mode);
@@ -150,7 +151,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
     uncoverList();
     focusSearch();
   },
-  "palette.open": () => setApp({ dialog: getApp().dialog === "palette" ? null : "palette" }),
+  "palette.open": togglePalette,
   "go.inbox": () => goToFolder("inbox"),
   "go.starred": () => goToFolder("starred"),
   "go.sent": () => goToFolder("sent"),
