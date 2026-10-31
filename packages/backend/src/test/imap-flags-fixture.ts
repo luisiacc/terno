@@ -1,9 +1,9 @@
 import imapkit from "imapkit";
 import { bounded } from "./imap-idle-fixture";
 
-export async function flagsFixture(condstore: boolean) {
+export async function flagsFixture(condstore: boolean, idle = false) {
   const server = imapkit({
-    plugins: ["SPECIAL-USE", "UIDPLUS", "ENABLE", ...(condstore ? ["CONDSTORE"] : [])],
+    plugins: [...(idle ? ["IDLE"] : []), "SPECIAL-USE", "UIDPLUS", "ENABLE", ...(condstore ? ["CONDSTORE"] : [])],
     storage: { INBOX: {}, "": { separator: "/", folders: { Projects: {} } } },
   });
   const commands: { command: string; data: string; mailbox: string | null }[] = [];
@@ -24,6 +24,7 @@ export async function flagsFixture(condstore: boolean) {
   try {
     const port = await bounded(server.start(0, "127.0.0.1"), "flag fixture listen");
     return { server, port, commands, responses, get overflow() { return overflow; },
+      resetCapture() { commands.length = 0; responses.length = 0; overflow = false; },
       stop: () => bounded(server.stop(), "flag fixture stop") };
   } catch (error) { await server.stop(); throw error; }
 }
