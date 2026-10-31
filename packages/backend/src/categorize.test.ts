@@ -285,7 +285,7 @@ describe("categorizer: training hooks", () => {
       expect(members()).toContain(other);
     });
 
-    it("an edited filter survives the undo; the filter failing keeps the mail filed; only sender and subject scopes", async () => {
+    it("an edited filter survives the undo; the filter failing keeps the mail filed; words can't be always", async () => {
       const { backend, client, cat, ingest, members } = await world();
       const [a] = ingest([{ subject: "Tu recibo" }]);
       const r = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true, filterName: "Uber → Facturas" });
@@ -301,7 +301,31 @@ describe("categorizer: training hooks", () => {
       expect(members()).toEqual([a]);
       sqlDb(backend.store).exec("DROP TRIGGER no_filters");
 
-      await expect(client.call("categorize.apply", { categoryId: cat, scope: { kind: "domain", domain: "uber.com" }, always: true })).rejects.toThrow();
+      await expect(client.call("categorize.apply", { categoryId: cat, scope: { kind: "query", query: "recibo" }, always: true })).rejects.toThrow();
+    });
+
+    it("plan 81: a domain and a list scope file now and save their filter too; undo takes back both", async () => {
+      const { client, cat, ingest, members } = await world();
+      const [a, b] = ingest([
+        { from: { name: "Ana", email: "ana@acme.studio" } },
+        { from: { name: "Javier", email: "javier@acme.studio" } },
+        { from: { name: "Xataka", email: "boletin@xataka.com" }, listId: "boletin.xataka.com" },
+      ]);
+      const domain = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "domain", domain: "acme.studio" }, always: true, filterName: "@acme.studio → Facturas" });
+      expect(domain).toMatchObject({ added: 2, batchId: expect.any(Number), filter: { filterUndo: expect.any(Number) }, filterFailed: false });
+      expect(members()).toEqual([a, b].sort((x, y) => x! - y!));
+      const list = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "list", listId: "boletin.xataka.com" }, always: true, filterName: "boletin.xataka.com → Facturas" });
+      expect(list).toMatchObject({ added: 1, filter: { filterUndo: expect.any(Number) } });
+      expect((await client.call("filters.list", {})).map((f) => [f.name, f.rule])).toEqual([
+        ["@acme.studio → Facturas", { match: "all", conditions: [{ field: "fromDomain", op: "equals", value: "acme.studio" }], actions: [{ type: "addCategory", categoryId: cat }] }],
+        ["boletin.xataka.com → Facturas", { match: "all", conditions: [{ field: "listId", op: "equals", value: "boletin.xataka.com" }], actions: [{ type: "addCategory", categoryId: cat }] }],
+      ]);
+      for (const r of [domain, list]) {
+        await client.call("similar.undo", { undoId: null, filterUndo: r.filter!.filterUndo });
+        await client.call("categorize.undo", { batchId: r.batchId! });
+      }
+      expect(members()).toEqual([]);
+      expect(await client.call("filters.list", {})).toEqual([]);
     });
 
     it("a filing that fails partway names its batch, and its undo takes back what was filed", async () => {
@@ -320,6 +344,30 @@ describe("categorizer: training hooks", () => {
       await client.call("similar.undo", { undoId: null, filterUndo });
       await client.call("categorize.undo", { batchId });
       expect(members()).toEqual([]);
+      expect(await client.call("filters.list", {})).toEqual([]);
+    });
+
+    it("plan 81: \"@Domain \" files and filters the same bare domain, and mail that arrives later is caught", async () => {
+      const { backend, client, acct, cat, ingest, members } = await world();
+      const [a] = ingest([{ from: { name: "Ana", email: "ana@acme.studio" } }]);
+      const r = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "domain", domain: " @Acme.studio " }, always: true });
+      expect(r.added).toBe(1);
+      expect(members()).toEqual([a]);
+      expect((await client.call("filters.list", {}))[0]!.rule.conditions).toEqual([{ field: "fromDomain", op: "equals", value: "Acme.studio" }]);
+      // new mail from someone else at the domain comes in through the filters
+      await backend.ingestSliced([incoming(acct, { from: { name: "Luz", email: "luz@acme.studio" }, subject: "Nueva", rfcMessageId: "<later@acme.studio>", date: NOW })]);
+      expect(members()).toHaveLength(2);
+    });
+
+    it("plan 81: a failure before anything is filed still names the filter, so Undo can take it back", async () => {
+      const { backend, client, cat, ingest } = await world();
+      ingest([{ subject: "Tu recibo" }]);
+      sqlDb(backend.store).exec("CREATE TRIGGER no_batch BEFORE INSERT ON cat_batches BEGIN SELECT RAISE(ABORT, 'boom'); END");
+      const error = await client.call("categorize.apply", { categoryId: cat, scope: { kind: "sender", email: "uber.receipts@uber.com" }, always: true }).catch((e: unknown) => e);
+      const details = (error as { details: { batchId: number | null; filterUndo: number | null } }).details;
+      expect(details).toEqual({ batchId: null, filterUndo: expect.any(Number) });
+      sqlDb(backend.store).exec("DROP TRIGGER no_batch");
+      await client.call("similar.undo", { undoId: null, filterUndo: details.filterUndo });
       expect(await client.call("filters.list", {})).toEqual([]);
     });
   });

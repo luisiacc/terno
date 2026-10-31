@@ -1,4 +1,4 @@
-import { capFilterName, FILTER_NAME_MAX, type AlwaysScope } from "@terno/core";
+import { capFilterName, FILTER_NAME_MAX, type FilterableScope } from "@terno/core";
 import type { CategorizeSource } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -305,9 +305,9 @@ export async function answerReview(threadId: number, categoryId: number, yes: bo
   if (!(await answered)) await recover();
 }
 
-/** What a filter made here is called: who (and the subject) → the category. */
-export function filterNameOf(scope: AlwaysScope, senderName: string | null, category: string): string {
-  const who = senderName || scope.email;
+/** What a filter made here is called: who (and the subject), the domain or the list → the category. */
+export function filterNameOf(scope: FilterableScope, senderName: string | null, category: string): string {
+  const who = scope.kind === "domain" ? `@${scope.domain}` : scope.kind === "list" ? scope.listId : senderName || scope.email;
   const tail = ` → ${category}`;
   // a filter's name has a cap: a long subject shortens, the category stays readable at the end
   const head = [...(scope.kind === "subject" ? `${who} · ${scope.subject}` : who)];
@@ -324,13 +324,14 @@ interface AlwaysUndo {
 /**
  * Plan 80: "Always add to C" from the Review list: every conversation the
  * scope matches now (this one included) and a filter for future mail. The
- * row leaves at once; the rest when the list reloads. One Undo (and z) takes
+ * row leaves at once (plan 81: the snackbar's 1–3 pass no row); the rest when
+ * the list reloads. One Undo (and z) takes
  * back the filter first (no new mail is caught meanwhile), then the batch;
  * the filter's failing never keeps the mail filed.
  */
-export async function fileAlways(categoryId: number, scope: AlwaysScope, threadId: number, filterName: string): Promise<void> {
+export async function fileAlways(categoryId: number, scope: FilterableScope, threadId: number | null, filterName: string): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  if (getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) leaveView([threadId]);
+  if (threadId !== null && getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) leaveView([threadId]);
   const outcome = deferred<AlwaysUndo>();
   const undo = registerUndo(() =>
     outcome.promise.then(async (u) => {
@@ -362,11 +363,15 @@ export async function fileAlways(categoryId: number, scope: AlwaysScope, threadI
     // undone with z before the answer came: its own snacks say so
     if (undo.state !== "ready") return dismissSnack(id);
     const undoable = r.batchId !== null || r.filter?.filterUndo != null;
-    snack[r.filterFailed ? "warning" : "success"](t(r.filterFailed ? "category.added" : "review.always.done", { count: r.added, category: name }), {
+    // a filter that was already there stays on: the Undo then promises only the filing (plan 81)
+    const undoName = r.filter?.filterUndo != null ? t("review.always.undoName") : t("category.undoAdd", { category: name });
+    // nothing left to file now: what it did is the filter
+    const message = r.filterFailed ? t("category.added", { count: r.added, category: name }) : r.added ? t("review.always.done", { count: r.added, category: name }) : t("category.futureOnly", { category: name });
+    snack[r.filterFailed ? "warning" : "success"](message, {
       id,
       duration: 10_000,
       description: r.filterFailed ? t("similar.filterFailed") : undefined,
-      action: undoable ? undoAction(undo, t("review.always.undoName")) : undefined,
+      action: undoable ? undoAction(undo, undoName) : undefined,
     });
   } catch (error) {
     // part of it may be filed, and the filter made (the backend says which): Undo still takes those back
@@ -374,7 +379,7 @@ export async function fileAlways(categoryId: number, scope: AlwaysScope, threadI
     const u = { batchId: typeof details?.batchId === "number" ? details.batchId : null, filterUndo: typeof details?.filterUndo === "number" ? details.filterUndo : null };
     outcome.resolve(u);
     const undoable = u.batchId !== null || u.filterUndo !== null;
-    snack.error(t("category.addFailed", { error: errorText(error) }), { id, action: undoable ? undoAction(undo, t("review.always.undoName")) : undefined });
+    snack.error(t("category.addFailed", { error: errorText(error) }), { id, action: undoable ? undoAction(undo, u.filterUndo !== null ? t("review.always.undoName") : t("category.undoAdd", { category: name })) : undefined });
   } finally {
     void reloadList({ keepSelection: true });
   }

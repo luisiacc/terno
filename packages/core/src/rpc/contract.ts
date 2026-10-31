@@ -660,12 +660,12 @@ export const contract = {
   ),
   /**
    * Files every thread in the scope (resolved once, then added in slices); undo with categorize.undo. A failure
-   * partway carries `{ batchId }` in its details. Plan 80: `always` (sender and subject scopes) also ensures the
+   * partway carries `{ batchId }` in its details. Plan 80: `always` (sender, subject; plan 81: domain, list) also ensures the
    * filter that files future mail there; `filterUndo` lets similar.undo take it back.
    */
   "categorize.apply": m<{ batchId: number | null; added: number; filter: { id: number; filterUndo: number | null } | null; filterFailed: boolean }>()(
-    // only who sent it (and the subject) make a filter: other scopes can't be filed always
-    z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind === "sender" || p.scope.kind === "subject"),
+    // a filter says who sent it (and the subject), the domain or the list (plan 81); words can't be filed always
+    z.object({ categoryId: id, scope: categorizeScope, always: z.boolean().optional(), filterName }).refine((p) => !p.always || p.scope.kind !== "query"),
     { timeoutMs: 120_000 },
   ),
   /** Plan 80: "Always file here" for one thread: same subject from its sender, then all from them, with how many each files now. */

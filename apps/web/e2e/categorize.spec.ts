@@ -44,8 +44,9 @@ async function fileWithPicker(page: Page, categoryId: number) {
 }
 
 test.describe("categorization snackbar", { tag: "@design" }, () => {
-  test("filing one thread offers all mail from its sender: 1 files it, the result toast undoes it", async ({ app: page, server }) => {
-    const { facturas, target, outside } = uberSetup(server);
+  test("filing one thread offers all mail from its sender: 1 files it and their future mail, the result toast undoes both", async ({ app: page, server }) => {
+    const { db, facturas, target, outside } = uberSetup(server);
+    const filters = () => db.all<{ rule_json: string }>("SELECT rule_json FROM filters WHERE rule_json LIKE '%uber.receipts@uber.com%'").map((r) => JSON.parse(r.rule_json));
     const rest = outside() - 1;
     expect(rest).toBeGreaterThan(1);
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
@@ -56,14 +57,40 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
     await expect(snack.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
     await expect(page.getByTestId("reader").locator("[data-slot=category-badge]", { hasText: "Facturas" })).toBeVisible();
+    // plan 81: it says it catches new mail too, in a word and in full
+    await expect(snack.getByTestId("snackbar-sender-future")).toHaveText("+ new mail");
+    await expect(snack.getByTestId("snackbar-sender")).toHaveAccessibleDescription("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
+    await snack.getByTestId("snackbar-sender").hover();
+    await expect(page.getByTestId("snackbar-sender-help")).toHaveText("Adds every conversation from Uber Receipts to Facturas, and their new mail from now on.");
 
     await page.keyboard.press("1");
     await expect(snack).toHaveCount(0);
-    const done = toast(page, `${rest} added to Facturas`);
+    const done = toast(page, `${rest} added to Facturas, future mail too`);
     await expect(done).toBeVisible();
     await expect.poll(outside).toBe(0);
+    expect(filters()).toEqual([{ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] }]);
+    await expect(done.getByTestId("snack-action")).toHaveAccessibleName("Undo, and stop adding future mail");
     await done.getByTestId("snack-action").click();
     await expect.poll(outside).toBe(rest);
+    await expect.poll(() => filters().length).toBe(0);
+    // the thread that opened the snackbar stays filed: that was its own undo
+    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas)).toBeDefined();
+  });
+
+  test("plan 81: z takes back 1, its filing and its filter (z is one level: the filing that opened the snackbar stays)", async ({ app: page, server }) => {
+    const { db, facturas, target, outside } = uberSetup(server);
+    const rest = outside() - 1;
+    await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
+    await fileWithPicker(page, facturas);
+    await expect(page.getByTestId("snackbar-sender-count")).toHaveText(`${rest}`);
+    await page.keyboard.press("1");
+    await expect(toast(page, "future mail too")).toBeVisible();
+    await expect.poll(outside).toBe(0);
+    await focusList(page);
+    await page.keyboard.press("z");
+    await expect.poll(outside).toBe(rest);
+    await expect.poll(() => db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%uber.receipts@uber.com%'")!.c).toBe(0);
+    expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas)).toBeDefined();
   });
 
   test("z undoes the add itself without teaching the engine anything; Esc just closes", async ({ app: page, server }) => {
@@ -86,17 +113,25 @@ test.describe("categorization snackbar", { tag: "@design" }, () => {
     expect(db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", target, facturas)).toBeDefined();
   });
 
-  test("5 makes it a filter for that sender", async ({ app: page, server }) => {
-    const { db, facturas, target } = uberSetup(server);
+  test("plan 81: a sender with nothing left still offers 1, without a count: it makes only the filter; 5 is gone", async ({ app: page, server }) => {
+    const { db, facturas, target, outside } = uberSetup(server);
+    // everything else from them is already in Facturas
+    db.exec(
+      `INSERT OR IGNORE INTO thread_categories (thread_id, category_id, added_by, added_at)
+       SELECT DISTINCT t.id, ${facturas}, 'user', 0 FROM threads t JOIN messages m ON m.thread_id = t.id WHERE m.from_email = 'uber.receipts@uber.com' AND t.id != ${target}`,
+    );
     await selectThread(page, target, "in:inbox from:uber.receipts@uber.com");
     await fileWithPicker(page, facturas);
-    await expect(page.getByTestId("snackbar-filter")).toBeVisible();
+    expect(outside()).toBe(0);
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack.getByTestId("snackbar-sender")).toContainText("Everything from Uber Receipts");
+    await expect(snack.getByTestId("snackbar-count-loading")).toHaveCount(0);
+    await expect(snack.getByTestId("snackbar-sender-count")).toHaveCount(0);
     await page.keyboard.press("5");
-    await expect(toast(page, "Filter created")).toBeVisible();
-    const rule = JSON.parse(db.get<{ rule_json: string }>("SELECT rule_json FROM filters ORDER BY id DESC LIMIT 1")!.rule_json);
-    expect(rule).toEqual({ match: "all", conditions: [{ field: "from", op: "equals", value: "uber.receipts@uber.com" }], actions: [{ type: "addCategory", categoryId: facturas }] });
-    await toast(page, "Filter created").getByTestId("snack-action").click();
-    await expect(page.getByTestId("filters-dialog")).toBeVisible();
+    await expect(snack).toBeVisible();
+    await page.keyboard.press("1");
+    await expect(toast(page, "New mail like this will be added to Facturas")).toBeVisible();
+    expect(db.get<{ c: number }>("SELECT count(*) c FROM filters WHERE rule_json LIKE '%uber.receipts@uber.com%'")!.c).toBe(1);
   });
 
   test("several threads: the chips cover what they share, without duplicates", async ({ app: page, server }) => {
@@ -212,7 +247,7 @@ test.describe("everything about X and Y", { tag: "@design" }, () => {
     await expect(snack.getByTestId("snackbar-topic-count")).toHaveText(/^\d/);
     // stacked: every line sits inside the bar, the sender's above the topic's, nothing clipped sideways
     const bar = (await snack.boundingBox())!;
-    for (const id of ["snackbar-sender", "snackbar-topic", "snackbar-filter"]) {
+    for (const id of ["snackbar-sender", "snackbar-topic"]) {
       const box = (await snack.getByTestId(id).boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(bar.x);
       expect(box.x + box.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);

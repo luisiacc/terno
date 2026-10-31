@@ -266,6 +266,9 @@ describe("plan 80: the filter's name", () => {
     expect([...name].length).toBeLessThanOrEqual(120);
     expect(name).toMatch(/^Rappi · x+… → Facturas$/);
     expect(filterNameOf({ kind: "sender", email: "a@b.com" }, null, "Facturas")).toBe("a@b.com → Facturas");
+    // plan 81: the snackbar's domain and list lines name their filter by what they match, not the sender
+    expect(filterNameOf({ kind: "domain", domain: "acme.studio" }, "Javier Ortiz", "Clientes")).toBe("@acme.studio → Clientes");
+    expect(filterNameOf({ kind: "list", listId: "boletin.xataka.com" }, "Xataka", "Lecturas")).toBe("boletin.xataka.com → Lecturas");
     expect([...filterNameOf({ kind: "sender", email: "a@b.com" }, "y".repeat(300), "z".repeat(300))].length).toBeLessThanOrEqual(120);
   });
 

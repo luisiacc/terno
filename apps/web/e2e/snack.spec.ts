@@ -222,7 +222,8 @@ test.describe("the docked snackbar", { tag: "@design" }, () => {
       await page.waitForTimeout(500);
       await expect(dock(page)).toContainText("Archived");
       await dock(page).getByTestId("snack-close").click();
-      await expect(dock(page)).toContainText("removed from Facturas");
+      // plan 81: 1 is "now and future mail"; its undo says so in one line
+      await expect(dock(page)).toContainText("Undone: Facturas");
     } finally {
       release();
       h["categorize.undo"] = original;

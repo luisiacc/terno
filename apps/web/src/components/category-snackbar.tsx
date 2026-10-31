@@ -1,12 +1,12 @@
-import { termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
+import { isFilterable, termsQuery, type CategorizeScope, type CategoryColor, type QuickActions } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { formatList, formatNumber, t } from "@terno/i18n";
-import { Check, Filter, Search } from "lucide-react";
+import { Check, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { undoFiled, type Filed } from "~/lib/categorize";
+import { fileAlways, filterNameOf, undoFiled, type Filed } from "~/lib/categorize";
 import { dismissSnack, patchSnack, pause, resume, runUndo, snack, useSnack, type Undo } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -163,18 +163,33 @@ function OfferCount({ count, testId }: { count: Count | "loading" | undefined; t
   );
 }
 
-/** One offer per line, so its whole label shows (a long name truncates with its full text in `title`). */
-function Offer({ n, label, count, onClick, testId, icon }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; icon?: React.ReactNode }) {
+/**
+ * One offer per line, so its whole label shows (a long name truncates). Plan
+ * 81: 1–3 also catch future mail; a quiet "+ new mail" says so, the tooltip
+ * (and the description) says it in full.
+ */
+function Offer({ n, label, count, onClick, testId, help }: { n: number; label: string; count?: Count | "loading"; onClick: () => void; testId: string; help: string }) {
+  const helpId = useId();
   if (count === null) return null;
   return (
-    <button type="button" data-testid={testId} onClick={onClick} className={cn(line, "w-full text-left")}>
-      <Kbd className={key}>{n}</Kbd>
-      {icon}
-      <span className="min-w-0 flex-1 truncate" title={label}>
-        {label}
+    <>
+      <Tooltip>
+        <TooltipTrigger render={<button type="button" data-testid={testId} onClick={onClick} aria-describedby={helpId} className={cn(line, "w-full text-left")} />}>
+          <Kbd className={key}>{n}</Kbd>
+          <span className="min-w-0 truncate">{label}</span>
+          <span data-testid={`${testId}-future`} className="flex-1 shrink-0 text-2xs whitespace-nowrap text-muted-foreground">
+            {t("category.newMailToo")}
+          </span>
+          <OfferCount count={count} testId={`${testId}-count`} />
+        </TooltipTrigger>
+        <TooltipContent align="start" data-testid={`${testId}-help`}>
+          {help}
+        </TooltipContent>
+      </Tooltip>
+      <span id={helpId} hidden>
+        {help}
       </span>
-      <OfferCount count={count} testId={`${testId}-count`} />
-    </button>
+    </>
   );
 }
 
@@ -223,7 +238,7 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     };
   }, [filed]);
 
-  // counts stream in lazily, one per chip; a chip with nothing left to add hides
+  // counts stream in lazily, one per chip; a domain or list with nothing left to add hides, the sender stays (its future mail)
   useEffect(() => {
     if (!qa) return;
     let alive = true;
@@ -234,8 +249,8 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       setCounts((c) => ({ ...c, [slot]: "loading" }));
       void client
         .call("categorize.count", { categoryId: filed.categoryId, scope })
-        .then((r) => alive && setCounts((c) => ({ ...c, [slot]: r.count ? r : null })))
-        .catch(() => alive && setCounts((c) => ({ ...c, [slot]: null })));
+        .then((r) => alive && setCounts((c) => ({ ...c, [slot]: r.count || slot === "sender" ? r : null })))
+        .catch(() => alive && setCounts((c) => ({ ...c, [slot]: slot === "sender" ? undefined : null })));
     }
     return () => {
       alive = false;
@@ -289,10 +304,17 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     setApp({ query, view: "all", categoryId: null, accountId: null, reviewCategoryId: null, selectedId: null });
   };
 
+  /** 1–3 file now and catch future mail (plan 81), even with nothing left now; 4 (words) only files what's there. */
   const run = (slot: Slot) => {
     const scope = scopes()[slot];
     const count = counts[slot];
-    if (!scope || !count || count === "loading" || count.count === 0) return;
+    if (!scope || !category || count === null || count === "loading") return;
+    if (isFilterable(scope)) {
+      close();
+      void fileAlways(filed.categoryId, scope, null, filterNameOf(scope, qa?.sender?.name ?? null, category.name));
+      return;
+    }
+    if (!count || count.count === 0) return;
     close();
     void applyScope(filed.categoryId, scope);
   };
@@ -319,19 +341,14 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       },
     );
   };
-  const always = () => {
-    if (!qa?.filterDraft) return;
-    close();
-    void client
-      .call("filters.save", { name: `${qa.filterDraft.name} → ${category?.name ?? ""}`.slice(0, 120), enabled: true, source: "manual", rule: qa.filterDraft.rule })
-      .then(() => void snack.success(t("category.filterCreated"), { action: { label: t("common.edit"), name: t("category.editFilter"), onClick: () => setApp({ dialog: "filters" }) } }))
-      .catch((e: unknown) => void snack.error(t("category.filterFailed", { error: errorText(e) })));
-  };
 
   useEffect(() => {
     if (!live) return;
     snackbarControls.current = {
-      action: (n) => (n === 5 ? always() : run((["sender", "domain", "list", "topic"] as const)[n - 1]!)),
+      action: (n) => {
+        const slot = (["sender", "domain", "list", "topic"] as const)[n - 1];
+        if (slot) run(slot);
+      },
       undo: doUndo,
       close,
     };
@@ -342,16 +359,18 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
     };
   });
 
-  // a domain or list with no mail beyond this sender's adds nothing: one chip says it
+  // a domain or list with no mail beyond this sender's adds nothing now: one line says it (capped counts can't tell)
   const sameAsSender = (slot: "domain" | "list") => {
     const a = counts[slot];
     const b = counts.sender;
-    return !!a && !!b && a !== "loading" && b !== "loading" && a.count === b.count && a.capped === b.capped;
+    return !!a && !!b && a !== "loading" && b !== "loading" && !a.capped && !b.capped && a.count === b.count;
   };
   if (!category) return null;
   const title = titleOf(filed, category.name);
   const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom);
-  const offers = qa && (qa.sender || qa.domain || qa.list || qa.filterDraft || qa.terms.length);
+  const offers = qa && (qa.sender || qa.domain || qa.list || qa.terms.length);
+  // the sender with nothing left now: the line is about their future mail, no "0"
+  const senderCount = counts.sender && counts.sender !== "loading" && counts.sender.count === 0 ? undefined : counts.sender;
   return (
     <div data-testid="category-snackbar" data-failed={failed ? "" : undefined}>
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3 text-sm">
@@ -373,9 +392,29 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
       </div>
       {offers && (
         <div data-testid="snackbar-offers" className="flex flex-col px-1.5 pb-1.5">
-          {qa.sender && <Offer n={1} testId="snackbar-sender" label={t("threadMenu.allFrom", { name: qa.sender.name })} count={counts.sender} onClick={() => run("sender")} />}
-          {qa.domain && !sameAsSender("domain") && <Offer n={2} testId="snackbar-domain" label={t("category.chip.domain", { domain: qa.domain })} count={counts.domain} onClick={() => run("domain")} />}
-          {qa.list && !sameAsSender("list") && <Offer n={3} testId="snackbar-list" label={t("category.chip.list", { list: qa.list })} count={counts.list} onClick={() => run("list")} />}
+          {qa.sender && (
+            <Offer
+              n={1}
+              testId="snackbar-sender"
+              label={t("threadMenu.allFrom", { name: qa.sender.name })}
+              help={t("category.helpSender", { name: qa.sender.name, category: category.name })}
+              count={senderCount}
+              onClick={() => run("sender")}
+            />
+          )}
+          {qa.domain && !sameAsSender("domain") && (
+            <Offer
+              n={2}
+              testId="snackbar-domain"
+              label={t("category.chip.domain", { domain: qa.domain })}
+              help={t("category.helpDomain", { domain: qa.domain, category: category.name })}
+              count={counts.domain}
+              onClick={() => run("domain")}
+            />
+          )}
+          {qa.list && !sameAsSender("list") && (
+            <Offer n={3} testId="snackbar-list" label={t("category.chip.list", { list: qa.list })} help={t("category.helpList", { list: qa.list, category: category.name })} count={counts.list} onClick={() => run("list")} />
+          )}
           {/* not one button: its words, More… and View are controls of their own; the words get a line of their own, under the label */}
           <div className="flex min-w-0 flex-col text-xs" data-testid="snackbar-topic">
             <div className="flex h-7 min-w-0 items-center gap-2">
@@ -463,7 +502,6 @@ function CategorySnackbar({ id, filed, undo }: { id: string; filed: Filed; undo:
               )}
             </div>
           </div>
-          {qa.filterDraft && <Offer n={5} testId="snackbar-filter" label={t("category.alwaysFilter")} icon={<Filter className="size-3 shrink-0 text-muted-foreground" />} onClick={always} />}
         </div>
       )}
     </div>

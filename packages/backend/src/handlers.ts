@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
+import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -411,7 +411,7 @@ export function createHandlers(b: Backend): Handlers {
       // plan 80: the filter first, so mail that arrives while the set is filed is caught by it (the set is fixed below)
       let filter: { id: number; filterUndo: number | null } | null = null;
       let filterFailed = false;
-      if (always && (scope.kind === "sender" || scope.kind === "subject")) {
+      if (always && isFilterable(scope)) {
         try {
           const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? similarValue(scope));
           filter = { id: f.filter.id, filterUndo: f.filterUndo };
@@ -421,12 +421,14 @@ export function createHandlers(b: Backend): Handlers {
           b.log("warn", "category filter failed", error instanceof Error ? error.message : error);
         }
       }
-      // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
-      const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
-      const batchId = await store.categories.createBatch(categoryId, always ? "always" : "snackbar", scope, b.now());
       const addedBy = ctx.origin === "mcp" ? "agent" : "bulk";
       let added = 0;
+      let batchId = 0;
+      // from here a failure still names the filter made above (plan 81: resolving or the batch failing stranded it)
       try {
+        // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
+        const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
+        batchId = await store.categories.createBatch(categoryId, always ? "always" : "snackbar", scope, b.now());
         await b.runSliced(ids, 100, async (chunk) => {
           const r = await store.categories.add({ categoryId, threadIds: chunk, addedBy, now: b.now(), batchId });
           b.categorizer.apply(r.deltas);

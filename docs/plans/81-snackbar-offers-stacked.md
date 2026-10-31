@@ -68,3 +68,50 @@ No new requests: the counts are the same lazy `categorize.count` calls. The tool
 - The help said "Moves", but `categorize.apply` only adds the category (a thread keeps its others): every string now says "Adds"/"Añade".
 - The e2e checks the visible tooltip after toggling a word and with More… text, not only the description, and opens it from the keyboard (Tab onto 4).
 - The countdown test hovers the tooltip itself for 11 s, then replaces the bar with 1 while the tooltip is open and checks the next snack still expires.
+
+# Part 2: offers 1–3 also catch future mail
+
+## Request (verbatim)
+
+> i mean why isn't that the default when selecting one of the other 2options?
+
+> ah that's fine, then yes lets integrate the future filer on options 1-3 , in the end, people don't want homework that they need to do for reviewing email, they just want to see what's important,if they move something, its likely they want future ones to move as well.
+
+## What exists
+
+- Offer 5 "Always → filter" saves `quickActions.filterDraft` (the strongest of sender, list, domain → add category) with `filters.save`: future mail only, no Undo (only Edit), and nothing tells the user 1–3 don't do it.
+- Plan 80 landed `categorize.apply { always, filterName }` for sender and subject scopes: the filter first (`SimilarFilters.ensureRule`: identical reused, disabled one enabled, else created; `filterUndo`), then the batch; a failure partway carries both in its details. The renderer's `fileAlways` registers one Undo (z) that takes back the filter, then the batch; the result reads "N added to C, future mail too".
+- `similarRule` already turns all four similar scopes (sender, subject, domain, list) into conditions.
+
+## Design
+
+- **Backend:** `always` accepts every scope a filter can express: sender, subject, domain, list (`FilterableScope`); `categoryRule` reuses `similarRule`'s conditions (from, from+subject, fromDomain, listId). A query scope still can't be always (zod refine).
+- **Renderer:** `fileAlways(categoryId, scope, threadId | null, filterName)` takes any filterable scope; with no thread (the snackbar) nothing leaves the view first. `filterNameOf` names domain and list filters (`@acme.studio → Facturas`, `list → Facturas`).
+- **Snackbar:** 1–3 run `fileAlways` (now + future, one Undo, z). 4 (words) stays existing mail only: words are too loose for a standing rule. 5 goes; key 5 does nothing.
+- **Sender at 0:** "Everything from X" shows even when nothing is left to add now (it still catches their future mail); its count reads nothing then. Domain and list still hide at 0 or when they equal the sender's.
+- **Tooltips** on 1–3, also their accessible descriptions: "Adds every conversation from Javier Ortiz to Facturas, and their new mail from now on." (domain: "from @acme.studio … and new mail from @acme.studio"; list: "from the list X … and its new mail"). 4's stays.
+- **Result:** "N added to Facturas, future mail too" (plan 80's string); with 0 added "New mail from Javier Ortiz will be added to Facturas." The filter failing keeps the plan 80 warning.
+
+## Tests
+
+- Backend: `categorize.apply { always }` with a domain and a list scope makes the right rule and files; undo (`similar.undo` + `categorize.undo`) takes both back; the zod refine still refuses a query.
+- Unit: `filterNameOf` for domain and list; the offer tooltips en/es.
+- e2e: 1 files the rest and creates the filter (`filters` table), the snack says "future mail too"; z takes back both; 5 is gone; a sender with nothing left still shows 1, and choosing it only creates the filter.
+
+## Out of scope
+
+- Option 4 as a filter. The similar snackbar (plan 63) is unchanged.
+
+## Revisions after the Codex review (Part 2 plan)
+
+1. Equal counts don't mean equal future rules: kept the hide (a domain or list that adds nothing now is noise on a bar meant to save work), but two capped counts no longer count as equal.
+2. Domain and list still hide at 0: only the sender line stays for its future mail (decision: the common case, less noise).
+3. **Fixed:** `@Acme.studio ` filed `acme.studio` now but its filter said `@Acme.studio` and would catch nothing; `categoryRule` canonicalizes domain and list as the stores do. Test ingests later mail through `ingestSliced` and sees it filed.
+4. Exclusions differ (the scope skips spam, sent and threads the user took out; a filter acts on any new mail): that is how every addCategory filter behaves (plan 80, the old 5). Kept.
+5. Mail a filter catches while the batch is filed isn't in the batch, so Undo leaves it: plan 80's accepted boundary (the filter first, on purpose). Kept.
+6. **Fixed:** resolving the scope or creating the batch failing after the filter was made lost its `filterUndo`; both are inside the `try` now. Test with a trigger on `cat_batches`.
+7. **Fixed:** a filter that was already on (no `filterUndo`) stays on after Undo, so the Undo's name is then "Undo add to C", not "…and stop adding future mail".
+8. z is one level: it takes back 1 (filing and filter); the filing that opened the snackbar keeps its own Undo in the snackbar only. Tested and recorded.
+9. **Added:** a quiet "+ new mail" on 1–3, so the future part is visible before choosing.
+10. The zero result is scope-neutral: "New mail like this will be added to C".
+11. Backend tests cover domain and list rules, later mail caught, the early failure, and undo of both; the e2e covers the filter row, Undo of both, the sender at 0 and 5 gone.

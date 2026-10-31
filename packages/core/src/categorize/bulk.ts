@@ -1,5 +1,6 @@
 import type { Reason } from "../types";
 import type { FilterRule } from "../rules/schema";
+import { similarRule } from "../similar";
 
 /** Counts above this show as "1 000+": a chip never pays for an exact count of a huge set. */
 export const COUNT_CAP = 1000;
@@ -53,12 +54,15 @@ export function termsQuery(terms: readonly string[], categoryName: string): stri
 
 /** Plan 80: the scopes "Always file here" offers, and the filter that does it to future mail. */
 export type AlwaysScope = Extract<CategorizeScope, { kind: "sender" | "subject" }>;
+/** Plan 81: every scope a filter can say (the snackbar's 1–3 file now and catch future mail); words can't. */
+export type FilterableScope = Extract<CategorizeScope, { kind: "sender" | "subject" | "domain" | "list" }>;
 
-export function categoryRule(scope: AlwaysScope, categoryId: number): FilterRule {
-  const from = { field: "from" as const, op: "equals" as const, value: scope.email };
-  return {
-    match: "all",
-    conditions: scope.kind === "subject" ? [from, { field: "subject" as const, op: "equals" as const, value: scope.subject }] : [from],
-    actions: [{ type: "addCategory", categoryId }],
-  };
+export const isFilterable = (scope: CategorizeScope): scope is FilterableScope => scope.kind !== "query";
+
+/** The filter that files the scope's future mail here: the same conditions as plan 63's similar filters. */
+export function categoryRule(scope: FilterableScope, categoryId: number): FilterRule {
+  // as the stores resolve the scope now: "@acme.studio " files acme.studio, so the filter must say acme.studio
+  const canonical: FilterableScope =
+    scope.kind === "domain" ? { kind: "domain", domain: scope.domain.trim().replace(/^@/, "") } : scope.kind === "list" ? { kind: "list", listId: scope.listId.trim() } : scope;
+  return { match: "all", conditions: similarRule(canonical, "archive").conditions, actions: [{ type: "addCategory", categoryId }] };
 }
