@@ -919,6 +919,12 @@ export class SqlMailStore implements MailStore {
     resolvePage: async (scope, action, targets, cursor, limit) => resolveSimilarPage(this.db, scope, action, targets, cursor, limit),
     kept: async (threadIds) => keptThreads(this.db, threadIds),
     roots: async (threadIds) => rootRefs(this.db, threadIds).map((r) => r.messageId),
+    automated: async (threadIds) => {
+      const ids = [...new Set(threadIds)];
+      // a thread whose facts aren't computed yet (person NULL, before the backfill) may well be a person's
+      const r = this.db.get<{ n: number; known: number }>("SELECT count(*) n, count(CASE WHEN t.person = 0 THEN 1 END) known FROM json_each(?) j JOIN threads t ON t.id = j.value", JSON.stringify(ids))!;
+      return r.n === ids.length && r.n > 0 && r.known === r.n;
+    },
   };
 
   readonly storage: MailStore["storage"] = {
@@ -942,8 +948,8 @@ export class SqlMailStore implements MailStore {
 
   readonly categorize: MailStore["categorize"] = {
     quickActions: async (categoryId, threadIds, model) => quickActions(this.db, categoryId, threadIds, model),
-    countScope: async (categoryId, scope, now, opts) => countScope(this.db, categoryId, scope, now, opts),
-    resolveScope: async (categoryId, scope, now, limit, opts) => resolveScope(this.db, categoryId, scope, now, limit, opts),
+    countScope: async (categoryId, scope, now) => countScope(this.db, categoryId, scope, now),
+    resolveScope: async (categoryId, scope, now, limit) => resolveScope(this.db, categoryId, scope, now, limit),
     predict: async (threadId, model, mode, now) => predictThread(this.db, threadId, model, mode, now),
     pendingSuggestions: async (o) => pendingSuggestions(this.db, o),
     reject: async (threadId, categoryId, now) => rejectSuggestion(this.db, threadId, categoryId, now),

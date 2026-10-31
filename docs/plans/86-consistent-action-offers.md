@@ -180,3 +180,13 @@ Deviations from the plan:
   - "Mailing list …"
 - **The category submenu's "Everything from X":** plan 77's file/out choice is kept as it is. "Move to → category" runs the same default and snackbar as a drag.
 - **The menu's "Only this email"** still shows the offers (without a default) in the snackbar, for consistency.
+
+## Second review (plausible everyday bugs)
+
+- **People not yet analysed don't get the default:** "automated" now means the thread's people facts are computed and say "not a person" (`similar.automated`). Before the facts backfill (first sync, after an upgrade) they weren't known, so a person's mail could get the group move.
+- **The group move leaves deliberate multi-category threads alone:** it no longer pulls out of their other categories threads that are already in the destination, as a right-click multi-category assignment is the user's choice. The exclusive "move scope" counting in both stores is gone; counts are what would change.
+- **Correct title when nothing else moved:** when the group had nothing left to move, the title stays "Moved to Facturas" (not "Moved 1 email with the same sender and subject…"), and "No, only…" shows only when there's something to take back.
+- **Words and More… move after a move:** after a move, the words line and the More… search move their mail too, and the result says "moved".
+- **No false "Future mail too":** the spam snackbar no longer says it after "No, only…" or the menu's "Only this email"; only an active default filter brings that note.
+- **Rules compared as rules:** the builder decides whether an automatic filter was edited by comparing rules (`sameRule`), not JSON text.
+

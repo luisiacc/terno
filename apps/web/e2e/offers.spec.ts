@@ -162,6 +162,8 @@ test.describe("plan 86: defaults and the same offers everywhere", { tag: "@desig
     await expect(snack.getByTestId("similar-subject")).toBeVisible();
     await page.keyboard.press("0");
     await expect(snack.getByTestId("snack-message")).toHaveText("Marked only this email as spam");
+    // no filter catches their new mail any more: nothing says it does
+    await expect(snack.getByTestId("similar-future")).toHaveCount(0);
     await expect.poll(spam).toBe(1);
     await page.keyboard.press("z");
     await expect.poll(spam).toBe(0);

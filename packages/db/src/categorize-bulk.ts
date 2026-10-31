@@ -31,14 +31,9 @@ export { COUNT_CAP } from "@terno/core";
  * and threads the user took out of it. Sender and domain scopes match only
  * mail the user received, never their own addresses.
  */
-function scopeSql(db: Db, categoryId: number, scope: CategorizeScope, move = false): { sql: string; params: Param[] } | null {
-  // plan 86: a move also takes threads that are in the category and another one (they leave the other)
-  const filed = move
-    ? `t.id NOT IN (SELECT tc.thread_id FROM thread_categories tc INDEXED BY thread_categories_c WHERE tc.category_id = ?
-         AND NOT EXISTS (SELECT 1 FROM thread_categories o WHERE o.thread_id = tc.thread_id AND o.category_id != tc.category_id))`
-    : "t.id NOT IN (SELECT thread_id FROM thread_categories INDEXED BY thread_categories_c WHERE category_id = ?)";
+function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: string; params: Param[] } | null {
   const exclusions = `t.in_trash = 0 AND t.in_spam = 0
-    AND ${filed}
+    AND t.id NOT IN (SELECT thread_id FROM thread_categories INDEXED BY thread_categories_c WHERE category_id = ?)
     AND NOT EXISTS (SELECT 1 FROM cls_examples e WHERE e.thread_id = t.id AND e.category_id = ? AND e.label < 0)`;
   const own = JSON.stringify([...ownAddresses(db).emails]);
   const by = (index: string, predicate: string, values: Param[]) => ({
@@ -74,17 +69,17 @@ const QUERY_EXCLUSIONS = [
 ];
 
 /** Matching thread ids, newest first; `limit` -1 resolves every one (bulk apply). */
-export function resolveScope(db: Db, categoryId: number, given: CategorizeScope, now: number, limit = -1, opts: { move?: boolean } = {}): number[] {
+export function resolveScope(db: Db, categoryId: number, given: CategorizeScope, now: number, limit = -1): number[] {
   const scope = resolvable(given);
-  const s = scopeSql(db, categoryId, scope, opts.move);
+  const s = scopeSql(db, categoryId, scope);
   if (s) return db.all<{ id: number }>(`${s.sql} ORDER BY t.last_date DESC, t.id DESC LIMIT ?`, ...s.params, limit).map((r) => r.id);
   if (scope.kind !== "query") return [];
   return searchThreadIds(db, { query: scope.query, now, limit, where: QUERY_EXCLUSIONS, whereParams: [categoryId, categoryId] }).ids;
 }
 
-export function countScope(db: Db, categoryId: number, given: CategorizeScope, now: number, opts: { move?: boolean } = {}): { count: number; capped: boolean } {
+export function countScope(db: Db, categoryId: number, given: CategorizeScope, now: number): { count: number; capped: boolean } {
   const scope = resolvable(given);
-  const s = scopeSql(db, categoryId, scope, opts.move);
+  const s = scopeSql(db, categoryId, scope);
   const n = s
     ? db.get<{ c: number }>(`SELECT count(*) AS c FROM (${s.sql} LIMIT ?)`, ...s.params, COUNT_CAP + 1)!.c
     : resolveScope(db, categoryId, scope, now, COUNT_CAP + 1).length;

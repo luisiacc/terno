@@ -67,13 +67,13 @@ export function showCategorySnackbar(filed: Filed, undo: Undo, source: Categoriz
 }
 
 /** Files a whole scope, with a progress snack that ends in "N added · Undo". */
-export async function applyScope(categoryId: number, scope: CategorizeScope): Promise<void> {
+export async function applyScope(categoryId: number, scope: CategorizeScope, move = false): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  const id = snack.loading(t("category.adding", { category: name }));
+  const id = snack.loading(t(move ? "category.moving" : "category.adding", { category: name }));
   try {
-    const { added, batchId } = await client.call("categorize.apply", { categoryId, scope });
+    const { added, batchId } = await client.call("categorize.apply", { categoryId, scope, move });
     void reloadList({ keepSelection: true });
-    snack.success(t("category.added", { count: added, category: name }), {
+    snack.success(t(move ? "category.filed.moved" : "category.added", { count: added, category: name }), {
       id,
       duration: 8000,
       action: batchId === null ? undefined : { label: t("common.undo"), name: t("category.undoAdd", { category: name }), onClick: () => undoScope(categoryId, batchId, name) },
@@ -109,6 +109,8 @@ interface Default {
   retargetedFrom: number | null;
   /** the group moved but the filter for new mail couldn't be saved */
   filterFailed: boolean;
+  /** it changed something "only" can take back (a group moved, a filter made or turned on) */
+  undoable: boolean;
   /** takes it back once (the filter, then the group's move); "only" and Undo share it */
   takeBack: () => Promise<void>;
   /** z's undo while it stands: it, then the move */
@@ -164,7 +166,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
       })
       .catch(() => {});
     void client
-      .call("offers.forAction", { threadIds: filed.threadIds.slice(0, 200), action: { category: filed.categoryId, move: filed.moved } })
+      .call("offers.forAction", { threadIds: filed.threadIds.slice(0, 200), action: { category: filed.categoryId } })
       .then((o) => {
         if (!alive) return;
         setOffers(o);
@@ -183,7 +185,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
    */
   /** the offers counted again: what the default or "only" changed changes what each line would do */
   const recount = () =>
-    void client.call("offers.forAction", { threadIds: filed.threadIds.slice(0, 200), action: { category: filed.categoryId, move: filed.moved } }).then(
+    void client.call("offers.forAction", { threadIds: filed.threadIds.slice(0, 200), action: { category: filed.categoryId } }).then(
       (o) => current() && setOffers(o),
       () => undefined,
     );
@@ -204,7 +206,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
       if (u.batchId !== null) await undoFiled({ categoryId: filed.categoryId, addedIds: [], batchId: u.batchId, moved: true });
     });
     const chained = chainUndo(takeBack, undo);
-    setDef({ status: "running", moved: subject.count, retargeted: null, retargetedFrom: null, filterFailed: false, takeBack, token: chained });
+    setDef({ status: "running", moved: subject.count, retargeted: null, retargetedFrom: null, filterFailed: false, undoable: true, takeBack, token: chained });
     patchSnack(id, { message: t("offers.default.moving", { count: filed.threadIds.length + subject.count, category: name }) });
     void client
       .call("categorize.apply", { categoryId: filed.categoryId, scope, always: true, move: true, filterName: filterNameOf(scope, o.senderName, name) })
@@ -213,9 +215,11 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
           outcome({ batchId: r.batchId, filterUndo: r.filter?.filterUndo ?? null });
           void reloadList({ keepSelection: true });
           const from = r.filter?.retargeted ? (getApp().categories.find((c) => c.id === r.filter!.retargeted!.from)?.name ?? null) : null;
-          setDef((d) => d && { ...d, status: "done", moved: r.added, retargeted: from, retargetedFrom: r.filter?.retargeted?.from ?? null, filterFailed: r.filterFailed });
+          const undoable = r.added > 0 || r.filter?.filterUndo != null;
+          setDef((d) => d && { ...d, status: "done", moved: r.added, retargeted: from, retargetedFrom: r.filter?.retargeted?.from ?? null, filterFailed: r.filterFailed, undoable });
           recount();
-          const message = t("offers.default.moved", { count: filed.threadIds.length + r.added, category: name });
+          // nothing else moved after all (filed meanwhile): the title stays the plain move, the note says new mail follows
+          const message = r.added > 0 ? t("offers.default.moved", { count: filed.threadIds.length + r.added, category: name }) : titleOf(filed, name);
           // said aloud too: the whole group moved, not just the one dragged
           if (current()) patchSnack(id, { message }, true);
         },
@@ -329,11 +333,12 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
       if (topic.kind === "query") {
         if (!topicCount || topicCount === "loading" || topicCount.count === 0) return;
         close();
-        void applyScope(filed.categoryId, topic);
+        void applyScope(filed.categoryId, topic, filed.moved);
         return;
       }
       close();
-      void fileAlways(filed.categoryId, topic, null, filterNameOf(topic, qa?.sender?.name ?? null, category.name), { original });
+      // after a move, the words move their mail too (Codex review)
+      void fileAlways(filed.categoryId, topic, null, filterNameOf(topic, qa?.sender?.name ?? null, category.name), { original, move: filed.moved });
       return;
     }
     const scope = l.offer.scope;
@@ -345,7 +350,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
 
   /** "No, only move this email": the default comes back (the group, the filter); the user's own move stays, z takes that back. */
   const only = () => {
-    if (!def || def.status !== "done" || undoing) return;
+    if (!def || def.status !== "done" || !def.undoable || undoing) return;
     setUndoing(true);
     def.takeBack().then(
       () => {
@@ -401,7 +406,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
   if (!category) return null;
   const help = topicHelp(category.name, qa ? qa.terms.filter((x) => terms.has(x.term)).map((x) => x.term) : [], custom, topic?.kind === "words" && topic.email ? (qa?.sender?.name ?? topic.email) : null);
   const senderName = offers?.senderName ?? qa?.sender?.name ?? null;
-  const title = failed ?? (def?.status === "running" ? t("offers.default.moving", { count: filed.threadIds.length + def.moved, category: category.name }) : def?.status === "done" ? t("offers.default.moved", { count: filed.threadIds.length + def.moved, category: category.name }) : onlyDone ? t("offers.only.done", { count: filed.threadIds.length, category: category.name }) : titleOf(filed, category.name));
+  const title = failed ?? (def?.status === "running" ? t("offers.default.moving", { count: filed.threadIds.length + def.moved, category: category.name }) : def?.status === "done" && def.moved > 0 ? t("offers.default.moved", { count: filed.threadIds.length + def.moved, category: category.name }) : onlyDone ? t("offers.only.done", { count: filed.threadIds.length, category: category.name }) : titleOf(filed, category.name));
   const note =
     def?.status === "done"
       ? def.filterFailed
@@ -580,7 +585,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
               {t("filters.stop.line", { category: stops.name })}
             </button>
           )}
-          {def?.status === "done" && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
+          {def?.status === "done" && def.undoable && <OnlyLine label={t("offers.only.move", { count: filed.threadIds.length })} onClick={only} disabled={undoing} />}
         </div>
       )}
     </div>

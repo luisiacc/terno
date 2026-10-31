@@ -559,16 +559,17 @@ export interface MailStore {
     resolvePage(scope: SimilarScope, action: SimilarAction, targets: readonly number[], cursor: number | null, limit: number): Promise<SimilarPage>;
     /** plan 85: each thread's root inbound message (what sender and subject rules decide on) */
     roots(threadIds: readonly number[]): Promise<number[]>;
+    /** plan 86: every thread is known not to be from a person (its facts computed: person = 0, never still unknown) */
+    automated(threadIds: readonly number[]): Promise<boolean>;
     /** which of these threads the user values now (starred, or with a message they sent): a sweep re-reads it per slice */
     kept(threadIds: readonly number[]): Promise<number[]>;
   };
 
   categorize: {
     quickActions(categoryId: number, threadIds: readonly number[], model: CategorizerModel | null): Promise<QuickActions>;
-    /** plan 86: `move` counts what an exclusive move would change: only threads that are in the category and nowhere else are left out (sender, subject, domain, list scopes) */
-    countScope(categoryId: number, scope: CategorizeScope, now: number, opts?: { move?: boolean }): Promise<{ count: number; capped: boolean }>;
+    countScope(categoryId: number, scope: CategorizeScope, now: number): Promise<{ count: number; capped: boolean }>;
     /** the scope's threads, fixed once (filing changes the scope's own "not yet filed" predicate) */
-    resolveScope(categoryId: number, scope: CategorizeScope, now: number, limit?: number, opts?: { move?: boolean }): Promise<number[]>;
+    resolveScope(categoryId: number, scope: CategorizeScope, now: number, limit?: number): Promise<number[]>;
     predict(threadId: number, model: CategorizerModel, mode: AutoCategorize, now: number): Promise<Prediction[]>;
     pendingSuggestions(o: { categoryId?: number; threadId?: number; limit: number }): Promise<PendingSuggestion[]>;
     reject(threadId: number, categoryId: number, now: number): Promise<ModelDelta[]>;

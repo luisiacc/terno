@@ -615,8 +615,7 @@ export const contract = {
   /** Plan 63: what these threads share, each scope with how many threads it would move now (targets still in place included; ≤ 200 targets, else nothing). */
   /** Plan 86: the offers after an action (archive, trash, spam, or a move to a category), and whether the targets' senders are automated. */
   "offers.forAction": m<SimilarOffers & { automated: boolean }>()(
-    // a category: `move` counts what a move would change (a drag), else what an add would (the picker's toggle)
-    z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id, move: z.boolean().optional() })]) }),
+    z.object({ threadIds: z.array(id).min(1).max(200), action: z.union([z.enum(SIMILAR_ACTIONS), z.object({ category: id })]) }),
   ),
   "similar.offers": m<SimilarOffers>()(z.object({ threadIds: z.array(id).min(1).max(200), action: z.enum(SIMILAR_ACTIONS) })),
   /**

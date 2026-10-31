@@ -1,4 +1,4 @@
-import { checkPattern, filterIssueKey, filterRuleSchema, describeCondition, patternTemplate, PATTERN_FIELDS, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
+import { checkPattern, sameRule, filterIssueKey, filterRuleSchema, describeCondition, patternTemplate, PATTERN_FIELDS, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -322,7 +322,8 @@ export function FiltersDialog() {
     try {
       const name = draft.name.trim() || describeCondition(rule.conditions[0]!);
       // plan 85: an automatic filter the user changed is theirs now (turning it on or off isn't a change)
-      const adopted = draft.auto && (draft.auto.name !== name || JSON.stringify(draft.auto.rule) !== JSON.stringify(valid.data));
+      // compared as rules (key order, padding and case don't make an edit)
+      const adopted = draft.auto && (draft.auto.name !== name || !sameRule(draft.auto.rule, valid.data));
       const f = await client.call("filters.save", { id: draft.id, name, enabled: draft.enabled, source: draft.source, rule: valid.data, ...(adopted ? { auto: false } : {}) });
       // plan 84: applying runs in the background (its own progress snack); the dialog is free at once
       if (applyExisting) void applyFilter(f.id, f.name);

@@ -491,7 +491,8 @@ export function createHandlers(b: Backend): Handlers {
       // from here a failure still names the filter made above (plan 81: resolving or the batch failing stranded it)
       try {
         // the set is fixed here, once: filing changes the scope's own "not yet in the category" predicate
-        const ids = await store.categorize.resolveScope(categoryId, scope, b.now(), -1, { move });
+        // never what's already in the category (plan 86, review): a thread deliberately in it and another keeps both
+        const ids = await store.categorize.resolveScope(categoryId, scope, b.now());
         if (move) {
           // plan 86: an exclusive move of the whole set, like a drag (other categories left, every row journaled)
           if (ids.length === 0) return { batchId: null, added: 0, filter, filterFailed };
@@ -521,14 +522,14 @@ export function createHandlers(b: Backend): Handlers {
      * each with what it would change now, and whether every target came from a sender that isn't a person.
      */
     "offers.forAction": async ({ threadIds, action }) => {
-      const summaries = await store.threads.summaries([...new Set(threadIds)].slice(0, 200));
-      const automated = summaries.length > 0 && summaries.every((t) => t.person !== true);
+      // known not to be a person's, every one (not merely "not known to be": the facts may still be coming)
+      const automated = await store.similar.automated(threadIds);
       if (typeof action === "string") return { ...(await store.similar.offers(threadIds, action)), automated };
       await requireCategory(action.category);
       const { senderName, scopes } = await store.similar.scopes(threadIds);
       const offers = await Promise.all(
-        // what it would still change: not the targets (already there); after a move, also what's in it and elsewhere
-        scopes.map(async (scope) => ({ scope, ...(await store.categorize.countScope(action.category, scope, b.now(), { move: action.move })), skipped: 0 })),
+        // what it would still change: not the targets (already there), nothing already in the category
+        scopes.map(async (scope) => ({ scope, ...(await store.categorize.countScope(action.category, scope, b.now())), skipped: 0 })),
       );
       return { senderName, offers, automated };
     },

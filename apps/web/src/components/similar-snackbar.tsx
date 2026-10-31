@@ -170,7 +170,8 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
     };
   });
 
-  const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : !def && action === "spam" ? t("similar.alsoFuture") : null;
+  // said only when a filter now catches their new mail (each line says "+ new mail" for itself)
+  const note = def?.status === "done" ? t(def.filterFailed ? "offers.default.noFilter" : "offers.default.spamFuture") : null;
   return (
     <div data-testid="similar-snackbar" data-default={def?.status}>
       <div className="flex min-h-9 items-center gap-2 py-1.5 pr-1.5 pl-3">

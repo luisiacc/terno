@@ -1510,6 +1510,12 @@ export class IdbMailStore implements MailStore {
     resolvePage: (scope, action, targets, cursor, limit) => this.read(() => resolveSimilarPage(this.c, scope, action, targets, cursor, limit)),
     kept: (threadIds) => this.read(() => keptThreads(this.c, threadIds)),
     roots: (threadIds) => this.read(() => rootRefs(this.c, threadIds).map((r) => r.messageId)),
+    // a thread whose facts aren't computed yet (person null, before the backfill) may well be a person's
+    automated: (threadIds) =>
+      this.read(() => {
+        const ids = [...new Set(threadIds)];
+        return ids.length > 0 && ids.every((id) => T(this.c, "threads").get(id)?.person === 0);
+      }),
   };
 
   readonly storage: MailStore["storage"] = {
@@ -1542,16 +1548,16 @@ export class IdbMailStore implements MailStore {
         return quickActions(this.c, categoryId, threadIds, model);
       });
     },
-    countScope: async (categoryId, given, now, opts) => {
+    countScope: async (categoryId, given, now) => {
       const scope = resolvable(given);
       if (scope.kind === "query") return countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length);
-      return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1, opts?.move)))!.length);
+      return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1)))!.length);
     },
-    resolveScope: async (categoryId, given, now, limit = -1, opts) => {
+    resolveScope: async (categoryId, given, now, limit = -1) => {
       const scope = resolvable(given);
       // sender/domain/list scopes read the message indexes: the late tables must be in
       const prepared = await this.read(() => {
-        const direct = scopeThreads(this.c, categoryId, scope, undefined, opts?.move);
+        const direct = scopeThreads(this.c, categoryId, scope);
         if (direct) return { ids: direct, search: null };
         if (scope.kind !== "query") return { ids: [], search: null };
         const search = this.resolve({ query: scope.query, now });

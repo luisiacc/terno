@@ -363,7 +363,7 @@ describe("categorizer: training hooks", () => {
       expect((await client.call("filters.list", {}))[0]).toMatchObject({ name: "Renamed", enabled: false, auto: true });
     });
 
-    it("plan 86: a move of the group is exclusive (other categories left, what's only here skipped) and undoes exactly; offers count what it would change", async () => {
+    it("plan 86: a move of the group is exclusive (other categories left), never touches what's already here, and undoes exactly; offers count what it would change", async () => {
       const { backend, client, cat, ingest } = await world();
       const db = sqlDb(backend.store);
       const lecturas = (await client.call("categories.create", { name: "Lecturas", color: "cyan" })).id;
@@ -384,17 +384,23 @@ describe("categorizer: training hooks", () => {
       const memberships = () => db.all<{ thread_id: number; category_id: number }>("SELECT thread_id, category_id FROM thread_categories ORDER BY thread_id, category_id").map((r) => `${r.thread_id}:${r.category_id}`);
       const before = memberships();
 
-      const offers = await client.call("offers.forAction", { threadIds: [target!], action: { category: cat, move: true } });
+      const offers = await client.call("offers.forAction", { threadIds: [target!], action: { category: cat } });
       expect(offers.automated).toBe(true);
-      expect(offers.offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 2, capped: false });
-      expect(offers.offers.find((o) => o.scope.kind === "sender")).toMatchObject({ count: 3 });
+      // already in Facturas (with Lecturas, or alone): not part of it
+      expect(offers.offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 1, capped: false });
+      expect(offers.offers.find((o) => o.scope.kind === "sender")).toMatchObject({ count: 2 });
+      // facts not computed yet (before the backfill): maybe a person, so no default
+      db.run("UPDATE threads SET person = NULL WHERE id = ?", target!);
+      expect((await client.call("offers.forAction", { threadIds: [target!], action: { category: cat } })).automated).toBe(false);
+      db.run("UPDATE threads SET person = 0 WHERE id = ?", target!);
 
       const scope = { kind: "subject", email: "uber.receipts@uber.com", subject: "Tu pedido 1 en camino" } as const;
       const r = await client.call("categorize.apply", { categoryId: cat, scope, always: true, move: true, filterName: "Uber · Tu pedido # en camino → Facturas" });
-      expect(r).toMatchObject({ added: 2, batchId: expect.any(Number), filter: { filterUndo: expect.any(Number) } });
-      const cats = (t: number) => db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ?", t).map((x) => x.category_id);
+      expect(r).toMatchObject({ added: 1, batchId: expect.any(Number), filter: { filterUndo: expect.any(Number) } });
+      const cats = (t: number) => db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", t).map((x) => x.category_id);
       expect(cats(inOther!)).toEqual([cat]);
-      expect(cats(inBoth!)).toEqual([cat]);
+      // deliberately in both: stays in both
+      expect(cats(inBoth!)).toEqual([cat, lecturas].sort((a, b) => a - b));
       expect(cats(otherSubject!)).toEqual([]);
       // "No, only move this email": the filter, then the group's move, back exactly
       await client.call("similar.undo", { undoId: null, filterUndo: r.filter!.filterUndo });
