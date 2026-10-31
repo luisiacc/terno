@@ -361,37 +361,38 @@ export function FiltersDialog() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-            <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">
-              <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
-                <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
-              </label>
-              <div className="flex gap-2">
-                <Textarea
-                  id="ai-prompt"
-                  data-testid="ai-prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void generate();
-                  }}
-                  placeholder={t("filters.ai.placeholder")}
-                  className="min-h-16 flex-1 resize-none bg-background"
-                />
-                <Button data-testid="ai-generate" onClick={generate} disabled={generating || prompt.trim().length < 3} className="self-end">
-                  {generating ? <Loader2 className="animate-spin" /> : <Wand2 />} {t("filters.ai.create")}
-                </Button>
-              </div>
-              {ai && (
+            {/* only offered once an AI is chosen; with AI off the box could only fail */}
+            {ai && ai.provider !== "none" && (
+              <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-accent/80 to-transparent p-4">
+                <label className="mb-2 flex items-center gap-1.5 text-sm font-medium" htmlFor="ai-prompt">
+                  <Sparkles className="size-4 text-primary" /> {t("filters.ai.label")}
+                </label>
+                <div className="flex gap-2">
+                  <Textarea
+                    id="ai-prompt"
+                    data-testid="ai-prompt"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void generate();
+                    }}
+                    placeholder={t("filters.ai.placeholder")}
+                    className="min-h-16 flex-1 resize-none bg-background"
+                  />
+                  <Button data-testid="ai-generate" onClick={generate} disabled={generating || prompt.trim().length < 3} className="self-end">
+                    {generating ? <Loader2 className="animate-spin" /> : <Wand2 />} {t("filters.ai.create")}
+                  </Button>
+                </div>
                 <p className="mt-2 text-2xs text-muted-foreground" data-testid="ai-privacy-notice">
                   {privacyLine(ai)}
                 </p>
-              )}
-              {explanation && (
-                <p className="mt-2 text-xs text-accent-foreground" data-testid="ai-explanation">
-                  {explanation} {t("filters.ai.review")}
-                </p>
-              )}
-            </div>
+                {explanation && (
+                  <p className="mt-2 text-xs text-accent-foreground" data-testid="ai-explanation">
+                    {explanation} {t("filters.ai.review")}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground" htmlFor="filter-name">

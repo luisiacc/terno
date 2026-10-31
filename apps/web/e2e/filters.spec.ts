@@ -36,6 +36,16 @@ test.describe("AI filters and learned filters", () => {
     await expect(page.getByTestId("list-empty")).toBeVisible();
   });
 
+  test("with AI off there is no AI box: rules are built by hand", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, { clientId: "setup", origin: "dev" });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("open-filters").click();
+    await expect(page.getByTestId("condition-value")).toBeVisible();
+    await expect(page.getByTestId("ai-prompt")).toHaveCount(0);
+    await expect(page.getByTestId("ai-generate")).toHaveCount(0);
+  });
+
   test("invalid rules can't be saved", async ({ app: page }) => {
     await page.getByTestId("open-filters").click();
     await expect(page.getByTestId("condition-value")).toHaveValue("");
