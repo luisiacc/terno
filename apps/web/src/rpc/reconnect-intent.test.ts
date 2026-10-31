@@ -40,7 +40,7 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
     const messageId = (await store.threads.get(id))!.messages[0]!.id;
     attach();
     setApp({ selectedId: id, accounts: await store.accounts.list() });
-    await loadThread(id, true);
+    const originalDetail = await loadThread(id, true);
     const old = (await store.sync.beginObservation(a!, { authoritativeFlags: true }))!;
     await client.call("threads.act", { threadIds: [id], action });
     const [op] = await store.ops.claimReady(Date.now(), 20);
@@ -61,7 +61,17 @@ for (const adapter of ["SQL", "IDB exact", "IDB instant"] as const) for (const a
     expect(client.connectionVersion).toBeGreaterThan(previous);
     await delayed; oldTransport.release();
     await store.sync.updateFlags(a!, [{ messageId, expectedProviderMsgId: "owned", flags: matching }], old);
-    await vi.waitFor(() => expect(useThreads.getState().details.get(id)?.thread).toMatchObject({ id, unread: true, starred: false, inInbox: true }));
+    // This request starts after the stale observation committed, so an earlier recovery read cannot satisfy it.
+    const recovered = await loadThread(id, true);
+    const assertRecovered = (candidate: typeof recovered) => {
+      expect(candidate).not.toBe(originalDetail);
+      expect(candidate?.thread).toMatchObject({ id, unread: true, starred: false, inInbox: true });
+    };
+    assertRecovered(recovered);
+    expect(useThreads.getState().details.get(id)).toBe(recovered);
+    expect(() => assertRecovered(originalDetail)).toThrow();
+    expect(() => assertRecovered(recovered && { ...recovered, thread: { ...recovered.thread, starred: true } })).toThrow();
+    expect((await client.call("threads.get", { threadId: id })).thread).toMatchObject({ id, unread: true, starred: false, inInbox: true });
     await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id).sort()).toEqual([id, sibling].sort()));
     await vi.waitFor(() => expect(getApp().counts.inboxUnread).toBe(2));
     expect((await store.debug.snapshot()).ops.filter((o) => o.state === "queued")).toEqual(queued);

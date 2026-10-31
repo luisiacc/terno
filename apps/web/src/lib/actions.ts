@@ -152,8 +152,8 @@ export async function act(action: ThreadAction, ids?: number[], options: { quiet
     const ids: number[] = [];
     for (let i = 0; i < targets.length; i += 5000) {
       const r = await client.call("threads.act", { threadIds: targets.slice(i, i + 5000), action });
-      if (connection !== client.connectionVersion) { undoIds.resolve([]); return; }
       if (r.undoId !== null) ids.push(r.undoId);
+      if (connection !== client.connectionVersion) { undoIds.resolve(ids); return; }
     }
     undoIds.resolve(ids);
     invalidateThreads(targets);
@@ -253,6 +253,7 @@ export function trackJob(title: string): { jobId: string; snackId: string; stop(
  * Undo takes back exactly what changed.
  */
 async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void> {
+  const connection = client.connectionVersion;
   const s = getApp();
   // the scope's loaded rows: with the unread filter, not a read row it kept (the open one)
   const loaded = scopeRows(useList.getState().items, sel.scope).map((t) => t.id);
@@ -272,15 +273,18 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
   try {
     const r = await client.call("threads.actScope", { scope: sel.scope, action, jobId: progress.jobId });
     undoId.resolve({ id: r.undoId, n: r.affected });
+    if (connection !== client.connectionVersion) return;
     invalidateThreads(loaded);
     const offer = r.undoId !== null && undo.state === "ready";
     snack.success(said(action, r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
   } catch (error) {
     undoId.resolve({ id: null, n: 0 });
+    if (connection !== client.connectionVersion) return;
     snack.error(failed(error), { id: progress.snackId });
   } finally {
     progress.stop();
-    void reloadList({ keepSelection: true });
+    if (connection === client.connectionVersion) void reloadList({ keepSelection: true });
+    else dismissSnack(progress.snackId);
   }
 }
 
