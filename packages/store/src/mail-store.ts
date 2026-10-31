@@ -454,8 +454,9 @@ export interface MailStore {
      * Sets these, replacing what those threads had, all or nothing: refused
      * (`ok: false`) when the reminders not among them plus these would pass
      * `cap`. Threads that are gone are skipped. `replaced`: what they had.
+     * `ifAbsent`: only threads that have none now (an Undo never overwrites a reminder set since).
      */
-    put(rows: readonly Reminder[], cap: number): Promise<{ ok: true; put: number[]; replaced: Reminder[] } | { ok: false }>;
+    put(rows: readonly Reminder[], cap: number, o?: { ifAbsent?: boolean }): Promise<{ ok: true; put: number[]; replaced: Reminder[] } | { ok: false }>;
     /** removes these threads' reminders (`dueBy`: only those due by then); what it removed */
     delete(threadIds: readonly number[], o?: { dueBy?: number }): Promise<Reminder[]>;
     /** removes these reminders only if they are still exactly these (a replacement meanwhile stays) */

@@ -1446,7 +1446,7 @@ export class IdbMailStore implements MailStore {
 
   readonly reminders: MailStore["reminders"] = {
     list: () => this.early(() => listReminders(this.c)),
-    put: (rows, cap) => this.command(() => putReminders(this.c, rows, cap), { early: true }),
+    put: (rows, cap, o) => this.command(() => putReminders(this.c, rows, cap, o?.ifAbsent), { early: true }),
     delete: (threadIds, o) => this.command(() => deleteReminders(this.c, threadIds, o?.dueBy), { early: true }),
     deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
     // reads messages: waits for them

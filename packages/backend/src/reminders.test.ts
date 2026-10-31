@@ -197,4 +197,64 @@ describe("reminders (plan 87)", () => {
     await backend.stop();
     expect(backend.reminders.nextAt).toBeNull();
   });
+
+  it("Undo of a set never overwrites a reminder set since (another window); Undo of a clear neither", async () => {
+    const { client, a } = await setup();
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW + HOUR, kind: "always" });
+    const second = await client.call("reminders.set", { threadIds: [a], dueAt: NOW + 2 * HOUR, kind: "always" });
+    // meanwhile, elsewhere: a third
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW + 3 * HOUR, kind: "noReply" });
+    await client.call("reminders.restore", { drop: second.rows, put: second.replaced });
+    expect((await client.call("reminders.list", {})).reminders.map((r) => [r.dueAt, r.kind])).toEqual([[NOW + 3 * HOUR, "noReply"]]);
+    const { cleared } = await client.call("reminders.clear", { threadIds: [a] });
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW + 4 * HOUR, kind: "always" });
+    await client.call("reminders.restore", { drop: [], put: cleared });
+    expect((await client.call("reminders.list", {})).reminders.map((r) => r.dueAt)).toEqual([NOW + 4 * HOUR]);
+  });
+
+  it("an open ends exactly the reminder it saw: one set meanwhile stays", async () => {
+    const { client, a } = await setup();
+    const seen = (await client.call("reminders.set", { threadIds: [a], dueAt: NOW - 1, kind: "always" })).rows;
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW - 2, kind: "always" });
+    expect((await client.call("reminders.clear", { threadIds: [a], dueOnly: true, exact: seen })).cleared).toEqual([]);
+    expect((await client.call("reminders.list", {})).reminders.map((r) => r.dueAt)).toEqual([NOW - 2]);
+  });
+
+  it("an archive's Undo refused at the cap takes nothing back and stays for a retry", async () => {
+    const { client, db, account, a } = await setup();
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW - 1, kind: "always" });
+    const r = await client.call("threads.act", { threadIds: [a], action: "archive" });
+    const many = [...ingestMessages(db, Array.from({ length: REMINDERS_MAX }, () => incoming(account))).touchedThreads];
+    await client.call("reminders.set", { threadIds: many, dueAt: NOW + HOUR, kind: "always" });
+    const err = await client.call("threads.undo", { undoId: r.undoId! }).then(() => null, (e: unknown) => e);
+    expect((err as RpcError).code).toBe("BAD_REQUEST");
+    expect(db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", a)!.in_inbox).toBe(0);
+    await client.call("reminders.clear", { threadIds: [many[0]!] });
+    await client.call("threads.undo", { undoId: r.undoId! });
+    expect(db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", a)!.in_inbox).toBe(1);
+    expect((await client.call("reminders.list", {})).reminders.find((x) => x.threadId === a)).toMatchObject({ due: true });
+  });
+
+  it("a change with no reminded thread in it (an account removed, a merge's survivor) still looks again", async () => {
+    const { backend, client, db, a, events } = await setup();
+    await client.call("reminders.set", { threadIds: [a], dueAt: NOW - 1, kind: "always" });
+    await settle();
+    db.run("DELETE FROM threads WHERE id = ?", a);
+    backend.notifyChanged([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(events.at(-1)).toEqual({ reminders: [] });
+  });
+
+  it("filing a due one into a category hidden from the Inbox ends it; the filing's Undo brings it back", async () => {
+    const { client, a, b } = await setup();
+    const hidden = await client.call("categories.create", { name: "Quiet", color: "slate" });
+    const shown = await client.call("categories.create", { name: "Work", color: "indigo", showInInbox: true });
+    await client.call("reminders.set", { threadIds: [a, b], dueAt: NOW - 1, kind: "always" });
+    await client.call("categories.addThreads", { categoryId: shown.id, threadIds: [b], source: "picker" });
+    const moved = await client.call("categories.moveThreads", { to: hidden.id, threadIds: [a], source: "picker" });
+    expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId)).toEqual([b]);
+    await client.call("categorize.undo", { batchId: moved.batchId });
+    expect((await client.call("reminders.list", {})).reminders.map((r) => r.threadId).sort()).toEqual([a, b].sort());
+  });
 });

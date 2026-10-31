@@ -16,7 +16,8 @@ import { inboxTop, reloadList, useList } from "~/state/list";
  * set and clear (with Undo), and the opening that ends a due one.
  */
 export { anyDue, useReminders } from "~/state/reminders";
-const dueIds = (m: ReadonlyMap<number, ReminderInfo>) => [...m.values()].filter((r) => r.due).map((r) => r.threadId).sort((a, b) => a - b).join();
+/** the Inbox's top as it stands: which are due and when (a new time reorders it) */
+const dueIds = (m: ReadonlyMap<number, ReminderInfo>) => [...m.values()].filter((r) => r.due).map((r) => `${r.threadId}@${r.dueAt}`).sort().join();
 
 /** A snapshot from the backend; the lists that show reminders follow what changed in them. */
 export function applyReminders(snapshot: RemindersSnapshot): void {
@@ -158,11 +159,15 @@ const opening: { timer: ReturnType<typeof setTimeout> | null } = { timer: null }
 export function noteOpen(id: number): void {
   if (opening.timer) clearTimeout(opening.timer);
   opening.timer = null;
-  if (!useReminders.getState().byThread.get(id)?.due) return;
+  const seen = useReminders.getState().byThread.get(id);
+  if (!seen?.due) return;
   opening.timer = setTimeout(() => {
     opening.timer = null;
-    if (getApp().selectedId !== id || !readerShown() || !useReminders.getState().byThread.get(id)?.due) return;
-    void client.call("reminders.clear", { threadIds: [id], dueOnly: true }).catch(() => {});
+    const now = useReminders.getState().byThread.get(id);
+    if (getApp().selectedId !== id || !readerShown() || now?.dueAt !== seen.dueAt || now.setAt !== seen.setAt || now.kind !== seen.kind) return;
+    // the one it saw, exactly: one set meanwhile (another window) stays
+    const { threadId, dueAt, kind, setAt } = seen;
+    void client.call("reminders.clear", { threadIds: [id], dueOnly: true, exact: [{ threadId, dueAt, kind, setAt }] }).catch(() => {});
   }, OPEN_DWELL_MS);
 }
 
@@ -196,5 +201,5 @@ export function openRemind(o: { kind?: ReminderKind; custom?: boolean; ids?: num
     useRemindPopover.setState({ open: true });
     return;
   }
-  setApp({ dialog: "remind", remindTarget: { ids, kind: o.kind ?? "always", custom: o.custom ?? false } });
+  setApp({ dialog: "remind", remindTarget: { ids, kind: o.kind, custom: o.custom ?? false } });
 }

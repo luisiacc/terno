@@ -600,8 +600,10 @@ export const contract = {
   "reminders.set": m<{ rows: Reminder[]; replaced: Reminder[] }>()(
     z.object({ threadIds: z.array(id).min(1).max(REMINDERS_MAX), dueAt: z.number().int().positive(), kind: z.enum(REMINDER_KINDS) }),
   ),
-  /** plan 87: removes these threads' reminders (`dueOnly`: only those due now: opening one); what it removed */
-  "reminders.clear": m<{ cleared: Reminder[] }>()(z.object({ threadIds: z.array(id).min(1).max(REMINDERS_MAX), dueOnly: z.boolean().optional() })),
+  /** plan 87: removes these threads' reminders (`dueOnly`: only those due now; `exact`: only if still exactly these: an open ends the one it saw); what it removed */
+  "reminders.clear": m<{ cleared: Reminder[] }>()(
+    z.object({ threadIds: z.array(id).min(1).max(REMINDERS_MAX), dueOnly: z.boolean().optional(), exact: z.array(reminderSchema).max(REMINDERS_MAX).optional() }),
+  ),
   /** plan 87: Undo: drops these rows if they are still exactly these, and puts those back */
   "reminders.restore": m<{ ok: true }>()(z.object({ drop: z.array(reminderSchema).max(REMINDERS_MAX), put: z.array(reminderSchema).max(REMINDERS_MAX) })),
   /** plan 87: the reminders' conversations, none in Trash or Spam. `dueOnly`: the due ones (newest due first, the Inbox's top); otherwise all (soonest first) */

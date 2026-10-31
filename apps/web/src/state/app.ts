@@ -79,7 +79,7 @@ export interface AppState {
   /** what the print sheet prints (set with dialog "print") */
   printTarget: PrintTarget | null;
   /** plan 87: what the reminder dialog sets a reminder on (set with dialog "remind") */
-  remindTarget: { ids: number[]; kind: ReminderKind; custom: boolean } | null;
+  remindTarget: { ids: number[]; kind?: ReminderKind; custom: boolean } | null;
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";
   settingsTab: SettingsTab;

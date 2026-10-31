@@ -79,6 +79,21 @@ export function createHandlers(b: Backend): Handlers {
    * what changed for undo. Above ONE_GO ids it runs in time slices (one
    * batch, several transactions) so interactive RPCs keep flowing.
    */
+  /** plan 87: the due reminders a filing into a category hidden from the Inbox ended (it leaves the Inbox), by batch, for its undo */
+  const filedReminders = new Map<number, Reminder[]>();
+  const endDueIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
+    if (batchId === null || !(await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) return;
+    const ended = await b.reminders.endDue(threadIds);
+    if (ended.length === 0) return;
+    filedReminders.set(batchId, ended);
+    for (const key of filedReminders.keys()) if (filedReminders.size > 16) filedReminders.delete(key);
+  };
+  /** Its undo puts them back first: refused (the cap), nothing is taken back */
+  const restoreFiled = async (batchId: number) => {
+    const ended = filedReminders.get(batchId);
+    if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
+    filedReminders.delete(batchId);
+  };
   const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string, progress?: (done: number) => void) => {
     await requireCategory(categoryId);
     const batchId = await store.categories.createBatch(categoryId, source, { kind: "threads" }, b.now());
@@ -91,6 +106,7 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged(chunk);
       progress?.((done += chunk.length));
     });
+    await endDueIfHidden(categoryId, added, added.length ? batchId : null);
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
   /**
@@ -172,9 +188,10 @@ export function createHandlers(b: Backend): Handlers {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
     try {
-      const restored = (await restore(before, jobId)).size;
+      // the reminders it ended first: refused (the cap), nothing is taken back and the Undo stays for a retry
       const ended = endedReminders.get(undoId);
-      if (ended) await b.reminders.restore([], ended);
+      if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
+      const restored = (await restore(before, jobId)).size;
       endedReminders.delete(undoId);
       return restored;
     } catch (error) {
@@ -289,7 +306,7 @@ export function createHandlers(b: Backend): Handlers {
       if (!r) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
       return r;
     },
-    "reminders.clear": async ({ threadIds, dueOnly }) => ({ cleared: await b.reminders.clear(threadIds, dueOnly ?? false) }),
+    "reminders.clear": async ({ threadIds, dueOnly, exact }) => ({ cleared: exact ? await b.reminders.clearExact(exact, dueOnly ?? false) : await b.reminders.clear(threadIds, dueOnly ?? false) }),
     "reminders.restore": async ({ drop, put }) => {
       if (!(await b.reminders.restore(drop, put))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
       return { ok: true as const };
@@ -394,6 +411,7 @@ export function createHandlers(b: Backend): Handlers {
       const { batchId } = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
       await b.finishMove(batchId);
       const r = await store.categories.moveOutcome(batchId);
+      await endDueIfHidden(to, threadIds, batchId);
       return { added: r.added.length, addedIds: r.added, batchId, moved: r.moved };
     },
     "categories.addScope": async ({ categoryId, scope, jobId }) => {
@@ -512,6 +530,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categorize.stats": () => store.categorize.stats(),
     "categorize.undo": async ({ batchId }) => {
+      await restoreFiled(batchId);
       if ((await store.categories.movePhase(batchId)) !== null) {
         // a move still being applied or trained finishes first; an undo cut short (a failure, a crash) picks up where it was
         const phase = await store.categories.movePhase(batchId);

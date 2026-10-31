@@ -717,7 +717,7 @@ export class BackendCore {
       this.pendingThreadIds.clear();
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
-      this.reminders.touched(threadIds);
+      this.reminders.touched();
       this.emitCounts();
       this.autocomplete.notify();
       this.facts.wake();

@@ -8,7 +8,7 @@ import { listScroller } from "~/components/thread-list";
 import type { ThreadScope } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { getApp, markSelectionIntent, setApp, type AppState } from "~/state/app";
-import { currentScope, listKey, useList } from "~/state/list";
+import { currentScope, listKey, onlyOnTop, useList } from "~/state/list";
 import { loadThread } from "~/state/threads";
 import { viewLabel } from "~/lib/format";
 import { addRange, extend, pick, scopeLabel, targetsOf, toggle, type Order } from "~/lib/selection";
@@ -142,9 +142,10 @@ export function selectScope(count: number): void {
  * A scope's loaded rows: with a filter, the ones it keeps (a row the filter
  * kept in place, the open one, is shown but isn't part of "all N unread").
  */
-export function scopeRows<T extends { unread: boolean; starred: boolean; hasAttachments: boolean }>(items: readonly T[], scope: ThreadScope): T[] {
+export function scopeRows<T extends { id: number; unread: boolean; starred: boolean; hasAttachments: boolean; inInbox?: boolean; categoryIds: readonly number[] }>(items: readonly T[], scope: ThreadScope): T[] {
   const filter = listFilterOf(scope);
-  return filter ? items.filter((t) => matchesFilter(filter, t)) : [...items];
+  // plan 87: a row there only for its reminder isn't one of the scope's
+  return items.filter((t) => (!filter || matchesFilter(filter, t)) && !onlyOnTop(t));
 }
 
 /** What an action applies to now: a scope, the checked rows (in list order), or the open thread. */

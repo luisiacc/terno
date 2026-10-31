@@ -23,10 +23,11 @@ function remindersOf(db: Db, threadIds: readonly number[]): Reminder[] {
 }
 
 /** All or nothing (one transaction): the cap counts the reminders these don't replace. */
-export function putReminders(db: Db, rows: readonly Reminder[], cap: number): { ok: true; put: number[]; replaced: Reminder[] } | { ok: false } {
+export function putReminders(db: Db, rows: readonly Reminder[], cap: number, ifAbsent = false): { ok: true; put: number[]; replaced: Reminder[] } | { ok: false } {
   return db.tx(() => {
     // the last of a thread's rows wins
     const byThread = new Map(rows.map((r) => [r.threadId, r]));
+    if (ifAbsent) for (const r of remindersOf(db, [...byThread.keys()])) byThread.delete(r.threadId);
     const ids = [...byThread.keys()];
     const live = new Set(ids.length ? db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => r.id) : []);
     const replaced = remindersOf(db, ids);

@@ -906,7 +906,7 @@ export class SqlMailStore implements MailStore {
 
   readonly reminders: MailStore["reminders"] = {
     list: async () => listReminders(this.db),
-    put: async (rows, cap) => putReminders(this.db, rows, cap),
+    put: async (rows, cap, o) => putReminders(this.db, rows, cap, o?.ifAbsent),
     delete: async (threadIds, o) => deleteReminders(this.db, threadIds, o?.dueBy),
     deleteExact: async (rows) => deleteExactReminders(this.db, rows),
     answered: async (rows) => answeredReminders(this.db, rows),

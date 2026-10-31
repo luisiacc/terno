@@ -63,16 +63,13 @@ export class Reminders {
   }
 
   /**
-   * Threads changed: a look, if one of them has a reminder (an answer, a
-   * delete; throttled). A merge announces only its survivor: the reminder it
-   * carried over is the store's at once (the Inbox's top, the timer's next
-   * look), and the windows' copy catches up at the next look.
+   * Mail changed: while there are reminders, a look (throttled to one a
+   * second). Not only for the threads that have one: a merge announces its
+   * survivor, an account's removal no thread at all, and either may have
+   * taken a reminder with it.
    */
-  touched(threadIds: Iterable<number>): void {
+  touched(): void {
     if (this.stopped || this.ids.size === 0 || this.touchTimer) return;
-    let hit = false;
-    for (const id of threadIds) if (this.ids.has(id)) hit = true;
-    if (!hit) return;
     this.touchTimer = setTimeout(() => {
       this.touchTimer = null;
       if (!this.stopped) void this.refresh();
@@ -98,16 +95,28 @@ export class Reminders {
     return { rows: rows.filter((x) => put.has(x.threadId)), replaced: r.replaced };
   }
 
+  /** Only these rows, if still exactly these (and due, with `dueOnly`): an open ends the reminder it saw, never a replacement. */
+  async clearExact(rows: readonly Reminder[], dueOnly: boolean): Promise<Reminder[]> {
+    const now = this.host.now();
+    const cleared = await this.host.store.reminders.deleteExact(rows.filter((r) => !dueOnly || r.dueAt <= now));
+    if (cleared.length) void this.refresh();
+    return cleared;
+  }
+
   async clear(threadIds: readonly number[], dueOnly: boolean): Promise<Reminder[]> {
     const cleared = await this.host.store.reminders.delete(threadIds, dueOnly ? { dueBy: this.host.now() } : undefined);
     if (cleared.length) void this.refresh();
     return cleared;
   }
 
-  /** Undo: what was set goes (unless replaced since), what it replaced comes back. Over the cap: refused. */
+  /**
+   * Undo: what was set goes (unless replaced since), and what it replaced or
+   * cleared comes back where nothing was set since (a newer reminder wins).
+   * Over the cap: refused, nothing put back.
+   */
   async restore(drop: readonly Reminder[], put: readonly Reminder[]): Promise<boolean> {
     if (drop.length) await this.host.store.reminders.deleteExact(drop);
-    const ok = put.length === 0 || (await this.host.store.reminders.put(put, REMINDERS_MAX)).ok;
+    const ok = put.length === 0 || (await this.host.store.reminders.put(put, REMINDERS_MAX, { ifAbsent: true })).ok;
     void this.refresh();
     return ok;
   }

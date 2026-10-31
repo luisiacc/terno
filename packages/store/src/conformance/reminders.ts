@@ -44,6 +44,13 @@ export function defineReminderConformance(fresh: () => Promise<MailStore>, reope
       expect(await store.reminders.put([r(y, NOW + 5 * HOUR)], 2)).toMatchObject({ ok: true, put: [y] });
     });
 
+    it("ifAbsent puts back only where nothing was set since", async () => {
+      const { store, x, y } = await setup();
+      await store.reminders.put([r(x, NOW + HOUR)], 10);
+      expect(await store.reminders.put([r(x, NOW - HOUR), r(y, NOW - HOUR)], 10, { ifAbsent: true })).toEqual({ ok: true, put: [y], replaced: [] });
+      expect((await store.reminders.list()).map((m) => m.dueAt)).toEqual([NOW + HOUR, NOW - HOUR]);
+    });
+
     it("deletes all, only the due ones, or only unchanged ones", async () => {
       const { store, x, y, z } = await setup();
       await store.reminders.put([r(x, NOW - HOUR), r(y, NOW + HOUR), r(z, NOW)], 10);

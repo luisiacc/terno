@@ -16,6 +16,7 @@ import { CodeChip } from "./code-chip";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
+import { onlyOnTop } from "~/state/list";
 
 /** The account, in all-accounts views: a small ring in its color (category dots are filled) before its name (plan 23). */
 const ACCOUNT_MARK: Record<CategoryColor, string> = {
@@ -57,7 +58,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
   // "select all N" checks every row, loaded later or not ("all N unread": not a read row the filter kept in place)
-  const inScope = (s: AppState) => s.scope !== null && matchesFilter(listFilterOf(s.scope.scope), thread);
+  // plan 87: nor a row the Inbox shows only for its reminder
+  const inScope = (s: AppState) => s.scope !== null && matchesFilter(listFilterOf(s.scope.scope), thread) && !onlyOnTop(thread);
   const checked = useApp((s) => inScope(s) || s.checked.has(thread.id));
   // what assistive tech hears as selected: the checked rows, or the open thread when nothing is checked
   const inSelection = useApp((s) => inScope(s) || s.checked.has(thread.id) || (s.selectedId === thread.id && s.checked.size === 0));

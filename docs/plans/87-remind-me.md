@@ -242,3 +242,16 @@ These revisions replace the matching parts of the design above.
 9. **Merges, cascades and account deletion.** Rather than tracking every store path that can touch a reminder, the backend re-reads reminders after each `changed` flush while any exist. That read is throttled to at most once per second, trailing, and an event is emitted only when the snapshot differs from the last one sent. Merges, cascades, answers and account deletion therefore all reach the renderer.
 10. **No quick filter in Reminders.** `activeFilter()` returns undefined when `reminders` is on, as it does for Revisar, so All Mail's saved filter never applies. A web unit test enters Reminders with All Mail filtered to unread.
 11. **Bounded work for long conversations.** The answered check runs in budgeted slices, `b.runBudgeted` over the reminder ids with `store.reminders.answered(ids)` per slice, so it never blocks for one big unit. In IndexedDB it reads the thread's message ids from `fk_thread_id` and checks each one's date first, which is cheap. Perf tests run in both stores with 1,000 reminders, including 20 conversations of 500 messages each.
+
+### Code review
+
+Codex reviewed `main...HEAD` and made eight findings. Each one is fixed, and each fix has a regression test.
+
+1. **Undo overwrote a newer reminder.** Setting R1 over R0, then R2 from another window, then undoing R1 put R0 back over R2. `reminders.put` now takes `ifAbsent`, which only fills threads that have no reminder now. Undo of both a set and a clear uses it. Tests: store conformance and a backend test.
+2. **An archive's Undo refused at the cap lost the reminders it ended.** `undoActs` now restores the reminders first. If the cap refuses them, it throws `errors.remindersFull` before taking any mail back, and the Undo stays in the journal for a retry. Test: backend.
+3. **An open could end a replacement.** The dwell now sends the exact row it saw (`reminders.clear { exact }`, through `deleteExact`), and a reminder set in the meantime stays. Tests: backend and web unit.
+4. **Reminders went stale after cascades and merges.** The backend now looks again after every `changed` flush while any reminder exists (throttled to once a second), not only when the change names a reminded thread. Test: backend (a thread deleted under its reminder with `notifyChanged([])`).
+5. **Filing into a category hidden from the Inbox didn't end a due reminder.** The conversation left the Inbox and then came back on top. `categories.addThreads` and `categories.moveThreads` into a hidden category now end the due reminders of what they filed, and `categorize.undo` restores them first, again refusing at the cap. Test: backend.
+6. **"Select all N" checked and acted on rows the Inbox shows only for their reminder.** That means archived rows, or rows in a hidden category. `onlyOnTop` (`state/list.ts`) now leaves them out of `scopeRows` and the rows' scope check. Test: web unit.
+7. **The menu's "Remind me if no reply ▸ Pick date & time…" opened on the existing reminder's kind.** The kind asked for now wins, then the existing reminder's kind, then Remind me. Test: e2e.
+8. **A due reminder's new time didn't reorder the top.** The comparison now includes each due reminder's time. Test: web unit.

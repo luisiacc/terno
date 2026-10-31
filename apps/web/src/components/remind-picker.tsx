@@ -26,9 +26,10 @@ function moment(date: string, time: string): number | null {
  * time…" and h (without a reader) in a dialog. Arrow keys move through the
  * choices; `done` closes whatever holds it.
  */
-export function RemindPicker({ threadIds, initialKind = "always", custom = false, done }: { threadIds: readonly number[]; initialKind?: ReminderKind; custom?: boolean; done: () => void }) {
+export function RemindPicker({ threadIds, initialKind, custom = false, done }: { threadIds: readonly number[]; initialKind?: ReminderKind; custom?: boolean; done: () => void }) {
   const current = useReminders((s) => (threadIds.length === 1 ? s.byThread.get(threadIds[0]!) : undefined));
-  const [kind, setKind] = useState<ReminderKind>(current?.kind ?? initialKind);
+  // the kind asked for ("Remind me if no reply ▸ Pick…") wins; else the reminder there is; else Remind me
+  const [kind, setKind] = useState<ReminderKind>(initialKind ?? current?.kind ?? "always");
   const [picking, setPicking] = useState(custom);
   const start = new Date(defaultRemindAt(new Date()));
   const [date, setDate] = useState(dateValue(start));

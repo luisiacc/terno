@@ -123,6 +123,21 @@ test.describe("remind me", { tag: "@design" }, () => {
     await expect(page.getByTestId("nav-reminders").locator("[data-slot=nav-count]")).toHaveText("1");
   });
 
+  test("the menu's Pick date & time… opens the picker on the kind it was under, over the reminder's own", async ({ app: page, server }) => {
+    const row = rows(page).nth(2);
+    const id = Number(await row.getAttribute("data-thread-id"));
+    await server.backend.server.invoke("reminders.set", { threadIds: [id], dueAt: E2E_NOW + 86_400_000, kind: "always" }, { clientId: "setup", origin: "dev" });
+    await expect(rowOf(page, id).getByTestId("row-reminder")).toBeVisible();
+    await row.click({ button: "right" });
+    await page.getByTestId("menu-remind-noReply").hover();
+    await page.getByTestId("menu-remind-noReply-pick").click();
+    const dialog = page.getByTestId("remind-dialog");
+    await expect(dialog.getByTestId("remind-kind-noReply")).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.getByTestId("remind-custom")).toBeVisible();
+    await dialog.getByTestId("remind-set").click();
+    await expect(snackWith(page, "if they don't answer")).toBeVisible();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the picker and the menu are axe-clean, ${mode}`, async ({ app: page }) => {
       await page.emulateMedia({ colorScheme: mode });

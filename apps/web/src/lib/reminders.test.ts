@@ -105,7 +105,7 @@ it("an open ends a due reminder after the dwell, only if it's still the one on s
     vi.advanceTimersByTime(OPEN_DWELL_MS - 1);
     expect(calls.some((c) => c.method === "reminders.clear")).toBe(false);
     vi.advanceTimersByTime(1);
-    expect(calls.filter((c) => c.method === "reminders.clear").map((c) => c.params)).toEqual([{ threadIds: [7], dueOnly: true }]);
+    expect(calls.filter((c) => c.method === "reminders.clear").map((c) => c.params)).toEqual([{ threadIds: [7], dueOnly: true, exact: [{ threadId: 7, dueAt: 1, kind: "always", setAt: 0 }] }]);
     // moved away before the dwell: nothing; a pending one: nothing
     calls.length = 0;
     noteOpen(7);
@@ -116,4 +116,17 @@ it("an open ends a due reminder after the dwell, only if it's still the one on s
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("a new time for a due one reorders the top; a top row there only for its reminder isn't one of select-all's (scopeRows and the rows' checks read onlyOnTop)", async () => {
+  page = [row(1), row(2)];
+  due = [row(7), { ...row(8), inInbox: false }];
+  applyReminders(snapshot([7, 8]));
+  await vi.waitFor(() => expect(ids()).toEqual([7, 8, 1, 2]));
+  // 8's reminder moved later (still due): the top follows
+  due = [{ ...row(8), inInbox: false }, row(7)];
+  applyReminders({ reminders: snapshot([7, 8]).reminders.map((r) => (r.threadId === 8 ? { ...r, dueAt: 5 } : r)) });
+  await vi.waitFor(() => expect(ids()).toEqual([8, 7, 1, 2]));
+  const { onlyOnTop } = await import("~/state/list");
+  expect(useList.getState().items.filter((t) => !onlyOnTop(t)).map((t) => t.id)).toEqual([7, 1, 2]);
 });

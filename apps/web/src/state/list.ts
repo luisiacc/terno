@@ -90,6 +90,18 @@ export function keptIds(s = getApp()): number[] {
  */
 export const inboxTop: { ids: readonly number[] } = { ids: [] };
 
+/**
+ * A top row the Inbox shows only for its reminder (archived, or in a category
+ * hidden from the Inbox): not one of "all N" of the Inbox (the backend's
+ * scope doesn't have it), so a select-all neither checks nor acts on it.
+ */
+export function onlyOnTop(t: { id: number; inInbox?: boolean; categoryIds: readonly number[] }): boolean {
+  if (!inboxTop.ids.includes(t.id)) return false;
+  if (t.inInbox === false) return true;
+  const hidden = getApp().categories.filter((c) => !c.showInInbox).map((c) => c.id);
+  return t.categoryIds.some((id) => hidden.includes(id));
+}
+
 async function withTop<P extends { items: ThreadSummary[]; nextCursor: { lastDate: number; id: number } | null }>(page: Promise<P>, first: boolean): Promise<P> {
   const s = getApp();
   if (!inPlainInbox(s)) {

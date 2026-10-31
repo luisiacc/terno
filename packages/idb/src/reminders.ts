@@ -11,10 +11,11 @@ export function listReminders(c: Ctx): Reminder[] {
   return [...T(c, "reminders").all()].map(toReminder).sort((a, b) => a.threadId - b.threadId);
 }
 
-export function putReminders(c: Ctx, rows: readonly Reminder[], cap: number): { ok: true; put: number[]; replaced: Reminder[] } | { ok: false } {
+export function putReminders(c: Ctx, rows: readonly Reminder[], cap: number, ifAbsent = false): { ok: true; put: number[]; replaced: Reminder[] } | { ok: false } {
   const reminders = T(c, "reminders");
   const threads = T(c, "threads");
   const byThread = new Map(rows.map((r) => [r.threadId, r]));
+  if (ifAbsent) for (const id of [...byThread.keys()]) if (reminders.has(id)) byThread.delete(id);
   const replaced = [...byThread.keys()].flatMap((id) => {
     const r = reminders.get(id);
     return r ? [toReminder(r)] : [];
