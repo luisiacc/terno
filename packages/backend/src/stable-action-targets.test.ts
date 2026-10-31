@@ -16,11 +16,12 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-stable-action-"));
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+  let now = NOW;
   let backend: BackendCore;
   let client: RpcClient;
   async function open() {
     const store = new SqlMailStore(openDatabase(join(dir, "test.db")), { platform, instantSearch: false });
-    backend = new BackendCore({ store, platform, version: "test", providers: demoRegistry, cipher: plaintextCipher, now: () => NOW, autoSync: false, iconTransport: null });
+    backend = new BackendCore({ store, platform, version: "test", providers: demoRegistry, cipher: plaintextCipher, now: () => now, autoSync: false, iconTransport: null });
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "stable-actions", origin: "renderer" });
     client = new RpcClient(c);
@@ -39,6 +40,7 @@ async function setup() {
   const rule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "equals", value: "Target receipt" }], actions: [{ type: "markRead" }, { type: "addCategory", categoryId: category.id }] };
   return {
     get backend() { return backend; }, get client() { return client; }, category, account, rule,
+    advance: () => { now += 1000; },
     save: (value = rule) => client.call("filters.save", { name: "Stable destination", enabled: true, source: "manual", rule: value }),
     async reopen() { client.close(); await backend.stop(); await open(); },
     async history(id: number) {
@@ -75,7 +77,11 @@ describe("stable explicit filter actions (native SQLite)", () => {
     await t.reopen();
     expect(await t.ops()).toEqual(ops);
     expect((await t.client.call("filters.list", {}))[0]).toEqual({ ...saved, hits: 1 });
+    t.advance();
     expect(await t.client.call("filters.apply", { id: saved.id })).toEqual({ matchedMessages: 0, affectedThreads: 0 });
+    expect(await t.client.call("filters.list", {})).toEqual([{ ...saved, hits: 1 }]);
+    await t.reopen();
+    expect(await t.client.call("filters.list", {})).toEqual([{ ...saved, hits: 1 }]);
     expect(await t.backend.store.debug.snapshot()).toEqual(after);
     expect(await t.history(saved.id)).toEqual({ claims: [{ filter_id: saved.id, message_id: target!.id, applied_at: NOW }], at: NOW });
   });
