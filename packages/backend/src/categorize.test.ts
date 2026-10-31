@@ -374,7 +374,9 @@ describe("categorizer: training hooks", () => {
         { subject: "Tu pedido 4 en camino" },
         { subject: "Tu factura" },
       ]);
-      const put = (thread: number, ...cats: number[]) => client.call("categories.addThreads", { categoryId: cats[0]!, threadIds: [thread], source: "picker" }).then(() => cats.length > 1 && client.call("categories.addThreads", { categoryId: cats[1]!, threadIds: [thread], source: "picker" }));
+      const put = async (thread: number, ...cats: number[]) => {
+        for (const categoryId of cats) await client.call("categories.addThreads", { categoryId, threadIds: [thread], source: "picker" });
+      };
       await put(inOther!, lecturas);
       await put(inBoth!, cat, lecturas);
       await put(onlyHere!, cat);
