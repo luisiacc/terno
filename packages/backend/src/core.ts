@@ -137,6 +137,7 @@ const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ?
 const needsWholeSignIn = (s: AccountSyncState): boolean => Boolean(s.authRequired) && s.authScope !== "send";
 /** plan 25: an op this refusal holds back (a refused send holds only sends) */
 const heldBySignIn = (s: AccountSyncState, kind: string): boolean => Boolean(s.authRequired) && (s.authScope !== "send" || kind === "send");
+const gmailPolicyError = (key: string | undefined): boolean => key === "errors.gmail.serviceDisabled" || key === "errors.gmail.permissionRequired" || key === "errors.gmail.adminPolicy";
 
 const OP_SUMMARY = {
   archive: "backend.op.archive",
@@ -1566,6 +1567,8 @@ export class BackendCore {
     }
     const setState = async (patch: Partial<AccountSyncState>) => {
       await this.accountWrite(life, async () => {
+        // Local admission refusals and stale sync completion cannot replace the policy's recovery instruction.
+        if (this.google.get(accountId)?.policyPaused && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !gmailPolicyError(patch.lastErrorI18n?.key)) return;
         await this.store.accounts.setSyncState(accountId, patch);
         await this.emitAccounts();
       });
@@ -1742,7 +1745,7 @@ export class BackendCore {
         }
         // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
         const sendOnly = (await this.accountRead(life, () => this.store.accounts.get(accountId)))?.syncState.authScope === "send";
-        if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) return;
+        if (before?.kind === "gmail" && (credentials !== this.credentialsOf(accountId) || this.google.get(accountId)?.paused)) return;
         // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
         const firstChunk = more && before?.syncState.lastSyncAt === null;
         // plan 103: a chunk leaves its latest progress; a sync that's done leaves none
@@ -2321,7 +2324,7 @@ export class BackendCore {
           const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
           state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryPark(pe, retryAt, this.connectivity.inOutage(op.account_id)));
         }
-        if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && (pe.i18n?.key === "errors.gmail.serviceDisabled" || pe.i18n?.key === "errors.gmail.permissionRequired" || pe.i18n?.key === "errors.gmail.adminPolicy")) {
+        if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && gmailPolicyError(pe.i18n?.key)) {
           this.connectivity.succeeded(op.account_id);
           await this.accountWrite(life, async () => {
             if (credentials !== this.credentialsOf(op.account_id)) return;

@@ -291,6 +291,68 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" }, connection: null });
   });
 
+  it.each(["final account read", "next provider request"])("a concurrent Send policy refusal survives a sync waiting on its %s", async (boundary) => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const first = await h.send();
+    let finalRead = false, entered = false, release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const get = h.backend.store.accounts.get.bind(h.backend.store.accounts);
+    vi.spyOn(h.backend.store.accounts, "get").mockImplementation(async (id) => {
+      const result = await get(id);
+      if (boundary === "final account read" && id === h.account.id && finalRead && !entered) {
+        entered = true;
+        await held;
+      }
+      return result;
+    });
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages/send") return failure(403, "SERVICE_DISABLED");
+      if (path === "/gmail/history" && boundary === "next provider request") return new Response(new ReadableStream({
+        start(controller) {
+          entered = true;
+          let released = false;
+          release = () => {
+            if (released) return;
+            released = true;
+            controller.enqueue(new TextEncoder().encode('{"historyId":"10"}'));
+            controller.close();
+          };
+        },
+      }));
+      if (path === "/gmail/labels") finalRead = true;
+      return healthySync(request);
+    });
+    const syncing = h.backend.syncAccount(h.account.id);
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      expect(await h.backend.runWorker()).toBe(1);
+      expect(await h.backend.store.ops.get(first.opId)).toMatchObject({ state: "failed", attempts: 1 });
+      const sibling = await h.send();
+      const queued = await h.backend.store.ops.get(sibling.opId);
+      const refusal = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+      expect(refusal).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" }, connection: null });
+      release();
+      await syncing;
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toEqual(refusal);
+      const calls = h.paths().slice();
+      await h.backend.syncAccount(h.account.id);
+      expect(await h.backend.runWorker()).toBe(0);
+      expect(h.paths()).toEqual(calls);
+      expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+      h.answer(healthySync);
+      await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+      await h.backend.syncAccount(h.account.id);
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", lastError: null, lastErrorI18n: null });
+      expect(await h.backend.runWorker()).toBe(1);
+      expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
+      expect(await h.backend.store.ops.get(first.opId)).toMatchObject({ state: "failed", attempts: 1 });
+      expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(2);
+    } finally { release(); await syncing; }
+  });
+
   it("an older policy body cannot relatch after explicit recovery in the same credential generation", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();

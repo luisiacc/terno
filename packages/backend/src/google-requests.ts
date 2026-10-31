@@ -7,6 +7,7 @@ const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
 
 export interface SavedGoogleRequests extends GoogleRequests {
   readonly paused: boolean;
+  readonly policyPaused: boolean;
   recoverPolicy(): void;
   retryAt(): number | undefined;
   close(): void;
@@ -45,6 +46,7 @@ export async function savedGoogleRequests(input: {
   return {
     generation: input.credentials,
     get paused() { return paused || policyPaused(); },
+    get policyPaused() { return policyPaused(); },
     recoverPolicy() { recoveryRevision++; if (policyEpoch !== undefined) { policyEpoch = undefined; input.changed(); } },
     retryAt() {
       const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
