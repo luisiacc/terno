@@ -813,6 +813,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (updates.length) await sink.updateFlags(updates);
       if (gone.length) await sink.removeMessages(gone);
       if (failure) throw failure.error;
+      if (!updates.length) await yieldPage();
       if (!page.hasMore) break;
       after = page.items[page.items.length - 1]!.id;
     }

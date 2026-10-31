@@ -17,6 +17,7 @@ afterEach(async () => { try { for (const close of cleanup.splice(0).reverse()) a
 async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "gone" = "normal", emptyContinuation = false) {
   const requests: URL[] = [], unexpected: string[] = [];
   let checkpoint: ((value: unknown) => Promise<void>) | undefined;
+  let minimal: ((id: string) => Promise<void>) | undefined;
   let historyId = baseline;
   const history: { messages: { id: string }[]; labelsRemoved: { message: { id: string } }[] }[] = [];
   const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -36,7 +37,10 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
     if (path === "/history" && url.searchParams.size === 6 && url.searchParams.get("maxResults") === "500" && url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted" && [baseline, historyId].includes(url.searchParams.get("startHistoryId") ?? "")) return Response.json({ historyId, history: url.searchParams.get("startHistoryId") === baseline ? history : [] });
     const id = path.slice("/messages/".length);
     if (path === "/messages/sibling" && url.searchParams.size === 1 && url.searchParams.get("format") === "raw") return Response.json({ id, threadId: id, labelIds: [], internalDate: "1", raw: Buffer.from(["From: sender@example.test", "To: me@example.test", "Subject: Sibling", "Message-ID: <sibling@example.test>", "Content-Type: text/plain", "", "Exact unaffected sibling"].join("\r\n")).toString("base64url") });
-    if (path.startsWith("/messages/") && /^(a|z|sibling|m\d{4})$/.test(id) && url.searchParams.size === 1 && url.searchParams.get("format") === "minimal") return mode === "gone" && id !== "sibling" ? Response.json({}, { status: 404 }) : Response.json({ id, labelIds: [] });
+    if (path.startsWith("/messages/") && /^(a|z|sibling|m\d{4})$/.test(id) && url.searchParams.size === 1 && url.searchParams.get("format") === "minimal") {
+      await minimal?.(id);
+      return mode === "gone" && id !== "sibling" ? Response.json({}, { status: 404 }) : Response.json({ id, labelIds: [] });
+    }
     return refuse();
   });
   const dir = mkdtempSync(join(tmpdir(), "terno-refresh-invocation-")), factory = new IDBFactory(), name = crypto.randomUUID();
@@ -61,6 +65,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
     requests, transport, cursor, rows, seed, account,
     get backend() { return backend; },
     sync() { const run = backend.syncAccount(account.id); runs.push(run); return run; },
+    minimal(fn?: typeof minimal) { minimal = fn; },
     checkpoint(fn?: typeof checkpoint) { checkpoint = fn; },
     async peer() {
       const { account: peer } = await backend.store.accounts.create({ kind: "gmail", email: "peer@example.test", displayName: "Peer", color: "indigo", now: 2 });
@@ -114,9 +119,30 @@ describe.each(["SQL", "IndexedDB"] as const)("%s cached-refresh checkpoint admis
     expect(await t.backend.store.attachments.read(t.account.id, assets[0]!.assetId!, 0)).toBe(bytes);
     expect(after.filter((m) => m.providerMsgId?.startsWith("m"))).toEqual(before.filter((m) => m.providerMsgId?.startsWith("m")).map((m) => ({ ...m, inInbox: false, isRead: true, gmailLabels: "[]" })));
     expect(after.find((m) => m.id === local.id)).toEqual({ ...local, inInbox: false, isRead: true, gmailLabels: "[]" });
-    expect(t.requests.filter((u) => u.pathname.endsWith(`/messages/${added}`)).map((u) => u.searchParams.get("format"))).toEqual(position === "history" ? ["minimal", "minimal"] : ["minimal"]);
+    expect(t.requests.filter((u) => u.pathname.endsWith(`/messages/${added}`)).map((u) => u.searchParams.get("format"))).toEqual(position === "history" || position === "ahead" ? ["minimal", "minimal"] : ["minimal"]);
     await t.reopen(); await t.sync(); expect(await t.rows()).toEqual(after);
   });
+  it.each([false, true])("retains an admission inside an already-read page interval (promotion=%s)", async (promote) => {
+    const t = await mailbox(kind);
+    await t.seed(Array.from({ length: 101 }, (_, i) => `m${String(i).padStart(4, "0")}`).filter((id) => id !== "m0075"));
+    if (promote) await t.seed(["m0075"], true);
+    let admitted = false;
+    t.minimal(async (id) => {
+      if (id !== "m0050" || admitted) return;
+      admitted = true;
+      expect(await t.cursor()).toMatchObject({ reconciliation: { stage: "refresh", refreshAfter: promote ? "m0048" : "m0049", baseline } });
+      await t.seed(["m0075"]);
+    });
+    await t.sync(); expect(admitted).toBe(true);
+    expect(await t.cursor()).toEqual({ historyId: baseline });
+    const row = (await t.rows()).find((message) => message.providerMsgId === "m0075")!;
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toContainEqual({ id: row.id, providerMsgId: "m0075" });
+    t.minimal(); await t.reopen(); t.requests.length = 0; await t.sync();
+    expect((await t.rows()).find((message) => message.id === row.id)).toEqual({ ...row, inInbox: false, isRead: true, gmailLabels: "[]" });
+    expect(t.requests.filter((url) => url.pathname.includes("/messages")).map((url) => url.pathname.split("/").at(-1))).toEqual(["m0075"]);
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+  });
+
   it("refreshes an admission racing with completed cursor promotion on the next public sync", async () => {
     const t = await mailbox(kind);
     await t.seed(["m0000"]);
@@ -181,5 +207,35 @@ describe.each(["SQL", "IndexedDB"] as const)("%s local cached-refresh fairness",
     const reads = t.requests.length;
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(t.requests).toHaveLength(reads);
+  });
+});
+
+
+describe.each(["SQL", "IndexedDB"] as const)("%s pending repair fairness", (kind) => {
+  it.each([false, true])("yields 1050 actual all404 obligations to a peer/cancellation (cancel=%s)", async (cancel) => {
+    const t = await mailbox(kind, "gone");
+    await t.sync();
+    await t.seed(Array.from({ length: 1050 }, (_, i) => `m${String(i).padStart(4, "0")}`));
+    expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toHaveLength(50);
+    const peer = await t.peer();
+    let reads = 0, completedAt: number | undefined;
+    let scheduled: Promise<void> | undefined;
+    t.minimal(async (id) => {
+      if (!id.startsWith("m")) return;
+      reads++;
+      if (!scheduled) scheduled = new Promise<void>((resolve) => setImmediate(resolve)).then(cancel ? () => t.backend.dropAccount(t.account.id) : peer).then(() => { completedAt = reads; });
+    });
+    await t.sync(); await scheduled;
+    expect(completedAt).toBeLessThan(1050);
+    if (cancel) {
+      expect(reads).toBeLessThan(1050);
+      expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items.length).toBeGreaterThan(0);
+      const dispatched = t.requests.length;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(t.requests).toHaveLength(dispatched);
+    } else {
+      expect(reads).toBe(1050);
+      expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
+    }
   });
 });

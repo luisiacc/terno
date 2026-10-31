@@ -2,13 +2,12 @@ import { FLAG_COLUMNS, flagObservationValid, flagTick, putFlagIntent, type FlagR
 import type { FlagObservation } from "./types";
 import type { LocalFlagField } from "./flag-intents";
 
-/** An in-progress traversal still owns admissions ahead of its durable seek key. */
-function coveredByRefresh(cursor: unknown, providerId: string): boolean {
+/** Only enumeration guarantees a future cache read; a refresh page may already be in flight. */
+function coveredByEnumeration(cursor: unknown): boolean {
   if (!cursor || typeof cursor !== "object" || !("reconciliation" in cursor)) return false;
   const phase = cursor.reconciliation;
-  if (!phase || typeof phase !== "object" || !("version" in phase) || phase.version !== 1 || !("stage" in phase)) return false;
-  if (phase.stage === "enumerate" || phase.stage === "restart") return true;
-  return phase.stage === "refresh" && (!("refreshAfter" in phase) || (typeof phase.refreshAfter === "string" && providerId > phase.refreshAfter));
+  return !!phase && typeof phase === "object" && "version" in phase && phase.version === 1
+    && "stage" in phase && (phase.stage === "enumerate" || phase.stage === "restart");
 }
 
 /** Same transaction as identity admission; trusted provider observations already own fresh metadata. */
@@ -23,7 +22,7 @@ export function requireGmailRefresh(repo: FlagRepository, ids: readonly number[]
     if (!repo.clock(accountId) || flagObservationValid(repo, accountId, observation)) continue;
     if (!accounts.has(accountId)) accounts.set(accountId, account(accountId));
     const owner = accounts.get(accountId);
-    if (owner?.kind !== "gmail" || coveredByRefresh(owner.cursor, message.provider_msg_id)) continue;
+    if (owner?.kind !== "gmail" || coveredByEnumeration(owner.cursor)) continue;
     const epoch = flagTick(repo, accountId);
     changed = true;
     for (const field of Object.keys(FLAG_COLUMNS) as LocalFlagField[]) {
