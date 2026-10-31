@@ -1,5 +1,5 @@
 /**
- * Plan 89: one icon line weight at every size, and a surface can still tune it. Tagged @design: every design.
+ * Plan 92: one icon line weight at every size, and a surface can still tune it. Tagged @design: every design.
  */
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";

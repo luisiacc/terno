@@ -1,4 +1,4 @@
-# 89: Hugeicons, and one icon line weight
+# 92: Hugeicons, and one icon line weight
 
 ## Request (verbatim)
 

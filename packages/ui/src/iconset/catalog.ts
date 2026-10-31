@@ -1,5 +1,5 @@
 /**
- * The app's icons (plan 89): the name the UI imports → its Hugeicons free-core drawing. Edit here, then run
+ * The app's icons (plan 92): the name the UI imports → its Hugeicons free-core drawing. Edit here, then run
  * `pnpm --filter @terno/ui gen:icons` (a test fails on drift). Names are the lucide ones the UI started with;
  * mostly Hugeicons' own lucide aliases, and where those read poorly at 16 px the closest Hugeicons drawing.
  */

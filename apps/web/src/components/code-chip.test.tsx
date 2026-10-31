@@ -6,7 +6,7 @@ import { CodeChip } from "./code-chip";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
-it("the copied check takes the shared icon line (plan 89): svg.icon, its own stroke, no width of its own", async () => {
+it("the copied check takes the shared icon line (plan 92): svg.icon, its own stroke, no width of its own", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
   await act(async () => root.render(<CodeChip threadId={1} code="123456" />));

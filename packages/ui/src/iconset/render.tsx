@@ -1,5 +1,5 @@
 /**
- * Draws a Hugeicons icon (plan 89). Not @hugeicons/react: its paths carry stroke-width="1.5", which no CSS on the
+ * Draws a Hugeicons icon (plan 92). Not @hugeicons/react: its paths carry stroke-width="1.5", which no CSS on the
  * <svg> can reach. Without it they take the design's line (globals.css: --icon-line, non-scaling).
  */
 import type { ReactElement, Ref, SVGProps } from "react";

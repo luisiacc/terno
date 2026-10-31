@@ -11,7 +11,7 @@ import { Check, Star } from "./icons";
 
 const SIZE = "[&_svg:not([class*='size-'])]:";
 
-describe("icons (plan 89)", () => {
+describe("icons (plan 92)", () => {
   it("generated modules are up to date (run `pnpm --filter @terno/ui gen:icons`)", () => {
     const dir = join(import.meta.dirname, "iconset");
     expect(readFileSync(join(import.meta.dirname, "icons.ts"), "utf8")).toBe(generateIndex());
