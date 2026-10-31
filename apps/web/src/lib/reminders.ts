@@ -6,9 +6,9 @@ import { useReminders } from "~/state/reminders";
 import { client } from "~/rpc/connection";
 import { registerUndo, snack } from "~/lib/snack";
 import { readerShown } from "~/lib/page";
-import { getApp, inPlainInbox, setApp } from "~/state/app";
+import { getApp, inPlainInbox, setApp, useApp } from "~/state/app";
 import { currentTargets } from "~/lib/select";
-import { reloadList, useList } from "~/state/list";
+import { inboxTop, reloadList, useList } from "~/state/list";
 
 /**
  * Plan 87: the reminders as the windows see them (the backend's snapshot:
@@ -165,6 +165,13 @@ export function noteOpen(id: number): void {
     void client.call("reminders.clear", { threadIds: [id], dueOnly: true }).catch(() => {});
   }, OPEN_DWELL_MS);
 }
+
+/** The selection left a conversation the Inbox's top held only because it was open (its reminder ended): it goes to its place. */
+useApp.subscribe((s, prev) => {
+  if (prev.selectedId === null || s.selectedId === prev.selectedId || !inboxTop.ids.includes(prev.selectedId)) return;
+  if (useReminders.getState().byThread.get(prev.selectedId)?.due) return;
+  if (inPlainInbox(s)) void reloadList({ keepSelection: true });
+});
 
 // ───────────────────────────── the picker ─────────────────────────────
 
