@@ -288,7 +288,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 13) for (const name of ["send_copies", "send_copy_bytes"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 15) for (const name of ["recipient_receipts", "recipient_receipt_parts"]) db.createObjectStore(name);
       if (event.oldVersion >= 1 && event.oldVersion < 12) for (const name of ["folders", "thread_folders", "folder_rebuilds"]) db.createObjectStore(name);
-      if (event.oldVersion >= 1 && event.oldVersion < 21) db.createObjectStore("reminders");
+      // plan 87 (an image written by a later adapter's table list may have it already)
+      if (event.oldVersion >= 1 && event.oldVersion < 21 && !db.objectStoreNames.contains("reminders")) db.createObjectStore("reminders");
       if (event.oldVersion < 20) {
         const counter = event.oldVersion === 0 ? tx.objectStore("category_counter") : db.createObjectStore("category_counter");
         let ceiling = 0;

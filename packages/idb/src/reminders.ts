@@ -15,7 +15,7 @@ export function putReminders(c: Ctx, rows: readonly Reminder[], cap: number, ifA
   const reminders = T(c, "reminders");
   const threads = T(c, "threads");
   const byThread = new Map(rows.map((r) => [r.threadId, r]));
-  if (ifAbsent) for (const id of [...byThread.keys()]) if (reminders.has(id)) byThread.delete(id);
+  if (ifAbsent) for (const id of byThread.keys()) if (reminders.has(id)) byThread.delete(id);
   const replaced = [...byThread.keys()].flatMap((id) => {
     const r = reminders.get(id);
     return r ? [toReminder(r)] : [];
