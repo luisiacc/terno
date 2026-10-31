@@ -63,6 +63,8 @@ import type {
   MessageState,
   PendingSuggestion,
   ProviderFolder,
+  ScheduledRow,
+  ScheduledSend,
   ScopeParams,
   ThreadFeatureSet,
 } from "./types";
@@ -187,6 +189,8 @@ export interface SendCommand {
   attachments?: import("@terno/core").AttachmentRef[];
   /** explicit user replies feed learned filters; agents' don't */
   recordReply: boolean;
+  /** plan 89: a scheduled send: only while the draft is still scheduled for exactly this moment (STALE "unscheduled" otherwise) */
+  scheduledAt?: number;
   now: number;
 }
 
@@ -474,6 +478,23 @@ export interface MailStore {
      * one of your addresses.
      */
     answered(rows: readonly Reminder[]): Promise<number[]>;
+  };
+
+  /**
+   * Plan 89: drafts scheduled to send (one row per draft; deleting the draft
+   * removes it). The draft stays as it was until the send deletes it.
+   */
+  scheduled: {
+    /** every scheduled send (at most SCHEDULED_MAX), soonest first */
+    list(): Promise<ScheduledSend[]>;
+    get(draftId: number): Promise<ScheduledRow | null>;
+    /** "stale": the draft is gone or isn't that generation and revision; "full": `cap.count` others are scheduled, or the params would pass `cap.bytes` together */
+    put(row: Omit<ScheduledRow, "error" | "retryAt"> & { generation: string; revision: number }, cap: { count: number; bytes: number }): Promise<"ok" | "full" | "stale">;
+    /** a new moment; a failure noted before is forgotten */
+    reschedule(draftId: number, sendAt: number): Promise<boolean>;
+    /** it couldn't go yet: why, and when to try again (only if still scheduled for `sendAt`) */
+    fail(draftId: number, sendAt: number, error: string, retryAt: number): Promise<boolean>;
+    delete(draftId: number): Promise<boolean>;
   };
 
   /** plan 68: the accounts' own folders, as their providers list them (membership is the store's own: see refreshFolders) */

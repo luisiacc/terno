@@ -160,6 +160,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
+import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
@@ -1287,6 +1288,7 @@ export class IdbMailStore implements MailStore {
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
+        if (p.scheduledAt !== undefined && !stillScheduled(this.c, p.draftId, p.scheduledAt)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "unscheduled" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         const account = getAccount(this.c, p.accountId);
         if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
@@ -1504,6 +1506,15 @@ export class IdbMailStore implements MailStore {
     deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
     // reads messages: waits for them
     answered: (rows) => this.read(() => answeredReminders(this.c, rows)),
+  };
+
+  readonly scheduled: MailStore["scheduled"] = {
+    list: () => this.early(() => listScheduled(this.c)),
+    get: (draftId) => this.early(() => getScheduled(this.c, draftId)),
+    put: (row, cap) => this.command(() => putScheduled(this.c, row, cap), { early: true }),
+    reschedule: (draftId, sendAt) => this.command(() => rescheduleScheduled(this.c, draftId, sendAt), { early: true }),
+    fail: (draftId, sendAt, error, retryAt) => this.command(() => failScheduled(this.c, draftId, sendAt, error, retryAt), { early: true }),
+    delete: (draftId) => this.command(() => deleteScheduled(this.c, draftId), { early: true }),
   };
 
   readonly categories: MailStore["categories"] = {

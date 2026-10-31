@@ -13,6 +13,7 @@ import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 import { defineReminderConformance } from "./reminders";
+import { defineScheduledConformance } from "./scheduled";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
 import { defineFlagIntentConformance } from "./flag-intents";
@@ -78,6 +79,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineTabsConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineScheduledConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

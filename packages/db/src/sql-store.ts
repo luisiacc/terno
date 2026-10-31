@@ -76,6 +76,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
+import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
@@ -762,6 +763,7 @@ export class SqlMailStore implements MailStore {
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
         const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
+        if (p.scheduledAt !== undefined && !stillScheduled(this.db, p.draftId, p.scheduledAt)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "unscheduled" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         const account = getAccount(this.db, p.accountId);
         if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
@@ -931,6 +933,15 @@ export class SqlMailStore implements MailStore {
     delete: async (threadIds, o) => deleteReminders(this.db, threadIds, o?.dueBy),
     deleteExact: async (rows) => deleteExactReminders(this.db, rows),
     answered: async (rows) => answeredReminders(this.db, rows),
+  };
+
+  readonly scheduled: MailStore["scheduled"] = {
+    list: async () => listScheduled(this.db),
+    get: async (draftId) => getScheduled(this.db, draftId),
+    put: async (row, cap) => putScheduled(this.db, row, cap),
+    reschedule: async (draftId, sendAt) => rescheduleScheduled(this.db, draftId, sendAt),
+    fail: async (draftId, sendAt, error, retryAt) => failScheduled(this.db, draftId, sendAt, error, retryAt),
+    delete: async (draftId) => deleteScheduled(this.db, draftId),
   };
 
   readonly similar: MailStore["similar"] = {

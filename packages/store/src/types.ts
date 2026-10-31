@@ -304,6 +304,32 @@ export interface DraftRow {
   updated_at: number;
 }
 
+/** Plan 89: a draft scheduled to send, as listed (its draft's recipients and subject; no params). */
+export interface ScheduledSend {
+  draftId: number;
+  sendAt: number;
+  setAt: number;
+  accountId: number;
+  threadId: number | null;
+  mode: DraftRow["mode"];
+  to: unknown[];
+  subject: string;
+  /** why the last try didn't go (null: none failed) */
+  error: string | null;
+  /** when it is tried again after that (null: at sendAt) */
+  retryAt: number | null;
+}
+
+/** Plan 89: a scheduled send as stored: the exact compose.send parameters, as JSON. */
+export interface ScheduledRow {
+  draftId: number;
+  sendAt: number;
+  setAt: number;
+  paramsJson: string;
+  error: string | null;
+  retryAt: number | null;
+}
+
 /** What drafts.save writes. Omitted fields keep their stored value on an update, their default on an insert. */
 export interface DraftInput {
   id?: number;
