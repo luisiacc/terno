@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, rows, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -86,6 +87,54 @@ test.describe("a category hidden from the Inbox (plan 83)", { tag: "@design" }, 
     await expect(page.getByTestId(`nav-category-hidden-${cat}`)).toHaveCount(0);
     expect(db.get("SELECT show_in_inbox FROM categories WHERE id = ?", cat)).toEqual({ show_in_inbox: 1 });
   });
+
+  test("right-click → Delete…: Cancel keeps it; Delete removes it, keeps its mail, and its open list goes back to the Inbox", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const { id: cat, name } = db.get<{ id: number; name: string }>("SELECT id, name FROM categories WHERE name = 'Facturas'")!;
+    const threads = () => db.get<{ c: number }>("SELECT count(*) AS c FROM threads")!.c;
+    const before = threads();
+    const nav = page.getByTestId(`nav-category-${cat}`);
+    await nav.click();
+    await expect(page.getByTestId("list-title")).toHaveText(name);
+
+    await nav.click({ button: "right" });
+    await page.getByTestId("category-menu-delete").click();
+    const dialog = page.getByTestId("category-delete-dialog");
+    await expect(dialog).toContainText(`Delete “${name}”?`);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(nav).toBeVisible();
+
+    // the row has focus, and the delete answers after the dialog has handed it back
+    await nav.focus();
+    const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => Promise<unknown>> }).handlers;
+    const remove = handlers["categories.delete"]!;
+    handlers["categories.delete"] = async (...a) => (await new Promise((r) => setTimeout(r, 300)), remove(...a));
+    await nav.click({ button: "right" });
+    await page.getByTestId("category-menu-delete").click();
+    await page.getByTestId("category-delete-dialog-confirm").click();
+    await expect(page.getByTestId("snack").filter({ hasText: `“${name}” deleted` })).toBeVisible();
+    await expect(nav).toHaveCount(0);
+    await expect(page.getByTestId("nav-inbox")).toBeFocused();
+    // the Inbox (whose title is a greeting in some designs)
+    expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null; view: string } } }).__terno.getApp())).toMatchObject({ categoryId: null, view: "inbox" });
+    expect(db.get("SELECT id FROM categories WHERE id = ?", cat)).toBeUndefined();
+    expect(threads()).toBe(before);
+  });
+
+  for (const mode of ["light", "dark"] as const) {
+    test(`the category menu, its Delete… highlighted, is axe-clean, ${mode}`, async ({ app: page, server }) => {
+      await server.backend.server.invoke("settings.update", { theme: mode }, { clientId: "setup", origin: "dev" });
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const cat = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+      await page.getByTestId(`nav-category-${cat}`).click({ button: "right" });
+      await page.getByTestId("category-menu-delete").hover();
+      if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/menu-${mode}.png` });
+      const r = await new AxeBuilder({ page }).include(`[data-testid=category-menu-${cat}]`).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
+    });
+  }
 
   test("Settings → Categories: the Show in Inbox switch hides it, and says so in the row", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);

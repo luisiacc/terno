@@ -87,3 +87,11 @@ SQL: when hidden categories exist (`SELECT id FROM categories WHERE show_in_inbo
 ## Perf (measured)
 
 SQLite (29,500 threads, 51k messages; budgets 5 ms): with the seed's largest category hidden, an Inbox page p95 0.6 ms, the unread page 0.5 ms, counts 3.7–4.1 ms (2.9 ms with nothing hidden). Two hidden categories holding 95% of the Inbox: pages 1.4 ms, unread 0.7 ms, select all 1.8 ms, counts within 1 ms of the same memberships shown (the per-category counts grow with what is filed). IndexedDB (28,400 threads): every read at 95% hidden 0.3–3 ms, the same right after a membership change (budget: a frame).
+
+## Addendum: Delete… in the menu
+
+Request: "in the right click menu of a category, i should be able to delete it". The menu gains **Delete…** below a separator: a plain item, as in macOS menus (the destructive red on the highlight tint fails AA; the confirmation is where it reads as destructive). It opens the same confirmation as Settings → Categories (same strings, `category-delete-dialog`), lazy-loaded so the AlertDialog stays out of the entry chunk; both go through `deleteCategory` (lib/categorize). Its conversations stay; an open list or Review view of it goes back to the Inbox. e2e: Cancel keeps it, Delete removes it (all designs), the menu axe-clean in light and dark.
+
+Codex review: *deleting a category whose sidebar row had focus left focus on the page* (the dialog hands focus back to the row, then the row goes). Focus moves to the Inbox entry; e2e with a slowed delete fails without it.
+
+Known, not from this change: the shared destructive Button fails AA contrast in dark (the same in Settings → Categories' dialog).

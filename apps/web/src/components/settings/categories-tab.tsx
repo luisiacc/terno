@@ -10,9 +10,9 @@ import { ChevronDown, ChevronRight, ChevronUp, Plus, Trash2 } from "lucide-react
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
-import { setShowInInbox } from "~/lib/categorize";
+import { deleteCategory, setShowInInbox } from "~/lib/categorize";
 import { client } from "~/rpc/connection";
-import { getApp, setApp, setCategories, useApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const modes = () =>
@@ -148,16 +148,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
                     title={t("settings.categories.delete.title", { name })}
                     description={t("settings.categories.delete.description")}
                     confirm={t("settings.categories.delete.confirm")}
-                    onConfirm={async () => {
-                      try {
-                        await client.call("categories.delete", { id: category.id });
-                        // its list or its Revisar view, if open, goes back to the inbox
-                        setCategories(getApp().categories.filter((c) => c.id !== category.id));
-                        snack.success(t("settings.categories.deleted", { name }));
-                      } catch (e) {
-                        snack.error(errorText(e));
-                      }
-                    }}
+                    onConfirm={() => void deleteCategory(category.id, name)}
                   />
                 </>
               )}

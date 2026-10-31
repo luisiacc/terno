@@ -439,3 +439,20 @@ async function applyShowInInbox(categoryId: number, show: boolean): Promise<void
   setCategories(getApp().categories.map((c) => (c.id === next.id ? next : c)));
   if (!show) leaveLoaded(useList.getState().items.filter((row) => row.categoryIds.includes(categoryId)).map((row) => row.id));
 }
+
+/**
+ * Deletes a category (after the caller's confirmation: what was learned for
+ * it can't come back). Its conversations stay; its list or Review view, if
+ * open, goes back to the Inbox. Settings → Categories and the sidebar's menu.
+ */
+export async function deleteCategory(categoryId: number, name: string): Promise<boolean> {
+  try {
+    await client.call("categories.delete", { id: categoryId });
+    setCategories(getApp().categories.filter((c) => c.id !== categoryId));
+    snack.success(t("settings.categories.deleted", { name }));
+    return true;
+  } catch (error) {
+    snack.error(errorText(error));
+    return false;
+  }
+}
