@@ -1,5 +1,8 @@
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { defaultFilter } from "cmdk";
 import { describe, expect, it } from "vitest";
-import { arrange, itemValue, match, ranked, RECENT, scoreOf, type PaletteCommand } from "./palette-commands";
+import { arrange, itemValue, words, match, ranked, RECENT, scoreOf, type PaletteCommand } from "./palette-commands";
 import { recordUse, type Usage } from "./palette-usage";
 
 const cmd = (id: string, group: PaletteCommand["group"], extra: Partial<PaletteCommand> = {}): PaletteCommand => ({ id, group, label: id, icon: null, ...extra });
@@ -115,6 +118,41 @@ describe("palette groups", () => {
     expect(arrange([archive], "root", "arhcive", new Map(), 0)).toHaveLength(1);
     const list = [cmd("filter.unread", "actions", { label: "Show unread only", search: "Show unread only unread filter" }), cmd("addTo:1", "actions", { label: "Add to Clientes", search: "add to Clientes", searchOnly: true }), archive];
     expect(arrange(list, "root", "done", new Map(), 0).flatMap((g) => g.commands.map((c) => c.command.id))).toEqual(["thread.archive"]);
+  });
+
+  it("a pasted paragraph doesn't stall a keystroke, and its first words still match", () => {
+    const many = Array.from({ length: 1500 }, (_, i) => cmd(`move:${i}`, "actions", { label: `Move to “Category number ${i}”`, search: `move to Category number ${i}`, searchOnly: true }));
+    const long = "category nu".repeat(2000);
+    const t0 = performance.now();
+    arrange([...many, archive], "root", long, new Map(), 0);
+    expect(performance.now() - t0).toBeLessThan(150);
+    expect(arrange([archive], "root", `archive ${"x".repeat(5000)}`, new Map(), 0)).toHaveLength(0);
+    expect(arrange([archive], "root", `done${" ".repeat(70)}zzz`, new Map(), 0)).toHaveLength(1);
+  });
+
+  it("no synonym in the catalogs is the start of another command's name (it would outrank it)", () => {
+    // each alias key, with the label it belongs to
+    const own: Record<string, string> = {
+      archive: "palette.archive", trash: "palette.trash", spam: "palette.spam", markRead: "palette.markRead", markUnread: "palette.markUnread",
+      star: "palette.star", move: "palette.move", remind: "palette.remind", compose: "palette.compose", reply: "palette.reply",
+      forward: "palette.forward", undo: "common.undo", theme: "palette.theme", shortcuts: "shortcuts.title", print: "palette.print",
+      aiFilter: "palette.aiFilter", discard: "compose.discard", attach: "attachments.attach", send: "common.send",
+    };
+    const labelOf = (catalog: Record<string, unknown>, key: string) => {
+      const v = catalog[key];
+      return typeof v === "string" ? v : (v as { one: string }).one;
+    };
+    for (const catalog of [en, es] as Record<string, unknown>[]) {
+      const labels = Object.values(own).map((k) => labelOf(catalog, k));
+      for (const [name, key] of Object.entries(own)) {
+        for (const word of words(catalog[`palette.alias.${name}`] as string)) {
+          for (const label of labels) {
+            if (label === labelOf(catalog, key)) continue;
+            expect(defaultFilter(label, word), `"${word}" (${name}) vs "${label}"`).toBeLessThan(0.9);
+          }
+        }
+      }
+    }
   });
 
   it("shows only its own groups on a page", () => {

@@ -24,6 +24,7 @@ import { arrange, itemValue, words, type PaletteCommand, type PaletteGroup, type
 import { noteUse, readUsage, type Usage } from "~/lib/palette-usage";
 import { reply } from "~/lib/keyboard";
 import { createCategory } from "./category-picker";
+import { snack } from "~/lib/snack";
 import { SETTINGS_TABS } from "./settings/tabs";
 
 const NONE: readonly never[] = [];
@@ -308,7 +309,13 @@ export function CommandPalette() {
     // the conversations it was picked for, before the create's wait (the selection may move meanwhile)
     const target = currentTargets();
     close();
-    const id = await createCategory(name);
+    let id: number;
+    try {
+      id = await createCategory(name);
+    } catch (error) {
+      snack.error(t("category.addFailed", { error: error instanceof Error ? error.message : String(error) }));
+      return;
+    }
     if (intoMove && "ids" in target) void moveToCategory(id, target.ids, { source: "picker" });
     else if ("scope" in target) void addScopeToCategory(id, target.scope);
     else void addToCategory(id, target.ids, { source: "picker" });
@@ -333,7 +340,9 @@ export function CommandPalette() {
         onKeyDownCapture={(e) => {
           if (page === "root") return;
           // a page: Esc, or Backspace with nothing typed, goes back to all commands (Esc at the root closes)
-          if (e.key === "Escape" || (e.key === "Backspace" && value === "")) {
+          // (not while an input method composes, nor a held Backspace that just emptied the text)
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Escape" || (e.key === "Backspace" && value === "" && !e.repeat)) {
             e.preventDefault();
             e.stopPropagation();
             back();

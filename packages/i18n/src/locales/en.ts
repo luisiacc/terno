@@ -1139,7 +1139,7 @@ const en = {
   "palette.alias.trash": "delete, bin, remove",
   "palette.alias.spam": "junk",
   "palette.alias.markRead": "seen",
-  "palette.alias.markUnread": "new",
+  "palette.alias.markUnread": "unseen",
   "palette.alias.star": "flag, favorite, important",
   "palette.alias.move": "folder, label, file",
   "palette.alias.remind": "snooze, later, follow up",

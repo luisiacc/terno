@@ -146,6 +146,21 @@ test.describe("palette", () => {
     await expect(input(page)).toHaveValue("");
   });
 
+  test("holding Backspace to clear a page's text stays on the page; a fresh Backspace goes back", async ({ app: page }) => {
+    await openRow(page, 0);
+    await focusList(page);
+    await palette(page, "move to");
+    await page.keyboard.press("Enter");
+    await input(page).fill("vi");
+    // a held key: the repeats after the text is gone don't leave the page
+    for (let i = 0; i < 5; i++) await page.keyboard.down("Backspace");
+    await page.keyboard.up("Backspace");
+    await expect(input(page)).toHaveValue("");
+    await expect(page.getByTestId("palette-page")).toBeVisible();
+    await page.keyboard.press("Backspace");
+    await expect(page.getByTestId("palette-page")).toHaveCount(0);
+  });
+
   test("“move viajes” moves from the root; a bare “viajes” still goes to the category, however often you moved there", async ({ app: page, server }) => {
     const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     for (const n of [3, 4, 5]) {

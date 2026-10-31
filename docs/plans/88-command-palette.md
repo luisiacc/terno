@@ -166,3 +166,11 @@ Unchanged otherwise: same dialog, hairlines, icons and shortcut column. The page
 2. **"Create … and move" could act on a later selection.** It read the targets after the create finished. It now captures them when picked. jsdom test with a held `categories.create` and a selection change in between.
 3. **⌘K closing kept the page and query.** The keyboard handler closes without the component's reset, so the next ⌘K reopened on the old page. Every opening now starts at the root with nothing typed. E2E from a page and from a query.
 4. **English names of the new commands didn't match in Spanish** (Reply, Forward, Send, Attach, Add Cc/Bcc, Insert link, Discard). Their English labels join their keywords. E2E: "forward" and "reply all" in Spanish.
+
+## Edge-case pass
+
+- **A pasted paragraph stalled each keystroke.** command-score is about linear in the query per text, and every command was scored twice (once for the alias, once for the rank): 2,000 values against a 20,000-character paste took about 150 ms. Only the first 64 characters are scored now (the search item keeps the whole text), once per command. Unit test: 1,500 values against a 22,000-character query stay under 150 ms.
+- **A synonym outranked another command's name.** "new" (Mark as unread) scored 1.0 and beat "New message" (0.99); in Spanish "archivar en" (Move) tied with "Archivar conversación". They are now "unseen" and "clasificar". A catalog test checks every en and es synonym against the other commands' names.
+- **A held Backspace left the page.** Its repeats after the text was gone went back to the root. Only a fresh press does now, and neither Backspace nor Esc acts while an input method is composing. E2E for the held key.
+- **A failed "Create … and move" was an unhandled rejection** with nothing on screen. It now says "Couldn’t add: …" and moves nothing. jsdom test.
+- Checked and not a bug: ⌘K in the text while a draft sends (the text can't take focus then, so ⌘K reaches the palette), cmdk item values with quotes or odd characters in category names (cmdk only puts group values in selectors, and the palette no longer asks it to sort), and the React Compiler with the module reads (`paletteFrom`, the targets): every opening re-renders closed first, so nothing carries over between opens.

@@ -62,8 +62,15 @@ export const RECENT = 4;
 const texts = (c: Pick<PaletteCommand, "label" | "search" | "aliases" | "keywords">): string[] => [c.search ?? c.label, ...(c.aliases ?? []), ...(c.keywords ?? [])];
 
 /** The best score of any one text (never across two, as one concatenated string would), and the alias that gave it. */
+/**
+ * How much of a query is scored: a command is a few words, and a pasted
+ * paragraph scored against every value would stall each keystroke
+ * (command-score is ~linear in the query, per text). The search item keeps it all.
+ */
+export const MAX_QUERY = 64;
+
 export function match(c: Pick<PaletteCommand, "label" | "search" | "aliases" | "keywords">, query: string): { score: number; alias: string | null } {
-  const q = query.trim();
+  const q = query.trim().slice(0, MAX_QUERY).trimEnd();
   if (!q) return { score: 1, alias: null };
   const all = texts(c);
   const aliases = c.aliases?.length ?? 0;
@@ -85,8 +92,12 @@ export function ranked(score: number, id: string, usage: Usage, now: number): nu
   return Math.min(score * boost(usage.get(id), now), score === 1 ? 1 : 0.995);
 }
 
-/** What the palette's filter answers for a command: its match, weighed by its scale, then by use. */
-export const scoreOf = (c: PaletteCommand, query: string, usage: Usage, now: number): number => ranked(match(c, query).score * (c.scale ?? 1), c.id, usage, now);
+/** A command's match, weighed by its scale, then by use; and the alias that matched. */
+export function scored(c: PaletteCommand, query: string, usage: Usage, now: number): { score: number; alias: string | null } {
+  const m = match(c, query);
+  return { score: ranked(m.score * (c.scale ?? 1), c.id, usage, now), alias: m.alias };
+}
+export const scoreOf = (c: PaletteCommand, query: string, usage: Usage, now: number): number => scored(c, query, usage, now).score;
 
 /** cmdk's item value: unique by id (the palette filters and orders itself, so cmdk only selects). */
 export const itemValue = (c: Pick<PaletteCommand, "id" | "label">): string => `${c.id}\u0000${c.label}`;
@@ -113,12 +124,12 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   const groups = PAGE_GROUPS[page];
   const mine = commands.filter((c) => groups.includes(c.group));
   if (query.trim() !== "") {
-    const scored = mine
-      .map((command) => ({ command, alias: match(command, query).alias, score: scoreOf(command, query, usage, now) }))
+    const hits = mine
+      .map((command) => ({ command, ...scored(command, query, usage, now) }))
       .filter((s) => s.score >= FLOOR);
     const out: (Arranged & { best: number; order: number })[] = [];
     for (const [order, group] of groups.entries()) {
-      const list = scored.filter((s) => s.command.group === group).sort((a, b) => b.score - a.score);
+      const list = hits.filter((s) => s.command.group === group).sort((a, b) => b.score - a.score);
       if (list.length) out.push({ group, commands: list.map(({ command, alias }) => ({ command, alias })), best: list[0]!.score, order });
     }
     return out.sort((a, b) => b.best - a.best || a.order - b.order).map(({ group, commands }) => ({ group, commands }));

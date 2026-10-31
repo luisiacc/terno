@@ -13,14 +13,19 @@ import { setApp } from "~/state/app";
 
 const rpc = vi.hoisted(() => {
   (globalThis as Record<string, unknown>).matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  return { create: null as ((c: unknown) => void) | null };
+  return { create: null as ((c: unknown) => void) | null, fail: null as ((e: Error) => void) | null };
 });
 vi.mock("~/rpc/connection", () => ({
   client: {
-    call: (method: string) => (method === "categories.create" ? new Promise((resolve) => (rpc.create = resolve)) : new Promise(() => {})),
+    call: (method: string) => (method === "categories.create" ? new Promise((resolve, reject) => ((rpc.create = resolve), (rpc.fail = reject))) : new Promise(() => {})),
     on: () => () => {},
   },
 }));
+const errors = vi.hoisted(() => [] as string[]);
+vi.mock("~/lib/snack", async (original) => {
+  const real = await original<typeof import("~/lib/snack")>();
+  return { ...real, snack: Object.assign((...a: Parameters<typeof real.snack>) => real.snack(...a), real.snack, { error: (title: string) => (errors.push(title), "") }) };
+});
 const moves = vi.hoisted(() => [] as { categoryId: number; ids: readonly number[] }[]);
 vi.mock("~/lib/categorize", async (original) => ({
   ...(await original<typeof import("~/lib/categorize")>()),
@@ -91,4 +96,15 @@ it("Create and move moves the conversation it was picked for, not the one select
   await act(async () => setApp({ selectedId: 8 }));
   await act(async () => rpc.create!({ id: 99, name: "Nueva", color: "indigo", position: 3, autoApply: false, showInInbox: true }));
   expect(moves).toEqual([{ categoryId: 99, ids: [7] }]);
+});
+
+it("a category that can't be created says so (no unhandled rejection) and moves nothing", async () => {
+  moves.length = 0;
+  await act(async () => setApp({ categories: categories(3), selectedId: 7, checked: new Set(), scope: null, dialog: "palette" }));
+  await act(async () => document.querySelector<HTMLElement>("[data-testid=palette-move]")!.click());
+  await type("Otra");
+  await act(async () => document.querySelector<HTMLElement>("[data-testid=palette-create]")!.click());
+  await act(async () => rpc.fail!(new Error("name taken")));
+  expect(errors).toEqual(["Couldn’t add: name taken"]);
+  expect(moves).toEqual([]);
 });
