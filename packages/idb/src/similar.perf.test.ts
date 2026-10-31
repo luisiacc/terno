@@ -97,3 +97,17 @@ it("plan 80: the Review list's Always offers (scopes, a subject and a sender cou
   const rare = await timed(() => dominant.categorize.countScope(dcat, { kind: "subject", email: "bot@notify.example", subject: "nothing has this subject" }, NOW));
   expect(rare, `rare subject count, one sender: ${rare.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
 }, 300_000);
+
+it("plan 84: a numbered subject (any number) is counted and swept within a frame, a rare one too, for a sender that sent everything", async () => {
+  const dcat = (await dominant.categories.create(`Perf numbered ${Date.now()}`, "amber")).id;
+  // a subject with numbers nothing has: every message of the sender is tested (the text around the numbers first)
+  const rare = { kind: "subject", email: "bot@notify.example", subject: "Factura 1 vencida hoy" } as const;
+  const count = await timed(() => dominant.categorize.countScope(dcat, rare, NOW));
+  expect(count, `rare numbered subject count: ${count.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  const page = await timed(() => dominant.similar.resolvePage(rare, "spam", [], null, 2000));
+  expect(page, `rare numbered subject page: ${page.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+  // one the mailbox is full of: "Tu pedido N …"
+  const common = { kind: "subject", email: "bot@notify.example", subject: "Tu pedido 1 está en camino" } as const;
+  const hit = await timed(() => dominant.categorize.countScope(dcat, common, NOW));
+  expect(hit, `numbered subject count: ${hit.toFixed(2)}ms`).toBeLessThanOrEqual(FRAME * MULT);
+}, 300_000);

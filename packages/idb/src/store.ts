@@ -1341,7 +1341,13 @@ export class IdbMailStore implements MailStore {
       const messages = T(this.c, "messages");
       const needsBody = ruleNeedsBody(rule);
       const readsBody = ruleReadsBody(rule);
-      const ids = [...messages.rows.keys()].map(Number).filter((id) => !window || (id >= window.from && id <= window.to)).sort((a, b) => a - b);
+      // a window's ids only (no copy and sort of every key per window: a pattern's apply walks many small windows)
+      const ids: number[] = [];
+      for (const k of messages.rows.keys()) {
+        const id = Number(k);
+        if (!window || (id >= window.from && id <= window.to)) ids.push(id);
+      }
+      ids.sort((a, b) => a - b);
       const out = { messageIds: [] as number[], threadIds: new Set<number>() };
       for (let i = 0; i < ids.length; i += SLICE) {
         const candidates = ids.slice(i, i + SLICE);

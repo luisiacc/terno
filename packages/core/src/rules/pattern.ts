@@ -74,6 +74,20 @@ export function subjectKey(normalized: string): string {
   return normalized.replace(/[\\#]/g, "\\$&").replace(DIGITS, "#");
 }
 
+/**
+ * A GLOB every subject with this one's key matches (a superset: `[0-9]*` is a
+ * digit, then anything): SQLite's cheap first test before the exact one.
+ */
+export function subjectGlob(normalized: string): string {
+  return normalized.split(DIGITS).map((part) => part.replace(/[*?[]/g, "[$&]")).join("[0-9]*");
+}
+
+/** What a subject with this key must start and end with (the text around its numbers): JS's cheap first test. */
+export function subjectEnds(normalized: string): { head: string; tail: string } {
+  const parts = normalized.split(DIGITS);
+  return { head: parts[0]!, tail: parts.length > 1 ? parts[parts.length - 1]! : "" };
+}
+
 // the syntax characters only: under the u flag any other escape (\-) is an error
 const escape = (text: string) => text.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 

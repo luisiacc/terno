@@ -331,7 +331,8 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
     if (l.kind === "words") {
       if (!topic) return;
       if (topic.kind === "query") {
-        if (!topicCount || topicCount === "loading" || topicCount.count === 0) return;
+        // still counting is no reason to ignore Enter (the backend resolves it anyway); only a known nothing is
+        if (topicCount && topicCount !== "loading" && topicCount.count === 0 && !topicCount.capped) return;
         close();
         void applyScope(filed.categoryId, topic, filed.moved);
         return;

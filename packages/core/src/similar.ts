@@ -5,7 +5,7 @@
  */
 import { CONSUMER_DOMAINS } from "./categorize/features";
 import { proposalKey, type DestructiveAction } from "./learning/propose";
-import { foldPattern, subjectGeneralizes, subjectKey, subjectPattern } from "./rules/pattern";
+import { foldPattern, subjectEnds, subjectGeneralizes, subjectGlob, subjectKey, subjectPattern } from "./rules/pattern";
 import type { FilterRule, TextCondition } from "./rules/schema";
 import { normalizeText } from "./text";
 
@@ -83,15 +83,18 @@ export function subjectIdentity(normalized: string): string {
  * How the stores test a scope's subject against a message's normalized one:
  * the key (computed for each message) or exact equality.
  */
-export function subjectTest(scopeSubject: string): { kind: "key"; key: string } | { kind: "exact"; normalized: string } {
+export function subjectTest(scopeSubject: string): { kind: "key"; key: string; glob: string } | { kind: "exact"; normalized: string } {
   const normalized = normalizeText(scopeSubject);
-  return subjectGeneralizes(normalized) ? { kind: "key", key: subjectKey(normalized) } : { kind: "exact", normalized };
+  return subjectGeneralizes(normalized) ? { kind: "key", key: subjectKey(normalized), glob: subjectGlob(normalized) } : { kind: "exact", normalized };
 }
 
 /** The scope's subject test, prepared once for a walk: does this normalized subject belong to it? */
 export function subjectMatcher(scopeSubject: string): (normalized: string) => boolean {
   const test = subjectTest(scopeSubject);
-  return test.kind === "key" ? (normalized) => subjectKey(normalized) === test.key : (normalized) => normalized === test.normalized;
+  if (test.kind === "exact") return (normalized) => normalized === test.normalized;
+  // the text around its numbers first (a string compare): most of a sender's other subjects stop there
+  const { head, tail } = subjectEnds(normalizeText(scopeSubject));
+  return (normalized) => normalized.startsWith(head) && normalized.endsWith(tail) && subjectKey(normalized) === test.key;
 }
 
 /** Does this normalized subject belong to the scope's subject? */

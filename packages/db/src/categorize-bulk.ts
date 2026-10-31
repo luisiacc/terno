@@ -31,7 +31,7 @@ export { COUNT_CAP } from "@terno/core";
  * and threads the user took out of it. Sender and domain scopes match only
  * mail the user received, never their own addresses.
  */
-function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: string; params: Param[] } | null {
+function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: string; count: string; params: Param[] } | null {
   const exclusions = `t.in_trash = 0 AND t.in_spam = 0
     AND t.id NOT IN (SELECT thread_id FROM thread_categories INDEXED BY thread_categories_c WHERE category_id = ?)
     AND NOT EXISTS (SELECT 1 FROM cls_examples e WHERE e.thread_id = t.id AND e.category_id = ? AND e.label < 0)`;
@@ -41,6 +41,9 @@ function scopeSql(db: Db, categoryId: number, scope: CategorizeScope): { sql: st
           WHERE t.id IN (SELECT m.thread_id FROM messages m INDEXED BY ${index}
                          WHERE ${predicate} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)))
             AND ${exclusions}`,
+    // a count walks the index and stops at its limit: the IN above would build the whole scope first (perf gate: offers within a frame)
+    count: `SELECT DISTINCT m.thread_id FROM messages m INDEXED BY ${index} JOIN threads t ON t.id = m.thread_id
+            WHERE ${predicate} AND m.is_sent = 0 AND m.from_email NOT IN (SELECT value FROM json_each(?)) AND ${exclusions}`,
     params: [...values, own, categoryId, categoryId] as Param[],
   });
   switch (scope.kind) {
@@ -81,7 +84,7 @@ export function countScope(db: Db, categoryId: number, given: CategorizeScope, n
   const scope = resolvable(given);
   const s = scopeSql(db, categoryId, scope);
   const n = s
-    ? db.get<{ c: number }>(`SELECT count(*) AS c FROM (${s.sql} LIMIT ?)`, ...s.params, COUNT_CAP + 1)!.c
+    ? db.get<{ c: number }>(`SELECT count(*) AS c FROM (${s.count} LIMIT ?)`, ...s.params, COUNT_CAP + 1)!.c
     : resolveScope(db, categoryId, scope, now, COUNT_CAP + 1).length;
   return { count: Math.min(n, COUNT_CAP), capped: n > COUNT_CAP };
 }
@@ -89,7 +92,7 @@ export function countScope(db: Db, categoryId: number, given: CategorizeScope, n
 /** The SQL a scope count runs (query-plan tests). */
 export function scopeCountSql(db: Db, categoryId: number, scope: Exclude<CategorizeScope, { kind: "query" | "words" }>): { sql: string; params: Param[] } {
   const s = scopeSql(db, categoryId, scope)!;
-  return { sql: `SELECT count(*) AS c FROM (${s.sql} LIMIT ?)`, params: [...s.params, COUNT_CAP + 1] };
+  return { sql: `SELECT count(*) AS c FROM (${s.count} LIMIT ?)`, params: [...s.params, COUNT_CAP + 1] };
 }
 
 // ───────────────────────────── quick actions ─────────────────────────────

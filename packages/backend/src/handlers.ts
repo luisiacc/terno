@@ -622,15 +622,17 @@ export function createHandlers(b: Backend): Handlers {
       try {
         const filter = await store.filters.get(id);
         if (!filter) throw new RpcError("NOT_FOUND", L("errors.filterGone"));
-        // match in id windows, yielding between them: no single long synchronous scan (a pattern runs in linear time)
+        // match in id windows, yielding between them: no single long synchronous scan; a pattern costs a JS call a message,
+        // so its windows are smaller (perf gate: no stall over 50 ms while it runs)
         const bounds = await store.filters.messageIdRange();
+        const step = filter.rule.conditions.some((c) => c.field !== "hasAttachment" && c.field !== "account" && c.field !== "ageDays" && c.op === "matches") ? 1000 : 4000;
         const span = bounds ? bounds.hi - bounds.lo + 1 : 0;
         const checking = progressReporter(b, jobId, span);
         checking(0);
         const matched: number[] = [];
-        for (let from = bounds?.lo ?? 1; bounds && from <= bounds.hi; from += 4000) {
-          matched.push(...(await store.filters.matchWindow(filter.rule, b.now(), { from, to: from + 3999 })));
-          checking(Math.min(span, from + 4000 - bounds.lo));
+        for (let from = bounds?.lo ?? 1; bounds && from <= bounds.hi; from += step) {
+          matched.push(...(await store.filters.matchWindow(filter.rule, b.now(), { from, to: from + step - 1 })));
+          checking(Math.min(span, from + step - bounds.lo));
           await b.platform.yield();
         }
         const progress = progressReporter(b, jobId, matched.length);

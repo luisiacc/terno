@@ -196,4 +196,81 @@ test.describe("plan 86: defaults and the same offers everywhere", { tag: "@desig
     await stop.click();
     await expect.poll(enabled).toBe(0);
   });
+
+  test("low resource use: a drag's default costs a fixed handful of requests, and nothing runs once the snackbar is gone", async ({ app: page, server }) => {
+    const facturas = catId(server, "Facturas");
+    const g = group(server, facturas);
+    // every request the renderer sends, by method, from now on
+    const sent: { at: number; method: string }[] = [];
+    page.on("websocket", (ws) =>
+      ws.on("framesent", ({ payload }) => {
+        try {
+          const frame = JSON.parse(String(payload)) as { t?: string; m?: string };
+          if (frame.t === "req" && frame.m) sent.push({ at: Date.now(), method: frame.m });
+        } catch {
+          // not a JSON frame
+        }
+      }),
+    );
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await selectThread(page, g.target, `from:${g.email}`);
+    const from = Date.now();
+    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${g.target}"]`), page.getByTestId(`nav-category-${facturas}`));
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack).toHaveAttribute("data-default", "done");
+    await expect(snack.getByTestId("snackbar-offers").locator("[data-testid=snackbar-count-loading]")).toHaveCount(0);
+    const ours = (since: number) => sent.filter((r) => r.at >= since && /^(offers|categorize|filters|similar)\./.test(r.method)).map((r) => r.method);
+    const count = (list: string[], m: string) => list.filter((x) => x === m).length;
+    const during = ours(from);
+    // the offers (once, then once more after the default), the words, the default's move, the words' count, the stop-filing check
+    expect(count(during, "offers.forAction")).toBe(2);
+    expect(count(during, "categorize.quickActions")).toBe(1);
+    expect(count(during, "categorize.apply")).toBe(1);
+    expect(count(during, "categorize.count")).toBeLessThanOrEqual(1);
+    expect(count(during, "filters.autoFor")).toBeLessThanOrEqual(3);
+    expect(during.length, during.join(", ")).toBeLessThanOrEqual(8);
+    // toggling a word recounts once (debounced), not per keystroke or render
+    const toggles = Date.now();
+    const words = snack.getByTestId("snackbar-term");
+    if (await words.count()) {
+      await words.first().click();
+      await words.first().click();
+      await words.first().click();
+      await page.waitForTimeout(500);
+      expect(count(ours(toggles), "categorize.count"), ours(toggles).join(", ")).toBeLessThanOrEqual(2);
+    }
+    // gone: idle means idle (no polling, no recount, no retries)
+    await page.keyboard.press("Escape");
+    await expect(snack).toHaveCount(0);
+    const after = Date.now();
+    await page.waitForTimeout(3000);
+    expect(ours(after), ours(after).join(", ")).toEqual([]);
+  });
+
+  test("Codex review: after a move, More… moves what it finds too (out of its other category)", async ({ app: page, server }) => {
+    const facturas = catId(server, "Facturas");
+    const lecturas = catId(server, "Lecturas");
+    const db = sqlDb(server.backend.store);
+    // a person with two conversations, both in Lecturas; one is dragged to Facturas (no default: a person)
+    const email = db.get<{ email: string }>(
+      `SELECT t.last_from_email AS email FROM threads t WHERE t.in_inbox = 1 AND t.person = 1 AND t.in_trash = 0 AND t.message_count = 1
+       GROUP BY t.last_from_email HAVING count(*) >= 2 ORDER BY count(*) DESC LIMIT 1`,
+    )!.email;
+    const [a, b] = db.all<{ id: number }>("SELECT id FROM threads WHERE last_from_email = ? AND in_inbox = 1 AND in_trash = 0 ORDER BY last_date DESC LIMIT 2", email).map((r) => r.id);
+    const cats = (t: number) => db.all<{ category_id: number }>("SELECT category_id FROM thread_categories WHERE thread_id = ? ORDER BY category_id", t).map((r) => r.category_id);
+    db.run("DELETE FROM thread_categories WHERE thread_id IN (?, ?)", a!, b!);
+    await server.backend.server.invoke("categories.addThreads", { categoryId: lecturas, threadIds: [a!, b!], source: "picker" }, { clientId: "t", origin: "dev" });
+    await selectThread(page, a!, `from:${email}`);
+    await drop(page, page.locator(`[data-testid=thread-row][data-thread-id="${a}"]`), page.getByTestId(`nav-category-${facturas}`));
+    const snack = page.getByTestId("category-snackbar");
+    await expect(snack.getByTestId("snackbar-title")).toHaveText("Moved to Facturas");
+    await snack.getByTestId("snackbar-more").click();
+    await snack.getByTestId("snackbar-query").fill(`from:${email}`);
+    // Enter right away, while the count may still be loading: it runs
+    await snack.getByTestId("snackbar-query").press("Enter");
+    await expect(snack).toHaveCount(0);
+    await expect.poll(() => cats(b!)).toEqual([facturas]);
+  });
 });
+

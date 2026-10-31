@@ -41,7 +41,10 @@ export function pageSql(scope: SimilarScope, action: SimilarAction, own: OwnAddr
 /** A subject scope's test on `m.subject_norm`: equality, or (with numbers) the same key. */
 export function subjectSql(subject: string): { sql: string; params: Param[] } {
   const test = subjectTest(subject);
-  return test.kind === "key" ? { sql: "terno_subject_key(m.subject_norm) = ?", params: [test.key] } : { sql: "m.subject_norm = ?", params: [test.normalized] };
+  // the GLOB in C first: only a subject that could have the key costs a JS call (perf gate: offers within a frame)
+  return test.kind === "key"
+    ? { sql: "(m.subject_norm GLOB ? AND terno_subject_key(m.subject_norm) = ?)", params: [test.glob, test.key] }
+    : { sql: "m.subject_norm = ?", params: [test.normalized] };
 }
 
 function page(db: Db, scope: SimilarScope, action: SimilarAction, own: OwnAddresses, cursor: number | null, limit: number) {
