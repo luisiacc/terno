@@ -7,6 +7,7 @@ export function incomingGmailFixture(options: {
   ids: readonly string[];
   raw(id: string, token: string): Response | Promise<Response>;
   labels?: readonly string[];
+  list?(token: string): readonly string[];
   profile?(email: string): unknown;
   history?(): Response;
   observe?(url: URL, token: string): void | Promise<void>;
@@ -36,7 +37,7 @@ export function incomingGmailFixture(options: {
     if (options.observe) await options.observe(url, token);
     if (path === "/profile") return Response.json(options.profile ? options.profile(email) : { historyId: "10", emailAddress: email });
     if (path === "/labels") return Response.json({ labels: [] });
-    if (list) return Response.json({ messages: options.ids.map((id) => ({ id })) });
+    if (list) return Response.json({ messages: (options.list?.(token) ?? options.ids).map((id) => ({ id })) });
     if (history) return options.history ? options.history() : Response.json({ historyId: "10" });
     if (format === "minimal") return Response.json({ id, labelIds: options.labels ?? ["INBOX"] });
     return options.raw(id, token);

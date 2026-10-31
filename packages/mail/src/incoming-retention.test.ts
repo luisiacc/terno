@@ -67,3 +67,12 @@ it("compacts a distinct attachment backing before transfer and charges whole ret
     expect(backing.byteLength).toBe(1024 * 1024);
   } finally { pipeline.close(); }
 });
+
+it("preserves the specified default text policy while enforcing an explicitly supplied result budget", async () => {
+  const text = "Exact body ".repeat(4096);
+  const input = () => ({ kind: "mime" as const, chunks: [new TextEncoder().encode(`Content-Type: text/plain\r\n\r\n${text}\r\n`)] });
+  const complete = await processIncoming(input());
+  expect(complete.message.text === `${text}\n`).toBe(true);
+  expect(complete.message.captureUnavailable).toBeUndefined();
+  await expect(processIncoming(input(), { maxResultTextCodeUnits: 1024 })).rejects.toMatchObject({ code: "result-limit" });
+});
