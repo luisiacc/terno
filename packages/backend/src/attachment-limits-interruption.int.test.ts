@@ -189,7 +189,7 @@ it.each(["401", "offline"] as const)("queued pins survive expiry and managed Gma
   expect(parsed.to).toEqual(to); expect(Buffer.from(parsed.attachments[0]!.bytes!)).toEqual(bytes);
   const retried = await parseRaw(Buffer.from(JSON.parse(t.sends[1]!).raw, "base64url"));
   expect(retried.to).toEqual(to); expect(retried.subject).toBe("Limits witness"); expect(retried.text).toBe("Exact body");
-  expect(retried.messageId).toBe(parsed.messageId); expect(Buffer.from(retried.attachments[0]!.bytes!)).toEqual(bytes);
+  expect(parsed.rfcMessageId).toEqual(expect.any(String)); expect(retried.rfcMessageId).toBe(parsed.rfcMessageId); expect(Buffer.from(retried.attachments[0]!.bytes!)).toEqual(bytes);
   const accepted = snapshot(t); await t.reopen(); await t.backend.runWorker();
   expect(snapshot(t)).toEqual(accepted); expect(t.sends).toHaveLength(2);
   expect((await t.backend.store.ops.get(opId))?.payload_json).toBe(payload);
