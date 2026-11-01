@@ -96,3 +96,35 @@ Only `packages/mail/src/imap.ts` changes in production:
 Actual cost diagnosis: `folder-cost-counts.log`, a finite **non-timing** count diagnostic over the R46 input and exact base/candidate mapping functions. Both produce 10,000 folders/20 groups. Base enters mailbox flag iterators 10,000 times (the existing special-use scan) and calls Set.has 50,000 times. Candidate enters mailbox flag iterators 60,000 times and calls Set.has zero times. The shared case-insensitive matcher thus adds 50,000 iterator entries to this gate's work, including empty flag sets, replacing direct Set lookups; the 20 group flags additionally require case conversion during group checks. The 210,000 path segments are unchanged. The script transpiles only the extracted mapping/helper text for a standalone counting diagnostic; it emits no application/package bundle and reads no unrelated source. These counts identify changed work, **not a measured attribution of the entire 25.54 ms**. No further production optimization was made and no gate was retried. Hold S15 clean/unlanded for Root disposition; no environment waiver or release-green claim.
 
 Exactly one native `codex exec -s read-only -m gpt-6.1-sol` with high reasoning is now reserved to review this entire coherent rebased candidate against `a3d93881f5f8d032af0dd0fb2fa3dd264d9632da`, Standards plus Spec. It is R3 of the original series; R1/R2 remain. If R3 returns P1/P2, no source loop or R4: park only S15 with the findings.
+
+
+## Single R3 outcome and final parked handoff
+
+R3 ran once, native `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high"`, against the entire base-to-candidate range `a3d93881f5f8d032af0dd0fb2fa3dd264d9632da..bbbb02509d10d58ccda70ed0e049d4a2ec4c2512`. Process exited 0. Exact final report `/tmp/terno-s15-followup-prep/review-r3.txt`, full transcript `.log`, argv/birth/PID `.process.json`, prompt `review-r3.prompt`, exit `.exit`. No additional reviewer/model/fallback, R4, test/perf retry or source optimization followed. R1/R2 history remains intact. R3 is consumed.
+
+R3 report (verbatim):
+
+> Reviewed the entire `a3d93881…bbbb0250` candidate. This is the single R3; R1/R2 remain unchanged.
+>
+> **Standards**
+>
+> - **P2 — Previously documented performance hold:** [imap.ts:423](/Users/Luis/.t3/worktrees/emailclient/t3-91186c2e/packages/mail/src/imap.ts:423). The shared matcher adds flag iteration throughout catalog construction. The unchanged 10,000-folder/depth-20 gate measured **25.540792 ms against <16 ms**, violating the required performance gate. Counts establish 50,000 additional iterator entries, but cannot attribute the entire timing difference to them. This confirms the existing hold, not a new discovery. No additional Standards findings.
+>
+> **Spec**
+>
+> - **P2 — Foreground initialization can overwrite newer sync roles:** [imap.ts:688](/Users/Luis/.t3/worktrees/emailclient/t3-91186c2e/packages/mail/src/imap.ts:688). Foreground discovery retains its earlier LIST across `loadCursor()`. If a concurrent sync selects a new role path during that await, line 690 uses the newer mapping only as a preference against the older LIST; line 706 then overwrites it.
+>
+>   Concrete scenario: after reopen, foreground LIST contains duplicate Trash candidates Alpha and Zeta, then cursor loading waits. Zeta is renamed Aardvark; a concurrent sync lists Aardvark first and selects it. Foreground resumes with `previous.trash = Aardvark`, which its old LIST lacks, chooses Alpha, and publishes that stale choice. Trash can consequently move mail to Alpha despite the newer sync selection. This remains an in-scope current-role-state defect. It is established by code inspection; the supplied tests do not execute this interleaving.
+>
+> The supplied evidence supports the sequential pre-sync persistence fix and case-insensitive eligibility fix, including **187/187 direct passes**. Existing unsupported boundaries—UID ambiguity recovery, NIL wire coverage, IndexedDB parity, renderer/browser IMAP and Outlook—remain outside this qualification.
+>
+> **Verdict: P1-P2. Park S15.** One in-scope Spec P2 plus the already documented performance hold. No source changes, tests, builds, retries or additional reviewers were used.
+
+
+Disposition: **PARK ONLY S15, clean and unlanded.** Stop source per the authorized cap. The new Spec P2 is a code-inspection interleaving, not an executed ordinary regression or a proved public-backend reproduction. It must not be described as closed by the 187 passing sequential/direct tests. The documented R46 perf failure independently blocks landing. No finding was waived, no review reset, no claim of release-green.
+
+Source hunks at the reviewed candidate are only `packages/mail/src/imap.ts`: shared eligibility helper at423–430; removal of duplicate local predicates from `customFolders`; persisted-preference selection at687–692; snapshot destinations1273; listed/vanished eligibility1295; authoritative coverage1373. Original test-only preparation rebased as60621898; causal fix commitbbbb0250. This final commit changes documentation only to record R3 and the park; production/test bytes stay exactly as reviewed.
+
+The evidence supports sequential saved-role retention before sync, case-insensitive role/canonical catalog eligibility, existing selectable duplicate/mixed-case special-use controls and the previously supported password-IMAP folder boundary. Root owns row reconciliation. Do not mark S15 complete while these two holds remain. T03 may be considered only within supported password-IMAP arbitrary-folder controls from Plan68/current committed W06, with explicit browser IMAP/Outlook limits; this role fix cannot close broad UID ambiguity, renderer reader selection, NIL wire coverage or IndexedDB parity. No held recovery source/SQL41 was imported.
+
+All owned command supervisors joined and reaped their commands; `final-process-audit.json` found zero matching captured processes alive. Default incoming worker was initially absent and is restored to absent. The named worker implementation/builder and MIME inputs are unchanged between the original prep base and actual new main; no stale changed worker source is substituted. All reports stay in the evidence directory; no existing report was overwritten. No user/peer/WIP/main/worklist/protected-plan edit, push, landing or remote endpoint occurred. Root handles any later serial rebase, targeted retest, disposition and landing.
