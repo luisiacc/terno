@@ -8,6 +8,7 @@ it("keeps full-message and section construction outside the static reader import
     const imports = [...source.matchAll(/^import\s+[\s\S]*?\sfrom\s+["']([^"']+)["'];/gm)].map((match) => match[1]);
     expect(imports).not.toContain("./full-message");
     expect(imports).not.toContain("./mail-sections");
+    expect(imports).not.toContain("./mail-graphic");
   }
   expect(body).toContain('lazy(() => import("./full-message"))');
 });

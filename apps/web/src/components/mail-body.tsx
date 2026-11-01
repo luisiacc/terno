@@ -1,8 +1,8 @@
 import type { AttachmentInfo } from "@terno/core";
 import DOMPurify from "dompurify";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
+import { FullMessageBoundary, MailReaderStatus, useMailReaderView } from "./mail-reader-view";
 import { ImageOff } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
@@ -53,10 +53,14 @@ function paint(root: HTMLElement, look: MailLook): void {
   root.dataset.mail = look.mail;
 }
 
-export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean }
+export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
 
-export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight }: HtmlBodyProps) {
+export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const loaded = useRef<{ markup: string; doc: Document; tabs: WeakMap<Node, string | null> } | null>(null);
+  const hydrateRef = useRef(hydrate);
+  const errorRef = useRef(onHydrationError);
+  useLayoutEffect(() => { hydrateRef.current = hydrate; errorRef.current = onHydrationError; }, [hydrate, onHydrationError]);
   const heightRef = useRef(onSectionHeight);
   useLayoutEffect(() => { heightRef.current = onSectionHeight; }, [onSectionHeight]);
   const exitRef = useRef(onExit);
@@ -91,18 +95,32 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
     return () => { active = false; };
   }, [cidAllowed, accountId, cidKey, clean]);
   const visibleHtml = cidAllowed && cidResult?.key === cidKey ? cidResult.html : clean;
-  const paper = appearance === "paper" || hasOwnColors(clean);
+  const paper = appearance === "paper" || (!section && hasOwnColors(clean));
   // the colors, as variables on the document's root: a theme or "HTML mail" change repaints the loaded mail in place
   const look = useMemo(() => mailLook(paper, mode), [paper, themeKey, mode]);
   // the document is rebuilt only when what it shows changes (the mail, its remote content); its first paint has the
   // colors of that moment. A rebuild reloads the frame (blank, then re-measured): theming must never cause one.
   const [built, setBuilt] = useState({ html: visibleHtml, allowRemote, look });
   if (built.html !== visibleHtml || built.allowRemote !== allowRemote) setBuilt({ html: visibleHtml, allowRemote, look });
+  const version = useRef(0);
+  const sourceId = useMemo(() => String(++version.current), [built]);
   const doc = useMemo(
     () =>
-      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow>${built.html}</div></body></html>`,
-    [built, section],
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow data-terno-document="${sourceId}">${built.html}</div></body></html>`,
+    [built, section, sourceId],
   );
+  const source = useCallback((signal: AbortSignal) => new Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>((resolve, reject) => {
+    const frame = ref.current;
+    const cleanup = () => { frame?.removeEventListener("load", check); signal.removeEventListener("abort", abort); };
+    const abort = () => { cleanup(); reject(signal.reason); };
+    const check = () => {
+      const current = loaded.current;
+      const root = current?.doc.querySelector<HTMLElement>("[data-terno-flow]");
+      if (root && current?.markup === sourceId && current.doc === frame?.contentDocument) { cleanup(); resolve({ root, tabs: current.tabs }); }
+    };
+    if (signal.aborted) { abort(); return; }
+    frame?.addEventListener("load", check); signal.addEventListener("abort", abort, { once: true }); check();
+  }), [sourceId]);
   // the loaded document follows the colors (and gets them again once a rebuilt one loads)
   const lookRef = useRef(look);
   useEffect(() => {
@@ -111,114 +129,126 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
     if (root) paint(root, look);
   }, [look]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const frame = ref.current;
     if (!frame) return;
     // everything attached to the loaded document goes when the document or the frame does
     let active = true;
     let observer: ResizeObserver | null = null;
     let detach: (() => void) | null = null;
+    let hydration: AbortController | null = null;
     const onLoad = () => {
+      hydration?.abort();
       observer?.disconnect();
       detach?.();
       const d = frame.contentDocument;
       const flow = d?.querySelector<HTMLElement>("[data-terno-flow]");
       if (!d || !flow) return;
-      paint(d.documentElement, lookRef.current);
-      if (section) for (const svg of d.querySelectorAll<SVGSVGElement>("svg")) {
-        const bounds = svg.getBBox();
-        if (bounds.width > 0 && bounds.height > 0 && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
-      }
-      const tabStops = [...d.querySelectorAll<HTMLElement>("a[href], area[href], button, input, select, textarea, [tabindex]")].map((element) => ({ element, tab: element.getAttribute("tabindex") }));
-      const styled = [...d.body.querySelectorAll<HTMLElement>("[style]")];
-      const positioned = styled.filter((element) => ["absolute", "fixed"].includes(getComputedStyle(element).position));
-      const cropped = styled.filter((element) => {
-        const overflow = getComputedStyle(element).overflowY;
-        if (overflow === "auto" || overflow === "scroll") element.style.setProperty("overflow-y", "clip", "important");
-        return overflow === "hidden" || overflow === "clip" || overflow === "auto" || overflow === "scroll";
-      });
-      // Reserve media growth before displaying a section, so late loads/width changes
-      // cannot force repartitioning underneath a native text selection.
-      const mediaAllowance = section ? [...d.querySelectorAll("img,svg,video,canvas,input,select")].filter((element) => !element.parentElement?.closest("svg")).length * 4096 : 0;
-      const clippedParents = new Set(cropped);
-      const disabledStops = new Map<HTMLElement, string | null>();
-      // Measure the flow independently of the preview box, including positioned overflow.
-      // Reset that box first so changed bodies and image reflows can shrink; round up fractional pixels.
-      const measure = () => {
+      const finish = () => {
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
-        if (!section) d.body.style.height = "auto";
-        const padding = getComputedStyle(d.body);
-        const content = Math.ceil(Math.max(Math.max(flow.getBoundingClientRect().height, flow.scrollHeight) + Number.parseFloat(padding.paddingTop) + Number.parseFloat(padding.paddingBottom), d.body.scrollHeight, positioned.reduce((bottom, element) => Math.max(bottom, element.getBoundingClientRect().bottom), 0)));
-        if (section && heightRef.current?.(content + mediaAllowance) === false) { setHeight(120); return; }
-        if (!section) d.body.style.height = `${Math.min(MAX_HEIGHT, content)}px`;
-        const clipped = !section && (content > MAX_HEIGHT || cropped.some((element) => element.scrollHeight > element.clientHeight));
-        setClipping((previous) => previous.source === clean && previous.clipped === clipped ? previous : { source: clean, clipped });
-        if (!section && clipped) {
-          const boxes = new Map<HTMLElement, DOMRect>();
-          for (const { element, tab } of tabStops) {
-            const rect = element.getBoundingClientRect();
-            let hidden = rect.top >= MAX_HEIGHT;
-            for (let parent = element.parentElement; !hidden && parent; parent = parent.parentElement) {
-              if (!clippedParents.has(parent)) continue;
-              let box = boxes.get(parent);
-              if (!box) { box = parent.getBoundingClientRect(); boxes.set(parent, box); }
-              hidden = rect.top >= box.bottom;
+        paint(d.documentElement, lookRef.current);
+        if (section) for (const svg of d.querySelectorAll<SVGSVGElement>("svg:not(svg *)")) {
+          const bounds = svg.getBBox();
+          if (bounds.width > 0 && bounds.height > 0 && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+        }
+        const tabStops = section ? [] : [...d.querySelectorAll<HTMLElement>("a[href], area[href], button, input, select, textarea, [tabindex]")].map((element) => ({ element, tab: element.getAttribute("tabindex") }));
+        loaded.current = { markup: flow.dataset.ternoDocument!, doc: d, tabs: new WeakMap(tabStops.map(({ element, tab }) => [element, tab])) };
+        const styled = [...d.body.querySelectorAll<HTMLElement>(section ? "[style]:not(svg *)" : "[style]")];
+        const positioned = styled.filter((element) => ["absolute", "fixed"].includes(getComputedStyle(element).position));
+        const cropped = styled.filter((element) => {
+          const overflow = getComputedStyle(element).overflowY;
+          if (overflow === "auto" || overflow === "scroll") element.style.setProperty("overflow-y", "clip", "important");
+          return overflow === "hidden" || overflow === "clip" || overflow === "auto" || overflow === "scroll";
+        });
+        // Reserve media growth before displaying a section, so late loads/width changes
+        // cannot force repartitioning underneath a native text selection.
+        const mediaAllowance = section ? d.querySelectorAll("img:not(svg *),svg:not(svg *),video:not(svg *),canvas:not(svg *),input:not(svg *),select:not(svg *)").length * 4096 : 0;
+        const clippedParents = new Set(cropped);
+        const disabledStops = new Map<HTMLElement, string | null>();
+        // Measure the flow independently of the preview box, including positioned overflow.
+        // Reset that box first so changed bodies and image reflows can shrink; round up fractional pixels.
+        const measure = () => {
+          if (!active || frame.contentDocument !== d || !flow.isConnected) return;
+          if (!section) d.body.style.height = "auto";
+          const padding = getComputedStyle(d.body);
+          const content = Math.ceil(Math.max(Math.max(flow.getBoundingClientRect().height, flow.scrollHeight) + Number.parseFloat(padding.paddingTop) + Number.parseFloat(padding.paddingBottom), d.body.scrollHeight, positioned.reduce((bottom, element) => Math.max(bottom, element.getBoundingClientRect().bottom), 0)));
+          if (section && heightRef.current?.(content + mediaAllowance) === false) { setHeight(120); return; }
+          if (!section) d.body.style.height = `${Math.min(MAX_HEIGHT, content)}px`;
+          const clipped = !section && (content > MAX_HEIGHT || cropped.some((element) => element.scrollHeight > element.clientHeight));
+          setClipping((previous) => previous.source === clean && previous.clipped === clipped ? previous : { source: clean, clipped });
+          if (!section && clipped) {
+            const boxes = new Map<HTMLElement, DOMRect>();
+            for (const { element, tab } of tabStops) {
+              const rect = element.getBoundingClientRect();
+              let hidden = rect.top >= MAX_HEIGHT;
+              for (let parent = element.parentElement; !hidden && parent; parent = parent.parentElement) {
+                if (!clippedParents.has(parent)) continue;
+                let box = boxes.get(parent);
+                if (!box) { box = parent.getBoundingClientRect(); boxes.set(parent, box); }
+                hidden = rect.top >= box.bottom;
+              }
+              if (hidden) { element.setAttribute("tabindex", "-1"); disabledStops.set(element, tab); }
+              else if (disabledStops.has(element)) {
+                if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab);
+                disabledStops.delete(element);
+              }
             }
-            if (hidden) { element.setAttribute("tabindex", "-1"); disabledStops.set(element, tab); }
-            else if (disabledStops.has(element)) {
-              if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab);
-              disabledStops.delete(element);
-            }
+          } else if (!section) {
+            for (const [element, tab] of disabledStops) { if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab); }
+            disabledStops.clear();
           }
-        } else if (!section) {
-          for (const [element, tab] of disabledStops) { if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab); }
-          disabledStops.clear();
-        }
-        const h = section ? content : Math.min(MAX_HEIGHT, content);
-        if (!section) rememberHeight(messageId, h);
-        setHeight(h);
-      };
-      measure();
-      d.addEventListener("load", measure, true);
-      observer = new ResizeObserver(measure);
-      observer.observe(d.documentElement);
-      const onClick = (e: MouseEvent) => {
-        const a = (e.target as Element).closest("a");
-        if (a?.href) {
+          const h = section ? content : Math.min(MAX_HEIGHT, content);
+          if (!section) rememberHeight(messageId, h);
+          setHeight(h);
+        };
+        measure();
+        d.addEventListener("load", measure, true);
+        observer = new ResizeObserver(measure);
+        observer.observe(d.documentElement);
+        const onClick = (e: MouseEvent) => {
+          const a = (e.target as Element).closest("a");
+          if (a?.href) {
+            e.preventDefault();
+            openLink(a.href);
+          }
+        };
+        // a right-click inside the mail doesn't leave its frame: replayed on the frame, where the message's menu listens
+        const onMenu = (e: MouseEvent) => {
+          if (wantsNativeMenu(e.target, d.getSelection()?.toString() ?? "")) return;
           e.preventDefault();
-          openLink(a.href);
-        }
+          const r = frame.getBoundingClientRect();
+          frame.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + e.clientX, clientY: r.top + e.clientY, button: 2 }));
+        };
+        d.addEventListener("click", onClick);
+        d.addEventListener("contextmenu", onMenu);
+        d.addEventListener("keydown", forwardPrintKey);
+        // plan 24: Back from List's page (Esc, ⌘[, the mouse's side buttons) works with focus in the mail too
+        const onNavKey = (event: KeyboardEvent) => {
+          if (section && event.key === "Escape" && !event.isComposing && !event.defaultPrevented) {
+            event.preventDefault(); event.stopImmediatePropagation(); exitRef.current?.();
+          } else forwardNavKey(event);
+        };
+        d.addEventListener("keydown", onNavKey);
+        d.addEventListener("mouseup", forwardMouseNav, true);
+        detach = () => {
+          d.removeEventListener("load", measure, true);
+          d.removeEventListener("click", onClick);
+          d.removeEventListener("contextmenu", onMenu);
+          d.removeEventListener("keydown", forwardPrintKey);
+          d.removeEventListener("keydown", onNavKey);
+          d.removeEventListener("mouseup", forwardMouseNav, true);
+        };
       };
-      // a right-click inside the mail doesn't leave its frame: replayed on the frame, where the message's menu listens
-      const onMenu = (e: MouseEvent) => {
-        if (wantsNativeMenu(e.target, d.getSelection()?.toString() ?? "")) return;
-        e.preventDefault();
-        const r = frame.getBoundingClientRect();
-        frame.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + e.clientX, clientY: r.top + e.clientY, button: 2 }));
-      };
-      d.addEventListener("click", onClick);
-      d.addEventListener("contextmenu", onMenu);
-      d.addEventListener("keydown", forwardPrintKey);
-      // plan 24: Back from List's page (Esc, ⌘[, the mouse's side buttons) works with focus in the mail too
-      const onNavKey = (event: KeyboardEvent) => {
-        if (section && event.key === "Escape" && !event.isComposing && !event.defaultPrevented) {
-          event.preventDefault(); event.stopImmediatePropagation(); exitRef.current?.();
-        } else forwardNavKey(event);
-      };
-      d.addEventListener("keydown", onNavKey);
-      d.addEventListener("mouseup", forwardMouseNav, true);
-      detach = () => {
-        d.removeEventListener("load", measure, true);
-        d.removeEventListener("click", onClick);
-        d.removeEventListener("contextmenu", onMenu);
-        d.removeEventListener("keydown", forwardPrintKey);
-        d.removeEventListener("keydown", onNavKey);
-        d.removeEventListener("mouseup", forwardMouseNav, true);
-      };
+      if (section && hydrateRef.current) {
+        hydration = new AbortController();
+        const cancellation = hydration;
+        void hydrateRef.current(d, cancellation.signal).then(finish, () => { if (!cancellation.signal.aborted) errorRef.current?.(); });
+      } else finish();
     };
     frame.addEventListener("load", onLoad);
     return () => {
       active = false;
+      hydration?.abort();
       frame.removeEventListener("load", onLoad);
       observer?.disconnect();
       detach?.();
@@ -258,8 +288,8 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
       }}>{t("reader.full.show")}</button>}
       {view?.active === lease && view.target && createPortal(
         <FullMessageBoundary onClose={() => view.close(lease)} key={opening}>
-          <Suspense fallback={<section className="flex h-full flex-col p-3.5"><button type="button" onClick={() => view.close(lease)}>{t("reader.full.back")}</button><p role="status">{t("reader.full.loading")}</p></section>}>
-            <FullMessage html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
+          <Suspense fallback={<MailReaderStatus onClose={() => view.close(lease)} />}>
+            <FullMessage source={source} html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
           </Suspense>
         </FullMessageBoundary>, view.target)}
     </div>

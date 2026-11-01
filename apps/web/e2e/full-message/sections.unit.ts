@@ -88,3 +88,60 @@ it("bounds repeated table context globally without removing original header payl
   }
   expect(bodies.map((body) => body.textContent).join("")).toBe('h'.repeat(900) + 'x'.repeat(9000));
 });
+it("prepares 30000 sibling breaks with linear indexed sibling work and exact leaf order", () => {
+  const source = '<p>First' + '<br>'.repeat(30000) + 'Last</p>';
+  const original = Array.prototype.indexOf;
+  let probes = 0;
+  Array.prototype.indexOf = function (search: unknown, from?: number) {
+    if (!(this instanceof NodeList)) return original.call(this, search, from);
+    const observed = new Proxy(this, { get(target, key) {
+      if (typeof key === "string" && /^\d+$/.test(key) && ++probes > 90000) throw new Error("Sibling indexing exceeded three probes per payload leaf");
+      return Reflect.get(target, key, target);
+    } });
+    return original.call(observed, search, from);
+  };
+  let sections: ReturnType<typeof mailSections>;
+  try { sections = mailSections(source); } finally { Array.prototype.indexOf = original; }
+  expect(probes).toBeLessThanOrEqual(90000);
+  const body = parsed(Array.from({ length: sections!.count }, (_, i) => sections!.html(i)).join(""));
+  expect(body.querySelectorAll("br")).toHaveLength(30000);
+  expect(body.textContent).toBe("FirstLast");
+});
+it("retains textarea text and its background asset exactly once through reflow", () => {
+  const image = 'data:image/png;base64,AAAA';
+  const source = `<textarea style="height:30000px;background-image:url(${image})">Exact &lt;textarea&gt; text</textarea>`;
+  const sections = mailSections(source);
+  const bodies = Array.from({ length: sections.count }, (_, i) => parsed(sections.html(i)));
+  expect(bodies.map((body) => body.textContent).join("")).toBe("Exact <textarea> text");
+  const images = bodies.flatMap((body) => [...body.querySelectorAll("img")]);
+  expect(images).toHaveLength(1);
+  expect(images[0]!.getAttribute("src")).toBe(image);
+  expect(bodies[0]!.querySelector("pre")!.style.backgroundImage).toContain(image);
+});
+it("continues every partially cloned list when its range also includes outside content", () => {
+  for (const [attributes, value, expected] of [['start="10"', '', '11'], ['start="10" reversed', '', '9'], ['start="10"', 'value="20"', '21']]) {
+    const sections = mailSections(`<ol ${attributes}><li ${value}>${'x'.repeat(4096)}</li><li>Second</li></ol><p>Tail</p>`);
+    const body = parsed(sections.html(1));
+    expect(body.textContent).toBe("SecondTail");
+    expect(body.querySelector("ol")!.getAttribute("start")).toBe(expected);
+    expect(body.querySelector("li")!.textContent).toBe("Second");
+  }
+});
+it("indexes source tables once while rendering consecutive sections", () => {
+  const original = DocumentFragment.prototype.querySelectorAll;
+  const roots = new WeakSet<DocumentFragment>();
+  let found = false;
+  let lookups = 0;
+  DocumentFragment.prototype.querySelectorAll = function (selector: string) {
+    if (selector === "table") {
+      if (!found) { roots.add(this); found = true; }
+      if (roots.has(this)) lookups++;
+    }
+    return original.call(this, selector);
+  };
+  try {
+    const sections = mailSections('<p>' + '<br>'.repeat(130) + '</p>');
+    for (let index = 0; index < sections.count; index++) sections.html(index);
+    expect(lookups).toBe(1);
+  } finally { DocumentFragment.prototype.querySelectorAll = original; }
+});

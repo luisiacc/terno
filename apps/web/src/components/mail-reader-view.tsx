@@ -1,6 +1,7 @@
 import { registerMailReaderBack } from "./mail-reader-back";
 import { t } from "@terno/i18n";
 import { Component, createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { getApp } from "~/state/app";
 import { cancelReaderScroll } from "~/lib/reader-scroll";
 import { forwardPrintKey } from "~/lib/print-open";
 
@@ -14,6 +15,7 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const source = useRef<HTMLDivElement>(null);
   const returning = useRef<Opening | null>(null);
+  const escape = useRef<((event: KeyboardEvent) => void) | null>(null);
   const superseded = Boolean(opening && focusRequest !== null && opening.focusRequest !== focusRequest);
   const active = !superseded && opening?.owner === identity ? opening : null;
   const close = useCallback((lease: object, restore = true) => {
@@ -50,24 +52,32 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
   }, [active, identity]);
   useLayoutEffect(() => {
     if (!active) return;
+    const retained = new WeakSet<KeyboardEvent>();
+    const capture = (event: KeyboardEvent) => {
+      const state = getApp();
+      if (state.menuOpen || state.dialog !== null || (event.target as Element | null)?.closest?.('[role="menu"], [role="dialog"], [role="alertdialog"]')) retained.add(event);
+    };
     const keys = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (retained.has(event)) { event.stopPropagation(); return; }
+      if (document.activeElement !== document.body && !target?.contains(document.activeElement)) return;
       forwardPrintKey(event);
       if (event.defaultPrevented) return;
       event.preventDefault(); event.stopImmediatePropagation();
       close(active.lease);
     };
     const unregisterBack = registerMailReaderBack(() => close(active.lease));
-    window.addEventListener("keydown", keys, true);
+    window.addEventListener("keydown", capture, true);
+    escape.current = keys;
     const observer = new MutationObserver(() => {
       if (!active.trigger.isConnected || active.trigger.closest('[data-state="closed"]')) close(active.lease, false);
     });
     if (source.current) observer.observe(source.current, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-state"] });
-    return () => { unregisterBack(); window.removeEventListener("keydown", keys, true); observer.disconnect(); };
-  }, [active, close]);
+    return () => { unregisterBack(); window.removeEventListener("keydown", capture, true); if (escape.current === keys) escape.current = null; observer.disconnect(); };
+  }, [active, close, target]);
   return (
     <Context.Provider value={{ threadId: typeof identity === "number" ? identity : null, active: active?.lease ?? null, target, open, close }}>
-      <div className="relative h-full min-h-0">
+      <div className="relative h-full min-h-0" onKeyDown={(event) => escape.current?.(event.nativeEvent)}>
         <div ref={source} inert={Boolean(active)} aria-hidden={active ? true : undefined} className="h-full min-h-0" style={{ visibility: active ? "hidden" : undefined }}>{children}</div>
         <div ref={setTarget} className={active ? "absolute inset-0 flex min-h-0 flex-col bg-background" : "hidden"} data-full-message-host />
       </div>
@@ -75,10 +85,16 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
   );
 }
 
+export function MailReaderStatus({ onClose, failed = false }: { onClose(): void; failed?: boolean }) {
+  const back = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => { back.current?.focus({ preventScroll: true }); }, []);
+  return <section className="flex h-full flex-col p-3.5"><button ref={back} type="button" className="self-start rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={onClose}>{t("reader.full.back")}</button><p role={failed ? "alert" : "status"}>{t(failed ? "reader.full.error" : "reader.full.loading")}</p></section>;
+}
+
 export class FullMessageBoundary extends Component<{ onClose(): void; children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   override render() {
-    return this.state.failed ? <section className="flex h-full flex-col p-3.5"><button type="button" onClick={this.props.onClose}>{t("reader.full.back")}</button><p role="alert">{t("reader.full.error")}</p></section> : this.props.children;
+    return this.state.failed ? <MailReaderStatus onClose={this.props.onClose} failed /> : this.props.children;
   }
 }

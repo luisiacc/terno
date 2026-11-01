@@ -2,13 +2,21 @@
 const TEXT_BUDGET = 4096;
 const NODE_BUDGET = 64;
 const APPEARANCE = ["color", "background-color", "background-image", "background-position", "background-size", "background-repeat", "font-family", "font-weight", "font-style", "text-decoration", "text-align"];
+export const SVG_APPEARANCE = ["color", "font-family", "font-size", "font-style", "font-weight", "font-variant", "font-stretch", "letter-spacing", "word-spacing", "text-anchor", "dominant-baseline", "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "paint-order", "color-interpolation", "color-interpolation-filters", "filter", "clip-path", "mask", "opacity"];
 interface Point { node: Node; offset: number }
 interface Section { start: Point; end: Point; offset: number }
 
-export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
+export function mailSections(clean: string | DocumentFragment, nodeBudget = NODE_BUDGET) {
   const template = document.createElement("template");
-  template.innerHTML = clean;
+  if (typeof clean === "string") template.innerHTML = clean;
+  else template.content.appendChild(clean.cloneNode(true));
   const root = template.content;
+  for (const element of root.querySelectorAll("textarea")) {
+    const text = root.ownerDocument.createElement("pre");
+    for (const { name, value } of element.attributes) text.setAttribute(name, value);
+    text.textContent = element.textContent;
+    element.replaceWith(text);
+  }
   // Background assets are payload, not duplicated ancestor context on every section.
   for (const element of root.querySelectorAll<HTMLElement>("[style], [background]")) {
     const style = element.style;
@@ -36,6 +44,10 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
     }
     return ordinals.get(item)!;
   };
+  for (const list of root.querySelectorAll("ol")) {
+    for (const child of list.children) if (child.localName === "li") child.setAttribute("data-terno-ordinal", String(ordinal(list, child)));
+  }
+  const sourceTables = [...root.querySelectorAll("table")];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ALL, {
     acceptNode(node) {
       if (node.parentElement?.closest("svg")) return NodeFilter.FILTER_REJECT;
@@ -50,6 +62,8 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
     if (start && end) sections.push({ start, end, offset: beginning });
     start = end = null; chars = nodes = 0;
   };
+  const offsets = new WeakMap<Node, number>();
+  const indexed = new WeakSet<Node>();
   let node: Node | null;
   while ((node = walker.nextNode())) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -67,7 +81,12 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
     } else {
       if (nodes === nodeBudget) flush();
       const parent = node.parentNode!;
-      const offset = Array.prototype.indexOf.call(parent.childNodes, node) as number;
+      if (!indexed.has(parent)) {
+        let index = 0;
+        for (let child = parent.firstChild; child; child = child.nextSibling) offsets.set(child, index++);
+        indexed.add(parent);
+      }
+      const offset = offsets.get(node)!;
       if (!start) { start = { node: parent, offset }; beginning = position; }
       end = { node: parent, offset: offset + 1 }; nodes++; position++;
     }
@@ -91,17 +110,17 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
       if (ancestor.nodeType !== Node.ELEMENT_NODE) ancestor = ancestor.parentNode!;
       while (ancestor && ancestor !== root) {
         const wrapper = ancestor.cloneNode(false) as Element;
-        if (wrapper.localName === "ol") {
-          const list = ancestor as HTMLOListElement;
-          let child = part.start.node.nodeType === Node.ELEMENT_NODE ? part.start.node as Element : part.start.node.parentElement;
-          while (child && child.parentElement !== ancestor) child = child.parentElement;
-          if (child?.localName === "li") wrapper.setAttribute("start", String(ordinal(list, child)));
-        }
         wrapper.appendChild(fragment); fragment = wrapper; ancestor = ancestor.parentNode!;
       }
       const output = document.createElement("template");
       output.content.appendChild(fragment);
-      const tables = [...root.querySelectorAll("table")].filter((table) => range.intersectsNode(table));
+      for (const list of output.content.querySelectorAll("ol")) {
+        const first = [...list.children].find((child) => child.localName === "li");
+        const value = first?.getAttribute("data-terno-ordinal");
+        if (value !== null && value !== undefined) list.setAttribute("start", value);
+      }
+      for (const item of output.content.querySelectorAll("[data-terno-ordinal]")) item.removeAttribute("data-terno-ordinal");
+      const tables = sourceTables.filter((table) => range.intersectsNode(table));
       let contextChars = 512; let contextNodes = 32;
       for (const [i, table] of [...output.content.querySelectorAll("table")].entries()) {
         const heading = tables[i]?.querySelector(":scope > thead");
@@ -115,13 +134,10 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
         }
       }
       for (const element of output.content.querySelectorAll<HTMLElement>("*")) {
-        if (element.localName === "textarea") {
-          const text = output.content.ownerDocument.createElement("pre");
-          text.textContent = element.textContent; element.replaceWith(text); continue;
-        }
         if (element.closest("svg") && element.localName !== "svg") continue;
         const style = element.style;
-        const retained = APPEARANCE.map((name) => [name, style.getPropertyValue(name)] as const);
+        const properties = element.localName === "svg" ? [...APPEARANCE, ...SVG_APPEARANCE, ...Array.from(style)].filter((name) => APPEARANCE.includes(name) || SVG_APPEARANCE.includes(name) || name.startsWith("--")) : APPEARANCE;
+        const retained = properties.map((name) => [name, style.getPropertyValue(name)] as const);
         element.removeAttribute("style");
         for (const name of ["height", "width", "depth", "voffset", "lspace", "mathsize", "minsize", "maxsize", "rowspacing", "columnspacing", "framespacing"]) element.removeAttribute(name);
         for (const [name, value] of retained) if (value) style.setProperty(name, value);

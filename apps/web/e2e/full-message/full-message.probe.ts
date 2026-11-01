@@ -1,3 +1,5 @@
+import { inflateSync } from "node:zlib";
+import { existsSync, renameSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -179,12 +181,13 @@ test("heavy modules stay unloaded until opened; source replacement shrinks the p
   page.on("request", (request) => loaded.push(new URL(request.url()).pathname));
   await page.goto("/e2e/full-message/index.html");
   await expect(show(page)).toBeVisible();
-  expect(loaded.filter((path) => /\/src\/components\/(full-message|mail-sections)\.tsx?$/.test(path))).toEqual([]);
+  expect(loaded.filter((path) => /\/src\/components\/(full-message|mail-sections|mail-graphic)\.tsx?$/.test(path))).toEqual([]);
   await show(page).click();
   await expect(full(page)).toBeVisible();
   await expect(full(page)).toHaveAttribute("aria-busy", "false");
   expect(loaded).toContain("/src/components/full-message.tsx");
   expect(loaded).toContain("/src/components/mail-sections.ts");
+  expect(loaded).toContain("/src/components/mail-graphic.ts");
   await page.keyboard.press("Escape");
   await page.evaluate(() => (window as unknown as Fixture).fullFixture.replace());
   await expect(show(page)).toHaveCount(0);
@@ -368,4 +371,140 @@ test("the full-width preview affordance aligns in the actual reader in both them
     expect(await frame.evaluate((element) => element.getBoundingClientRect().width === element.parentElement!.getBoundingClientRect().width)).toBe(true);
     await page.screenshot({ path: `/tmp/terno-w11-full-61640/preview-${mode}.png` });
   }
+});
+
+test("a 100000-node SVG never takes an atomic deep-clone expansion on opening", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?large-svg");
+  await expect(show(page)).toBeVisible();
+  await page.evaluate(() => {
+    const original = Range.prototype.cloneContents;
+    Object.assign(window, { largestGraphicClone: 0 });
+    Range.prototype.cloneContents = function () {
+      const result = original.call(this);
+      const count = result.querySelectorAll("svg *").length;
+      const state = window as unknown as { largestGraphicClone: number };
+      state.largestGraphicClone = Math.max(state.largestGraphicClone, count);
+      return result;
+    };
+  });
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  expect(await page.evaluate(() => (window as unknown as { largestGraphicClone: number }).largestGraphicClone)).toBeLessThanOrEqual(64);
+  await expect(mail(page).locator("svg path")).toHaveCount(100000);
+  await expect(mail(page).locator("svg text")).toHaveText("Complete graphic label");
+});
+
+for (const query of ["svg-reference", "svg-inherited"]) test(`a later SVG renders its earlier pattern dependency (${query})`, async ({ page }) => {
+  await page.goto(`/e2e/full-message/index.html?${query}`);
+  await expect(show(page)).toBeVisible();
+  const control = await page.locator("iframe").contentFrame().locator("#control-pixel").boundingBox();
+  const prefix = `/tmp/terno-w11-r1-fixes-61640/cross-reference-${query}`;
+  for (const kind of ["control", "result"]) { const path = `${prefix}-${kind}.png`; if (existsSync(path)) renameSync(path, `${path}.${Date.now()}.archive`); }
+  const color = (png: Buffer) => {
+    const chunks: Buffer[] = [];
+    for (let offset = 8; offset < png.length;) {
+      const length = png.readUInt32BE(offset);
+      if (png.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    // A 1×1 first-row PNG has zero predictors under every PNG filter.
+    return [...inflateSync(Buffer.concat(chunks)).subarray(1, 4)];
+  };
+  const expected = await page.screenshot({ path: `${prefix}-control.png`, clip: { x: control!.x + control!.width / 2, y: control!.y + control!.height / 2, width: 1, height: 1 } });
+  expect(color(expected)).toEqual([0, 255, 0]);
+  await show(page).click();
+  for (;;) {
+    await expect(full(page)).toHaveAttribute("aria-busy", "false");
+    if (await mail(page).locator("#referenced-pixel").count()) break;
+    await full(page).getByRole("button", { name: "Next section", exact: true }).click();
+  }
+  await mail(page).locator("#referenced-pixel").scrollIntoViewIfNeeded();
+  const actual = await mail(page).locator("#referenced-pixel").boundingBox();
+  expect(color(await page.screenshot({ path: `${prefix}-result.png`, clip: { x: actual!.x + actual!.width / 2, y: actual!.y + actual!.height / 2, width: 1, height: 1 } }))).toEqual(color(expected));
+});
+
+test("Escape dismisses the full-reader context menu before returning to the conversation", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?reader&keyboard");
+  await page.evaluate(async () => { const path = "/src/state/app.ts"; (await import(path)).setApp({ checked: new Set([1]), anchorId: 1 }); });
+  const cursor = await page.evaluate(() => (window as unknown as Fixture).fullFixture.cursor());
+  const trigger = show(page);
+  await trigger.scrollIntoViewIfNeeded(); await trigger.focus();
+  const position = await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop);
+  await page.keyboard.press("Enter");
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await mail(page).locator("p").first().click({ button: "right" });
+  const menu = page.getByTestId("message-menu");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(full(page)).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as Fixture).fullFixture.cursor())).toEqual(cursor);
+  expect(await page.evaluate(() => document.activeElement?.closest('[data-full-message-host]') !== null)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(full(page)).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop)).toBe(position);
+});
+
+test("a consumed or composing Escape preserves full-reader focus ownership", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?reader");
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await full(page).evaluate((element) => element.addEventListener("keydown", (event) => event.preventDefault(), { once: true }));
+  await page.keyboard.press("Escape");
+  await expect(full(page)).toBeVisible();
+  await full(page).evaluate((element) => element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, isComposing: true })));
+  await expect(full(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(full(page)).toHaveCount(0);
+});
+
+test("the unchanged print document produces a bounded native Chromium PDF", async ({ page, context }) => {
+  await page.goto("/e2e/full-message/index.html?reader");
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await mail(page).locator("p").first().click({ button: "right" });
+  await page.getByTestId("message-menu-print").click();
+  const preview = page.getByTestId("print-preview");
+  await expect(preview).toHaveAttribute("data-ready", "true");
+  const source = await preview.evaluate((element: HTMLIFrameElement) => element.srcdoc);
+  const output = "/tmp/terno-w11-r1-fixes-61640/full-message-print.pdf";
+  if (existsSync(output)) renameSync(output, `${output}.${Date.now()}.archive`);
+  const printed = await context.newPage();
+  try {
+    await blockNetwork(printed);
+    await printed.setContent(source, { waitUntil: "load" });
+    const pdf = await printed.pdf({ path: output, format: "A4", printBackground: true });
+    expect(pdf.byteLength).toBeGreaterThan(1000);
+    expect(pdf.byteLength).toBeLessThan(5_000_000);
+  } finally { await printed.close(); }
+});
+
+test("Escape returns before the actual global keyboard can change the reader cursor", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?reader&keyboard");
+  await page.evaluate(async () => { const path = "/src/state/app.ts"; (await import(path)).setApp({ checked: new Set([1]), anchorId: 1 }); });
+  const cursor = await page.evaluate(() => (window as unknown as Fixture).fullFixture.cursor());
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await page.keyboard.press("Escape");
+  await expect(full(page)).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as Fixture).fullFixture.cursor())).toEqual(cursor);
+  await expect(show(page)).toBeFocused();
+});
+
+for (const query of ["svg-theme", "svg-theme-link"]) test(`staged SVG paint follows an in-place reader theme repaint (${query})`, async ({ page }) => {
+  await page.goto(`/e2e/full-message/index.html?${query}`);
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  const frame = full(page).locator("iframe");
+  const before = await frame.evaluate((element: HTMLIFrameElement) => { Object.assign(window, { graphicDocument: element.contentDocument }); return getComputedStyle(element.contentDocument!.body).color; });
+  await page.evaluate(async () => { const path = "/src/lib/appearance.ts"; (await import(path)).applyAppearance({ theme: "dark", design: "macos", lightTheme: "design", darkTheme: "design", motionMs: 0, customThemes: [] }); });
+  await expect.poll(() => frame.evaluate((element: HTMLIFrameElement) => getComputedStyle(element.contentDocument!.body).color)).not.toBe(before);
+  const state = await frame.evaluate((element: HTMLIFrameElement) => {
+    const doc = element.contentDocument!;
+    const graphic = doc.querySelector("svg")!;
+    return { color: getComputedStyle(graphic).color, inherited: getComputedStyle(graphic.parentElement!).color, same: doc === (window as unknown as { graphicDocument: Document }).graphicDocument };
+  });
+  expect(state.color).toBe(state.inherited);
+  expect(state.same).toBe(true);
 });
