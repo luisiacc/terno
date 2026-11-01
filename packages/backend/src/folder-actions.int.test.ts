@@ -155,6 +155,38 @@ it("a RENAME the server carried out but whose answer was lost still keeps the ma
   expect(config?.config.cursor?.renamed).toBeUndefined();
 });
 
+it("a RENAME whose answer was lost is announced by the next pass, before its list: the view and favorites follow it (Codex code review round 5 #1)", async () => {
+  const t = await setup(["Work", "Work/Sub"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work/Sub", view: null, on: true });
+  const original = ImapFlow.prototype.mailboxRename;
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  expect(await t.ownFolders()).toEqual(expect.arrayContaining(["Work", "Work/Sub"]));
+  const reopened = await t.reopen();
+  t.events.length = 0;
+  await reopened.backend.syncAccount(t.account.id);
+  expect(t.events[0]).toBe("renamed Work>Job,Work/Sub>Job/Sub");
+  expect(t.events[1]).toMatch(/^folders .*Job/);
+  expect(t.events.filter((e) => e.startsWith("renamed"))).toHaveLength(1);
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }, { accountId: t.account.id, folder: "Job/Sub", view: null }]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  // announced once: the next pass has nothing to follow
+  t.events.length = 0;
+  await reopened.backend.syncAccount(t.account.id);
+  expect(t.events.filter((e) => e.startsWith("renamed"))).toEqual([]);
+});
+
 it("a RENAME the server refuses leaves no record behind (Codex code review round 3 #1)", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);

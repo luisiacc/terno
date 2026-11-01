@@ -27,7 +27,8 @@ import { googleClientFor, rememberedGoogleClient, rememberLegacyGoogleClients, t
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { carryRenamed } from "./folders";
+import { followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -1623,13 +1624,19 @@ export class BackendCore {
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
         // plan 68: the account's own folders; an unchanged list writes and says nothing
-        setFolders: async (folders) => {
+        setFolders: async (folders, renamed = []) => {
           checkCurrent();
+          // plan 107: a rename this list shows done that the store hasn't followed (its answer was lost, Codex code
+          // review round 5 #1) is announced as a change's is, and favorites follow it
+          const shown = renamed.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
           const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders));
           if (!r.changed) return;
+          const moves = shown ? renamed.filter((m) => shown.has(m.from) && !shown.has(m.to)) : [];
+          await carryRenamed(this, accountId, moves, (work) => this.accountWrite(life, work));
           this.server.emit("folders", await this.store.folders.list());
           this.notifyChanged(r.touched);
           void this.rebuildFolders();
+          if (moves.length) await this.accountWrite(life, () => followFavoriteFolders(this.store, accountId, { renamed: moves }));
         },
       };
       if (!this.current(life)) return;

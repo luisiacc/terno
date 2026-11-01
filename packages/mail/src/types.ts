@@ -166,8 +166,11 @@ export interface SyncSink {
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
-  /** plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink has it; a bare test sink may not */
-  setFolders?(folders: readonly ProviderFolder[]): Promise<void>;
+  /**
+   * plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink
+   * has it; a bare test sink may not. plan 107: `renamed`, renames made here that this list shows done
+   */
+  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly { from: string; to: string }[]): Promise<void>;
   signal: AbortSignal;
 }
 

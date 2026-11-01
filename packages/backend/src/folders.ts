@@ -32,6 +32,25 @@ async function accountFolders(b: Backend, accountId: number): Promise<Folder[]> 
   return (await b.store.folders.list()).filter((f) => f.accountId === accountId);
 }
 
+/**
+ * A rename's new keys keep the folders' threads, then the move is announced: before the `folders` event that follows,
+ * so the view, the back stack and favorites follow before the new list can send anyone to the Inbox (Codex R7). Also
+ * a sync pass's, for a rename whose answer was lost (Codex code review round 5 #1).
+ */
+export async function carryRenamed(b: Backend, accountId: number, renamed: readonly { from: string; to: string }[], write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
+  // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
+  // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time
+  for (const m of renamed) {
+    if (m.from === m.to) continue;
+    for (let after: number | null = 0; after !== null; ) {
+      const from: number = after;
+      after = (await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
+      await b.yieldTurn();
+    }
+  }
+  if (renamed.length) b.server.emit("foldersRenamed", renamed.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
+}
+
 async function change<R extends FolderChange>(
   b: Backend,
   accountId: number,
@@ -57,18 +76,7 @@ async function change<R extends FolderChange>(
     account.check();
     const stored = await account.write(() => b.store.folders.replace(accountId, result.folders));
     const { renamed = [], deleted = [] } = follows(result);
-    // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
-    // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time
-    for (const m of renamed) {
-      if (m.from === m.to) continue;
-      for (let after: number | null = 0; after !== null; ) {
-        const from: number = after;
-        after = (await account.write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
-        await b.yieldTurn();
-      }
-    }
-    // the view, the back stack and favorites follow before the new list can send anyone to the Inbox (Codex R7)
-    if (renamed.length) b.server.emit("foldersRenamed", renamed.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
+    await carryRenamed(b, accountId, renamed, account.write);
     if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
     b.notifyChanged(stored.touched);
     void b.rebuildFolders();

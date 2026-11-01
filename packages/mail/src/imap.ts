@@ -59,7 +59,7 @@ interface Cursor {
    * plan 107: mailboxes the user renamed here, by their new path: the old one and its UIDVALIDITY. Read under the same
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
    */
-  renamed?: Record<string, { from: string; uidvalidity: number }>;
+  renamed?: Record<string, { from: string; uidvalidity: number; key?: string }>;
 }
 
 /**
@@ -1529,8 +1529,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
         }
         const folders = customFolders(list, r);
+        // plan 107: renames made here that this LIST shows done (the old path gone, the new one there): the store
+        // still showing the old one means their answer was lost (Codex code review round 5 #1)
+        const own = new Set(folders.map((f) => f.key));
+        const moved = Object.entries(cursor.renamed ?? {}).map(([to, m]) => ({ from: m.key ?? m.from, to })).filter((m) => m.from !== m.to && own.has(m.to) && !own.has(m.from));
         // listed before they sync: a location in a listed folder is membership as it's written
-        await sink.setFolders?.(folders);
+        await sink.setFolders?.(folders, moved);
         // plan 107 (Codex R1): mailboxes deleted here. A record is written before its DELETE is sent (Codex code review
         // round 2 #2): one the LIST still has wasn't carried out (its answer was lost), so only the record goes
         const stillListed = cursor.deleted ? new Set(list.filter((m) => !classifyMailbox(m).unusable).map((m) => m.path)) : null;
@@ -1775,7 +1779,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // a path renamed here that no pass has read yet passes its own proof on (Codex code review round 3 #2:
           // Work → Job → New, New's UIDs are Work's)
           const proof = state ? { from: m.from, uidvalidity: state.uidvalidity } : cursor?.renamed?.[m.from];
-          if (proof && proof.from !== m.to) intent[m.to] = proof;
+          // `key`: the path it was listed under, so a pass that finds the RENAME done tells where it went (Codex code
+          // review round 5 #1: an answer lost, and the folder you were in fell back to the Inbox)
+          if (proof && proof.from !== m.to) intent[m.to] = { from: proof.from, uidvalidity: proof.uidvalidity, key: m.from };
         }
         if (cursor && Object.keys(intent).length) await ctx.saveCursor({ ...cursor, renamed: intent });
         try {
