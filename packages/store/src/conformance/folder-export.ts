@@ -74,6 +74,22 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       expect((await walk(store, { accountId: imap!, folder: "Nope" })).ids).toEqual([]);
     });
 
+    it("an IMAP folder renamed here before a pass has its mail still under the old path: the alias names it (Codex code review round 5 #2)", async () => {
+      const store = await fresh();
+      const [, imap] = await withAccounts(store);
+      await store.folders.replace(imap!, [{ key: "Work", path: ["Work"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: imap!, providerMsgId: "i1", locations: [loc("Work", 1)] }),
+        msg({ accountId: imap!, providerMsgId: "i2", locations: [loc("INBOX", 1), loc("Work", 2)] }),
+        msg({ accountId: imap!, providerMsgId: "i3", locations: [loc("INBOX", 2)] }),
+      ]);
+      // the rename: listed under its new key, its threads carried, its locations where they were
+      await store.folders.replace(imap!, [{ key: "Job", path: ["Job"], selectable: true }]);
+      for (let after: number | null = 0; after !== null; ) after = (await store.folders.carry(imap!, "Work", "Job", after, 1)).next;
+      expect((await walk(store, { accountId: imap!, folder: "Job" })).ids).toEqual([]);
+      for (const limit of [1, 50]) expect((await walk(store, { accountId: imap!, folder: "Job", aliases: ["Work"] }, limit)).ids).toEqual(await idsOf(store, ["i1", "i2"]));
+    });
+
     it("a standard row is the account's messages in that place", async () => {
       const store = await fresh();
       const [a, b] = await withAccounts(store);

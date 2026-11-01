@@ -5,6 +5,7 @@ import { mboxMessage, type MboxStats } from "@terno/mail/portable";
 import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore } from "./core";
+import { renameAliases } from "./folders";
 
 /**
  * Plan 107: an .mbox of a folder's messages, from this computer's copy, as a session. `start` fixes the messages
@@ -60,7 +61,9 @@ export class FolderExports {
     const superseded = () => this.starting.get(clientId) !== ticket || this.b.isStopped;
     try {
       const name = await this.nameOf(target);
-      const { ids, dates } = await this.resolve(target, superseded);
+      // a folder renamed here that no pass has read keeps its mail under its old path meanwhile (Codex code review round 5 #2)
+      const place: FolderExportTarget = target.folder !== undefined ? { ...target, aliases: await renameAliases(this.b, target.accountId, [target.folder]) } : target;
+      const { ids, dates } = await this.resolve(place, superseded);
       if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
       const sorted = await sortByDate(ids, dates, () => this.b.yieldTurn());
       // the sort takes turns: a newer start meanwhile wins (Codex code review round 4 #5: both were kept)

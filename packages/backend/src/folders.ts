@@ -51,6 +51,24 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
   if (renamed.length) b.server.emit("foldersRenamed", renamed.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
 }
 
+/**
+ * Where these folders' mail is still cached while an IMAP rename made here waits for a pass: the old paths (the IMAP
+ * cursor's `renamed`, by new path). The rename carried their threads to the new keys, not their locations, so a count
+ * or an export read under the new keys alone found nothing (Codex code review round 5 #2). A path listed again is
+ * another folder now, never an alias.
+ */
+export async function renameAliases(b: Backend, accountId: number, keys: readonly string[]): Promise<string[]> {
+  const renamed = (await b.store.accounts.config<{ cursor?: { renamed?: Record<string, { from?: unknown }> } }>(accountId))?.config.cursor?.renamed;
+  if (!renamed) return [];
+  const listed = new Set((await accountFolders(b, accountId)).map((f) => f.key));
+  const out = new Set<string>();
+  for (const key of keys) {
+    const from = Object.hasOwn(renamed, key) ? renamed[key]?.from : undefined;
+    if (typeof from === "string" && !listed.has(from)) out.add(from);
+  }
+  return [...out];
+}
+
 async function change<R extends FolderChange>(
   b: Backend,
   accountId: number,
@@ -108,7 +126,9 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
   const folders = await accountFolders(b, accountId);
   const target = folders.find((f) => f.key === key);
   if (!target) throw new RpcError("NOT_FOUND", L("errors.folder.notFound"));
-  const keys = folders.filter((f) => under(f.path, target.path)).map((f) => f.key);
+  const own = folders.filter((f) => under(f.path, target.path)).map((f) => f.key);
+  // and where a rename here left their mail until a pass reads it (counted once: a message counts where it's first placed)
+  const keys = [...own, ...(await renameAliases(b, accountId, own))];
   // a slice at a time, sized by time, with a turn between (Codex code review round 4 #3: one call could be seconds)
   const sizer = new SliceSizer(COUNT_SLICE);
   let messages = 0;
@@ -121,7 +141,7 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
     after = r.next;
     await b.yieldTurn();
   }
-  return { messages, folders: keys.length };
+  return { messages, folders: own.length };
 }
 
 /** Plan 107: a folder (or standard row) below Starred, or not: the account must exist, an own folder must be listed. */

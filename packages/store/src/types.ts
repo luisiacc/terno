@@ -366,7 +366,11 @@ export interface DraftInput {
 }
 
 /** Plan 107: what an .mbox export reads: an account's own folder (`folder`: its key) or one of its standard rows */
-export type FolderExportTarget = { accountId: number; folder: string; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
+/**
+ * `aliases`: mailboxes whose locations are the folder's too: the old paths of an IMAP rename made here that no pass has
+ * reconciled yet (its threads were carried to the new key, its locations weren't: Codex code review round 5 #2)
+ */
+export type FolderExportTarget = { accountId: number; folder: string; aliases?: readonly string[]; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
 
 /**
  * Plan 107: where an export's id walk goes on: past thread `thread`, or inside it past `message` (a long conversation

@@ -123,6 +123,24 @@ it("renames a folder with its subfolder: the move is announced before the list, 
   expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
 });
 
+it("a folder renamed here before a pass read it counts and exports its mail, still under the old path (Codex code review round 5 #2)", async () => {
+  const t = await setup(["Work", "Work/Sub"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Work/Sub", { raw: rawIdleMail("In sub") });
+  await t.backend.syncAccount(t.account.id);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  // no pass yet: the threads are carried to the new keys, the locations are still under the old ones
+  expect(await t.threadsIn("Job")).toHaveLength(1);
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).toEqual({ messages: 2, folders: 2 });
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job/Sub" })).toEqual({ messages: 1, folders: 1 });
+  const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder: "Job", view: null });
+  expect(started.total).toBe(1);
+  await t.client.call("folders.exportCancel", { exportId: started.exportId });
+  // once a pass has read them, the same from the new paths alone
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).toEqual({ messages: 2, folders: 2 });
+});
+
 it("a RENAME the server carried out but whose answer was lost still keeps the mail, with its identity, after a restart (Codex code review round 3 #1)", async () => {
   const t = await setup(["Work", "Keep"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });

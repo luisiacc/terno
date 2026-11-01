@@ -18,7 +18,7 @@ const PLACE: Record<FolderView, string> = {
 /** a Gmail label in its stored labels, or an IMAP location in that mailbox */
 const IN_FOLDER = `m.is_trash = 0 AND m.is_spam = 0 AND (
   (m.gmail_labels IS NOT NULL AND instr(m.gmail_labels, ?2) > 0 AND json_valid(m.gmail_labels) AND EXISTS (SELECT 1 FROM json_each(m.gmail_labels) WHERE value = ?2))
-  OR EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.mailbox = ?2))`;
+  OR EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND (l.mailbox = ?2 OR l.mailbox IN (SELECT value FROM json_each(?6)))))`;
 
 /** before every message (dates are milliseconds) */
 const FIRST = { id: 0, date: Number.MIN_SAFE_INTEGER };
@@ -30,11 +30,13 @@ export function exportIds(db: Db, target: FolderExportTarget, after: FolderExpor
   const test = target.folder !== undefined ? `m.is_draft = 0 AND ${IN_FOLDER}` : `m.account_id = ?2 AND m.is_draft = 0 AND ${PLACE[target.view]}`;
   const select = `SELECT m.id, m.date, (${test}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?1`;
   const key = target.folder ?? target.accountId;
+  // a folder's pending rename aliases (?6), bound only where the test names them
+  const aliases = target.folder !== undefined ? [JSON.stringify(target.aliases ?? [])] : [];
   // the rest of the cursor's date, then the later dates: two seeks (a row value compared whole seeks by the date
   // alone, so a run of equal dates would be walked from its start each time)
   const page = (thread: number, from: { id: number; date: number }, n: number) => {
-    const same = from === FIRST ? [] : db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?5`, thread, key, from.date, from.id, n);
-    return same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date > ?3 ORDER BY m.date, m.id LIMIT ?4`, thread, key, from.date, n - same.length)];
+    const same = from === FIRST ? [] : db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?5`, thread, key, from.date, from.id, n, ...aliases);
+    return same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date > ?3 ORDER BY m.date, m.id LIMIT ?5`, thread, key, from.date, from.id, n - same.length, ...aliases)];
   };
   const out: { id: number; date: number }[] = [];
   let budget = limit;

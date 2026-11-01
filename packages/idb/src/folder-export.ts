@@ -72,7 +72,9 @@ export function threadStretch(c: Ctx, thread: number, from: number | null, n: nu
 export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
   const locations = T(c, "message_locations");
   const folder = target.folder;
-  const test = folder !== undefined ? (m: R) => !m.is_trash && !m.is_spam && (hasLabel(m, folder) || locations.has(m.id, folder)) : PLACE[target.view];
+  // a pending rename's old paths are the folder's too (Codex code review round 5 #2)
+  const mailboxes = folder !== undefined ? [folder, ...(target.aliases ?? [])] : [];
+  const test = folder !== undefined ? (m: R) => !m.is_trash && !m.is_spam && (hasLabel(m, folder) || mailboxes.some((k) => locations.has(m.id, k))) : PLACE[target.view];
   const out: { id: number; date: number }[] = [];
   let budget = limit;
   /** a thread from `from`: where it stopped, or null when it's read to its end */
