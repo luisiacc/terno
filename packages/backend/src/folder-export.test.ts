@@ -153,6 +153,23 @@ describe("folders.export (plan 107)", () => {
     await expect(client.call("folders.exportNext", { exportId: second.exportId })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("a start superseded while it sorts never opens its session (Codex code review round 4 #5)", async () => {
+    const { backend, gmail } = await setup();
+    await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "one" })]);
+    // every slice of the sort takes its turn; the first turn is where a newer start from the same client lands
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (clock += 20));
+    let second: Promise<{ exportId: string }> | null = null;
+    const exports: FolderExports = new FolderExports(Object.assign(Object.create(backend) as typeof backend, {
+      yieldTurn: async () => { if (!second) await (second = exports.start({ accountId: gmail, view: "inbox" }, "c")); },
+    }));
+    const first = exports.start({ accountId: gmail, view: "inbox" }, "c");
+    await expect(first).rejects.toMatchObject({ code: "CANCELLED" });
+    vi.mocked(performance.now).mockRestore();
+    expect(exports.size).toBe(1);
+    expect(await exports.next((await second!).exportId, "c")).toMatchObject({ finished: true, total: 1 });
+  });
+
   it("a session idle for a minute ends by itself", async () => {
     const { backend, gmail } = await setup();
     await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "one" })]);

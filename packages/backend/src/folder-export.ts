@@ -62,7 +62,10 @@ export class FolderExports {
       const name = await this.nameOf(target);
       const { ids, dates } = await this.resolve(target, superseded);
       if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
-      const session: Session = { id: `export-${ticket}-${Math.random().toString(36).slice(2, 10)}`, clientId, ids: await sortByDate(ids, dates, () => this.b.yieldTurn()), at: 0, current: null, done: 0, missingAttachments: 0, partialBodies: 0, busy: false, ended: false, timer: null };
+      const sorted = await sortByDate(ids, dates, () => this.b.yieldTurn());
+      // the sort takes turns: a newer start meanwhile wins (Codex code review round 4 #5: both were kept)
+      if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
+      const session: Session = { id: `export-${ticket}-${Math.random().toString(36).slice(2, 10)}`, clientId, ids: sorted, at: 0, current: null, done: 0, missingAttachments: 0, partialBodies: 0, busy: false, ended: false, timer: null };
       this.sessions.set(session.id, session);
       this.touch(session);
       return { exportId: session.id, total: session.ids.length, name };
