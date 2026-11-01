@@ -1371,3 +1371,91 @@ it("favorites of folders another app deleted go when the pass stores the account
   expect(heard.at(-1)).toBe(0);
   expect((await t.client.call("folders.favorite", { accountId: other.id, folder: null, view: "inbox", on: true })).favorites).toEqual([{ accountId: other.id, folder: null, view: "inbox" }]);
 });
+
+/**
+ * Codex code review round 25 #1: the rename and delete records' family, as a table. A server that keeps or changes a
+ * renamed mailbox's UIDVALIDITY × one rename or two (Work → Job → Other) × then nothing, the last name deleted, or Work
+ * made again by another app, all before a pass. After the pass (and a second, settled): the mail is where it should be,
+ * nothing deleted is held or kept, nothing surviving is lost, and no record is left.
+ */
+const RENAME_TABLE = (["keeps", "changes"] as const).flatMap((uv) => ([1, 2] as const).flatMap((renames) =>
+  (["nothing", "delete", "recreate"] as const).map((then) => ({ uv, renames, then }))));
+
+it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renames rename(s), then $then (Codex code review round 25 #1)", async ({ uv, renames, then }) => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  t.server.control.addMessage("INBOX", { raw: rawIdleMail("In the inbox") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  const inboxNow = async () => (await t.client.call("threads.list", { view: "inbox", accountId: t.account.id })).items.map((x) => x.id);
+  const inbox = await inboxNow();
+  expect(inbox).toHaveLength(1);
+  const original = ImapFlow.prototype.mailboxRename;
+  let next = 900;
+  const renumbered = uv === "changes" ? vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    const r = await original.apply(this, args);
+    t.server.control.resetUidValidity(String(args[1]), { uidvalidity: next++ });
+    return r;
+  }) : null;
+  const names = renames === 1 ? ["Work", "Job"] : ["Work", "Job", "Other"];
+  const last = names.at(-1)!;
+  try {
+    for (let i = 1; i < names.length; i++) await t.client.call("folders.rename", { accountId: t.account.id, key: names[i - 1]!, name: names[i]! });
+  } finally {
+    renumbered?.mockRestore();
+  }
+  if (then === "delete") await t.client.call("folders.delete", { accountId: t.account.id, key: last });
+  if (then === "recreate") {
+    t.server.control.createMailbox("Work");
+    t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  }
+  // before the pass, the last name shows and counts the moved mail (round 25 #1: renamed twice on a server that gave
+  // Job a new UIDVALIDITY, Other showed none)
+  if (then !== "delete") {
+    expect(await t.threadsIn(last)).toEqual([a]);
+    expect((await t.client.call("folders.count", { accountId: t.account.id, key: last })).messages).toBe(1);
+  }
+  const check = async () => {
+    await t.backend.rebuildFolders();
+    // the inbox is never touched
+    expect(await inboxNow()).toEqual(inbox);
+    if (then === "delete") {
+      expect(await t.locations([ma.id])).toEqual([]);
+      expect(await t.held([ma.id])).toEqual([]);
+      expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+      expect(await t.ownFolders()).not.toContain(last);
+    } else if (uv === "changes") {
+      // its UIDs under the new UIDVALIDITY prove nothing: the moved mail is held as a reset's is (plan 68), with its
+      // id and body, and no folder lists it
+      expect(await t.threadsIn(last)).toEqual([]);
+      expect(await t.locations([ma.id])).toEqual([]);
+      expect(await t.held([ma.id])).toEqual([ma.id]);
+      expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
+    } else {
+      // the moved mail is in the last name, once, with its body; nothing it was is held or left elsewhere
+      const there = await t.threadsIn(last);
+      expect(there).toHaveLength(1);
+      const m = await t.messageOf(there[0]!);
+      expect(m.subject).toBe("Only in work");
+      expect(m.bodyText).toBe(ma.bodyText);
+      expect((await t.locations([m.id])).map((l) => l.mailbox)).toEqual([last]);
+      expect(await t.held([ma.id, m.id])).toEqual([]);
+      // the server kept its UIDs' meaning: the message keeps its identity
+      expect(m.id).toBe(ma.id);
+    }
+    for (const name of names.slice(0, -1)) if (name !== "Work" || then !== "recreate") expect(await t.threadsIn(name)).toEqual([]);
+    if (then === "recreate") {
+      const fresh = await t.threadsIn("Work");
+      expect(fresh).toHaveLength(1);
+      expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
+    }
+    const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; renamed?: unknown } }>(t.account.id);
+    expect(config?.config.cursor?.deleted).toBeUndefined();
+    expect(config?.config.cursor?.renamed).toBeUndefined();
+  };
+  await t.backend.syncAccount(t.account.id);
+  await check();
+  await t.backend.syncAccount(t.account.id);
+  await check();
+});

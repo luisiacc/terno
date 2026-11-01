@@ -27,7 +27,7 @@ import { googleClientFor, rememberedGoogleClient, rememberLegacyGoogleClients, t
 import { restorePending } from "./import";
 import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreadableError, type LegacySecretReader } from "./keychain";
 import { createNetworkPolicy, type LookupAll, type NetworkPolicy } from "./net-policy";
-import { carryRenamed } from "./folders";
+import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFavoriteFolders, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
@@ -1630,7 +1630,7 @@ export class BackendCore {
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
         // plan 68: the account's own folders; an unchanged list writes and says nothing
-        setFolders: async (folders, renamed = [], deleted = []) => {
+        setFolders: async (folders, renamed = [], deleted = [], unproven = []) => {
           checkCurrent();
           // plan 107: a rename this list shows done that the backend hasn't followed (its answer was lost, Codex code
           // review round 5 #1) is announced as a change's is, and favorites follow it. The provider hands only those
@@ -1643,10 +1643,14 @@ export class BackendCore {
           const shown = moves.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
           const carried = shown ? moves.filter((m) => shown.has(m.from)) : [];
           const partial = await carryRenamed(this, accountId, carried, folders, (work) => this.accountWrite(life, work), moves);
+          // a retired rename's new key whose carried rows no read proved starts empty and is derived again from its
+          // places (Codex code review round 25 #1: a server that renumbered it left a thread listed with none there)
+          const again = unproven.filter((key) => folders.some((f) => f.key === key));
+          for (const key of again) while ((await this.accountWrite(life, () => this.store.folders.clear(accountId, key, CARRY_SLICE))).more) await this.yieldTurn();
           // the list and the favorites that follow it, never between a favorite's check and its write (round 10 #4)
           await this.withFolderList(accountId, async () => {
-            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, carried.map((m) => m.to), partial));
-            if (r.changed || moves.length || partial.length) {
+            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, carried.map((m) => m.to), [...partial, ...again]));
+            if (r.changed || moves.length || partial.length || again.length) {
               this.server.emit("folders", await this.store.folders.list());
               this.notifyChanged(r.touched);
               void this.rebuildFolders();

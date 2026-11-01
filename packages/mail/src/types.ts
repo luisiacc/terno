@@ -170,9 +170,11 @@ export interface SyncSink {
    * plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink
    * has it; a bare test sink may not. plan 107: `renamed`, renames made here that this list shows done and that the
    * backend hasn't followed (Codex code review round 15 #2: the provider's acknowledgement decides); `deleted`,
-   * paths deleted here that this list shows done and that nothing announced yet (their answer was lost)
+   * paths deleted here that this list shows done and that nothing announced yet (their answer was lost); `unproven`,
+   * new keys of renames this pass retired whose carried rows no read proved (the new path read as another generation):
+   * cleared and derived again from their places (Codex code review round 25 #1)
    */
-  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly FolderMove[], deleted?: readonly string[]): Promise<void>;
+  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly FolderMove[], deleted?: readonly string[], unproven?: readonly string[]): Promise<void>;
   signal: AbortSignal;
 }
 

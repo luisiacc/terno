@@ -21,7 +21,7 @@ function folderError(b: Backend, error: unknown): unknown {
 }
 
 /** threads carried a slice at a time (an IndexedDB write is ~20 µs a row: 500 stay well within a frame) */
-const CARRY_SLICE = 500;
+export const CARRY_SLICE = 500;
 
 /** a count's rows looked at a slice, sized by time */
 const COUNT_SLICE = { ...BULK_SLICE, initial: 500, floor: 50, ceiling: 20_000 };

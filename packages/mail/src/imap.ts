@@ -77,9 +77,19 @@ interface Cursor {
    * `to`: the new path's UIDVALIDITY read after the RENAME (Codex code review round 19 #1); unread (an answer lost), the
    * moved one's. Its places and membership go to the new path only while it's that generation: one deleted and made
    * again by another app is another mailbox, read afresh.
+   * `moved`: the generation that moved, at `key`, when it's not the one its mail is cached under at `from` (a rename of
+   * a folder renamed here that a pass hasn't read, whose first RENAME gave it a new UIDVALIDITY: Codex code review round
+   * 25 #1). `uidvalidity` stays the cached one through every rename, as `from` does.
    */
-  renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true; to?: number }>;
+  renamed?: Record<string, Renamed>;
 }
+
+type Renamed = { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true; to?: number; moved?: number };
+
+/** plan 107: the generation a rename record's RENAME moved, at its `key` (round 25 #1) */
+const movedGeneration = (r: { uidvalidity: number; moved?: number }) => r.moved ?? r.uidvalidity;
+/** plan 107: the generation a rename record's new path arrived as: read after the RENAME, else the moved one's */
+const arrivedGeneration = (r: { uidvalidity: number; moved?: number; to?: number }) => r.to ?? movedGeneration(r);
 
 /**
  * plan 107: a generation deleted here: the path its mail is cached under, its UIDVALIDITY, whether the backend followed
@@ -1085,9 +1095,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * recorded after the RENAME, else the moved one's: a server keeps it), never one another app deleted and made again
    * since, nor one STATUS can't tell: those take no alias and no carry, their mail is read afresh.
    */
-  const arrived = (to: string, r: { uidvalidity: number; to?: number }, generations: ReadonlyMap<string, number | null>) => {
+  const arrived = (to: string, r: { uidvalidity: number; moved?: number; to?: number }, generations: ReadonlyMap<string, number | null>) => {
     const now = generations.get(to);
-    return now != null && now === (r.to ?? r.uidvalidity);
+    return now != null && now === arrivedGeneration(r);
   };
 
   function withExcept(folders: ProviderFolder[], cursor: Cursor | null | undefined, generations: ReadonlyMap<string, number | null>): ProviderFolder[] {
@@ -1749,7 +1759,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (m.answered || waiting.has(to)) return [];
           // announced, but carried only into the generation that moved (round 19 #1: Job deleted and made again by
           // another app before this pass took Work's mail)
-          return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== m.uidvalidity)) ? [{ from, to, ...((m.stale || !arrived(to, m, generations)) && { stale: true as const }) }] : [];
+          return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== movedGeneration(m))) ? [{ from, to, ...((m.stale || !arrived(to, m, generations)) && { stale: true as const }) }] : [];
         });
         // plan 107: deletions made here that this LIST shows done (the path gone, or another mailbox there now) and that
         // nothing announced (their answer was lost): their favorites go with the list, once (Codex code review round 12 #3)
@@ -1955,9 +1965,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // left them to the record: Codex code review round 7 #1).
         // records retired below: the list is stored again without what they added (round 16 #1)
         let retired = false;
+        // new paths whose carried rows no read proved: derived again from their places (below)
+        const unproven = new Set<string>();
         for (const [to, r] of incomplete ? [] : Object.entries(cursor.renamed ?? {})) {
           retired = true;
           const state = cursor.mailboxes[to];
+          // carried, but the new path read as another generation than the one that moved (a server that gives a
+          // renamed mailbox a new UIDVALIDITY): its UIDs prove nothing, the moved mail is held as a reset's is (plan
+          // 68), and the rows the rename carried there aren't its mail (Codex code review round 25 #1, found by its
+          // table: Job listed a thread none of its places had)
+          if (!r.stale && r.from !== to && listed.has(to) && state?.uidvalidity !== r.uidvalidity) unproven.add(to);
           // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
           const live = listed.has(r.from);
           if (replaced(r) && !deletions.some((d) => d.from === r.from && d.cached === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
@@ -1983,7 +2000,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // outlived its record). A crash first lists them again from the records still in the cursor.
         if (retired) {
           await ctx.saveCursor(cursor);
-          await sink.setFolders?.(withExcept(customFolders(list, r), cursor, generations), [], []);
+          await sink.setFolders?.(withExcept(customFolders(list, r), cursor, generations), [], [], [...unproven]);
         }
         // Forget vanished paths, retaining their cached identities behind durable holds.
         // (one a record forgot has no state left; another generation cached for its path is a vanished folder's: round 8)
@@ -2078,13 +2095,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const was = cursor?.renamed?.[m.from];
           // its mail is cached under the path (a pass read this generation), or under the one a rename here that no
           // pass has read moved it from (Codex code review round 3 #2: Work → Job → New, New's UIDs are Work's); else
-          // nothing is cached for it, and the record only says where it went
-          const cached = state?.uidvalidity === now || was?.uidvalidity === now;
-          const from = state?.uidvalidity === now ? m.from : was?.uidvalidity === now ? was.from : m.from;
-          if (!cached && (state || was)) stale.add(m.from);
+          // nothing is cached for it, and the record only says where it went. That rename is matched by the generation
+          // it arrived as, and its cached path and generation go on (Codex code review round 25 #1: matched by the one
+          // it left, a server that gave Job a new UIDVALIDITY made Job → Other stale, and Other lost Work's mail)
+          const fromState = state?.uidvalidity === now;
+          const chained = !fromState && was && !was.stale && arrivedGeneration(was) === now ? was : undefined;
+          const from = chained ? chained.from : m.from;
+          const uidvalidity = chained ? chained.uidvalidity : now;
+          if (!fromState && !chained && (state || was)) stale.add(m.from);
           // `key`: the path it was listed under, so a pass that finds the RENAME done tells where it went (Codex code
           // review round 5 #1: an answer lost, and the folder you were in fell back to the Inbox)
-          if (from !== m.to) intent[m.to] = { from, uidvalidity: now, key: m.from, ...(stale.has(m.from) && { stale: true as const }) };
+          if (from !== m.to) intent[m.to] = { from, uidvalidity, key: m.from, ...(uidvalidity !== now && { moved: now }), ...(stale.has(m.from) && { stale: true as const }) };
         }
         if (cursor && Object.keys(intent).length) await ctx.saveCursor({ ...cursor, renamed: intent });
         try {
@@ -2157,7 +2178,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // Job a new UIDVALIDITY recorded Job's, and Work's cached mail was held as a vanished folder's)
           const state = cursor?.mailboxes[path];
           const was = cursor?.renamed?.[path];
-          const record: Deletion = !now || state?.uidvalidity === now || !was || (was.to ?? was.uidvalidity) !== now
+          const record: Deletion = !now || state?.uidvalidity === now || !was || arrivedGeneration(was) !== now
             ? { from: path, uidvalidity: now }
             : { from: was.from, uidvalidity: now, ...(was.uidvalidity !== now && { cached: was.uidvalidity }) };
           // beside the path's other generations deleted here and not yet reconciled, never over them (Codex code review
