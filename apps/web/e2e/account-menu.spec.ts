@@ -47,6 +47,11 @@ test.describe("the account menu", () => {
     const popover = page.getByTestId("sign-in-popover");
     await expect(popover).toBeVisible();
     await expect.poll(() => popover.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+    // a right-click in the panel is its own (paste into the password), never the account menu (Codex code review round 6)
+    await popover.click({ button: "right" });
+    await page.waitForTimeout(200);
+    await expect(menu(page, b!)).toHaveCount(0);
+    await expect(popover).toBeVisible();
   });
 
   test("Rename: the field sits where the name was; Enter saves, Esc cancels, leaving saves, empty keeps the name", async ({ app: page, server }) => {

@@ -203,7 +203,17 @@ export function SignInMarker({ account }: { account: Account }) {
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-      <PopoverContent side="right" align="start" sideOffset={8} className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto" data-testid="sign-in-popover" data-sign-in-ui>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto"
+        data-testid="sign-in-popover"
+        data-sign-in-ui
+        // portaled, but React's events still pass the account row's menu trigger (plan 102, Codex code review
+        // round 6): a right-click in the password field is the field's own (paste), not the account menu
+        onContextMenu={(e) => e.stopPropagation()}
+      >
         <SignInPanel
           accounts={[account]}
           onLater={() => {
