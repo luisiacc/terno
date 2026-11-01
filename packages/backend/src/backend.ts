@@ -2,7 +2,7 @@ import { SEARCH_SCHEMA_VERSION, openingSqlStore } from "@terno/db";
 import { needsLegacyBodyUpgrade, upgradeNodeLegacyBodies } from "./legacy-body-worker";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { nodeUnsubscribeTransport } from "./unsubscribe-node";
-import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
+import { nodePlatform, openDatabase, SqlMailStore, type Db, type OpenOptions } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
@@ -22,6 +22,14 @@ export interface BackendOptions extends Omit<BackendCoreOptions, "store" | "plat
 }
 
 const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
+
+/** Hosts call after their backup gate, before opening a normal store or reading mail. */
+export async function openNodeMailbox(path: string, options: OpenOptions = {}, signal = new AbortController().signal): Promise<Db> {
+  signal.throwIfAborted();
+  if (await needsLegacyBodyUpgrade(path)) await upgradeNodeLegacyBodies(path, signal);
+  signal.throwIfAborted();
+  return openDatabase(path, options);
+}
 
 /** where Node's fetch finds its dispatcher (npm undici's setGlobalDispatcher writes the same slot) */
 const DISPATCHER = Symbol.for("undici.globalDispatcher.1");
@@ -68,9 +76,7 @@ export class Backend extends BackendCore {
       if (!options.dbPath) throw new Error("Backend needs a store or a dbPath");
       const path = options.dbPath;
       store = openingSqlStore(async (signal) => {
-        if (await needsLegacyBodyUpgrade(path)) await upgradeNodeLegacyBodies(path, signal);
-        signal.throwIfAborted();
-        const db = openDatabase(path, { uuid: () => platform.uuid() });
+        const db = await openNodeMailbox(path, { uuid: () => platform.uuid() }, signal);
         try { return nodeStore(db, options); }
         catch (error) { db.close(); throw error; }
       }, { engine: "sqlite-node-sqlite", search: options.instantSearch === false ? "fts5" : "instant+fts5", bulkRuleScan: "indexed", imapLocations: true, externalReaders: true, durability: "fsync" }, { identity: `sqlite-${SEARCH_SCHEMA_VERSION}`, snapshotBase: path === ":memory:" ? null : path });

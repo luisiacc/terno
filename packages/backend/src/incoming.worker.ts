@@ -1,4 +1,4 @@
-import { nodeSqliteDriver, nodePlatform, openDatabaseWith, upgradeLegacyBodies, type BodyUpgradeProgress } from "@terno/db";
+import { nodeSqliteDriver, nodePlatform, openDatabaseWith, upgradeLegacyBodies, classifyOpenError, type BodyUpgradeProgress } from "@terno/db";
 import { parentPort } from "node:worker_threads";
 import type { IncomingWorkerReply, IncomingWorkerRequest } from "@terno/mail/incoming-processing";
 import { incomingResultTransfers, runIncomingWorkerRequest } from "@terno/mail/incoming-processing-worker";
@@ -29,7 +29,7 @@ port.on("message", (request: IncomingWorkerRequest | { type: "legacy-upgrade"; p
         result = await upgradeLegacyBodies(db, nodePlatform.yield, (progress) => new Promise<void>((resolve) => { continueLegacy = resolve; port.postMessage({ type: "legacy-progress", progress }); }), () => {});
       } finally { db.close(); }
       port.postMessage({ type: "legacy-complete", progress: result });
-    })().catch(() => port.postMessage({ type: "legacy-failed" }));
+    })().catch((error: unknown) => { const failure = classifyOpenError(error); port.postMessage(failure ? { type: "legacy-open-failed", failure } : { type: "legacy-failed" }); });
     return;
   }
   if (legacy) { port.postMessage({ type: "legacy-failed" }); return; }
