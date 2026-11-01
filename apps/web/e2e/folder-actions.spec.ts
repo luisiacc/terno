@@ -491,6 +491,30 @@ test.describe("folder actions", { tag: "@design" }, () => {
     expect(await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe(elsewhere);
   });
 
+  test("a second rename started while the first is on its way works on its own (Codex code review round 9 #2)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const rename = handlers["folders.rename"]!;
+    handlers["folders.rename"] = async (...a) => (await new Promise((r) => setTimeout(r, 600)), rename(...a));
+    await openAccount(page, acme);
+    await own(page, acme, "Label_23").click({ button: "right" });
+    await page.getByTestId("folder-menu-favorite").click();
+    await expect(page.locator("[role=menu]")).toHaveCount(0);
+    await own(page, acme, "Label_23").click({ button: "right" });
+    await page.getByTestId("folder-menu-rename").click();
+    const field = page.getByTestId(`nav-own-rename-${acme}-Label_23`);
+    await field.fill("Primero");
+    await field.press("Enter");
+    // from the favorite, before the answer
+    await page.getByTestId(`nav-fav-${acme}-Label_23`).click({ button: "right" });
+    await page.getByTestId(`folder-menu-${acme}-Label_23`).getByTestId("folder-menu-rename").click();
+    await expect(field).toBeFocused();
+    await page.waitForTimeout(800);
+    await field.fill("Segundo");
+    await field.press("Enter");
+    await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_23")?.path).toEqual(["Segundo"]);
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

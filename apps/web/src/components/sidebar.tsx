@@ -472,6 +472,8 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
     const self = getApp().folders.find((f) => f.accountId === accountId && f.key === folderKey);
     return (
       <FolderNameRow
+        // each edit its own field: an older answer never settles a newer one (Codex code review round 9 #2)
+        key={renaming}
         initial={name}
         label={t("folder.rename.label", { name })}
         inset={INSET[depth] ?? INSET.at(-1)!}
