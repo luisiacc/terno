@@ -82,6 +82,12 @@ interface Cursor {
    * 25 #1). `uidvalidity` stays the cached one through every rename, as `from` does.
    */
   renamed?: Record<string, Renamed>;
+  /**
+   * plan 107: new paths of retired renames whose rebuild the backend hasn't stored yet (`setFolders`' `unproven`).
+   * Written with the retirement, dropped once `setFolders` returns: a pass stopped between them still owes it (Codex
+   * code review round 27 #1: the record was gone, so the carried thread stayed).
+   */
+  rebuild?: string[];
 }
 
 type Renamed = { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true; to?: number; moved?: number };
@@ -1965,8 +1971,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // left them to the record: Codex code review round 7 #1).
         // records retired below: the list is stored again without what they added (round 16 #1)
         let retired = false;
-        // new paths whose carried rows no read proved: derived again from their places (below)
-        const unproven = new Set<string>();
+        // new paths whose carried rows no read proved: derived again from their places (below), and those a pass
+        // stopped before the backend stored their rebuild still owes (round 27 #1)
+        const unproven = new Set<string>(cursor.rebuild ?? []);
         for (const [to, r] of incomplete ? [] : Object.entries(cursor.renamed ?? {})) {
           retired = true;
           const state = cursor.mailboxes[to];
@@ -1975,7 +1982,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // moved mail is held as a reset's is (plan 68: Codex code review round 25 #1, found by its table: Job listed a
           // thread none of its places had); read as the same, a message another app expunged before the pass has no
           // place, but its carried row kept the thread and its unread count (round 26 #1)
-          if (!r.stale && r.from !== to && listed.has(to)) unproven.add(to);
+          if (!r.stale && r.from !== to && listed.has(to)) {
+            unproven.add(to);
+            // owed until the backend stores it: in the cursor before any save without the record (round 27 #1)
+            cursor.rebuild = [...unproven];
+          }
           // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
           const live = listed.has(r.from);
           if (replaced(r) && !deletions.some((d) => d.from === r.from && d.cached === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
@@ -1999,9 +2010,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // their mail is placed where it is now (or forgotten): the list as the records left it, with no rename's aliases
         // and no generation left out that's gone (Codex code review round 16 #1: kept until the next pass, an alias
         // outlived its record). A crash first lists them again from the records still in the cursor.
-        if (retired) {
+        if (retired || unproven.size) {
           await ctx.saveCursor(cursor);
           await sink.setFolders?.(withExcept(customFolders(list, r), cursor, generations), [], [], [...unproven]);
+          // stored, with its rebuild jobs: no longer owed
+          if (cursor.rebuild && sink.setFolders) {
+            delete cursor.rebuild;
+            await ctx.saveCursor(cursor);
+          }
         }
         // Forget vanished paths, retaining their cached identities behind durable holds.
         // (one a record forgot has no state left; another generation cached for its path is a vanished folder's: round 8)
