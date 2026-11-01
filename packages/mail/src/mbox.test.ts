@@ -1,6 +1,7 @@
 import { ATTACHMENT_CHUNK, bytesBase64 } from "@terno/core";
 import PostalMime from "postal-mime";
 import { describe, expect, it, vi } from "vitest";
+import { parseRaw } from "./mime";
 import { asctime, BODY_READ, MBOX_PIECE, mboxMessage, qpLine, stringBody, type MboxBody, type MboxChunkReader, type MboxMessage } from "./mbox";
 
 const base: MboxMessage = {
@@ -278,6 +279,26 @@ describe("mbox (plan 107)", () => {
     expect(email.attachments).toHaveLength(1);
     expect(email.attachments[0]!.contentId).toBeUndefined();
     expect(text).toContain("X-Terno-Omitted-Id: Content-ID\n");
+  });
+
+  it("an over-long address is left out with a diagnostic, the others kept, every piece and line bounded (Codex code review round 25 #3)", async () => {
+    // as the incoming parser reads it: a 200,000-character addr-spec beside an ordinary one
+    const huge = `${"a".repeat(200_000)}@example.com`;
+    const parsed = await parseRaw(["From: Ana <ana@example.com>", `To: Big <${huge}>, Luis <luis@example.com>`, `Cc: ${huge}`, "Subject: hi", "", "hola", ""].join("\r\n"));
+    expect(parsed.to.map((a) => a.email.length)).toContain(huge.length);
+    const { pieces, text } = await serialize({ ...base, from: parsed.from, to: parsed.to, cc: parsed.cc, replyTo: [] });
+    expect(Math.max(...pieces.map((p) => p.length))).toBeLessThanOrEqual(MBOX_PIECE);
+    for (const line of text.split("\n")) expect(line.length).toBeLessThanOrEqual(998);
+    expect(text).not.toContain("aaaa");
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.to).toEqual([expect.objectContaining({ name: "Luis", address: "luis@example.com" })]);
+    expect(email.cc ?? []).toEqual([]);
+    expect(email.headers.filter((h) => h.key === "x-terno-omitted-address").map((h) => h.value)).toEqual(["To", "Cc"]);
+    // an ordinary long one (RFC 5321's 320) is written
+    const long = `${"b".repeat(64)}@${"c".repeat(250)}.example`;
+    const ok = await serialize({ ...base, cc: [{ name: "", email: long }] });
+    expect((await PostalMime.parse(readMbox(ok.text)[0]!)).cc).toEqual([expect.objectContaining({ address: long })]);
+    expect(ok.text).not.toContain("X-Terno-Omitted-Address");
   });
 
   it("folding keeps runs of spaces in a subject and a missing attachment's name (Codex code review round 22 #2)", async () => {

@@ -200,11 +200,25 @@ function* referencesHeader(refs: readonly string[]): Generator<string, void> {
   if (kept.length < refs.length) yield `X-Terno-Omitted-References: ${refs.length - kept.length}\n`;
 }
 
+/**
+ * The longest addr-spec written, in characters. RFC 5321 caps one at 320 (64 for the local part, 255 for the domain)
+ * and a path at 256; this is generous past both, and keeps its line within RFC 5322's 998. Ingestion doesn't bound
+ * them (Codex code review round 25 #3: a 200,000-character address was one 200,020-character piece); longer is left
+ * out, named in `X-Terno-Omitted-Address`.
+ */
+const ADDRESS_MAX = 900;
+
+/** an addr-spec as written, "" when there's none, null when it's over ADDRESS_MAX (one that long isn't cleaned) */
+function boundedEmail(email: string): string | null {
+  if (email.length > 4 * ADDRESS_MAX) return null;
+  const e = asciiEmail(oneLine(email).replace(/[<>\s]/g, ""));
+  return e.length <= ADDRESS_MAX ? e : null;
+}
+
 /** Each address's words (its name's, then `<email>`), a comma after all but the last. */
-function* addressWords(list: readonly Address[]): Generator<string, void> {
-  const items = list.filter((a) => a.email.trim());
+function* addressWords(items: readonly { name: string; email: string }[]): Generator<string, void> {
   for (const [i, a] of items.entries()) {
-    const email = asciiEmail(oneLine(a.email).replace(/[<>\s]/g, ""));
+    const email = a.email;
     const comma = i < items.length - 1 ? "," : "";
     const name = oneLine(a.name).trim();
     if (!name) {
@@ -217,8 +231,17 @@ function* addressWords(list: readonly Address[]): Generator<string, void> {
   }
 }
 
+/** an address header of the addresses that fit, and the diagnostic that names it for each left out */
 function* addresses(name: string, list: readonly Address[]): Generator<string, void> {
-  if (list.some((a) => a.email.trim())) yield* header(name, addressWords(list));
+  const items: { name: string; email: string }[] = [];
+  let omitted = 0;
+  for (const a of list) {
+    const email = boundedEmail(a.email);
+    if (email === null) omitted++;
+    else if (email) items.push({ name: a.name, email });
+  }
+  if (items.length) yield* header(name, addressWords(items));
+  for (let i = 0; i < omitted; i++) yield `X-Terno-Omitted-Address: ${name}\n`;
 }
 
 /** A MIME type as a token pair, else octet-stream. */
