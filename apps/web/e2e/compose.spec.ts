@@ -8,7 +8,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { addRecipients, chipsOf, expect, navTo, focusList, openRow, recipientEmails, rows, selectThread, stabilize, test } from "./fixtures";
+import { E2E_NOW } from "./constants";
+import { addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -53,6 +54,44 @@ test.describe("inline reply, reply-all, forward", { tag: "@design" }, () => {
     const body = page.getByTestId("compose-body");
     await expect(body).toBeFocused();
     await expect(body).toBeInViewport();
+  });
+
+  test("a reply sent from the thread scrolls the reader to it, wherever the reader was", async ({ app: page }) => {
+    await page.setViewportSize({ width: 1100, height: 520 });
+    await openRow(page, 0);
+    const before = await page.getByTestId("message").count();
+    await page.getByTestId("quick-reply").click();
+    const body = page.getByTestId("compose-body");
+    await expect(body).toBeFocused();
+    await page.keyboard.type("Enviado y a la vista");
+    // the reader back at the top: the sent message lands below the fold
+    const scroller = page.locator("[data-reader-scroller]");
+    await scroller.evaluate((el) => { el.scrollTop = 0; });
+    await page.keyboard.press("Meta+Enter");
+    await expect(page.getByTestId("message")).toHaveCount(before + 1);
+    const sent = page.getByTestId("message").last();
+    await expect(sent).toBeInViewport();
+    // its top, not just a sliver of its foot
+    await expect.poll(async () => {
+      const [m, s] = await Promise.all([sent.boundingBox(), scroller.boundingBox()]);
+      return m!.y >= s!.y && m!.y < s!.y + s!.height / 2;
+    }).toBe(true);
+  });
+
+  test("a reply sent into a run of read messages shows open, never folded away", async ({ app: page, server }) => {
+    // mail dated after the send (a skewed clock): the sent copy sorts first, ahead of five read messages
+    const id = await ingestConversation(server, { subject: "Reloj adelantado", count: 6, now: E2E_NOW + 10 * 86_400_000 });
+    await selectThread(page, id, 'subject:"Reloj adelantado"');
+    await page.getByTestId("quick-reply").click();
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.keyboard.type("Primero en la fila");
+    await page.keyboard.press("Meta+Enter");
+    await expect(page.getByTestId("message")).toHaveCount(2);
+    const sent = page.getByTestId("message").first();
+    await expect(sent.getByTestId("message-toggle")).toHaveAttribute("aria-expanded", "true");
+    await expect(sent.locator("iframe").contentFrame().locator("body")).toContainText("Primero en la fila");
+    await expect(sent).toBeInViewport();
+    await expect(page.getByTestId("more-messages")).toHaveCount(1);
   });
 
   test("reply-all puts the other recipients in Cc, never me", async ({ app: page, server }) => {

@@ -438,8 +438,8 @@ export interface MailStore {
   };
 
   compose: {
-    /** optimistic local copy + durable send op (+ draft removal, reply signal), atomically */
-    queueSend(c: SendCommand): Promise<{ opId: string; threadId: number; deltas: ModelDelta[] }>;
+    /** optimistic local copy (`messageId`) + durable send op (+ draft removal, reply signal), atomically */
+    queueSend(c: SendCommand): Promise<{ opId: string; threadId: number; messageId: number; deltas: ModelDelta[] }>;
   };
 
   filters: {

@@ -835,7 +835,8 @@ export const contract = {
   "learning.accept": m<Filter>()(z.object({ key: z.string().max(400), name: z.string().trim().min(1).max(120).optional() })),
   "learning.dismiss": m<{ ok: true }>()(z.object({ key: z.string().max(400) })),
 
-  "compose.send": m<{ opId: string; threadId: number }>()(composeSend),
+  /** `messageId`: the sent copy shown in the thread until the server's replaces it */
+  "compose.send": m<{ opId: string; threadId: number; messageId: number }>()(composeSend),
   /** plan 94: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
   "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
   "scheduled.list": m<ScheduledSnapshot>()(empty),

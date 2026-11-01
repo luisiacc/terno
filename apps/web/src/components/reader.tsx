@@ -12,7 +12,8 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
-import { cancelReaderScroll, keepInView } from "~/lib/reader-scroll";
+import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scroll";
+import { takeSent } from "~/lib/sent-reveal";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { ScheduledReplyLine } from "./scheduled-popover";
@@ -217,7 +218,11 @@ function Conversation({ messages, icons, headless, knownEmail }: { messages: Mes
   // one arriving later keeps how it first showed too (a render more, only then: never on a thread switch)
   useEffect(() => {
     const unseen = messages.filter((m) => !shown.has(m.id));
-    if (unseen.length) setShown(new Map([...shown, ...unseen.map((m) => [m.id, opensAt(m)] as const)]));
+    if (!unseen.length) return;
+    // a reply just sent from here: the reader goes to it, open (newer mail can follow it, never folds it away)
+    const sent = takeSent(unseen.map((m) => m.id));
+    setShown(new Map([...shown, ...unseen.map((m) => [m.id, m.id === sent || opensAt(m)] as const)]));
+    if (sent !== null) revealMessage(sent);
   }, [messages]);
   const [own, setState] = useState<{ toggled: Map<number, boolean>; revealed: Set<number> }>({ toggled: new Map(), revealed: new Set() });
   const isOpen = (m: MessageDetail) => own.toggled.get(m.id) ?? shown.get(m.id) ?? opensAt(m);

@@ -30,6 +30,14 @@ for (const adapter of ["SQL", "IDB"] as const) describe(`${adapter} durable Sent
     return { store, open, account, command };
   }
 
+  it("names the optimistic copy it queued (the reader scrolls to it)", async () => {
+    const { store, command } = await setup();
+    const { threadId, messageId } = await store.compose.queueSend(command);
+    const detail = await store.threads.get(threadId);
+    expect(detail?.messages.map((m) => m.id)).toEqual([messageId]);
+    expect(detail?.messages[0]).toMatchObject({ isSent: true, subject: "Once" });
+  });
+
   it("reserves Sent-copy recovery before dispatch instead of silently losing APPEND evidence", async () => {
     const { store, command } = await setup();
     const { opId } = await store.compose.queueSend(command);

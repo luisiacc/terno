@@ -1381,7 +1381,7 @@ export class IdbMailStore implements MailStore {
         linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
-        return { opId, threadId: T(this.c, "messages").get(localId)!.thread_id as number, deltas: ingest.deltas };
+        return { opId, threadId: T(this.c, "messages").get(localId)!.thread_id as number, messageId: localId, deltas: ingest.deltas };
       });
     },
   };

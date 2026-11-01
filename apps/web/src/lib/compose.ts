@@ -7,6 +7,7 @@ import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
+import { revealSent } from "./sent-reveal";
 import { getApp, getSelectionWriteRevision, markSelectionIntent, setApp, subscribeComposeSelectionIntent, useApp } from "~/state/app";
 import { invalidateThreads, loadThread } from "~/state/threads";
 import { registerUndo, snack, useSnack } from "./snack";
@@ -933,6 +934,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     }
     const res = await client.call("compose.send", params);
     forgetDraft(key);
+    // sent from a thread: the reader goes to its copy in the conversation
+    if (d.threadId !== null) revealSent(res.messageId);
     if (getApp().compose?.key === key) setApp({ compose: null });
     invalidateThreads([res.threadId]);
     snack.success(t("compose.sending"));

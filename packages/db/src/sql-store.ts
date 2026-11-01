@@ -847,7 +847,7 @@ export class SqlMailStore implements MailStore {
         if (p.draftId) deleteDraft(this.db, p.draftId);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
         const threadId = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
-        return { opId, threadId, deltas: ingest.deltas };
+        return { opId, threadId, messageId: localId, deltas: ingest.deltas };
       });
     },
   };

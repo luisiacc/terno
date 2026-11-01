@@ -1,4 +1,5 @@
 import { useAppearance } from "./appearance";
+import { setSentRevealer } from "./sent-reveal";
 
 /**
  * The reader's one scroll scheduler: keeps an element that is growing (an
@@ -58,3 +59,29 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
   frame = requestAnimationFrame(step);
   return stop;
 }
+
+/**
+ * Brings a message's top to the top of the reader (as far as the reader
+ * scrolls), once it renders (a few frames at most): navigation never animates.
+ */
+export function revealMessage(id: number, pad = 16): void {
+  cancelReaderScroll();
+  let frame = 0;
+  let left = 6;
+  const step = () => {
+    const el = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${id}"]`);
+    const scroller = el?.closest<HTMLElement>("[data-reader-scroller]");
+    if (!el || !scroller) {
+      if (--left > 0) frame = requestAnimationFrame(step);
+      else if (cancel === stop) cancel = null;
+      return;
+    }
+    if (cancel === stop) cancel = null;
+    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - pad;
+  };
+  const stop = () => cancelAnimationFrame(frame);
+  cancel = stop;
+  frame = requestAnimationFrame(step);
+}
+
+setSentRevealer(revealMessage);
