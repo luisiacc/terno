@@ -148,6 +148,8 @@ export const DEFAULT_SETTINGS: General = {
   senderIcons: true,
   googlePhotos: {},
   googlePhotosPending: [],
+  // plan 107: folders below Starred
+  favoriteFolders: [],
   // plan 41: like Mail, the count and the notifications are on until turned off
   dockBadge: true,
   notifications: true,

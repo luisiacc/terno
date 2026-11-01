@@ -250,6 +250,23 @@ export interface Folder {
   selectable: boolean;
 }
 
+/** Plan 107: an account's standard places a favorite can point at (the rows under an open account). */
+export const FOLDER_VIEWS = ["inbox", "sent", "archive", "spam", "trash"] as const;
+export type FolderView = (typeof FOLDER_VIEWS)[number];
+/** Plan 107: a folder shown below Starred: one of an account's own (`folder`: its key) or a standard row (`view`) */
+export interface FavoriteFolder {
+  accountId: AccountId;
+  folder: string | null;
+  view: FolderView | null;
+}
+export const FAVORITES_MAX = 50;
+/** Plan 107: a folder an account's change renamed (IMAP: a new key; Gmail: the same key, a new name) */
+export interface FolderRename {
+  accountId: AccountId;
+  from: string;
+  to: string;
+}
+
 /** Folder names (Gmail's own limit) and how many an account lists (plan 68: a catalog is bounded) */
 export const FOLDER_NAME_MAX = 225;
 export const FOLDERS_PER_ACCOUNT_MAX = 10_000;

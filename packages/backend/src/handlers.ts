@@ -993,6 +993,15 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged([]);
       return { ok: true as const };
     },
+    // plan 107: folder changes, favorites and the .mbox export (filled in by their commits)
+    "folders.create": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.rename": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.delete": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.count": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.favorite": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.exportStart": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.exportNext": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.exportCancel": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
 
     "storage.report": () => storage.report(),
     "storage.remove": async ({ buckets, olderThanDays, jobId }) => {

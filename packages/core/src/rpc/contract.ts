@@ -28,6 +28,8 @@ import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets"
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
+  FOLDER_NAME_MAX,
+  FOLDER_VIEWS,
   REMINDER_KINDS,
   REMINDERS_MAX,
   VIEWS,
@@ -35,6 +37,8 @@ import {
   type Reminder,
   type Category,
   type Folder,
+  type FavoriteFolder,
+  type FolderRename,
   type Counts,
   type OpState,
   type ThreadDetail,
@@ -156,6 +160,8 @@ export interface AppSettings {
   notifications: boolean;
   /** plan 41: notifications name the sender and the subject (off: only how many) */
   notificationPreview: boolean;
+  /** plan 107: folders below Starred, in the order added (set through folders.favorite, never settings.update) */
+  favoriteFolders: FavoriteFolder[];
 }
 
 /** Plan 22: what Google granted an account for photos (each contacts scope on its own), and whether its project's People API is off. */
@@ -489,6 +495,11 @@ const categorizeScope = z.discriminatedUnion("kind", [
 
 /** plan 68: an account's folder (its key: an IMAP path, a Gmail label id) */
 const folderKey = z.string().min(1).max(1000);
+/** plan 107: a folder's new name as typed (one level; the backend checks the server's rules) */
+const folderName = z.string().trim().min(1).max(FOLDER_NAME_MAX);
+/** plan 107: an account's own folder (`folder`) or one of its standard rows (`view`), exactly one */
+const folderTarget = z.object({ accountId: id, folder: folderKey.nullable(), view: z.enum(FOLDER_VIEWS).nullable() });
+const oneTarget = (f: { folder: string | null; view: string | null }) => (f.folder === null) !== (f.view === null);
 /** A folder is an account's, alone: no category or review with it, its view "all" (no trash, no spam) */
 const folderScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string }>(p: T, ctx: z.RefinementCtx) => {
   if (p.folder === undefined) return;
@@ -950,6 +961,28 @@ export const contract = {
   "accounts.reconnect": m<Account>()(z.object({ id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
   "accounts.remove": m<{ ok: true }>()(z.object({ id })),
 
+  /**
+   * Plan 107: an account's own folders, changed on its server (IMAP mailboxes, Gmail labels), one change at a time
+   * per account. `parent`: the folder it goes in (null: the top). Names are checked against the server's catalog.
+   */
+  "folders.create": m<Folder>()(z.object({ accountId: id, parent: folderKey.nullable(), name: folderName }), { timeoutMs: 120_000 }),
+  /** Plan 107: a new name for a folder (its subfolders follow). `renamed`: where each one went. */
+  "folders.rename": m<{ renamed: FolderRename[] }>()(z.object({ accountId: id, key: folderKey, name: folderName }), { timeoutMs: 120_000 }),
+  /** Plan 107: deletes a folder and its subfolders on the server (IMAP: with their mail). `deleted`: their keys. */
+  "folders.delete": m<{ deleted: string[] }>()(z.object({ accountId: id, key: folderKey }), { timeoutMs: 300_000 }),
+  /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
+  "folders.count": m<{ messages: number; folders: number }>()(z.object({ accountId: id, key: folderKey })),
+  /** Plan 107: a folder (or a standard row) below Starred, or not */
+  "folders.favorite": m<FavoriteFolder[]>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: "folder or view" })),
+  /**
+   * Plan 107: an .mbox of a folder's messages from this computer's copy, as a session: `start` fixes the messages
+   * (by date, then id) and says how many; each `next` gives the following text (bounded by size and time), until
+   * `done`; `cancel` ends it early. A session idle for a minute ends by itself.
+   */
+  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.refine(oneTarget, { message: "folder or view" })),
+  "folders.exportNext": m<{ text: string; done: number; total: number; finished: boolean; missingAttachments: number; partialBodies: number }>()(z.object({ exportId: z.string().min(1).max(100) }), { timeoutMs: 60_000 }),
+  "folders.exportCancel": m<{ ok: true }>()(z.object({ exportId: z.string().min(1).max(100) })),
+
   /** Plan 69: what the mailbox takes on this device, by view, and what each age would remove (read in slices; nothing kept). */
   "storage.report": m<StorageReport>()(empty, { timeoutMs: 120_000 }),
   /**
@@ -1037,6 +1070,8 @@ export interface Events {
   categories: Category[];
   /** plan 68: the folders of every account, when an account's list changed */
   folders: Folder[];
+  /** plan 107: sent right before the `folders` its change produced: where a renamed folder went (the view and favorites follow) */
+  foldersRenamed: FolderRename[];
   op: OpInfo;
   recipientReceiptRetired: { opId: string };
   owner: OwnerIdentity | null;
