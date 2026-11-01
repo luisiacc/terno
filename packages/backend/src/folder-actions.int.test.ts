@@ -634,6 +634,8 @@ it("a folder renamed here keeps its mail with its identity when its old name is 
   expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
   expect(await t.held([ma.id])).toEqual([]);
   expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
+  // the pass rebuilds Job too now (round 26 #1), a slice a turn: Work's rebuild is done once the drain is
+  await t.backend.rebuildFolders();
   const fresh = await t.threadsIn("Work");
   expect(fresh).toHaveLength(1);
   expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
@@ -1407,11 +1409,11 @@ it("favorites of folders another app deleted go when the pass stores the account
 /**
  * Codex code review round 25 #1: the rename and delete records' family, as a table. A server that keeps or changes a
  * renamed mailbox's UIDVALIDITY × one rename or two (Work → Job → Other) × then nothing, the last name deleted, or Work
- * made again by another app, all before a pass. After the pass (and a second, settled): the mail is where it should be,
+ * made again by another app, or its only message expunged by another app (round 26 #1), all before a pass. After the pass (and a second, settled): the mail is where it should be,
  * nothing deleted is held or kept, nothing surviving is lost, and no record is left.
  */
 const RENAME_TABLE = (["keeps", "changes"] as const).flatMap((uv) => ([1, 2] as const).flatMap((renames) =>
-  (["nothing", "delete", "recreate"] as const).map((after) => ({ uv, renames, after }))));
+  (["nothing", "delete", "recreate", "expunge"] as const).map((after) => ({ uv, renames, after }))));
 
 it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renames rename(s), then $after (Codex code review round 25 #1)", async ({ uv, renames, after }) => {
   const t = await setup(["Work"]);
@@ -1442,6 +1444,7 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
     t.server.control.createMailbox("Work");
     t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
   }
+  if (after === "expunge") t.server.control.expungeMessages(last, t.server.control.listMessages(last).map((m: { uid: number }) => m.uid));
   // before the pass, the last name shows and counts the moved mail (round 25 #1: renamed twice on a server that gave
   // Job a new UIDVALIDITY, Other showed none)
   if (after !== "delete") {
@@ -1457,6 +1460,16 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
       expect(await t.held([ma.id])).toEqual([]);
       expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
       expect(await t.ownFolders()).not.toContain(last);
+    } else if (after === "expunge") {
+      // gone from the server before a pass read it: the sidebar, the unread count, a count and an export agree it's
+      // empty (round 26 #1: the carried thread and its unread count stayed, since retiring the alias rebuilt nothing)
+      expect(await t.threadsIn(last)).toEqual([]);
+      expect((await t.client.call("counts.get", {})).folderUnread?.[folderRef(t.account.id, last)] ?? 0).toBe(0);
+      expect((await t.client.call("folders.count", { accountId: t.account.id, key: last })).messages).toBe(0);
+      const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder: last, view: null });
+      await t.client.call("folders.exportCancel", { exportId: started.exportId });
+      expect(started.total).toBe(0);
+      expect(await t.ownFolders()).toContain(last);
     } else if (uv === "changes") {
       // its UIDs under the new UIDVALIDITY prove nothing: the moved mail is held as a reset's is (plan 68), with its
       // id and body, and no folder lists it

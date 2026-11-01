@@ -1970,11 +1970,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const [to, r] of incomplete ? [] : Object.entries(cursor.renamed ?? {})) {
           retired = true;
           const state = cursor.mailboxes[to];
-          // carried, but the new path read as another generation than the one that moved (a server that gives a
-          // renamed mailbox a new UIDVALIDITY): its UIDs prove nothing, the moved mail is held as a reset's is (plan
-          // 68), and the rows the rename carried there aren't its mail (Codex code review round 25 #1, found by its
-          // table: Job listed a thread none of its places had)
-          if (!r.stale && r.from !== to && listed.has(to) && state?.uidvalidity !== r.uidvalidity) unproven.add(to);
+          // carried rows no read proved: derived again from the new path's places. Read as another generation than the
+          // one that moved (a server that gives a renamed mailbox a new UIDVALIDITY), its UIDs prove nothing and the
+          // moved mail is held as a reset's is (plan 68: Codex code review round 25 #1, found by its table: Job listed a
+          // thread none of its places had); read as the same, a message another app expunged before the pass has no
+          // place, but its carried row kept the thread and its unread count (round 26 #1)
+          if (!r.stale && r.from !== to && listed.has(to)) unproven.add(to);
           // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
           const live = listed.has(r.from);
           if (replaced(r) && !deletions.some((d) => d.from === r.from && d.cached === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
