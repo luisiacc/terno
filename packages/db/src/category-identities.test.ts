@@ -105,3 +105,61 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("migrates retai
   close(db); const reopened = open(file); reopened.run("DELETE FROM categories");
   expect(createCategory(reopened, "After reopen", "amber").id).toBeGreaterThan(201);
 });
+
+
+it.each(["id", "rowid", "_rowid_", "oid", "ROWID", '"_RoWiD_"', "`oid`", "[ROWID]"])("refuses %s rebinding of a retired filter target without changing the replacement lifetime", (alias) => {
+  const file = path(); const db = open(file);
+  const old = createCategory(db, "Old lifetime", "amber");
+  const filter = saveFilter(db, { name: "Retained", enabled: true, source: "manual", rule: rule(old.id) });
+  const originalRule = db.get("SELECT rule_json FROM filters WHERE id=?", filter.id);
+  expect(old.id).toBe(1);
+  deleteCategory(db, old.id);
+  const replacement = createCategory(db, "Replacement lifetime", "amber");
+  expect(replacement.id).toBe(2);
+  expect(db.get("SELECT id FROM categories WHERE id=1")).toBeUndefined();
+  expect(() => db.run(`UPDATE categories SET ${alias}=1 WHERE id=2`)).toThrow("Category identity cannot change");
+  expect(db.get("SELECT id,name FROM categories WHERE id=2")).toEqual({ id: 2, name: "Replacement lifetime" });
+  expect(db.get("SELECT id FROM categories WHERE id=1")).toBeUndefined();
+  expect(db.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual(originalRule);
+  db.run(`UPDATE categories SET ${alias}=${alias},name='Renamed replacement',color='cyan',position=7 WHERE id=2`);
+  close(db); const reopened = open(file);
+  expect(reopened.get("SELECT id,name,color,position FROM categories WHERE id=2")).toEqual({ id: 2, name: "Renamed replacement", color: "cyan", position: 7 });
+  expect(reopened.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual(originalRule);
+  expect(createCategory(reopened, "Next lifetime", "amber").id).toBe(3);
+});
+
+
+it("upgrades the installed alias guard atomically without changing categories or retained filters", () => {
+  const file = path(); const db = new Db(sqliteDriver(), file); opened.add(db);
+  for (const migration of MIGRATIONS.filter((m) => m.version <= 39)) db.exec(migration.sql);
+  db.exec("PRAGMA user_version = 39");
+  const old = createCategory(db, "Original lifetime", "amber");
+  const filter = saveFilter(db, { name: "Preserved rule", enabled: true, source: "manual", rule: rule(old.id) });
+  deleteCategory(db, old.id);
+  const replacement = createCategory(db, "Replacement lifetime", "amber");
+  expect(old.id).toBe(1); expect(replacement.id).toBe(2);
+  const categories = db.all("SELECT * FROM categories");
+  const filters = db.all("SELECT * FROM filters");
+  const trigger = db.get("SELECT sql FROM sqlite_master WHERE name='category_immutable_id'");
+  const exec = db.exec.bind(db);
+  vi.spyOn(db, "exec").mockImplementation((sql) => {
+    exec(sql);
+    if (sql.includes("CREATE TRIGGER category_immutable_id BEFORE UPDATE ON")) throw new Error("interrupted alias upgrade");
+  });
+  expect(() => migrate(db)).toThrow("interrupted alias upgrade");
+  vi.restoreAllMocks();
+  expect(db.get("PRAGMA user_version")).toEqual({ user_version: 39 });
+  expect(db.get("SELECT sql FROM sqlite_master WHERE name='category_immutable_id'")).toEqual(trigger);
+  expect(db.all("SELECT * FROM categories")).toEqual(categories);
+  expect(db.all("SELECT * FROM filters")).toEqual(filters);
+  migrate(db);
+  expect(() => db.run("UPDATE categories SET rowid=1 WHERE id=2")).toThrow("Category identity cannot change");
+  expect(db.all("SELECT * FROM categories")).toEqual(categories);
+  expect(db.all("SELECT * FROM filters")).toEqual(filters);
+  expect(db.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual({ rule_json: JSON.stringify(rule(1)) });
+  close(db); const reopened = open(file);
+  expect(() => reopened.run("UPDATE categories SET oid=1 WHERE id=2")).toThrow("Category identity cannot change");
+  reopened.run("UPDATE categories SET name='Renamed' WHERE id=2");
+  expect(reopened.get("SELECT id,name FROM categories WHERE id=2")).toEqual({ id: 2, name: "Renamed" });
+  expect(reopened.all("PRAGMA foreign_key_check")).toEqual([]);
+});

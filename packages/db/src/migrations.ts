@@ -1092,6 +1092,12 @@ CREATE TABLE scheduled_sends (
 ` },
   // plan 96: List-Unsubscribe as compact JSON (NULL: none, or stored before; no backfill: the headers aren't kept)
   { version: 39, name: "unsubscribe (plan 96)", sql: "ALTER TABLE messages ADD COLUMN unsubscribe TEXT;" },
+  { version: 40, name: "guard category rowid aliases", sql: `
+DROP TRIGGER category_immutable_id;
+CREATE TRIGGER category_immutable_id BEFORE UPDATE ON categories WHEN new.id != old.id BEGIN
+ SELECT RAISE(ABORT, 'Category identity cannot change');
+END;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
