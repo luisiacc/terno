@@ -410,6 +410,27 @@ test.describe("folder actions", { tag: "@design" }, () => {
     expect(calls).toBe(1);
   });
 
+  test("a favorite taken away from its own menu by keyboard: the next favorite has the focus (Codex code review round 4 #4)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    await openAccount(page, acme);
+    for (const key of ["Label_22", "Label_23"]) {
+      await own(page, acme, key).click({ button: "right" });
+      await page.getByTestId("folder-menu-favorite").click();
+    }
+    const first = page.getByTestId(`nav-fav-${acme}-Label_22`);
+    // the menus that added them have closed (and handed their rows the focus back)
+    await expect(page.locator("[role=menu]")).toHaveCount(0);
+    await first.focus();
+    await page.keyboard.press("Shift+F10");
+    await expect(page.getByTestId(`folder-menu-${acme}-Label_22`)).toBeVisible();
+    const item = page.getByTestId(`folder-menu-${acme}-Label_22`).getByTestId("folder-menu-favorite");
+    await expect(item).toHaveText("Remove from favorites");
+    await item.focus();
+    await page.keyboard.press("Enter");
+    await expect(first).toHaveCount(0);
+    await expect(page.getByTestId(`nav-fav-${acme}-Label_23`)).toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
