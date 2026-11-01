@@ -420,6 +420,14 @@ const CHECK_EVERY = 4;
 
 type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
 
+function hasMailboxFlag(mailbox: ListedMailbox, flag: string): boolean {
+  for (const value of mailbox.flags) if (value.length === flag.length && value.toLowerCase() === flag) return true;
+  return false;
+}
+const unusable = (m: ListedMailbox) => hasMailboxFlag(m, "\\nonexistent");
+const groupOnly = (m: ListedMailbox) => hasMailboxFlag(m, "\\noselect");
+const selectableMailbox = (m: ListedMailbox) => !groupOnly(m) && !unusable(m);
+
 /**
  * Plan 68: the account's own folders in a LIST: what holds no role, isn't a server special (Gmail's Starred,
  * Important…) and exists. A \Noselect parent is listed only to group folders under it. A leading INBOX in the
@@ -431,8 +439,6 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
   const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
   const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || [...m.flags].some(isSpecialUseFlag);
-  const unusable = (m: ListedMailbox) => m.flags.has("\\NonExistent");
-  const groupOnly = (m: ListedMailbox) => m.flags.has("\\Noselect");
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
   const bounded = list.length > LISTED_MAX ? list.slice(0, LISTED_MAX) : list;
   const candidates = bounded.filter((m) => (!isRole(m) || (groupOnly(m) && !isInbox(m.path))) && !unusable(m) && m.path.length <= 1000);
@@ -678,7 +684,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     if (roles && !listed) return roles;
     const found: Partial<Record<Role, string>> = { inbox: "INBOX" };
     const list = listed ?? (await c.list());
-    const selectable = list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent"));
+    if (!listed) {
+      const persisted = roles ? null : await ctx.loadCursor<Cursor>();
+      // A foreground action can be the first discovery after reopen; keep a concurrent sync's newer choice.
+      previous = roles ?? persisted?.roles ?? null;
+    }
+    const selectable = list.filter(selectableMailbox);
     for (const mb of selectable) for (const flag of mb.flags) {
       const role = roleForFlag(flag);
       if (role && previous?.[role] === mb.path && role !== "inbox") found[role] = mb.path;
@@ -1259,7 +1270,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         // Snapshot obligations include selectable special-use paths omitted from the folder UI.
         if (forceSnapshots && list.length <= LISTED_MAX) for (const mailbox of list) {
-          if (!mailbox.flags.has("\\Noselect") && !mailbox.flags.has("\\NonExistent") && !boxes.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
+          if (selectableMailbox(mailbox) && !boxes.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
         }
         // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
         const swept = new Map<string, Snapshot | null>();
@@ -1281,7 +1292,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // destination, role mailboxes too, gets the index), so their locations stay until every folder has synced (Codex R1)
         // a place mail can be: listed, existing and selectable (Codex R24: one that became a \Noselect parent holds
         // nothing, its old locations go like a deleted folder's; it's still drawn as a group)
-        const listed = new Set(list.filter((m) => !m.flags.has("\\Noselect") && !m.flags.has("\\NonExistent")).map((m) => m.path));
+        const listed = new Set(list.filter(selectableMailbox).map((m) => m.path));
         const vanished = Object.keys(cursor.mailboxes).filter((path) => !boxes.has(path) && !listed.has(path));
         const vanishedIds = new Set<number>();
         for (const path of vanished) await addAll(vanishedIds, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
@@ -1359,7 +1370,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const overflowed = full && cursor.overflow === true;
         if (overflowed) await addAll(touched, lost);
         const covered = new Set([...boxes, ...custom]);
-        const authoritative = full && list.length <= LISTED_MAX && list.every((mailbox) => mailbox.flags.has("\\Noselect") || mailbox.flags.has("\\NonExistent") || covered.has(mailbox.path));
+        const authoritative = full && list.length <= LISTED_MAX && list.every((mailbox) => !selectableMailbox(mailbox) || covered.has(mailbox.path));
         const kept = await reconcile(touched, sink, true, c, false, check);
         // Capture the finite work boundary after incomplete derivations have recorded fresh obligations.
         if (authoritative && ctx.flagObservation) {

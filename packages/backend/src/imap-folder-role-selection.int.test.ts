@@ -86,11 +86,13 @@ it.each([false, true])("retains the exact persisted duplicate destination after 
   expect(t.server.control.getMessage("Other", other.uid, { raw: true }).raw).toEqual(Buffer.from(otherBytes));
 });
 
-it.each(["\\Noselect", "\\NonExistent", "\\noselect", "\\nonexistent"])("rejects a LIST role candidate with %s before foreground dispatch", async (flag) => {
-  const t = await setup({ A: {}, Zeta: { "special-use": "\\tRaSh" } });
+it.each(["\\Noselect", "\\NonExistent", "\\noselect", "\\nonexistent", "\\NoSeLeCt", "\\NoNeXiStEnT"])("rejects a LIST role candidate with %s before foreground dispatch", async (flag) => {
+  const t = await setup({ A: {}, Group: { folders: { Child: {} } }, Zeta: { "special-use": "\\tRaSh" } });
   // The wire flags are deliberate: ImapKit normalizes storage flags before LIST.
   t.server.script.add({ on: "command", command: "LIST", when: (ctx) => !/LIST "" ""/i.test(ctx.data), send:
     `* LIST (\\HasNoChildren ${flag} \\Trash) "/" "A"\r\n` +
+    `* LIST (\\HasChildren ${flag}) "/" "Group"\r\n` +
+    '* LIST (\\HasNoChildren) "/" "Group/Child"\r\n' +
     '* LIST (\\HasNoChildren) "/" "INBOX"\r\n' +
     '* LIST (\\HasNoChildren \\tRaSh) "/" "Zeta"\r\n$TAG OK LIST completed\r\n',
   });
@@ -106,6 +108,11 @@ it.each(["\\Noselect", "\\NonExistent", "\\noselect", "\\nonexistent"])("rejects
   const original = t.server.control.addMessage("INBOX", { raw: bytes });
   await t.backend.syncAccount(t.account.id);
 
+  const folders = (await t.client.call("app.bootstrap", {})).folders.filter((folder) => folder.accountId === t.account.id);
+  if (["\\Noselect", "\\noselect", "\\NoSeLeCt"].includes(flag)) {
+    expect.soft(folders.find((folder) => folder.key === "Group")).toMatchObject({ selectable: false, path: ["Group"] });
+  } else expect.soft(folders.find((folder) => folder.key === "Group")).toBeUndefined();
+  expect(folders.find((folder) => folder.key === "Group/Child")).toMatchObject({ selectable: true, path: ["Group", "Child"] });
   expect.soft(persistedTrash(t.backend, t.account.id)).toBe("Zeta");
   const thread = (await t.client.call("threads.list", { view: "inbox" })).items[0]!;
   const message = (await t.client.call("threads.get", { threadId: thread.id })).messages[0]!;
