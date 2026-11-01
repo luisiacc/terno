@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { open } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-/** a rename that waits for the test (null: Node's own) */
+/** the next rename waits for the test (null: Node's own) */
 const renaming = vi.hoisted(() => ({ hold: null as null | Promise<void>, started: false }));
 vi.mock("node:fs/promises", async (actual) => {
   const fs = await actual<typeof import("node:fs/promises")>();
@@ -12,7 +12,9 @@ vi.mock("node:fs/promises", async (actual) => {
     ...fs,
     rename: async (from: string, to: string) => {
       renaming.started = true;
-      if (renaming.hold) await renaming.hold;
+      const hold = renaming.hold;
+      renaming.hold = null;
+      if (hold) await hold;
       return fs.rename(from, to);
     },
   };
@@ -123,6 +125,44 @@ describe("mbox export file (plan 107)", () => {
     expect(readFileSync(target, "utf8")).toBe("From - a\n");
     expect(readdirSync(d)).toEqual(["Clients.mbox"]);
     expect(files.size).toBe(0);
+  });
+
+  it("a stalled rename never overwrites the export that replaced it, in its window or another (Codex code review round 27 #2)", async () => {
+    const d = dir();
+    const target = join(d, "Clients.mbox");
+    const files = new MboxFiles();
+    for (const owner of [1, 2]) {
+      writeFileSync(target, "old");
+      const first = await files.begin(1, target);
+      expect(await files.write(1, first, "older\n")).toBe(true);
+      let release!: () => void;
+      renaming.hold = new Promise<void>((r) => (release = r));
+      renaming.started = false;
+      const ending = files.end(1, first);
+      await vi.waitFor(() => expect(renaming.started).toBe(true));
+      // the window's next export waits for the one committing; another window's commits after it
+      let begun = false;
+      const next = files.begin(owner, target).then((id) => ((begun = true), id));
+      await new Promise((r) => setTimeout(r, 20));
+      if (owner === 1) expect(begun).toBe(false);
+      const ended = owner === 1 ? null : (async () => {
+        const id = await next;
+        expect(await files.write(owner, id, "newer\n")).toBe(true);
+        return files.end(owner, id);
+      })();
+      await new Promise((r) => setTimeout(r, 20));
+      release();
+      expect(await ending).toEqual({ status: "saved", name: "Clients.mbox" });
+      const result = ended ? await ended : await (async () => {
+        const id = await next;
+        expect(await files.write(owner, id, "newer\n")).toBe(true);
+        return files.end(owner, id);
+      })();
+      expect(result).toEqual({ status: "saved", name: "Clients.mbox" });
+      expect(readFileSync(target, "utf8")).toBe("newer\n");
+      expect(readdirSync(d)).toEqual(["Clients.mbox"]);
+      expect(files.size).toBe(0);
+    }
   });
 
   it("a begin a newer ask superseded aborts nothing, before or after its file opens (Codex code review round 8 #4)", async () => {

@@ -31,6 +31,8 @@ interface Pending {
    * #1: a cancel during the rename said cancelled while the file replaced the destination)
    */
   committing: boolean;
+  /** its rename, once committing: a begin of the window waits for it (Codex code review round 27 #2) */
+  committed?: Promise<void>;
 }
 
 /** how an export's end went: saved under `name`, cancelled before it was renamed into place, or failed */
@@ -59,6 +61,11 @@ export class MboxFiles {
   private readonly pages = new Map<number, number>();
   /** each window's newest export asked for: an older one whose panel answers late begins nothing (Codex code review round 8 #4) */
   private readonly asks = new Map<number, number>();
+  /**
+   * each destination's last rename: the next one to it goes after it, so an older export whose rename stalls never
+   * replaces a newer one's file (Codex code review round 27 #2)
+   */
+  private readonly commits = new Map<string, Promise<void>>();
 
   /** how many are open (tests) */
   get size(): number {
@@ -96,6 +103,9 @@ export class MboxFiles {
   async begin(owner: number, path: string, page = this.page(owner), ask = this.ask(owner)): Promise<string> {
     if (!this.current(owner, ask)) throw new Error("a newer export replaced this one");
     await this.abortAll(owner);
+    // one already going into place isn't aborted: its replacement begins once it's there (round 27 #2)
+    for (const p of this.pending.values()) if (p.owner === owner && p.committing) await p.committed?.catch(() => {});
+    if (!this.current(owner, ask)) throw new Error("a newer export replaced this one");
     const tmp = tempSibling(dirname(path), randomBytes(8).toString("hex"));
     const file = await open(tmp, "wx", 0o600);
     // the page ended while this opened: its cleanup ran before the file was here (Codex code review round 5 #5); or a
@@ -141,7 +151,8 @@ export class MboxFiles {
       if (p.aborted) return { status: "cancelled" };
       // from here the rename decides: a cancel during it changes nothing, so the answer is what happened
       p.committing = true;
-      await rename(p.tmp, p.path);
+      p.committed = this.commit(p.tmp, p.path);
+      await p.committed;
       return { status: "saved", name: basename(p.path) };
     } catch {
       await p.file.close().catch(() => {});
@@ -161,6 +172,15 @@ export class MboxFiles {
   /** the window went (or began another) */
   async abortAll(owner: number): Promise<void> {
     for (const p of this.pending.values()) if (p.owner === owner) await this.drop(p);
+  }
+
+  /** renamed into place after the destination's last rename, whichever way that went */
+  private commit(tmp: string, path: string): Promise<void> {
+    const done = (this.commits.get(path) ?? Promise.resolve()).then(() => rename(tmp, path));
+    const settled = done.catch(() => {});
+    this.commits.set(path, settled);
+    void settled.then(() => { if (this.commits.get(path) === settled) this.commits.delete(path); });
+    return done;
   }
 
   private own(owner: number, id: string): Pending | undefined {
