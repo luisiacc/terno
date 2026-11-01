@@ -15,7 +15,7 @@ export function CategoryMenu({ category, children }: { category: Category; child
   return (
     <>
       <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
-        <ContextMenuTrigger render={children} />
+        <ContextMenuTrigger data-context-menu render={children} />
         <ContextMenuContent className="w-52" data-testid={`category-menu-${category.id}`}>
           <ContextMenuCheckboxItem closeOnClick data-testid="category-menu-show-in-inbox" checked={category.showInInbox} onCheckedChange={(on) => void setShowInInbox(category.id, on)}>
             <Inbox />

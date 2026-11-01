@@ -3,7 +3,7 @@ import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
-import { openMenuForSelection } from "~/components/thread-menu";
+import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
 import { getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
 import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
@@ -123,7 +123,10 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.selectStarred": () => selectWhere((t) => t.starred),
   "list.extendNext": () => extendSelection(1),
   "list.extendPrev": () => extendSelection(-1),
-  "list.menu": () => openMenuForSelection(),
+  "list.menu": () => {
+    // plan 102: a focused sidebar row with a menu of its own opens that one
+    if (!openFocusedMenu()) openMenuForSelection();
+  },
   "list.toggleUnread": toggleUnreadFilter,
   "list.filterUnread": () => filterList("unread"),
   "list.filterAll": () => filterList(undefined),

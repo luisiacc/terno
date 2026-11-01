@@ -130,12 +130,33 @@ function Notice({ accounts }: { accounts: Account[] }) {
   );
 }
 
+/** the markers shown now, by account: how the account menu opens one */
+const markers = new Map<number, () => void>();
+
+/**
+ * Plan 102: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a hover or
+ * focus on the key would (the panel's chunk, so its first focus lands in it; Google's script on the web).
+ */
+export async function openSignInMarker(account: Account): Promise<void> {
+  if (WEB && account.kind === "gmail") prepareGoogle();
+  await loadPanel().catch(() => {});
+  markers.get(account.id)?.();
+}
+
 /**
  * Plan 25: the key at the end of an account's sidebar row while it needs a sign-in. Quiet (the muted
  * ink, no fill); its name and tooltip say why; it opens that account's sign-in beside the row.
  */
 export function SignInMarker({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
+  // plan 102: the account menu's Sign In Again… opens this one; only while it's here (nothing waits for a later one)
+  useEffect(() => {
+    const show = () => setOpen(true);
+    markers.set(account.id, show);
+    return () => {
+      if (markers.get(account.id) === show) markers.delete(account.id);
+    };
+  }, [account.id]);
   const label = t("signIn.marker", { email: account.email });
   return (
     <Popover

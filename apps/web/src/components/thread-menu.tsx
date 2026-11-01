@@ -112,6 +112,18 @@ export function menuAnchor(selectedId: number | null, checked: ReadonlySet<numbe
 }
 
 /**
+ * Plan 102: ⇧F10 / the ContextMenu key on a row with a menu of its own (a sidebar account or category, marked
+ * `data-context-menu`) opens that one, as a right-click at the row's start would. False: none has focus.
+ */
+export function openFocusedMenu(): boolean {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || !el.closest("[data-context-menu]")) return false;
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(r.left + 24), clientY: Math.round(r.top + r.height / 2), button: 2 }));
+  return true;
+}
+
+/**
  * ⇧F10 / the ContextMenu key: the menu opens on the selection (or the open
  * thread), as a right-click there would (the row is scrolled into view first).
  */

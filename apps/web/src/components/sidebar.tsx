@@ -25,6 +25,9 @@ import { SignInMarker, SignInNotice } from "./sign-in-notice";
 import { UpdatePill } from "./update-pill";
 import { preloadComposer } from "./composer/lazy";
 import { CategoryMenu } from "./category-menu";
+import { AccountMenu } from "./account-menu";
+import { patchAccount } from "~/lib/accounts";
+import { snack } from "~/lib/snack";
 
 const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "inbox", icon: Inbox, keys: "g i" },
@@ -666,6 +669,69 @@ function useFolderUnreadByAccount(all: Record<string, number> | undefined): Read
 }
 
 /**
+ * Plan 102: an account's name being renamed, in place: the row's shape and the name's place, the field where the
+ * name was (not inside the row's button, Codex R5). Enter saves, Esc cancels (both give the row back its focus),
+ * leaving saves; empty or unchanged saves nothing. Each edit settles once (Codex R6: the blur after Enter is not a
+ * second save), and a composition's Enter is the input method's.
+ */
+function RenameRow({ account, active, count, reserveEnd, onDone }: { account: Account; active: boolean; count?: number; reserveEnd?: boolean; onDone: () => void }) {
+  const settled = useRef(false);
+  const finish = (value: string | null, refocus: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    const name = value?.trim();
+    if (name && name !== account.displayName) {
+      patchAccount(account.id, { displayName: name }).catch((e: unknown) => snack.error(t("account.renameFailed", { error: e instanceof Error ? e.message : String(e) })));
+    }
+    onDone();
+    if (refocus) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus());
+  };
+  return (
+    <div
+      data-testid={`nav-account-rename-${account.id}`}
+      data-active={active || undefined}
+      className={cn(
+        "type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-sidebar-foreground",
+        ROW_SEAM,
+        reserveEnd && "pr-8",
+        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
+      )}
+    >
+      <span className="flex size-4 items-center justify-center text-sidebar-glyph">
+        <CategoryDot color={account.color as CategoryColor} />
+      </span>
+      {/* the text starts where the name did: the field's padding sits outside the label's line */}
+      <input
+        autoFocus
+        data-testid={`nav-account-rename-input-${account.id}`}
+        aria-label={t("account.rename.label")}
+        defaultValue={account.displayName}
+        maxLength={200}
+        spellCheck={false}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          // the field's keys are its own: never the row's disclosure or a shortcut
+          e.stopPropagation();
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(e.currentTarget.value, true);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            finish(null, true);
+          }
+        }}
+        onBlur={(e) => finish(e.currentTarget.value, false)}
+        // the field's own menu (cut, copy, paste), not the account's
+        onContextMenu={(e) => e.stopPropagation()}
+        className="-mx-1 h-[calc(var(--nav-h)-6px)] min-w-0 flex-1 rounded-sm bg-background px-1 text-foreground ring-2 ring-ring outline-none"
+      />
+      {count ? <span className="inline-block text-xs text-muted-foreground tabular">{formatNumber(count)}</span> : null}
+    </div>
+  );
+}
+
+/**
  * An account in the sidebar: its row and, open, its folders (plans 67, 68). Memoized: opening one account, or a
  * count of another, never renders the rest (they get the same props: where you are is passed only to its own).
  */
@@ -716,26 +782,34 @@ const AccountEntry = memo(function AccountEntry({
   const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
   const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
   const viewUnread = useMemo(() => ({ archive: archiveUnread, spam: spamUnread }), [archiveUnread, spamUnread]);
+  // plan 102: Rename puts a field where the name is
+  const [renaming, setRenaming] = useState(false);
   return (
     <div data-account-id={a.id}>
-      {/* the row and its sign-in key together (plan 25), apart from the folders below */}
-      <div className="relative">
-        <NavItem
-          testId={`nav-account-${a.id}`}
-          // closed over where you are, the account is what's selected
-          active={here && !childActive}
-          expanded={open}
-          controls={`account-folders-${a.id}`}
-          onClick={() => toggleAccount(a.id)}
-          // syncing stays quiet here: the first-sync and connection pills speak for it
-          icon={<CategoryDot color={a.color as CategoryColor} />}
-          label={a.displayName}
-          // open, the count is its Inbox's row's
-          count={open ? undefined : unread || undefined}
-          reserveEnd={a.syncState.authRequired ? "icon" : undefined}
-        />
-        {a.syncState.authRequired && <SignInMarker account={a} />}
-      </div>
+      {/* the row and its sign-in key together (plan 25), apart from the folders below; its menu (plan 102) */}
+      <AccountMenu account={a} unread={unread ?? 0} onRename={() => setRenaming(true)}>
+        <div className="relative">
+          {renaming ? (
+            <RenameRow account={a} active={here && !childActive} count={open ? undefined : unread || undefined} reserveEnd={a.syncState.authRequired} onDone={() => setRenaming(false)} />
+          ) : (
+            <NavItem
+              testId={`nav-account-${a.id}`}
+              // closed over where you are, the account is what's selected
+              active={here && !childActive}
+              expanded={open}
+              controls={`account-folders-${a.id}`}
+              onClick={() => toggleAccount(a.id)}
+              // syncing stays quiet here: the first-sync and connection pills speak for it
+              icon={<CategoryDot color={a.color as CategoryColor} />}
+              label={a.displayName}
+              // open, the count is its Inbox's row's
+              count={open ? undefined : unread || undefined}
+              reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+            />
+          )}
+          {a.syncState.authRequired && <SignInMarker account={a} />}
+        </div>
+      </AccountMenu>
       <AccountFolders
         account={a}
         open={open}
@@ -952,6 +1026,7 @@ export function Sidebar() {
           </div>
           <button
             type="button"
+            data-testid="sidebar-add-account"
             onClick={() => setApp({ dialog: "addAccount" })}
             className="mt-0.5 flex h-7 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
           >

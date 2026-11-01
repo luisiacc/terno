@@ -439,9 +439,10 @@ setForwardOpenProbe(() => openingNow > 0);
 
 /**
  * `prefill` (plan 93, a new message from a snippet): the fields the new
- * message starts with, in the same step that creates it.
+ * message starts with, in the same step that creates it. `from` (plan 102,
+ * an account's menu): the account a new message is from.
  */
-export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>): Promise<void> {
+export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number): Promise<void> {
   const finish = beginDraftWork();
   if (!finish) return;
   markSelectionIntent();
@@ -461,7 +462,7 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   );
   let outcome: OpenOutcome;
   openingNow++;
-  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null, prefill); } finally {
+  try { outcome = await openComposeNow(mode, threadId, mine, lease ?? null, prefill, from); } finally {
     openingNow--;
     lease?.stopSelection?.(); if (lease) lease.stopSelection = undefined;
     lease?.stopContext?.(); if (lease) lease.stopContext = undefined;
@@ -473,11 +474,11 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   // nothing newer was asked for: a refresh that replaced the conversation mid-open (a sync, its own read state, a send
   // landing) is retried with it, and a failure says so instead of leaving the click without an answer
   if (mine !== intent || !outcome) return;
-  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1, prefill);
+  if (outcome === "stale" && attempt < 2) return openCompose(mode, threadId, attempt + 1, prefill, from);
   snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
 }
 
-async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null, prefill?: (accountId: number) => Partial<DraftFields>): Promise<OpenOutcome> {
+async function openComposeNow(mode: DraftMode, threadId: number | null, mine: number, lease: FocusLease | null, prefill?: (accountId: number) => Partial<DraftFields>, from?: number): Promise<OpenOutcome> {
   const focusAllowed = () => !lease || (lease.valid && focusLease === lease && lease.selectionRevision === getSelectionWriteRevision() && destinationAvailable(lease));
   if (mine !== intent || (lease && !lease.valid)) return;
   if (!destinationAvailable(lease)) {
@@ -488,7 +489,9 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const active = typeof document === "undefined" ? null : document.activeElement;
   const focusUnchanged = () => typeof document === "undefined" || document.activeElement === active || Boolean(lease?.earlyInput?.owns(document.activeElement)) || Boolean(lease?.valid && active && !active.isConnected && document.activeElement === document.body);
   const s = getApp();
-  const defaultAccount = s.accountId ?? s.accounts[0]?.id;
+  // plan 102: a new message from an account's menu is from that account
+  const asked = mode === "new" && s.accounts.some((a) => a.id === from) ? from : undefined;
+  const defaultAccount = asked ?? s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {
     snack(t("compose.noAccount"));
     setApp({ dialog: "addAccount" });
