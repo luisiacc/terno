@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { nodeUnsubscribeTransport } from "./unsubscribe-node";
-import { nodePlatform, openDatabase, SqlMailStore, type Db } from "@terno/db";
+import { nodePlatform, openDatabase, SqlMailStore } from "@terno/db";
 import type { MailStore } from "@terno/store";
 import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
@@ -43,7 +43,7 @@ export function resetFetchSockets(): void {
 }
 
 /** The store a Node backend runs on, over a database already open (and migrated): checkpoints on a worker, the instant index. */
-export function nodeStore(db: Db, options: Pick<BackendOptions, "platform" | "instantSearch" | "log">): SqlMailStore {
+export function nodeStore(db: ConstructorParameters<typeof SqlMailStore>[0], options: Pick<BackendOptions, "platform" | "instantSearch" | "log">): SqlMailStore {
   return new SqlMailStore(db, {
     checkpointWorker: true,
     instantSearch: options.instantSearch ?? true,
