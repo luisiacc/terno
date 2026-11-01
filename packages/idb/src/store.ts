@@ -7,7 +7,7 @@ import { idbRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { idbSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
-import { addMessageLabels, carryFolder, confirmRebuilt, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
+import { addMessageLabels, carryFolder, clearFolder, confirmRebuilt, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { removeStorage, storageThreads } from "./storage";
@@ -1487,6 +1487,7 @@ export class IdbMailStore implements MailStore {
     replace: (accountId, folders, carried) => this.command(() => replaceFolders(this.c, accountId, folders, carried)),
     count: (accountId, keys, after, limit) => this.read(() => countFolderMessages(this.c, accountId, keys, after, limit)),
     carry: (accountId, from, to, after, limit) => this.command(() => carryFolder(this.c, accountId, from, to, after, limit)),
+    clear: (accountId, key, limit) => this.command(() => clearFolder(this.c, accountId, key, limit)),
     rebuild: async (limit) => {
       const r = await this.command(() => {
         const own = rebuildFolders(this.c, limit);

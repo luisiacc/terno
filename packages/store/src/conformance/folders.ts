@@ -643,6 +643,35 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect((await store.threads.counts(0)).folderUnread?.[`${m!}:New`]).toBe(5);
     });
 
+    it("plan 107: a rename into a key another rename just vacated clears what it left there first, in slices (Codex code review round 14 #2)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const folder = (key: string) => ({ key, path: [key], selectable: true });
+      await store.folders.replace(m!, [folder("Work"), folder("Other")]);
+      await ingest(store, [
+        ...[1, 2, 3].map((i) => msg({ accountId: m!, providerMsgId: `w${i}`, subject: `w${i}`, inInbox: false, locations: [loc("Work", i)] })),
+        msg({ accountId: m!, providerMsgId: "o1", subject: "o1", inInbox: false, locations: [loc("Other", 1)] }),
+      ]);
+      const members = async (key: string) => (await store.threads.list({ view: "all", accountId: m!, folder: key, limit: 50 })).items.map((t) => t.id).sort((a, b) => a - b);
+      const work = await members("Work");
+      const other = await members("Other");
+      // Work → Job before a pass: Work's rows stay under its key, unlisted
+      await store.folders.carry(m!, "Work", "Job", 0, 10);
+      await store.folders.replace(m!, [folder("Job"), folder("Other")], ["Job"]);
+      // Other → Work: what Work left goes two at a time, then Other's are carried
+      const slices: boolean[] = [];
+      for (let more = true; more; ) slices.push((more = (await store.folders.clear(m!, "Work", 2)).more));
+      expect(slices).toEqual([true, false]);
+      await store.folders.carry(m!, "Other", "Work", 0, 10);
+      await store.folders.replace(m!, [folder("Job"), folder("Work")], ["Work"]);
+      expect(await members("Work")).toEqual(other);
+      expect(await members("Job")).toEqual(work);
+      expect((await store.threads.counts(0)).folderUnread?.[`${m!}:Work`]).toBe(1);
+      // nothing left: one call says so
+      expect(await store.folders.clear(m!, "Other", 2)).toEqual({ more: false });
+      expect(await members("Work")).toEqual(other);
+    });
+
     it("plan 107: a mailbox deleted on its server forgets its locations with no identity hold (a reset holds them)", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);

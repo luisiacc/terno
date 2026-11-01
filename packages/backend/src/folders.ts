@@ -44,7 +44,11 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
   // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time; never another
   // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
   for (const m of renamed) {
-    if (m.from === m.to || m.stale) continue;
+    if (m.from === m.to) continue;
+    // the new key starts empty: rows a folder that had the name left (renamed away before a pass) aren't this one's
+    // (Codex code review round 14 #2: Work → Job, then Other → Work, showed Job's threads in Work), a slice at a time
+    while ((await write(() => b.store.folders.clear(accountId, m.to, CARRY_SLICE))).more) await b.yieldTurn();
+    if (m.stale) continue;
     for (let after: number | null = 0; after !== null; ) {
       const from: number = after;
       after = (await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;

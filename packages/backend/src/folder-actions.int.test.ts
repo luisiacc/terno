@@ -750,6 +750,27 @@ it("a RENAME answered but whose LIST after it failed isn't acknowledged: a pass 
   expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
 });
 
+it("renaming into a name a rename just vacated, before a pass, shows only the moved folder's threads there (Codex code review round 14 #2)", async () => {
+  const t = await setup(["Work", "Other"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  t.server.control.addMessage("Other", { raw: rawIdleMail("In other") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const [b] = await t.threadsIn("Other");
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  // Other takes the name Work left, before a pass: Work shows Other's threads, never the old Work's
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Other", name: "Work" });
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Work")).toEqual([b]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Work")).toEqual([b]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+});
+
 it("a folder made again under a renamed one's old name, then deleted, records its own generation: the renamed one keeps its mail (round 8 audit)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

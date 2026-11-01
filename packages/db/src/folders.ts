@@ -414,6 +414,17 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
   });
 }
 
+/** Plan 107: a slice of the rows left under a key a rename is about to carry threads to (Store.folders.clear). */
+export function clearFolder(db: Db, accountId: number, key: string, limit: number): { more: boolean } {
+  return db.tx(() => {
+    const gone = db.all<{ thread_id: number }>(
+      "DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT ?) RETURNING thread_id",
+      key, accountId, key, limit,
+    );
+    return { more: gone.length >= limit };
+  });
+}
+
 /** Plan 107: a renamed IMAP folder's threads under its new key, a slice by thread id (Store.folders.carry). */
 export function carryFolder(db: Db, accountId: number, from: string, to: string, after: number, limit: number): { next: number | null } {
   return db.tx(() => {

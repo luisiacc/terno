@@ -521,6 +521,19 @@ export function folderUnreadCounts(c: Ctx): Record<string, number> {
   return out;
 }
 
+/** Plan 107: a slice of the rows left under a key a rename is about to carry threads to (the SQL adapter's clearFolder). */
+export function clearFolder(c: Ctx, accountId: number, key: string, limit: number): { more: boolean } {
+  const memberships = T(c, "thread_folders");
+  // read from the index and no further, then deleted (a live walk would meet what it deletes)
+  const gone: R[] = [];
+  for (const k of memberships.keysBy("folder", accountId, key)) {
+    gone.push(memberships.rows.get(k)!);
+    if (gone.length >= limit) break;
+  }
+  for (const r of gone) memberships.deleteRow(r);
+  return { more: gone.length >= limit };
+}
+
 /**
  * Plan 107: a renamed IMAP folder's threads under its new key, a slice at a time (the SQL adapter's carryFolder):
  * a live walk of the folder's index kept between slices, each row checked by its key (Codex code review round 3

@@ -535,6 +535,12 @@ export interface MailStore {
      * threads above `after`, by id; `next`: where the next slice starts, null when done.
      */
     carry(accountId: number, from: string, to: string, after: number, limit: number): Promise<{ next: number | null }>;
+    /**
+     * Plan 107: up to `limit` of the rows a folder no longer listed left under its key, gone, before a rename carries
+     * another folder's threads there (Codex code review round 14 #2: Work → Job, then Other → Work before a pass,
+     * showed the old Work's threads beside Other's). `more`: rows remain.
+     */
+    clear(accountId: number, key: string, limit: number): Promise<{ more: boolean }>;
   };
 
   /**

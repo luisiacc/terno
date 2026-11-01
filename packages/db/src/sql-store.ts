@@ -8,7 +8,7 @@ import { sqlRecipientReceipts } from "./recipient-receipts";
 import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
-import { carryFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
+import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
@@ -902,6 +902,7 @@ export class SqlMailStore implements MailStore {
     rebuild: async (limit) => rebuildFolders(this.db, limit),
     count: async (accountId, keys, after, limit) => countFolderMessages(this.db, accountId, keys, after, limit),
     carry: async (accountId, from, to, after, limit) => carryFolder(this.db, accountId, from, to, after, limit),
+    clear: async (accountId, key, limit) => clearFolder(this.db, accountId, key, limit),
   };
 
   readonly folderExport: MailStore["folderExport"] = {
