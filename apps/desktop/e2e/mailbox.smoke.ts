@@ -150,10 +150,11 @@ test("a mailbox from a newer Terno: the gate says so, and the backend isn't rest
 test("a step that fails: the gate names it, Try Again tries once more, the file stays at its version", async () => {
   const userData = profile("conflict");
   const db = join(userData, "terno.db");
-  oldMailbox(db);
+  // the newest step that creates a table, with that table already there (a hand-edited or half-restored file)
+  const creating = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql))!;
+  oldMailbox(db, { version: creating.version - 1 });
   const raw = new DatabaseSync(db);
-  // what the next step creates is already there (a hand-edited or half-restored file)
-  raw.exec("CREATE TABLE scheduled_sends (x)");
+  raw.exec(creating.sql);
   raw.close();
   const page = await launch(userData);
   await expect(gate(page)).toHaveAttribute("data-kind", "migration", { timeout: 30_000 });
@@ -164,7 +165,7 @@ test("a step that fails: the gate names it, Try Again tries once more, the file 
   await closePackaged(app);
   app = undefined;
   expect(logged(userData, "backend.started")).toBe(2);
-  expect(facts(db).version).toBe(PREV);
+  expect(facts(db).version).toBe(creating.version - 1);
   // its backup was made before the step failed, and kept for the retry
   expect(readdirSync(join(userData, "backups"))).toHaveLength(1);
 });

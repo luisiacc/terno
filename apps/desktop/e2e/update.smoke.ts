@@ -46,6 +46,12 @@ function signingIdentity(): string | null {
 function cleanSquirrel() {
   // Stop the test helper before removing the cache it writes.
   spawnSync("launchctl", ["remove", `${APP_ID}.ShipIt`]);
+  // a ShipIt the last test's quit started (an update was staged) may still be swapping a bundle at this path: the
+  // next test's fresh 0.1.0 must not be replaced under it, so it goes first (exactly the test bundle id's, nothing else)
+  for (const until = Date.now() + 20_000; Date.now() < until; ) {
+    if (spawnSync("pgrep", ["-f", `${APP_ID}.ShipIt`]).status !== 0) break;
+    spawnSync("sleep", ["0.2"]);
+  }
   for (const dir of CACHES) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 

@@ -16,7 +16,8 @@ afterEach(() => {
   }
 });
 
-const PREV = SCHEMA_VERSION - 1;
+/** the newest step that creates a table: run twice it fails, and it needs a page of its own (whatever came after it) */
+const CREATING = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql))!;
 
 function at(version: number): { dir: string; path: string; db: Db } {
   const dir = mkdtempSync(join(tmpdir(), "terno-open-"));
@@ -32,9 +33,9 @@ const version = (db: Db) => db.get<{ user_version: number }>("PRAGMA user_versio
 
 describe("why a mailbox couldn't open (plan 95)", () => {
   it("a step that fails names itself, and the file stays at the step before", () => {
-    const { db } = at(PREV - 1);
-    // a table the next step creates is already there (a hand-edited or half-restored file)
-    db.exec("CREATE TABLE scheduled_sends (x)");
+    const { db } = at(CREATING.version - 1);
+    // what the step makes is already there (a hand-edited or half-restored file): it fails
+    db.exec(CREATING.sql);
     const error = (() => {
       try {
         migrate(db);
@@ -43,16 +44,19 @@ describe("why a mailbox couldn't open (plan 95)", () => {
       }
     })();
     expect(error).toBeInstanceOf(MigrationError);
-    expect(error).toMatchObject({ step: SCHEMA_VERSION });
-    expect(version(db)).toBe(PREV);
-    expect(classifyOpenError(error)).toEqual({ kind: "failed", reason: "migration", step: SCHEMA_VERSION });
+    expect(error).toMatchObject({ step: CREATING.version });
+    expect(version(db)).toBe(CREATING.version - 1);
+    expect(classifyOpenError(error)).toEqual({ kind: "failed", reason: "migration", step: CREATING.version });
     db.close();
   });
 
   it("a migration that runs out of room (a real SQLITE_FULL) rolls back, keeps SQLite's error, and is 'no room'", () => {
-    const { db } = at(PREV);
+    const { db } = at(CREATING.version - 1);
     for (let i = 0; i < 50; i++) db.run("INSERT INTO accounts (kind, email, display_name, provider_config, created_at) VALUES ('imap', ?, '', '{}', 0)", `a${i}@example.test`);
+    const schema = () => db.all("SELECT type, name, sql FROM sqlite_master ORDER BY type, name");
+    const before = schema();
     const pages = db.get<{ page_count: number }>("PRAGMA page_count")!.page_count;
+    // not one page more: whatever the last step writes doesn't fit
     db.exec(`PRAGMA max_page_count = ${pages}`);
     let error: unknown;
     try {
@@ -64,9 +68,9 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     // the cause is SQLite's own (not a failed ROLLBACK's "no transaction is active")
     expect(((error as MigrationError).cause as { errcode: number }).errcode & 0xff).toBe(13);
     expect(classifyOpenError(error, () => ({ needBytes: 10, freeBytes: 1 }))).toEqual({ kind: "no-room", stage: "migrate", needBytes: 10, freeBytes: 1, canSkipBackup: false });
-    expect(version(db)).toBe(PREV);
+    expect(version(db)).toBe(CREATING.version - 1);
     // nothing of the step is left behind
-    expect(db.get("SELECT name FROM sqlite_master WHERE name = 'scheduled_sends'")).toBeUndefined();
+    expect(schema()).toEqual(before);
     db.exec("PRAGMA max_page_count = 1073741823");
     migrate(db);
     expect(version(db)).toBe(SCHEMA_VERSION);
@@ -92,7 +96,7 @@ describe("why a mailbox couldn't open (plan 95)", () => {
   });
 
   it("a damaged file is 'corrupt', and the failed open is closed (the file can be replaced and opened again)", () => {
-    const { dir, db } = at(PREV);
+    const { dir, db } = at(CREATING.version - 1);
     db.close();
     const path = join(dir, "garbage.db");
     writeFileSync(path, Buffer.alloc(16384, 0x5a));
@@ -109,7 +113,7 @@ describe("why a mailbox couldn't open (plan 95)", () => {
 
   it("a mailbox in a folder Terno can't write to is 'unwritable'", () => {
     if (process.getuid?.() === 0) return;
-    const { dir, path, db } = at(PREV);
+    const { dir, path, db } = at(CREATING.version - 1);
     db.close();
     chmodSync(path, 0o444);
     rmSync(`${path}-wal`, { force: true });
