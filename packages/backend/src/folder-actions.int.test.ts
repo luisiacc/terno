@@ -1352,3 +1352,22 @@ it("favorites whose folders went in another app don't count toward the limit (Co
   await t.backend.syncAccount(t.account.id);
   expect((await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Kept", view: null, on: true })).favorites).toEqual([{ accountId: t.account.id, folder: "Kept", view: null }]);
 });
+
+it("favorites of folders another app deleted go when the pass stores the account's list: another account's Inbox can be favorited (Codex code review round 24 #3)", async () => {
+  const names = Array.from({ length: FAVORITES_MAX }, (_, i) => `F${i}`);
+  const t = await setup(names);
+  await t.backend.syncAccount(t.account.id);
+  for (const name of names) await t.client.call("folders.favorite", { accountId: t.account.id, folder: name, view: null, on: true });
+  const other = await t.client.call("accounts.addImap", {
+    email: "second@example.test", displayName: "Second",
+    imap: { host: "127.0.0.1", port: 1, secure: false, user: "second" },
+    smtp: { host: "127.0.0.1", port: 1, secure: false, user: "second" }, password: "secret", verify: false,
+  });
+  const heard: number[] = [];
+  t.client.on("favoriteFolders", (s) => heard.push(s.favorites.length));
+  // deleted on the server by another client: the pass stores A's list without them, and their favorites go with it
+  for (const name of names) t.server.control.deleteMailbox(name);
+  await t.backend.syncAccount(t.account.id);
+  expect(heard.at(-1)).toBe(0);
+  expect((await t.client.call("folders.favorite", { accountId: other.id, folder: null, view: "inbox", on: true })).favorites).toEqual([{ accountId: other.id, folder: null, view: "inbox" }]);
+});

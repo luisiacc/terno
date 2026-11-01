@@ -1652,8 +1652,9 @@ export class BackendCore {
               void this.rebuildFolders();
             }
             // a DELETE whose answer was lost, shown done by this list, takes its favorites as a change's does (Codex code
-            // review round 12 #3: they stayed, and a folder made again under the name came back a favorite)
-            if (moves.length || deleted.length) await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves, deleted })));
+            // review round 12 #3: they stayed, and a folder made again under the name came back a favorite); and so
+            // does a folder gone in another app, this list being the account's whole one (Codex code review round 24 #3)
+            await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves, deleted, listed: new Set(folders.map((f) => f.key)) })));
           });
         },
       };

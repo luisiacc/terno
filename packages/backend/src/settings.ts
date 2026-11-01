@@ -339,10 +339,12 @@ export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFo
 
 /**
  * Plan 107: favorites follow an account's folders: `renamed` keys move (an IMAP rename gives a folder a new key), and
- * the `deleted` ones go, or all of a removed account's (`deleted: "all"`). Nothing is written when none is touched
- * (null).
+ * the `deleted` ones go, or all of a removed account's (`deleted: "all"`). `listed`: the account's whole list as just
+ * stored (its authoritative catalog): one of its own folders not in it went in another app, and goes too (Codex code
+ * review round 24 #3: invisible, it still counted toward the limit when another account's folder was favorited).
+ * Nothing is written when none is touched (null).
  */
-export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all" }): Promise<FavoriteFolder[] | null> {
+export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all"; listed?: ReadonlySet<string> }): Promise<FavoriteFolder[] | null> {
   return store.settings.update<StoredSettings, FavoriteFolder[] | null>("app", {}, (raw) => {
     const s = migrate(raw);
     const list = s.favoriteFolders ?? [];
@@ -355,6 +357,7 @@ export async function followFavoriteFolders(store: SettingsStore, accountId: num
       if (gone === null || (f.folder !== null && gone.has(f.folder))) { touched = true; continue; }
       const to = f.folder !== null ? moved.get(f.folder) : undefined;
       const kept = to === undefined || to === f.folder ? f : { ...f, folder: to };
+      if (change.listed && kept.folder !== null && !change.listed.has(kept.folder)) { touched = true; continue; }
       if (kept !== f) touched = true;
       // once each, whichever way it got there: a stale favorite left under the new key (its folder went in another app
       // before the list was read again) is the moved one's twin (Codex code review round 16 #2: kept beside it)

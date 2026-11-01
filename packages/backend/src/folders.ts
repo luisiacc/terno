@@ -142,7 +142,8 @@ async function change<R extends FolderChange>(
         if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
         b.notifyChanged(stored.touched);
         void b.rebuildFolders();
-        if (renamed.length || deleted.length) await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted }));
+        // and those of folders gone in another app: the list after the change is the account's whole one (round 24 #3)
+        await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted, listed: new Set(result.folders.map((f) => f.key)) }));
       });
       // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
       // a LIST failing after the DELETE left the favorite for good)
