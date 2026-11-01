@@ -353,6 +353,86 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { release(); await syncing; }
   });
 
+  it.each([["send", "policy first"], ["send", "auth first"], ["sync", "policy first"], ["sync", "auth first"]] as const)("surfaces invalid_grant despite concurrent policy refusal from %s: %s", async (policySource, order) => {
+    const h = await setup(false, kind);
+    const provider = (await h.backend.provider(h.account.id))!;
+    await provider.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const held = (status: number, value: unknown) => {
+      let controller!: ReadableStreamDefaultController<Uint8Array>, entered = false, released = false;
+      const response = new Response(new ReadableStream<Uint8Array>({
+        start(c) { controller = c; },
+        pull() { entered = true; },
+      }, { highWaterMark: 0 }), { status, headers: { "content-type": "application/json" } });
+      return { response, get entered() { return entered; }, release() {
+        if (released) return;
+        released = true;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(value)));
+        controller.close();
+      } };
+    };
+    const policy = held(403, { error: { errors: [{ reason: "SERVICE_DISABLED" }] } });
+    const auth = held(400, { error: "invalid_grant" });
+    let history = 0, sends = 0;
+    const fromSend = policySource === "send";
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages/send") return fromSend ? policy.response : sends++ === 0 ? Response.json({ error: { code: 401 } }, { status: 401 }) : undefined;
+      if (path === "/token") return auth.response;
+      if (path === "/gmail/history") return !fromSend ? policy.response : history++ === 0 ? Response.json({ error: { code: 401 } }, { status: 401 }) : healthySync(request);
+      return healthySync(request);
+    });
+    const first = await h.send();
+    let sending: Promise<number> | undefined, syncing: Promise<void> | undefined;
+    if (fromSend) sending = h.backend.runWorker();
+    else syncing = h.backend.syncAccount(h.account.id);
+    try {
+      await vi.waitFor(() => expect(policy.entered).toBe(true));
+      if (fromSend) syncing = h.backend.syncAccount(h.account.id);
+      else sending = h.backend.runWorker();
+      await vi.waitFor(() => expect(auth.entered).toBe(true));
+      const policyRun = fromSend ? sending : syncing;
+      const authRun = fromSend ? syncing : sending;
+      if (order === "policy first") {
+        policy.release();
+        await policyRun;
+        expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" } });
+        auth.release();
+        await authRun;
+      } else {
+        auth.release();
+        await authRun;
+        expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.gmail.revoked" } });
+        policy.release();
+        await policyRun;
+      }
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", authRequired: true, authScope: null, lastErrorI18n: { key: "errors.gmail.revoked" } });
+      expect(await h.backend.store.ops.get(first.opId)).toMatchObject({ state: fromSend ? "failed" : "queued", attempts: fromSend ? 1 : 0 });
+      const sibling = await h.send();
+      const queued = await h.backend.store.ops.get(sibling.opId);
+      const calls = h.paths().slice();
+      await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+      expect(await h.backend.runWorker()).toBe(1);
+      expect(h.paths()).toEqual(calls);
+      expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: queued!.payload_json, target_json: queued!.target_json });
+      expect(await h.backend.runWorker()).toBe(0);
+      let accepted = 0;
+      h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? Response.json({ id: `recovered-${++accepted}`, threadId: `recovered-thread-${accepted}` }) : healthySync(request));
+      await h.backend.setSecret(`account:${h.account.id}:refreshToken`, "synthetic-reconnected-refresh");
+      await h.backend.signedIn(h.account.id);
+      await provider.verify();
+      await h.backend.syncAccount(h.account.id);
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: false, lastError: null, lastErrorI18n: null });
+      expect(await h.backend.runWorker()).toBe(fromSend ? 1 : 2);
+      expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
+      expect(await h.backend.store.ops.get(first.opId)).toMatchObject({ state: fromSend ? "failed" : "succeeded", attempts: 1 });
+      expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(fromSend ? 2 : 3);
+    } finally {
+      policy.release(); auth.release();
+      await Promise.allSettled([...(sending ? [sending] : []), ...(syncing ? [syncing] : [])]);
+    }
+  });
+
   it("an older policy body cannot relatch after explicit recovery in the same credential generation", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();

@@ -129,6 +129,10 @@ export class Connectivity {
     return this.accounts.has(accountId);
   }
 
+  signInRequired(accountId: number): boolean {
+    return this.accounts.get(accountId)?.signIn === true;
+  }
+
   /** consecutive retryable failures (0: healthy) */
   failures(accountId: number): number {
     return this.accounts.get(accountId)?.failures ?? 0;

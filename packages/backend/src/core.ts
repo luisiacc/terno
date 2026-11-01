@@ -1567,8 +1567,10 @@ export class BackendCore {
     }
     const setState = async (patch: Partial<AccountSyncState>) => {
       await this.accountWrite(life, async () => {
-        // Local admission refusals and stale sync completion cannot replace the policy's recovery instruction.
-        if (this.google.get(accountId)?.policyPaused && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !gmailPolicyError(patch.lastErrorI18n?.key)) return;
+        const policyFailure = gmailPolicyError(patch.lastErrorI18n?.key);
+        if (policyFailure && this.connectivity.signInRequired(accountId)) return;
+        // A policy-only pause preserves its instruction, but cannot hide a genuine sign-in refusal.
+        if (this.google.get(accountId)?.policyPaused && patch.authRequired !== true && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !policyFailure) return;
         await this.store.accounts.setSyncState(accountId, patch);
         await this.emitAccounts();
       });
@@ -2327,7 +2329,7 @@ export class BackendCore {
         if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && gmailPolicyError(pe.i18n?.key)) {
           this.connectivity.succeeded(op.account_id);
           await this.accountWrite(life, async () => {
-            if (credentials !== this.credentialsOf(op.account_id)) return;
+            if (credentials !== this.credentialsOf(op.account_id) || this.connectivity.signInRequired(op.account_id)) return;
             await this.store.accounts.setSyncState(op.account_id, { status: "error", lastError: pe.message, lastErrorI18n: pe.i18n, connection: null });
             await this.emitAccounts();
           });
