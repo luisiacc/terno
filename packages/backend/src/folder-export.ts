@@ -208,20 +208,27 @@ export class FolderExports {
 
 /**
  * Ids by (date, id): runs sorted natively a block at a time, then merged pass by pass with a turn whenever a
- * slice's worth of time went (50k ids never sort in one go).
+ * slice's worth of time went (50k ids never sort in one go). The time is looked at every `STEP` places, inside a
+ * merge and while the order and the result are written (Codex code review round 9 #4: a million ids' last merge and
+ * the result's build were one ~56 ms segment).
  */
 export async function sortByDate(ids: readonly number[], dates: readonly number[], yieldTo: () => Promise<void>, sliceMs = 8): Promise<Float64Array> {
   const n = ids.length;
   const less = (a: number, b: number) => dates[a]! < dates[b]! || (dates[a] === dates[b] && ids[a]! < ids[b]!);
-  let order = new Uint32Array(n).map((_, i) => i);
-  let spare = new Uint32Array(n);
-  const RUN = 2048;
+  const STEP = 4096;
   let started = performance.now();
   const turn = async () => {
     if (performance.now() - started < sliceMs) return;
     await yieldTo();
     started = performance.now();
   };
+  let order = new Uint32Array(n);
+  let spare = new Uint32Array(n);
+  for (let lo = 0; lo < n; lo += STEP) {
+    for (let i = lo, end = Math.min(n, lo + STEP); i < end; i++) order[i] = i;
+    await turn();
+  }
+  const RUN = 2048;
   for (let lo = 0; lo < n; lo += RUN) {
     const run = Array.from(order.subarray(lo, Math.min(n, lo + RUN))).sort((a, b) => (less(a, b) ? -1 : less(b, a) ? 1 : 0));
     order.set(run, lo);
@@ -234,12 +241,21 @@ export async function sortByDate(ids: readonly number[], dates: readonly number[
       let i = lo;
       let j = mid;
       let k = lo;
-      while (i < mid && j < hi) spare[k++] = less(order[j]!, order[i]!) ? order[j++]! : order[i++]!;
-      while (i < mid) spare[k++] = order[i++]!;
-      while (j < hi) spare[k++] = order[j++]!;
-      await turn();
+      while (k < hi) {
+        // a stretch of the merge, then the time looked at
+        for (const end = Math.min(hi, k + STEP); k < end; ) {
+          if (i < mid && (j >= hi || !less(order[j]!, order[i]!))) spare[k++] = order[i++]!;
+          else spare[k++] = order[j++]!;
+        }
+        await turn();
+      }
     }
     [order, spare] = [spare, order];
   }
-  return Float64Array.from(order, (i) => ids[i]!);
+  const out = new Float64Array(n);
+  for (let lo = 0; lo < n; lo += STEP) {
+    for (let i = lo, end = Math.min(n, lo + STEP); i < end; i++) out[i] = ids[order[i]!]!;
+    await turn();
+  }
+  return out;
 }

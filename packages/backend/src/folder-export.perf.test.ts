@@ -16,7 +16,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { BUDGET_MULTIPLIER, report, type Stat } from "../../db/src/test/perf";
 import { describeGap, watchLoop } from "../../db/src/test/timing";
 import type { BackendCore } from "./core";
-import { FolderExports } from "./folder-export";
+import { FolderExports, sortByDate } from "./folder-export";
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 const FOLDER = 5_000;
@@ -242,6 +242,26 @@ describe("folder export (plan 107)", () => {
     }
   }, 900_000);
 
+
+  it("a 1,000,000-message folder's order (both stores sort it here): every stretch between turns within budget (Codex code review round 9 #4)", async () => {
+    const n = 1_000_000;
+    const ids = Array.from({ length: n }, (_, i) => n - i);
+    const dates = ids.map((id) => (id * 7919) % 100_000);
+    const stretches: number[] = [];
+    let since = performance.now();
+    const sorted = await sortByDate(ids, dates, async () => {
+      stretches.push(performance.now() - since);
+      await yieldTurn();
+      since = performance.now();
+    });
+    stretches.push(performance.now() - since);
+    for (let i = 1; i < n; i++) if (dates[n - sorted[i]!]! < dates[n - sorted[i - 1]!]!) throw new Error(`out of order at ${i}`);
+    const ms = [...stretches].sort((a, b) => a - b);
+    const max = ms.at(-1)!;
+    stats.push({ name: `sortByDate: ${n} ids, ${stretches.length} stretches`, budgetMs: STALL_MS, p50: ms[Math.floor(ms.length / 2)]!, p95: ms[Math.ceil(ms.length * 0.95) - 1]!, max, iterations: stretches.length });
+    // before: the last merge and the result's build ran whole between two turns (~56 ms)
+    expect(max, `longest of ${stretches.length} stretches`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
+  }, 300_000);
 
   it("SQLite: a 5,000-message folder, each next within budget", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
