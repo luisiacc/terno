@@ -6,6 +6,7 @@ import { pageOf } from "~/lib/page";
 import { snack } from "~/lib/snack";
 import { focusPinned, pinnedKey, usePinned } from "~/lib/pinned-draft-state";
 import { getApp, setApp } from "~/state/app";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 
 let stopWatch: (() => void) | null = null;
 
@@ -22,7 +23,8 @@ function clear(): void {
  */
 export function pinDraft(key: string): boolean {
   const d = useDrafts.getState().drafts[key];
-  if (!d || d.sending || draftEditsHeld()) return false;
+  // Review drafts owns every draft while it is open (its own slot, its own checkpoints)
+  if (!d || d.sending || draftEditsHeld() || useDraftRecovery.getState().open) return false;
   const current = usePinned.getState().key;
   if (current === key) { focusPinned(); return true; }
   if (current) unpinDraft(current, { focus: false });
@@ -34,7 +36,10 @@ export function pinDraft(key: string): boolean {
   if (d.uiState !== "open") setDraftUi(key, "open");
   usePinned.setState((s) => ({ key, threadId: d.mode === "new" ? null : draftPresentationThread(d), focus: s.focus + 1 }));
   // the draft gone (sent, discarded, scheduled, forgotten): the card goes with it
-  stopWatch = useDrafts.subscribe((state) => { if (!state.drafts[key]) clear(); });
+  const stopDrafts = useDrafts.subscribe((state) => { if (!state.drafts[key]) clear(); });
+  // Review drafts takes the window: the card lets go (the draft stays where it lives), so recovery's slot shows the editor
+  const stopRecovery = useDraftRecovery.subscribe((state) => { if (state.open) clear(); });
+  stopWatch = () => { stopDrafts(); stopRecovery(); };
   return true;
 }
 
@@ -50,8 +55,12 @@ function onScreen(threadId: number | null): boolean {
 export function focusReading(left = true): void {
   const active = document.activeElement;
   if (left && active && active !== document.body && active.isConnected) return;
-  const page = document.querySelector<HTMLElement>("[data-testid=list-page] [data-testid=reader]");
-  (page ?? document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]"))?.focus({ preventScroll: true });
+  // List's page (a conversation, or a new message being written over the list); else the list, if it can take focus
+  const page = document.querySelector<HTMLElement>("[data-testid=list-page] [data-testid=reader]") ?? document.querySelector<HTMLElement>("[data-testid=list-page] [data-testid=compose-to]");
+  const list = document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]");
+  const target = page ?? (list && !list.closest("[inert]") ? list : null);
+  if (target) target.focus({ preventScroll: true });
+  else if (active instanceof HTMLElement && active.closest("[data-testid=pinned-draft]")) active.blur();
 }
 
 /**

@@ -33,7 +33,7 @@
   - elsewhere and untouched: a reply goes back to its conversation as it was; an untouched new message just goes (as Esc on a new message does).
 - **Esc** in the card leaves the card but keeps it pinned: focus goes back to the list (or List's page), so j/k work again. That is the reading-while-writing loop.
 - **Send / Discard** close the card (the draft is gone); Discard's undo restores it inline as today.
-- A pinned draft that disappears another way (sent from elsewhere, converted by r/a/f into another mode under a new key, the account removed) unpins silently.
+- A pinned draft that disappears another way (sent, scheduled, forgotten) unpins silently. r / a / f on its conversation never convert it (see the revisions).
 - The pin is session state (not persisted): after a reload the draft is where it lives, as today.
 
 ### Shape
@@ -69,3 +69,33 @@ Nothing on a hot path: the card mounts only while pinned; the inset is one numbe
 
 - Several pinned drafts, dragging or resizing the card, minimizing it to a header.
 - Remembering the pin across reloads.
+
+## Revisions after the Codex review (plan)
+
+Codex (read-only, against the code) raised 11 points. What changed:
+
+1. **Two editors for one key during the close animation.** `Expand` keeps closing children for up to 150 ms. The slot now drops its form the moment the draft is pinned (`d` is undefined for a pinned key), so the old editor unmounts in the same commit the card's mounts.
+2. **A pinned new message and `leaveNewDraft`.** Pinning clears `compose` directly (never `leaveNewDraft`), and `leaveNewDraft` never forgets the pinned key.
+3. **Leased focus from r/a/f.** `openCompose` checks for a pinned draft on the conversation *before* it takes a reader lease and sends focus to the card; the later check (expired placements found by source) releases the lease the normal way. The card also answers a `draftFocus` for its key (leased or not) as the slot would.
+4. **Placement expiring while pinned.** The pin remembers the conversation it came from (`usePinned.threadId`), so that conversation keeps showing "Draft pinned" after its placement expired; unpinning there with an expired placement goes through `openStoredDraft`, which validates the source again.
+5. **Conversion keeps the key.** r / a / f on the pinned draft's conversation only focus the card; they never convert it.
+6. **Other open paths.** `openStoredDraft` and `showNewDraft` focus the card for a pinned key instead of mounting it elsewhere.
+7. **"On screen" checks.** Not in a bulk selection, not under a new message, and in List only on its page; `draftShown` names the key explicitly.
+8. **"Draft saved" only when it is.** The snack waits for the flush and reads the result: saved → "Draft saved"; anything else → "Draft kept, but not saved yet" (its Retry is in the draft). Both offer Open.
+9. **Snack and card in List.** Where the pane is too narrow for the dock (30 rem, bottom left) and the card side by side, the card stands on the dock (lifted by its inset), and the buffer includes the lift.
+10. **One inset everywhere.** The reader, List's list (anchoring too) and List's new-message page take `max(snack, pinned)`; Split's new message is padded by the card; Split's list is not (the card isn't over it). `keepInView` now clears the scroller's `scroll-padding-bottom`.
+11. **Account removal.** Dropped from the plan: a draft whose account is gone is kept (as `openStoredDraft` allows), and the card shows it like the standalone composer does.
+
+## Codex code review
+
+Three findings, all fixed with a regression test that fails without the fix:
+
+1. **The card's form leaked state between pinned drafts** (revealed Cc/Bcc rows, recipient undo history). The card is keyed by draft. e2e: "another draft pinned starts with its own form".
+2. **Review drafts showed "Draft pinned" instead of the editor.** Opening Review drafts lets go of the pin (the draft stays where it lives); nothing can be pinned while it is open, and its slot has no Pin button. Unit: "Review drafts".
+3. **Esc in the card over List's new-message page** aimed at the hidden (inert) list and left focus in the card. It now goes to the page's new message; the list only when it can take focus. e2e: "Esc in the card over a new message".
+
+## Results
+
+- `pinned-draft.spec.ts` (10 flows, the `@design` ones in all three designs), `pinned-draft.test.ts` (8), the palette spec (its draft group lists Pin draft now).
+- Screenshots in light and dark, Split and List, looked at.
+- Pre-existing failures on `main`, unchanged by this plan: `draft-presentation-app-r1` and `forward-source-continuity` (unit), three `designs.spec` tests (Settings → Appearance baseline, font faces), the perf gate's "toggling More" (category seeding error). `main` also needs `packages/backend/src/account-label.ts`, imported by plan 101 but never committed.

@@ -110,10 +110,22 @@ test.describe("a pinned draft", { tag: "@design" }, () => {
     await expect(cardBody(page)).toContainText("Not lost");
   });
 
+  test("another draft pinned starts with its own form, not the last one's (Codex code review 1)", async ({ app: page }) => {
+    await pinReply(page, 1, "First");
+    // the first draft's Cc row, revealed in the card
+    await card(page).getByTestId("compose-show-cc").click();
+    await expect(card(page).getByTestId("compose-cc")).toBeVisible();
+    await pinReply(page, 2, "Second");
+    await expect(cardBody(page)).toContainText("Second");
+    await expect(card(page).getByTestId("compose-cc")).toHaveCount(0);
+    await expect(card(page).getByTestId("compose-show-cc")).toBeVisible();
+  });
+
   test("Pin draft and Unpin draft from the palette", async ({ app: page }) => {
     await openRow(page, 1);
     await focusList(page);
     await page.keyboard.press("r");
+    await expect(page.getByTestId("reader").getByTestId("compose-body")).toBeFocused();
     await page.keyboard.type("Via the palette");
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByTestId("palette-draft-pin").click();
@@ -154,5 +166,22 @@ test.describe("a pinned draft in the List layout", () => {
     await expect(page.getByTestId("reader-subject")).toBeVisible();
     await footClearsCard(page);
     await expect(cardBody(page)).toContainText("From the list layout");
+  });
+
+  test("Esc in the card over a new message goes to that message, not the hidden list (Codex code review 3)", async ({ app: page }) => {
+    await rows(page).nth(1).click();
+    await focusList(page);
+    await page.keyboard.press("r");
+    await page.keyboard.type("Pinned first");
+    await page.getByTestId("reader").getByTestId("compose-pin").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("reader").getByRole("button", { name: /back/i }).first().click();
+    await focusList(page);
+    await page.keyboard.press("c");
+    await expect(page.getByTestId("list-page")).toHaveAttribute("data-page", "compose");
+    await cardBody(page).click();
+    await page.keyboard.press("Escape");
+    await expect(cardBody(page)).not.toBeFocused();
+    await expect(page.getByTestId("list-page").getByTestId("compose-to")).toBeFocused();
   });
 });

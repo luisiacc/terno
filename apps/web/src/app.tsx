@@ -120,7 +120,8 @@ export function App() {
   const composing = useApp((s) => s.compose !== null);
   const selectedId = useApp((s) => s.selectedId);
   const list = useAppearance((s) => s.layout) === "list";
-  const pinned = usePinned((s) => s.key !== null);
+  // keyed by draft: another pinned draft never inherits the last one's form state (revealed rows, recipient undo)
+  const pinned = usePinned((s) => s.key);
   // Split: a new message keeps its foot (the format bar) clear of the pinned draft
   const composeInset = usePinned((s) => (!list && composing ? s.inset : 0));
   const page = usePage();
@@ -178,7 +179,7 @@ export function App() {
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
-          {list && pinned && <PinnedDraft list />}
+          {list && pinned && <PinnedDraft key={pinned} list />}
           <SnackDock />
           {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it) */}
           <PaneHandle pane="sidebar" />
@@ -190,7 +191,7 @@ export function App() {
             <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing ? selectedId : null}>
               {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
             </PaneBoundary>
-            {pinned && <PinnedDraft list={false} />}
+            {pinned && <PinnedDraft key={pinned} list={false} />}
           </main>
         )}
       </div>

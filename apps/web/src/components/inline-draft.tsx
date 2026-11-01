@@ -25,6 +25,7 @@ import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
 import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
+import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 
 export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
@@ -302,6 +303,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
   const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
+  const recovering = useDraftRecovery((s) => s.open);
   const focus = useApp((s) => (draftKey && !pinned && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
   const slotMove = useRef<InlineFocusMove | null>(null), slotGeneration = useRef(0);
@@ -482,9 +484,12 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
-                <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
-                  <Pin />
-                </ToolIcon>
+                {/* plan 115: not from Review drafts, which owns the draft while it's open */}
+                {!recovering && (
+                  <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
+                    <Pin />
+                  </ToolIcon>
+                )}
                 <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </ToolIcon>

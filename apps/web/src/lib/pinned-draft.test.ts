@@ -18,6 +18,7 @@ const { pinDraft, unpinDraft } = await import("./pinned-draft");
 const { usePinned } = await import("./pinned-draft-state");
 const { useSnack, resetSnacks } = await import("./snack");
 const { setApp } = await import("~/state/app");
+const { useDraftRecovery } = await import("./draft-recovery-ui");
 
 let saves: number;
 let fail: boolean;
@@ -28,6 +29,7 @@ beforeEach(() => {
   useDrafts.setState({ drafts: {} });
   usePinned.setState({ key: null, threadId: null, inset: 0 });
   resetSnacks();
+  useDraftRecovery.setState({ open: false, key: null, reason: "error", checkpoint: undefined });
   setApp({ compose: null, selectedId: null, checked: new Set(), scope: null });
   setDraftTransport(async (method, params) => {
     if (method === "drafts.delete") return { ok: true };
@@ -66,6 +68,24 @@ describe("pinning", () => {
     const key = createDraft(newFields(1));
     pinDraft(key);
     useDrafts.setState({ drafts: {} });
+    expect(usePinned.getState().key).toBeNull();
+  });
+});
+
+describe("Review drafts (Codex code review 2)", () => {
+  it("opening it lets go of the pin, keeping the draft where it lives", () => {
+    const key = createDraft(newFields(1));
+    editDraft(key, { bodyText: "kept" });
+    pinDraft(key);
+    useDraftRecovery.setState({ open: true, key, reason: "error" });
+    expect(usePinned.getState().key).toBeNull();
+    expect(useDrafts.getState().drafts[key]?.bodyText).toBe("kept");
+  });
+
+  it("nothing is pinned while it is open", () => {
+    const key = createDraft(newFields(1));
+    useDraftRecovery.setState({ open: true, key, reason: "error" });
+    expect(pinDraft(key)).toBe(false);
     expect(usePinned.getState().key).toBeNull();
   });
 });
