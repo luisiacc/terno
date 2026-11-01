@@ -950,6 +950,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         if (page.next === undefined) break;
         if (!nonempty(page.next) || page.next.length > LIST_TOKEN_MAX || page.next <= (state.refreshAfter ?? "") || page.items.length > 50) throw invalidResponse();
+        // every stored message's flags read again: a full page means more follow (minutes under Gmail's quota), so the labels first
+        if (catalog === null && !earlyTried && page.items.length >= 50) await earlyLabels(sink);
         const updates: FlagUpdate[] = [], gone: number[] = [];
         await download(page.items, async (m) => {
           try {

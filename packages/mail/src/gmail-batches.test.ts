@@ -7,7 +7,7 @@ import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
 import type { QuotaPacer } from "./gmail-quota";
 
-function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>, o: { unitsPerSecond?: number; quota?: QuotaPacer; unauthorizedOnce?: string; pageSize?: number; labels?: () => Response | Promise<Response> } = {}) {
+function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>, o: { unitsPerSecond?: number; quota?: QuotaPacer; unauthorizedOnce?: string; pageSize?: number; labels?: () => Response | Promise<Response>; stored?: boolean } = {}) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   const ids = Array.from({ length: count }, (_, i) => `m${i}`);
@@ -23,7 +23,19 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
   const ctx = {
     incoming, incomingProcessor: processor,
     account: { id: 1 }, config: {},
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
+    store: {
+      // stored: every listed message is already here (an interrupted first sync resumed): the flags are read again
+      messageByProviderId: async (id: string) => (o.stored ? { id: ids.indexOf(id) + 1, providerMsgId: id } : null),
+      syncedMessages: async () => [],
+      syncedMessagePage: async (after?: string) => {
+        if (!o.stored) return { items: [] };
+        // the page token only grows (zero-padded positions), as the store's does
+        const from = after === undefined ? 0 : Number(after);
+        const items = ids.slice(from, from + 50).map((id) => ({ id: ids.indexOf(id) + 1, providerMsgId: id }));
+        return { items, ...(items.length && { next: String(from + items.length).padStart(8, "0") }) };
+      },
+      pendingAttachmentBodies: async () => [],
+    },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
@@ -227,5 +239,15 @@ it("cancelling the sync aborts a stalled early label read at once (Codex review)
     t.abort();
     expect(await running).toBeTruthy();
     expect(performance.now() - before).toBeLessThan(1000);
+  } finally { await t.close(); }
+});
+
+it("a resumed first sync whose flags are all read again reads the labels first too (2026-11)", async () => {
+  // 600 messages listed on two pages, all stored already: no download, a long flag refresh
+  const t = setup(600, "ordinary small mail", undefined, { pageSize: 500, stored: true });
+  try {
+    await t.sync();
+    expect(t.order.slice(0, 2)).toEqual(["labels", "download"]);
+    expect(t.folders).toEqual([[{ key: "Label_1", path: ["Banco"], selectable: true }]]);
   } finally { await t.close(); }
 });

@@ -83,6 +83,8 @@ it("bounds 50k cached refresh pages, effects and durable scalar checkpoints", as
       requests++; const url = new URL(String(input));
       if (url.pathname.endsWith("/profile") || url.pathname.endsWith("/history")) return Response.json({ historyId: baseline });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: [] });
+      // a long flag refresh reads the labels once first (2026-11)
+      if (url.pathname.endsWith("/labels")) return Response.json({ labels: [] });
       expect(url.searchParams.get("format")).toBe("minimal");
       return Response.json({ id: url.pathname.split("/").at(-1), labelIds: ["INBOX"] });
     },
@@ -99,6 +101,6 @@ it("bounds 50k cached refresh pages, effects and durable scalar checkpoints", as
   try { await provider.sync(sink); } finally { await provider.close(); }
   const cpu = threadCpuMs() - start;
   expect(cpu, `50k cached refresh CPU ${cpu.toFixed(2)}ms`).toBeLessThanOrEqual(2500 * BUDGET_MULTIPLIER);
-  expect(reads).toBe(1001); expect(requests).toBe(50_003); expect(effects).toBe(1000);
+  expect(reads).toBe(1001); expect(requests).toBe(50_004); expect(effects).toBe(1000);
   expect(writes).toBe(1004); expect(maxBytes).toBeLessThan(512); expect(saved).toEqual({ historyId: baseline });
 });
