@@ -397,7 +397,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
   // plan 93: snippets whose id and name aren't here (yours win), within the budget
   const snippets = data.snippets.length ? await importSnippets(store, data.snippets) : 0;
 
-  // settings: never secrets; a cloud AI refused by local mode is left out, the rest applies
+  // settings: never secrets; an AI part that's refused (a bad endpoint) is left out, the rest applies
   let settings = false;
   if (data.settings && typeof data.settings === "object") {
     // saved keys stay bound to the endpoints they serve now: an imported endpoint has to be confirmed before one is sent there
@@ -405,11 +405,11 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     const before = await readSettings(store);
     const { general, ai } = settingsFrom(data.settings as Record<string, unknown>, before);
     try {
-      await updateSettings(store, { ...general, ai }, {});
+      await updateSettings(store, { ...general, ai });
       settings = true;
     } catch (error) {
       if (!(error instanceof SettingsError)) throw error;
-      await updateSettings(store, general, {});
+      await updateSettings(store, general);
       settings = true;
     }
     const after = await readSettings(store);

@@ -5,14 +5,15 @@
  * electron-updater and the disk come in as deps, so the whole flow is
  * unit-tested in Node.
  *
- * Idle means idle: nothing runs until the startup delay, the periodic check
- * is scheduled only while automatic checks are allowed (never in local
- * mode), and electron-updater isn't even loaded before the first check.
+ * Idle means idle: nothing runs until the startup delay, then one check
+ * every 4 hours (a timer, not polling the network in between), and
+ * electron-updater isn't even loaded before the first check. Local mode
+ * doesn't stop updates (plan 97).
  */
 import type { MailboxGate } from "@terno/core/mailbox";
 import { compareVersions, initialUpdateState, notesText, reduceUpdate, type UnsupportedReason, type UpdateChannel, type UpdateEvent, type UpdateMode, type UpdateState } from "@terno/core/updates";
 import type { Engine, EngineHandlers, EngineInfo } from "./engine";
-import { errorKind, expectedKind, feedMinimum, Grants, installOutcome, mayCheck, mayDownload, updateRequestAllowed, type FeedConfig, type PendingInstall, type Trigger, type UpdatePrefs } from "./policy";
+import { errorKind, expectedKind, feedMinimum, Grants, installOutcome, mayDownload, updateRequestAllowed, type FeedConfig, type PendingInstall, type Trigger, type UpdatePrefs } from "./policy";
 
 /** the first check waits this long after launch, so a cold start never pays for it */
 export const STARTUP_CHECK_DELAY_MS = 30_000;
@@ -62,17 +63,12 @@ export class UpdateController {
   private healthChecked = false;
   private mailboxFailureSaid = false;
   private waitingForSends = false;
-  /** a grant revoked while its request ran: its failure is a cancellation, not an error */
+  /** a grant revoked while its request ran (the channel changed): its failure is a cancellation, not an error */
   private revoked = new Set<number>();
-  /** the open grants that are automatic (local mode revokes them) */
-  private automatic = new Set<number>();
 
-  constructor(
-    private readonly deps: ControllerDeps,
-    localMode: boolean,
-  ) {
+  constructor(private readonly deps: ControllerDeps) {
     this.prefs = deps.prefs.read();
-    this.state = initialUpdateState({ current: deps.version, mode: this.prefs.mode, channel: this.prefs.channel, localMode, checkedAt: this.prefs.checkedAt });
+    this.state = initialUpdateState({ current: deps.version, mode: this.prefs.mode, channel: this.prefs.channel, checkedAt: this.prefs.checkedAt });
     // plan 95: a requirement from an earlier run still holds (never a request: only what the last check said)
     if (this.prefs.requiredMinimum) this.setRequired(this.prefs.requiredMinimum);
   }
@@ -123,11 +119,11 @@ export class UpdateController {
     this.timer = null;
   }
 
-  /** The background check; the next one is scheduled only while they're allowed. */
+  /** The background check, then the next one in 4 hours (none for a copy that can't update itself). */
   private async autoCheck(): Promise<void> {
-    if (!(await this.supported()) || !mayCheck({ localMode: this.state.localMode, trigger: "auto" })) return;
+    if (!(await this.supported())) return;
     await this.check("auto");
-    if (!this.state.localMode && this.state.status !== "unsupported") this.schedule(CHECK_EVERY_MS, () => this.autoCheck());
+    if (this.state.status !== "unsupported") this.schedule(CHECK_EVERY_MS, () => this.autoCheck());
   }
 
   private dispatch(e: UpdateEvent): void {
@@ -144,7 +140,7 @@ export class UpdateController {
       allowed: (url) => {
         const host = updateRequestAllowed(url, this.deps.testFeed);
         const ok = host && this.grants.active;
-        if (!ok) this.deps.log("update.blocked", { reason: host ? "local-mode" : "host" });
+        if (!ok) this.deps.log("update.blocked", { reason: host ? "policy" : "host" });
         return ok;
       },
       handlers: {
@@ -175,9 +171,7 @@ export class UpdateController {
     if (this.checking) return this.checking;
     // one thing at a time, through Squirrel's own check of a finished download
     if (this.downloading || this.state.status === "verifying" || this.state.status === "installing") return Promise.resolve(this.state);
-    if (!mayCheck({ localMode: this.state.localMode, trigger })) return Promise.resolve(this.state);
-    const grant = this.takeGrant(trigger);
-    if (grant === null) return Promise.resolve(this.state);
+    const grant = this.grants.grant(trigger);
     this.checkGrant = grant;
     this.checking = this.runCheck(trigger, grant).finally(() => {
       this.dropGrant(grant);
@@ -219,8 +213,8 @@ export class UpdateController {
     }
     this.setRequired(feedMinimum(minimum, info?.version ?? null, this.deps.version));
     this.saveCheckedAt();
-    // automatic mode downloads what it found (a manual check in automatic mode too, as long as local mode is off)
-    if (this.state.available && this.state.available.version !== this.state.ready?.version && mayDownload({ localMode: this.state.localMode, mode: this.state.mode, trigger: "auto" })) void this.download("auto");
+    // automatic mode downloads what it found (after a manual check too)
+    if (this.state.available && this.state.available.version !== this.state.ready?.version && mayDownload({ mode: this.state.mode, trigger: "auto" })) void this.download("auto");
     return this.state;
   }
 
@@ -229,9 +223,8 @@ export class UpdateController {
     if (this.downloading) return this.downloading;
     const target = this.state.available;
     if (!target || target.version === this.state.ready?.version || this.state.status === "verifying" || this.state.status === "installing") return Promise.resolve(this.state);
-    if (!mayDownload({ localMode: this.state.localMode, mode: this.state.mode, trigger })) return Promise.resolve(this.state);
-    const grant = this.takeGrant(trigger);
-    if (grant === null) return Promise.resolve(this.state);
+    if (!mayDownload({ mode: this.state.mode, trigger })) return Promise.resolve(this.state);
+    const grant = this.grants.grant(trigger);
     this.downloadGrant = grant;
     this.downloading = this.runDownload(grant).finally(() => {
       this.dropGrant(grant);
@@ -386,32 +379,8 @@ export class UpdateController {
     this.deps.capture(Object.assign(new Error("mailbox didn't open after an update"), { name: "UpdateMailboxFailed" }), "update.mailbox_failed", { fromVersion: pending.from, toVersion: pending.to, openFailure, step: gate.kind === "failed" ? (gate.step ?? undefined) : undefined }, false);
   }
 
-  setLocalMode(on: boolean): void {
-    if (on === this.state.localMode) return;
-    this.dispatch({ type: "local-mode", on });
-    if (on) {
-      // automatic work stops now: its requests are refused from here on, a download is cancelled
-      const cut = [this.downloadGrant, this.checkGrant].some((g) => g !== null && this.automatic.has(g));
-      if (cut) this.engine?.cancel();
-      // the grants end; the requests they covered fail as cancellations, not errors
-      for (const id of this.automatic) this.revoked.add(id);
-      this.automatic.clear();
-      this.grants.revokeAutomatic();
-      this.unschedule();
-    } else if (this.started && this.state.status !== "unsupported") {
-      this.schedule(this.deps.checkDelayMs, () => this.autoCheck());
-    }
-  }
-
-  private takeGrant(trigger: Trigger): number | null {
-    const id = this.grants.grant(trigger, { localMode: this.state.localMode });
-    if (id !== null && trigger === "auto") this.automatic.add(id);
-    return id;
-  }
-
   private dropGrant(id: number): void {
     this.grants.release(id);
-    this.automatic.delete(id);
     this.revoked.delete(id);
   }
 
@@ -427,9 +396,9 @@ export class UpdateController {
     this.dispatch({ type: "prefs", mode: p.mode, channel: p.channel });
     this.prefs = { ...this.prefs, mode: this.state.mode, channel: this.state.channel };
     this.deps.prefs.write(this.prefs);
-    if (channelChanged && this.started && this.state.status !== "unsupported" && mayCheck({ localMode: this.state.localMode, trigger: "auto" })) {
+    if (channelChanged && this.started && this.state.status !== "unsupported") {
       void Promise.allSettled([this.checking, this.downloading]).then(() => this.check("auto"));
-    } else if (this.state.available && mayDownload({ localMode: this.state.localMode, mode: this.state.mode, trigger: "auto" })) void this.download("auto");
+    } else if (this.state.available && mayDownload({ mode: this.state.mode, trigger: "auto" })) void this.download("auto");
   }
 
   seen(): void {

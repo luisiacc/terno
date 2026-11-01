@@ -977,15 +977,13 @@ export function createHandlers(b: Backend): Handlers {
     "settings.update": (patch) => {
       // Keep committed settings and their notifications in the same order.
       const updating = settingsUpdates.then(async () => {
-        const endpoint = patch.ai?.baseURL ?? (await readSettings(store)).ai.profiles.compatible?.baseURL;
-        const endpointIsLocal = endpoint ? await b.net.isLoopbackEndpoint(endpoint) : false;
         try {
           const was = await readSettings(store);
-          const next = await updateSettings(store, patch, { endpointIsLocal });
+          const next = await updateSettings(store, patch);
           b.aiAssist.settingsChanged(patch);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
-          // plan 22: website icons turned off (or local mode took the default away): nothing in flight lands, windows forget them
+          // plan 22: website icons turned off: nothing in flight lands, windows forget them
           if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
           // plan 41: the badge follows at once; notifications turned off drop what was pending
           if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();

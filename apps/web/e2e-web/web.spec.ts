@@ -138,7 +138,7 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   const settings = page.getByTestId("settings-dialog");
   await expect(settings).toBeVisible();
   await expect(settings.getByTestId("mac-section")).toBeVisible();
-  await expect(settings.getByTestId("local-mode-row")).toContainText("can’t pin DNS addresses");
+  await expect(settings.getByTestId("local-mode-row")).toContainText("Terno keeps its copy of your mail in this browser.");
   await settings.getByTestId("tab-agents").click();
   await expect(settings.getByTestId("desktop-only-agents")).toBeVisible();
   await expect(settings.getByTestId("mcp-claude")).toHaveCount(0);

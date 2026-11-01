@@ -112,23 +112,23 @@ function registerAppProtocol() {
   });
 }
 
-// ───────────────────────────── local mode backstop ─────────────────────────────
-
-/** Fail closed: until the backend reports the policy, the renderer is treated as in local mode. */
-let localMode = true;
+// ───────────────────────────── the renderer's network fence ─────────────────────────────
 
 /**
  * The backend polices its own connections; this fences the renderer over
- * http(s)/ws(s) (app:// and data: never hit the network). In local mode only
- * loopback, and images a mail frame loads (plan 37), get through: see backstopAllows.
+ * http(s)/ws(s) (app:// and data: never hit the network). Only loopback, and
+ * images a mail frame loads (plan 37), get through: see backstopAllows. The
+ * renderer reaches nothing else itself (mail, AI, icons, updates and reports
+ * go through the backend and main's own sessions), so this holds for
+ * everyone (plan 97: it no longer follows local mode).
  */
 function installNetworkBackstop() {
   const dev = isDev ? originOf(process.env.TERNO_DEV_URL!) : null;
   const appOrigins = [APP_ORIGIN, ...(dev ? [dev] : [])];
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (details, callback) => {
-    // frames are only looked at when they can matter: a local-mode image
-    const frame = localMode && details.resourceType === "image" ? requestFrame(details.frame) : null;
-    callback({ cancel: !backstopAllows({ url: details.url, resourceType: details.resourceType, frame }, { localMode, appOrigins }) });
+    // frames are only looked at when they can matter: an image
+    const frame = details.resourceType === "image" ? requestFrame(details.frame) : null;
+    callback({ cancel: !backstopAllows({ url: details.url, resourceType: details.resourceType, frame }, { appOrigins }) });
   });
 }
 
@@ -240,9 +240,7 @@ function startBackend() {
         mainDiag.backendRecord(instance, msg.record);
         break;
       case "policy":
-        localMode = msg.localMode;
         mainDiag.setPolicy(msg);
-        updates?.setLocalMode(localMode);
         void followLanguage(msg.language);
         break;
       case "badge":
@@ -786,7 +784,6 @@ if (!app.requestSingleInstanceLock()) {
     updates = startUpdates({
       trusted,
       windows: () => windows,
-      localMode: () => localMode,
       shutdown: shutdownForInstall,
       onSendsIdle: (cb) => void sendsIdleWaiters.push(cb),
       recover: () => {

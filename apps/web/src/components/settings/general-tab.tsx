@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
+import { Columns2, Keyboard, LaptopMinimalCheck, Rows3 } from "@terno/ui/icons";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { updateAppearance } from "~/lib/appearance";
 import { Suspense, useEffect, useReducer, useRef, useState } from "react";
@@ -218,19 +218,15 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
   );
 }
 
-export function GeneralTab({ settings, update, onLocalOff }: { settings: AppSettings; update: SettingsUpdate; onLocalOff: () => void }) {
+export function GeneralTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const updates = useHasUpdates();
   return (
     <div data-testid="general-tab">
       <SettingsGroup>
-        <SettingsRow
-          testId="local-mode-row"
-          label={t("settings.general.localMode")}
-          hint={
-            WEB ? t("settings.general.localMode.hintWeb") : settings.localMode && settings.senderIcons ? t("settings.general.localMode.hintIcons") : t("settings.general.localMode.hint")
-          }
-        >
-          {(a) => <Switch {...a} data-testid="local-mode-switch" checked={settings.localMode} onCheckedChange={(on) => (on ? void update({ localMode: true }) : onLocalOff())} />}
+        {/* plan 97: a fact, not a switch: Terno has no server of its own that keeps mail; each outbound
+            feature (AI, icons, updates, reports, remote images) is its own setting */}
+        <SettingsRow testId="local-mode-row" label={t("settings.general.localMode")} hint={t(WEB ? "settings.general.localMode.hintWeb" : "settings.general.localMode.hint")}>
+          {() => <LaptopMinimalCheck className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
         </SettingsRow>
         {/* plan 37: the same in both modes; local mode doesn't decide remote images */}
         <SettingsRow label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>

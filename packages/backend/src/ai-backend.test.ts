@@ -115,26 +115,30 @@ describe("settings: providers and profiles", () => {
     expect(back.ai.profiles.lmstudio).toEqual({ model: "mistral", baseURL: "http://127.0.0.1:4321/v1" });
   });
 
-  it("refuses to select a cloud provider (or a remote endpoint) while local mode is on", async () => {
-    const { client } = setup({ dns: { "llm.lan": ["10.0.0.5"], "llm.test": ["127.0.0.1"] } });
-    for (const ai of [{ provider: "openai" as const }, { provider: "anthropic" as const }, { provider: "compatible" as const, preset: "openrouter" as const }, { provider: "compatible" as const, baseURL: "http://llm.lan:8080/v1" }]) {
-      expect(await errorOf(client.call("settings.update", { ai }))).toMatchObject({ code: "BAD_REQUEST" });
-    }
-    expect((await client.call("app.bootstrap", {})).settings.ai.provider).toBe("none");
-    // a custom endpoint whose name resolves to loopback is a server on this Mac
-    await expect(client.call("settings.update", { ai: { provider: "compatible", baseURL: "http://llm.test:8080/v1" } })).resolves.toMatchObject({ ai: { provider: "compatible", preset: "custom" } });
+  it("plan 97: local mode doesn't stop choosing a cloud provider, or using it", async () => {
+    const { client } = setup();
+    expect((await client.call("app.bootstrap", {})).settings.localMode).toBe(true);
+    await expect(client.call("settings.update", { ai: { provider: "openai", model: "gpt-x", baseURL: `${url()}/v1` } })).resolves.toMatchObject({ localMode: true, ai: { provider: "openai", local: false } });
+    await client.call("ai.setKey", { provider: "openai", value: "sk-local-mode-0000-1111" });
+    await expect(generate(client)).resolves.toMatchObject({ name: "Uber" });
     expect(await errorOf(client.call("settings.update", { ai: { baseURL: "not a url" } }))).toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("turning local mode on keeps a cloud provider dormant (paused), and off restores it", async () => {
-    const { client } = setup({ localMode: false });
-    await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x", baseURL: `${url()}/v1` } });
-    await client.call("ai.setKey", { provider: "openai", value: "sk-dormant-0000-1111" });
-    const on = await client.call("settings.update", { localMode: true });
-    expect(on.ai).toMatchObject({ provider: "openai", local: false });
-    expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "blocked" }, message: expect.stringMatching(/paused by local mode/), i18n: { key: "errors.ai.pausedByLocalMode", params: { provider: "OpenAI" } } });
-    await client.call("settings.update", { localMode: false });
-    await expect(generate(client)).resolves.toMatchObject({ name: "Uber" });
+  it("plan 97: a cloud choice local mode had paused doesn't resume on its own (profile and key stay); others are untouched", async () => {
+    const { backend, client } = setup();
+    await backend.setSecret("ai:openai:apiKey", "sk-paused-0000-1111");
+    setSetting(sqlDb(backend.store), "app", { localMode: true, aiCategorize: true, ai: { provider: "openai", profiles: { openai: { model: "gpt-x" } } } });
+    const s = (await client.call("app.bootstrap", {})).settings;
+    expect(s.ai.provider).toBe("none");
+    expect(s.aiCategorize).toBe(false);
+    expect(s.ai.profiles.openai).toEqual({ model: "gpt-x" });
+    // choosing it again is one step, its key still saved
+    await expect(client.call("settings.update", { ai: { provider: "openai" } })).resolves.toMatchObject({ ai: { provider: "openai", model: "gpt-x", hasKey: true } });
+    // in use (local mode off), or local: kept as it was
+    for (const app of [{ localMode: false, ai: { provider: "openai" as const } }, { localMode: true, ai: { provider: "ollama" as const } }]) {
+      setSetting(sqlDb(backend.store), "app", app);
+      expect((await client.call("app.bootstrap", {})).settings.ai.provider).toBe(app.ai.provider);
+    }
   });
 
   it("tells the host (Electron main's renderer fence) when local mode changes, and only then", async () => {
@@ -150,7 +154,8 @@ describe("settings: providers and profiles", () => {
 
   it("maps pre-v3 settings into the new shape", async () => {
     const { backend, client } = setup();
-    setSetting(sqlDb(backend.store), "app", { aiProvider: "anthropic", aiModel: "claude-legacy", theme: "dark" });
+    // what a pre-v3 install looks like (database migration v3 wrote localMode: false for them)
+    setSetting(sqlDb(backend.store), "app", { aiProvider: "anthropic", aiModel: "claude-legacy", theme: "dark", localMode: false });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s.ai).toMatchObject({ provider: "anthropic", model: "claude-legacy" });
     expect(s.theme).toBe("dark");
@@ -203,42 +208,7 @@ describe("keys never leave the backend", () => {
   });
 });
 
-describe("local mode enforcement (zero connections)", () => {
-  for (const provider of ["openai", "anthropic"] as const) {
-    it(`${provider} pointed at a reachable stub is blocked without opening a socket`, async () => {
-      const { client } = setup({ localMode: false });
-      await client.call("settings.update", { ai: { provider, model: "m", baseURL: provider === "openai" ? `${url()}/v1` : url() } });
-      await client.call("ai.setKey", { provider, value: "sk-test-key-000000000" });
-      await client.call("settings.update", { localMode: true });
-      connects.length = 0;
-      const err = await errorOf(generate(client));
-      expect(err).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "blocked" } });
-      const listed = await errorOf(client.call("ai.listModels", { provider, baseURL: url() }));
-      expect(listed).toMatchObject({ details: { aiErrorKind: "blocked" } });
-      const tested = await client.call("ai.test", { provider, model: "m", baseURL: url() });
-      expect(tested).toMatchObject({ ok: false, error: { kind: "blocked" } });
-      expect(connections).toBe(0);
-      expect(requests).toEqual([]);
-      expect(connects).toEqual([]);
-    });
-  }
-
-  it("a compatible endpoint whose name resolves to the LAN is blocked; one resolving to loopback goes to the IP", async () => {
-    const { client } = setup({ dns: { "gpu-box.lan": ["10.0.0.5"], "my-llm.test": ["127.0.0.1"] } });
-    await client.call("settings.update", { ai: { provider: "compatible", baseURL: `http://my-llm.test:${port}/v1`, model: "m" } });
-    // the saved endpoint later points somewhere else (e.g. edited config): checked again at call time
-    await client.call("settings.update", { localMode: false });
-    await client.call("settings.update", { ai: { baseURL: `http://gpu-box.lan:${port}/v1` } });
-    await client.call("settings.update", { localMode: true });
-    expect(await errorOf(generate(client))).toMatchObject({ details: { aiErrorKind: "blocked" } });
-    expect(connections).toBe(0);
-
-    await client.call("settings.update", { ai: { baseURL: `http://my-llm.test:${port}/v1` } });
-    await expect(generate(client)).resolves.toMatchObject({ name: "Uber" });
-    expect(requests.at(-1)!.headers.host).toBe(`127.0.0.1:${port}`);
-    expect(connects.every((h) => h === "127.0.0.1")).toBe(true);
-  });
-
+describe("local AI", () => {
   it("an Ollama server on localhost works in local mode end to end (discovery, test, generate)", async () => {
     const { client } = setup();
     await client.call("settings.update", { ai: { provider: "ollama", baseURL: `${url("localhost")}/v1`, model: "qwen3:8b" } });

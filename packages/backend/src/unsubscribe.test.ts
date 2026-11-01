@@ -184,7 +184,7 @@ describe("the web's transport (plan 96, Codex review #2)", () => {
   /** what a browser's fetch would get: the init it was handed, and an answer */
   const browser = (answer: (init: RequestInit) => Response | Promise<Response>) => {
     const asked: RequestInit[] = [];
-    const net = createNetworkPolicy({ localMode: () => true, fetch: async (_input, init) => (asked.push(init ?? {}), answer(init ?? {})) });
+    const net = createNetworkPolicy({ fetch: async (_input, init) => (asked.push(init ?? {}), answer(init ?? {})) });
     return { asked, policed: net.fetchFor("unsubscribe") };
   };
 

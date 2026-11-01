@@ -36,7 +36,7 @@ beforeEach(() => {
   accepted = 0;
 });
 
-function policy(localMode: boolean, dns: Record<string, string[]> = {}) {
+function policy(dns: Record<string, string[]> = {}) {
   const lookups: string[] = [];
   const lookup: LookupAll = async (host) => {
     lookups.push(host);
@@ -46,84 +46,24 @@ function policy(localMode: boolean, dns: Record<string, string[]> = {}) {
   };
   // non-keep-alive so each allowed request is a fresh, countable connection
   const fetchNoReuse: typeof fetch = (input, init) => fetch(input, { ...init, headers: { ...(init?.headers as Record<string, string>), connection: "close" } });
-  return { net: createNetworkPolicy({ localMode: () => localMode, lookup, fetch: fetchNoReuse }), lookups };
+  return { net: createNetworkPolicy({ lookup, fetch: fetchNoReuse }), lookups };
 }
 
-describe("network policy in local mode", () => {
-  it("always allows mail traffic", async () => {
-    const { net } = policy(true);
-    const res = await net.fetchFor("mail")(`http://127.0.0.1:${port}/gmail`);
-    expect(res.status).toBe(200);
-    expect(seen).toHaveLength(1);
-  });
-
-  it("rejects cloud AI before resolving or connecting anything", async () => {
-    const { net, lookups } = policy(true, { "api.openai.com": ["127.0.0.1"] });
-    const err = await net.fetchFor("ai", { providerLocality: "cloud" })(`http://127.0.0.1:${port}/v1/chat/completions`).catch((e) => e);
-    expect(err).toBeInstanceOf(NetworkPolicyError);
-    expect(err).toMatchObject({ purpose: "ai" });
-    expect(lookups).toEqual([]);
-    expect(accepted).toBe(0);
-    expect(connects).toEqual([]);
-  });
-
-  it("rejects a 'local' provider whose host resolves to the LAN, with zero connections", async () => {
-    const { net } = policy(true, { "ollama.lan": ["10.0.0.5"] });
-    await expect(net.fetchFor("ai", { providerLocality: "local" })(`http://ollama.lan:${port}/v1/models`)).rejects.toBeInstanceOf(NetworkPolicyError);
-    await expect(net.fetchFor("ai", { providerLocality: "local" })("http://192.168.1.20:11434/api/tags")).rejects.toThrow(/isn’t a local address/);
-    await expect(net.fetchFor("ai", { providerLocality: "local" })("http://unresolvable.invalid/v1")).rejects.toBeInstanceOf(NetworkPolicyError);
-    expect(connects).toEqual([]);
-  });
-
-  it("rejects a host with any non-loopback address (no mixed answers)", async () => {
-    const { net } = policy(true, { "mixed.test": ["127.0.0.1", "93.184.216.34"] });
-    await expect(net.assert("ai", "http://mixed.test/v1", { providerLocality: "local" })).rejects.toBeInstanceOf(NetworkPolicyError);
-  });
-
-  it("connects a loopback-resolving name to the IP it checked (DNS rebinding can't redirect it)", async () => {
-    const { net, lookups } = policy(true, { "my-llm.test": ["::1", "127.0.0.1"] });
-    const res = await net.fetchFor("ai", { providerLocality: "local" })(`http://my-llm.test:${port}/v1/models?x=1`);
-    expect(await res.json()).toEqual({ ok: true });
-    expect(lookups).toEqual(["my-llm.test"]);
-    // the request went to the pinned IPv4 address, not the name (path and query intact)
-    expect(seen).toEqual([{ host: `127.0.0.1:${port}`, url: "/v1/models?x=1" }]);
-    expect(connects.filter((c) => c.startsWith("undici:"))).toEqual(["undici:127.0.0.1"]);
-  });
-
-  it("allows localhost and loopback literals, including Request inputs", async () => {
-    const { net } = policy(true, { localhost: ["127.0.0.1"] });
-    const ai = net.fetchFor("ai", { providerLocality: "local" });
-    expect((await ai(`http://localhost:${port}/a`)).status).toBe(200);
-    expect((await ai(new Request(`http://127.0.0.1:${port}/b`, { method: "POST", body: "{}" }))).status).toBe(200);
-    expect(seen.map((s) => s.url)).toEqual(["/a", "/b"]);
-    await expect(net.assert("ai", "http://[::1]:1234/v1", { providerLocality: "local" })).resolves.toEqual({ pinnedHost: "::1" });
-  });
-
-  it("denies remote content, telemetry, updates and cloud identity outright", async () => {
-    const { net } = policy(true);
-    for (const purpose of ["remote-content", "telemetry", "update", "cloud"] as NetPurpose[]) {
-      await expect(net.fetchFor(purpose)(`http://127.0.0.1:${port}/`)).rejects.toMatchObject({ name: "NetworkPolicyError", purpose });
-    }
-    expect(accepted).toBe(0);
-  });
-});
-
-describe("network policy with local mode off", () => {
-  it("lets every purpose through unchanged (no lookups, no pinning)", async () => {
-    const { net, lookups } = policy(false);
-    for (const purpose of ["ai", "cloud", "telemetry"] as NetPurpose[]) {
+describe("network policy (plan 97: local mode means mail is kept here; no purpose is refused for it)", () => {
+  it("lets mail and every other purpose through unchanged: no lookups, no pinning", async () => {
+    const { net, lookups } = policy();
+    expect((await net.fetchFor("mail")(`http://127.0.0.1:${port}/gmail`)).status).toBe(200);
+    for (const purpose of ["ai", "cloud", "telemetry", "update", "remote-content"] as NetPurpose[]) {
       expect((await net.fetchFor(purpose, { providerLocality: "cloud" })(`http://127.0.0.1:${port}/${purpose}`)).status).toBe(200);
     }
     expect(lookups).toEqual([]);
-    expect(seen.map((s) => s.url)).toEqual(["/ai", "/cloud", "/telemetry"]);
+    expect(seen.map((s) => s.url)).toEqual(["/gmail", "/ai", "/cloud", "/telemetry", "/update", "/remote-content"]);
   });
 
-  it("re-reads the switch on every request", async () => {
-    let on = false;
-    const net = createNetworkPolicy({ localMode: () => on });
+  it("cloud AI and a provider declared local both pass, wherever they are (the provider is the user's choice)", async () => {
+    const { net } = policy();
     await expect(net.assert("ai", "https://api.anthropic.com/v1", { providerLocality: "cloud" })).resolves.toEqual({});
-    on = true;
-    await expect(net.assert("ai", "https://api.anthropic.com/v1", { providerLocality: "cloud" })).rejects.toBeInstanceOf(NetworkPolicyError);
+    await expect(net.assert("ai", "http://192.168.1.20:11434/api/tags", { providerLocality: "local" })).resolves.toEqual({});
   });
 });
 
@@ -156,26 +96,10 @@ describe("redirects", () => {
     return { aUrl, seenB, bConnections: () => bConnections, close: () => (a.close(), b.close()) };
   }
 
-  it("local mode checks every hop: a loopback server can't forward the prompt to another host", async () => {
-    const p = await pair();
-    try {
-      // the redirect target is a name that (per DNS) is not on this Mac
-      const { net } = policy(true, { localhost: ["10.0.0.5"] });
-      const err = await net
-        .fetchFor("ai", { providerLocality: "local" })(`${p.aUrl}/v1/chat/completions`, { method: "POST", body: '{"prompt":"secret"}', headers: { "content-type": "application/json" } })
-        .catch((e) => e);
-      expect(err).toBeInstanceOf(NetworkPolicyError);
-      expect(p.bConnections()).toBe(0);
-      expect(p.seenB).toEqual([]);
-    } finally {
-      p.close();
-    }
-  });
-
   it("allowed redirects are followed hop by hop; credentials never cross origins, bodies survive 307", async () => {
     const p = await pair();
     try {
-      const { net } = policy(false);
+      const { net } = policy();
       const res = await net.fetchFor("ai", { providerLocality: "cloud" })(`${p.aUrl}/v1`, { method: "POST", body: "payload" });
       expect(await res.json()).toEqual({ from: "b" });
       const mail = await net.fetchFor("mail")(`${p.aUrl}/v1`, { method: "POST", body: "payload", headers: { authorization: "Bearer gmail-token" } });
@@ -194,7 +118,7 @@ describe("redirects", () => {
   it("an AI request carrying a key follows no redirect at all, to another origin or its own: the key stays where it was bound", async () => {
     const p = await pair();
     try {
-      const { net } = policy(false);
+      const { net } = policy();
       const ai = net.fetchFor("ai", { providerLocality: "cloud" });
       // Bearer (OpenAI-style APIs, Anthropic), Azure's api-key, x-api-key; as a plain object, a Headers or a Request
       const keyed: [string, RequestInit | Request][] = [
@@ -218,7 +142,7 @@ describe("redirects", () => {
     const { createAi } = await import("@terno/ai");
     const p = await pair();
     try {
-      const { net } = policy(false);
+      const { net } = policy();
       const azure = createAi({ id: "compatible", preset: "azure", model: "dep", apiKey: "azure-secret", baseURL: p.aUrl, fetch: net.fetchFor("ai", { providerLocality: "cloud" }), timeoutMs: 5000, maxRetries: 1 });
       await expect(azure.generateFilter("archiva lo de uber", { now: 0, categories: [], accounts: [] })).rejects.toMatchObject({ message: expect.stringMatching(/redirect to localhost:\d+: Terno doesn’t follow redirects/), i18n: { key: "errors.net.redirect" } });
       expect(p.seenB).toEqual([]);
@@ -229,42 +153,27 @@ describe("redirects", () => {
 });
 
 describe("network policy without DNS (the browser)", () => {
-  const browser = (localMode: boolean) => createNetworkPolicy({ localMode: () => localMode, fetch: (input, init) => fetch(input, { ...init, headers: { ...(init?.headers as Record<string, string>), connection: "close" } }) });
+  const browser = () => createNetworkPolicy({ fetch: (input, init) => fetch(input, { ...init, headers: { ...(init?.headers as Record<string, string>), connection: "close" } }) });
 
-  it("counts only literal loopback hosts as local: names it can't resolve are refused, nothing is pinned", async () => {
-    const net = browser(true);
-    await expect(net.assert("ai", "http://127.0.0.1:11434/v1", { providerLocality: "local" })).resolves.toEqual({ pinnedHost: "127.0.0.1" });
-    await expect(net.assert("ai", "http://[::1]:1234/v1", { providerLocality: "local" })).resolves.toEqual({ pinnedHost: "::1" });
-    await expect(net.assert("ai", "http://localhost:1234/v1", { providerLocality: "local" })).resolves.toMatchObject({});
-    await expect(net.assert("ai", "http://my-llm.test:1234/v1", { providerLocality: "local" })).rejects.toBeInstanceOf(NetworkPolicyError);
-    await expect(net.assert("ai", "http://192.168.1.4:1234/v1", { providerLocality: "local" })).rejects.toBeInstanceOf(NetworkPolicyError);
-    const res = await net.fetchFor("ai", { providerLocality: "local" })(`http://127.0.0.1:${port}/v1`);
-    expect(res.status).toBe(200);
-    expect(seen.map((s) => s.host)).toEqual([`127.0.0.1:${port}`]);
-  });
-
-  it("a vetted request may not be redirected at all (a browser hides where it would go)", async () => {
+  it("follows redirects as the browser does, for AI without a key and for mail", async () => {
     const hop = createServer((_req, res) => void res.writeHead(307, { location: `http://127.0.0.1:${port}/elsewhere` }).end());
     await new Promise<void>((r) => hop.listen(0, "127.0.0.1", r));
     try {
       const url = `http://127.0.0.1:${(hop.address() as AddressInfo).port}/v1`;
-      await expect(browser(true).fetchFor("ai", { providerLocality: "local" })(url)).rejects.toThrow();
-      expect(seen).toEqual([]);
-      // mail (always allowed) and anything outside local mode follow redirects as the browser does
-      expect((await browser(true).fetchFor("mail")(url)).status).toBe(200);
-      expect((await browser(false).fetchFor("ai", { providerLocality: "cloud" })(url)).status).toBe(200);
+      expect((await browser().fetchFor("mail")(url)).status).toBe(200);
+      expect((await browser().fetchFor("ai", { providerLocality: "local" })(url)).status).toBe(200);
     } finally {
       hop.close();
     }
   });
 
-  it("an AI request carrying a key is never redirected outside local mode either (a browser would re-send api-key to the target)", async () => {
+  it("an AI request carrying a key is never redirected (a browser would re-send api-key to the target)", async () => {
     const hop = createServer((_req, res) => void res.writeHead(307, { location: `http://127.0.0.1:${port}/elsewhere` }).end());
     await new Promise<void>((r) => hop.listen(0, "127.0.0.1", r));
     try {
       const url = `http://127.0.0.1:${(hop.address() as AddressInfo).port}/openai/deployments/dep/chat/completions`;
       for (const headers of [{ "api-key": "azure-secret" }, { authorization: "Bearer sk-secret" }, { "x-api-key": "sk-ant-secret" }]) {
-        await expect(browser(false).fetchFor("ai", { providerLocality: "cloud" })(url, { method: "POST", body: "{}", headers })).rejects.toThrow(/doesn’t follow redirects/);
+        await expect(browser().fetchFor("ai", { providerLocality: "cloud" })(url, { method: "POST", body: "{}", headers })).rejects.toThrow(/doesn’t follow redirects/);
       }
       expect(seen).toEqual([]);
     } finally {
@@ -272,9 +181,9 @@ describe("network policy without DNS (the browser)", () => {
     }
   });
 
-  it("plan 96: an unsubscribe request is allowed in local mode and never follows a redirect", async () => {
+  it("plan 96: an unsubscribe request never follows a redirect", async () => {
     const asked: RequestInit[] = [];
-    const net = createNetworkPolicy({ localMode: () => true, fetch: async (_input, init) => (asked.push(init ?? {}), new Response(null, { status: 204 })) });
+    const net = createNetworkPolicy({ fetch: async (_input, init) => (asked.push(init ?? {}), new Response(null, { status: 204 })) });
     await expect(net.assert("unsubscribe", "https://news.example/u")).resolves.toEqual({});
     await net.fetchFor("unsubscribe")("https://news.example/u", { method: "POST", body: "List-Unsubscribe=One-Click" });
     expect(asked.map((i) => i.redirect)).toEqual(["manual"]);

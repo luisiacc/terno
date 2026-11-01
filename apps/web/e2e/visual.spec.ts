@@ -142,7 +142,7 @@ test.describe("light", () => {
   test("settings: general with local mode first", async ({ app: page }) => {
     await ready(page);
     await page.getByTestId("local-pill").click();
-    await expect(page.getByTestId("local-mode-switch")).toBeChecked();
+    await expect(page.getByTestId("local-mode-row")).toBeVisible();
     await stabilize(page);
     await expect(page).toHaveScreenshot("settings-general.png");
   });

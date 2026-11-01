@@ -49,7 +49,7 @@ export function UpdatesSection() {
   const [checking, setChecking] = useState(false);
   if (!state) return null;
   const unsupported = state.status === "unsupported";
-  const mode = state.localMode ? "updates.settings.localMode" : state.mode === "auto" ? "updates.settings.autoHint" : "updates.settings.manualHint";
+  const mode = state.mode === "auto" ? "updates.settings.autoHint" : "updates.settings.manualHint";
   const modeHint = `${t(mode)} ${t("updates.settings.where")}`;
   return (
     <SettingsGroup

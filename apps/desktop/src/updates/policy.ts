@@ -11,30 +11,24 @@ import { compareVersions, validVersion, type UnsupportedReason, type UpdateChann
 export type Trigger = "auto" | "manual";
 
 /**
- * Automatic work needs automatic mode outside local mode (a check also runs
- * in manual mode: it only offers). A manual check is one grant, a manual
- * download a second one; each is allowed anywhere, local mode included,
- * because the user asked for exactly that request.
+ * Checks run in both modes (manual mode only offers); downloads run on their
+ * own in automatic mode, and otherwise when the user asks. Local mode only
+ * means mail is stored here (plan 97): it doesn't stop updates.
  */
-export function mayCheck(o: { localMode: boolean; trigger: Trigger }): boolean {
-  return o.trigger === "manual" || !o.localMode;
-}
-
-export function mayDownload(o: { localMode: boolean; mode: UpdateMode; trigger: Trigger }): boolean {
-  return o.trigger === "manual" || (!o.localMode && o.mode === "auto");
+export function mayDownload(o: { mode: UpdateMode; trigger: Trigger }): boolean {
+  return o.trigger === "manual" || o.mode === "auto";
 }
 
 /**
  * The open grants: the updater's session lets a request through only while
- * one is open. Automatic grants are refused in local mode and revoked when
- * it turns on; a manual one lasts until its check or download settles.
+ * one is open, i.e. while a check or a download the controller started is
+ * running; nothing else in the session reaches the network.
  */
 export class Grants {
   private open = new Map<number, Trigger>();
   private seq = 0;
 
-  grant(trigger: Trigger, o: { localMode: boolean }): number | null {
-    if (trigger === "auto" && o.localMode) return null;
+  grant(trigger: Trigger): number {
     const id = ++this.seq;
     this.open.set(id, trigger);
     return id;
@@ -42,13 +36,6 @@ export class Grants {
 
   release(id: number | null): void {
     if (id !== null) this.open.delete(id);
-  }
-
-  /** local mode turned on: automatic grants end now (their requests are refused from here on) */
-  revokeAutomatic(): boolean {
-    let revoked = false;
-    for (const [id, t] of this.open) if (t === "auto") revoked = this.open.delete(id) || revoked;
-    return revoked;
   }
 
   get active(): boolean {

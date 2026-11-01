@@ -94,7 +94,7 @@ test.describe("first run", () => {
       await addImap(page, "ana@icloud.com");
 
       await page.getByTestId("open-settings").click();
-      await expect(page.getByTestId("local-mode-switch")).toBeChecked();
+      await expect(page.getByTestId("local-mode-row")).toBeVisible();
       await page.getByTestId("tab-ai").click();
       await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
       await expect(page.getByTestId("ai-model")).toHaveValue("qwen3:8b");

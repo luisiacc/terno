@@ -25,7 +25,6 @@ const base: UpdateState = {
   checkedAt: null,
   error: null,
   deferred: null,
-  localMode: false,
   justUpdated: null,
   required: null,
   updatingNow: false,
@@ -86,19 +85,19 @@ test.describe("updates: the sidebar pill", { tag: "@design" }, () => {
     await fakeMain(page, { status: "up-to-date", checkedAt: Date.now() });
     await expect(pill(page)).toHaveCount(0);
 
-    await push(page, { status: "available", available: release, localMode: true, mode: "manual" });
+    await push(page, { status: "available", available: release, mode: "manual" });
     await expect(pill(page)).toHaveText("Update 0.2.0");
     await pill(page).click();
     const popover = page.getByTestId("update-popover");
     await expect(popover).toContainText("Terno 0.2.0");
     await expect(popover).toContainText(/113\.\d MB/);
     await expect(page.getByTestId("update-notes")).toContainText("Faster search across every account");
-    // in local mode it says where the download comes from, and that it waits for the user
-    await expect(page.getByTestId("update-subtitle")).toContainText("GitHub");
+    // manual mode: it waits for the user
+    await expect(page.getByTestId("update-subtitle")).toContainText("A new version of Terno is available.");
     await page.getByTestId("update-download").click();
     expect(await calls(page)).toContain("download");
 
-    await push(page, { status: "downloading", available: release, percent: 42, localMode: true, mode: "manual" });
+    await push(page, { status: "downloading", available: release, percent: 42, mode: "manual" });
     await expect(pill(page)).toHaveText("Downloading 42%");
     await expect(pill(page)).toHaveAttribute("data-state", "downloading");
 
@@ -175,12 +174,13 @@ test.describe("updates: the sidebar pill", { tag: "@design" }, () => {
 });
 
 test.describe("updates: Settings and ⌘K", { tag: "@design" }, () => {
-  test("Settings → General → Updates: automatic/manual, channel, check now with its answer; local mode is disclosed", async ({ app: page }) => {
+  test("Settings → General → Updates: automatic/manual, channel, check now with its answer; where updates come from is disclosed", async ({ app: page }) => {
     const now = await page.evaluate(() => Date.now()); // the page runs on the fixture's frozen clock
-    await fakeMain(page, { status: "idle", localMode: true, checkedAt: now - 5 * 60_000 }, { check: { status: "up-to-date", checkedAt: now } });
+    await fakeMain(page, { status: "idle", checkedAt: now - 5 * 60_000 }, { check: { status: "up-to-date", checkedAt: now } });
     await page.getByTestId("open-settings").click();
     const section = page.getByTestId("updates-section");
-    await expect(section).toContainText("Local mode is on: Terno checks and downloads only when you ask");
+    // plan 97: local mode doesn't stop updates
+    await expect(section).toContainText("New versions download in the background and install when Terno restarts.");
     await expect(section).toContainText("github.com");
     await expect(page.getByTestId("updates-status")).toContainText("Last checked 5 minutes ago");
     await expect(page.getByTestId("updates-version")).toHaveText("Terno 0.1.0");

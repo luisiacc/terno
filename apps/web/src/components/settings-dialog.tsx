@@ -1,8 +1,6 @@
-import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@terno/ui/components/alert-dialog";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp, type SettingsTab } from "~/state/app";
@@ -31,7 +29,6 @@ export function SettingsDialog() {
   const fatalModal = useNativeReload((s) => s.modalHost !== null);
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
-  const [confirmLocalOff, setConfirmLocalOff] = useState(false);
 
   const update = useCallback<SettingsUpdate>(async (patch, options) => {
     try {
@@ -80,7 +77,7 @@ export function SettingsDialog() {
             {/* a section that fails to render stays a section: the sheet and the other tabs keep working */}
             <PaneBoundary area="settings" resetKey={tab} title={t("settings.sectionError")}>
               <TabsContent value="general">
-                <GeneralTab settings={settings} update={update} onLocalOff={() => setConfirmLocalOff(true)} />
+                <GeneralTab settings={settings} update={update} />
               </TabsContent>
 
               <TabsContent value="appearance">
@@ -122,33 +119,6 @@ export function SettingsDialog() {
           </div>
         </Tabs>
         <ReportPreview />
-        <AlertDialog open={confirmLocalOff} onOpenChange={setConfirmLocalOff}>
-          <AlertDialogContent data-testid="local-mode-confirm">
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("settings.localOff.title")}</AlertDialogTitle>
-              <AlertDialogDescription render={<div />}>
-                <p>{t("settings.localOff.intro")}</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-left">
-                  <li>{t("settings.localOff.cloudAi")}</li>
-                </ul>
-                <p className="mt-2">{t("settings.localOff.mail")}</p>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t("settings.localOff.keep")}</AlertDialogCancel>
-              <Button
-                variant="destructive"
-                data-testid="local-mode-confirm-off"
-                onClick={() => {
-                  setConfirmLocalOff(false);
-                  void update({ localMode: false });
-                }}
-              >
-                {t("settings.localOff.confirm")}
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

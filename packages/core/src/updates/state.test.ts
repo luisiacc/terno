@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compareVersions, initialUpdateState, notesText, reduceUpdate, type UpdateEvent, type UpdateInfo, type UpdateState } from "./state";
 
 const info = (version: string): UpdateInfo => ({ version, notes: "", size: 100, releaseDate: null });
-const start = () => initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable", localMode: false });
+const start = () => initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable" });
 const run = (s: UpdateState, ...events: UpdateEvent[]) => events.reduce(reduceUpdate, s);
 
 describe("updates: the state machine", () => {
@@ -112,7 +112,6 @@ describe("updates: the state machine", () => {
     const s = run(start(), { type: "unsupported", reason: "dmg" });
     expect(s).toMatchObject({ status: "unsupported", unsupported: "dmg" });
     expect(run(s, { type: "check-start" }, { type: "available", at: 1, update: info("0.2.0") }, { type: "ready" })).toBe(s);
-    expect(run(s, { type: "local-mode", on: true }).localMode).toBe(true);
   });
 
   it("after an update: justUpdated once, until seen", () => {
@@ -140,7 +139,7 @@ describe("updates: release notes as plain text", () => {
 });
 
 describe("required updates (plan 95)", () => {
-  const s0 = initialUpdateState({ current: "0.2.0", mode: "auto", channel: "stable", localMode: true });
+  const s0 = initialUpdateState({ current: "0.2.0", mode: "auto", channel: "stable" });
 
   it("a minimum above this version requires the update; at or below it, or none, doesn't", () => {
     expect(reduceUpdate(s0, { type: "policy", minimum: "0.3.0" }).required).toBe("0.3.0");

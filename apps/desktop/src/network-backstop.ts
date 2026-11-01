@@ -65,20 +65,20 @@ export function isMailFrame(frame: RequestFrame | null, appOrigins: readonly str
 
 /**
  * Loopback is always reachable (backend-dev, local AI from a dev renderer).
- * Outside local mode everything else is too. In local mode only an image a
- * mail frame asks for passes (plan 37): the user loaded it, with "Load
- * content" or the setting, and the frame's CSP is that per-message gate
- * (img-src opens only for an approved message). Scripts, fetch/XHR, sockets,
- * stylesheets, fonts, media and anything from the app's own frame stay
- * cancelled; an unreadable URL or an unknown frame fails closed.
+ * Beyond it only an image a mail frame asks for passes (plan 37): the user
+ * loaded it, with "Load content" or the setting, and the frame's CSP is that
+ * per-message gate (img-src opens only for an approved message). Scripts,
+ * fetch/XHR, sockets, stylesheets, fonts, media and anything from the app's
+ * own frame stay cancelled; an unreadable URL or an unknown frame fails
+ * closed. The same for everyone (plan 97: local mode no longer decides it).
  */
-export function backstopAllows(req: { url: string; resourceType: string; frame: RequestFrame | null }, o: { localMode: boolean; appOrigins: readonly string[] }): boolean {
+export function backstopAllows(req: { url: string; resourceType: string; frame: RequestFrame | null }, o: { appOrigins: readonly string[] }): boolean {
   let host: string;
   try {
     host = new URL(req.url).hostname;
   } catch {
     return false;
   }
-  if (isLoopbackHost(host) || !o.localMode) return true;
+  if (isLoopbackHost(host)) return true;
   return req.resourceType === "image" && isMailFrame(req.frame, o.appOrigins);
 }

@@ -378,7 +378,7 @@ it("R1 late403 after cancellation releases its logical ticket but retains physic
   const policy = gate.requestsFor("installation");
   let respond!: (response: Response) => void;
   const requests: Request[] = [];
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => {
+  const net = createNetworkPolicy({ fetch: async (input) => {
     if (!(input instanceof Request) || input.url !== "https://synthetic.invalid/gmail/profile") throw new Error("Unexpected managed request");
     requests.push(input);
     return new Promise<Response>((resolve) => { respond = resolve; });

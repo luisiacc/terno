@@ -77,22 +77,17 @@ test.describe("sender icons", { tag: "@design" }, () => {
 
 test.describe("a fresh install's default", () => {
   test.use({ siteIcons: true });
-  test("Settings → Appearance: website icons are on in local mode too, General says so, and one tap turns them off", async ({ app: page }) => {
+  test("Settings → Appearance: website icons are on by default, say what the site sees, and one tap turns them off", async ({ app: page }) => {
     await focusList(page);
     await page.keyboard.press("Meta+,");
-    await page.getByTestId("tab-general").click();
-    await expect(page.getByTestId("local-mode-row")).toContainText("website icons (Appearance) and the error reports you choose to send");
     await page.getByTestId("tab-appearance").click();
     const row = page.getByTestId("site-icons-row");
     await row.scrollIntoViewIfNeeded();
-    await expect(row).toContainText("On in local mode too");
+    await expect(row).toContainText("That site sees your IP address and nothing else.");
     const sw = page.getByTestId("site-icons-switch");
     await expect(sw).toBeChecked();
     await sw.click();
     await expect(sw).not.toBeChecked();
-    await page.getByTestId("tab-general").click();
-    await expect(page.getByTestId("local-mode-row")).not.toContainText("website icons");
-    await page.getByTestId("tab-appearance").click();
     await page.getByTestId("forget-icons").click();
     await expect(page.getByText("Saved icons forgotten").first()).toBeVisible();
   });

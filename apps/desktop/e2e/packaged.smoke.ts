@@ -158,20 +158,20 @@ test("plan 18: the packaged backend suggests recipients from its index", async (
   await page.keyboard.press("Escape");
 });
 
-test("plan 22: the packaged backend can fetch website icons, and they're on in local mode too until turned off", async () => {
+test("plan 22: the packaged backend can fetch website icons, and they're on until turned off", async () => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Meta+,");
   await page.getByTestId("tab-appearance").click();
   const row = page.getByTestId("site-icons-row");
   await row.scrollIntoViewIfNeeded();
-  // the desktop host has the node:https transport (the switch is live, unlike the web's), on by default even in local mode
+  // the desktop host has the node:https transport (the switch is live, unlike the web's), on by default
   await expect(page.getByTestId("site-icons-switch")).toBeEnabled();
   await expect(page.getByTestId("site-icons-switch")).toBeChecked();
-  await expect(row).toContainText("On in local mode too");
+  await expect(row).toContainText("That site sees your IP address and nothing else.");
   await page.keyboard.press("Escape");
 });
 
-test("local mode (the default for a new profile): main cancels the renderer's remote requests", async () => {
+test("main cancels the renderer's remote requests, for everyone (plan 97: not a local-mode setting)", async () => {
   await expect(page.getByTestId("local-pill")).toHaveText("Local");
   // observe cancellations in main itself, so a failure for any other reason (offline, CSP) doesn't count
   await app.evaluate(({ session }) => {

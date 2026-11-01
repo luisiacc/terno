@@ -1196,7 +1196,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     await t.backend.aiAssist.enqueue(t.threads);
     const running = t.backend.aiAssist.drain();
     await started.promise;
-    await expect(t.client.call("settings.update", { aiCategorize: false, ai: { provider: "openai" } })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(t.client.call("settings.update", { aiCategorize: false, lightTheme: "dracula" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(requests[0]!.signal.aborted).toBe(false);
     answer.release();
     await running;

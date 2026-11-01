@@ -8,7 +8,7 @@ import { checkResult, errorText, pillModel, unsupportedText } from "./updates";
 afterEach(() => setLocale("en", en));
 
 const info = (version: string) => ({ version, notes: "", size: 1, releaseDate: null });
-const s = (...events: UpdateEvent[]): UpdateState => events.reduce(reduceUpdate, initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable", localMode: false }));
+const s = (...events: UpdateEvent[]): UpdateState => events.reduce(reduceUpdate, initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable" }));
 const available = (v = "0.2.0"): UpdateEvent => ({ type: "available", at: 1, update: info(v) });
 const ready: UpdateEvent[] = [available(), { type: "download-start" }, { type: "downloaded" }, { type: "ready" }];
 const off = { later: false, webUpdate: false };

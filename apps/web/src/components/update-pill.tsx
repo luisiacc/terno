@@ -105,9 +105,7 @@ function UpdateDetails({ pill, close }: { pill: Exclude<PillModel, { kind: "hidd
         ? t("updates.popover.deferred")
         : t("updates.popover.ready")
       : pill.kind === "available"
-        ? state.localMode
-          ? t("updates.popover.localMode")
-          : t("updates.popover.available")
+        ? t("updates.popover.available")
         : pill.kind === "downloading"
           ? t("updates.popover.downloading", { percent: pill.percent })
           : pill.kind === "verifying"

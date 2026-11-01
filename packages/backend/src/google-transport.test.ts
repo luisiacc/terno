@@ -14,7 +14,7 @@ const descriptor = { request: { endpoint: "gmail-api", purpose: "mail" } } as co
 
 it("freezes a managed Google Request before awaiting admission and refuses redirects", async () => {
   const sent: Request[] = [];
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => { sent.push(input as Request); return new Response("{}"); } });
+  const net = createNetworkPolicy({ fetch: async (input) => { sent.push(input as Request); return new Response("{}"); } });
   const headers = new Headers({ authorization: "Bearer synthetic-original" });
   const body = new URLSearchParams({ value: "original" });
   const init = { method: "POST", headers, body, redirect: "follow" as const };
@@ -33,7 +33,7 @@ it("freezes a managed Google Request before awaiting admission and refuses redir
 
 it("holds one shared bounded physical pool through body EOF; cancel is not completion", async () => {
   const transport = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ pull() {}, cancel() {} })));
-  const net = createNetworkPolicy({ localMode: () => true, fetch: transport });
+  const net = createNetworkPolicy({ fetch: transport });
   const fetchA = net.fetchGoogle(await policy(), descriptor), fetchB = net.fetchGoogle(await policy(), descriptor);
   const responses: Response[] = [];
   for (let i = 0; i < 64; i++) responses.push(await (i % 2 ? fetchA : fetchB)("https://gmail.googleapis.com/test"));
@@ -53,7 +53,7 @@ it.each([200, 429])("drains a retired %s response without publishing headers and
   const cancelled = vi.fn();
   const headers = vi.fn();
   let signal: AbortSignal | undefined;
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => {
+  const net = createNetworkPolicy({ fetch: async (input) => {
     signal = (input as Request).signal;
     return new Promise<Response>((resolve) => { resolveResponse = resolve; });
   } });
@@ -80,7 +80,7 @@ it.each([false, true])("retired body failure releases capacity only without requ
   let deliver!: (response: Response) => void;
   let body!: ReadableStreamDefaultController<Uint8Array>;
   const abort = new AbortController();
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
+  const net = createNetworkPolicy({ fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
   const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test", { signal: abort.signal });
   await vi.waitFor(() => expect(deliver).toBeDefined());
   live = false;
@@ -98,7 +98,7 @@ it.each([false, true])("retired body failure releases capacity only without requ
 it("releases a retired response with no native body", async () => {
   let live = true;
   let deliver!: (response: Response) => void;
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
+  const net = createNetworkPolicy({ fetch: async () => new Promise<Response>((resolve) => { deliver = resolve; }) });
   const result = net.fetchGoogle(await policy(() => live), descriptor)("https://gmail.googleapis.com/test");
   await vi.waitFor(() => expect(deliver).toBeDefined());
   live = false;
@@ -109,7 +109,7 @@ it("releases a retired response with no native body", async () => {
 
 it("bounds overflow disposal and releases only a proven native terminal before repeated recovery", async () => {
   const { readResponseText } = await import("../../mail/src/http-body");
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => {
+  const net = createNetworkPolicy({ fetch: async (input) => {
     expect(input).toBeInstanceOf(Request);
     let sent = 0;
     return new Response(new ReadableStream<Uint8Array>({ pull(c) {
@@ -131,7 +131,7 @@ it("bounds overflow disposal and releases only a proven native terminal before r
 it("cancels overflow disposal at the exact byte boundary without requesting another native chunk", async () => {
   const { readResponseText } = await import("../../mail/src/http-body");
   let reads = 0, canceled = false;
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async () => new Response(new ReadableStream<Uint8Array>({
+  const net = createNetworkPolicy({ fetch: async () => new Response(new ReadableStream<Uint8Array>({
     pull(c) { reads++; if (reads <= 33) c.enqueue(new Uint8Array(16_384)); },
     cancel() { canceled = true; },
   }, { highWaterMark: 0 })) });

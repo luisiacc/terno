@@ -5,22 +5,21 @@ import { startOllamaStub } from "./ollama-stub";
 const remote = (url: URL) => /^https?:$/.test(url.protocol) && url.hostname !== "127.0.0.1" && url.hostname !== "localhost";
 
 test.describe("local mode and AI providers", () => {
-  test("AI tab: cloud is disabled in local mode; Ollama lists models from the server and Test shows latency", async ({ app: page }) => {
+  test("AI tab: every provider can be chosen (plan 97: local mode doesn't block the cloud); Ollama lists models and Test shows latency", async ({ app: page }) => {
     const ollama = await startOllamaStub();
     try {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
-      await expect(page.getByTestId("ai-local-banner")).toContainText("Local mode: AI can only use models on this Mac.");
+      await expect(page.getByTestId("ai-local-banner")).toHaveCount(0);
       await page.getByTestId("ai-provider").click();
-      for (const cloud of ["anthropic", "openai", "compatible"]) await expect(page.getByTestId(`ai-choice-${cloud}`)).toHaveAttribute("data-disabled", "");
-      await expect(page.getByText("In the cloud · turn off local mode to use it")).toBeVisible();
+      for (const cloud of ["anthropic", "openai", "compatible"]) await expect(page.getByTestId(`ai-choice-${cloud}`)).not.toHaveAttribute("data-disabled", "");
       await page.getByTestId("ai-choice-ollama").click();
       await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
       await expect(page.getByTestId("ai-endpoint")).toHaveValue("http://127.0.0.1:11434/v1");
 
-      // a LAN endpoint is rejected inline in local mode
+      // an endpoint on another machine (a GPU box on the LAN) is the user's to choose
       await page.getByTestId("ai-endpoint").fill("http://192.168.1.20:11434/v1");
-      await expect(page.getByTestId("ai-endpoint-error")).toContainText("must be on this Mac");
+      await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
 
       await page.getByTestId("ai-endpoint").fill(`${ollama.url}/v1`);
       const options = page.getByTestId("ai-model-option");
@@ -49,30 +48,16 @@ test.describe("local mode and AI providers", () => {
     }
   });
 
-  test("Local pill opens General; turning local mode off asks first, then cloud AI shows in the pill", async ({ app: page }) => {
+  test("Local pill opens General, where local mode is a fact; choosing a cloud AI shows it in the pill until another is chosen", async ({ app: page }) => {
     const pill = page.getByTestId("local-pill");
     await expect(pill).toHaveText("Local");
     await pill.click();
     const row = page.getByTestId("local-mode-row");
     await expect(row).toBeVisible();
-    // it is the first row of General
+    // it is the first row of General, and says what's true: Terno has no server that keeps mail
     await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
-    const toggle = page.getByRole("switch", { name: "Local mode" });
-    await expect(toggle).toHaveAccessibleDescription(/Nothing leaves this Mac except mail with your servers, the remote images you load and the error reports you choose to send/);
-    await expect(toggle).toBeChecked();
-
-    await toggle.click();
-    const confirm = page.getByTestId("local-mode-confirm");
-    await expect(confirm).toContainText("use cloud AI");
-    // plan 37: remote images aren't local mode's to give
-    await expect(confirm).not.toContainText("remote images");
-    await confirm.getByRole("button", { name: "Keep on" }).click();
-    await expect(toggle).toBeChecked();
-
-    await toggle.click();
-    await page.getByTestId("local-mode-confirm-off").click();
-    await expect(toggle).not.toBeChecked();
-    await expect(pill).toHaveCount(0); // the demo model is local: nothing to warn about
+    await expect(row).toContainText("Terno keeps its copy of your mail on this Mac. It has no server of its own that stores your mail.");
+    await expect(page.getByRole("switch", { name: "Local mode" })).toHaveCount(0);
 
     await page.getByTestId("tab-ai").click();
     await page.getByTestId("ai-provider").click();
@@ -80,6 +65,7 @@ test.describe("local mode and AI providers", () => {
     await expect(page.getByTestId("ai-key")).toBeVisible();
     await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
     await expect(page.getByTestId("ai-privacy")).toContainText("Never the content of your messages");
+    // where the mail it's asked about goes, said where the user looks
     await expect(pill).toHaveText("AI: OpenAI (cloud)");
 
     // the key field is never pre-filled; once saved only the last 4 characters are shown
@@ -88,12 +74,10 @@ test.describe("local mode and AI providers", () => {
     await expect(page.getByTestId("ai-key-saved")).toHaveText(/Saved · …a1b2/);
     await expect(page.locator("body")).not.toContainText("sk-proj-e2e-secret");
 
-    // back to local mode: the cloud provider is kept but paused
-    await page.getByTestId("tab-general").click();
-    await page.getByTestId("local-mode-switch").click();
+    // a model on this Mac again: the pill says Local
+    await page.getByTestId("ai-provider").click();
+    await page.getByTestId("ai-choice-ollama").click();
     await expect(pill).toHaveText("Local");
-    await page.getByTestId("tab-ai").click();
-    await expect(page.getByTestId("ai-local-banner")).toContainText("OpenAI is paused");
   });
 
   test("a slow connection test that finishes after switching provider doesn't touch the new one", async ({ app: page, server }) => {
@@ -153,7 +137,7 @@ test.describe("local mode and AI providers", () => {
     await expect(always).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
     await always.click();
     await expect(always).toBeChecked();
-    await expect(page.getByRole("switch", { name: "Local mode" })).toBeChecked();
+    await expect(page.getByTestId("local-mode-row")).toBeVisible();
     await page.keyboard.press("Escape");
     await openRow(page, 2);
     await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();

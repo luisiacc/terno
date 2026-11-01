@@ -42,7 +42,7 @@ describe("errors as catalog messages", () => {
     const errors = [
       new SettingsError(L("errors.themeUnknownDark", { id: "x" })),
       new AiError(L("errors.ai.timeout", { provider: "Ollama" }), "timeout"),
-      new NetworkPolicyError(L("errors.net.localModeCloudAi", { host: "api.openai.com" }), "ai", "api.openai.com"),
+      new NetworkPolicyError(L("errors.net.iconsOff", { host: "icons.example" }), "icons", "icons.example"),
       new ProviderError(L("errors.smtp.authFailed", { detail: "535" }), false),
       new ProviderAuthError(L("errors.gmail.revoked")),
     ];
@@ -59,9 +59,8 @@ describe("errors as catalog messages", () => {
 
   it("a refused setting reaches the renderer in its language", async () => {
     const { client } = setup();
-    await client.call("settings.update", { localMode: true });
-    const english = await errorOf(client.call("settings.update", { ai: { provider: "openai", model: "gpt-x" } }));
-    expect(english).toMatchObject({ code: "BAD_REQUEST", message: "OpenAI runs in the cloud and local mode is on. Turn it off in Settings → General to use it.", i18n: { key: "errors.cloudAiLocalMode" } });
+    const english = await errorOf(client.call("settings.update", { lightTheme: "dracula" }));
+    expect(english).toMatchObject({ code: "BAD_REQUEST", message: "Unknown light theme: dracula", i18n: { key: "errors.themeUnknownLight" } });
     setLocale("es", es);
     expect(await errorOf(client.call("settings.update", { lightTheme: "dracula" }))).toMatchObject({ message: "Tema desconocido para el modo claro: dracula" });
     expect(await errorOf(client.call("threads.get", { threadId: 9999 }))).toMatchObject({ code: "NOT_FOUND", message: "Esa conversación ya no existe." });

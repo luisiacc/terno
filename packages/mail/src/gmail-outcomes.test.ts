@@ -20,7 +20,7 @@ function mailbox(respond: (url: URL) => Response | Promise<Response>, initial: u
   const rows = new Map<string, { id: number; providerMsgId: string; bytes: string; labels: string[] }>();
   let cursor = initial, refuseIngest = false, reservations = 0, needsProof = false;
   const pending = new Set<string>();
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input, init) => {
+  const net = createNetworkPolicy({ fetch: async (input, init) => {
     expect(input).toBeInstanceOf(Request);
     expect(init).toBeUndefined();
     const request = input as Request;

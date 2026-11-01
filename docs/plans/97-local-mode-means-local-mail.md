@@ -89,3 +89,29 @@ Terno has no server that stores mail. Nothing in the code would store mail anywh
 
 - A Terno server or sync: if one ever exists, local mode becomes a switch again.
 - Removing `localMode` from the stored settings schema.
+
+## Revisions after the Codex review
+
+These override the design above where they conflict. The full critique is in `/tmp/terno-p95/p97-review.txt`.
+
+1. **The network behaves exactly as with local mode off today**, which is already shipped and tested.
+   - AI endpoints are not pinned to loopback, redirects are handled as they are with local mode off (a request carrying a key never follows one), and custom compatible endpoints work wherever they are.
+   - There is no new "declared local" rule (review points 3, 4, 10).
+   - The AI tab's endpoint check that existed only in local mode goes with it.
+2. **The AI service's own gate** (`ai-service.ts` `isLocalMode()`, `errors.ai.pausedByLocalMode`) goes, and so does `isLocalMode` on the policy (point 1).
+3. **A paused cloud choice doesn't resume on its own** (point 2).
+   - A one-time settings migration (`localModeMeansLocalMail`, versioned like the others) does this for a profile whose local mode was on and whose AI provider is a cloud one, i.e. one that was paused: the provider becomes "none" and the categorizer's AI use goes off.
+   - Saved keys and profiles stay.
+   - The AI tab shows the providers as usual, so choosing one again is one click.
+4. **Imports and restore keep the user's own settings as written** (points 5, 6). A cloud provider in an export or a backup was the user's choice. An import that brings one in still needs its key on this Mac (key-origin binding unchanged), and the restored copy's quarantine keeps covering ops and scheduled sends.
+5. **The old flag's existing readers keep reading it** (points 7, 8):
+   - the historical migrations (remote images, error reports, `keptPolicy`)
+   - the policy message (`localMode` stays in the contract, and diagnostics still validates it)
+
+   Only enforcement goes.
+6. **First run** writes the discovered local model only while AI is still unset when discovery answers (point 9).
+7. **The copy says what's true** (point 11):
+   - "Terno keeps its copy of your mail on this Mac. It has no server of its own that stores your mail." (web: "in this browser")
+   - cloud AI is disclosed where it's chosen and by the sidebar pill ("Cloud AI: {provider}")
+8. **The full copy and test inventory** (point 12): `settings.categories.askAi.hint`, `ai.help.blocked` and `sidebar.cloudTip`, in en and es; `local-ai.spec.ts`, `identity.spec.ts`, `visual.spec.ts`, `settings-pass.spec.ts`, `icons.spec.ts`, `updates.spec.ts` and `mailbox-gate.spec.ts`.
+   - **No new packaged coverage for the fence:** the strict fence is what every default profile already runs (local mode was on by default), so the existing packaged smokes for remote content, print, avatars and reports already exercise it. Only profiles that had turned local mode off see a change.

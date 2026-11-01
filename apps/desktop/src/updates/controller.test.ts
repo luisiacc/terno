@@ -45,7 +45,7 @@ interface FakeEngine extends Engine {
 
 const release = (version: string): EngineInfo => ({ version, releaseNotes: "<p>Faster</p>", releaseDate: null, size: 1000 });
 
-function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string; pendingFailure?: boolean } = {}): Harness {
+function harness(o: { prefs?: Partial<UpdatePrefs>; unsupported?: "dmg" | null; shutdown?: InstallShutdown[]; pending?: PendingInstall | null; version?: string; pendingFailure?: boolean } = {}): Harness {
   const engine: FakeEngine = {
     handlers: null,
     allowed: null,
@@ -125,7 +125,7 @@ function harness(o: { localMode?: boolean; prefs?: Partial<UpdatePrefs>; unsuppo
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
   };
-  h.ctl = new UpdateController(h.deps, o.localMode ?? false);
+  h.ctl = new UpdateController(h.deps);
   return h;
 }
 
@@ -180,68 +180,14 @@ describe("main: the update controller", () => {
     expect(h.ctl.view.status).toBe("downloading");
   });
 
-  describe("local mode", () => {
-    it("no automatic check at all: no engine, no timer; the session refuses everything", async () => {
-      const h = harness({ localMode: true });
-      h.ctl.start();
-      await vi.advanceTimersByTimeAsync(DELAY + CHECK_EVERY_MS * 2);
-      expect(h.loads).toBe(0);
-      expect(vi.getTimerCount()).toBe(0);
-      expect(h.published).toEqual([]);
-    });
-
-    it("a manual check is one grant, the download a second; neither outlives its request", async () => {
-      const h = harness({ localMode: true });
-      h.engine.next = release("0.2.0");
-      h.ctl.start();
-      await vi.advanceTimersByTimeAsync(DELAY);
-      const checked = await h.ctl.check("manual");
-      expect(checked.status).toBe("available");
-      // automatic mode, but local mode: found, not downloaded
-      expect(h.engine.dl).toBeNull();
-      expect(h.allowed()).toBe(false);
-      const downloading = h.ctl.download("manual");
-      await flush();
-      expect(h.allowed()).toBe(true);
-      h.engine.dl!.resolve();
-      await downloading;
-      expect(h.allowed()).toBe(false);
-      // an automatic download is still refused
-      expect((await h.ctl.download("auto")).status).toBe("verifying");
-    });
-
-    it("turning it on stops automatic work in flight: the download is cancelled, the offer stays, no timer is left", async () => {
-      const h = harness();
-      h.engine.next = release("0.2.0");
-      h.ctl.start();
-      await vi.advanceTimersByTimeAsync(DELAY);
-      expect(h.ctl.view.status).toBe("downloading");
-      h.ctl.setLocalMode(true);
-      await flush();
-      expect(h.engine.cancelled).toBe(1);
-      expect(h.ctl.view).toMatchObject({ status: "available", error: null, localMode: true });
-      expect(h.captures).toEqual([]); // a cancellation, not an error
-      expect(h.allowed()).toBe(false);
-      expect(vi.getTimerCount()).toBe(0);
-      // and off again: the automatic check comes back after the delay
-      h.engine.next = release("0.2.0");
-      h.ctl.setLocalMode(false);
-      await vi.advanceTimersByTimeAsync(DELAY);
-      expect(h.ctl.view.status).toBe("downloading");
-    });
-
-    it("a manual download in local mode is the user's: turning local mode on again doesn't cancel it", async () => {
-      const h = harness({ localMode: true, prefs: { mode: "manual" } });
-      h.engine.next = release("0.2.0");
-      h.ctl.start();
-      await h.ctl.check("manual");
-      void h.ctl.download("manual");
-      await flush();
-      h.ctl.setLocalMode(false);
-      h.ctl.setLocalMode(true);
-      expect(h.engine.cancelled).toBe(0);
-      expect(h.allowed()).toBe(true);
-    });
+  it("local mode doesn't stop updates (plan 97): checked after the delay, downloaded in automatic mode, then every 4 hours", async () => {
+    const h = harness();
+    h.engine.next = release("0.2.0");
+    h.ctl.start();
+    await vi.advanceTimersByTimeAsync(DELAY);
+    expect(h.engine.checks).toBe(1);
+    expect(h.ctl.view.status).toBe("downloading");
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it("only GitHub's release hosts, even with a grant open", async () => {
@@ -402,15 +348,6 @@ describe("main: the update controller", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("the backend's first policy (local mode off) arriving after launch still probes before the first check", async () => {
-    const h = harness({ localMode: true, unsupported: "dmg" });
-    h.ctl.start();
-    h.ctl.setLocalMode(false);
-    await vi.advanceTimersByTimeAsync(DELAY);
-    expect(h.ctl.view.status).toBe("unsupported");
-    expect(h.loads).toBe(0);
-  });
-
   it("switching channel cancels the other channel's download, checks the new one, and is remembered", async () => {
     const h = harness();
     h.engine.next = release("0.2.0");
@@ -459,21 +396,6 @@ describe("main: the update controller", () => {
       expect(h.engine.installs).toBe(1);
     });
 
-    it("local mode turning on cuts an automatic check already waiting for GitHub", async () => {
-      const h = harness();
-      h.engine.slowCheck = true;
-      h.engine.next = release("0.2.0");
-      h.ctl.start();
-      await vi.advanceTimersByTimeAsync(DELAY);
-      expect(h.ctl.view.status).toBe("checking");
-      h.ctl.setLocalMode(true);
-      await flush();
-      expect(h.engine.cancelled).toBe(1);
-      expect(h.ctl.view.status).toBe("idle");
-      expect(h.captures).toEqual([]);
-      expect(h.allowed()).toBe(false);
-    });
-
     it("a staged update holds the channel: nothing is cancelled, and the saved channel is still the old one", async () => {
       const h = harness();
       h.engine.next = release("0.2.0");
@@ -493,19 +415,23 @@ describe("main: the update controller", () => {
 describe("required updates and Update Terno (plan 95)", () => {
   const wire = (h: Harness) => h.engine.checks;
 
-  it("a feed's minimum above this version requires the update, persists it, and a relaunch in local mode keeps it without a request", async () => {
-    const h = harness({ localMode: true });
+  it("a feed's minimum above this version requires the update, persists it, and a relaunch covers at once, before any request", async () => {
+    const h = harness();
     h.engine.next = release("0.3.0");
     h.engine.minimum = "0.3.0";
     await h.ctl.check("manual");
     expect(h.ctl.view.required).toBe("0.3.0");
     expect(h.prefs.requiredMinimum).toBe("0.3.0");
-    const again = harness({ localMode: true, prefs: h.prefs });
+    const again = harness({ prefs: h.prefs });
     again.ctl.start();
-    await vi.advanceTimersByTimeAsync(DELAY + CHECK_EVERY_MS);
     expect(again.ctl.view.required).toBe("0.3.0");
     expect(wire(again)).toBe(0);
-    expect(again.loads).toBe(0);
+    // the automatic check then confirms it (the feed still asks)
+    again.engine.next = release("0.3.0");
+    again.engine.minimum = "0.3.0";
+    await vi.advanceTimersByTimeAsync(DELAY);
+    expect(wire(again)).toBe(1);
+    expect(again.ctl.view.required).toBe("0.3.0");
   });
 
   it("a minimum no published version meets is ignored (no lock-out), and one this version meets lifts the requirement", async () => {
@@ -532,7 +458,7 @@ describe("required updates and Update Terno (plan 95)", () => {
   });
 
   it("Update Terno in local mode: one click checks, downloads and installs once Squirrel has the bundle; nothing outlives it", async () => {
-    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" } });
+    const h = harness({ prefs: { requiredMinimum: "0.2.0" } });
     h.engine.next = release("0.2.0");
     h.engine.minimum = "0.2.0";
     const done = h.ctl.updateNow();
@@ -552,16 +478,17 @@ describe("required updates and Update Terno (plan 95)", () => {
   });
 
   it("a staged update below the requirement isn't installed: the required one downloads over it first", async () => {
-    const h = harness();
+    const h = harness({ prefs: { mode: "manual" } });
     h.engine.next = release("0.1.5");
     await h.ctl.check("manual");
+    void h.ctl.download("manual");
+    await flush();
     h.engine.dl!.resolve();
     await flush();
     h.engine.handlers!.ready();
     expect(h.ctl.view.ready?.version).toBe("0.1.5");
     h.engine.next = release("0.2.0");
     h.engine.minimum = "0.2.0";
-    h.ctl.setLocalMode(true);
     await h.ctl.check("manual");
     expect(h.ctl.view.required).toBe("0.2.0");
     const done = h.ctl.updateNow();
@@ -577,7 +504,7 @@ describe("required updates and Update Terno (plan 95)", () => {
   });
 
   it("a refused bundle or a failed download ends Update Terno with the reason, and Try Again starts over", async () => {
-    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" } });
+    const h = harness({ prefs: { requiredMinimum: "0.2.0" } });
     h.engine.next = release("0.2.0");
     h.engine.minimum = "0.2.0";
     void h.ctl.updateNow();
@@ -595,7 +522,7 @@ describe("required updates and Update Terno (plan 95)", () => {
   });
 
   it("nothing newer to install (a mailbox from a newer Terno, but this is the latest): says so, installs nothing", async () => {
-    const h = harness({ localMode: true });
+    const h = harness();
     h.engine.next = null;
     const s = await h.ctl.updateNow();
     expect(s).toMatchObject({ status: "up-to-date", updatingNow: false });
@@ -632,7 +559,7 @@ describe("required updates and Update Terno (plan 95)", () => {
   });
 
   it("a forced shutdown during Update Terno ends it: the button comes back with the reason (Codex review R5)", async () => {
-    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" }, shutdown: ["forced", "closed"] });
+    const h = harness({ prefs: { requiredMinimum: "0.2.0" }, shutdown: ["forced", "closed"] });
     h.engine.next = release("0.2.0");
     h.engine.minimum = "0.2.0";
     const done = h.ctl.updateNow();

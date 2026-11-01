@@ -4,21 +4,21 @@ import { backstopAllows, isLoopbackHost, isMailFrame, originOf, requestFrame, ty
 const app = ["app://terno"];
 const mail: RequestFrame = { url: "about:srcdoc", parentIsTop: true, topUrl: "app://terno/index.html" };
 const image = (frame: RequestFrame | null, url = "https://images.acme.test/promo.png") => ({ url, resourceType: "image", frame });
-const local = { localMode: true, appOrigins: app };
+const local = { appOrigins: app };
 
 describe("main: the renderer's network backstop", () => {
-  it("loopback is always reachable; outside local mode everything is", () => {
+  it("loopback is always reachable; nothing else the renderer asks for is, for everyone (plan 97: local mode doesn't decide it)", () => {
     for (const url of ["http://127.0.0.1:5173/x.js", "http://localhost:11434/v1", "ws://[::1]:9000/", "http://127.4.5.6/"]) expect(backstopAllows({ url, resourceType: "xhr", frame: null }, local)).toBe(true);
-    expect(backstopAllows({ url: "https://api.example.test/", resourceType: "xhr", frame: null }, { localMode: false, appOrigins: app })).toBe(true);
+    expect(backstopAllows({ url: "https://api.example.test/", resourceType: "xhr", frame: null }, local)).toBe(false);
     expect(isLoopbackHost("localhost.evil.test")).toBe(false);
     expect(isLoopbackHost("128.0.0.1")).toBe(false);
   });
 
-  it("plan 37: in local mode an image a mail frame asks for passes (the frame's CSP is the per-message gate)", () => {
+  it("plan 37: an image a mail frame asks for passes (the frame's CSP is the per-message gate)", () => {
     expect(backstopAllows(image(mail), local)).toBe(true);
     expect(backstopAllows(image(mail, "http://tracker.test/pixel.gif"), local)).toBe(true);
     // the dev renderer's page is a mail frame's top too
-    expect(backstopAllows(image({ ...mail, topUrl: "http://localhost:5173/" }), { localMode: true, appOrigins: [...app, "http://localhost:5173"] })).toBe(true);
+    expect(backstopAllows(image({ ...mail, topUrl: "http://localhost:5173/" }), { appOrigins: [...app, "http://localhost:5173"] })).toBe(true);
   });
 
   it("in local mode nothing but images passes, even from a mail frame", () => {
@@ -38,7 +38,7 @@ describe("main: the renderer's network backstop", () => {
     // the top's origin, exactly: no prefix games
     expect(backstopAllows(image({ ...mail, topUrl: "https://evil.test/app://terno/" }), local)).toBe(false);
     expect(backstopAllows(image({ ...mail, topUrl: "app://terno.evil.test/" }), local)).toBe(false);
-    expect(backstopAllows(image({ ...mail, topUrl: "http://localhost:51730/" }), { localMode: true, appOrigins: [...app, "http://localhost:5173"] })).toBe(false);
+    expect(backstopAllows(image({ ...mail, topUrl: "http://localhost:51730/" }), { appOrigins: [...app, "http://localhost:5173"] })).toBe(false);
     expect(isMailFrame({ ...mail, topUrl: "https://evil.test/" }, [""])).toBe(false);
     expect(isMailFrame({ ...mail, topUrl: "not a url" }, app)).toBe(false);
     expect(originOf("app://terno/a/b?c")).toBe("app://terno");
@@ -48,7 +48,7 @@ describe("main: the renderer's network backstop", () => {
 
   it("an unreadable URL is cancelled in either mode", () => {
     expect(backstopAllows({ url: "http://[bad", resourceType: "image", frame: mail }, local)).toBe(false);
-    expect(backstopAllows({ url: "http://[bad", resourceType: "image", frame: mail }, { localMode: false, appOrigins: app })).toBe(false);
+    expect(backstopAllows({ url: "http://[bad", resourceType: "image", frame: mail }, local)).toBe(false);
   });
 
   it("reads Electron's frame fail-closed: missing, detached, orphaned or disposed frames are unknown", () => {

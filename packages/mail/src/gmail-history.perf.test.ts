@@ -33,7 +33,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     const next = fn(ledger); ledger = next.encoded; return next.result;
   } }, { wallNow: Date.now, elapsedNow: () => performance.now(), random: () => 0.5 });
   const policy = gate.requestsFor("a".repeat(64));
-  const net = createNetworkPolicy({ localMode: () => true, fetch: async (input) => {
+  const net = createNetworkPolicy({ fetch: async (input) => {
     expect(input).toBeInstanceOf(Request);
     const request = input as Request;
     expect(request.url).toBe(resource);

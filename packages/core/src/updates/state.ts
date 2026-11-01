@@ -48,8 +48,6 @@ export interface UpdateState {
   error: { stage: UpdateErrorStage; kind: UpdateErrorKind; canRetry: boolean } | null;
   /** "Restart now" was asked while a send was in flight: it happens once the send finishes */
   deferred: "sending" | null;
-  /** in local mode nothing is checked or downloaded unless the user asks each time */
-  localMode: boolean;
   /** this run is the version an update just installed (once, for "Terno updated to …") */
   justUpdated: string | null;
   /**
@@ -65,7 +63,6 @@ export interface UpdateState {
 export type UpdateEvent =
   | { type: "unsupported"; reason: UnsupportedReason }
   | { type: "prefs"; mode: UpdateMode; channel: UpdateChannel }
-  | { type: "local-mode"; on: boolean }
   | { type: "check-start" }
   | { type: "check-failed"; at: number; kind: UpdateErrorKind }
   | { type: "available"; at: number; update: UpdateInfo }
@@ -90,7 +87,7 @@ export type UpdateEvent =
   | { type: "policy"; minimum: string | null }
   | { type: "update-now"; on: boolean };
 
-export function initialUpdateState(o: { current: string; mode: UpdateMode; channel: UpdateChannel; localMode: boolean; checkedAt?: number | null }): UpdateState {
+export function initialUpdateState(o: { current: string; mode: UpdateMode; channel: UpdateChannel; checkedAt?: number | null }): UpdateState {
   return {
     status: "idle",
     unsupported: null,
@@ -104,7 +101,6 @@ export function initialUpdateState(o: { current: string; mode: UpdateMode; chann
     checkedAt: o.checkedAt ?? null,
     error: null,
     deferred: null,
-    localMode: o.localMode,
     justUpdated: null,
     required: null,
     updatingNow: false,
@@ -121,7 +117,7 @@ function settled(s: UpdateState): UpdateState {
 export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
   // an unsupported copy stays unsupported: nothing else can happen to it
   // (a requirement persisted from before still applies: the window offers the download page instead)
-  if (s.status === "unsupported" && e.type !== "prefs" && e.type !== "local-mode" && e.type !== "seen" && e.type !== "policy") return s;
+  if (s.status === "unsupported" && e.type !== "prefs" && e.type !== "seen" && e.type !== "policy") return s;
   switch (e.type) {
     case "unsupported":
       return { ...s, status: "unsupported", unsupported: e.reason, available: null, target: null, ready: null, percent: null, error: null };
@@ -131,8 +127,6 @@ export function reduceUpdate(s: UpdateState, e: UpdateEvent): UpdateState {
       // another channel: what it offered no longer applies
       if (e.channel !== s.channel) return settled({ ...s, mode: e.mode, channel: e.channel, available: null, target: null, error: null });
       return { ...s, mode: e.mode };
-    case "local-mode":
-      return { ...s, localMode: e.on };
     case "check-start":
       if (s.status === "downloading" || s.status === "verifying" || s.status === "installing") return s;
       // with an update ready the check runs quietly (a newer one may have shipped)

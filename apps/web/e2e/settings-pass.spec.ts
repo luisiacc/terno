@@ -103,12 +103,10 @@ test.describe("reachable", () => {
 });
 
 test.describe("editable, persisted and in effect", () => {
-  test("General: local mode, remote images, density (row height), sync window (validated)", async ({ app: page }) => {
+  test("General: local mode (a fact, not a switch: plan 97), remote images, density (row height), sync window (validated)", async ({ app: page }) => {
     await openVia(page, "gear", "general");
-    const local = page.getByRole("switch", { name: "Local mode" });
-    await local.click();
-    await page.getByTestId("local-mode-confirm-off").click();
-    await expect(local).not.toBeChecked();
+    await expect(page.getByTestId("local-mode-row")).toContainText("Terno keeps its copy of your mail on this Mac. It has no server of its own that stores your mail.");
+    await expect(page.getByRole("switch", { name: "Local mode" })).toHaveCount(0);
     const images = page.getByRole("switch", { name: "Always load remote images" });
     await images.click();
     await expect(images).toBeChecked();
@@ -126,16 +124,11 @@ test.describe("editable, persisted and in effect", () => {
     await expect(page.getByTestId("sync-window-error")).toHaveCount(0);
 
     await reopen(page, "general");
-    await expect(page.getByRole("switch", { name: "Local mode" })).not.toBeChecked();
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
     await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
     await expect(page.getByRole("spinbutton", { name: "Sync window" })).toHaveValue("45");
     await expect(rows(page).first()).toHaveCSS("height", "40px");
-    // plan 37: local mode back on leaves the choice alone: the switch stays live and on, across a reload too
-    await page.getByRole("switch", { name: "Local mode" }).click();
-    await expect(page.getByRole("switch", { name: "Local mode" })).toBeChecked();
-    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeEnabled();
-    await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
+    // the choice survives a reload too
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await reopen(page, "general");
@@ -446,7 +439,7 @@ for (const scheme of ["light", "dark"] as const) {
       await show(page, "accounts");
       await expect(panel(page).getByRole("radiogroup", { name: "Color" }).getByRole("radio")).toHaveCount(8);
       await page.getByTestId("tab-general").click();
-      await expect(page.getByRole("switch", { name: "Local mode" })).toHaveAccessibleDescription(/mail with your servers/);
+      await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
     });
   });
 }

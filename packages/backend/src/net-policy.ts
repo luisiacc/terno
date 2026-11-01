@@ -38,7 +38,6 @@ export interface NetworkPolicy {
   fetchFor(purpose: NetPurpose, meta?: NetMeta): typeof fetch;
   /** whether every address of the URL's host is loopback (what local mode would accept for AI) */
   isLoopbackEndpoint(url: string): Promise<boolean>;
-  isLocalMode(): Promise<boolean>;
   fetchGoogle(policy: ProviderRequests, descriptor: RequestDescriptor): typeof fetch;
   googlePending(): number;
 }
@@ -46,7 +45,6 @@ export interface NetworkPolicy {
 export type LookupAll = (host: string) => Promise<{ address: string; family: number }[]>;
 
 export interface NetworkPolicyOptions {
-  localMode: () => boolean | Promise<boolean>;
   /**
    * Plan 22: website icons are allowed (the setting: in connected mode unless turned off, in local
    * mode only when the user turned them on). Without it, never.
@@ -176,15 +174,10 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
       if (!(await options.siteIcons?.())) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
       return {};
     }
-    // plan 96: an unsubscribe request is the user's own click on one conversation, to the sender of that mail
-    if (purpose === "mail" || purpose === "unsubscribe" || !(await options.localMode())) return {};
-    if (purpose !== "ai") throw new NetworkPolicyError(L("errors.net.localModeBlocks", { purpose, host: url.host }), purpose, url.host);
-    if (meta.providerLocality !== "local") {
-      throw new NetworkPolicyError(L("errors.net.localModeCloudAi", { host: url.host }), purpose, url.host);
-    }
-    const ip = await loopbackTarget(url.hostname);
-    if (!ip) throw new NetworkPolicyError(L("errors.net.localModeNotLocal", { host: url.hostname }), purpose, url.host);
-    return { pinnedHost: ip };
+    // plan 97: everything else is the feature's own decision (AI: the provider the user chose; updates: their
+    // setting; an unsubscribe: their click); local mode means Terno keeps its copy of the mail here, nothing more
+    void meta;
+    return {};
   }
 
   return {
@@ -254,9 +247,6 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
         return false;
       }
     },
-    async isLocalMode() {
-      return options.localMode();
-    },
     fetchFor(purpose, meta) {
       const policed = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         // Request objects carry a one-shot body: normalise to url + init so a redirect can be re-sent.
@@ -276,10 +266,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
               }
               return res;
             }
-            // no pinning and no manual redirects in a browser (they come back opaque): a vetted request may not be redirected at all
-            const vetted = purpose === "ai" && (await options.localMode());
-            // plan 96: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque)
-            return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : vetted ? "error" : "follow" });
+            // plan 96: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque);
+            // a keyed AI request was refused above
+            return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : "follow" });
           }
           const target = new URL(url);
           // Connect to the address we just checked, so a DNS answer can't change between check and connect.

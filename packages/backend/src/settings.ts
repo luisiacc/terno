@@ -1,6 +1,5 @@
 import {
   DEFAULT_ANTHROPIC_MODEL,
-  describeProvider,
   isLocalProvider,
   keySecretName,
   resolveBaseURL,
@@ -36,6 +35,8 @@ interface StoredSettings extends Partial<General> {
   remoteImagesVersion?: number;
   /** plan 78: 1 once local mode stopped deciding error reports (see migrateErrorReports) */
   errorReportsVersion?: number;
+  /** plan 97: 1 once local mode stopped deciding the network (see migrateLocalMail) */
+  localMailVersion?: number;
 }
 
 export const APPEARANCE_VERSION = 3;
@@ -89,9 +90,31 @@ export function migrateErrorReports(s: StoredSettings): StoredSettings {
   return { ...s, ...(local && s.errorReports === "always" ? { errorReports: "ask" as const } : {}), errorReportsVersion: ERROR_REPORTS_VERSION };
 }
 
+export const LOCAL_MAIL_VERSION = 1;
+
+/**
+ * Plan 97: local mode means Terno keeps its copy of your mail here; it no
+ * longer blocks cloud AI. A cloud provider chosen before local mode was
+ * turned on was paused, not in use: it doesn't start sending mail text on
+ * its own. It goes back to "none" (its profile and saved key stay, so
+ * choosing it again is one click), and so does AI categorizing. Pure, like
+ * the others.
+ */
+export function migrateLocalMail(s: StoredSettings): StoredSettings {
+  if ((s.localMailVersion ?? 0) >= LOCAL_MAIL_VERSION) return s;
+  const local = s.localMode ?? DEFAULT_SETTINGS.localMode;
+  const provider = s.ai?.provider ?? s.aiProvider;
+  const profile = provider ? s.ai?.profiles?.[provider] : undefined;
+  // a custom endpoint may be a server on this Mac (it was never paused); anything else not local was
+  const paused = local && provider !== undefined && provider !== "none" && !isLocalProvider({ id: provider, baseURL: profile?.baseURL, preset: profile?.preset }) && !(provider === "compatible" && (profile?.preset ?? "custom") === "custom");
+  if (!paused) return { ...s, localMailVersion: LOCAL_MAIL_VERSION };
+  const { aiProvider: _p, aiModel: _m, ...rest } = s;
+  return { ...rest, ai: { ...s.ai, provider: "none" }, aiCategorize: false, localMailVersion: LOCAL_MAIL_VERSION };
+}
+
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
-  return migrateErrorReports(migrateRemoteImages(migrateAppearance(s)));
+  return migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s))));
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -331,7 +354,7 @@ function resolveThemes(g: General): General {
 
 export async function readSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
@@ -371,34 +394,30 @@ export class SettingsError extends Error {
  * Applies a settings patch. Selecting a cloud provider while local mode is on
  * is refused; turning local mode on with a cloud provider keeps it dormant.
  */
-export async function updateSettings(store: SettingsStore, patch: SettingsPatch, options: { endpointIsLocal?: boolean } = {}): Promise<AppSettings> {
+export async function updateSettings(store: SettingsStore, patch: SettingsPatch): Promise<AppSettings> {
   if (patch.ai) await pinKeyOrigins(store);
   const hasLegacyKey = await store.secrets.has(keySecretName("anthropic"));
-  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, options, hasLegacyKey), result: undefined }));
+  await store.settings.update<StoredSettings, void>("app", {}, (s) => ({ value: patchedSettings(migrate(s), patch, hasLegacyKey), result: undefined }));
   return readSettings(store);
 }
 
-function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { endpointIsLocal?: boolean }, hasLegacyKey: boolean): StoredSettings {
+function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean): StoredSettings {
   const { ai: aiPatch, ...rest } = patch;
   const general = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   const state = aiState(s, hasLegacyKey);
   let { provider } = state;
   const profiles = { ...state.profiles };
-  let selecting = false;
   if (aiPatch) {
     if (aiPatch.provider !== undefined) {
-      selecting ||= aiPatch.provider !== provider;
       provider = aiPatch.provider;
     }
     const current: AiProfile = { ...(profiles[provider] ?? { model: "" }) };
     if (aiPatch.model !== undefined) current.model = aiPatch.model;
     if (aiPatch.baseURL !== undefined) {
-      selecting ||= (aiPatch.baseURL ?? undefined) !== current.baseURL;
       if (aiPatch.baseURL) current.baseURL = aiPatch.baseURL;
       else delete current.baseURL;
     }
     if (aiPatch.preset !== undefined) {
-      selecting ||= (aiPatch.preset ?? undefined) !== current.preset;
       if (aiPatch.preset) current.preset = aiPatch.preset;
       else delete current.preset;
     }
@@ -410,13 +429,6 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, options: { end
   for (const [key, mode] of [["lightTheme", "light"], ["darkTheme", "dark"]] as const) {
     const id = general[key] as string | undefined;
     if (id !== undefined && !fitsMode(id, mode, custom)) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
-  }
-  const localMode = (general.localMode as boolean | undefined) ?? s.localMode ?? DEFAULT_SETTINGS.localMode;
-  const profile = profiles[provider] ?? { model: "" };
-  // a custom endpoint may be a name that resolves to loopback: the caller checked it (see endpointIsLocal)
-  const local = isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }) || (provider === "compatible" && profile.preset === "custom" && options.endpointIsLocal === true);
-  if (selecting && localMode && provider !== "none" && !local) {
-    throw new SettingsError(L("errors.cloudAiLocalMode", { provider: describeProvider(provider).label }));
   }
   const { aiProvider: _p, aiModel: _m, ...kept } = s;
   return { ...kept, ...general, ai: { ...s.ai, provider, profiles } };

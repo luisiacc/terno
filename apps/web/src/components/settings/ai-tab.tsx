@@ -6,7 +6,7 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { cn } from "@terno/ui/lib/utils";
-import { CircleAlert, CircleCheck, LaptopMinimalCheck, Loader2, RefreshCw, ShieldCheck } from "@terno/ui/icons";
+import { CircleAlert, CircleCheck, Loader2, RefreshCw, ShieldCheck } from "@terno/ui/icons";
 import { refText, t } from "@terno/i18n";
 import { useEffect, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -39,7 +39,7 @@ type Catalog = { providers: ProviderDescriptor[]; presets: PresetDescriptor[] };
 type Discovery = { state: "idle" } | { state: "loading" } | { state: "done"; models: ModelInfo[] } | { state: "error"; message: string };
 
 export function AiTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  const { ai, localMode } = settings;
+  const { ai } = settings;
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const choice = choiceOf(ai);
   const presetNeedsKey = ai.provider === "compatible" && (catalog?.presets.find((p) => p.id === ai.preset)?.needsKey ?? ai.preset !== "custom");
@@ -48,8 +48,6 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   const showsKey = needsKey || (ai.provider === "compatible" && choice === "compatible");
   // any endpoint set is shown (an imported one included), so it can be seen and changed
   const showsEndpoint = LOCAL_CHOICES.includes(choice) || (ai.provider === "compatible" && (ai.preset === "custom" || ai.preset === "azure")) || Boolean(ai.baseURL);
-  // a custom endpoint may still resolve to this Mac: the backend decides when it connects
-  const paused = localMode && !ai.local && ai.provider !== "none" && !(ai.provider === "compatible" && ai.preset === "custom");
 
   useEffect(() => {
     void client.call("ai.providers", {}).then(setCatalog);
@@ -65,19 +63,16 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     const timer = setTimeout(() => {
       const value = endpointDraft.trim();
       if (!/^https?:\/\/[^/\s]+/i.test(value)) return setEndpointError(t("ai.endpoint.invalid"));
-      if (localMode && LOCAL_CHOICES.includes(choice) && !isLoopbackUrl(value) && choice !== "local-server") {
-        return setEndpointError(t("ai.endpoint.notLocal"));
-      }
       setEndpointError(null);
       update({ ai: { baseURL: value } }, { quiet: true }).catch((e) => setEndpointError(e instanceof Error ? e.message : String(e)));
     }, 400);
     return () => clearTimeout(timer);
-  }, [endpointDraft, endpoint, localMode, choice, update]);
+  }, [endpointDraft, endpoint, update]);
 
   // ── model discovery: when the tab opens and whenever provider or endpoint change (debounced)
   const [discovery, setDiscovery] = useState<Discovery>({ state: "idle" });
   const discoverySeq = useRef(0);
-  const canDiscover = ai.provider !== "none" && !paused && (!needsKey || (ai.hasKey && ai.keyConfirmed));
+  const canDiscover = ai.provider !== "none" && (!needsKey || (ai.hasKey && ai.keyConfirmed));
   const discover = async () => {
     const seq = ++discoverySeq.current;
     setDiscovery({ state: "loading" });
@@ -169,7 +164,6 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   };
 
   const selectable = (c: ProviderChoice) => c !== "fake" || catalog?.providers.some((p) => p.id === "fake");
-  const cloudDisabled = localMode;
   const items = [...LOCAL_CHOICES, ...CLOUD_CHOICES, "fake" as const, "none" as const].filter(selectable).map((c) => ({ value: c, label: choiceLabel(c) }));
   const models = discovery.state === "done" ? discovery.models : [];
 
@@ -185,15 +179,6 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </span>
         }
       >
-        {localMode && (
-          <div className="flex items-start gap-2 py-2.5 text-xs text-muted-foreground" data-testid="ai-local-banner">
-            <LaptopMinimalCheck className="mt-px size-3.5 shrink-0 text-primary" aria-hidden />
-            <span>
-              {t("ai.localBanner")}
-              {paused && ` ${t("ai.localBanner.paused", { provider: providerName(ai) })}`}
-            </span>
-          </div>
-        )}
         <SettingsRow label={t("ai.provider")} hint={t("ai.provider.hint")}>
           {({ id: _id, ...a }) => (
             <Select value={choice} onValueChange={(v) => void select(v as ProviderChoice)} items={items}>
@@ -211,9 +196,9 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
                 </SelectGroup>
                 <SelectSeparator />
                 <SelectGroup>
-                  <SelectLabel>{cloudDisabled ? t("ai.group.cloudDisabled") : t("ai.group.cloud")}</SelectLabel>
+                  <SelectLabel>{t("ai.group.cloud")}</SelectLabel>
                   {CLOUD_CHOICES.map((c) => (
-                    <SelectItem key={c} value={c} disabled={cloudDisabled} data-testid={`ai-choice-${c}`}>
+                    <SelectItem key={c} value={c} data-testid={`ai-choice-${c}`}>
                       {choiceLabel(c)}
                     </SelectItem>
                   ))}
@@ -316,7 +301,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {ai.provider !== "none" && ai.provider !== "fake" && (
-          <SettingsRow stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey && !paused ? t("ai.model.needsKey") : undefined}>
+          <SettingsRow stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey ? t("ai.model.needsKey") : undefined}>
             {(a) => (
               <div className="space-y-2">
                 <div className="flex gap-2">
@@ -372,7 +357,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         {ai.provider !== "none" && (
           <div className="space-y-2 py-3">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" data-testid="ai-test" disabled={testing || paused || (ai.provider !== "fake" && !ai.model)} onClick={() => void runTest()}>
+              <Button variant="outline" size="sm" data-testid="ai-test" disabled={testing || (ai.provider !== "fake" && !ai.model)} onClick={() => void runTest()}>
                 {testing && <Loader2 className="animate-spin" />} {t("ai.test")}
               </Button>
               <span role="status" aria-live="polite" className="text-xs">

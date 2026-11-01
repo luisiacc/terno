@@ -76,11 +76,9 @@ export class AiService {
     const { provider, preset } = target;
     if (provider === "none") throw new AiError(L("errors.ai.notConfigured"), "not_configured");
     const local = isLocalProvider({ id: provider, baseURL: target.baseURL, preset });
-    // a custom endpoint may be a name for a server on this Mac: the policy resolves it before connecting
+    // a custom endpoint may be a name for a server on this Mac; the locality rides along with the request (plan 97:
+    // it no longer decides whether a cloud provider may run)
     const declaredCloud = !local && !(provider === "compatible" && (preset ?? "custom") === "custom");
-    if (declaredCloud && (await this.b.net.isLocalMode())) {
-      throw new AiError(L("errors.ai.pausedByLocalMode", { provider: describeProvider(provider).label }), "blocked");
-    }
     const baseURL = resolveBaseURL({ id: provider, baseURL: target.baseURL, preset });
     if (provider !== "fake" && !baseURL) throw new AiError(L("errors.ai.serverUrlMissing"), "not_configured");
     const secretName = keySecretName(provider, preset);

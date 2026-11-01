@@ -28,7 +28,6 @@ const base: UpdateState = {
   checkedAt: null,
   error: null,
   deferred: null,
-  localMode: true,
   justUpdated: null,
   required: null,
   updatingNow: false,

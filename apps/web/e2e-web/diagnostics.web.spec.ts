@@ -42,7 +42,7 @@ test("local mode offers Send; nothing leaves before the click, and what leaves i
   // a new install starts in local mode
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-general").click();
-  await expect(page.getByTestId("local-mode-switch")).toBeChecked();
+  await expect(page.getByTestId("local-mode-row")).toBeVisible();
   await page.keyboard.press("Escape");
   await deadTab(page);
   const row = page.getByTestId("report-row");
@@ -100,7 +100,7 @@ test("Settings: the choice is open in local mode; Never keeps reports here", asy
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-general").click();
   await page.getByTestId("diagnostics-section").scrollIntoViewIfNeeded();
-  await expect(page.getByTestId("local-mode-switch")).toBeChecked();
+  await expect(page.getByTestId("local-mode-row")).toBeVisible();
   const select = page.getByTestId("error-reports-select");
   await expect(select).toBeEnabled();
   await expect(page.getByTestId("error-reports-row")).toContainText("Terno asks before sending each one.");

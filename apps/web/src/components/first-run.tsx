@@ -32,10 +32,11 @@ async function findLocalModel(): Promise<Found | null> {
 export function FirstRun() {
   const [open, setOpen] = useState(true);
 
-  // a model already running on this Mac becomes the AI, as local mode expects (no key, nothing leaves the machine)
+  // a model already running on this Mac becomes the AI (no key, nothing leaves the machine), only while no AI is
+  // chosen yet when discovery answers: a provider picked meanwhile is the user's (plan 97, Codex review)
   useEffect(() => {
     void findLocalModel().then(async (found) => {
-      if (!found || getApp().settings?.localMode === false) return;
+      if (!found || (getApp().settings?.ai.provider ?? "none") !== "none") return;
       try {
         const settings = await client.call("settings.update", { ai: { provider: found.provider, model: found.model } });
         setApp({ settings: reconcileSettings(settings) });

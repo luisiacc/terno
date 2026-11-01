@@ -22,7 +22,7 @@ it.each([false, true].flatMap((managed) => [1, 65_536].map((chunkSize) => ({ man
   const gate = await ProviderCooldown.open({ read: async () => raw, update: async (fn) => { const next = fn(raw); raw = next.encoded; return next.result; } }, { wallNow: Date.now, elapsedNow: () => performance.now(), random: () => 0.5 });
   const policy = gate.requestsFor("a".repeat(64));
   const wire = async () => { requests++; return response; };
-  const net = createNetworkPolicy({ localMode: () => true, fetch: wire });
+  const net = createNetworkPolicy({ fetch: wire });
   const ctx = {
     google: managed ? {
       generation: () => 0,

@@ -10,7 +10,7 @@
  * - a profile on a nearly full disk image: "no room", then Update Without a
  *   Backup migrates
  * - a damaged mailbox with a backup: Restore, after which a send queued in the
- *   backup is not sent again and local mode is on
+ *   backup is not sent again
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from "node:fs";
@@ -205,7 +205,7 @@ test("a nearly full disk: 'no room' with the numbers, then Update Without a Back
   expect(statSync(filler).size).toBeGreaterThan(0);
 });
 
-test("a damaged mailbox with a backup: Restore brings it back, a queued send isn't sent again, local mode is on", async () => {
+test("a damaged mailbox with a backup: Restore brings it back, and a queued send isn't sent again", async () => {
   const userData = profile("damaged");
   const db = join(userData, "terno.db");
   // the backup an earlier upgrade made (its manifest names its file and size)
@@ -231,7 +231,6 @@ test("a damaged mailbox with a backup: Restore brings it back, a queued send isn
   const check = new DatabaseSync(db, { readOnly: true });
   try {
     expect(check.prepare("SELECT state FROM ops WHERE id = 'op-1'").get()).toEqual({ state: "failed" });
-    expect(JSON.parse((check.prepare("SELECT value_json FROM settings WHERE key = 'app'").get() as { value_json: string }).value_json)).toMatchObject({ localMode: true });
   } finally {
     check.close();
   }

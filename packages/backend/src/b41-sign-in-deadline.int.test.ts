@@ -37,7 +37,7 @@ it.each([
     await headers.promise;
     return new Response(JSON.stringify({ error: { errors: [{ reason: "rateLimitExceeded" }] } }), { status: 403, headers: { "retry-after": "120" } });
   });
-  const net = createNetworkPolicy({ localMode: () => true, fetch: transport });
+  const net = createNetworkPolicy({ fetch: transport });
   const abort = new AbortController();
   let finished = false;
   const result = inspectGmailToken("synthetic-stalled-settlement", async () => { throw new Error("Unexpected unmanaged request"); }, {

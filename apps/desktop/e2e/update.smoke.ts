@@ -91,6 +91,10 @@ function stage(o: { tamper: boolean; minimum?: string }) {
   mkdirSync(join(work, "Applications"), { recursive: true });
   mkdirSync(join(work, "feed"), { recursive: true });
   mkdirSync(profile(), { recursive: true });
+  // manual mode: a check offers, downloading is the user's step (automatic mode, the default, downloads right after a
+  // check, local mode or not: plan 97), so each test drives every step itself
+  mkdirSync(join(profile(), "updates"), { recursive: true });
+  writeFileSync(join(profile(), "updates/prefs.json"), JSON.stringify({ mode: "manual", channel: "stable", checkedAt: null }));
   execFileSync("ditto", [join(work, "release-0.1.0/mac-arm64/Terno.app"), bundle()]);
   const zip = "Terno-0.1.1-arm64-mac.zip";
   for (const f of ["latest-mac.yml", zip, `${zip}.blockmap`]) copyFileSync(join(work, "release-0.1.1", f), join(work, "feed", f));
@@ -120,7 +124,7 @@ async function launch(env: Record<string, string> = {}) {
 }
 
 const updates = <T>(fn: string) => page.evaluate(`window.ternoDesktop.updates.${fn}()`) as Promise<T>;
-const state = () => updates<{ status: string; error: { stage: string; kind: string } | null; ready: { version: string } | null; localMode: boolean }>("state");
+const state = () => updates<{ status: string; error: { stage: string; kind: string } | null; ready: { version: string } | null; mode: string }>("state");
 
 function logLines(): { code: string; fields?: Record<string, unknown>; version?: string }[] {
   const file = join(profile(), "logs/main.jsonl");
@@ -188,8 +192,8 @@ test.afterAll(async () => {
 test("a corrupted download is refused (sha512): an integrity error, and the app stays as it was", async () => {
   stage({ tamper: true });
   await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
-  // a new profile is in local mode: nothing was checked on its own
-  expect((await state()).localMode).toBe(true);
+  // the test build's first automatic check waits an hour: nothing was checked on its own
+  expect((await state()).mode).toBe("manual");
   expect(requests).toEqual([]);
   // the manual check is one grant, the download a second
   expect((await updates<{ status: string }>("check")).status).toBe("available");
@@ -308,7 +312,7 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");
-  // local mode: the pill offers it, and downloading is the user's second yes
+  // manual mode: the pill offers it, and downloading is the user's step
   await expect(page.getByTestId("update-pill")).toHaveText("Update 0.1.1");
   await page.getByTestId("update-pill").click();
   await page.getByTestId("update-download").click();
@@ -356,7 +360,7 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
 test("a required update (plan 95): the feed's minimum covers the window, and one click on Update Terno installs it and relaunches", async () => {
   stage({ tamper: false, minimum: "0.1.1" });
   await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
-  // local mode: nothing was asked on its own; the user's check reads the requirement
+  // nothing was asked on its own (the first automatic check waits an hour); the user's check reads the requirement
   expect(requests).toEqual([]);
   await updates("check");
   const required = page.getByTestId("required-update");

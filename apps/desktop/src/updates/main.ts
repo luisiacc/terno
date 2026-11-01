@@ -21,7 +21,6 @@ import { bundleOf, parsePending, parsePrefs, resolveFeed, signedFromCodesign, un
 export interface UpdatesMainDeps {
   trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean;
   windows(): Iterable<BrowserWindow>;
-  localMode(): boolean;
   shutdown(): Promise<InstallShutdown>;
   onSendsIdle(cb: () => void): void;
   recover(): void;
@@ -112,7 +111,6 @@ export function startUpdates(deps: UpdatesMainDeps): UpdateController {
       setTimeout: (fn, ms) => setTimeout(fn, ms),
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     },
-    deps.localMode(),
   );
 
   ipcMain.handle("terno:updates-state", (e) => (deps.trusted(e) ? controller.view : null));

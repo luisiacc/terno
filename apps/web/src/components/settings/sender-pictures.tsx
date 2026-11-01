@@ -74,7 +74,7 @@ export function SenderPictures({ settings, update }: { settings: AppSettings; up
   const canFetch = useApp((s) => s.host?.capabilities.siteIcons === true);
   const accounts = useApp((s) => s.accounts);
   const gmail = accounts.filter((a) => a.kind === "gmail");
-  const hint = !canFetch ? t("settings.appearance.siteIcons.hintWeb") : settings.localMode ? t("settings.appearance.siteIcons.hintLocal") : t("settings.appearance.siteIcons.hint");
+  const hint = !canFetch ? t("settings.appearance.siteIcons.hintWeb") : t("settings.appearance.siteIcons.hint");
   return (
     <SettingsGroup title={t("settings.appearance.senderPictures")} testId="sender-pictures" footer={t("settings.appearance.senderPictures.footer")}>
       <SettingsRow testId="site-icons-row" label={t("settings.appearance.siteIcons")} hint={hint}>

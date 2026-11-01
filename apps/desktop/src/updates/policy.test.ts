@@ -6,7 +6,6 @@ import {
   inboundHeaders,
   outboundHeaders,
   installOutcome,
-  mayCheck,
   mayDownload,
   parsePending,
   feedMinimum,
@@ -18,36 +17,28 @@ import {
   type LocationProbe,
 } from "./policy";
 
-describe("updates: the network policy (local mode × setting × grants)", () => {
+describe("updates: the network policy (setting × grants; local mode doesn't stop updates, plan 97)", () => {
   it.each([
-    // localMode, mode, trigger → check, download
-    [false, "auto", "auto", true, true],
-    [false, "manual", "auto", true, false],
-    [true, "auto", "auto", false, false],
-    [true, "manual", "auto", false, false],
-    [false, "auto", "manual", true, true],
-    [false, "manual", "manual", true, true],
-    [true, "auto", "manual", true, true],
-    [true, "manual", "manual", true, true],
-  ] as const)("local mode %s, %s updates, %s trigger → check %s, download %s", (localMode, mode, trigger, check, download) => {
-    expect(mayCheck({ localMode, trigger })).toBe(check);
-    expect(mayDownload({ localMode, mode, trigger })).toBe(download);
+    // mode, trigger → download
+    ["auto", "auto", true],
+    ["manual", "auto", false],
+    ["auto", "manual", true],
+    ["manual", "manual", true],
+  ] as const)("%s updates, %s trigger → download %s", (mode, trigger, download) => {
+    expect(mayDownload({ mode, trigger })).toBe(download);
   });
 
-  it("grants: automatic ones are refused in local mode and revoked when it turns on; manual ones stay until released", () => {
+  it("grants: the session is open only while one is; releasing twice is harmless", () => {
     const g = new Grants();
-    expect(g.grant("auto", { localMode: true })).toBeNull();
     expect(g.active).toBe(false);
-    const auto = g.grant("auto", { localMode: false });
-    const manual = g.grant("manual", { localMode: true });
-    expect(auto).not.toBeNull();
-    expect(g.revokeAutomatic()).toBe(true);
+    const auto = g.grant("auto");
+    const manual = g.grant("manual");
+    expect(g.active).toBe(true);
+    g.release(auto);
     expect(g.active).toBe(true);
     g.release(manual);
     expect(g.active).toBe(false);
-    // releasing twice, or a revoked one, is harmless
     g.release(auto);
-    g.release(manual);
     expect(g.active).toBe(false);
   });
 });

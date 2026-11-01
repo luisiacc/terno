@@ -25,7 +25,15 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
 
 ## Non-negotiables
 
-- **Privacy.** Mail content, addresses, names, subjects, tokens and keys never leave the machine except to the user's own mail and AI providers. **Local mode** (the default) means traffic to the mail servers only, plus remote mail content only when the user loads it (per message, or with the setting; plan 37) and the other explicit choices plans 11 and 22 allow. Diagnostics follow plan 10.
+- **Privacy.** Mail content, addresses, names, subjects, tokens and keys never leave the machine except to the user's own mail servers and the AI provider they chose. **Local mode** (the default, plan 97) means Terno keeps its copy of the mail on this machine and has no server of its own that stores it. It is not a network switch: everything else may use the internet, each by its own setting or explicit choice:
+  - updates (plan 11)
+  - website icons (plan 22)
+  - remote mail content, loaded per message or with the setting (plan 37)
+  - cloud AI, the provider the user picks
+  - error reports, with consent (plan 78)
+  - unsubscribe, on the user's click (plan 96)
+
+  Diagnostics follow plan 10. The desktop renderer itself reaches nothing beyond loopback and approved mail images (main's fence).
 - **Never** read or print the user's real secrets, and never touch real profiles (`~/Library/Application Support/Terno*`): use temp profiles and copies.
 - **Process safety.** Only kill processes you started, by the PID you captured. Ports 5173/5174 and other vite/node processes may belong to the user. Unset `ELECTRON_RUN_AS_NODE` when launching Electron.
 
