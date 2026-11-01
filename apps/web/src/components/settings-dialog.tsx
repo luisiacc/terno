@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/t
 import { useCallback } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { setApp, useApp, type SettingsTab } from "~/state/app";
+import { getApp, setApp, useApp, type SettingsTab } from "~/state/app";
 import { AiTab } from "./settings/ai-tab";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
@@ -23,6 +23,16 @@ import type { SettingsUpdate } from "./settings/parts";
 import { PaneBoundary } from "./diag/error-boundary";
 import { ReportPreview } from "./diag/report-preview";
 import { useNativeReload } from "~/lib/native-reload";
+
+/** plan 102: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
+function initialFocus(): boolean | HTMLElement {
+  const id = getApp().settingsAccount;
+  if (id === null) return switchFocus();
+  const row = document.querySelector<HTMLElement>(`[data-testid=settings-account][data-account-id="${id}"] [data-testid=account-toggle]`);
+  // used once: a later visit to the tab opens nothing by itself
+  setApp({ settingsAccount: null });
+  return row ?? switchFocus();
+}
 
 export function SettingsDialog() {
   const open = useApp((s) => s.dialog === "settings");
@@ -46,13 +56,13 @@ export function SettingsDialog() {
       open={open && !fatalModal}
       onOpenChange={(o) => {
         if (o || fatalModal) return;
-        setApp({ dialog: null });
+        setApp({ dialog: null, settingsAccount: null });
         // plan 93: Settings opens again on the list (the editor's save is flushed as it unmounts)
         closeSnippetEditor();
         setDeletedSnippet(null);
       }}
     >
-      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={switchFocus}>
+      <DialogContent className="h-[min(640px,85vh)] max-w-[min(820px,94vw)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-[min(820px,94vw)]" data-testid="settings-dialog" initialFocus={initialFocus}>
         <DialogTitle className="sr-only">{t("common.settings")}</DialogTitle>
         <Tabs value={tab} onValueChange={(v) => setApp({ settingsTab: v as SettingsTab })} orientation="vertical" className="flex h-full min-w-0 flex-row gap-0">
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}

@@ -1,7 +1,7 @@
 import { SentCopies } from "./sent-copies";
 import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
-import { separatesTabs, type Account, type AccountPatch, type CategoryColor } from "@terno/core";
+import { separatesTabs, type Account, type CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -17,10 +17,12 @@ import { googleBuiltIn } from "~/lib/google-client";
 import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
 import { client } from "~/rpc/connection";
-import { getApp, setAccounts, setApp, useApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
+import { patchAccount, type AccountEdit } from "~/lib/accounts";
 import { DaysField } from "./general-tab";
 import { OwnerCard } from "./owner-card";
-import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { AccountRemoveDialog } from "../account-remove-dialog";
+import { ColorPicker, CommitInput, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const CaptureRecovery = lazy(() => import("./capture-recovery"));
 
@@ -43,11 +45,6 @@ function status(a: Account): string {
   if (a.syncState.status === "offline") return error ? t("account.status.offlineError", { error }) : t("account.status.offline");
   if (a.syncState.status === "syncing") return t("account.status.syncing");
   return t("account.status.upToDate");
-}
-
-async function updateAccount(id: number, patch: AccountPatch): Promise<void> {
-  const next = await client.call("accounts.update", { id, ...patch });
-  setAccounts(getApp().accounts.map((a) => (a.id === next.id ? next : a)));
 }
 
 /**
@@ -160,7 +157,7 @@ function Reconnect({ account }: { account: Account }) {
 
 function AccountEditor({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
   const [removing, setRemoving] = useState(false);
-  const save = (patch: AccountPatch) => updateAccount(account.id, patch);
+  const save = (patch: AccountEdit) => patchAccount(account.id, patch);
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
       <SettingsRow labelFor label={t("account.name")} hint={t("account.name.hint")}>
@@ -204,22 +201,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
             <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="account-remove" onClick={() => setRemoving(true)}>
               <Trash2 /> {t("account.remove.button")}
             </Button>
-            <ConfirmDialog
-              open={removing}
-              onOpenChange={setRemoving}
-              testId="account-remove-dialog"
-              title={t("account.remove.title", { email: account.email })}
-              description={isOwner ? t("account.remove.descriptionOwner") : t("account.remove.description")}
-              confirm={t("account.remove.confirm")}
-              onConfirm={async () => {
-                try {
-                  await client.call("accounts.remove", { id: account.id });
-                  snack.success(t("account.removed"));
-                } catch (e) {
-                  snack.error(errorText(e));
-                }
-              }}
-            />
+            <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="settings" />
           </>
         )}
       </SettingsRow>
@@ -228,7 +210,8 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
 }
 
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
-  const [open, setOpen] = useState(false);
+  // plan 102: Settings opened on this account (the sidebar's Account Settings…) opens it; later events leave it be
+  const [open, setOpen] = useState(() => getApp().settingsAccount === account.id);
   const panel = useId();
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
   const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");

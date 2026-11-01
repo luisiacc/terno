@@ -8,6 +8,9 @@ import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { useId, useState } from "react";
+import { COLOR_LABEL } from "~/lib/color-labels";
+
+export { COLOR_LABEL };
 
 /**
  * Settings, inset-grouped (macOS System Settings): groups on a tint surface,
@@ -196,17 +199,6 @@ export function CommitInput({
   );
 }
 
-/** Each palette color's accessible name, as a key (read at render, in the current language). */
-export const COLOR_LABEL = {
-  rose: "settings.color.rose",
-  amber: "settings.color.amber",
-  lime: "settings.color.lime",
-  emerald: "settings.color.emerald",
-  cyan: "settings.color.cyan",
-  indigo: "settings.color.indigo",
-  violet: "settings.color.violet",
-  slate: "settings.color.slate",
-} as const satisfies Record<CategoryColor, string>;
 
 /**
  * The palette as native radio buttons (arrow keys, one tab stop), each named

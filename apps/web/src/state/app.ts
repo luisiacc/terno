@@ -85,6 +85,8 @@ export interface AppState {
   /** the category picker toggles categories (l) or moves exclusively (v, "Mover a…") */
   pickerMode: "toggle" | "move";
   settingsTab: SettingsTab;
+  /** plan 102: the account Settings opens on (the sidebar menu's Account Settings…); read once as it opens */
+  settingsAccount: number | null;
   /** e.g. "g" while waiting for the second key of a sequence */
   pendingKeys: string | null;
   /** the categorization snackbar is up (its keys win: 1–5, z, Esc) */
@@ -131,6 +133,7 @@ export const useApp = create<AppState>(() => ({
   remindTarget: null,
   pickerMode: "toggle",
   settingsTab: "general",
+  settingsAccount: null,
   pendingKeys: null,
   snackbar: false,
 }));

@@ -21,6 +21,7 @@ import { setMailboxBridgeForTests } from "~/lib/mailbox";
 import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
+import { withPendingEdits } from "~/lib/accounts";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
@@ -87,7 +88,8 @@ export async function boot(): Promise<void> {
     });
     installQueryRecovery({ covered: listCovered, readerShown });
     client.on("accounts", (accounts) => {
-      setAccounts(accounts);
+      // plan 102: a rename or color still on its way stays shown
+      setAccounts(withPendingEdits(accounts));
       reconcileAccounts(accounts);
       // plan 25: an account that works again ends what was said about its sign-in
       accountsChanged(accounts);
