@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { beforeAll, afterAll, expect, it } from "vitest";
-import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups } from "@terno/db";
+import { Db, MIGRATIONS, nodeSqliteDriver, createAccount, ingestMessages, registerFunctions, listBackups, SCHEMA_VERSION } from "@terno/db";
 import { msg } from "../../../../packages/store/src/conformance/fixtures";
 import { openNodeMailbox, nodeStore } from "@terno/backend";
 import type { MainToBackend } from "../ipc";
@@ -40,7 +40,9 @@ function legacy(path: string, fail: boolean) {
     registerFunctions(db);
     for (const migration of MIGRATIONS) if (migration.version <= 38) db.tx(() => { db.exec(migration.sql); db.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "partial" })], 1);
+    db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     if (fail) db.exec("CREATE TABLE body_parts(synthetic_collision INTEGER)");
   } finally { db.close(); }
 }
@@ -67,7 +69,7 @@ for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "mig
     expect(native.events.some((event) => event.tag === "host-open" || event.tag === "ready")).toBe(false);
     if (mode === "migration-error") {
       native.worker.postMessage({ fixture: "release-retirement" });
-      const failure = await native.until("open-failed"); expect(failure.kind).toBe("failed"); expect(failure.reason).toBe("migration"); exactOld(path, 38);
+      const failure = await native.until("open-failed"); expect(failure.kind).toBe("failed"); expect(failure.reason).toBe("migration"); exactOld(path, SCHEMA_VERSION - 1);
     } else if (mode === "prepared-success") {
       native.worker.postMessage({ fixture: "release-prepared" }); expect((await native.until("native-exit")).tag).toBe("native-exit");
       await native.barrier(); expect(native.events.some((event) => event.tag === "ready" || event.tag === "host-open")).toBe(false);
@@ -76,12 +78,12 @@ for (const mode of ["prepared-cancel", "prepared-success", "backup-cancel", "mig
       native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 }); expect((await native.until("shutdown-result")).outcome).toBe("closed");
     } else {
       native.worker.postMessage({ type: "shutdown", id: 1, force: true, deadlineMs: 5000 });
-      if (mode === "prepared-cancel") { expect((await native.until("native-exit")).tag).toBe("native-exit"); exactOld(path, 39); }
+      if (mode === "prepared-cancel") { expect((await native.until("native-exit")).tag).toBe("native-exit"); exactOld(path, SCHEMA_VERSION); }
       await native.barrier(); expect(native.events.some((event) => event.tag === "shutdown-result"), "logical abort must not acknowledge owned physical work").toBe(false);
       native.worker.postMessage({ fixture: mode === "backup-cancel" ? "release-backup" : "release-retirement" });
       expect((await native.until("shutdown-result")).outcome).toBe("closed");
       expect(native.events.some((event) => event.tag === "ready" || event.tag === "host-open")).toBe(false);
-      expect(listBackups(join(directory, "backups"))).toHaveLength(1); exactOld(path, mode === "backup-cancel" ? 38 : 39);
+      expect(listBackups(join(directory, "backups"))).toHaveLength(1); exactOld(path, mode === "backup-cancel" ? 38 : SCHEMA_VERSION);
       await native.close();
       const store = nodeStore(await openNodeMailbox(path), { instantSearch: false });
       try { const message = (await store.threads.get(1))!.messages[0]!; expect(message.bodyText === text && message.bodyHtml === html).toBe(true); expect(message.bodyState).toBe("partial"); }

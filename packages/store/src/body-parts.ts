@@ -1,4 +1,4 @@
-import { tokenize, type TextOp } from "@terno/core";
+import { UNSUBSCRIBE_SCAN_MAX, tokenize, type TextOp } from "@terno/core";
 
 /** A storage/transfer unit, never a limit on a message's complete content. */
 export const BODY_PART_UNITS = 32768;
@@ -176,4 +176,20 @@ export function bodyPreview(text: string | null, parts?: import("@terno/core").E
     if (length === units.length) break;
   }
   return String.fromCharCode(...units.subarray(0, length));
+}
+
+/** The existing Plan96 projection, streamed without flattening the complete captured body. */
+export async function unsubscribeBodyParts(source: BodyPartSource, html: boolean): Promise<string> {
+  const limit = UNSUBSCRIBE_SCAN_MAX;
+  const head: string[] = [], tail: string[] = [];
+  let headUnits = 0, tailUnits = 0, total = 0;
+  for await (const part of bodyPartText(source)) {
+    total += part.length;
+    if (html && headUnits < limit / 4) { const piece = part.slice(0, limit / 4 - headUnits); head.push(piece); headUnits += piece.length; }
+    tail.push(part); tailUnits += part.length;
+    const keep = limit;
+    while (tailUnits > keep) { const first = tail[0]!; const excess = tailUnits - keep; if (first.length <= excess) { tail.shift(); tailUnits -= first.length; } else { tail[0] = first.slice(excess); tailUnits -= excess; } }
+  }
+  const end = tail.join("");
+  return html && total > limit ? `${head.join("")}\n${end.slice(-limit * 3 / 4)}` : end;
 }

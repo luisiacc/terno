@@ -1,7 +1,7 @@
 import { resolvable, parseSearch } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
-import { decodeBodyPart } from "@terno/store";
-import { observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, hydrateBody, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
+import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
+import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, hydrateBody, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
 import { unsubscribeSource } from "./unsubscribe";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -370,7 +370,20 @@ export class SqlMailStore implements MailStore {
       }
       return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
     },
-    unsubscribeSource: async (id) => unsubscribeSource(this.db, id),
+    unsubscribeSource: async (id) => {
+      const result = unsubscribeSource(this.db, id);
+      if (!result || result.unsubscribe) return result;
+      const reference = bodyReadReference(this.db, result.messageId);
+      if (reference) {
+        const release = retainBody(this.db, reference.version);
+        try {
+        result.bodyText = reference.textParts === null ? null : await unsubscribeBodyParts(sqlBodyParts(this.db, reference.version, 0, this.yieldTo), false);
+        result.bodyHtml = reference.htmlParts === null ? null : await unsubscribeBodyParts(sqlBodyParts(this.db, reference.version, 1, this.yieldTo), true);
+        if (bodyReadReference(this.db, result.messageId)?.version !== reference.version) throw new RpcError("STALE", L("errors.originalGone"));
+        } finally { release(); }
+      }
+      return result;
+    },
     bodyPart: async (input) => {
       const current = () => !!this.db.get("SELECT 1 FROM messages m JOIN body_heads b ON b.message_id=m.id WHERE m.id=? AND m.account_id=? AND b.capture_id=?", input.messageId, input.accountId, input.version);
       if (!current()) throw new RpcError("STALE", L("errors.originalGone"));

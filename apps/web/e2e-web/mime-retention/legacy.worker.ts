@@ -20,7 +20,10 @@ function fixture(db: Db): number {
   const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
   const assets = sqlAssets(db);
   const asset = db.tx(() => { const asset = createAsset(assets, () => crypto.randomUUID(), { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(assets, account.id, asset.assetId!, 0, "AP+A"); sealAsset(assets, account.id, asset.assetId!); return asset; });
-  return [...ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "old", bodyText: text, bodyHtml: html, bodyState: "full", isStarred: true, attachments: [{ filename: "exact.bin", mime: "application/octet-stream", size: 3, assetId: asset.assetId! }] })], 1).touchedThreads][0]!;
+  db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
+  const threadId = [...ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "old", bodyText: text, bodyHtml: html, bodyState: "full", isStarred: true, attachments: [{ filename: "exact.bin", mime: "application/octet-stream", size: 3, assetId: asset.assetId! }] })], 1).touchedThreads][0]!;
+  db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
+  return threadId;
 }
 async function idbFixture(name: string, db: Db): Promise<void> {
   const open = indexedDB.open(databaseName(name), 22);

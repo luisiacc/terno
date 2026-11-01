@@ -1,3 +1,4 @@
+import { unsubscribeBodyParts } from "@terno/store";
 import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
@@ -1010,8 +1011,8 @@ export class IdbMailStore implements MailStore {
           fromName: pick.row.from_name,
           fromEmail: pick.row.from_email,
           unsubscribe: pick.unsubscribe,
-          bodyHtml: (body?.body_html as string | null | undefined) ?? null,
-          bodyText: (body?.body_text as string | null | undefined) ?? null,
+          bodyHtml: body?.capture_id ? (T(this.c, "body_captures").get(body.capture_id)!.html_parts === null ? null : await unsubscribeBodyParts(this.bodyPartSource(String(body.capture_id), 1), true)) : (body?.body_html as string | null | undefined) ?? null,
+          bodyText: body?.capture_id ? (T(this.c, "body_captures").get(body.capture_id)!.text_parts === null ? null : await unsubscribeBodyParts(this.bodyPartSource(String(body.capture_id), 0), false)) : (body?.body_text as string | null | undefined) ?? null,
         };
       });
     },

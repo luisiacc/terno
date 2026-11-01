@@ -1,3 +1,4 @@
+import { findUnsubscribeLink } from "@terno/core";
 import { expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import { msg, withAccounts } from "./fixtures";
@@ -60,6 +61,18 @@ export function defineExactBodyLifecycle(open: () => Promise<{ store: MailStore;
       const message = (await store.threads.get(threadId))!.messages.find((message) => message.bodyText === text)!;
       expect(await store.filters.matchMessages({ match: "all", conditions: [{ field: "body", op: "contains", value: "alpha beta é" }], actions: [{ type: "star" }] }, 1, [message.id])).toEqual([message.id]);
       expect(message.bodyHtml === `<p>${text}</p>`).toBe(true);
+    } finally { await store.close(); await fixture.dispose(); }
+  });
+
+  it("preserves existing unsubscribe fallback for exact segmented bodies", async () => {
+    const fixture = await open(), store = fixture.store;
+    try {
+      const [accountId] = await withAccounts(store, 1);
+      const text = "complete exact text ".repeat(40000), html = `<p>${text}</p><a href="https://example.test/unsubscribe">Unsubscribe</a>`;
+      const result = await store.sync.ingest([msg({ accountId: accountId!, bodyText: text, bodyHtml: html, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+      const source = (await store.threads.unsubscribeSource(result.touched[0]!))!;
+      expect(findUnsubscribeLink(source.bodyHtml, source.bodyText)).toBe("https://example.test/unsubscribe");
+      expect((await store.threads.get(result.touched[0]!))!.messages[0]!.bodyHtml === html).toBe(true);
     } finally { await store.close(); await fixture.dispose(); }
   });
 

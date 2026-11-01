@@ -8,7 +8,7 @@ const staging = new WeakMap<Db, Set<string>>();
 const retiredObservers = new WeakMap<Db, () => void>();
 export function observeBodyRetirement(db: Db, observer: () => void): void { retiredObservers.set(db, observer); }
 const readers = new WeakMap<Db, Map<string, number>>();
-function retainBody(db: Db, id: string): () => void {
+export function retainBody(db: Db, id: string): () => void {
   let held = readers.get(db); if (!held) readers.set(db, held = new Map());
   held.set(id, (held.get(id) ?? 0) + 1);
   let released = false;

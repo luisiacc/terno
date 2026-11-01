@@ -27,3 +27,5 @@ export * from "./forwards";
 export * from "./body-parts";
 
 export * from "./body-preparation";
+
+export { unsubscribeBodyParts } from "./body-parts";

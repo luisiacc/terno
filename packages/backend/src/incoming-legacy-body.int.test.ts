@@ -22,7 +22,9 @@ for (const version of [36, 37]) it(`opens SQL${version} large cached bodies with
     registerFunctions(legacy);
     for (const migration of MIGRATIONS) if (migration.version <= 37) legacy.tx(() => { legacy.exec(migration.sql); legacy.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(legacy, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    legacy.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     const result = ingestMessages(legacy, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1);
+    legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     threadId = [...result.touchedThreads][0]!;
     if (version === 36) legacy.exec("DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key='tabs_backfill'; PRAGMA user_version=36");
   } finally { legacy.close(); }
@@ -73,7 +75,9 @@ for (const phase of ["prepared", "committed"] as const) it(`resumes exact legacy
     accountId = createAccount(old, { kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1).id;
     const repo = sqlAssets(old);
     const asset = old.tx(() => { const asset = createAsset(repo, () => crypto.randomUUID(), { accountId, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(repo, accountId, asset.assetId!, 0, "AP+A"); sealAsset(repo, accountId, asset.assetId!); return asset; });
+    old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     const result = ingestMessages(old, [msg({ accountId, providerMsgId: "INBOX:7:42", bodyText: text, bodyHtml: html, bodyState: "partial", isStarred: true, attachments: [{ filename: "exact.bin", mime: "application/octet-stream", size: 3, assetId: asset.assetId! }] })], 1);
+    old.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     messageId = result.inserted[0]!; threadId = [...result.touchedThreads][0]!;
     old.run("INSERT INTO capture_repairs(account_id,key,message_id,locator,reason,state,revision,bytes) VALUES(?,?,?,?,'mime-depth','blocked',7,100)", accountId, "synthetic-key", messageId, JSON.stringify({ kind: "imap", mailbox: "INBOX", uidvalidity: "7", uid: 42 }));
   } finally { old.close(); }

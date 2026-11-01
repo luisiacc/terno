@@ -127,7 +127,7 @@ function* anchors(html: string): Generator<{ tag: string; inner: string }> {
 }
 
 /** Bodies longer than this are read at both ends only (the link sits in the footer, sometimes in a header). */
-const SCAN_MAX = 512 * 1024;
+export const UNSUBSCRIBE_SCAN_MAX = 512 * 1024;
 
 /**
  * The link in the mail itself that unsubscribes (plan 96 §1.4): the last http(s) anchor
@@ -135,7 +135,7 @@ const SCAN_MAX = 512 * 1024;
  */
 export function findUnsubscribeLink(html: string | null | undefined, text: string | null | undefined): string | null {
   if (html) {
-    const body = html.length > SCAN_MAX ? `${html.slice(0, SCAN_MAX / 4)}\n${html.slice(-SCAN_MAX * 3 / 4)}` : html;
+    const body = html.length > UNSUBSCRIBE_SCAN_MAX ? `${html.slice(0, UNSUBSCRIBE_SCAN_MAX / 4)}\n${html.slice(-UNSUBSCRIBE_SCAN_MAX * 3 / 4)}` : html;
     let found: string | null = null;
     for (const a of anchors(body)) {
       const href = attr(a.tag, "href");
@@ -147,7 +147,7 @@ export function findUnsubscribeLink(html: string | null | undefined, text: strin
     if (found) return found;
   }
   if (text) {
-    const body = text.length > SCAN_MAX ? text.slice(-SCAN_MAX) : text;
+    const body = text.length > UNSUBSCRIBE_SCAN_MAX ? text.slice(-UNSUBSCRIBE_SCAN_MAX) : text;
     let found: string | null = null;
     for (const m of body.matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) {
       // the words just before it, on its line ("Unsubscribe: https://…", "Darse de baja aquí https://…")

@@ -16,7 +16,9 @@ it("admits a backed-up Plan95 mailbox through exact legacy conversion before exp
     registerFunctions(old);
     for (const migration of MIGRATIONS) if (migration.version <= 38) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
     const account = createAccount(old, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     threadId = [...ingestMessages(old, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1).touchedThreads][0]!;
+    old.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
   } finally { old.close(); }
   let largest = 0;
   const inspect = (row: unknown): void => { if (typeof row === "string") largest = Math.max(largest, row.length); else if (row && typeof row === "object" && !ArrayBuffer.isView(row) && !(row instanceof ArrayBuffer)) for (const value of Object.values(row)) inspect(value); };
@@ -50,6 +52,6 @@ for (const mode of ["corrupt", "migration"] as const) it(`preserves Plan95 class
   try {
     const error = await openNodeMailbox(path).then((db) => { db.close(); return undefined; }, (error: unknown) => error);
     expect(classifyOpenError(error)).toMatchObject({ kind: "failed", reason: mode, step: mode === "migration" ? SCHEMA_VERSION : null });
-    if (mode === "migration") { const old = new Db(nodeSqliteDriver, path, { readonly: true }); try { expect(old.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(38); } finally { old.close(); } }
+    if (mode === "migration") { const old = new Db(nodeSqliteDriver, path, { readonly: true }); try { expect(old.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(SCHEMA_VERSION - 1); } finally { old.close(); } }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
