@@ -180,8 +180,14 @@ const QP_SLICE = 16 * 1024;
 class QpLine {
   private cur = "";
   private begun = false;
+  /** a space or tab that ended the last stretch: whether it ends the line (encoded) is known with the next one */
+  private held = "";
   *feed(part: string, ends: boolean): Generator<string, void> {
+    if (this.held) { part = this.held + part; this.held = ""; }
     const from = !this.begun && part.startsWith("From ");
+    // Codex code review round 10 #2: emitted as is and then ended by the next stretch, a decoder dropped it
+    const tail = part.charCodeAt(part.length - 1);
+    if (!ends && (tail === 0x20 || tail === 0x09)) { this.held = part.slice(-1); part = part.slice(0, -1); }
     for (let s = 0; ; ) {
       let e = Math.min(part.length, s + QP_SLICE);
       // never between a surrogate pair

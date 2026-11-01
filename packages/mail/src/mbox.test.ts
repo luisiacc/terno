@@ -143,6 +143,14 @@ describe("mbox (plan 107)", () => {
     expect(email.text?.replace(/\r\n/g, "\n").replace(/\n$/, "")).toBe(body.replace("\r\n", "\n"));
   });
 
+  it("a space or tab that ends a stretch keeps its place when the next stretch ends the line (Codex code review round 10 #2)", async () => {
+    // a space, then a tab, each the last character of a stretch with the line's end in the next; and one that goes on
+    const body = `${"x".repeat(BODY_READ - 1)} \n${"y".repeat(BODY_READ - 2)}\t\n${"z".repeat(BODY_READ - 1)} goes on\nEND`;
+    const { text } = await serialize({ ...base, bodyText: stringBody(body) });
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.text?.replace(/\n$/, "")).toBe(body);
+  });
+
   it("a body gone while it's read ends there and counts as partial", async () => {
     const gone: MboxBody = async (at) => (at === 0 ? { text: "first\nsecond", next: 12 } : null);
     const { text, stats } = await serialize({ ...base, bodyText: gone });
