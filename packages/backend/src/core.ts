@@ -192,6 +192,8 @@ export class BackendCore {
   private readonly syncing = new Map<number, Promise<void>>();
   /** plan 107 (Codex R2): an account's folder change in flight (it opens when done; one queued behind it replaces it) */
   private readonly folderChanges = new Map<number, Promise<void>>();
+  /** plan 107 (Codex code review round 10 #4): an account's folder list and the favorites that follow it, written one at a time */
+  private readonly folderLists = new Map<number, Promise<unknown>>();
   /** plan 107: what talks to an account's provider now (sync passes, ops, body reads, copy repairs): a folder change waits for it */
   private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
   private readonly capacitySync = new Set<number>();
@@ -1632,12 +1634,15 @@ export class BackendCore {
           const moves = shown ? renamed.filter((m) => shown.has(m.from) && !shown.has(m.to)) : [];
           // carried before the list is stored, as a change's are (Codex code review round 8 #1)
           await carryRenamed(this, accountId, moves, (work) => this.accountWrite(life, work));
-          const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, moves.map((m) => m.to)));
-          if (!r.changed && !moves.length) return;
-          this.server.emit("folders", await this.store.folders.list());
-          this.notifyChanged(r.touched);
-          void this.rebuildFolders();
-          if (moves.length) await this.accountWrite(life, () => followFavoriteFolders(this.store, accountId, { renamed: moves }));
+          // the list and the favorites that follow it, never between a favorite's check and its write (round 10 #4)
+          await this.withFolderList(accountId, async () => {
+            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, moves.map((m) => m.to)));
+            if (!r.changed && !moves.length) return;
+            this.server.emit("folders", await this.store.folders.list());
+            this.notifyChanged(r.touched);
+            void this.rebuildFolders();
+            if (moves.length) await this.accountWrite(life, () => followFavoriteFolders(this.store, accountId, { renamed: moves }));
+          });
         },
       };
       if (!this.current(life)) return;
@@ -1796,6 +1801,23 @@ export class BackendCore {
   private admissionChanged(): void {
     this.cooldownVersion++;
     this.admissionSnapshot = undefined;
+  }
+
+  /**
+   * Plan 107 (Codex code review round 10 #4): `run` alone among the account's folder-list writes: a change's or a sync
+   * pass's stored list and the favorites that follow it, and a favorite's check of the list and its write. A favorite
+   * read against the list before a rename or delete wrote its key back after the change had moved it.
+   */
+  async withFolderList<T>(accountId: number, run: () => Promise<T>): Promise<T> {
+    const previous = this.folderLists.get(accountId);
+    const mine = (async () => { await previous?.catch(() => {}); return run(); })();
+    const settled = mine.catch(() => {});
+    this.folderLists.set(accountId, settled);
+    try {
+      return await mine;
+    } finally {
+      if (this.folderLists.get(accountId) === settled) this.folderLists.delete(accountId);
+    }
   }
 
   /**

@@ -986,7 +986,7 @@ export function createHandlers(b: Backend): Handlers {
       await setGooglePhotoState(store, id, null);
       await b.icons.dropPhotos(id);
       // plan 107: and its favorite folders
-      await followFavoriteFolders(store, id, { deleted: "all" });
+      await b.withFolderList(id, () => followFavoriteFolders(store, id, { deleted: "all" }));
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
       b.accountRemoved(id);

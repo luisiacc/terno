@@ -106,11 +106,14 @@ async function change<R extends FolderChange>(
     account.check();
     const { renamed = [], deleted = [] } = follows(result);
     await carryRenamed(b, accountId, renamed, account.write);
-    const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to)));
-    if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
-    b.notifyChanged(stored.touched);
-    void b.rebuildFolders();
-    if (renamed.length || deleted.length) await followFavoriteFolders(b.store, accountId, { renamed, deleted });
+    // the list and the favorites that follow it, never between a favorite's check and its write (Codex code review round 10 #4)
+    await b.withFolderList(accountId, async () => {
+      const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to)));
+      if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
+      b.notifyChanged(stored.touched);
+      void b.rebuildFolders();
+      if (renamed.length || deleted.length) await followFavoriteFolders(b.store, accountId, { renamed, deleted });
+    });
     resync();
     if (result.partial) throw folderError(b, result.partial);
     return result;
@@ -158,7 +161,13 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
 }
 
 /** Plan 107: a folder (or standard row) below Starred, or not: the account must exist, an own folder must be listed. */
-export async function favoriteFolder(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+export function favoriteFolder(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+  // checked and written alone among the account's folder-list writes: a rename or delete between them had its key
+  // written back (Codex code review round 10 #4)
+  return b.withFolderList(target.accountId, () => favoriteAlone(b, target, on));
+}
+
+async function favoriteAlone(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
   if (!(await b.store.accounts.get(target.accountId))) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   if (on && target.folder !== null && !(await accountFolders(b, target.accountId)).some((f) => f.key === target.folder)) throw new RpcError("BAD_REQUEST", L("errors.folder.favoriteUnknown"));
   const [accounts, folders] = await Promise.all([b.store.accounts.list(), b.store.folders.list()]);

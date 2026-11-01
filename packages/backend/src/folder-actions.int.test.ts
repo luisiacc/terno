@@ -763,6 +763,29 @@ it("favorites: on once each, an own folder must be listed, the account must exis
   expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([]);
 });
 
+it("a favorite checked against the list before a rename is never written back after the rename moved it (Codex code review round 10 #4)", async () => {
+  const t = await setup(["Work"]);
+  await t.backend.syncAccount(t.account.id);
+  const change = t.hold("rename");
+  const renaming = t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await change.started;
+  // the favorite reads the list (Work still there), then is slow to go on: the rename gets every chance to finish
+  const list = t.backend.store.folders.list.bind(t.backend.store.folders);
+  const slow = vi.spyOn(t.backend.store.folders, "list").mockImplementationOnce(async () => {
+    const before = await list();
+    change.release();
+    await Promise.race([renaming, new Promise((r) => setTimeout(r, 200))]);
+    return before;
+  });
+  try {
+    await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+    await renaming;
+  } finally {
+    slow.mockRestore();
+  }
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
+});
+
 it("favorites whose folders went in another app don't count toward the limit (Codex code review #8)", async () => {
   const names = Array.from({ length: FAVORITES_MAX }, (_, i) => `F${i}`);
   const t = await setup(names);
