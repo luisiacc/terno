@@ -1,5 +1,5 @@
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
-import { exportBody, exportIds, exportMessages } from "./folder-export";
+import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
 class CredentialAdmissionExpired extends Error {}
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
@@ -174,6 +174,8 @@ const PENDING_BODIES_CAP = 1000;
 /** bodies kept in memory after a unit of work (read ahead or written), by count and bytes; the rest stay in IndexedDB */
 const BODY_CACHE = 2000;
 const BODY_CACHE_BYTES = 8 * 1024 * 1024;
+/** export sessions whose body being written is held at once (plan 107, Codex code review round 27 #3); one more lets the oldest go */
+export const EXPORT_LEASES_MAX = 4;
 /** ids per exclusive slice when the feed reads bodies */
 const SLICE = 500;
 /** a scan's slice: this long at most, in chunks of this many messages, before yielding */
@@ -224,6 +226,12 @@ export class IdbMailStore implements MailStore {
   private open = true;
   private unusable = false;
   private seeding = false;
+  /**
+   * plan 107: each export session's body being written, held outside the body cache (one past its budget went after
+   * every call, so a 20 MB body was read again for each 256 KB stretch: Codex code review round 27 #3). One a session,
+   * at most `EXPORT_LEASES_MAX`; a write to the message lets it go.
+   */
+  private readonly exportLeases = new Map<string, { id: number; body: { body_text: string | null; body_html: string | null } }>();
   private readonly providerStores = new Map<number, ProviderStore>();
   private readonly log: NonNullable<IdbMailStoreOptions["log"]>;
   /** how long opening took: reading IndexedDB, building the in-memory tables */
@@ -341,6 +349,7 @@ export class IdbMailStore implements MailStore {
 
   async close(): Promise<void> {
     if (!this.open) return;
+    this.exportLeases.clear();
     try {
       await this.instant?.close();
     } finally {
@@ -383,6 +392,8 @@ export class IdbMailStore implements MailStore {
       const result = this.db.tx(fn);
       const touched = this.db.touched(["messages", "message_bodies", "threads", "thread_categories"]);
       const messageIds = new Set<number>([...touched.get("messages")!, ...touched.get("message_bodies")!].map(Number));
+      // a body held for an export is read again once its message is written (round 27 #3)
+      if (this.exportLeases.size) for (const [k, l] of this.exportLeases) if (messageIds.has(l.id)) this.exportLeases.delete(k);
       const threadIds = new Set<number>([...touched.get("threads")!.map(Number), ...touched.get("thread_categories")!.map((k) => (JSON.parse(k as string) as number[])[0]!)]);
       if (messageIds.size || threadIds.size) this.db.tx(() => appendOutbox(this.c, [...messageIds].sort((a, b) => a - b), [...threadIds].sort((a, b) => a - b), Date.now()));
       const commit = this.db.takeCommit();
@@ -1535,13 +1546,30 @@ export class IdbMailStore implements MailStore {
         return exportMessages(this.c, ids);
       });
     },
-    body: async (id, part, at, size) => {
+    body: async (id, part, at, size, lease) => {
       await this.settled();
       return this.exclusive(async () => {
-        await this.readBodies([id]);
-        return exportBody(this.c, id, part, at, size);
+        if (lease === undefined) {
+          await this.readBodies([id]);
+          return exportBody(this.c, id, part, at, size);
+        }
+        // the cache's copy if it has one, else the session's (no write since: it'd have let it go), else a read
+        const bodies = this.db.table<R>("message_bodies");
+        const held = this.exportLeases.get(lease);
+        let body = held?.id === id && !bodies.rows.has(id) ? held.body : undefined;
+        if (!body) {
+          await this.readBodies([id]);
+          body = this.c.body(id) ?? undefined;
+        }
+        this.exportLeases.delete(lease);
+        if (body) {
+          this.exportLeases.set(lease, { id, body });
+          if (this.exportLeases.size > EXPORT_LEASES_MAX) this.exportLeases.delete(this.exportLeases.keys().next().value!);
+        }
+        return sliceBody(body ?? null, part, at, size);
       });
     },
+    release: (lease) => void this.exportLeases.delete(lease),
   };
 
   readonly reminders: MailStore["reminders"] = {

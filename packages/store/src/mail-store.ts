@@ -576,9 +576,14 @@ export interface MailStore {
      * A stretch of a message's stored body part, about `size` of the store's own units from `at` (0: the start), never
      * half a character; `next`: where the rest starts, null at its end; null: the message or the part is gone. A big
      * body is never read whole into one call (Codex code review round 6 #4): SQLite reads that byte range of the
-     * stored value; IndexedDB keeps a body as one record, read whole into its body cache once, then sliced.
+     * stored value; IndexedDB keeps a body as one record, read whole once, then sliced.
+     * `lease`: the export session reading it. IndexedDB holds the session's body being written under it, outside its
+     * body cache (which lets one past its budget go after every call: Codex code review round 27 #3), until `release`,
+     * another message's body under it, a write to the message, or more sessions than it keeps.
      */
-    body(id: number, part: "text" | "html", at: number, size: number): Promise<{ text: string; next: number | null } | null>;
+    body(id: number, part: "text" | "html", at: number, size: number, lease?: string): Promise<{ text: string; next: number | null } | null>;
+    /** the session ended (finished, cancelled, expired): what it held goes */
+    release(lease: string): void;
   };
 
   categories: {

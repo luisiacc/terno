@@ -248,6 +248,26 @@ describe("folders.export (plan 107)", () => {
     await expect(exports.next(exportId, "c")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("a session reads bodies under its lease, released when it finishes, is cancelled or ends idle (Codex code review round 27 #3)", async () => {
+    const { backend, gmail } = await setup();
+    await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "one", bodyText: "x".repeat(600_000) })]);
+    const body = vi.spyOn(backend.store.folderExport, "body");
+    const release = vi.spyOn(backend.store.folderExport, "release");
+    const exports = new FolderExports(backend);
+    const finished = await exports.start({ accountId: gmail, view: "inbox" }, "c");
+    while (!(await exports.next(finished.exportId, "c")).finished);
+    expect(new Set(body.mock.calls.map((c) => c[4]))).toEqual(new Set([finished.exportId]));
+    expect(release.mock.calls).toEqual([[finished.exportId]]);
+    const cancelled = await exports.start({ accountId: gmail, view: "inbox" }, "c");
+    await exports.next(cancelled.exportId, "c");
+    exports.cancel(cancelled.exportId, "c");
+    expect(release.mock.calls.at(-1)).toEqual([cancelled.exportId]);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const idle = await exports.start({ accountId: gmail, view: "inbox" }, "c");
+    vi.advanceTimersByTime(EXPORT_IDLE_MS);
+    expect(release.mock.calls.at(-1)).toEqual([idle.exportId]);
+  });
+
   it("sorts by date then id in slices, as a plain sort would", async () => {
     const n = 20_000;
     const ids = Array.from({ length: n }, (_, i) => n - i);

@@ -909,6 +909,8 @@ export class SqlMailStore implements MailStore {
     ids: async (target, after, limit) => exportIds(this.db, target, after, limit),
     messages: async (ids) => exportMessages(this.db, ids),
     body: async (id, part, at, size) => exportBody(this.db, id, part, at, size),
+    // a byte range a call: nothing held
+    release: () => {},
   };
 
   readonly categories: MailStore["categories"] = {

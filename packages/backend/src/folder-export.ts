@@ -109,7 +109,7 @@ export class FolderExports {
         if (!s.current) {
           const m = await this.nextMessage(s, started);
           if (!m) break;
-          s.current = mboxMessage(this.toMbox(m), (attachment, index) => this.chunk(m, attachment, index));
+          s.current = mboxMessage(this.toMbox(m, s), (attachment, index) => this.chunk(m, attachment, index));
         }
         const r = await s.current.next();
         if (r.done) {
@@ -172,6 +172,8 @@ export class FolderExports {
     void s.current?.return({ missingAttachments: 0, partialBody: false }).catch(() => {});
     s.current = null;
     this.sessions.delete(s.id);
+    // finished, cancelled or left alone: the body it held goes (round 27 #3)
+    this.b.store.folderExport.release(s.id);
   }
 
   private async nameOf(target: FolderExportTarget): Promise<string> {
@@ -231,8 +233,14 @@ export class FolderExports {
   }
 
   /** its bodies read a stretch at a time as they're written, never whole (Codex code review round 6 #4) */
-  private toMbox(m: ExportMessage) {
-    const body = (part: "text" | "html"): MboxBody => (at, size) => this.b.store.folderExport.body(m.id, part, at, size);
+  private toMbox(m: ExportMessage, s: Session) {
+    // under the session's lease: a big body is read once, not once a stretch (Codex code review round 27 #3); one
+    // that ended during the read lets go of what that read held
+    const body = (part: "text" | "html"): MboxBody => async (at, size) => {
+      const r = await this.b.store.folderExport.body(m.id, part, at, size, s.id);
+      if (s.ended) this.b.store.folderExport.release(s.id);
+      return r;
+    };
     return { ...m, bodyText: m.hasText ? body("text") : null, bodyHtml: m.hasHtml ? body("html") : null, partial: m.bodyState !== "full", attachments: m.attachments.map((a) => ({ ...a, stored: a.assetId !== null })) };
   }
 

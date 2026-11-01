@@ -324,7 +324,11 @@ export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] 
  * UTF-16 units, never half a surrogate pair (Codex code review round 6 #4).
  */
 export function exportBody(c: Ctx, id: number, part: "text" | "html", at: number, size: number): { text: string; next: number | null } | null {
-  const body = c.body(id);
+  return sliceBody(c.body(id), part, at, size);
+}
+
+/** a stretch of a body read already (an export's lease: Codex code review round 27 #3) */
+export function sliceBody(body: { body_text: string | null; body_html: string | null } | null, part: "text" | "html", at: number, size: number): { text: string; next: number | null } | null {
   const s = part === "text" ? body?.body_text : body?.body_html;
   if (typeof s !== "string") return null;
   let end = Math.min(s.length, at + size);
