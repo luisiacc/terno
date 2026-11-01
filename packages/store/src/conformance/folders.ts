@@ -1,6 +1,6 @@
 import { folderRef } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { AWAITING_IDENTITY } from "../types";
+import { AWAITING_IDENTITY, type FolderPlace } from "../types";
 import type { MailStore } from "../mail-store";
 import { generateDataset } from "@terno/mock-data";
 import { ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
@@ -28,7 +28,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
     (await store.threads.list({ view: "all", accountId, folder, limit: o.limit ?? 50, filter: o.filter, keepIds: o.keepIds, now: NOW })).items.map((t) => t.id);
   const unread = async (store: MailStore) => (await store.threads.counts(NOW)).folderUnread ?? {};
   /** a folder count to its end, `limit` rows a slice (what the backend does with yields between); `calls`: how many it took */
-  const counted = async (store: MailStore, accountId: number, keys: readonly string[], limit: number) => {
+  const counted = async (store: MailStore, accountId: number, keys: readonly FolderPlace[], limit: number) => {
     let messages = 0;
     let calls = 0;
     for (let after: Parameters<MailStore["folders"]["count"]>[2] = null; ; ) {
@@ -39,7 +39,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       after = r.next;
     }
   };
-  const count = async (store: MailStore, accountId: number, keys: readonly string[]) => {
+  const count = async (store: MailStore, accountId: number, keys: readonly FolderPlace[]) => {
     const whole = (await counted(store, accountId, keys, 10_000)).messages;
     // the same however it's sliced
     expect((await counted(store, accountId, keys, 1)).messages).toBe(whole);
@@ -570,6 +570,28 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await count(store, m!, ["Work/Sub"])).toBe(1);
       // another account's folder of the same key isn't this one's
       expect(await count(store, g!, ["Work"])).toBe(0);
+    });
+
+    it("plan 107: a path made again after a rename here: each UIDVALIDITY counts in its own folder, however sliced (Codex code review round 6 #2)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      await store.folders.replace(m!, [{ key: "Job", path: ["Job"], selectable: true }, { key: "Work", path: ["Work"], selectable: true }]);
+      const at = (mailbox: string, uidvalidity: number, uid: number) => ({ ...loc(mailbox, uid), uidvalidity });
+      // Job's mail still under Work's old UIDVALIDITY (7), the new Work's under 9 (and one at a later 12, then 3)
+      await ingest(store, [
+        ...Array.from({ length: 3 }, (_, i) => msg({ accountId: m!, providerMsgId: `old${i}`, inInbox: false, locations: [at("Work", 7, i + 1)] })),
+        msg({ accountId: m!, providerMsgId: "both", inInbox: false, locations: [at("Work", 7, 9), at("Job", 4, 1)] }),
+        ...Array.from({ length: 2 }, (_, i) => msg({ accountId: m!, providerMsgId: `new${i}`, inInbox: false, locations: [at("Work", 9, i + 1)] })),
+        msg({ accountId: m!, providerMsgId: "later", inInbox: false, locations: [at("Work", 12, 1)] }),
+        msg({ accountId: m!, providerMsgId: "early", inInbox: false, locations: [at("Work", 3, 1)] }),
+      ]);
+      expect(await count(store, m!, ["Job", { mailbox: "Work", uidvalidity: 7 }])).toBe(4);
+      expect(await count(store, m!, [{ mailbox: "Work", except: [7] }])).toBe(4);
+      expect(await count(store, m!, [{ mailbox: "Work", except: [3, 7, 12] }])).toBe(2);
+      // the whole path, as before
+      expect(await count(store, m!, ["Work"])).toBe(8);
+      // both folders at once: each message once
+      expect(await count(store, m!, ["Job", { mailbox: "Work", except: [7] }, { mailbox: "Work", uidvalidity: 7 }])).toBe(8);
     });
 
     it("plan 107: a count over overlapping sublabels of one long conversation looks at each thread and message once, a slice at a time (Codex code review round 4 #3)", async () => {

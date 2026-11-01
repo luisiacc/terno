@@ -524,7 +524,7 @@ export interface MailStore {
      * long conversation were seconds in one call): `limit` bounds what's looked at, each thread and message once
      * however many of the folders hold it; `messages` is this slice's; `next`: where the count goes on, null when done.
      */
-    count(accountId: number, keys: readonly string[], after: import("./types").FolderCountCursor | null, limit: number): Promise<{ messages: number; next: import("./types").FolderCountCursor | null }>;
+    count(accountId: number, keys: readonly import("./types").FolderPlace[], after: import("./types").FolderCountCursor | null, limit: number): Promise<{ messages: number; next: import("./types").FolderCountCursor | null }>;
     /**
      * Plan 107: a renamed IMAP folder keeps its threads under its new key until the next pass proves where its mail
      * went (membership is derived: that pass, or any refresh of a thread, rewrites it from locations). Up to `limit`

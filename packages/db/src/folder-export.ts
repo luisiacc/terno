@@ -15,10 +15,15 @@ const PLACE: Record<FolderView, string> = {
   trash: "m.is_trash = 1",
 };
 
-/** a Gmail label in its stored labels, or an IMAP location in that mailbox */
+/**
+ * a Gmail label in its stored labels, or an IMAP location in that mailbox (but under the UIDVALIDITYs ?7 leaves out),
+ * or in one of its aliases (?6) under the UIDVALIDITY each names (Codex code review round 6 #2: a path made again
+ * after a rename here holds both folders' mail)
+ */
 const IN_FOLDER = `m.is_trash = 0 AND m.is_spam = 0 AND (
   (m.gmail_labels IS NOT NULL AND instr(m.gmail_labels, ?2) > 0 AND json_valid(m.gmail_labels) AND EXISTS (SELECT 1 FROM json_each(m.gmail_labels) WHERE value = ?2))
-  OR EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND (l.mailbox = ?2 OR l.mailbox IN (SELECT value FROM json_each(?6)))))`;
+  OR EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.mailbox = ?2 AND l.uidvalidity NOT IN (SELECT value FROM json_each(?7)))
+  OR EXISTS (SELECT 1 FROM json_each(?6) a JOIN message_locations l ON l.message_id = m.id AND l.mailbox = json_extract(a.value, '$.mailbox') WHERE l.uidvalidity = json_extract(a.value, '$.uidvalidity')))`;
 
 /** before every message (dates are milliseconds) */
 const FIRST = { id: 0, date: Number.MIN_SAFE_INTEGER };
@@ -30,8 +35,8 @@ export function exportIds(db: Db, target: FolderExportTarget, after: FolderExpor
   const test = target.folder !== undefined ? `m.is_draft = 0 AND ${IN_FOLDER}` : `m.account_id = ?2 AND m.is_draft = 0 AND ${PLACE[target.view]}`;
   const select = `SELECT m.id, m.date, (${test}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?1`;
   const key = target.folder ?? target.accountId;
-  // a folder's pending rename aliases (?6), bound only where the test names them
-  const aliases = target.folder !== undefined ? [JSON.stringify(target.aliases ?? [])] : [];
+  // a folder's pending rename aliases (?6) and the UIDVALIDITYs of its path that are theirs (?7), bound only where the test names them
+  const aliases = target.folder !== undefined ? [JSON.stringify(target.aliases ?? []), JSON.stringify(target.except ?? [])] : [];
   // the rest of the cursor's date, then the later dates: two seeks (a row value compared whole seeks by the date
   // alone, so a run of equal dates would be walked from its start each time)
   const page = (thread: number, from: { id: number; date: number }, n: number) => {

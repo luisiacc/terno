@@ -1,5 +1,5 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
-import type { FolderCountCursor, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
+import type { FolderCountCursor, FolderPlace, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
 import { keepInPage } from "@terno/store";
 import { stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
@@ -92,15 +92,34 @@ export function threadsOfMessages(c: Ctx, messageIds: readonly number[]): number
  * when no folder places them). What's looked at is bounded by `limit` (Codex code review round 4 #3: every sublabel
  * read the same long conversation again, five million visits in one call).
  */
-export function countFolderMessages(c: Ctx, accountId: number, keys: readonly string[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+export function countFolderMessages(c: Ctx, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  const places = keys.map((k): { mailbox: string; uidvalidity?: number; except?: readonly number[] } => (typeof k === "string" ? { mailbox: k } : k));
+  // the folders' keys (labels and rows: a renamed folder's old path under one UIDVALIDITY has neither), and each
+  // mailbox's places in order: a path made again after a rename here holds two folders' mail (Codex code review round 6 #2)
   const index = new Map<string, number>();
-  keys.forEach((k, i) => { if (!index.has(k)) index.set(k, i); });
+  const byMailbox = new Map<string, number[]>();
+  const firsts = new Map<string, number>();
+  places.forEach((p, i) => {
+    if (p.uidvalidity === undefined && !index.has(p.mailbox)) index.set(p.mailbox, i);
+    const same = byMailbox.get(p.mailbox);
+    if (same) same.push(i);
+    else byMailbox.set(p.mailbox, [i]);
+    const id = JSON.stringify(p);
+    if (!firsts.has(id)) firsts.set(id, i);
+  });
+  const placeOf = (mailbox: string, uidvalidity: number) => {
+    for (const i of byMailbox.get(mailbox) ?? []) {
+      const p = places[i]!;
+      if ((p.uidvalidity === undefined || p.uidvalidity === uidvalidity) && !p.except?.includes(uidvalidity)) return i;
+    }
+    return Infinity;
+  };
   const locations = T(c, "message_locations");
   const memberships = T(c, "thread_folders");
   /** where a message is first placed among the folders (Infinity: none) */
   const firstPlace = (id: number) => {
     let first = Infinity;
-    for (const l of locations.by("fk_message_id", id)) first = Math.min(first, index.get(l.mailbox as string) ?? Infinity);
+    for (const l of locations.by("fk_message_id", id)) first = Math.min(first, placeOf(l.mailbox as string, l.uidvalidity as number));
     return first;
   };
   let messages = 0;
@@ -113,16 +132,17 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly st
     return more && rows.length ? (rows.at(-1)!.id as number) : null;
   };
   let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
-  while (at.key < keys.length) {
+  while (at.key < places.length) {
     if (budget <= 0) return { messages, next: at };
-    const key = keys[at.key]!;
-    if (index.get(key) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    const place = places[at.key]!;
+    const key = place.mailbox;
+    if (firsts.get(JSON.stringify(place)) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     if (at.places) {
       // the folder's places by a live walk of its index kept between slices (as carryFolder's), each slice its next
       // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). `after`: how many
       // the walk has looked at; one lost (a reload, many counts at once) is walked again past those, once
       const seen = at.after[0] ?? 0;
-      const token = `${accountId}\u0000${keys.join("\u0000")}\u0000${at.key}`;
+      const token = `${accountId}\u0000${JSON.stringify(places)}\u0000${at.key}`;
       let walks = countWalks.get(c);
       if (!walks) countWalks.set(c, (walks = new Map()));
       let walk = walks.get(`${token}\u0000${seen}`);
@@ -151,6 +171,8 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly st
       }
       continue;
     }
+    // a renamed folder's old path under one UIDVALIDITY: its places only (its threads are the new key's rows)
+    if (place.uidvalidity !== undefined) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     // inside a thread: the rest of it
     const [thread = 0, message] = at.after;
     if (message !== undefined) {

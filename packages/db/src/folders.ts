@@ -1,5 +1,5 @@
 import type { Folder } from "@terno/core";
-import type { FolderCountCursor, ProviderFolder } from "@terno/store";
+import type { FolderCountCursor, FolderPlace, ProviderFolder } from "@terno/store";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
@@ -98,10 +98,22 @@ export function threadsOfMessages(db: Db, messageIds: readonly number[]): number
   return [...out];
 }
 
-/** a message counted in its thread: one of these labels (outside trash and spam), and no place in these folders (counted by it) */
+/**
+ * a location of message `id` in one of these places (`places`: a JSON array of `{ m: mailbox, v: UIDVALIDITY or
+ * null, x: UIDVALIDITYs left out }`): a path made again after a rename here holds two folders' mail (Codex code review
+ * round 6 #2). The message's few locations by the primary key, each matched against the places (none, a Gmail one).
+ */
+const placed = (id: string, places: string) => `EXISTS (SELECT 1 FROM message_locations e WHERE e.message_id = ${id} AND EXISTS (SELECT 1 FROM json_each(${places}) p
+  WHERE json_extract(p.value, '$.m') = e.mailbox AND coalesce(json_extract(p.value, '$.v'), e.uidvalidity) = e.uidvalidity AND e.uidvalidity NOT IN (SELECT value FROM json_each(p.value, '$.x'))))`;
+
+/** a message counted in its thread: one of these labels (?5, outside trash and spam), and no place in these folders (?2, counted by it) */
 const LABELLED = `m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'Label_') > 0
-  AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?2)))
-  AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.mailbox IN (SELECT value FROM json_each(?2)))`;
+  AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?5)))
+  AND NOT ${placed("m.id", "?2")}`;
+
+type Place = { mailbox: string; uidvalidity?: number; except?: readonly number[] };
+export const toPlace = (k: FolderPlace): Place => (typeof k === "string" ? { mailbox: k } : k);
+const placesJson = (places: readonly Place[]) => JSON.stringify(places.map((p) => ({ m: p.mailbox, v: p.uidvalidity ?? null, x: p.except ?? [] })));
 
 /**
  * Plan 107: the account's messages in these folders (MailStore.folders.count; the IndexedDB adapter's
@@ -110,29 +122,51 @@ const LABELLED = `m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'La
  * thread index (counted by label when no folder places them). What's looked at is bounded by `limit`, never by how
  * many match (Codex code review round 4 #3: every sublabel read the same long conversation again, in one call).
  */
-export function countFolderMessages(db: Db, accountId: number, keys: readonly string[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
-  const all = JSON.stringify(keys);
+export function countFolderMessages(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  const places = keys.map(toPlace);
+  const all = placesJson(places);
+  // the folders' keys, for labels and rows (a renamed folder's old path under one UIDVALIDITY has neither)
+  const folders = (to: number) => JSON.stringify(places.slice(0, to).filter((p) => p.uidvalidity === undefined).map((p) => p.mailbox));
+  const labels = folders(places.length);
   let messages = 0;
   let budget = Math.max(1, limit);
   let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
-  while (at.key < keys.length) {
+  while (at.key < places.length) {
     if (budget <= 0) return { messages, next: at };
-    const key = keys[at.key]!;
-    const earlier = JSON.stringify(keys.slice(0, at.key));
+    const place = places[at.key]!;
+    const key = place.mailbox;
     if (at.places) {
-      // by the place index, two seeks (the rest of a UIDVALIDITY, then the later ones: a row value compared whole
-      // seeks by the first column alone)
-      const [v = -1, u = -1] = at.after;
-      const select = `SELECT l.uidvalidity AS v, l.uid AS u, NOT EXISTS (SELECT 1 FROM message_locations e WHERE e.message_id = l.message_id AND e.mailbox IN (SELECT value FROM json_each(?3))) AS ok
-        FROM message_locations l INDEXED BY message_locations_uid WHERE l.account_id = ?1 AND l.mailbox = ?2`;
-      const asked = budget;
-      const same = v < 0 ? [] : db.all<{ v: number; u: number; ok: number }>(`${select} AND l.uidvalidity = ?4 AND l.uid > ?5 ORDER BY l.uidvalidity, l.uid LIMIT ?6`, accountId, key, earlier, v, u, asked);
-      const rows = same.length >= asked ? same : [...same, ...db.all<{ v: number; u: number; ok: number }>(`${select} AND l.uidvalidity > ?4 ORDER BY l.uidvalidity, l.uid LIMIT ?5`, accountId, key, earlier, v, asked - same.length)];
-      for (const r of rows) messages += r.ok ? 1 : 0;
-      budget -= Math.max(1, rows.length);
-      at = rows.length >= asked ? { key: at.key, places: true, after: [rows.at(-1)!.v, rows.at(-1)!.u] } : { key: at.key, places: false, after: [] };
+      // by the place index, a UIDVALIDITY at a time: the one named, or each but those left out, found by a seek
+      // (Codex code review round 6 #2), then its UIDs past `after`
+      const earlier = placesJson(places.slice(0, at.key));
+      const generation = (above: number): number | undefined => {
+        if (place.uidvalidity !== undefined) return above < place.uidvalidity ? place.uidvalidity : undefined;
+        for (;;) {
+          const next = db.get<{ v: number }>("SELECT uidvalidity AS v FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? AND uidvalidity > ? ORDER BY uidvalidity LIMIT 1", accountId, key, above)?.v;
+          if (next === undefined || !place.except?.includes(next)) return next;
+          above = next;
+        }
+      };
+      const select = `SELECT l.uid AS u, NOT ${placed("l.message_id", "?3")} AS ok
+        FROM message_locations l INDEXED BY message_locations_uid WHERE l.account_id = ?1 AND l.mailbox = ?2 AND l.uidvalidity = ?4 AND l.uid > ?5 ORDER BY l.uid LIMIT ?6`;
+      let v = at.after.length ? at.after[0] : generation(-1);
+      let u = at.after[1] ?? -1;
+      for (;;) {
+        if (v === undefined) { at = { key: at.key, places: false, after: [] }; break; }
+        const asked = budget;
+        const rows = db.all<{ u: number; ok: number }>(select, accountId, key, earlier, v, u, asked);
+        for (const r of rows) messages += r.ok ? 1 : 0;
+        budget -= Math.max(1, rows.length);
+        if (rows.length >= asked) { at = { key: at.key, places: true, after: [v, rows.at(-1)!.u] }; break; }
+        v = generation(v);
+        u = -1;
+        if (budget <= 0) { at = v === undefined ? { key: at.key, places: false, after: [] } : { key: at.key, places: true, after: [v, -1] }; break; }
+      }
       continue;
     }
+    // a renamed folder's old path under one UIDVALIDITY: its places only (its threads are the new key's rows)
+    if (place.uidvalidity !== undefined) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    const earlier = folders(at.key);
     // inside a thread: the rest of it, past (date, id)
     const [thread = 0, date, id] = at.after;
     if (date !== undefined && id !== undefined) {
@@ -164,8 +198,8 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly st
     const select = `SELECT m.id, m.date, (${LABELLED}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?1`;
     // one more than the budget: whether the thread goes on past it
     const n = Math.max(1, budget) + 1;
-    const same = from ? db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?5`, thread, all, from.date, from.id, n) : [];
-    const rows = same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date ${from ? ">" : ">="} ?3 ORDER BY m.date, m.id LIMIT ?4`, thread, all, from?.date ?? Number.MIN_SAFE_INTEGER, n - same.length)];
+    const same = from ? db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?6`, thread, all, from.date, from.id, labels, n) : [];
+    const rows = same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date ${from ? ">" : ">="} ?3 ORDER BY m.date, m.id LIMIT ?4`, thread, all, from?.date ?? Number.MIN_SAFE_INTEGER, n - same.length, labels)];
     const taken = rows.length > n - 1 ? rows.slice(0, n - 1) : rows;
     for (const r of taken) messages += r.ok ? 1 : 0;
     budget -= taken.length;

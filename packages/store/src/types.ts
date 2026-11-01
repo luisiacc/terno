@@ -368,9 +368,24 @@ export interface DraftInput {
 /** Plan 107: what an .mbox export reads: an account's own folder (`folder`: its key) or one of its standard rows */
 /**
  * `aliases`: mailboxes whose locations are the folder's too: the old paths of an IMAP rename made here that no pass has
- * reconciled yet (its threads were carried to the new key, its locations weren't: Codex code review round 5 #2)
+ * reconciled yet (its threads were carried to the new key, its locations weren't: Codex code review round 5 #2), each
+ * by the UIDVALIDITY it had; `except`: the UIDVALIDITYs of the folder's own path that are such a renamed folder's,
+ * cached under a path made again since (Codex code review round 6 #2)
  */
-export type FolderExportTarget = { accountId: number; folder: string; aliases?: readonly string[]; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
+export type FolderExportTarget = { accountId: number; folder: string; aliases?: readonly FolderGeneration[]; except?: readonly number[]; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
+
+/** Plan 107: a mailbox's locations under one UIDVALIDITY */
+export interface FolderGeneration {
+  mailbox: string;
+  uidvalidity: number;
+}
+
+/**
+ * Plan 107: a place a count reads: a folder's key (its locations and its rows), with `except` the UIDVALIDITYs under
+ * its path that are another folder's; or a renamed folder's old path under one UIDVALIDITY (`uidvalidity`: its
+ * locations only, no rows). Codex code review round 6 #2: a path made again after a rename here is another folder.
+ */
+export type FolderPlace = string | { mailbox: string; except: readonly number[] } | FolderGeneration;
 
 /**
  * Plan 107: where an export's id walk goes on: past thread `thread`, or inside it past `message` (a long conversation

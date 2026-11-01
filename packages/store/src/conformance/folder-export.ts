@@ -87,7 +87,23 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       await store.folders.replace(imap!, [{ key: "Job", path: ["Job"], selectable: true }]);
       for (let after: number | null = 0; after !== null; ) after = (await store.folders.carry(imap!, "Work", "Job", after, 1)).next;
       expect((await walk(store, { accountId: imap!, folder: "Job" })).ids).toEqual([]);
-      for (const limit of [1, 50]) expect((await walk(store, { accountId: imap!, folder: "Job", aliases: ["Work"] }, limit)).ids).toEqual(await idsOf(store, ["i1", "i2"]));
+      for (const limit of [1, 50]) expect((await walk(store, { accountId: imap!, folder: "Job", aliases: [{ mailbox: "Work", uidvalidity: 1 }] }, limit)).ids).toEqual(await idsOf(store, ["i1", "i2"]));
+    });
+
+    it("a path made again after a rename here: the alias takes its old UIDVALIDITY's mail, the new folder the rest (Codex code review round 6 #2)", async () => {
+      const store = await fresh();
+      const [, imap] = await withAccounts(store);
+      await store.folders.replace(imap!, [{ key: "Work", path: ["Work"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: imap!, providerMsgId: "old", locations: [loc("Work", 1)] }),
+        msg({ accountId: imap!, providerMsgId: "new", locations: [{ ...loc("Work", 1), uidvalidity: 2 }] }),
+      ]);
+      await store.folders.replace(imap!, [{ key: "Job", path: ["Job"], selectable: true }, { key: "Work", path: ["Work"], selectable: true }]);
+      for (let after: number | null = 0; after !== null; ) after = (await store.folders.carry(imap!, "Work", "Job", after, 1)).next;
+      for (const limit of [1, 50]) {
+        expect((await walk(store, { accountId: imap!, folder: "Job", aliases: [{ mailbox: "Work", uidvalidity: 1 }] }, limit)).ids).toEqual(await idsOf(store, ["old"]));
+        expect((await walk(store, { accountId: imap!, folder: "Work", except: [1] }, limit)).ids).toEqual(await idsOf(store, ["new"]));
+      }
     });
 
     it("a standard row is the account's messages in that place", async () => {

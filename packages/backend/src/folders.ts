@@ -2,7 +2,7 @@ import type { FavoriteFolder, Folder, FolderRename } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { ProviderError, type FolderChange, type MailProvider } from "@terno/mail/portable";
-import type { FolderCountCursor, ProviderFolder } from "@terno/store";
+import type { FolderCountCursor, FolderGeneration, FolderPlace, ProviderFolder } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore as Backend } from "./core";
 import { followFavoriteFolders, setFavoriteFolder, SettingsError } from "./settings";
@@ -54,19 +54,26 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
 /**
  * Where these folders' mail is still cached while an IMAP rename made here waits for a pass: the old paths (the IMAP
  * cursor's `renamed`, by new path). The rename carried their threads to the new keys, not their locations, so a count
- * or an export read under the new keys alone found nothing (Codex code review round 5 #2). A path listed again is
- * another folder now, never an alias.
+ * or an export read under the new keys alone found nothing (Codex code review round 5 #2). Each by the UIDVALIDITY
+ * the rename recorded: a path made again since is another folder, and these keys' own paths leave out the
+ * generations a carried-out rename took from them (`except`; Codex code review round 6 #2: by path alone, Job counted
+ * nothing and the new Work counted Job's mail).
  */
-export async function renameAliases(b: Backend, accountId: number, keys: readonly string[]): Promise<string[]> {
-  const renamed = (await b.store.accounts.config<{ cursor?: { renamed?: Record<string, { from?: unknown }> } }>(accountId))?.config.cursor?.renamed;
-  if (!renamed) return [];
+export async function renameAliases(b: Backend, accountId: number, keys: readonly string[]): Promise<{ aliases: FolderGeneration[]; except: Map<string, number[]> }> {
+  const renamed = (await b.store.accounts.config<{ cursor?: { renamed?: Record<string, { from?: unknown; uidvalidity?: unknown }> } }>(accountId))?.config.cursor?.renamed;
+  const aliases: FolderGeneration[] = [];
+  const except = new Map<string, number[]>();
+  if (!renamed) return { aliases, except };
   const listed = new Set((await accountFolders(b, accountId)).map((f) => f.key));
-  const out = new Set<string>();
-  for (const key of keys) {
-    const from = Object.hasOwn(renamed, key) ? renamed[key]?.from : undefined;
-    if (typeof from === "string" && !listed.has(from)) out.add(from);
+  const asked = new Set(keys);
+  for (const [to, r] of Object.entries(renamed)) {
+    const { from, uidvalidity } = r ?? {};
+    // carried out: the new path is listed (one whose answer was lost and that never happened leaves the old one whole)
+    if (typeof from !== "string" || typeof uidvalidity !== "number" || from === to || !listed.has(to)) continue;
+    if (asked.has(to) && !aliases.some((a) => a.mailbox === from && a.uidvalidity === uidvalidity)) aliases.push({ mailbox: from, uidvalidity });
+    if (asked.has(from)) except.set(from, [...(except.get(from) ?? []), uidvalidity]);
   }
-  return [...out];
+  return { aliases, except };
 }
 
 async function change<R extends FolderChange>(
@@ -128,7 +135,8 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
   if (!target) throw new RpcError("NOT_FOUND", L("errors.folder.notFound"));
   const own = folders.filter((f) => under(f.path, target.path)).map((f) => f.key);
   // and where a rename here left their mail until a pass reads it (counted once: a message counts where it's first placed)
-  const keys = [...own, ...(await renameAliases(b, accountId, own))];
+  const { aliases, except } = await renameAliases(b, accountId, own);
+  const keys: FolderPlace[] = [...own.map((key) => (except.has(key) ? { mailbox: key, except: except.get(key)! } : key)), ...aliases];
   // a slice at a time, sized by time, with a turn between (Codex code review round 4 #3: one call could be seconds)
   const sizer = new SliceSizer(COUNT_SLICE);
   let messages = 0;

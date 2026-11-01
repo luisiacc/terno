@@ -62,7 +62,11 @@ export class FolderExports {
     try {
       const name = await this.nameOf(target);
       // a folder renamed here that no pass has read keeps its mail under its old path meanwhile (Codex code review round 5 #2)
-      const place: FolderExportTarget = target.folder !== undefined ? { ...target, aliases: await renameAliases(this.b, target.accountId, [target.folder]) } : target;
+      let place: FolderExportTarget = target;
+      if (target.folder !== undefined) {
+        const { aliases, except } = await renameAliases(this.b, target.accountId, [target.folder]);
+        place = { ...target, aliases, except: except.get(target.folder) ?? [] };
+      }
       const { ids, dates } = await this.resolve(place, superseded);
       if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
       const sorted = await sortByDate(ids, dates, () => this.b.yieldTurn());
