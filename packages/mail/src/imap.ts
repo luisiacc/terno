@@ -64,8 +64,9 @@ interface Cursor {
   /**
    * plan 107: mailboxes the user renamed here, by their new path: the old one and its UIDVALIDITY. Read under the same
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
+   * `answered`: the change heard the server's answer and announced the move itself.
    */
-  renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true }>;
+  renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true }>;
 }
 
 /**
@@ -1600,14 +1601,29 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         // plan 107: each pending record's path's generation now, and the listing with theirs left out (Codex code review round 8)
         const generations = await recordedGenerations(c, list, cursor);
-        const folders = withExcept(customFolders(list, r), cursor, generations);
+        const listing = withExcept(customFolders(list, r), cursor, generations);
         // plan 107: renames made here that this LIST shows done (the new path there, the old one gone or another
         // mailbox now: Codex code review round 8 #3): the store still showing the old one means their answer was lost
         // (Codex code review round 5 #1). The path it was listed under had the record's generation when it was written.
-        const own = new Set(folders.map((f) => f.key));
+        const own = new Set(listing.map((f) => f.key));
+        // one whose answer was lost and whose old path is listed but STATUS can't say which mailbox it is now waits, with
+        // its record (Codex code review round 10 #1: dropped, the view and favorites stayed on another mailbox for good):
+        // the new path (and what's under it) isn't stored, neither path is read, and the pass is incomplete, so a pass
+        // whose STATUS answers announces it as the store still shows it
+        const waiting = new Set<string>();
+        const undecided = new Set<string>();
+        for (const [to, m] of Object.entries(cursor.renamed ?? {})) {
+          const from = m.key ?? m.from;
+          if (!m.answered && from !== to && own.has(to) && own.has(from) && generations.has(from) && generations.get(from) == null) { undecided.add(to); waiting.add(from); }
+        }
+        const withheld = listing.filter((f) => undecided.has(f.key));
+        const hidden = (f: ProviderFolder) => withheld.some((w) => w.path.length <= f.path.length && w.path.every((p, i) => f.path[i] === p));
+        const folders = withheld.length ? listing.filter((f) => !hidden(f)) : listing;
+        for (const f of listing) if (hidden(f)) waiting.add(f.key);
         const moved = Object.entries(cursor.renamed ?? {}).flatMap(([to, m]): FolderMove[] => {
           const from = m.key ?? m.from;
           const now = generations.get(from);
+          if (waiting.has(to)) return [];
           return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== m.uidvalidity)) ? [{ from, to, ...(m.stale && { stale: true as const }) }] : [];
         });
         // listed before they sync: a location in a listed folder is membership as it's written
@@ -1651,8 +1667,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const custom: string[] = [];
         const forceSnapshots = Boolean(snapshots?.items.length);
         let skipped = 0;
+        // a rename that waits for its old path's generation: neither path is read (round 10 #1)
+        if (waiting.size) incomplete = true;
         for (const f of folders) {
-          if (!f.selectable || boxes.has(f.key)) continue;
+          if (!f.selectable || boxes.has(f.key) || waiting.has(f.key)) continue;
           try {
             if (forceSnapshots || cursor.fullCheck || cursor.mailboxes[f.key] === undefined || !(await unchanged(c, f.key, cursor))) custom.push(f.key);
             else skipped++;
@@ -1662,7 +1680,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         // Snapshot obligations include selectable special-use paths omitted from the folder UI.
         if (forceSnapshots && list.length <= LISTED_MAX) for (const mailbox of list) {
-          if (selectableMailbox(mailbox) && !boxes.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
+          if (selectableMailbox(mailbox) && !boxes.has(mailbox.path) && !waiting.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
         }
         // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
         const swept = new Map<string, Snapshot | null>();
@@ -1906,6 +1924,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             }
           }
           throw refused(error, name);
+        }
+        // answered: this change announces it, so a pass whose STATUS fails never holds it back (round 10 #1)
+        if (cursor) {
+          const now = await ctx.loadCursor<Cursor>();
+          const written = plan.moves.filter((m) => intent[m.to] && now?.renamed?.[m.to]);
+          if (now?.renamed && written.length) {
+            for (const m of written) now.renamed[m.to] = { ...now.renamed[m.to]!, answered: true };
+            await ctx.saveCursor(now);
+          }
         }
         const after = await folderCatalog(c);
         return { folders: after.folders, renamed: plan.moves.filter((m) => after.own.has(m.to)).map((m) => (stale.has(m.from) ? { ...m, stale: true as const } : m)) };

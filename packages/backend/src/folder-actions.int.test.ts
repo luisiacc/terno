@@ -587,6 +587,54 @@ it("a RENAME whose answer was lost is announced by the next pass even when anoth
   expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
 });
 
+it("a RENAME whose answer was lost waits for the old name's generation: a STATUS that fails keeps its record, and a later pass announces it (Codex code review round 10 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  const original = ImapFlow.prototype.mailboxRename;
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  t.server.control.createMailbox("Work");
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  const reopened = await t.reopen();
+  // the first STATUS of Work fails (the pass's generation check); what follows, SELECT included, works
+  const status = ImapFlow.prototype.status;
+  let failed = false;
+  const flaky = vi.spyOn(ImapFlow.prototype, "status").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof status>) {
+    if (args[0] === "Work" && !failed) { failed = true; throw Object.assign(new Error("Server unavailable"), { responseStatus: "NO", responseText: "Try again" }); }
+    return status.apply(this, args);
+  });
+  try {
+    await reopened.backend.syncAccount(t.account.id);
+  } finally {
+    flaky.mockRestore();
+  }
+  expect(failed).toBe(true);
+  // the view and favorite haven't been taken to the new Work's mail: nothing was decided
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Work", view: null }]);
+  t.events.length = 0;
+  await reopened.backend.syncAccount(t.account.id);
+  await reopened.backend.rebuildFolders();
+  expect(t.events[0]).toBe("renamed Work>Job");
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+  expect(await t.held([ma.id])).toEqual([]);
+  const fresh = await t.threadsIn("Work");
+  expect(fresh).toHaveLength(1);
+  expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
+});
+
 it("a folder made again under a renamed one's old name, then deleted, records its own generation: the renamed one keeps its mail (round 8 audit)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
