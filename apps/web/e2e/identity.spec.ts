@@ -17,7 +17,9 @@ test.describe("owner identity", () => {
     await page.getByTestId("tab-accounts").click();
     await expect(page.getByTestId("owner-card")).toHaveText(/Your Terno account will be the first email address you connect/);
     await page.getByRole("button", { name: "Add account" }).click();
-    await expect(page.getByTestId("owner-first-copy")).toContainText("becomes your Terno account");
+    // nothing to sign in to or bill yet, so adding an account promises neither
+    await expect(page.getByTestId("add-account-dialog")).toBeVisible();
+    await expect(page.getByTestId("owner-first-copy")).toHaveCount(0);
     await addImap(page, "luis@fastmail.com");
 
     await page.getByTestId("open-settings").click();
@@ -27,9 +29,8 @@ test.describe("owner identity", () => {
     await expect(card).toContainText("Used to sign in and for billing.");
     await expect(card).toContainText(/Verified with IMAP · Oct 22, 2026/);
 
-    // a second mailbox doesn't replace it, and the add dialog no longer promises it
+    // a second mailbox doesn't replace it
     await page.getByRole("button", { name: "Add account" }).click();
-    await expect(page.getByTestId("owner-first-copy")).toHaveCount(0);
     await addImap(page, "work@acme.studio");
 
     await page.getByTestId("open-settings").click();
@@ -87,9 +88,9 @@ test.describe("first run", () => {
       const dialog = page.getByTestId("first-run");
       await expect(dialog).toContainText("Add your first account to get started.");
       await expect(dialog).not.toContainText("Local (recommended)");
-      await expect(dialog).toContainText("The first email address you connect becomes your Terno account");
+      await expect(dialog).not.toContainText("Terno account");
       await page.getByTestId("first-run-add-account").click();
-      await expect(page.getByTestId("owner-first-copy")).toBeVisible();
+      await expect(page.getByTestId("add-account-dialog")).toBeVisible();
       await addImap(page, "ana@icloud.com");
 
       await page.getByTestId("open-settings").click();

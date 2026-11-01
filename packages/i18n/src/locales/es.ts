@@ -418,7 +418,6 @@ const es = {
   "account.owner.changed": "{email} es ahora tu cuenta de Terno",
   "account.addTitle": "Añadir cuenta",
   "account.addDescription": "Conecta todas las cuentas que quieras. Todo se guarda localmente.",
-  "account.ownerFirst": "El primer correo que conectes será tu cuenta de Terno: con él iniciarás sesión y te facturaremos.",
   "account.continueGoogle": "Continuar con Google",
   "account.orImap": "o con IMAP/SMTP",
   "account.window.label": "Descargar correo de",

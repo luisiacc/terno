@@ -32,7 +32,6 @@ const PRESETS: Record<string, { imap: string; smtp: string; smtpPort: number }> 
 
 export function AddAccountDialog() {
   const open = useApp((s) => s.dialog === "addAccount");
-  const firstOwner = useApp((s) => !s.owner && !s.demo);
   const imapHere = useApp((s) => s.host?.capabilities.imap ?? true);
   const generalWindow = useApp((s) => s.settings?.syncWindowDays ?? 180);
   // null: not chosen yet, the General setting (read when the dialog has it)
@@ -109,11 +108,6 @@ export function AddAccountDialog() {
           <DialogTitle>{t("account.addTitle")}</DialogTitle>
           <DialogDescription>{t("account.addDescription")}</DialogDescription>
         </DialogHeader>
-        {firstOwner && (
-          <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-xs text-accent-foreground" data-testid="owner-first-copy">
-            {t("account.ownerFirst")}
-          </p>
-        )}
         {/* asked once, for whichever way the account connects */}
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="acc-window">{t("account.window.label")}</Label>

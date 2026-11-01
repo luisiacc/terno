@@ -424,7 +424,6 @@ const en = {
   "account.owner.changed": "{email} is now your Terno account",
   "account.addTitle": "Add account",
   "account.addDescription": "Connect as many accounts as you like. Everything is stored locally.",
-  "account.ownerFirst": "The first email address you connect becomes your Terno account: you’ll use it to sign in, and we’ll bill it.",
   "account.continueGoogle": "Continue with Google",
   "account.orImap": "or with IMAP/SMTP",
   // plan 79: how far back a new account downloads, asked when connecting

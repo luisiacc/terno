@@ -28,7 +28,7 @@ async function findLocalModel(): Promise<Found | null> {
   return Promise.any(probes).catch(() => null);
 }
 
-/** Fresh install, no accounts: a welcome that adds the first mailbox (the Terno account). Local mode is the default; Settings changes it. */
+/** Fresh install, no accounts: a welcome that adds the first mailbox. Local mode is the default; Settings changes it. */
 export function FirstRun() {
   const [open, setOpen] = useState(true);
 
@@ -52,22 +52,22 @@ export function FirstRun() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && done()}>
-      <DialogContent className="sm:max-w-lg" data-testid="first-run">
-        {/* the first thing a new user sees: the mark, quietly, above the welcome (decorative: the title names Terno) */}
-        <TernoMark className="size-7 text-foreground" data-testid="first-run-mark" />
-        <DialogTitle>{t("firstRun.welcome")}</DialogTitle>
-        <DialogDescription>{t("firstRun.addAccount")}</DialogDescription>
+      {/* a centred welcome, Apple-style: the mark, one line, one clear action ("Not now" and Esc close it) */}
+      <DialogContent className="justify-items-center gap-0 px-6 pt-8 pb-6 text-center sm:max-w-sm" showCloseButton={false} data-testid="first-run">
+        {/* decorative: the title names Terno */}
+        <TernoMark className="size-10 text-foreground" data-testid="first-run-mark" />
+        <DialogTitle className="mt-4 text-lg font-semibold tracking-tight">{t("firstRun.welcome")}</DialogTitle>
+        <DialogDescription className="mt-1.5">{t("firstRun.addAccount")}</DialogDescription>
         {OnboardingNudge && (
-          <Suspense>
-            <OnboardingNudge />
-          </Suspense>
+          <div className="mt-5 w-full text-left">
+            <Suspense>
+              <OnboardingNudge />
+            </Suspense>
+          </div>
         )}
-        <p className="rounded-lg border border-primary/25 bg-accent/50 px-3 py-2 text-sm text-accent-foreground">{t("account.ownerFirst")}</p>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={done}>
-            {t("firstRun.notNow")}
-          </Button>
+        <div className="mt-6 grid w-full gap-1.5">
           <Button
+            size="lg"
             data-testid="first-run-add-account"
             onClick={() => {
               done();
@@ -75,6 +75,9 @@ export function FirstRun() {
             }}
           >
             {t("account.addTitle")}
+          </Button>
+          <Button variant="ghost" size="lg" className="text-muted-foreground" onClick={done}>
+            {t("firstRun.notNow")}
           </Button>
         </div>
       </DialogContent>
