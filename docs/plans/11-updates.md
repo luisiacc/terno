@@ -193,6 +193,7 @@ These revisions override §§2–6 where they conflict. The full critique is in 
 1. Bump `apps/desktop/package.json` (`0.2.0`, or `0.2.0-nightly.1` for nightly) and commit.
 2. `pnpm release:mac` (gh signed in; the signing identity in the keychain; `APPLE_*` for notarization with a Developer ID).
 3. Review the draft on GitHub (notes, assets) and publish it. Copies of Terno see it on their next check. The repository must be public for them to reach it.
+4. **Required update (plan 95):** set `TERNO_MINIMUM_VERSION=x.y.z` (or `apps/desktop/release-policy.json` `{ "minimumVersion": "x.y.z" }`) for `pnpm release:mac`. Copies below it are covered with "Update Terno" once a check reads the channel file. It may not exceed the release being cut.
 
 ### Deviations from §§2–8
 

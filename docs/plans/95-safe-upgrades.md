@@ -1,6 +1,6 @@
 # Plan 95: safe upgrades: a backup before migrating, a clear screen when the mailbox can't open, and required updates
 
-- **Status:** planned.
+- **Status:** shipped (see §7, as shipped).
 - **Builds on:** plan 11 (in-app updates), plan 10 (diagnostics), plan 69 (compaction's free-space check).
 - **Request (verbatim):** "do we currently have everything set up to make releases and updates? also, do we have things set up so if there are changes in the db each client will gracefully update when they download an update, and have mechanisms if they fail, also if we force the user to update the app, we need to provide a button to clearly do that." Then: "yes do that, do have into account possibility of failiures during doing the backup like disk space and other things similar, after that, start implementing them and have tests for them, realtest for real scenarios and possible edge cases."
 
@@ -234,3 +234,93 @@ These override §§2–5 where they conflict. The full critique is in `/tmp/tern
 11. **Smaller decisions.**
     - The packaged smoke for a failing migration uses a conflicting table rather than a test-only hook in the release.
     - The full "failing release, then repair release" Squirrel chain is covered by the unit flow plus the gate smoke: building three signed releases is beyond the smoke's budget, recorded as a limit.
+
+## 7. As shipped
+
+### What exists
+
+- **Classified opens** (`packages/db/src/open-errors.ts`):
+  - `migrate` throws `SchemaNewerError` or `MigrationError` (with the step and SQLite's own words).
+  - `classifyOpenError` sorts any failure into newer, no-room (backup or migrate), corrupt, unwritable, migration or backup. Anything else stays a crash.
+  - **Full-disk detection.** On a really full volume SQLite says SQLITE_CANTOPEN (it can't create the WAL) or SQLITE_IOERR, almost never SQLITE_FULL. With less free space than the update needs, those count as no-room (found by the real-volume test).
+  - **Original errors kept.** `Db.tx` rolls back only while SQLite still has a transaction, and keeps the original error (a failed ROLLBACK used to replace SQLITE_FULL). Failed opens close their connection.
+- **The backup** (`upgrade.ts`, `backups.ts`):
+  - `prepareUpgrade` runs before the open and uses SQLite's backup API, 256 pages per step.
+  - The copy is switched to `journal_mode = DELETE`, so it is one self-contained file. It is verified by `user_version` and `page_count`.
+  - It is fsynced, with its manifest, and renamed into `backups/<createdAt>-v<from>-v<to>/`. The previous generation goes only after that.
+  - Room is checked first: `size + wal + 64 MiB + size/2`. A real ENOSPC or SQLITE_FULL is reported the same way.
+  - The first backup of an upgrade is kept across retries. Partial or torn generations are removed.
+  - `expireBackups` deletes one 14 days old, only after a healthy open.
+  - A start with nothing to migrate costs one `readdir` and one read-only `user_version`.
+- **Restore** (`apps/desktop/src/mailbox/restore.ts`):
+  - It is journaled. The copy is prepared beside the mailbox and verified, then the journal is written and the folder fsynced.
+  - The live WAL and then the file move aside; the folder is fsynced again; the copy takes their place; the marker is written; the journal goes.
+  - `reconcileRestore` settles a leftover journal before every backend start: finished, or put back exactly with its WAL. A restore that can't be settled keeps every backend off the file.
+  - The backend's `settleRestored` quarantines the restored mailbox:
+    - ops that would reach a server are failed with an explanation
+    - scheduled sends go back to drafts
+    - local mode is turned on
+  - The quarantine is checkpointed to the file (`wal_checkpoint(FULL)`) before the marker is removed.
+  - The damaged original is kept 14 days from the restore.
+- **Main** (`mailbox/host.ts`):
+  - It keeps the gate, pushes it to every window, and handles Try Again, Update Without a Backup (one start only, where the backup is what failed or didn't fit) and Restore (a damaged mailbox only, no backend alive).
+  - A backend that explained its failure isn't restarted on a timer. A crash during an upgrade steps the gate aside for the restart policy.
+- **Required updates:**
+  - `package.mjs` writes `minimumVersion` into the channel file (`TERNO_MINIMUM_VERSION` or `release-policy.json`) and refuses one above the release.
+  - The engine returns `{ update, minimum }`. `feedMinimum` ignores a minimum no published version meets.
+  - The requirement is persisted in `updates/prefs.json` and lifted by a check that no longer asks for it, or by running a version that meets it.
+  - `updateNow()` is one explicit click: a manual check if needed, a manual download, then the install on Squirrel's own "ready". A staged update below the minimum is never what installs.
+- **Health after an update:** `mailboxFailed` logs `update.installed` and captures `update.mailbox_failed` once per run. The pending record stays for the open that works. Writing it is fsynced, and a failure to write it is captured.
+- **Window** (lazy `mailbox-cover.tsx`):
+  - One screen per gate, plus the required-update screen with Update Terno and its progress, outcome and the unsupported "Download Terno".
+  - The pill shows Update Required while drafts keep the screen away (`useRequiredCover`, driven by draft changes, at most once a second). An unsaved draft sends the window to draft review before any gate.
+  - The gate and update state start with the window, before the mail engine connects.
+  - Strings are in `en` and `es`.
+
+### Deviations from §§2–6
+
+- No clone on APFS: the backup API's consistency matters more than the free copy (§6.1).
+- Restore is offered only on the damaged-mailbox gate (§6.6). There is no Settings entry.
+- Local mode still means no automatic checks. A required update is learned from a check the user makes, or one that runs outside local mode. Privacy over enforcement, as planned.
+
+### Verification
+
+- **Unit:**
+  - the backup, retention, failures per errno, verification and fsync failure, a WAL-only commit, retries (16)
+  - classification, including a real SQLITE_FULL inside a statement and inside a transaction, and a garbage file (8)
+  - restore, with failure at every step, crash states, durable ordering and retention (17)
+  - the host (10), the update controller and policy (required, Update Terno, forced shutdown, staged-below-minimum, mailbox failure after an install), and the reducer and semver (5 more)
+- **Real volumes** (`upgrade.volumes.int.test.ts`, hdiutil):
+  - a tight HFS+ volume refuses the backup by estimate
+  - a disk that fills during the backup leaves no partial copy and the mailbox intact
+  - a migration on a truly full APFS volume rolls back (CANTOPEN), then migrates once freed
+  - a read-only volume is unwritable with nothing written
+  - a backup on APFS still opens at the old version after the original migrated
+- **e2e** (`mailbox-gate.spec.ts`): every gate kind and the required screen, in light and dark with axe; a hung draft save keeps the required screen away, and a gate over an unsaved draft opens its review.
+- **Packaged** (`mailbox.smoke.ts`, the signed app):
+  - an older mailbox is backed up and migrated
+  - a newer one gets the gate, with Update Terno visible and one backend start in nine seconds
+  - a conflicting step gets the gate, and Try Again makes one more start
+  - a nearly full HFS+ image gets no-room, then Update Without a Backup
+  - a damaged mailbox is restored, its queued send failed and local mode on
+- **Packaged update** (`update.smoke.ts`, real Squirrel): a feed with `minimumVersion: '0.1.1'` covers 0.1.0; Update Terno installs and relaunches 0.1.1, which forgets the requirement.
+- **Environment note:** the update smoke's feed now ignores this environment's port probe (`GET /` with Node's user agent, seen on a plain server with no Terno running). The test asserts the updater never sends that agent.
+
+### Limits
+
+- A failing release followed by a fix release is covered by the unit flow and the gate smoke, not by three signed builds through Squirrel.
+- Web stores have no backups, as planned: IndexedDB upgrades atomically and OPFS SQLite migrates step by step.
+
+## 8. What the Codex code review changed
+
+The review is in `/tmp/terno-p95/code-review.txt`. Each fix has a regression test that fails without it.
+
+1. The restore journal and the moves are durable (folder fsync) before the copy takes the mailbox's place.
+2. A restore that can't be settled at start keeps every backend off the mailbox, with Try Again.
+3. The quarantine is checkpointed to the file before its marker is removed.
+4. The update state starts with the window, so a cold start whose mailbox can't open has Update Terno.
+5. A forced shutdown during Update Terno ends it, and the button comes back with the reason.
+6. A crash mid-upgrade steps the gate aside, so the restart policy and the stopped-engine screen take over.
+7. A gate never hides an unsaved draft: draft review comes first.
+8. Backups expire only after a healthy open, not when the header reads.
+9. The set-aside mailbox is kept 14 days from the restore, not from its last write.
