@@ -5,7 +5,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { Download, Folder as FolderIcon, FolderPlus, PenLine, Plus, Star, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactElement } from "react";
-import { fieldDrafts, isFavorite, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
+import { isFavorite, setFieldDraft, useFieldDrafts, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 
@@ -37,6 +37,9 @@ export function AddFolderButton({ accountId, parent, label, testId }: { accountI
   );
 }
 
+/** how many fields of each edit are on screen (a row back while its answer comes shows the failure itself) */
+const shownFields = new Map<number, number>();
+
 /**
  * Plan 107: a folder's name being typed, in place: a new folder where it will be, or a rename where the name was.
  * The row's shape and the name's line (`inset`: the row's indent). Enter submits, Esc cancels, leaving submits
@@ -66,21 +69,20 @@ export function FolderNameRow({
   /** "escape": the user asked (focus goes back to the row); "blur": they went elsewhere (focus stays there) */
   cancel: (how: "escape" | "blur") => void;
 }) {
-  const kept = fieldDrafts.get(editId);
-  const [error, setErrorNow] = useState<string | null>(kept?.error ?? null);
-  const setError = (e: string | null) => {
-    setErrorNow(e);
-    fieldDrafts.set(editId, { text: input.current?.value ?? kept?.text ?? initial, error: e });
-  };
-  const live = useRef(true);
-  useEffect(() => () => void (live.current = false), []);
-  const [busy, setBusy] = useState(false);
+  // its text, error and whether its answer is on the way live with the edit, not the row (round 2 #3, round 3 #4)
+  const draft = useFieldDrafts((s) => s[editId]);
+  const error = draft?.error ?? null;
+  const busy = draft?.pending ?? false;
+  useEffect(() => {
+    shownFields.set(editId, (shownFields.get(editId) ?? 0) + 1);
+    return () => void shownFields.set(editId, shownFields.get(editId)! - 1);
+  }, [editId]);
   // one answer per edit (Codex R6 of plan 106: the blur after Enter isn't a second submit)
   const settled = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const errorId = useId();
   const finish = async (value: string | null, fromBlur: boolean) => {
-    if (settled.current || busy) return;
+    if (settled.current || useFieldDrafts.getState()[editId]?.pending) return;
     if (value === null || (fromBlur && (!value.trim() || value.trim() === initial))) {
       settled.current = true;
       return cancel(fromBlur ? "blur" : "escape");
@@ -90,23 +92,16 @@ export function FolderNameRow({
       return cancel(fromBlur ? "blur" : "escape");
     }
     const problem = nameProblem(value, siblings, account);
-    if (problem) return setError(problem);
-    setBusy(true);
-    fieldDrafts.set(editId, { text: value, error: null });
+    if (problem) return setFieldDraft(editId, { text: value, error: problem });
+    setFieldDraft(editId, { text: value, error: null, pending: true });
     const failed = await submit(value);
     if (failed === null) {
       settled.current = true;
-      if (live.current) setBusy(false);
       return;
     }
-    if (!live.current) {
-      // its row went meanwhile: the text waits for it (reopening shows it), and the failure is said now
-      fieldDrafts.set(editId, { text: value, error: failed });
-      snack.error(t("folder.saveFailed", { name: value.trim(), error: failed }));
-      return;
-    }
-    setBusy(false);
-    setError(failed);
+    setFieldDraft(editId, { text: value, error: failed, pending: false });
+    // no field of this edit on screen (its account closed): the text waits for it, and the failure is said now
+    if (!shownFields.get(editId)) return void snack.error(t("folder.saveFailed", { name: value.trim(), error: failed }));
     // back to the field only if the focus is nowhere else (Codex R8: the user may have moved on)
     if (document.activeElement === document.body || document.activeElement === input.current) input.current?.focus();
   };
@@ -127,14 +122,11 @@ export function FolderNameRow({
           aria-describedby={error ? errorId : undefined}
           aria-busy={busy || undefined}
           readOnly={busy}
-          defaultValue={kept?.text ?? initial}
+          defaultValue={draft?.text || initial}
           maxLength={1000}
           spellCheck={false}
           onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) => {
-            if (error) setErrorNow(null);
-            fieldDrafts.set(editId, { text: e.currentTarget.value, error: null });
-          }}
+          onChange={(e) => setFieldDraft(editId, { text: e.currentTarget.value, error: null })}
           onKeyDown={(e) => {
             // the field's keys are its own: never a row's or a shortcut
             e.stopPropagation();

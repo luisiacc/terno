@@ -685,3 +685,29 @@ it("plan 83: a category hidden from the Inbox holding 95% of it: Inbox pages, un
     await store.categories.delete(small);
   }
 }, 900_000);
+
+it("plan 107: a renamed folder's threads carried to its new key a slice at a time: every slice within a frame, the whole folder once (Codex code review round 3 #5)", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  const byAccount = new Map<number, number>();
+  for (const t of all) if (!t.inTrash && !t.inSpam) byAccount.set(t.accountId, (byAccount.get(t.accountId) ?? 0) + 1);
+  const [account, size] = [...byAccount].sort((a, b) => b[1] - a[1])[0]!;
+  const messages = (await store.debug.snapshot()).messages.filter((m) => m.accountId === account);
+  for (let i = 0; i < messages.length; i += 2000) {
+    await store.sync.updateFlags(account, messages.slice(i, i + 2000).map((m) => ({ messageId: m.id, flags: {}, gmailLabels: ["Label_carry"] })));
+  }
+  await store.folders.replace(account, [...(await store.folders.list()).filter((f) => f.accountId === account).map(({ key, path, selectable }) => ({ key, path, selectable })), { key: "Label_carry", path: ["Carry"], selectable: true }]);
+  const slices: Sample[] = [];
+  for (let after: number | null = 0; after !== null; ) {
+    const from: number = after;
+    const s = await sampleAsync(() => store.folders.carry(account, "Label_carry", "Label_carried", from, 500));
+    slices.push(s);
+    after = s.result.next;
+  }
+  const ms = settle(slices).ms;
+  const total = ms.reduce((a, b) => a + b, 0);
+  console.log(`carry of ${size} threads: ${slices.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`);
+  expect(slices.length).toBe(Math.floor(size / 500) + 1);
+  expect(Math.max(...ms), "one slice").toBeLessThanOrEqual(FRAME * MULT);
+  // one pass over the folder in all, linear in its threads (a full scan and sort per slice grew with the folder)
+  expect(total / size, "per thread").toBeLessThanOrEqual(0.03 * MULT);
+}, 900_000);

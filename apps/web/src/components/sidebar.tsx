@@ -998,6 +998,12 @@ export function Sidebar() {
   const folders = useApp((s) => s.folders);
   const ownFolder = useApp((s) => s.folder);
   const gmailTab = useApp((s) => s.gmailTab);
+  // plan 107 (Codex code review round 3 #6): a favorite that's where you are is the one current row; its copy under
+  // the account isn't too
+  const favoriteHere = useApp((s) =>
+    s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders &&
+    (s.settings?.favoriteFolders ?? []).some((f) => f.accountId === s.accountId && (f.folder !== null ? f.folder === s.folder && s.folders.some((x) => x.accountId === f.accountId && x.key === f.folder && x.selectable) : s.folder === null && f.view === s.view)),
+  );
   const categories = useApp((s) => s.categories);
   const counts = useApp((s) => s.counts);
   const design = useDesign();
@@ -1167,7 +1173,7 @@ export function Sidebar() {
                 account={a}
                 open={openAccount === a.id}
                 // where you are, only for the account it's in: the others' props stay the same, so they don't render
-                here={accountId === a.id && reviewCategoryId === null}
+                here={accountId === a.id && reviewCategoryId === null && !favoriteHere}
                 view={accountId === a.id ? view : null}
                 inCategory={accountId === a.id && categoryId !== null}
                 ownFolder={accountId === a.id ? ownFolder : null}

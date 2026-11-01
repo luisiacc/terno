@@ -19,6 +19,9 @@ function folderError(b: Backend, error: unknown): unknown {
   return new RpcError("BAD_REQUEST", error.message, undefined, { i18n: error.i18n, cause: error });
 }
 
+/** threads carried a slice at a time (an IndexedDB write is ~20 µs a row: 500 stay well within a frame) */
+const CARRY_SLICE = 500;
+
 const under = (path: readonly string[], prefix: readonly string[]) => path.length >= prefix.length && prefix.every((p, i) => path[i] === p);
 
 async function accountFolders(b: Backend, accountId: number): Promise<Folder[]> {
@@ -56,7 +59,7 @@ async function change<R extends FolderChange>(
       if (m.from === m.to) continue;
       for (let after: number | null = 0; after !== null; ) {
         const from: number = after;
-        after = (await account.write(() => b.store.folders.carry(accountId, m.from, m.to, from, 2000))).next;
+        after = (await account.write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
         await b.yieldTurn();
       }
     }

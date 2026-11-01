@@ -17,9 +17,14 @@ export const useFolderEdit = create<{ editing: FolderEdit | null; done: { accoun
 
 /**
  * What an edit's field holds, by edit: its row can unmount (its account closed, the batch moved) while the server
- * answers; it comes back with the text and what went wrong (Codex code review round 2 #3). Gone with the edit.
+ * answers; it comes back with the text, what went wrong, and whether the server is still answering (round 3 #4:
+ * a row back while it is can't send it again). Gone with the edit.
  */
-export const fieldDrafts = new Map<number, { text: string; error: string | null }>();
+export type FieldDraft = { text: string; error: string | null; pending: boolean };
+export const useFieldDrafts = create<Record<number, FieldDraft>>(() => ({}));
+export function setFieldDraft(id: number, patch: Partial<FieldDraft>): void {
+  useFieldDrafts.setState((s) => ({ [id]: { text: "", error: null, pending: false, ...s[id], ...patch } }));
+}
 
 const edits = { n: 0 };
 export function startCreate(accountId: number, parent: string | null): void {
@@ -37,7 +42,11 @@ export function startRename(accountId: number, key: string): void {
  * with its text (Codex code review #3). `done`: the folder it made, focused once listed.
  */
 export function stopEditing(id: number, done?: { accountId: number; key: string }): void {
-  fieldDrafts.delete(id);
+  useFieldDrafts.setState((s) => {
+    if (!(id in s)) return s;
+    const { [id]: _gone, ...rest } = s;
+    return rest;
+  }, true);
   if (useFolderEdit.getState().editing?.id !== id) return;
   useFolderEdit.setState({ editing: null, done: done ?? null });
 }

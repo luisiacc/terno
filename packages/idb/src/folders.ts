@@ -384,11 +384,33 @@ export function folderUnreadCounts(c: Ctx): Record<string, number> {
   return out;
 }
 
-/** Plan 107: a renamed IMAP folder's threads under its new key, a slice by thread id (the SQL adapter's carryFolder). */
+/**
+ * Plan 107: a renamed IMAP folder's threads under its new key, a slice at a time (the SQL adapter's carryFolder):
+ * a live walk of the folder's index kept between slices, each row checked by its key (Codex code review round 3
+ * #5: never the whole folder per slice). `after` 0 starts the walk; `next` is non-null while rows remain.
+ */
 export function carryFolder(c: Ctx, accountId: number, from: string, to: string, after: number, limit: number): { next: number | null } {
   const memberships = T(c, "thread_folders");
-  const rows = memberships.by("folder", accountId, from).filter((r) => (r.thread_id as number) > after).sort((a, b) => (a.thread_id as number) - (b.thread_id as number)).slice(0, limit);
-  const have = new Set(memberships.by("folder", accountId, to).map((r) => r.thread_id as number));
-  for (const r of rows) if (!have.has(r.thread_id as number)) memberships.insert({ thread_id: r.thread_id, account_id: accountId, folder: to, last_date: r.last_date, unread: r.unread });
-  return { next: rows.length < limit ? null : (rows.at(-1)!.thread_id as number) };
+  let walks = carryWalks.get(c);
+  if (!walks) carryWalks.set(c, (walks = new Map()));
+  const at = `${accountId}\u0000${from}\u0000${to}`;
+  let walk = walks.get(at);
+  if (after === 0 || !walk) walks.set(at, (walk = memberships.keysBy("folder", accountId, from)));
+  let last: number | null = null;
+  let n = 0;
+  while (n < limit) {
+    const k = walk.next();
+    if (k.done) break;
+    const r = memberships.rows.get(k.value);
+    if (!r) continue;
+    n++;
+    last = r.thread_id as number;
+    if (!memberships.has(r.thread_id, to)) memberships.insert({ thread_id: r.thread_id, account_id: accountId, folder: to, last_date: r.last_date, unread: r.unread });
+  }
+  if (n < limit) {
+    walks.delete(at);
+    return { next: null };
+  }
+  return { next: last };
 }
+const carryWalks = new WeakMap<Ctx, Map<string, Iterator<Key>>>();

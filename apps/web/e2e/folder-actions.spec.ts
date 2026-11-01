@@ -190,8 +190,9 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const to = (await keyOf(server, freelance, "Renombrada"))!;
     expect(to).not.toBe(from.key);
     await expect.poll(() => listFor(page)).toContain(to);
-    await expect(own(page, freelance, to)).toHaveAttribute("aria-current", "page");
-    await expect(page.getByTestId(`nav-fav-${freelance}-${to}`)).toBeVisible();
+    // a favorite: it's the current row (its copy under the account isn't too)
+    await expect(page.getByTestId(`nav-fav-${freelance}-${to}`)).toHaveAttribute("aria-current", "page");
+    await expect(own(page, freelance, to)).toBeVisible();
   });
 
   test("favorites: below Starred, with whose they are; a standard row too; open one; take it away", async ({ app: page, server }) => {
@@ -221,6 +222,8 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await fav.click();
     await expect.poll(() => listFor(page)).toContain("Label_22");
     await expect(fav).toHaveAttribute("aria-current", "page");
+    // the one current row: not its copy under the account too (Codex code review round 3 #6)
+    await expect(page.locator("#app-sidebar [aria-current=page]")).toHaveCount(1);
     // its own menu takes it away
     await fav.click({ button: "right" });
     await expect(page.getByTestId("folder-menu-favorite")).toHaveText("Remove from favorites");
@@ -369,6 +372,42 @@ test.describe("folder actions", { tag: "@design" }, () => {
     expect(members(to)).toBe(before);
     await page.keyboard.press("Escape");
     await expect(rows.first()).toBeVisible();
+  });
+
+  test("the delete confirmation says what's inside goes too, even when counting fails (Codex code review round 3 #3)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    handlers["folders.count"] = async () => {
+      throw new Error("busy");
+    };
+    await openAccount(page, freelance);
+    const folder = (await server.backend.store.folders.list()).find((f) => f.accountId === freelance && f.selectable)!;
+    await own(page, freelance, folder.key).click({ button: "right" });
+    await page.getByTestId("folder-menu-delete").click();
+    await expect(page.getByTestId("folder-delete-dialog")).toContainText("Any folders inside it go too, with their mail.");
+  });
+
+  test("a field reopened while its answer is on the way waits, and can't send it twice (Codex code review round 3 #4)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const create = handlers["folders.create"]!;
+    let calls = 0;
+    handlers["folders.create"] = async (...a) => (calls++, await new Promise((r) => setTimeout(r, 1500)), create(...a));
+    await openAccount(page, acme);
+    await page.getByTestId(`nav-account-${acme}`).hover();
+    await page.getByTestId(`nav-account-add-${acme}`).click();
+    const field = page.getByTestId(`nav-own-new-${acme}`);
+    await field.fill("Lenta");
+    await field.press("Enter");
+    // close the account (its rows go after the slide) and open it again before the answer
+    await page.getByTestId(`nav-account-${acme}`).click();
+    await expect(field).toHaveCount(0);
+    await page.getByTestId(`nav-account-${acme}`).click();
+    await expect(field).toHaveValue("Lenta");
+    await expect(field).toHaveAttribute("aria-busy", "true");
+    await field.press("Enter");
+    await expect.poll(() => keyOf(server, acme, "Lenta")).toBeTruthy();
+    expect(calls).toBe(1);
   });
 
   for (const mode of ["light", "dark"] as const) {

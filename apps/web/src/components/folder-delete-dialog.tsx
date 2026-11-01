@@ -26,13 +26,15 @@ export function FolderDeleteDialog({ account, folderKey, name, open, onOpenChang
   }, [open, account.id, folderKey]);
   const gmail = account.kind === "gmail";
   const subfolders = count && count.folders > 1 ? count.folders - 1 : 0;
+  // what goes under it is always said (Codex code review round 3 #3: counting may fail, and Gmail's hidden sublabels
+  // go too, uncounted); a count found makes it exact
   const description = gmail
     ? subfolders
       ? t("folder.delete.gmail.withSubfolders", { count: subfolders })
-      : t("folder.delete.gmail")
+      : t("folder.delete.gmail.any")
     : [
         count ? t("folder.delete.imap.messages", { count: count.messages }) : t("folder.delete.imap.counting"),
-        subfolders ? t("folder.delete.imap.subfolders", { count: subfolders }) : null,
+        subfolders ? t("folder.delete.imap.subfolders", { count: subfolders }) : t("folder.delete.imap.anySubfolders"),
         t("folder.delete.imap.server"),
       ]
         .filter(Boolean)
