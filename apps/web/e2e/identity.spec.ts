@@ -80,18 +80,23 @@ test.describe("owner identity", () => {
 test.describe("first run", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
-  test("fresh install: no mode step (local by default, the Ollama model we found becomes the AI), straight to adding the first account", async ({ app: page, server }) => {
+  test("fresh install: no mode step (local by default, the Ollama model we found becomes the AI); the setup ends by adding the first account", async ({ app: page, server }) => {
     const ollama = await startOllamaStub();
     try {
       await isolateLocalDiscovery(server, ollama.url);
       await page.reload();
       const dialog = page.getByTestId("first-run");
-      await expect(dialog).toContainText("Add your first account to get started.");
+      await expect(dialog).toContainText("How do you like to read?");
       await expect(dialog).not.toContainText("Local (recommended)");
+      await page.getByTestId("first-run-continue").click();
+      await page.getByTestId("first-run-continue").click();
+      // nothing to sign in to or bill yet, so the account step promises neither
+      await expect(dialog).toHaveAttribute("data-step", "account");
       await expect(dialog).not.toContainText("Terno account");
-      await page.getByTestId("first-run-add-account").click();
-      await expect(page.getByTestId("add-account-dialog")).toBeVisible();
-      await addImap(page, "ana@icloud.com");
+      await page.getByTestId("imap-email").fill("ana@icloud.com");
+      await page.getByTestId("imap-password").fill("app-password");
+      await page.getByTestId("imap-submit").click();
+      await expect(dialog).toHaveCount(0);
 
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();

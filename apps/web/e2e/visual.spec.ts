@@ -192,19 +192,27 @@ test.describe("owner identity", () => {
   });
 });
 
-test.describe("first run", () => {
-  test.use({ backendOptions: { empty: true, ownerClaims: true } });
+for (const scheme of ["light", "dark"] as const) {
+  test.describe(`first run (${scheme})`, () => {
+    // plan 98: a new install's own look (Lumen in the GitHub palettes)
+    test.use({ backendOptions: { empty: true, ownerClaims: true }, design: null, colorScheme: scheme });
 
-  test("welcome: add the first account", async ({ app: page, server }) => {
-    // no real Ollama / LM Studio on the test machine may change what this screen shows
-    await isolateLocalDiscovery(server);
-    await page.reload();
-    await expect(page.getByTestId("first-run")).toContainText("Add your first account to get started.");
-    await page.evaluate(() => document.fonts.ready);
-    await stabilize(page);
-    await expect(page).toHaveScreenshot("first-run.png");
+    test("setup: layout, style and colors, account", async ({ app: page, server }) => {
+      // no real Ollama / LM Studio on the test machine may change what this screen shows
+      await isolateLocalDiscovery(server);
+      await page.reload();
+      const dialog = page.getByTestId("first-run");
+      const suffix = scheme === "dark" ? "-dark" : "";
+      for (const step of ["layout", "look", "account"]) {
+        await expect(dialog).toHaveAttribute("data-step", step);
+        await page.evaluate(() => document.fonts.ready);
+        await stabilize(page);
+        await expect(page).toHaveScreenshot(`first-run-${step}${suffix}.png`);
+        if (step !== "account") await page.getByTestId("first-run-continue").click();
+      }
+    });
   });
-});
+}
 
 test.describe("dark", () => {
   test.use({ colorScheme: "dark" });

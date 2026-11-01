@@ -74,7 +74,7 @@ export function resolveTheme(a: Pick<Appearance, "design" | "lightTheme" | "dark
   return own;
 }
 
-function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
+export function baseId(theme: Theme, a: Pick<Appearance, "customThemes">): string {
   if (!theme.id.startsWith(CUSTOM_PREFIX)) return theme.id;
   return a.customThemes.find((t) => `${CUSTOM_PREFIX}${t.id}` === theme.id)?.extends ?? DEFAULT_THEME[theme.mode];
 }
