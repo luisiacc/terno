@@ -10,7 +10,12 @@ vi.mock("~/rpc/connection", () => ({
   client: {
     call: (_method: string, params: { id: number } & Record<string, unknown>) =>
       new Promise((resolve, reject) => {
-        calls.push({ params, settle: (e) => (e ? reject(e) : resolve({ ...base(params.id), ...stored.get(params.id), ...strip(params) })) });
+        // the backend keeps what it saved: a later answer carries it
+        calls.push({ params, settle: (e) => {
+          if (e) return reject(e);
+          stored.set(params.id, { ...stored.get(params.id), ...strip(params) });
+          resolve({ ...base(params.id), ...stored.get(params.id) });
+        } });
       }),
     on: () => () => {},
   },
@@ -49,13 +54,15 @@ describe("patchAccount", () => {
     expect(name()).toBe("A1");
   });
 
-  it("an older answer landing after a newer edit leaves the newer name", async () => {
+  it("answers land in the order the backend saved them: the last saved name shows", async () => {
     const first = patchAccount(1, { displayName: "One" });
     const second = patchAccount(1, { displayName: "Two" });
-    calls[1]!.settle();
-    await second;
     calls[0]!.settle();
     await first;
+    // "Two" is still on its way: it keeps showing
+    expect(name()).toBe("Two");
+    calls[1]!.settle();
+    await second;
     expect(name()).toBe("Two");
   });
 
@@ -95,6 +102,30 @@ describe("patchAccount", () => {
     await done;
     await tick();
     expect(withPendingEdits([base(1)])[0]!.displayName).toBe("A1");
+  });
+
+  it("two renames that both fail show the backend's name, not the first unsaved one (Codex code review #1)", async () => {
+    const one = patchAccount(1, { displayName: "One" });
+    const two = patchAccount(1, { displayName: "Two" });
+    expect(name()).toBe("Two");
+    calls[0]!.settle(new Error("no"));
+    await expect(one).rejects.toThrow();
+    expect(name()).toBe("Two");
+    calls[1]!.settle(new Error("no"));
+    await expect(two).rejects.toThrow();
+    expect(name()).toBe("A1");
+  });
+
+  it("another field's answer, carrying the stored name, keeps a rename still on its way (Codex code review #3)", async () => {
+    const rename = patchAccount(1, { displayName: "Work" });
+    const recolor = patchAccount(1, { color: "rose" });
+    // the color's answer is the backend's account before the rename landed
+    calls[1]!.settle();
+    await recolor;
+    expect(getApp().accounts[0]).toMatchObject({ displayName: "Work", color: "rose" });
+    calls[0]!.settle();
+    await rename;
+    expect(getApp().accounts[0]).toMatchObject({ displayName: "Work", color: "rose" });
   });
 
   it("an account removed while saving stays removed", async () => {

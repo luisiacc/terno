@@ -163,3 +163,44 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
     expect(getApp()).toMatchObject({ view: "inbox", accountId: 1, gmailTab: null, scope: null });
   });
 });
+
+describe("an account's Mark all as read (plan 102)", () => {
+  const unread = (id: number, accountId: number, tab = 0) => ({ ...row(id), unread: true, accountId, tab, inInbox: true }) as ThreadSummary;
+  const gmail = { id: 1, kind: "gmail", email: "a@gmail.com", displayName: "A", color: "indigo", syncState: { status: "idle" } };
+  const imap = { id: 2, kind: "imap", email: "b@example.com", displayName: "B", color: "rose", syncState: { status: "idle" } };
+  let answer: (v: unknown) => void = () => {};
+  beforeEach(() => {
+    setAccounts([gmail, imap] as never);
+    fake.handlers["threads.actScope"] = () => new Promise((r) => (answer = r));
+    // 12: a promotion of the Gmail account, on top of the Inbox for its reminder; it isn't in the account's Inbox
+    const items = [unread(10, 1), unread(11, 1), unread(12, 1, 1), unread(20, 2)];
+    useList.setState({ items, index: new Map(items.map((t, i) => [t.id, i])) });
+  });
+  afterEach(() => {
+    answer({ undoId: null, affected: 0, total: 0 });
+    setApp({ listFilters: new Map() });
+  });
+  const shown = () => useList.getState().items.map((t) => [t.id, t.unread]);
+
+  it("under the Unread filter, the account's rows go but the checked one stays checked and is read in place (Codex code review #2)", async () => {
+    setApp({ view: "inbox", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map([["inbox||", "unread"]]), checked: new Set([10, 20]), selectedId: null });
+    const { markAccountRead } = await import("./actions");
+    void markAccountRead(1, 2);
+    expect(shown()).toEqual([[10, false], [12, true], [20, true]]);
+    expect([...getApp().checked]).toEqual([10, 20]);
+  });
+
+  it("a row in a Gmail tab the account keeps apart is left as it is (Codex code review #4)", async () => {
+    setApp({ view: "inbox", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map(), checked: new Set(), selectedId: null });
+    const { markAccountRead } = await import("./actions");
+    void markAccountRead(1, 2);
+    expect(shown()).toEqual([[10, false], [11, false], [12, true], [20, true]]);
+  });
+
+  it("outside an Inbox listing, nothing shown changes until the reload", async () => {
+    setApp({ view: "archive", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map(), checked: new Set(), selectedId: null });
+    const { markAccountRead } = await import("./actions");
+    void markAccountRead(1, 2);
+    expect(shown()).toEqual([[10, true], [11, true], [12, true], [20, true]]);
+  });
+});

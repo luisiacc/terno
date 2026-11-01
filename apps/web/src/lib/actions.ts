@@ -336,12 +336,14 @@ export async function markAccountRead(accountId: number, count: number): Promise
   const connection = client.connectionVersion;
   const s = getApp();
   const listed = inPlainInbox(s) && !s.reminders && (s.accountId === null || s.accountId === accountId);
-  const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t)).map((t) => t.id) : [];
-  // under the list's Unread filter they go (the open one is read in place, as the filter keeps it); else read in place
+  // a row there only for its reminder, or in a Gmail tab the account keeps apart, isn't in its Inbox (Codex code review #4)
+  const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t) && !inSeparateTab(t, s.accounts)).map((t) => t.id) : [];
+  // under the list's Unread filter they go; the open and the checked ones are read in place, as the filter keeps
+  // them (Codex code review #2: the selection isn't what this acts on, so it stays)
   const leaving = activeFilter(s) === "unread";
-  const stays = s.selectedId !== null && loaded.includes(s.selectedId) ? s.selectedId : null;
-  if (leaving) reflowRemoval(loaded.filter((id) => id !== stays));
-  patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, "markRead")));
+  const stays = (id: number) => id === s.selectedId || s.checked.has(id);
+  if (leaving) reflowRemoval(loaded.filter((id) => !stays(id)));
+  patchRows(loaded, (t) => (leaving && !stays(t.id) ? null : patched(t, "markRead")));
   breadcrumb("action", "action.thread", { action: "markRead", count });
   const progress = trackJob(t(DOING.markRead, { count }));
   const undoId = deferred<{ id: number | null; n: number }>();
