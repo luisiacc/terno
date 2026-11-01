@@ -7,7 +7,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { DESIGNS, designById } from "@terno/ui/designs/index";
 import { builtinTheme, themesFor } from "@terno/ui/themes/registry";
 import { cn } from "@terno/ui/lib/utils";
-import { Check, Columns2, Moon, Rows3, Sun } from "@terno/ui/icons";
+import { Check, Columns2, Laptop, Moon, Rows3, Sun } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { snack } from "~/lib/snack";
@@ -107,8 +107,8 @@ export function FirstRun() {
   const [step, setStep] = useState<Step>(savedStep);
   /** which way the last step change went: the new step slides in from that side */
   const [forward, setForward] = useState(true);
-  /** step 2 shows (and sets) one mode's colors; the window itself keeps following the system */
-  const [lookMode, setLookMode] = useState<ThemeMode>(systemMode);
+  /** following the system, step 2 offers both modes' colors: the preview shows the one last picked in (the system's mode until then) */
+  const [pickedMode, setPickedMode] = useState<ThemeMode | null>(null);
   const [draft, setDraft] = useState(() => kept.draft);
   /** a connection in flight: Back, Skip and Esc wait for it */
   const [busy, setBusy] = useState(false);
@@ -144,7 +144,7 @@ export function FirstRun() {
   // the palette in use is in view (the default, GitHub, sits partway down the list)
   useEffect(() => {
     if (step === "look") document.querySelector("[data-testid=first-run-palettes] [aria-pressed=true]")?.scrollIntoView({ block: "nearest" });
-  }, [step, lookMode]);
+  }, [step, settings?.theme]);
 
   if (!settings) return null;
 
@@ -161,11 +161,11 @@ export function FirstRun() {
   };
   const index = STEPS.indexOf(step);
   const design = designById(settings.design);
-  const previewMode = step === "look" ? lookMode : systemMode;
+  const following = settings.theme === "system";
+  const previewMode = step === "look" && following ? (pickedMode ?? systemMode) : systemMode;
   const theme = resolveTheme(settings, previewMode);
-  const slot = lookMode === "light" ? "lightTheme" : "darkTheme";
-  const chosen = settings[slot] === DESIGN_PALETTE ? DESIGN_PALETTE : resolveTheme(settings, lookMode).id;
-  const own = builtinTheme(design.palette[lookMode])!;
+  /** the modes whose colors step 2 offers: both while following the system, else the one chosen */
+  const modes: ThemeMode[] = following ? ["light", "dark"] : [settings.theme as ThemeMode];
   const pick = (patch: Partial<AppSettings>) => void updateAppearance(patch);
 
   const titles: Record<Step, [string, string]> = {
@@ -213,7 +213,12 @@ export function FirstRun() {
         </p>
         <div className="mt-4 mb-1 flex shrink-0 items-center justify-between gap-2">
           <h3 className="type-section-label text-muted-foreground">{t("firstRun.look.colors")}</h3>
-          <ToggleGroup aria-label={t("firstRun.look.mode")} variant="outline" size="sm" value={[lookMode]} onValueChange={(v: string[]) => v[0] && setLookMode(v[0] as ThemeMode)} data-testid="first-run-look-mode">
+          {/* the appearance itself (Settings' Mode): System follows the Mac, Light and Dark stay put */}
+          <ToggleGroup aria-label={t("firstRun.look.mode")} variant="outline" size="sm" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && pick({ theme: v[0] as AppSettings["theme"] })} data-testid="first-run-look-mode">
+            <ToggleGroupItem value="system" data-testid="first-run-look-system" className="gap-1.5">
+              <Laptop aria-hidden />
+              {t("settings.appearance.system")}
+            </ToggleGroupItem>
             <ToggleGroupItem value="light" data-testid="first-run-look-light" className="gap-1.5">
               <Sun aria-hidden />
               {t("settings.appearance.light")}
@@ -224,12 +229,29 @@ export function FirstRun() {
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <p className="mb-2 shrink-0 text-xs text-muted-foreground">{t("firstRun.look.modeHint")}</p>
-        <div role="group" aria-label={t("firstRun.look.colors")} className="hairline-t -mx-1.5 grid min-h-32 flex-1 basis-0 auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-1 overflow-y-auto pt-2 pb-1" data-testid="first-run-palettes">
-          <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${lookMode}`} selected={chosen === DESIGN_PALETTE} onSelect={() => pick({ [slot]: DESIGN_PALETTE })} />
-          {themesFor(lookMode).map((p) => (
-            <ThemeCard key={p.id} theme={p} base={p.id} selected={chosen === p.id} onSelect={() => pick({ [slot]: p.id })} />
-          ))}
+        <p className="mb-2 shrink-0 text-xs text-muted-foreground">{t(following ? "firstRun.look.modeHint" : settings.theme === "light" ? "firstRun.look.modeHint.light" : "firstRun.look.modeHint.dark")}</p>
+        <div className="hairline-t -mx-1.5 min-h-32 flex-1 basis-0 overflow-y-auto pt-2 pb-1" data-testid="first-run-palettes">
+          {modes.map((m) => {
+            const slot = m === "light" ? "lightTheme" : "darkTheme";
+            const chosen = settings[slot] === DESIGN_PALETTE ? DESIGN_PALETTE : resolveTheme(settings, m).id;
+            const own = builtinTheme(design.palette[m])!;
+            const choose = (id: string) => {
+              setPickedMode(m);
+              pick({ [slot]: id });
+            };
+            const label = t(m === "light" ? "settings.appearance.lightTheme" : "settings.appearance.darkTheme");
+            return (
+              <section key={m} aria-label={label} className="mb-3 last:mb-0">
+                {following && <h4 className="mb-1 px-1.5 text-xs font-medium text-muted-foreground">{label}</h4>}
+                <div role="group" aria-label={label} className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-1" data-testid={`first-run-palettes-${m}`}>
+                  <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${m}`} selected={chosen === DESIGN_PALETTE} onSelect={() => choose(DESIGN_PALETTE)} />
+                  {themesFor(m).map((p) => (
+                    <ThemeCard key={p.id} theme={p} base={p.id} selected={chosen === p.id} onSelect={() => choose(p.id)} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       </div>
     ),

@@ -51,16 +51,31 @@ test.describe("first-run setup", () => {
     await expect(preview(page)).toHaveAttribute("data-design", "atelier");
     await expect(page.getByTestId("first-run-design-atelier")).toHaveAttribute("aria-checked", "true");
 
-    // the dark palette, chosen in a light window: the preview shows dark, the window stays light
-    await page.getByTestId("first-run-look-dark").click();
-    await expect(preview(page)).toHaveAttribute("data-mode", "dark");
-    await expect(preview(page)).toHaveClass(/\bdark\b/);
-    await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
+    // following the system (the default), both modes' colors are offered; a dark palette picked in a light window previews dark, the window stays light
+    await expect(page.getByTestId("first-run-look-system")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("first-run-palettes-light")).toBeVisible();
+    await expect(page.getByTestId("first-run-palettes-dark")).toBeVisible();
     await expect(page.getByTestId("theme-card-github-dark")).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("theme-card-dracula").click();
+    await expect(preview(page)).toHaveAttribute("data-mode", "dark");
+    await expect(preview(page)).toHaveClass(/\bdark\b/);
     await expect(preview(page)).toHaveAttribute("data-theme", "dracula");
+    await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
     await expect.poll(async () => (await settings(server)).darkTheme).toBe("dracula");
     expect((await settings(server)).lightTheme).toBe("github-light");
+
+    // Light and Dark are the appearance itself: the app switches, and only that mode's colors are offered
+    await page.getByTestId("first-run-look-dark").click();
+    await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+    await expect(page.getByTestId("first-run-palettes-light")).toHaveCount(0);
+    await expect(preview(page)).toHaveAttribute("data-theme", "dracula");
+    await expect.poll(async () => (await settings(server)).theme).toBe("dark");
+    await page.getByTestId("first-run-look-light").click();
+    await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
+    await expect(page.getByTestId("first-run-palettes-dark")).toHaveCount(0);
+    await expect(preview(page)).toHaveAttribute("data-mode", "light");
+    await page.getByTestId("first-run-look-system").click();
+    await expect.poll(async () => (await settings(server)).theme).toBe("system");
 
     await page.getByTestId("first-run-back").click();
     await expect(step(page)).toHaveAttribute("data-step", "layout");
