@@ -3,7 +3,7 @@ import { generateDataset } from "@terno/mock-data";
 import type { FolderExportCursor, Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
-import { confirmRebuilt, rebuildFolders } from "./folders";
+import { confirmRebuilt, countFolderMessages, rebuildFolders } from "./folders";
 import { IdbMailStore } from "./store";
 
 /**
@@ -747,5 +747,41 @@ it("plan 107: a delete's count over 100 overlapping sublabels on one 50,000-mess
     expect(slices.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
   } finally {
     c.db.tx(() => { rows.forEach((r) => membershipsT.deleteRow(r)); copies.forEach((m) => messagesT.deleteRow(m)); threadsT.deleteRow(thread); });
+  }
+}, 900_000);
+
+it("plan 107: a delete's count over a 50,000-location mailbox walks it once across its slices, never again each slice (Codex code review round 5 #4)", async () => {
+  type Table = { all(): Iterable<Record<string, unknown>>; get(id: unknown): Record<string, unknown> | undefined; allocateId(): number; put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void };
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): Table } } }).c;
+  const mem = c as unknown as Parameters<typeof countFolderMessages>[0];
+  const [messagesT, threadsT, locationsT] = [c.db.table("messages"), c.db.table("threads"), c.db.table("message_locations")];
+  const seed = [...messagesT.all()].find((m) => !m.is_trash && !m.is_spam)!;
+  const account = seed.account_id as number;
+  // 50,000 messages (copies, in a thread of their own) each placed in the mailbox, written straight into the tables
+  const n = 50_000;
+  const thread = { ...threadsT.get(seed.thread_id)!, id: threadsT.allocateId(), provider_thread_id: "p107-places" };
+  const copies = Array.from({ length: n }, (_, i) => ({ ...seed, id: messagesT.allocateId(), thread_id: thread.id, provider_msg_id: `p107-places-${i}`, rfc_message_id: null }));
+  const rows = copies.map((m, i) => ({ message_id: m.id, account_id: account, mailbox: "P107Places", uidvalidity: 1, uid: i + 1, flags: "[]" }));
+  c.db.tx(() => { threadsT.put(thread); copies.forEach((m) => messagesT.put(m)); rows.forEach((r) => locationsT.put(r)); });
+  try {
+    const slices: Sample[] = [];
+    let counted = 0;
+    for (let after: Parameters<typeof countFolderMessages>[3] = null; ; ) {
+      const from = after;
+      let r!: ReturnType<typeof countFolderMessages>;
+      slices.push(sampleSync(() => (r = countFolderMessages(mem, account, ["P107Places"], from, 100))));
+      counted += r.messages;
+      if (!r.next) break;
+      after = r.next;
+    }
+    const ms = settle(slices).ms;
+    const total = ms.reduce((a, b) => a + b, 0);
+    console.log(`count of ${n} places: ${slices.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`);
+    expect(counted).toBe(n);
+    expect(slices.length).toBeLessThanOrEqual(Math.ceil(n / 100) + 2);
+    // the mailbox once in all (each slice walking and sorting all of it was 50,000 visits a slice)
+    expect(total / n, `per place (${total.toFixed(1)} ms in all)`).toBeLessThanOrEqual(0.005 * MULT);
+  } finally {
+    c.db.tx(() => { rows.forEach((r) => locationsT.deleteRow(r)); copies.forEach((m) => messagesT.deleteRow(m)); threadsT.deleteRow(thread); });
   }
 }, 900_000);

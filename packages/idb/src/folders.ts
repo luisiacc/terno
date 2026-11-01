@@ -118,18 +118,37 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly st
     const key = keys[at.key]!;
     if (index.get(key) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     if (at.places) {
-      // the folder's places past the last message counted, by id (one walk of its index and a native sort)
-      const from = at.after[0] ?? 0;
-      const found: number[] = [];
-      for (const k of locations.keysBy("mailbox", accountId, key)) {
-        const id = locations.rows.get(k)!.message_id as number;
-        if (id > from) found.push(id);
+      // the folder's places by a live walk of its index kept between slices (as carryFolder's), each slice its next
+      // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). `after`: how many
+      // the walk has looked at; one lost (a reload, many counts at once) is walked again past those, once
+      const seen = at.after[0] ?? 0;
+      const token = `${accountId}\u0000${keys.join("\u0000")}\u0000${at.key}`;
+      let walks = countWalks.get(c);
+      if (!walks) countWalks.set(c, (walks = new Map()));
+      let walk = walks.get(`${token}\u0000${seen}`);
+      walks.delete(`${token}\u0000${seen}`);
+      if (!walk) {
+        walk = locations.keysBy("mailbox", accountId, key);
+        for (let i = 0; i < seen && !walk.next().done; i++);
       }
       const asked = budget;
-      const ids = Float64Array.from(found).sort().subarray(0, asked);
-      for (const id of ids) if (firstPlace(id) === at.key) messages++;
-      budget -= Math.max(1, ids.length);
-      at = ids.length >= asked && found.length > asked ? { key: at.key, places: true, after: [ids[ids.length - 1]!] } : { key: at.key, places: false, after: [] };
+      let n = 0;
+      let ended = false;
+      while (n < asked) {
+        const k = walk.next();
+        if (k.done) { ended = true; break; }
+        n++;
+        const l = locations.rows.get(k.value);
+        if (l && firstPlace(l.message_id as number) === at.key) messages++;
+      }
+      budget -= Math.max(1, n);
+      if (ended) at = { key: at.key, places: false, after: [] };
+      else {
+        // a few kept (counts left unfinished let theirs go)
+        if (walks.size >= 16) walks.delete(walks.keys().next().value!);
+        walks.set(`${token}\u0000${seen + n}`, walk);
+        at = { key: at.key, places: true, after: [seen + n] };
+      }
       continue;
     }
     // inside a thread: the rest of it
@@ -155,6 +174,9 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly st
   }
   return { messages, next: null };
 }
+
+/** a count's walks of a folder's places, per store, by the count's folders, the folder and how far it has looked */
+const countWalks = new WeakMap<Ctx, Map<string, Iterator<Key>>>();
 
 export function isFolder(c: Ctx, accountId: number, key: string): boolean {
   return T(c, "folders").has(accountId, key);
