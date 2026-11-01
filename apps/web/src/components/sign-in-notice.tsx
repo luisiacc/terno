@@ -141,13 +141,15 @@ export async function openSignInMarker(account: Account): Promise<void> {
   const mine = ++opening.seq;
   // where focus was when asked: the menu's item, still there while the menu closes (Codex code review round 4)
   const from = document.activeElement;
+  const menu = from?.closest("[role=menu]") ?? null;
   if (WEB && account.kind === "gmail") prepareGoogle();
   await loadPanel().catch(() => {});
   // the user moved on while the panel loaded (a field, the list, another request): it doesn't open over that
-  // (Codex code review round 3 #2); the closing menu, nowhere or the account's row isn't moving on
+  // (Codex code review round 3 #2); the closing menu it was asked from (not another one, round 5 #2), nowhere or
+  // the account's row isn't moving on
   const at = document.activeElement;
   const row = document.querySelector(`[data-testid="nav-account-${account.id}"]`);
-  const stayed = !at || at === document.body || at === row || at === from || !at.isConnected || at.closest("[role=menu]") !== null;
+  const stayed = !at || at === document.body || at === row || at === from || !at.isConnected || (menu !== null && menu.contains(at));
   if (mine !== opening.seq || !stayed) return;
   markers.get(account.id)?.();
 }

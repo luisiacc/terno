@@ -62,3 +62,23 @@ it("the user moved on while the panel loaded: it stays closed, the field keeps t
   });
   expect(open()).toBe(true);
 });
+
+it("asked from a menu: focus still in that closing menu opens it, another menu opened meanwhile doesn't (Codex code review round 5 #2)", async () => {
+  const host = mount();
+  host.insertAdjacentHTML("beforeend", `<div role="menu" id="m1"><button>Sign in again</button></div><div role="menu" id="m2"><button>Rename</button></div>`);
+  const [inFirst, inSecond] = [host.querySelector<HTMLElement>("#m1 button")!, host.querySelector<HTMLElement>("#m2 button")!];
+  inFirst.focus();
+  let asked = openSignInMarker(account);
+  inSecond.focus();
+  await act(async () => {
+    await asked;
+  });
+  expect(open()).toBe(false);
+
+  inFirst.focus();
+  asked = openSignInMarker(account);
+  await act(async () => {
+    await asked;
+  });
+  expect(open()).toBe(true);
+});

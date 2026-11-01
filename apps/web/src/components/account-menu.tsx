@@ -14,7 +14,7 @@ import {
 } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
 import { KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useRef, useState, type ReactElement } from "react";
+import { lazy, Suspense, useState, type ReactElement } from "react";
 import { patchAccount } from "~/lib/accounts";
 import { markAccountRead, openCompose } from "~/lib/actions";
 import { COLOR_LABEL } from "~/lib/color-labels";
@@ -37,21 +37,23 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
   const [removing, setRemoving] = useState<boolean | null>(null);
   // an item that moves focus itself (the rename field, the composer, a dialog, the sign-in panel) keeps the
   // closing menu from handing it back to the row first (Codex R6: the field would blur, and save, at once)
-  const handOff = useRef(false);
+  // state, not a function: a function would override Base UI's own check that the user hasn't clicked elsewhere
+  // (Codex code review round 5 #1); set in the same click that closes, so the close reads it
+  const [handOff, setHandOff] = useState(false);
   const away = (run: () => void) => () => {
-    handOff.current = true;
+    setHandOff(true);
     run();
   };
   return (
     <>
       <ContextMenu
         onOpenChange={(open) => {
-          if (open) handOff.current = false;
+          if (open) setHandOff(false);
           setApp({ menuOpen: open });
         }}
       >
         <ContextMenuTrigger data-context-menu render={children} />
-        <ContextMenuContent className="w-56" data-testid={`account-menu-${account.id}`} finalFocus={() => !handOff.current}>
+        <ContextMenuContent className="w-56" data-testid={`account-menu-${account.id}`} finalFocus={handOff ? false : undefined}>
           <ContextMenuItem data-testid="account-menu-compose" onClick={away(() => void openCompose("new", null, 0, undefined, account.id))}>
             <SquarePen />
             <span className="flex-1">{t("compose.newMessage")}</span>

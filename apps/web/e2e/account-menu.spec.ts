@@ -125,6 +125,19 @@ test.describe("the account menu", () => {
     await expect(row(page, a!)).toContainText(before);
   });
 
+  test("a click elsewhere closes the menu (it's modal); the next click's focus stays where it went", async ({ app: page }) => {
+    const [a] = await accountIds(page);
+    await openMenu(page, a!);
+    const box = (await page.getByTestId("search-input").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(menu(page, a!)).toHaveCount(0);
+    await page.getByTestId("search-input").click();
+    await expect(page.getByTestId("search-input")).toBeFocused();
+    // past the menu's close: nothing takes it back
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("search-input")).toBeFocused();
+  });
+
   test("Color: the dot and the account change", async ({ app: page, server }) => {
     const [a] = await accountIds(page);
     const current = (await server.backend.store.accounts.get(a!))!.color;
