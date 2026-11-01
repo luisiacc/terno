@@ -13,6 +13,7 @@ import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { googleClientFor } from "./google-client";
 import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
 /** How long a recipient lookup waits for the index's first build (then answers with what it has: nothing). */
@@ -835,15 +836,14 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "accounts.connectGmail": async ({ syncWindowDays }) => {
-      const settings = await readSettings(store);
-      if (!settings.gmailClientId) {
-        throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
-      }
+      // plan 99: the client in Settings, else the one this build carries
+      const oauth = await googleClientFor(b);
+      if (!oauth) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
       if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
       const google = await b.initialGoogleRequests(true);
       const result = await b.options.providers.connectGmail({
-        clientId: settings.gmailClientId,
-        clientSecret: await b.getSecret("gmailClientSecret"),
+        clientId: oauth.clientId,
+        clientSecret: oauth.clientSecret,
         openExternal: b.options.openExternal,
         signal: b.abort.signal,
         fetch: b.net.fetchFor("mail"),
@@ -856,7 +856,7 @@ export function createHandlers(b: Backend): Handlers {
       if (result.refreshToken === null) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
       const existing = (await store.accounts.list()).find((a) => a.email === result.email.toLowerCase());
       if (existing) throw new RpcError("BAD_REQUEST", L("errors.alreadyConnected", { email: result.email }));
-      const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
+      const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const color = await nextAccountColor();
       googleFlowActive(b);

@@ -13,6 +13,7 @@ import { t } from "@terno/i18n";
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { setSeparateTabs } from "~/lib/gmail-tabs";
+import { googleBuiltIn } from "~/lib/google-client";
 import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
 import { retryIn } from "../connection-pill";
 import { client } from "~/rpc/connection";
@@ -251,69 +252,89 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
         <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
       </button>
       <div id={panel} hidden={!open}>
-        {open && <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />}
+          {open && <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function GoogleClient({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  const [secret, setSecret] = useState("");
-  const saveSecret = async (value: string) => {
-    try {
-      await client.call("settings.setSecret", { name: "gmailClientSecret", value });
-      setApp((s) => (s.settings ? { settings: { ...s.settings, gmailClientSecretSet: value !== "", gmailClientSecretUnreadable: false } } : {}));
-      setSecret("");
-      snack.success(value ? t("account.google.secretSaved") : t("account.google.secretRemoved"));
-    } catch (e) {
-      snack.error(errorText(e));
-    }
-  };
-  return (
-    <SettingsGroup
-      title="Google (Gmail)"
-      footer={
-        WEB ? t("account.google.footerWeb", { origin: location.origin }) : t("account.google.footer")
+  function GoogleClient({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+    const [secret, setSecret] = useState("");
+    // plan 99: with Terno's own client, yours is an option tucked away (shown while you have one)
+    const builtIn = googleBuiltIn();
+    const own = settings.gmailClientId !== "" || settings.gmailClientSecretSet;
+    const [opened, setOpened] = useState(false);
+    const open = !builtIn || own || opened;
+    const panel = useId();
+    const saveSecret = async (value: string) => {
+      try {
+        await client.call("settings.setSecret", { name: "gmailClientSecret", value });
+        setApp((s) => (s.settings ? { settings: { ...s.settings, gmailClientSecretSet: value !== "", gmailClientSecretUnreadable: false } } : {}));
+        setSecret("");
+        snack.success(value ? t("account.google.secretSaved") : t("account.google.secretRemoved"));
+      } catch (e) {
+        snack.error(errorText(e));
       }
-    >
-      {/* i18n-ignore: Google Cloud Console's name for the field, kept so it matches what people copy it from */}
-      <SettingsRow stacked labelFor label="Google OAuth Client ID">
-        {(a) => <CommitInput a11y={a} data-testid="gmail-client-id" value={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onCommit={(v) => update({ gmailClientId: v.trim() }, { quiet: true })} />}
-      </SettingsRow>
-      {!WEB && (
-        <SettingsRow stacked labelFor label={t("account.google.secret")} hint={t("account.google.secret.hint")}>
-          {(a) =>
-            settings.gmailClientSecretSet && !settings.gmailClientSecretUnreadable ? (
-              <div className="flex items-center gap-2 text-sm" data-testid="gmail-secret-saved">
-                <span className="text-success-ink">{t("account.google.saved")}</span>
-                <Button variant="ghost" size="xs" onClick={() => void saveSecret("")}>
-                  {t("common.remove")}
-                </Button>
-              </div>
-            ) : (
-              <>
-                {settings.gmailClientSecretUnreadable && (
-                  <p role="alert" className="mb-1.5 text-xs text-destructive-ink" data-testid="gmail-secret-unreadable">
-                    {t("account.google.secretUnreadable")}
-                  </p>
-                )}
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (secret.trim()) void saveSecret(secret.trim());
-                  }}
-                >
-                  <Input {...a} type="password" autoComplete="off" className="h-7 bg-background dark:bg-input/30" data-testid="gmail-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
-                  <Button type="submit" size="sm" disabled={!secret.trim()}>
-                    {t("common.save")}
-                  </Button>
-                </form>
-              </>
-            )
-          }
+    };
+    return (
+      <SettingsGroup
+        title="Google (Gmail)"
+        footer={!open ? t("account.google.builtIn") : WEB ? t("account.google.footerWeb", { origin: location.origin }) : t("account.google.footer")}
+        testId="google-client"
+      >
+        {builtIn && !own && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={panel}
+            onClick={() => setOpened((o) => !o)}
+            className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            data-testid="google-own-toggle"
+          >
+            <span className="min-w-0 flex-1">{t("account.google.own")}</span>
+            <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
+          </button>
+        )}
+        <div id={panel} hidden={!open}>
+        {/* i18n-ignore: Google Cloud Console's name for the field, kept so it matches what people copy it from */}
+        <SettingsRow stacked labelFor label="Google OAuth Client ID">
+          {(a) => <CommitInput a11y={a} data-testid="gmail-client-id" value={settings.gmailClientId} placeholder="xxxxx.apps.googleusercontent.com" onCommit={(v) => update({ gmailClientId: v.trim() }, { quiet: true })} />}
         </SettingsRow>
-      )}
+        {!WEB && (
+          <SettingsRow stacked labelFor label={t("account.google.secret")} hint={t("account.google.secret.hint")}>
+            {(a) =>
+              settings.gmailClientSecretSet && !settings.gmailClientSecretUnreadable ? (
+                <div className="flex items-center gap-2 text-sm" data-testid="gmail-secret-saved">
+                  <span className="text-success-ink">{t("account.google.saved")}</span>
+                  <Button variant="ghost" size="xs" onClick={() => void saveSecret("")}>
+                    {t("common.remove")}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {settings.gmailClientSecretUnreadable && (
+                    <p role="alert" className="mb-1.5 text-xs text-destructive-ink" data-testid="gmail-secret-unreadable">
+                      {t("account.google.secretUnreadable")}
+                    </p>
+                  )}
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (secret.trim()) void saveSecret(secret.trim());
+                    }}
+                  >
+                    <Input {...a} type="password" autoComplete="off" className="h-7 bg-background dark:bg-input/30" data-testid="gmail-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
+                    <Button type="submit" size="sm" disabled={!secret.trim()}>
+                      {t("common.save")}
+                    </Button>
+                  </form>
+                </>
+              )
+            }
+          </SettingsRow>
+        )}
+      </div>
     </SettingsGroup>
   );
 }

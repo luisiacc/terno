@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname, join } from "node:path";
-import { Backend, nodeStore, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
 import { classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
@@ -159,6 +159,8 @@ parentPort.on("message", async (event) => {
         // and only for an account whose servers are loopback: imap-seam.ts)
         providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
         openExternal: async (url) => send({ type: "open-external", url }),
+        // plan 99: Terno's Google clients, baked in by build.mjs
+        googleClients: parseGoogleClients(process.env.TERNO_GOOGLE_CLIENTS),
         demoAi: msg.demo || msg.dev,
         demo: msg.demo,
         online: msg.online,

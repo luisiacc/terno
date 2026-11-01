@@ -4,7 +4,8 @@ import { L } from "@terno/i18n";
 import type { GoogleAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
 import type { GmailAccountConfig, GmailConnectResult, GmailRenewalProof, ImapAccountConfig } from "@terno/mail";
 import type { BackendCore as Backend } from "./core";
-import { consumeGooglePhotosPending, googlePhotosPending, readSettings, setGooglePhotosPending } from "./settings";
+import { googleClientFor, rememberedGoogleClient } from "./google-client";
+import { consumeGooglePhotosPending, googlePhotosPending, setGooglePhotosPending } from "./settings";
 import { CONTACTS_SCOPE, GMAIL_SCOPES, OTHER_CONTACTS_SCOPE } from "@terno/mail/portable";
 
 /**
@@ -132,11 +133,12 @@ export async function googleCredentialIntent(b: Backend, account: Account, stamp
     const latest = await credentialSnapshot(b, account.id, flow, "refreshToken");
     if (!sameBytes(latest, current)) throw persistenceFailed();
     b.assertSignIn(account.id, flow);
-    const settings = await readSettings(b.store);
-    const clientSecret = await b.getSecret("gmailClientSecret");
+    // plan 99: the stored grant belongs to the account's own client (the one this sign-in used)
+    const oauth = await googleClientFor(b, await rememberedGoogleClient(b, account.id), true).catch(() => null);
     b.assertSignIn(account.id, flow);
+    if (!oauth) throw invalidRenewal();
     let proof: GmailRenewalProof;
-    try { proof = await b.options.providers.beginGmailRenewal({ clientId: settings.gmailClientId, clientSecret, refreshToken, fetch: b.net.fetchFor("mail"), signal: AbortSignal.any([b.abort.signal, flow.signal]) }); }
+    try { proof = await b.options.providers.beginGmailRenewal({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, refreshToken, fetch: b.net.fetchFor("mail"), signal: AbortSignal.any([b.abort.signal, flow.signal]) }); }
     catch { throw invalidRenewal(); }
     b.assertSignIn(account.id, flow);
     if (!proof || typeof proof.refreshToken !== "string" || proof.refreshToken.length > 4096 || !/^[\x21-\x7e]+$/.test(proof.refreshToken) || !Number.isFinite(proof.expiresAt) || typeof proof.inspect !== "function" || typeof proof.provePhotos !== "function") throw invalidRenewal();
@@ -195,14 +197,14 @@ export async function googleAdmission(b: Backend, accountId: number, flow: Abort
 
 export async function connectExistingGoogle(b: Backend, account: Account, flow: AbortController, scopes?: string[]): Promise<GmailConnectResult> {
   if (b.options.providers.gmailTokens) throw new RpcError("UNAVAILABLE", L("errors.gmailReconnectInBrowser"));
-  const settings = await readSettings(b.store);
+  // plan 99: an account signs in again with the client that connected it (its refresh token works with no other)
+  const remembered = await rememberedGoogleClient(b, account.id);
+  const oauth = await googleClientFor(b, remembered, true);
   b.assertSignIn(account.id, flow);
-  if (!settings.gmailClientId) throw new RpcError("BAD_REQUEST", L("errors.gmailClientIdMissing"));
+  if (!oauth) throw new RpcError("BAD_REQUEST", L(remembered ? "errors.google.clientGone" : "errors.gmailClientIdMissing"));
   if (!b.options.openExternal) throw new RpcError("UNAVAILABLE", L("errors.googleConnectNeedsDesktop"));
-  const clientSecret = await b.getSecret("gmailClientSecret");
-  b.assertSignIn(account.id, flow);
   let result: GmailConnectResult;
-  try { result = await b.options.providers.connectGmail({ clientId: settings.gmailClientId, clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, scopes, allowOmittedRefreshToken: true }); }
+  try { result = await b.options.providers.connectGmail({ clientId: oauth.clientId, clientSecret: oauth.clientSecret, openExternal: b.options.openExternal, signal: AbortSignal.any([b.abort.signal, flow.signal]), fetch: b.net.fetchFor("mail"), loginHint: account.email, scopes, allowOmittedRefreshToken: true }); }
   catch { b.assertSignIn(account.id, flow); throw invalidRenewal(); }
   b.assertSignIn(account.id, flow);
   validateGoogleConnection(result, "renewal");

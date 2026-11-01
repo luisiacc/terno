@@ -180,6 +180,21 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
     }
   }
 
+  /** Plan 99: the client that issued the refresh token; not having it (or its secret) means signing in again, never a retry. */
+  async function oauthClient(): Promise<{ clientId: string; clientSecret: string | null }> {
+    if (!ctx.googleClient) {
+      const clientId = (await ctx.store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
+      return { clientId: clientId ?? "", clientSecret: await ctx.getAppSecret("gmailClientSecret").catch(() => null) };
+    }
+    let client: { clientId: string; clientSecret: string | null } | null;
+    try { client = await ctx.googleClient(); } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      throw new ProviderAuthError(L("errors.gmail.reconnect"));
+    }
+    if (!client) throw new ProviderAuthError(L("errors.gmail.reconnect"));
+    return client;
+  }
+
   /** One promise owns both the exchange and its durable result for every waiting operation. */
   const refreshRuns = new Set<RequestRun>();
   let refreshIssued = false;
@@ -195,10 +210,9 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
           const refreshToken = await ctx.getSecret("refreshToken");
           assertOpen();
           if (!refreshToken) throw new ProviderAuthError(L("errors.gmail.reconnect"));
-          const clientId = (await ctx.store.setting<{ gmailClientId?: string }>("app"))?.gmailClientId;
-          const clientSecret = await ctx.getAppSecret("gmailClientSecret").catch(() => null);
+          const { clientId, clientSecret } = await oauthClient();
           assertOpen();
-          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId: clientId ?? "", clientSecret, refreshToken, signal: lifetime.signal, google: ctx.google, generation, admission, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
+          const exchange = await exchangeGmailRefresh({ fetch: ctx.fetch, url: ep.token, clientId, clientSecret, refreshToken, signal: lifetime.signal, google: ctx.google, generation, admission, run: { markDispatched: () => { refreshIssued = true; for (const owner of refreshRuns) owner.markDispatched(); } } });
           assertOpen();
           candidate = { expected: refreshToken, exchange, uncertain: false };
         }

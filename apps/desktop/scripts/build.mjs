@@ -27,7 +27,7 @@ if (testBuild && !(typeof testBuild.feed === "string" && typeof testBuild.userDa
 }
 if (testBuild && !process.env.TERNO_BUILD_OUT) throw new Error("a test build needs TERNO_BUILD_OUT: dist/ is what dist:mac packages");
 const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(join(repo, "scripts/sourcemaps.mjs"));
-const { buildDsn } = await import(join(repo, "scripts/release-env.mjs"));
+const { buildDsn, buildGoogleClients } = await import(join(repo, "scripts/release-env.mjs"));
 
 /** The commit this build is from (and whether the tree had changes on top). */
 function buildSha() {
@@ -43,6 +43,8 @@ const sha = process.env.TERNO_BUILD_SHA || buildSha();
 // public by design (it can only submit events); a release (TERNO_RELEASE=1) gets Terno's, never a test build;
 // without one the reporter is never loaded
 const dsn = testBuild ? "" : buildDsn();
+// plan 99: Terno's Google clients (from .env or the environment); an updater test build has none
+const google = testBuild ? null : buildGoogleClients();
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -62,6 +64,9 @@ const common = {
     "process.env.TERNO_BUILD_VERSION": JSON.stringify(version),
     "process.env.TERNO_BUILD_SHA": JSON.stringify(sha),
     "process.env.TERNO_SENTRY_DSN": JSON.stringify(dsn),
+    "process.env.TERNO_GOOGLE_CLIENTS": JSON.stringify(google ? JSON.stringify(google) : ""),
+    // the preload's answer to "does Connect Google need setup?" (never the clients themselves)
+    "process.env.TERNO_GOOGLE_BUILT_IN": JSON.stringify(google ? "1" : ""),
     ...(testBuild ? { __TERNO_TEST_BUILD__: JSON.stringify(testBuild) } : {}),
   },
   // ESM deps that read import.meta.url get a CJS-compatible value
@@ -128,4 +133,4 @@ const moved = archiveMaps(out, archive, "dist");
 assertNoMaps(out);
 // what dist:mac uploads to Sentry: this build's archive and release name
 if (!testBuild) writeFileSync(join(root, ".maps", "LATEST"), JSON.stringify({ release: `terno@${version}+${sha}`, archive }));
-console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);
+console.log(`built desktop bundles → ${out} (${version}+${sha}${dsn ? ", reports on" : ""}${google ? ", Google client in" : ""}); ${moved} source maps (${tagged.length} tagged) → ${archive}`);

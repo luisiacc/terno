@@ -396,3 +396,24 @@ describe("durable Gmail refresh", () => {
   });
 
 });
+
+describe("plan 99: the refresh uses the account's own Google client", () => {
+  it("sends the client the backend resolves, not the one in Settings", async () => {
+    const h = harness();
+    const bodies: string[] = [];
+    const fetch = h.ctx.fetch as ReturnType<typeof vi.fn>;
+    const inner = fetch.getMockImplementation() as (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    fetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => { if (String(input).includes("/token")) bodies.push(String(init?.body)); return inner(input, init); });
+    h.ctx.googleClient = async () => ({ clientId: "terno-dev", clientSecret: "dev-secret" });
+    await h.provider.verify();
+    const sent = new URLSearchParams(bodies[0]);
+    expect([sent.get("client_id"), sent.get("client_secret")]).toEqual(["terno-dev", "dev-secret"]);
+  });
+
+  it.each([["gone", async () => null], ["unreadable secret", async () => { throw new Error("keychain"); }]])("a client that is %s asks to sign in again, without a token request", async (_name, googleClient) => {
+    const h = harness();
+    h.ctx.googleClient = googleClient;
+    await expect(h.provider.verify()).rejects.toBeInstanceOf(ProviderAuthError);
+    expect(h.exchanges).toEqual([]);
+  });
+});

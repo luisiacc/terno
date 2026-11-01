@@ -2,6 +2,7 @@ import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
+import { webClientId } from "~/lib/google-client";
 
 /** Google Identity Services' token model: the subset Terno uses. */
 interface TokenResponse {
@@ -103,7 +104,7 @@ function accessToken(clientId: string, loginHint?: string, scopes = GMAIL_SCOPES
  * `syncWindowDays` (plan 79, Add account): the days a new mailbox downloads.
  */
 export async function connectGmailWeb(loginHint?: string, accountId?: number, o: { syncWindowDays?: number } = {}): Promise<Account> {
-  const clientId = getApp().settings?.gmailClientId;
+  const clientId = webClientId(getApp().settings?.gmailClientId);
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
   // plan 22: a new account asks for photos from Google too (the user can untick them on Google's screen)
@@ -135,7 +136,7 @@ export async function connectGmailWeb(loginHint?: string, accountId?: number, o:
  * creating one, and later reconnects carry the same grant (include_granted_scopes).
  */
 export async function authorizeGooglePhotosWeb(account: Account): Promise<void> {
-  const clientId = getApp().settings?.gmailClientId;
+  const clientId = webClientId(getApp().settings?.gmailClientId);
   if (!clientId) throw Object.assign(new Error(t("errors.gmailClientIdMissing")), { i18n: { key: "errors.gmailClientIdMissing" } });
   await preloadGoogle();
   const token = await accessToken(clientId, account.email, [...GMAIL_SCOPES, ...PHOTO_SCOPES], true);

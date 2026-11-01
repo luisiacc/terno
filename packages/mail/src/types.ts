@@ -184,6 +184,8 @@ export interface ProviderContext {
   replaceSecret(name: string, expectedPlaintext: string, nextPlaintext: string): Promise<boolean>;
   /** app-wide secrets (e.g. the Gmail OAuth client secret) */
   getAppSecret(name: string): Promise<string | null>;
+  /** plan 99: the Google OAuth client this account's refresh token belongs to (null: it isn't here any more) */
+  googleClient?(): Promise<{ clientId: string; clientSecret: string | null } | null>;
   /** persistent provider sync cursor (stored on the account) */
   loadCursor<T>(): Promise<T | null>;
   saveCursor(cursor: unknown, check?: () => void): Promise<void>;
@@ -237,6 +239,8 @@ export interface ImapAccountConfig {
 export interface GmailAccountConfig {
   /** Verified on explicit consent only; never inferred from the mailbox. */
   googleSubject?: string;
+  /** plan 99: the OAuth client that issued the refresh token (it works with no other) */
+  googleClientId?: string;
   senderName: string;
 }
 

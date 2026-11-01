@@ -7,4 +7,5 @@ export * from "./agent-socket";
 export * from "./demo";
 export * from "./net-policy";
 export * from "./identity";
+export { parseGoogleClients, type GoogleClients } from "./google-client";
 export * from "./keychain";
