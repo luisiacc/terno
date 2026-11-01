@@ -60,26 +60,35 @@ export function invalidateThreadConnection(): void {
 }
 
 /** Selection owns this completion, even when its header came from the cache. */
-export async function hydrateSelectedThread(id: number, selected: () => boolean): Promise<void> {
+export async function hydrateSelectedThread(id: number, selected: () => boolean, messageId?: number): Promise<void> {
+  const atConnection = client.connectionVersion;
+  const currentSelection = () => selected() && atConnection === client.connectionVersion;
   const detail = await loadThread(id);
-  if (!detail || !selected()) return;
+  if (!detail || !currentSelection()) return;
+  const showFailure = (failedId: number, error?: unknown) => {
+    if (!currentSelection()) return;
+    const notice = snack.error(t("reader.downloadFailed"), {
+      description: error instanceof RpcError ? error.message : undefined,
+      action: { label: t("common.retry"), onClick: () => { dismissSnack(notice); if (currentSelection()) void hydrateSelectedThread(id, currentSelection, failedId); } },
+    });
+  };
   for (const message of detail.messages) {
-    if (!selected()) return;
+    if (!currentSelection()) return;
+    if (messageId !== undefined && message.id !== messageId) continue;
     if (message.bodyState === "full" || message.bodyUnavailable) continue;
     try {
       const result = await client.call("reader.hydrate", { threadId: id, messageId: message.id });
-      if (!selected()) return;
+      if (!currentSelection()) return;
       const refreshed = await loadThread(id, true);
-      if (!selected()) return;
+      if (!currentSelection()) return;
       const current = refreshed?.messages.find((item) => item.id === message.id);
-      if (!result.changed && current && current.bodyState !== "full" && !current.bodyUnavailable) throw new Error("Body unavailable");
-    } catch (error) {
-      if (selected()) {
-        const notice = snack.error(t("reader.downloadFailed"), {
-          description: error instanceof RpcError ? error.message : undefined,
-          action: { label: t("common.retry"), onClick: () => { dismissSnack(notice); if (selected()) void hydrateSelectedThread(id, selected); } },
-        });
+      if (!result.changed && current && current.bodyState !== "full" && !current.bodyUnavailable) {
+        showFailure(message.id);
+        if (result.unavailable) continue;
+        return;
       }
+    } catch (error) {
+      showFailure(message.id, error);
       return;
     }
   }

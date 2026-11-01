@@ -7,7 +7,7 @@ import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
 import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
-import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type Transport } from "@terno/core/rpc";
+import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { AWAITING_AUTH, FlagObservationError, operationFlagFields, type FlagObservation, type ClassifierInput, type IncomingMessage, type MailStore, type OpRow, type Platform, type ProviderStore } from "@terno/store";
 import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, ProviderAuthError, ProviderError, RequestNotDispatchedError, type IncomingProcessor, type MailProvider, type ProviderRegistry, type RequestDescriptor, type MailAdmission, type SendPayload, type SyncSink } from "@terno/mail/portable";
@@ -182,7 +182,7 @@ export class BackendCore {
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
   private readonly capacitySync = new Set<number>();
-  private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<boolean> }>();
+  private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<ResultOf<"reader.hydrate">> }>();
   private bodyWaiters = 0;
   /** a change arrived while syncing: run another pass when the current one ends */
   private readonly syncAgain = new Set<number>();
@@ -389,7 +389,7 @@ export class BackendCore {
     }, delay);
     this.kickWorker();
     for (const id of this.capacitySync) {
-      if (!this.googleReady(id)) continue;
+      if (!this.connectivity.canSync(id) || !this.googleReady(id)) continue;
       this.capacitySync.delete(id);
       void this.syncAccount(id);
     }
@@ -1381,11 +1381,11 @@ export class BackendCore {
     this.options.providers.gmailTokens?.forget?.(accountId);
   }
 
-  hydrateBody(threadId: number, messageId: number): Promise<boolean> {
+  hydrateBody(threadId: number, messageId: number): Promise<ResultOf<"reader.hydrate">> {
     const existing = this.bodyJobs.get(messageId);
-    if (existing && existing.threadId !== threadId) return Promise.resolve(false);
+    if (existing && existing.threadId !== threadId) return Promise.resolve<ResultOf<"reader.hydrate">>({ changed: false });
     if (this.bodyWaiters >= 8 || (!existing && this.bodyJobs.size >= 2)) return Promise.reject(new RpcError("UNAVAILABLE", L("attachments.busy")));
-    const job = existing ?? { threadId, promise: Promise.resolve(false) };
+    const job = existing ?? { threadId, promise: Promise.resolve<ResultOf<"reader.hydrate">>({ changed: false }) };
     if (!existing) {
       job.promise = Promise.resolve().then(() => this.readSelectedBody(threadId, messageId)).finally(() => { if (this.bodyJobs.get(messageId) === job) this.bodyJobs.delete(messageId); });
       this.bodyJobs.set(messageId, job);
@@ -1394,11 +1394,11 @@ export class BackendCore {
     return job.promise.finally(() => { this.bodyWaiters--; });
   }
 
-  private async readSelectedBody(threadId: number, messageId: number): Promise<boolean> {
+  private async readSelectedBody(threadId: number, messageId: number): Promise<ResultOf<"reader.hydrate">> {
     await this.ready;
     const detail = await this.store.threads.get(threadId);
     const message = detail?.messages.find((m) => m.id === messageId);
-    if (!message || message.bodyState === "full" || message.bodyUnavailable) return false;
+    if (!message || message.bodyState === "full" || message.bodyUnavailable) return { changed: false };
     const life = this.lifetime(message.accountId);
     const credentials = this.credentialsOf(message.accountId);
     const eviction = this.evictions.generation;
@@ -1408,13 +1408,13 @@ export class BackendCore {
     };
     check();
     const account = await this.accountRead(life, () => this.store.accounts.get(message.accountId));
-    if (!account || needsWholeSignIn(account.syncState)) return false;
+    if (!account || needsWholeSignIn(account.syncState)) return { changed: false };
     const ids = await this.providerStore(life).providerIds([messageId]);
     const providerMsgId = ids.get(messageId);
-    if (!providerMsgId || providerMsgId.startsWith("local:")) return false;
+    if (!providerMsgId || providerMsgId.startsWith("local:")) return { changed: false };
     const provider = await this.provider(message.accountId);
     check();
-    if (!provider?.readBody) return false;
+    if (!provider?.readBody) return { changed: false };
     const body = await provider.readBody({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal])).catch(async (error: unknown) => {
       if (error instanceof ProviderAuthError) {
         check();
@@ -1422,7 +1422,7 @@ export class BackendCore {
       }
       throw error;
     });
-    if (!body) return false;
+    if (!body) { check(); return { changed: false, unavailable: true }; }
     try {
       check();
       const classifier = await this.classifier();
@@ -1435,7 +1435,7 @@ export class BackendCore {
       this.opsQueued(result.opIds);
       this.reconcileFlags(result.flagReconcileAccounts);
       this.notifyChanged(result.touched, false);
-      return result.touched.length > 0;
+      return { changed: result.touched.length > 0 };
     } finally { body.release(); }
   }
 
@@ -1635,7 +1635,11 @@ export class BackendCore {
       this.syncing.delete(accountId);
       const explicit = this.syncAgain.delete(accountId);
       const flags = this.flagSyncAgain.delete(accountId);
-      if (this.current(life) && this.googleReady(accountId) && (explicit || (flags && this.connectivity.canSync(accountId)))) void this.syncAccount(accountId);
+      const capacity = this.options.autoSync !== false && this.capacitySync.has(accountId) && this.connectivity.canSync(accountId);
+      if (this.current(life) && this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
+        this.capacitySync.delete(accountId);
+        void this.syncAccount(accountId);
+      }
     });
     this.syncing.set(accountId, run);
     return run;

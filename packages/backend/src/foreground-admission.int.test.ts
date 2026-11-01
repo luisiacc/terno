@@ -16,7 +16,8 @@ afterEach(async () => {
   finally { vi.restoreAllMocks(); }
 });
 
-async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false, autoSync = false) {
+async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false, autoSync = false, exactCapacity = false) {
+  let syncFailure: ((id: number, error: unknown) => Promise<void>) | undefined;
   let override: ((request: Request) => Response | undefined | Promise<Response | undefined>) | undefined;
   let firstPromoted!: () => void;
   const initialPromotion = new Promise<void>((resolve) => { firstPromoted = resolve; });
@@ -81,7 +82,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
     create(ctx) {
       const incoming = ctx.incoming!;
       const processor = ctx.incomingProcessor!;
-      return createGmailProvider({ ...ctx,
+      const provider = createGmailProvider({ ...ctx,
         google: ctx.google && { ...ctx.google, request(descriptor, input, init) { admissions.push({ path: new URL(input instanceof Request ? input.url : String(input)).pathname, lane: descriptor.admission ?? "background" }); return ctx.google!.request(descriptor, input, init); } },
         incoming: { ...incoming, promote: async (id, signal, reset, admission) => {
           if (admission === "reader") readerQueued();
@@ -89,7 +90,11 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
           promoted.push(id); if (promoted.length === 1) firstPromoted(); return release;
         } },
         incomingProcessor: { run: async (input, signal) => { const result = await processor.run(input, signal); processed.push(ctx.account.id); return result; } },
-      }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } }); },
+      }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } });
+      const sync = provider.sync.bind(provider);
+      provider.sync = async (sink) => { try { await sync(sink); } catch (error) { await syncFailure?.(ctx.account.id, error); throw error; } };
+      return provider;
+    },
     async verifyImap() {}, async connectGmail() { throw new Error("Unexpected OAuth"); },
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-foreground-"));
@@ -119,7 +124,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
   if (refresh) {
     for (let accountId = 1; accountId <= backgroundAccounts; accountId++) {
-      await backend.ingestSliced(Array.from({ length: 6 }, (_, i) => ({
+      await backend.ingestSliced(Array.from({ length: exactCapacity && accountId === backgroundAccounts ? 2 : 6 }, (_, i) => ({
         accountId, providerMsgId: `m${i}`, providerThreadId: `m${i}`, rfcMessageId: `m${i}-${accountId}@example.test`,
         inReplyTo: null, references: [], from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], bcc: [],
         subject: "Cached", date: 1000, snippet: "Cached", bodyText: "Cached", bodyHtml: null, bodyState: "full" as const, listId: null,
@@ -131,7 +136,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
     syncs.push(backend.syncAccount(id));
     if (!refresh && id === 1) { await firstNativeBody; if (large) await initialPromotion; }
   }
-  return { backend, rpc, hydrate, paths, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
+  return { backend, rpc, hydrate, paths, onSyncFailure(fn: typeof syncFailure) { syncFailure = fn; }, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
 }
 
 it("public Send completes through the shared physical pool while six multi-account backfill bodies remain held", async () => {
@@ -276,7 +281,7 @@ for (const kind of ["SQL", "IDB"] as const) {
     const details = await Promise.all(threads.items.map((thread) => t.rpc.call("threads.get", { threadId: thread.id })));
     const target = details.find((detail) => detail.messages[0]!.bodyText === null)!;
     t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? Response.json({}, { status: 404 }) : undefined);
-    expect(await t.hydrate({ threadId: target.thread.id, messageId: target.messages[0]!.id })).toEqual({ changed: false });
+    expect(await t.hydrate({ threadId: target.thread.id, messageId: target.messages[0]!.id })).toEqual({ changed: false, unavailable: true });
     expect(await Promise.all(threads.items.map((thread) => t.rpc.call("threads.get", { threadId: thread.id })))).toEqual(details);
   });
 
@@ -453,4 +458,130 @@ for (const kind of ["SQL", "IDB"] as const) it(`${kind} keyed capture stages exa
   expect(message.attachments[0]).toMatchObject({ filename: "exact.bin", size: 5 });
   expect(await t.rpc.call("attachments.read", { accountId: 3, assetId: message.attachments[0]!.assetId!, index: 0 })).toEqual({ dataBase64: "AP+ADQo=" });
   expect(await t.rpc.call("ops.list", {})).toEqual(ops);
+});
+
+for (const phase of ["before", "after"] as const) for (const automatic of [true, false]) it(`capacity EOF ${phase} catch registration resumes once (automatic=${automatic})`, async () => {
+  const t = await setup(true, "SQL", false, automatic, true);
+  await t.sixNativeBodies;
+  expect(t.backend.net.googlePending()).toBe(62);
+  t.override((request) => new URL(request.url).pathname === "/12/gmail/messages" ? Response.json({}) : undefined);
+  let refused!: () => void, deliver!: () => void, released!: () => void;
+  const refusal = new Promise<void>((resolve) => { refused = resolve; });
+  const delivery = new Promise<void>((resolve) => { deliver = resolve; });
+  const eof = new Promise<void>((resolve) => { released = resolve; });
+  t.onSyncFailure(async (id, error) => {
+    if (id !== 12) return;
+    expect(error).toMatchObject({ cooldown: { kind: "capacity" } });
+    refused(); if (phase === "before") await delivery;
+  });
+  const core = t.backend as unknown as { cooldownChanged(): void };
+  const changed = core.cooldownChanged.bind(core);
+  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.googlePending() === 61) released(); });
+  const continuation = vi.spyOn(t.backend, "syncAccount");
+  const first = t.sync(12);
+  await refusal;
+  if (phase === "after") await first;
+  t.bodies[0]!.finish(); await eof;
+  expect(t.backend.net.googlePending()).toBe(61);
+  deliver(); await first;
+  expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(automatic ? 2 : 1);
+  if (automatic) {
+    const index = continuation.mock.calls.findLastIndex(([id]) => id === 12);
+    await continuation.mock.results[index]!.value;
+    await t.rpc.call("app.bootstrap", {});
+    expect(continuation.mock.calls.filter(([id]) => id === 12)).toHaveLength(2);
+    expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(1);
+  } else expect(t.paths.filter((path) => path.startsWith("/12/"))).toHaveLength(0);
+});
+
+it("managed selected body obtains its native reader once through exact EOF", async () => {
+  const t = await setup(); await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3)]);
+  const thread = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items[0]!;
+  const detail = await t.rpc.call("threads.get", { threadId: thread.id });
+  const raw = Buffer.from("From: sender@example.test\r\nContent-Type: text/plain\r\n\r\nExact reader").toString("base64url");
+  const native = Response.json({ id: "header", threadId: "header", raw });
+  const acquisition = vi.spyOn(native.body!, "getReader");
+  t.override((request) => new URL(request.url).pathname === "/3/gmail/messages/header" ? native : undefined);
+  await t.hydrate({ threadId: thread.id, messageId: detail.messages[0]!.id });
+  expect(t.backend.net.googlePending()).toBe(6);
+  expect(acquisition).toHaveBeenCalledTimes(1);
+});
+
+it("successive keyed bodies reuse the provider's stateless fatal UTF8 envelope decoder", async () => {
+  const t = await setup(); await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3), { ...header(3), providerMsgId: "header2", providerThreadId: "header2", rfcMessageId: "header2@example.test" }]);
+  const list = await t.rpc.call("threads.list", { view: "inbox", accountId: 3 });
+  const details = await Promise.all(list.items.map((row) => t.rpc.call("threads.get", { threadId: row.id })));
+  const NativeDecoder = globalThis.TextDecoder;
+  let fatalDecoders = 0;
+  globalThis.TextDecoder = class extends NativeDecoder { constructor(label?: string, options?: TextDecoderOptions) { super(label, options); if (options?.fatal) fatalDecoders++; } };
+  t.override((request) => {
+    const id = new URL(request.url).pathname.split("/").at(-1)!;
+    if (!["header", "header2"].includes(id)) return;
+    return Response.json({ id, threadId: id, raw: Buffer.from("From: sender@example.test\r\nContent-Type: text/plain\r\n\r\nExact bytes").toString("base64url") });
+  });
+  try {
+    await t.hydrate({ threadId: details[0]!.thread.id, messageId: details[0]!.messages[0]!.id });
+    const afterFirst = fatalDecoders;
+    await t.hydrate({ threadId: details[1]!.thread.id, messageId: details[1]!.messages[0]!.id });
+    expect(fatalDecoders).toBe(afterFirst);
+  } finally { globalThis.TextDecoder = NativeDecoder; }
+});
+
+
+it("a rejected fatal UTF8 envelope cannot poison the next keyed body's decoder or publish bytes", async () => {
+  const t = await setup(); await t.sixNativeBodies;
+  await t.backend.ingestSliced([header(3), { ...header(3), providerMsgId: "header2", providerThreadId: "header2", rfcMessageId: "header2@example.test" }]);
+  const rows = (await t.rpc.call("threads.list", { view: "inbox", accountId: 3 })).items;
+  const details = await Promise.all(rows.map((row) => t.rpc.call("threads.get", { threadId: row.id })));
+  const first = details.find((detail) => detail.messages[0]!.rfcMessageId === "header@example.test")!;
+  const next = details.find((detail) => detail.messages[0]!.rfcMessageId === "header2@example.test")!;
+  t.override((request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/3/gmail/messages/header") return new Response(new Uint8Array([0x7b, 0xc3, 0x28, 0x7d]));
+    if (path === "/3/gmail/messages/header2") return Response.json({ id: "header2", threadId: "header2", raw: Buffer.from("From: sender@example.test\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nExact café body").toString("base64url") });
+  });
+  await expect(t.hydrate({ threadId: first.thread.id, messageId: first.messages[0]!.id })).rejects.toBeInstanceOf(Error);
+  expect(await t.rpc.call("threads.get", { threadId: first.thread.id })).toEqual(first);
+  expect(await t.hydrate({ threadId: next.thread.id, messageId: next.messages[0]!.id })).toEqual({ changed: true });
+  expect((await t.rpc.call("threads.get", { threadId: next.thread.id })).messages[0]!.bodyText).toBe("Exact café body\n");
+  expect(t.backend.net.googlePending()).toBe(6);
+  expect(t.sourceClosed()).toBe(0);
+});
+
+for (const guard of ["retired", "auth", "quota", "policy"] as const) it(`capacity EOF before registration cannot bypass ${guard}`, async () => {
+  const t = await setup(true, "SQL", false, true, true);
+  await t.sixNativeBodies;
+  let refused!: () => void, deliver!: () => void, released!: () => void;
+  const refusal = new Promise<void>((resolve) => { refused = resolve; });
+  const delivery = new Promise<void>((resolve) => { deliver = resolve; });
+  const eof = new Promise<void>((resolve) => { released = resolve; });
+  t.onSyncFailure(async (id, error) => {
+    if (id !== 12) return;
+    expect(error).toMatchObject({ cooldown: { kind: "capacity" } });
+    refused(); await delivery;
+  });
+  const core = t.backend as unknown as { cooldownChanged(): void };
+  const changed = core.cooldownChanged.bind(core);
+  vi.spyOn(core, "cooldownChanged").mockImplementation(() => { changed(); if (t.backend.net.googlePending() === 61) released(); });
+  const calls = vi.spyOn(t.backend, "syncAccount");
+  const first = t.sync(12); await refusal;
+  let retirement: Promise<void> | undefined;
+  if (guard === "retired") retirement = t.backend.dropAccount(12);
+  else {
+    await t.backend.ingestSliced([header(12)]);
+    const row = (await t.rpc.call("threads.list", { view: "inbox", accountId: 12 })).items[0]!;
+    const detail = await t.rpc.call("threads.get", { threadId: row.id });
+    const status = guard === "auth" ? 401 : guard === "policy" ? 403 : 429;
+    t.override((request) => new URL(request.url).pathname === "/12/gmail/messages/header" ? Response.json({ error: { errors: [{ reason: guard === "policy" ? "accessNotConfigured" : "rateLimitExceeded" }] } }, { status, headers: { "retry-after": "120" } }) : undefined);
+    await expect(t.hydrate({ threadId: row.id, messageId: detail.messages[0]!.id })).rejects.toBeInstanceOf(Error);
+    if (guard === "auth") expect((await t.backend.store.accounts.get(12))!.syncState.authRequired).toBe(true);
+  }
+  t.bodies[0]!.finish(); await eof;
+  deliver(); await first; await retirement;
+  await t.rpc.call("app.bootstrap", {});
+  expect(calls.mock.calls.filter(([id]) => id === 12)).toHaveLength(1);
+  expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(0);
+  expect(t.backend.net.googlePending()).toBe(61);
 });

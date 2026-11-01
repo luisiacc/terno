@@ -492,6 +492,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
   let parser: Promise<typeof import("./mime")> | undefined;
+  let envelopeDecoder: InstanceType<typeof TextDecoder> | undefined;
 
   async function incomingResponse(response: Response, expectedId: string, deadline: RequestDeadline, preparation?: AbortSignal, admission?: MailAdmission): Promise<IncomingResource> {
     let body: IncomingBody | undefined;
@@ -509,7 +510,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       deadline.stopClock();
       preparation?.throwIfAborted();
       if (body.bytes <= 65536) {
-        const m = readMessage(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body.chunks[0])) as unknown, expectedId, true);
+        const m = readMessage(JSON.parse((envelopeDecoder ??= new TextDecoder("utf-8", { fatal: true })).decode(body.chunks[0])) as unknown, expectedId, true);
         await validateRaw(m.raw!);
         const bytes = fromBase64url(m.raw!);
         if (inlineCandidate(bytes)) {

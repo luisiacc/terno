@@ -275,7 +275,7 @@ export function createHandlers(b: Backend): Handlers {
 
     "reader.hydrate": async ({ threadId, messageId }, ctx) => {
       if (ctx.origin !== "renderer") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
-      return { changed: await b.hydrateBody(threadId, messageId) };
+      return b.hydrateBody(threadId, messageId);
     },
 
     "threads.get": async ({ threadId }) => {

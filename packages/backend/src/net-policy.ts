@@ -116,9 +116,9 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
   let backgroundPending = 0, foregroundPending = 0;
   const available = (admission?: RequestDescriptor["admission"]) => googlePending < 64 && (admission === "background" ? backgroundPending < 62 : admission ? foregroundPending < 2 : true);
   const availability = () => [available(), available("background"), available("reader")].join();
-  const physical = (request: Request, release: () => void) => (response: Response): Response => {
+  const physical = (request: Request, release: () => void, owned?: ReadableStreamDefaultReader<Uint8Array>) => (response: Response): Response => {
     if (!response.body) { release(); return response; }
-    const reader = response.body.getReader();
+    const reader = owned ?? response.body.getReader();
     let cancelled = false;
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -228,8 +228,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
                 throw error;
               });
             }, Date.now);
-            reader?.releaseLock();
-            return physical(request, release!)(response);
+            return physical(request, release!, reader)(response);
           } catch (error) {
             if (received) {
               if (reader) {
