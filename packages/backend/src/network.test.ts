@@ -247,3 +247,41 @@ describe("plan 20: the backend and the network", () => {
   });
 });
 
+
+describe("a connection back while the OS still says offline (2026-11)", () => {
+  it("a network change probes at once; the server answering brings the account, push and the network back", async () => {
+    const t = setup({ accounts: 1 });
+    await t.backend.start();
+    await expect.poll(() => t.providers.get(t.ids[0]!)?.syncs).toBe(1);
+    const [a] = t.ids as [number];
+    const p = t.providers.get(a)!;
+    p.up = false;
+    t.backend.networkChanged(false, "offline");
+    await expect.poll(() => t.state(a).status).toBe("offline");
+    expect(p.watching).toBe(0);
+    const before = p.syncs;
+    // a VPN comes up: routes and DNS change, but macOS keeps saying offline; the server is reachable again
+    p.up = true;
+    t.backend.networkChanged(false, "network");
+    // one probe within the settle (not at the 60 s offline cap of this rig), and its success proves the OS wrong
+    await expect.poll(() => p.syncs, { timeout: 2000 }).toBeGreaterThan(before);
+    await expect.poll(() => t.state(a).status, { timeout: 2000 }).toBe("idle");
+    await expect.poll(() => p.watching, { timeout: 2000 }).toBe(1);
+    expect(t.state(a).connection).toBeNull();
+  });
+});
+
+describe("ops through an outage (2026-11)", () => {
+  it("a retryable failure during an outage waits for the network with its attempt back; outside one it counts", async () => {
+    const { retryPark } = await import("./core");
+    const tls = new ProviderError("IMAP: certificate has expired", true);
+    // a VPN or captive portal breaking TLS, or a 5xx, while the account can't sync: never uses up a send
+    expect(retryPark(tls, undefined, true)).toEqual({ network: true, keepAttempt: true });
+    expect(retryPark(tls, undefined, false)).toBeUndefined();
+    // a server's own "later" and a Google pause keep their own timing
+    expect(retryPark(ProviderError.deferred("421 4.7.0 Try again later"), undefined, true)).toEqual({ deferred: true });
+    expect(retryPark(tls, 5_000, true)).toEqual({ retryAt: 5_000 });
+    // a permanent failure is never parked
+    expect(retryPark(new ProviderError("550 rejected", false), undefined, true)).toBeUndefined();
+  });
+});

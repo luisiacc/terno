@@ -1,7 +1,7 @@
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
-import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission } from "@terno/store";
+import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission, type OpPark } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
@@ -2051,8 +2051,7 @@ export class BackendCore {
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
         else {
           const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
-          // the server said "later" (SMTP 4xx, IMAP throttling): a day of retries, not eight in two minutes
-          state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryAt !== undefined ? { retryAt } : pe?.deferred ? { deferred: true } : undefined);
+          state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryPark(pe, retryAt, this.connectivity.inOutage(op.account_id)));
         }
         if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && (pe.i18n?.key === "errors.gmail.serviceDisabled" || pe.i18n?.key === "errors.gmail.permissionRequired" || pe.i18n?.key === "errors.gmail.adminPolicy")) {
           this.connectivity.succeeded(op.account_id);
@@ -2267,4 +2266,17 @@ const ROUTE_WORDS = new Set(["messages", "threads", "attachments", "drafts", "la
 export function requestShape(resource: string): string {
   const path = resource.replace(/^https?:\/\/[^/]+/, "").replace(/[?#].*$/, "");
   return path.split("/").map((part) => (part === "" || ROUTE_WORDS.has(part) ? part : ":id")).join("/");
+}
+
+/**
+ * How a retryable op failure waits: a Google pause until its time; a server that said "later" (SMTP 4xx,
+ * IMAP throttling) a day of retries; and during an outage (offline, the account's sync failing, a network
+ * that just changed) whatever went wrong, a VPN or proxy breaking TLS, a 5xx, waits for the network with its
+ * attempt given back, as a network error does. A day without a connection never uses up a send.
+ */
+export function retryPark(pe: ProviderError | null | undefined, retryAt: number | undefined, outage: boolean): OpPark | undefined {
+  if (retryAt !== undefined) return { retryAt };
+  if (pe?.deferred) return { deferred: true };
+  if (pe?.retryable && outage) return { network: true, keepAttempt: true };
+  return undefined;
 }

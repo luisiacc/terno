@@ -22,6 +22,8 @@ export const SETTLE_MS = 300;
 export const SYNC_JITTER_MS = 250;
 /** a window regaining focus retries offline accounts at most this often */
 export const FOCUS_RETRY_EVERY_MS = 15_000;
+/** offline, a network change probes at once, at most this often (a flapping network isn't a probe storm) */
+export const CHANGE_PROBE_EVERY_MS = 15_000;
 /** an op's network failure this soon after a network change is part of that change (its attempt given back) */
 export const CHANGE_WINDOW_MS = 60_000;
 
@@ -69,6 +71,7 @@ export class Connectivity {
   private settleReason: NetReason | null = null;
   private readonly jitters = new Set<Timer>();
   private lastFocusAt = Number.NEGATIVE_INFINITY;
+  private lastChangeProbeAt = Number.NEGATIVE_INFINITY;
   private stopped = false;
   private readonly now: () => number;
   private readonly random: () => number;
@@ -195,7 +198,16 @@ export class Connectivity {
       if (this.settleTimer) this.clearTimer(this.settleTimer);
       this.settleTimer = null;
       this.settleReason = null;
-      if (!this.online) return;
+      if (!this.online) {
+        // Still "offline", but the network changed (a Wi-Fi joined, a VPN up, a wake): the OS can be slow or
+        // wrong about offline, and a connection may be there now. One probe per account soon (a burst
+        // coalesces: each change pushes the same probe), not at the 5-minute cap; a failed one waits the cap.
+        if ((reason === "network" || reason === "wake") && this.now() - this.lastChangeProbeAt >= CHANGE_PROBE_EVERY_MS) {
+          this.lastChangeProbeAt = this.now();
+          for (const [id, a] of this.accounts) if (!a.signIn) this.schedule(id, a, this.settleMs + this.random() * SYNC_JITTER_MS);
+        }
+        return;
+      }
       this.online = false;
       this.lastChangeAt = this.now();
       // one probe per account at the cap, however soon its retry was (the OS can be wrong about offline)

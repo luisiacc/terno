@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Connectivity, FOCUS_RETRY_EVERY_MS, OFFLINE_RETRY_MS, RETRY_DELAYS_MS, SETTLE_MS, type NetReason } from "./connectivity";
+import { CHANGE_PROBE_EVERY_MS, Connectivity, FOCUS_RETRY_EVERY_MS, OFFLINE_RETRY_MS, RETRY_DELAYS_MS, SETTLE_MS, type NetReason } from "./connectivity";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -113,6 +113,61 @@ describe("Connectivity (plan 20)", () => {
     expect(reconnects).toEqual(["online"]);
     expect(c.online).toBe(true);
     expect(syncs.length).toBe(4);
+  });
+
+  it("still offline but the network changed (a VPN up, another Wi-Fi, a wake): one probe now, not at the cap", () => {
+    const { c, syncs, reconnects } = rig();
+    for (const id of [1, 2]) c.track(id);
+    c.network(false, "offline");
+    vi.advanceTimersByTime(60_000);
+    expect(syncs).toEqual([]);
+    // the OS still says offline, but routes and DNS just changed: a burst of three events
+    for (let i = 0; i < 3; i++) { c.network(false, "network"); vi.advanceTimersByTime(50); }
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(syncs.map((s) => s.id).sort()).toEqual([1, 2]);
+    expect(reconnects).toEqual([]);
+    // those probes failed: back to the cap, nothing sooner (no spin on a network that changes but stays down)
+    vi.advanceTimersByTime(OFFLINE_RETRY_MS * 0.8 - 1000);
+    expect(syncs.length).toBe(2);
+    c.network(false, "wake");
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(syncs.length).toBe(4);
+  });
+
+  it("a network flapping while offline probes at most every 15 s, not on every change (Codex review)", () => {
+    const { c, syncs } = rig();
+    c.track(1);
+    c.network(false, "offline");
+    // a change every 750 ms for a minute
+    for (let i = 0; i < 80; i++) { c.network(false, "network"); vi.advanceTimersByTime(750); }
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(syncs.length).toBeGreaterThanOrEqual(1);
+    expect(syncs.length).toBeLessThanOrEqual(Math.ceil(60_000 / CHANGE_PROBE_EVERY_MS) + 1);
+  });
+
+  it("a day offline: a probe every 5 min at most, one timer an account, and the first online event syncs at once", () => {
+    const { c, syncs, reconnects } = rig();
+    for (const id of [1, 2]) c.track(id);
+    c.network(false, "offline");
+    let maxTimers = 0;
+    for (let minute = 0; minute < 24 * 60; minute++) {
+      vi.advanceTimersByTime(60_000);
+      maxTimers = Math.max(maxTimers, vi.getTimerCount());
+    }
+    // 24 h / ≥ 4 min (the cap, -20 % jitter) per account, and never a gap past the cap (+20 %): it keeps looking
+    for (const id of [1, 2]) {
+      const at = syncs.filter((x) => x.id === id).map((x) => x.at);
+      expect(at.length).toBeLessThanOrEqual(24 * 60 / 4);
+      const gaps = at.slice(1).map((t, i) => t - at[i]!);
+      expect(Math.max(...gaps)).toBeLessThanOrEqual(OFFLINE_RETRY_MS * 1.2 + 1);
+      expect(24 * 3_600_000 - at.at(-1)!).toBeLessThanOrEqual(OFFLINE_RETRY_MS * 1.2 + 60_000);
+    }
+    expect(maxTimers).toBeLessThanOrEqual(2);
+    const before = syncs.length;
+    c.network(true, "online");
+    vi.advanceTimersByTime(SETTLE_MS + 250);
+    expect(reconnects).toEqual(["online"]);
+    expect(syncs.length).toBe(before + 2);
   });
 
   it("offline right after an online event: the settle is cancelled (no reconnect on a dead network)", () => {

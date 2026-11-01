@@ -330,3 +330,17 @@ Before the code review:
 
 - The design checks caught the retry button dimmed with `opacity` (the contrast rule). It now uses the muted token.
 - The e2e caught the Settings button's focus tooltip covering the pill after Settings closes. The test now uses the keyboard; the overlap is ordinary tooltip behaviour.
+
+## Audit: any connection back means sync resumes (2026-11-01)
+
+Asked: for the first sync and the regular poll, consider a day without internet, DNS changes and VPNs, so that whenever a connection is available syncing starts again.
+
+What already held (checked, unchanged): retries cap at 5 minutes (2 s … 5 min, ±20 %), so a day offline is a probe per account every ~5 min and nothing else (push stopped, the worker paused, one timer per account); macOS `scutil` reports route, address and DNS changes (VPNs, utun, Wi-Fi) and `powerMonitor` wakes, each resetting every socket and HTTP pool and syncing every account at once; the watcher restarts itself, and without it the 5-minute probe still finds the network; no DNS answer is cached (each connection resolves anew); a pass that failed because of a reconnect doesn't count; the 2-minute poll retries accounts in error; a refresh token exchange that can't reach Google is a network failure, never "sign in again"; a probe that works while the OS says offline turns the network back on.
+
+Fixed:
+- **A change while the OS still said offline waited for the 5-minute probe.** A VPN up, another Wi-Fi or a wake reported as offline (macOS can lag or be wrong) was ignored. Now it probes every account at once, at most every 15 s (`CHANGE_PROBE_EVERY_MS`: a flapping network isn't a probe storm); a failed probe waits the cap again.
+- **An op failing retryably during an outage spent its attempts.** Only network-classified errors gave the attempt back; a VPN or proxy breaking TLS, or a 5xx while the account can't sync, used up eight tries in about two minutes and failed the action. Now any retryable failure during an outage (offline, the account's sync failing, a network that just changed) waits for the network with its attempt back (`retryPark`); it resumes on the next successful sync or reconnect.
+
+Codex review: a flapping network made a probe every change (rate-limited now); the day-offline test only bounded probes (it now also bounds the gap between them); and a backend test drives the whole chain: offline, a network change, the server answering, the account syncing and push watching again. Each fails without its fix.
+
+Not changed: with no OS event at all (the router's uplink returns), the bound is the 5-minute cap.
