@@ -146,25 +146,20 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     if (firsts.get(JSON.stringify(place)) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
     if (at.places) {
       // the folder's places by a live walk of its index kept between slices (as carryFolder's), each slice its next
-      // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). `after`: how many
-      // the walk has looked at; one lost (a reload, many counts at once) is walked again past those, once. A place
+      // `budget` (Codex code review round 5 #4: each slice walked and sorted the whole mailbox). Each count has a walk of
+      // its own (`walk`, given back in the cursor): counts of one mailbox keyed by its folders and position took each
+      // other's, and the next replayed every place passed (Codex code review round 17 #3). `after`: how many the walk has
+      // looked at; one lost (a reload, many counts at once) passes those again a slice at a time, counting none. A place
       // updated after the walk passed it is met again (an update moves its key to the end of the live index), so the
       // walk keeps which messages it counted, the folder's ids at most (Codex code review round 12 #1)
       const seen = at.after[0] ?? 0;
-      const token = `${accountId}\u0000${JSON.stringify(places)}\u0000${at.key}`;
+      const id = at.walk ?? ++countWalkIds.last;
+      const token = `${id}\u0000${at.key}`;
       let walks = countWalks.get(c);
       if (!walks) countWalks.set(c, (walks = new Map()));
-      let walk = walks.get(`${token}\u0000${seen}`);
-      walks.delete(`${token}\u0000${seen}`);
-      if (!walk) {
-        walk = { keys: locations.keysBy("mailbox", accountId, key), visited: new Set() };
-        for (let i = 0; i < seen; i++) {
-          const k = walk.keys.next();
-          if (k.done) break;
-          const l = locations.rows.get(k.value);
-          if (l) walk.visited.add(l.message_id as number);
-        }
-      }
+      let walk = walks.get(token);
+      walks.delete(token);
+      if (!walk) walk = { keys: locations.keysBy("mailbox", accountId, key), visited: new Set(), looked: 0 };
       const asked = budget;
       let n = 0;
       let ended = false;
@@ -172,18 +167,20 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
         const k = walk.keys.next();
         if (k.done) { ended = true; break; }
         n++;
+        // passed again after the walk was lost: counted before
+        const again = walk.looked++ < seen;
         const l = locations.rows.get(k.value);
         if (!l || walk.visited.has(l.message_id as number)) continue;
         walk.visited.add(l.message_id as number);
-        if (firstPlace(l.message_id as number) === at.key) messages++;
+        if (!again && firstPlace(l.message_id as number) === at.key) messages++;
       }
       budget -= Math.max(1, n);
       if (ended) at = { key: at.key, places: false, after: [] };
       else {
-        // a few kept (counts left unfinished let theirs go)
+        // a few kept, the least recently used let go (counts left unfinished let theirs go)
         if (walks.size >= 16) walks.delete(walks.keys().next().value!);
-        walks.set(`${token}\u0000${seen + n}`, walk);
-        at = { key: at.key, places: true, after: [seen + n] };
+        walks.set(token, walk);
+        at = { key: at.key, places: true, after: [Math.max(seen, walk.looked)], walk: id };
       }
       continue;
     }
@@ -215,8 +212,10 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
   return { messages, next: null };
 }
 
-/** a count's walks of a folder's places, per store, by the count's folders, the folder and how far it has looked */
-const countWalks = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; visited: Set<number> }>>();
+/** a count's walks of a folder's places, per store, by the count's walk and the folder (exported for tests) */
+export const countWalks = new WeakMap<Ctx, Map<string, { keys: Iterator<Key>; visited: Set<number>; looked: number }>>();
+/** the last walk id given (an object property: a module `let` read then reset miscompiles under the React Compiler) */
+const countWalkIds = { last: 0 };
 
 export function isFolder(c: Ctx, accountId: number, key: string): boolean {
   return T(c, "folders").has(accountId, key);

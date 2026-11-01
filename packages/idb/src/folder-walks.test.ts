@@ -2,8 +2,8 @@ import "fake-indexeddb/auto";
 import type { FolderCountCursor, FolderExportCursor, Platform } from "@terno/store";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { exportIds } from "./folder-export";
-import { countFolderMessages } from "./folders";
-import type { Ctx } from "./mail";
+import { countFolderMessages, countWalks } from "./folders";
+import { T, type Ctx } from "./mail";
 import { IdbMailStore } from "./store";
 
 /**
@@ -115,4 +115,62 @@ it("an export of a folder whose members are read over runs takes a thread update
   }
   expect(ids.length).toBe(N);
   expect(new Set(ids).size).toBe(N);
+});
+
+it("two counts of one mailbox interleaved each walk their own places, every slice within its limit; a walk lost is found again a slice at a time (Codex code review round 17 #3)", () => {
+  const N = 5000;
+  c.db.tx(() => {
+    c.db.table("folders").put({ account_id: account, key: "Work", path_json: '["Work"]', selectable: 1, position: 0 });
+    for (let i = 1; i <= N; i++) {
+      c.db.table("threads").put({ id: i, account_id: account, last_date: i, message_count: 1, unread_count: 0 });
+      c.db.table("messages").put(message(i, i, { gmail_labels: null }));
+      c.db.table("message_locations").put({ message_id: i, account_id: account, mailbox: "Work", uidvalidity: 1, uid: i, flags: "[]" });
+    }
+  });
+  // the places a slice walks
+  const locations = T(c, "message_locations");
+  const keysBy = locations.keysBy.bind(locations);
+  let visits = 0;
+  locations.keysBy = (...a: Parameters<typeof keysBy>) => {
+    const keys = keysBy(...a);
+    return { next: () => { visits++; return keys.next(); }, [Symbol.iterator]() { return this; } } as ReturnType<typeof keysBy>;
+  };
+  const LIMIT = 500;
+  const slice = (at: FolderCountCursor | null) => {
+    visits = 0;
+    const r = countFolderMessages(c, account, ["Work"], at, LIMIT);
+    expect(visits).toBeLessThanOrEqual(LIMIT + 1);
+    return r;
+  };
+  try {
+    // two windows counting the same mailbox, a slice each in turn
+    const counts = [{ at: null as FolderCountCursor | null, messages: 0, done: false }, { at: null as FolderCountCursor | null, messages: 0, done: false }];
+    for (let turn = 0; counts.some((x) => !x.done); turn++) {
+      const x = counts[turn % 2]!;
+      if (x.done) continue;
+      const r = slice(x.at);
+      x.messages += r.messages;
+      if (r.next) x.at = r.next;
+      else x.done = true;
+    }
+    expect(counts.map((x) => x.messages)).toEqual([N, N]);
+    // a count whose walk was let go (the store reopened): what it had counted is passed again a slice at a time
+    let messages = 0;
+    let at: FolderCountCursor | null = null;
+    for (let i = 0; i < 4; i++) {
+      const r = slice(at);
+      messages += r.messages;
+      at = r.next;
+    }
+    (countWalks as WeakMap<Ctx, Map<string, unknown>>).get(c)?.clear();
+    for (let slices = 0; at; slices++) {
+      const r = slice(at);
+      messages += r.messages;
+      at = r.next;
+      expect(slices).toBeLessThan(30);
+    }
+    expect(messages).toBe(N);
+  } finally {
+    locations.keysBy = keysBy;
+  }
 });

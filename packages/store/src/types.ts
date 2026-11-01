@@ -404,6 +404,8 @@ export interface FolderCountCursor {
   key: number;
   places: boolean;
   after: number[];
+  /** the count's own walk of the places, where the store keeps one between slices (Codex code review round 17 #3) */
+  walk?: number;
 }
 
 /** Plan 107: a message as the .mbox export writes it, from this computer's copy */
