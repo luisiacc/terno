@@ -764,7 +764,7 @@ const es = {
   "design.atelier": "Atelier",
   "design.lumen": "Lumen",
   "design.macos.description": "Como Mail de Apple: compacto, con la fuente del sistema.",
-  "design.atelier.description": "Editorial: títulos con serifa, tinta y papel.",
+  "design.atelier.description": "Editorial: tinta y papel, letra recta y sencilla.",
   "design.lumen.description": "Cálido y centrado en las personas: avatares grandes, filtros a la mano.",
   "sidebar.alreadyHere": "Ya está aquí",
   "sidebar.accounts": "Cuentas",

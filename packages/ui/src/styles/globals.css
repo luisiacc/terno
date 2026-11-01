@@ -11,7 +11,6 @@
 /* plan 15: the designs' faces, bundled (never fetched from a font service); a face downloads only once text uses it */
 @import "@fontsource-variable/figtree";
 @import "@fontsource-variable/instrument-sans";
-@import "@fontsource/instrument-serif/400.css";
 /* every theme's token values (generated from src/themes/registry.ts) */
 @import "./themes.generated.css";
 /* every design's type, shape and density (generated from src/designs/*.ts) */

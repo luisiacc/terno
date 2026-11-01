@@ -772,7 +772,7 @@ const en = {
   "design.atelier": "Atelier",
   "design.lumen": "Lumen",
   "design.macos.description": "Like Apple Mail: compact, in the system font.",
-  "design.atelier.description": "Editorial: serif titles, ink and paper.",
+  "design.atelier.description": "Editorial: ink and paper, plain upright type.",
   "design.lumen.description": "Warm and people-first: big avatars, filters at hand.",
   "sidebar.alreadyHere": "Already here",
   "sidebar.accounts": "Accounts",
