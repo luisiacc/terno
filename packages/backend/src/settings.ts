@@ -339,10 +339,11 @@ export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFo
 
 /**
  * Plan 107: favorites follow an account's folders: `renamed` keys move (an IMAP rename gives a folder a new key), and
- * the `deleted` ones go, or all of a removed account's (`deleted: "all"`). Nothing is written when none is touched.
+ * the `deleted` ones go, or all of a removed account's (`deleted: "all"`). Nothing is written when none is touched
+ * (null).
  */
-export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all" }): Promise<FavoriteFolder[]> {
-  return store.settings.update<StoredSettings, FavoriteFolder[]>("app", {}, (raw) => {
+export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all" }): Promise<FavoriteFolder[] | null> {
+  return store.settings.update<StoredSettings, FavoriteFolder[] | null>("app", {}, (raw) => {
     const s = migrate(raw);
     const list = s.favoriteFolders ?? [];
     const moved = new Map(change.renamed?.map((m) => [m.from, m.to]));
@@ -358,7 +359,7 @@ export async function followFavoriteFolders(store: SettingsStore, accountId: num
       const renamed = { ...f, folder: to };
       if (!next.some((n) => sameFavorite(n, renamed))) next.push(renamed);
     }
-    return touched ? { value: { ...s, favoriteFolders: next }, result: next } : { value: s, result: list };
+    return touched ? { value: { ...s, favoriteFolders: next }, result: next } : { value: s, result: null };
   });
 }
 

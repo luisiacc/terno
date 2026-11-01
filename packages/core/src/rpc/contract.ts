@@ -1072,6 +1072,8 @@ export interface Events {
   folders: Folder[];
   /** plan 107: sent right before the `folders` its change produced: where a renamed folder went (the view and favorites follow) */
   foldersRenamed: FolderRename[];
+  /** plan 107: the favorites below Starred, as the backend now keeps them, whenever it changed them (every window follows) */
+  favoriteFolders: FavoriteFolder[];
   op: OpInfo;
   recipientReceiptRetired: { opId: string };
   owner: OwnerIdentity | null;

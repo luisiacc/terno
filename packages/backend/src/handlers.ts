@@ -985,10 +985,13 @@ export function createHandlers(b: Backend): Handlers {
       // plan 22: its photo lists and photos go with it
       await setGooglePhotoState(store, id, null);
       await b.icons.dropPhotos(id);
-      // plan 107: and its favorite folders
-      await b.withFolderList(id, () => followFavoriteFolders(store, id, { deleted: "all" }));
-      // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
-      await store.accounts.remove(id);
+      // plan 107: and its favorite folders, in the one turn of its folder list with the account row (Codex code review
+      // round 11 #3: a favorite waiting for the list found the account still there and was written after the cleanup)
+      await b.withFolderList(id, async () => {
+        await b.writeFavorites(() => followFavoriteFolders(store, id, { deleted: "all" }));
+        // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
+        await store.accounts.remove(id);
+      });
       b.accountRemoved(id);
       forgetSignInVersion(b, id);
       // nobody from a removed account lingers in suggestions

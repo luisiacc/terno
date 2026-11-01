@@ -786,6 +786,90 @@ it("a favorite checked against the list before a rename is never written back af
   expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
 });
 
+it("a favorite on one account never drops another account's favorite that a rename just moved (Codex code review round 11 #1)", async () => {
+  const t = await setup(["Work"]);
+  // a second account (the same server's mailboxes) whose Work is a favorite
+  const other = await t.client.call("accounts.addImap", {
+    email: "other@example.test", displayName: "Other",
+    imap: { host: "127.0.0.1", port: (await t.backend.store.accounts.config<{ imap: { port: number } }>(t.account.id))!.config.imap.port, secure: false, user: "testuser" },
+    smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" }, password: "testpass", verify: false,
+  });
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.syncAccount(other.id);
+  await t.client.call("folders.favorite", { accountId: other.id, folder: "Work", view: null, on: true });
+  const change = t.hold("rename");
+  const renaming = t.client.call("folders.rename", { accountId: other.id, key: "Work", name: "Job" });
+  await change.started;
+  // the first account's favorite reads the lists (the other's Work still there), then is slow to go on: the other's
+  // rename (its own folder list's turn) gets every chance to finish
+  const list = t.backend.store.folders.list.bind(t.backend.store.folders);
+  const slow = vi.spyOn(t.backend.store.folders, "list").mockImplementationOnce(async () => {
+    const before = await list();
+    change.release();
+    await Promise.race([renaming, new Promise((r) => setTimeout(r, 200))]);
+    return before;
+  });
+  try {
+    await t.client.call("folders.favorite", { accountId: t.account.id, folder: null, view: "inbox", on: true });
+    await renaming;
+  } finally {
+    slow.mockRestore();
+  }
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: other.id, folder: "Job", view: null }, { accountId: t.account.id, folder: null, view: "inbox" }]);
+});
+
+it("every window hears the favorites the backend kept: a delete that fails midway still drops what went (Codex code review round 11 #2)", async () => {
+  const t = await setup(["Work", "Work/Sub"]);
+  await t.backend.syncAccount(t.account.id);
+  // another window, which made none of these changes
+  const [c, s] = createMemoryTransportPair();
+  t.backend.connect(s, { clientId: "p107-other", origin: "renderer" });
+  const window2 = new RpcClient(c);
+  const heard: unknown[] = [];
+  window2.on("favoriteFolders", (f) => heard.push(f));
+  try {
+    await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+    await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work/Sub", view: null, on: true });
+    const original = ImapFlow.prototype.mailboxDelete;
+    // Work/Sub goes, then the server refuses Work
+    const refused = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+      if (args[0] === "Work") throw Object.assign(new Error("Command failed"), { responseStatus: "NO", responseText: "Not now" });
+      return original.apply(this, args);
+    });
+    try {
+      await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Work" })).rejects.toMatchObject({ i18n: { key: "errors.folder.partialDelete" } });
+    } finally {
+      refused.mockRestore();
+    }
+    await new Promise((r) => setTimeout(r, 10));
+    const work = { accountId: t.account.id, folder: "Work", view: null };
+    expect(heard).toEqual([[work], [work, { accountId: t.account.id, folder: "Work/Sub", view: null }], [work]]);
+    expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([work]);
+  } finally {
+    window2.close();
+  }
+});
+
+it("a favorite waiting while its account is removed is never saved after the removal's cleanup (Codex code review round 11 #3)", async () => {
+  const t = await setup(["Work"]);
+  await t.backend.syncAccount(t.account.id);
+  // the account's row goes slowly: a favorite asked for meanwhile gets every chance to land
+  const remove = t.backend.store.accounts.remove.bind(t.backend.store.accounts);
+  const asked: { favorite?: Promise<unknown> } = {};
+  const slow = vi.spyOn(t.backend.store.accounts, "remove").mockImplementationOnce(async (id: number) => {
+    asked.favorite = t.client.call("folders.favorite", { accountId: t.account.id, folder: null, view: "inbox", on: true }).catch((e: unknown) => e);
+    await Promise.race([asked.favorite, new Promise((r) => setTimeout(r, 200))]);
+    return remove(id);
+  });
+  try {
+    await t.client.call("accounts.remove", { id: t.account.id });
+  } finally {
+    slow.mockRestore();
+  }
+  expect(((await asked.favorite) as { code?: string }).code).toBe("NOT_FOUND");
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([]);
+});
+
 it("favorites whose folders went in another app don't count toward the limit (Codex code review #8)", async () => {
   const names = Array.from({ length: FAVORITES_MAX }, (_, i) => `F${i}`);
   const t = await setup(names);

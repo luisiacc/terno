@@ -139,7 +139,7 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   }
   const { editing, done } = useFolderEdit.getState();
   const moved = (accountId: number, key: string) => renamed.find((r) => r.accountId === accountId && r.from === key)?.to ?? key;
-  // the backend rewrote its favorites the same way; this window's copy follows (no settings event comes)
+  // the backend rewrote its favorites the same way; this window's copy follows at once (its `favoriteFolders` comes after)
   const favorites = s.settings?.favoriteFolders;
   if (favorites?.some((f) => f.folder !== null && moved(f.accountId, f.folder) !== f.folder)) {
     setApp((st) => (st.settings ? { settings: { ...st.settings, favoriteFolders: favorites.map((f) => (f.folder === null ? f : { ...f, folder: moved(f.accountId, f.folder) })) } } : {}));
@@ -149,7 +149,15 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   if (done) useFolderEdit.setState({ done: { ...done, key: moved(done.accountId, done.key) } });
 }
 
-/** A delete's folders leave this window's favorites too (Codex code review round 2 #11: no settings event comes). */
+/**
+ * The favorites as the backend now keeps them (Codex code review round 11 #2): what a delete that failed midway took
+ * with it, and what another window changed, reach this one too.
+ */
+export function applyFavoriteFolders(favoriteFolders: FavoriteFolder[]): void {
+  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders } } : {}));
+}
+
+/** A delete's folders leave this window's favorites too at once (Codex code review round 2 #11), before the backend's `favoriteFolders`. */
 export function dropFavorites(accountId: number, keys: readonly string[]): void {
   const gone = new Set(keys);
   setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: s.settings.favoriteFolders.filter((f) => f.accountId !== accountId || f.folder === null || !gone.has(f.folder)) } } : {}));

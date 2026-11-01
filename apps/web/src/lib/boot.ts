@@ -22,7 +22,7 @@ import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { withPendingEdits } from "~/lib/accounts";
-import { applyFolderRenames } from "~/lib/folders";
+import { applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
@@ -101,6 +101,8 @@ export async function boot(): Promise<void> {
     // plan 107: a rename's mapping first, so the list you're in follows it before the new catalog lands
     client.on("foldersRenamed", (renamed) => applyFolderRenames(renamed));
     client.on("folders", (folders) => setFolders(folders));
+    // the backend's favorites whenever it changed them (a partial delete, another window)
+    client.on("favoriteFolders", applyFavoriteFolders);
     // plan 87: the reminders (bells, the sidebar's count, the Inbox's top); a failure leaves the Inbox as it is
     client.on("reminders", applyReminders);
     // before the first list, so the Inbox opens with its due ones on top (one local call)

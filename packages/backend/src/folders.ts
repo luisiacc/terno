@@ -112,7 +112,7 @@ async function change<R extends FolderChange>(
       if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
       b.notifyChanged(stored.touched);
       void b.rebuildFolders();
-      if (renamed.length || deleted.length) await followFavoriteFolders(b.store, accountId, { renamed, deleted });
+      if (renamed.length || deleted.length) await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted }));
     });
     resync();
     if (result.partial) throw folderError(b, result.partial);
@@ -169,13 +169,13 @@ export function favoriteFolder(b: Backend, target: FavoriteFolder, on: boolean):
 
 async function favoriteAlone(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
   if (!(await b.store.accounts.get(target.accountId))) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-  if (on && target.folder !== null && !(await accountFolders(b, target.accountId)).some((f) => f.key === target.folder)) throw new RpcError("BAD_REQUEST", L("errors.folder.favoriteUnknown"));
-  const [accounts, folders] = await Promise.all([b.store.accounts.list(), b.store.folders.list()]);
-  const ids = new Set(accounts.map((a) => a.id));
-  const keys = new Set(folders.map((f) => `${f.accountId}\n${f.key}`));
-  const live = (f: FavoriteFolder) => ids.has(f.accountId) && (f.folder === null || keys.has(`${f.accountId}\n${f.folder}`));
+  const keys = new Set((await accountFolders(b, target.accountId)).map((f) => f.key));
+  if (on && target.folder !== null && !keys.has(target.folder)) throw new RpcError("BAD_REQUEST", L("errors.folder.favoriteUnknown"));
+  // only this account's are judged: its list is the one held still; another account's may be changing meanwhile
+  // (Codex code review round 11 #1: a snapshot of every account's pruned a favorite another's rename had just moved)
+  const live = (f: FavoriteFolder) => f.accountId !== target.accountId || f.folder === null || keys.has(f.folder);
   try {
-    return await setFavoriteFolder(b.store, target, on, live);
+    return await b.writeFavorites(() => setFavoriteFolder(b.store, target, on, live));
   } catch (error) {
     if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message, undefined, { i18n: error.i18n });
     throw error;

@@ -2,15 +2,25 @@
  * Plan 107: what the folder name field says before asking the server, the folders a name sits beside, and a
  * rename's mapping applied before the new catalog (the list you're in, favorites and the field follow it).
  */
+import { readFileSync } from "node:fs";
 import type { Folder } from "@terno/core";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.hoisted(() => {
+  // the page module reads the appearance at import (a document, a window and its media queries)
+  const html = { classList: { contains: () => false, toggle() {} }, dataset: {}, setAttribute() {}, removeAttribute() {}, style: { setProperty() {}, removeProperty() {} } };
+  const g = globalThis as Record<string, unknown>;
+  g.document = { documentElement: html, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, head: { appendChild() {} }, createElement: () => ({}) };
+  g.window = globalThis;
+  g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  g.requestAnimationFrame = () => 0;
+});
 vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}), on: () => () => {} } }));
-(globalThis as Record<string, unknown>).localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
-const { applyFolderRenames, nameProblem, siblingsOf, startCreate, startRename, stopEditing, useFolderEdit } = await import("./folders");
+const { applyFavoriteFolders, applyFolderRenames, nameProblem, siblingsOf, startCreate, startRename, stopEditing, useFolderEdit } = await import("./folders");
 const { useOpenAccount } = await import("./account-folders");
 const { getApp, setApp } = await import("~/state/app");
 
@@ -64,6 +74,18 @@ describe("applyFolderRenames", () => {
     applyFolderRenames([{ accountId: 1, from: "Label_1", to: "Label_1" }, { accountId: 1, from: "Work", to: "Other" }]);
     expect(getApp().folder).toBe("Work");
     expect(getApp().settings).toBe(before);
+  });
+});
+
+describe("the backend's favorites (Codex code review round 11 #2)", () => {
+  it("every window takes the list the backend announces: a delete that failed midway, or one made in another window", () => {
+    setApp({ settings: { favoriteFolders: [{ accountId: 2, folder: "Work/Sub", view: null }, { accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }] } as never });
+    applyFavoriteFolders([{ accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }]);
+    expect(getApp().settings!.favoriteFolders).toEqual([{ accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }]);
+  });
+  it("boot listens for it", () => {
+    const boot = readFileSync(new URL("./boot.ts", import.meta.url), "utf8");
+    expect(boot).toContain('client.on("favoriteFolders", applyFavoriteFolders)');
   });
 });
 

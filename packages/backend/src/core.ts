@@ -5,7 +5,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -194,6 +194,7 @@ export class BackendCore {
   private readonly folderChanges = new Map<number, Promise<void>>();
   /** plan 107 (Codex code review round 10 #4): an account's folder list and the favorites that follow it, written one at a time */
   private readonly folderLists = new Map<number, Promise<unknown>>();
+  private favoriteWrites: Promise<unknown> = Promise.resolve();
   /** plan 107: what talks to an account's provider now (sync passes, ops, body reads, copy repairs): a folder change waits for it */
   private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
   private readonly capacitySync = new Set<number>();
@@ -1641,7 +1642,7 @@ export class BackendCore {
             this.server.emit("folders", await this.store.folders.list());
             this.notifyChanged(r.touched);
             void this.rebuildFolders();
-            if (moves.length) await this.accountWrite(life, () => followFavoriteFolders(this.store, accountId, { renamed: moves }));
+            if (moves.length) await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves })));
           });
         },
       };
@@ -1818,6 +1819,22 @@ export class BackendCore {
     } finally {
       if (this.folderLists.get(accountId) === settled) this.folderLists.delete(accountId);
     }
+  }
+
+  /**
+   * Plan 107 (Codex code review round 11 #2): the favorites written one at a time, each write announced
+   * (`favoriteFolders`) before the next: every window keeps the backend's list, a partial delete's or another
+   * window's change included, and never an older one after a newer. `write` answers null when it changed nothing.
+   */
+  async writeFavorites<T extends FavoriteFolder[] | null>(write: () => Promise<T>): Promise<T> {
+    const mine = (async () => {
+      await this.favoriteWrites;
+      const next = await write();
+      if (next) this.server.emit("favoriteFolders", next);
+      return next;
+    })();
+    this.favoriteWrites = mine.catch(() => {});
+    return mine;
   }
 
   /**
