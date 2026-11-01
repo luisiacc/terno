@@ -27,7 +27,7 @@ export const macos: DesignDefinition = {
     listSubtitle: { family: "sans", size: "0.6875rem", leading: "1.25", weight: 400, strong: 500, tracking: "0em", style: "normal" },
     sectionLabel: { family: "sans", size: "0.6875rem", leading: "0.875rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
     nav: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
-    rowFrom: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 600, tracking: "0em", style: "normal" },
+    rowFrom: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 600, strong: 600, tracking: "0em", style: "normal" },
     rowSubject: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
     rowSnippet: { family: "sans", size: "0.8125rem", leading: "1.125rem", weight: 400, strong: 400, tracking: "0em", style: "normal" },
     readerSubject: { family: "sans", size: "1.25rem", leading: "1.625rem", weight: 600, strong: 600, tracking: "-0.018em", style: "normal" },
