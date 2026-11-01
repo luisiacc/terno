@@ -500,7 +500,10 @@ const folderKey = z.string().min(1).max(1000);
 const folderName = z.string().trim().min(1).max(FOLDER_NAME_MAX);
 /** plan 107: an account's own folder (`folder`) or one of its standard rows (`view`), exactly one */
 const folderTarget = z.object({ accountId: id, folder: folderKey.nullable(), view: z.enum(FOLDER_VIEWS).nullable() });
-const oneTarget = (f: { folder: string | null; view: string | null }) => (f.folder === null) !== (f.view === null);
+/** exactly one of the two (said in the user's language when it's checked, like tabScope) */
+const oneTarget = (f: { folder: string | null; view: string | null }, ctx: z.RefinementCtx) => {
+  if ((f.folder === null) === (f.view === null)) ctx.addIssue({ code: "custom", path: ["folder"], message: t("errors.folder.target") });
+};
 /** A folder is an account's, alone: no category or review with it, its view "all" (no trash, no spam) */
 const folderScope = <T extends { view?: string; accountId?: number; categoryId?: number; folder?: string }>(p: T, ctx: z.RefinementCtx) => {
   if (p.folder === undefined) return;
@@ -974,14 +977,14 @@ export const contract = {
   /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
   "folders.count": m<{ messages: number; folders: number }>()(z.object({ accountId: id, key: folderKey })),
   /** Plan 107: a folder (or a standard row) below Starred, or not: the list kept, with its revision (as `favoriteFolders`) */
-  "folders.favorite": m<FavoriteFoldersSnapshot>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: t("errors.folder.target") })),
+  "folders.favorite": m<FavoriteFoldersSnapshot>()(folderTarget.extend({ on: z.boolean() }).superRefine(oneTarget)),
   /**
    * Plan 107: an .mbox of a folder's messages from this computer's copy, as a session: `start` fixes the messages
    * (by date, then id) and says how many; each `next` gives the following text (bounded by size and time), until
    * `done`; `cancel` ends it early. A session idle for a minute ends by itself.
    */
   // `requestId`: the renderer's own, so a cancel while it starts (no exportId yet) stops it (Codex code review round 14 #3)
-  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.extend({ requestId: z.string().min(1).max(100).optional() }).refine(oneTarget, { message: t("errors.folder.target") })),
+  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.extend({ requestId: z.string().min(1).max(100).optional() }).superRefine(oneTarget)),
   "folders.exportNext": m<{ text: string; done: number; total: number; finished: boolean; missingAttachments: number; partialBodies: number }>()(z.object({ exportId: z.string().min(1).max(100) }), { timeoutMs: 60_000 }),
   // a session's exportId, or a start's requestId while it starts
   "folders.exportCancel": m<{ ok: true }>()(z.object({ exportId: z.string().min(1).max(100) })),
