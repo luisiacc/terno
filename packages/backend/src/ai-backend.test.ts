@@ -141,6 +141,39 @@ describe("settings: providers and profiles", () => {
     }
   });
 
+  it("plan 97, Codex review R1: what local mode blocked is cleared whatever its kind (a remote Ollama, LM Studio or custom endpoint); loopback stays", async () => {
+    const { backend, client } = setup();
+    const blocked = [
+      { provider: "ollama" as const, profiles: { ollama: { model: "m", baseURL: "http://192.168.1.20:11434/v1" } } },
+      { provider: "lmstudio" as const, profiles: { lmstudio: { model: "m", baseURL: "http://gpu-box.lan:1234/v1" } } },
+      { provider: "compatible" as const, profiles: { compatible: { model: "m", preset: "custom" as const, baseURL: "https://llm.example.com/v1" } } },
+    ];
+    for (const ai of blocked) {
+      setSetting(sqlDb(backend.store), "app", { localMode: true, aiCategorize: true, ai });
+      const s = (await client.call("app.bootstrap", {})).settings;
+      expect(s.ai.provider, ai.provider).toBe("none");
+      expect(s.aiCategorize).toBe(false);
+    }
+    const allowed = [
+      { provider: "ollama" as const, profiles: { ollama: { model: "m" } } },
+      { provider: "lmstudio" as const, profiles: { lmstudio: { model: "m", baseURL: "http://localhost:1234/v1" } } },
+      { provider: "compatible" as const, profiles: { compatible: { model: "m", preset: "custom" as const, baseURL: "http://127.0.0.1:8080/v1" } } },
+    ];
+    for (const ai of allowed) {
+      setSetting(sqlDb(backend.store), "app", { localMode: true, aiCategorize: true, ai });
+      const s = (await client.call("app.bootstrap", {})).settings;
+      expect(s.ai.provider, ai.provider).toBe(ai.provider);
+      expect(s.aiCategorize).toBe(true);
+    }
+  });
+
+  it("plan 97, Codex review R2: a local kind pointed at another machine isn't 'local': what's disclosed follows where it goes", async () => {
+    const { client } = setup();
+    expect((await client.call("settings.update", { ai: { provider: "ollama", model: "m" } })).ai.local).toBe(true);
+    expect((await client.call("settings.update", { ai: { provider: "ollama", baseURL: "http://192.168.1.20:11434/v1" } })).ai.local).toBe(false);
+    expect((await client.call("settings.update", { ai: { provider: "lmstudio", model: "m", baseURL: "http://127.0.0.1:1234/v1" } })).ai.local).toBe(true);
+  });
+
   it("tells the host (Electron main's renderer fence) when local mode changes, and only then", async () => {
     const seen: boolean[] = [];
     const { backend, client } = setup({ onPolicy: (p) => seen.push(p.localMode) });

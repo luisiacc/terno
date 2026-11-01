@@ -105,8 +105,9 @@ export function migrateLocalMail(s: StoredSettings): StoredSettings {
   const local = s.localMode ?? DEFAULT_SETTINGS.localMode;
   const provider = s.ai?.provider ?? s.aiProvider;
   const profile = provider ? s.ai?.profiles?.[provider] : undefined;
-  // a custom endpoint may be a server on this Mac (it was never paused); anything else not local was
-  const paused = local && provider !== undefined && provider !== "none" && !isLocalProvider({ id: provider, baseURL: profile?.baseURL, preset: profile?.preset }) && !(provider === "compatible" && (profile?.preset ?? "custom") === "custom");
+  // what local mode let through: an endpoint on this Mac (a local kind pointed elsewhere was blocked too; a custom
+  // name that resolved to loopback can't be told apart here, and is cleared: the safe side, Codex review R1)
+  const paused = local && provider !== undefined && provider !== "none" && !isLocalProvider({ id: provider, baseURL: profile?.baseURL, preset: profile?.preset });
   if (!paused) return { ...s, localMailVersion: LOCAL_MAIL_VERSION };
   const { aiProvider: _p, aiModel: _m, ...rest } = s;
   return { ...rest, ai: { ...s.ai, provider: "none" }, aiCategorize: false, localMailVersion: LOCAL_MAIL_VERSION };

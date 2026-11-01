@@ -17,9 +17,12 @@ test.describe("local mode and AI providers", () => {
       await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
       await expect(page.getByTestId("ai-endpoint")).toHaveValue("http://127.0.0.1:11434/v1");
 
-      // an endpoint on another machine (a GPU box on the LAN) is the user's to choose
+      // an endpoint on another machine (a GPU box on the LAN) is the user's to choose, and said where it goes
+      // (Codex review R2): the pill names it and the footer no longer says nothing leaves
       await page.getByTestId("ai-endpoint").fill("http://192.168.1.20:11434/v1");
       await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
+      await expect(page.getByTestId("local-pill")).toHaveText("AI: Ollama (cloud)");
+      await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac.");
 
       await page.getByTestId("ai-endpoint").fill(`${ollama.url}/v1`);
       const options = page.getByTestId("ai-model-option");

@@ -79,12 +79,18 @@ export function resolveBaseURL(config: Pick<ProviderConfig, "id" | "baseURL" | "
 }
 
 /** Local means the model runs on this Mac: by declaration, or a custom endpoint on loopback. */
+/**
+ * Whether the provider runs on this machine: its endpoint is loopback. A
+ * local kind (Ollama, LM Studio) pointed at another machine isn't (plan 97:
+ * nothing stops that now, so what's disclosed follows where it goes).
+ */
 export function isLocalProvider(config: Pick<ProviderConfig, "id" | "baseURL" | "preset">): boolean {
   const d = describeProvider(config.id);
-  if (d.locality !== "by-url") return d.locality === "local";
+  if (d.locality === "cloud") return false;
   if (config.preset && config.preset !== "custom") return false;
   const url = resolveBaseURL(config);
-  if (!url) return false;
+  // no endpoint at all (the fake model, "none"): nothing to reach
+  if (!url) return d.locality === "local";
   try {
     return isLoopbackHost(new URL(url).hostname);
   } catch {

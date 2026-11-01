@@ -1,6 +1,6 @@
 # Plan 97: local mode means your mail is stored only here
 
-- **Status:** planned.
+- **Status:** shipped (see "What the Codex code review changed").
 - **Changes:** plan 11 (updates in local mode), plan 22 (sender icons in local mode), plan 5 (AI in local mode), plan 37 (the renderer fence), plan 95 (restore turned local mode on), and the privacy paragraph in AGENTS.md.
 
 ## Request
@@ -115,3 +115,20 @@ These override the design above where they conflict. The full critique is in `/t
    - cloud AI is disclosed where it's chosen and by the sidebar pill ("Cloud AI: {provider}")
 8. **The full copy and test inventory** (point 12): `settings.categories.askAi.hint`, `ai.help.blocked` and `sidebar.cloudTip`, in en and es; `local-ai.spec.ts`, `identity.spec.ts`, `visual.spec.ts`, `settings-pass.spec.ts`, `icons.spec.ts`, `updates.spec.ts` and `mailbox-gate.spec.ts`.
    - **No new packaged coverage for the fence:** the strict fence is what every default profile already runs (local mode was on by default), so the existing packaged smokes for remote content, print, avatars and reports already exercise it. Only profiles that had turned local mode off see a change.
+
+## What the Codex code review changed
+
+The review is in `/tmp/terno-p95/p97-code-review.txt`. Each fix has a regression test that fails without it.
+
+1. **The migration clears everything local mode had blocked, whatever its kind** (`migrateLocalMail`): a remote Ollama, LM Studio or custom endpoint, as well as cloud providers. Endpoints on loopback stay. A custom name that resolved to loopback can't be told apart without DNS and is cleared; that is the safe side.
+2. **"Local" now means the endpoint is on this machine** (`isLocalProvider`): a local kind pointed at another machine is disclosed like a cloud one, in the sidebar pill, the AI tab's privacy footer, error help and categorizer reasons.
+
+## Verification
+
+- **Unit:**
+  - the network policy: every purpose passes with no lookups or pinning; a keyed AI request still follows no redirect; unsubscribe never follows one
+  - the AI backend: a cloud provider can be chosen and used with local mode on; the migration's cases; `ai.local` by endpoint
+  - the updater runs automatically by mode alone
+  - the renderer fence is strict for everyone
+- **e2e:** Settings shows the statement row in light and dark, which I looked at; every provider can be chosen; a remote Ollama shows in the pill; the visual baselines for the AI tab were updated.
+- **Packaged** (fresh build): the packaged, mailbox, update, print and diagnostics smokes.
