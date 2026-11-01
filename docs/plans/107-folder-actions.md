@@ -1,0 +1,170 @@
+# Plan 107: creating folders, and a folder's right-click menu
+
+- **Status:** planned.
+- **Builds on:** plan 106 (the account menu, `data-context-menu` + Shift+F10 on sidebar rows), plans 67/68 (an account's standard and own folders).
+- **Request (verbatim):** "we also need to , on hover, show a icon on the far right , when the account is expanded,to add a folder, and laso each folder should have the ability to create subfolders so they'll need that hover too. folders right click menu should have: - export mailbox - mark as favorite (moves it sticky on top below the "Starred") - delete - rename maybe not on that order but those should be there"
+- **Decisions asked (2026-11-01):**
+  - **Export:** an `.mbox` rebuilt from the local copy. It's instant and offline; attachments never downloaded aren't in it.
+  - **Delete:** deletes the folder and its mail, after a clear confirmation (on IMAP the server deletes the messages; on Gmail the mail stays).
+  - **Favorites:** a favorite shows below Starred *and* stays under its account.
+
+## 1. What exists
+
+- **Folders (plan 68):** `Folder { accountId, key, path[], selectable }`.
+  - **IMAP:** the key is the mailbox path. The path is split on the mailbox's own delimiter, and `INBOX.` is dropped. Folders come from the `LIST` of every sync pass (`customFolders`, `sink.setFolders`).
+  - **Gmail:** the key is the label id (`Label_…`), and the path is the name split on "/". Labels are read from `/labels` (`readFolders` / `labelFolders`).
+  - **Stores:** `folders.list / replace / rebuild` in both SQLite (`packages/db/src/folders.ts`) and IndexedDB (`packages/idb/src/folders.ts`). Membership (`thread_folders`) is derived: Gmail from `messages.gmail_labels`, IMAP from `message_locations.mailbox` matching a listed key.
+  - **IMAP's sync cursor** (`accounts.provider_config.cursor`) is keyed by path: `mailboxes`, `resetPending`, `previewed`, `backfill.below`. A path the `LIST` no longer has is "vanished": its messages are looked for again, and their locations are dropped after a full pass. A rename therefore reads as delete + new folder: the new path is synced from scratch, and messages are re-identified.
+- **No folder is ever changed:** no RPC or provider method creates, renames or deletes one. IMAP only ever creates role mailboxes (`ensureMailbox`); `MailProvider.execute` handles message ops only.
+- **Direct provider calls from an RPC** follow `repairSentCopy` (`core.ts`): `lifetime` → `accountWrite` → `await this.provider(id)` → `assertCurrent`. A sync runs per account in `syncing` (one at a time).
+- **Sidebar** (`sidebar.tsx`):
+  - `AccountEntry` → `AccountMenu` (plan 106) → the account row. `AccountFolders` draws the standard rows (`nav-folder-<id>-<view>`), the Gmail tabs, and the own folders (`OwnFolderRow`, `nav-own-<id>-<key>`, inset by depth). Non-selectable groups are a `div` (`nav-own-group`).
+  - `useFolderRows` builds `FolderRow { id, key, name, depth, selectable }` from paths; parents aren't kept.
+  - Hover reveal elsewhere: the category section's "+" (`opacity-0 group-hover/section:opacity-100 focus-reveal:opacity-100`); controls over a row: `ReviewBadge`, `SignInMarker` with `reserveEnd`.
+- **Settings:** `AppSettings` through `settings.update` (zod `settingsPatch`), persisted in `store.settings`.
+- **Files:** a Blob and `<a download>`. The web downloads it; the desktop's main window shows Electron's save dialog (attachments do this today).
+- **What a message keeps:** headers (`rfc_message_id`, `in_reply_to`, `references_json`, from/to/cc/bcc/reply-to, subject, date), `message_bodies(body_text, body_html)` (maybe partial), attachment metadata, and bytes only when captured (`attachment_assets`/`chunks`). `buildRawPortable` (`packages/mail/src/compose-portable.ts`) makes RFC 5322 from a `SendPayload`.
+
+## 2. Design
+
+### Creating: the hover "+"
+
+- **Account row, open:** a "+" at the row's far right, shown on hover (the unread count is hidden while it shows). Its accessible name is "New folder in {account}". It's a sibling of the row's button (never nested), as `SignInMarker` is.
+- **Own folder row:** the same "+" on hover, named "New folder in {folder}".
+- **Standard rows** (Inbox, Sent…) get none: IMAP subfolders of the Inbox are rare, and Gmail has none.
+- **Keyboard:** the "+" is `tabIndex=-1` (a long folder list doesn't double its tab stops). "New folder…" / "New subfolder…" are also items in the account and folder menus, which Shift+F10 opens (plan 106), so every create is keyboard-reachable.
+- **Clicking "+":**
+  - An inline field appears as a new row where the folder will be: the account's top level first, or the folder's first child, one step further in. It's the same shell as the account rename (plan 106), and the same field the category "+" uses.
+  - Enter creates it, Esc cancels, and blur creates it if a name was typed, else cancels. Each field settles once.
+  - While the backend answers, the row shows the name dimmed (`aria-busy`). On success the real row takes its place, keeps the focus, and the list scrolls to it. A failure removes the row, puts the text back in the field so it isn't lost, and the snack says why.
+- **Names:**
+  - The name is trimmed and must be non-empty and ≤ `FOLDER_NAME_MAX`.
+  - It can't contain the account's hierarchy separator: "/" on Gmail; on IMAP the delimiter the server reported, which the backend checks.
+  - It must be unique among its siblings, case-insensitively. Otherwise: "There's already a folder called “X” here."
+  - The checks run in the field (the error shows under it, the text stays), and again on the backend.
+- **Opening:** the account opens (`toggleAccount`) if it wasn't. A folder's children always show (folders don't collapse today), so the new row is visible.
+
+### The folder menu (right-click, Shift+F10)
+
+Own folder rows (selectable ones and groups) and the standard rows get a `FolderMenu` (`data-context-menu`, `folder-menu-<accountId>-<key>`):
+
+| Item | Own folder | Group (\Noselect) | Standard row |
+| --- | --- | --- | --- |
+| New subfolder… | ✓ | ✓ | – |
+| Rename | ✓ | ✓ | – |
+| Add to favorites / Remove from favorites | ✓ | – | ✓ |
+| Export mailbox… | ✓ | – | ✓ |
+| — | | | |
+| Delete folder… | ✓ | ✓ | – |
+
+The account menu gains "New folder…" after Rename. Sentence case, as the other menus.
+
+### Rename (in place)
+
+- It works like the account's (plan 106): the field sits in the row, its text on the name's line. Enter saves, Esc cancels, and blur saves. The name is checked like a create's.
+- **Gmail:** `PATCH /labels/{id}` with the new full name, and every sublabel ("Old/…" → "New/…") is patched too. Keys don't change. The store's paths are updated (`folders.replace` with the new list).
+- **IMAP:** `RENAME` of the folder; the server moves its subfolders with it. The provider then, in this order:
+  1. The store moves the subtree's locations to the new paths: `folders.rekey(accountId, moves)` rewrites `message_locations.mailbox`, `folder_backfill` and pending `folder_rebuilds` in both stores.
+  2. The provider moves its cursor's entries for the subtree (`mailboxes`, `resetPending`, `previewed`, `backfill.below`), so the next pass syncs them incrementally. A server that changes UIDVALIDITY on rename is handled by the existing UIDVALIDITY reset.
+  3. `folders.replace` lists the new paths; the rebuild job derives membership from the moved locations.
+  - A crash between steps leaves a state the vanished-path reconciliation already handles: the folder is re-identified and nothing is lost.
+- **Everywhere:**
+  - A favorite keeps pointing at the folder: an IMAP rename moves its key.
+  - The current view follows the new key if you're in it, and Back still works.
+  - The row keeps the focus. A failure puts the old name back and the snack says why.
+
+### Delete
+
+- **Confirmation** (`ConfirmDialog`, lazy):
+  - **IMAP:** "Delete “Clients” and the N messages in it?" The description: "Its subfolders and their mail go too. They're deleted on the server, for every app that uses this account. This can't be undone." N counts the subtree's messages, from the store.
+  - **Gmail:** "Delete the label “Clients”?" The description: "Its sublabels go too. The mail stays in All Mail and in its other labels."
+  - The confirm button reads "Delete folder" (destructive).
+- **IMAP:** `DELETE` of the subtree, deepest first (some servers refuse a parent with children). A refusal stops the walk and says which folder couldn't go; the ones already deleted stay deleted, and the snack says so. Then `folders.replace` without them, and a sync pass. The vanished-path reconciliation drops their locations, and messages left with no location go. That is today's path for a folder deleted elsewhere, so the stores hold no new logic.
+- **Gmail:** `DELETE /labels/{id}` for the label and each sublabel. Then `folders.replace` without them; membership goes with the listing.
+- **Afterwards:**
+  - A favorite of a deleted folder is removed.
+  - If you're in it, you go to the account's Inbox.
+  - The focus goes to the next row, or the account's row.
+  - Snack: "Folder deleted".
+
+### Favorites
+
+- **Setting:** `AppSettings.favoriteFolders: { accountId: number; folder: string | null; view: AccountView | null }[]`. It holds an own folder (`folder` = key) or a standard row (`view` = inbox, sent…), at most 50, in the order added. It's validated by zod and kept by `settings.update`.
+- **Where they show:** in the top group, right below Starred, in the same `NavItem` style. Each shows the folder's icon and name, with the unread count where the sidebar already has one (own folders: `folderUnread`; an account's Inbox: `inboxUnreadByAccount`).
+  - With more than one account, a quiet account label follows the name (plan 23's `accountLabels`: muted, truncated, the full address as `title`).
+  - Clicking navigates as the folder's own row does. The row is `aria-current` when you're there; the row under the account isn't both.
+- **Each favorite has the same menu** (Remove from favorites included).
+- **It stays under its account too.**
+- **Cleanup:** removing an account drops its favorites. A favorite whose folder no longer exists (deleted elsewhere) isn't shown; it's dropped the next time favorites are saved.
+- **No reordering:** drag to reorder is out of scope.
+
+### Export mailbox…
+
+- **Backend:** `folders.export({ accountId, folder | view, after?, limit })` returns `{ mbox: string, next: number | null, done, total, missingAttachments }` in pages of messages. Each page is sized by time (`SliceSizer`, ≤ ~1 MB of text), so no call blocks the event loop past the slicer's budget.
+- **What's in it:** the folder's *messages*, not whole threads. On Gmail, messages whose labels hold the key; on IMAP, messages with a location in that mailbox. A standard row (Inbox, Sent…) uses the account's messages flagged in that place (`is_inbox`, `is_sent`, …), the same predicate its list uses. Trash and spam are excluded, except in their own rows. The order is by date.
+- **Each message** is rebuilt with `buildRawPortable`:
+  - stored headers (Message-ID, In-Reply-To, References, From, To, Cc, Reply-To, Date, Subject)
+  - the text and HTML bodies
+  - attachments whose bytes are on this computer
+  - An attachment that isn't is left out, and a header `X-Terno-Missing-Attachment: <filename>` names it. The count is returned, so the snack can say "3 attachments weren't on this computer."
+  - It's written in mboxrd form: a `From - <asctime date>` line, and `>`-quoting of `From ` lines.
+- **Renderer:**
+  - A loading snack shows progress ("Exporting Clients… 1,200 / 5,400") and can be cancelled.
+  - The pages are collected as Blob parts; Blobs are spilled to disk by the browser and by Electron, so the renderer's heap holds one page at a time.
+  - Then `<a download="Clients.mbox">`. The desktop shows its save dialog; the web downloads.
+  - On success the snack says "Exported 5,400 messages" (plus the missing-attachments line).
+- **Nothing leaves the machine:** the export reads only the local copy, and nothing goes to the network.
+
+### Backend and providers
+
+- **RPCs:**
+  - `folders.create({ accountId, parent: string | null, name })` → `Folder`
+  - `folders.rename({ accountId, key, name })` → `{ folders: Folder[]; moves: {from, to}[] }`
+  - `folders.delete({ accountId, key })` → `{ deleted: string[] }`
+  - `folders.count({ accountId, key })` → `{ messages }`, for the confirmation
+  - `folders.export(…)`
+- **Errors** are plain-English `L()` strings:
+  - offline: "You're offline. Try again when you're connected."
+  - the server refused: "{server} didn't allow this: {reason}"
+  - a name that's taken, or invalid
+- **Provider (optional methods):** `createFolder(parentKey, name)`, `renameFolder(key, name, store hooks)` and `deleteFolders(keys)`. They return the account's folder list after the change (IMAP: a fresh `LIST`; Gmail: `/labels`), so the store holds what the server says, not a prediction.
+- **One at a time per account:** a folder change waits for the account's running sync to end and holds the next one until it has written the store. A `LIST` taken before the change can't undo it. A sync is kicked after.
+- **Out of the hot path:** no new work in sync, lists or counts. Favorites are a settings read. The menus' content mounts only while open.
+
+### Strings (en + es)
+
+Every label, error, snack and confirmation above, under `folder.*`, in both locales.
+
+## 3. Tests
+
+- **Provider** (unit, with the IMAP test server / Gmail fetch fakes the mail package already uses):
+  - IMAP create, nested create (with the delimiter), rename moving its cursor's subtree, and deleting a subtree deepest first, with a refusal midway.
+  - Gmail label create and sublabel, rename patching sublabels, delete of label + sublabels.
+- **Stores** (conformance, both): `folders.rekey` moves locations, backfill and rebuild rows; after `replace`, membership follows with no message re-read.
+- **Backend:**
+  - A folder change waits for a running sync, and a sync started meanwhile waits for it.
+  - Favorites are rewritten on rename and delete, and dropped with their account.
+  - Export pages are bounded by time, and the mbox is quoted (`>From `). Missing attachments are counted.
+  - Gmail messages count by label; IMAP by location; standard rows by place.
+- **Unit (web):** the name rules (separator, empty, length, siblings); favorites helpers.
+- **e2e (`folder-actions.spec.ts`, `@design`):**
+  - The "+" shows on hover of an open account and of a folder row, only then, and the count hides while it does.
+  - Create top-level and nested (Enter, Esc, blur, a duplicate kept in the field with its error).
+  - Rename in place, aligned, with Enter/Esc/blur.
+  - Delete with the confirmation (IMAP and Gmail wording), Cancel, and the view leaving a deleted folder.
+  - Favorites added and removed, shown below Starred, opened, and following a rename.
+  - Export downloads an `.mbox` whose message count and quoting match.
+  - Shift+F10 on a folder row opens its menu.
+  - The menu and the field are axe-clean, light and dark.
+- **Perf:** UI perf gates (sidebar render counts unchanged); one export perf case (5,000 messages: each page within the slicer's budget, both stores).
+- **Screenshots:** the hover "+", the new-folder field, the menu and favorites, in light and dark, in every design.
+
+## 4. Out of scope
+
+- Moving a folder to another parent by drag.
+- Reordering favorites.
+- Collapsing a folder's children.
+- A "+" on standard rows.
+- Exporting an exact copy from the server.
+- Importing an `.mbox`.
+- Renaming, deleting or nesting standard folders.
