@@ -71,7 +71,7 @@ export interface DesktopMboxExport {
   /** false: the file can't be written (it's gone) */
   write(id: string, chunk: string): Promise<boolean>;
   /** renamed into place */
-  end(id: string): Promise<{ status: "saved"; name: string } | { status: "failed" }>;
+  end(id: string): Promise<{ status: "saved"; name: string } | { status: "cancelled" } | { status: "failed" }>;
   /** the temp file is deleted */
   abort(id: string): Promise<boolean>;
 }
