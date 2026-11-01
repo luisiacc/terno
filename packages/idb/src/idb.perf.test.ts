@@ -926,6 +926,41 @@ it("plan 107: a standard view's export of a 1,000,000-thread account reads its t
   }
 }, 900_000);
 
+it("plan 107: a standard view's export whose account's threads go between its calls looks at a bounded stretch of the gone ones a call (Codex code review round 15 #3)", async () => {
+  // a store of its own: a million rows written and let go would leave the shared one's writes behind for the others
+  const own = await IdbMailStore.open({ name: `${name}-view-gone`, factory: indexedDB, platform, instantSearch: false });
+  try {
+    const c = (own as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown; delete(id: number): unknown } } } }).c;
+    const { account } = await own.accounts.create({ kind: "gmail", email: "gone@example.com", displayName: "Gone", color: "indigo", now: 0 });
+    const N = 1_000_000;
+    const first = 95_000_000;
+    c.db.tx(() => { for (let i = N - 1; i >= 0; i--) c.db.table("threads").put({ id: first + i, account_id: account.id, last_date: 0, message_count: 0, unread_count: 0 }); });
+    const limit = 2000;
+    const samples: Sample[] = [];
+    let stretches = 0;
+    let deleted = false;
+    for (let after: FolderExportCursor | null = null; ; ) {
+      let r!: ReturnType<typeof exportIds>;
+      const from = after;
+      samples.push(sampleSync(() => (r = exportIds(c, { accountId: account.id, view: "inbox" }, from, limit))));
+      if (!r.next) break;
+      after = r.next;
+      if (r.next.thread < 0 || deleted) continue;
+      // the first stretch is out: the account's mail goes before the next call, its runs still kept
+      stretches++;
+      deleted = true;
+      c.db.tx(() => { for (let i = 0; i < N; i++) c.db.table("threads").delete(first + i); });
+    }
+    expect(stretches).toBe(1);
+    const ms = settle(samples).ms.sort((a, b) => a - b);
+    console.log(`Inbox export of ${N} threads gone after its first stretch: ${samples.length} calls, max ${ms.at(-1)!.toFixed(2)} ms`);
+    // before: the call after the deletion looked at every gone id (~1,000,000) in one go
+    expect(ms.at(-1)!).toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    await own.close();
+  }
+}, 900_000);
+
 it("plan 107: an export and a count of a 1,000,000-message conversation read it a bounded stretch a call, its order kept across them and read again when it changes (Codex code review round 10 #3)", async () => {
   // a store of its own: a million rows written and let go would leave the shared one's writes behind for the others
   const own = await IdbMailStore.open({ name: `${name}-long-thread`, factory: indexedDB, platform, instantSearch: false });
