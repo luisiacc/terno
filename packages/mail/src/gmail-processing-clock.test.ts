@@ -10,13 +10,13 @@ import type { ProviderContext, SyncSink } from "./types";
 const parsed: ParsedMessage = { rfcMessageId: null, inReplyTo: null, references: [], from: { name: "", email: "synthetic@example.test" }, replyTo: [], to: [], cc: [], bcc: [], subject: "Synthetic", date: null, listId: null, bulk: false, unsubscribe: null, text: "Exact processed body", html: null, attachments: [] };
 afterEach(() => { vi.useRealTimers(); });
 
-function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSignal) => Promise<IncomingProcessingResult>, promote?: (signal: AbortSignal) => Promise<() => void>) {
+function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSignal) => Promise<IncomingProcessingResult>, promote?: (signal: AbortSignal) => Promise<() => void>, capture: { blockCapture?: SyncSink["blockCapture"]; revision?: number } = {}) {
   const pipeline = new IncomingPipeline(), abort = new AbortController();
   const writes: unknown[] = [], checkpoints: unknown[] = [], removed: unknown[] = [];
   const ctx = {
     account: { id: 1 }, config: {}, incoming: { acquire: pipeline.acquire.bind(pipeline), promote: promote ? (_id: number, signal: AbortSignal) => promote(signal) : pipeline.promote.bind(pipeline) },
     incomingProcessor: { run: (_input: unknown, signal: AbortSignal) => process(signal) },
-    store: { messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
+    store: { repairs: capture.revision === undefined ? undefined : { get: async () => ({ state: "pending", revision: capture.revision }), list: async () => ({ items: [] }) }, messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
     loadCursor: async () => null, saveCursor: async (cursor: unknown) => { checkpoints.push(cursor); },
     fetch: async (input: string | URL) => {
       const url = new URL(String(input));
@@ -27,7 +27,7 @@ function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSign
     },
   } as unknown as ProviderContext;
   const sink: SyncSink = {
-    signal: abort.signal, windowStart: 0,
+    signal: abort.signal, windowStart: 0, blockCapture: capture.blockCapture,
     async ingest(batch) { writes.push(batch); }, async removeMessages(ids) { removed.push(ids); },
     async updateFlags() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
   };
@@ -105,6 +105,7 @@ it.each(["input-limit", "result-limit", "mime-limit-parts", "envelope-unavailabl
     expect(calls).toBe(1);
     expect(error).toMatchObject({ retryable: false, network: false, ambiguous: false, expected: true });
     expect(error).not.toHaveProperty("status");
+    if (code === "mime-limit-parts") expect(error).toHaveProperty("reason", "mime-parts");
     expect(t.writes).toEqual([]);
     expect(t.removed).toEqual([]);
     expect(completedGmailCursors(t.checkpoints)).toEqual([]);
@@ -163,4 +164,39 @@ it.each(["caller", "reset", "close"] as const)("cancels a tiny MIME-triggered qu
     active();
     (await pipeline.promote(2, new AbortController().signal))();
   } finally { active(); await t.close(); await work; pipeline.close(); }
+});
+
+it.each(["accept", "reject"] as const)("awaits durable MIME-parts capture acknowledgement before progress (%s)", async (action) => {
+  let acknowledge!: () => void, entered!: () => void;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  const pending = new Promise<void>((resolve) => { acknowledge = resolve; });
+  const failure = new Error("Synthetic local persistence refusal");
+  const blockCapture = vi.fn(async () => { entered(); await pending; if (action === "reject") throw failure; });
+  const raw = toBase64url(new TextEncoder().encode(`From: sender@example.test\r\nContent-Type: text/html\r\n\r\n${"<span>bounded</span>".repeat(40)}`));
+  const t = setup(async () => Response.json({ id: "m", threadId: "t", raw }), async () => { throw new IncomingProcessingError("mime-limit-parts"); }, undefined, { blockCapture, revision: 7 });
+  let settled = false;
+  const work = t.sync().then(() => undefined, (error: unknown) => error).finally(() => { settled = true; });
+  try {
+    await Promise.race([waiting, work.then(() => { throw new Error("Capture acknowledgement was never requested"); })]);
+    expect(blockCapture).toHaveBeenCalledExactlyOnceWith({ kind: "gmail", providerId: "m" }, "mime-parts", 7);
+    expect(settled).toBe(false);
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
+    acknowledge();
+    const error = await work;
+    if (action === "reject") { expect(error).toBe(failure); expect(completedGmailCursors(t.checkpoints)).toEqual([]); }
+    else { expect(error).toBeUndefined(); expect(completedGmailCursors(t.checkpoints)).toEqual([{ historyId: "10" }]); }
+    expect(t.writes).toEqual([]); expect(t.removed).toEqual([]);
+  } finally { acknowledge(); await t.close(); await work; }
+});
+
+it("does not quarantine an expected worker failure as deterministic poison", async () => {
+  const blockCapture = vi.fn(async () => {});
+  const raw = toBase64url(new TextEncoder().encode(`From: sender@example.test\r\nContent-Type: text/html\r\n\r\n${"<span>bounded</span>".repeat(40)}`));
+  const t = setup(async () => Response.json({ id: "m", threadId: "t", raw }), async () => { throw new IncomingProcessingError("worker-fault"); }, undefined, { blockCapture, revision: 7 });
+  try {
+    await expect(t.sync()).rejects.toMatchObject({ code: "worker-fault", expected: true, retryable: false, network: false, ambiguous: false });
+    expect(blockCapture).not.toHaveBeenCalled();
+    expect(completedGmailCursors(t.checkpoints)).toEqual([]);
+    expect(t.writes).toEqual([]); expect(t.removed).toEqual([]);
+  } finally { await t.close(); }
 });

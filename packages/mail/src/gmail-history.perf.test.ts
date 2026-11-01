@@ -13,7 +13,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
   const body = JSON.stringify({ historyId: "11", history, ignored: "x".repeat(190_000) });
   const bytes = new TextEncoder().encode(body);
   expect(bytes.length).toBeLessThanOrEqual(256 * 1024);
-  let pulled = 0, requests = 0, lookups = 0, nativeReleases = 0, saved: unknown;
+  let pulled = 0, requests = 0, lookups = 0, nativeReleases = 0, nativeReads = 0, nativeEof = 0, saved: unknown;
   const source = new Response(new ReadableStream<Uint8Array>({ pull(controller) {
     pulled += bytes.length;
     controller.enqueue(bytes); controller.close();
@@ -21,6 +21,13 @@ it("keeps maximal admitted history decoding and expansion within the control sli
   const getReader = source.body!.getReader.bind(source.body);
   const nativeReaders = vi.spyOn(source.body!, "getReader").mockImplementation(() => {
     const reader = getReader();
+    const read = reader.read.bind(reader);
+    vi.spyOn(reader, "read").mockImplementation(async () => {
+      nativeReads++;
+      const chunk = await read();
+      if (chunk.done) nativeEof++;
+      return chunk;
+    });
     const release = reader.releaseLock.bind(reader);
     vi.spyOn(reader, "releaseLock").mockImplementation(() => { nativeReleases++; release(); });
     return reader;
@@ -41,7 +48,7 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     requests++;
     return source;
   } });
-  // Prepare the actual admitted response, without pulling its body. Native admission owns the first lock handoff.
+  // Admission retains its native reader for the physical response, without reading ahead.
   const response = await net.fetchGoogle(policy, { request: { endpoint: "gmail-api", purpose: "mail" } })(resource);
   const ctx = { account: { id: 1 }, config: {}, store: {
     messageByProviderId: async () => { lookups++; return null; }, pendingAttachmentBodies: async () => [],
@@ -52,8 +59,10 @@ it("keeps maximal admitted history decoding and expansion within the control sli
     removeMessages: noop, setBody: noop, setSyncState: noop, pendingMessageIds: async () => new Set() };
   const provider = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   try {
-    expect(nativeReaders).toHaveBeenCalledTimes(2);
-    expect(nativeReleases).toBe(1);
+    expect(nativeReaders).toHaveBeenCalledTimes(1);
+    expect(nativeReleases).toBe(0);
+    expect(nativeReads).toBe(0);
+    expect(nativeEof).toBe(0);
     expect(source.body!.locked).toBe(true);
     expect(response).not.toBe(source);
     expect(pulled).toBe(0);
@@ -65,6 +74,10 @@ it("keeps maximal admitted history decoding and expansion within the control sli
       expect(timing.stall, JSON.stringify(timing)).toBeLessThanOrEqual(budget);
     }
     expect(pulled).toBe(bytes.length);
+    expect(nativeReaders).toHaveBeenCalledTimes(1);
+    expect(nativeReads).toBe(2);
+    expect(nativeEof).toBe(1);
+    expect(nativeReleases).toBe(0);
     expect(net.googlePending()).toBe(0);
     expect(requests).toBe(1);
     expect(lookups).toBe(2000);

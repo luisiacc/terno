@@ -492,6 +492,7 @@ interface IncomingResource {
 
 class IncomingCaptureRefusal extends ProviderError {
   constructor(readonly reason: import("@terno/core").CaptureReason) { super(L("errors.mail.processingComplex"), false); }
+  override get expected(): boolean { return true; }
 }
 
 class IncomingResourceError extends ProviderError {
