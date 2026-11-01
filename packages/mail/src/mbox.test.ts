@@ -87,6 +87,17 @@ describe("mbox (plan 107)", () => {
     expect(long.slice(0, -1).every((l) => l.endsWith("=") && !/=[0-9A-F]?=$/.test(l.slice(0, -1)))).toBe(true);
   });
 
+  it("a body of one 5 MB line is encoded a slice at a time, in bounded pieces, exact (Codex code review #2)", async () => {
+    // a surrogate pair and a multi-byte character across every slice edge, a trailing space at the very end
+    const body = "From x " + "a😀ñ= \t".repeat(5 * 1024 * 1024 / 7) + " ";
+    const { pieces, text } = await serialize({ ...base, bodyText: body });
+    expect(Math.max(...pieces.map((p) => p.length))).toBeLessThanOrEqual(MBOX_PIECE);
+    expect(pieces.length).toBeGreaterThan(40);
+    expect(pieces.every((p) => p.endsWith("\n"))).toBe(true);
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.text?.replace(/\r\n/g, "\n").replace(/\n$/, "")).toBe(body);
+  });
+
   it("several messages read back one by one", async () => {
     const a = await serialize(base);
     const b = await serialize({ ...base, rfcMessageId: "m2@terno", subject: "Second", bodyText: "From the second" });

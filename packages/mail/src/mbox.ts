@@ -156,28 +156,43 @@ function fileParams(filename: string): { name: string; disposition: string } {
 const HEX = "0123456789ABCDEF";
 const escape = (b: number) => `=${HEX[b >> 4]}${HEX[b & 15]}`;
 
-/** One text line as quoted-printable lines (≤ 76 characters; a leading "From " has its F encoded). */
-export function qpLine(line: string): string[] {
-  const bytes = utf8.encode(line);
-  const out: string[] = [];
+/** UTF-16 units of a line encoded at once (Codex code review #2: a 5 MB line was one 5.4 MB piece, 147 ms) */
+const QP_SLICE = 16 * 1024;
+
+/**
+ * One text line as quoted-printable lines (≤ 76 characters; a leading "From " has its F encoded), a slice of
+ * QP_SLICE at a time, so a line of any length is never encoded whole.
+ */
+export function* qpLines(line: string): Generator<string, void> {
+  const from = line.startsWith("From ");
   let cur = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i]!;
-    const last = i === bytes.length - 1;
-    let token: string;
-    if (i === 0 && b === 0x46 && line.startsWith("From ")) token = escape(b);
-    else if ((b === 0x20 || b === 0x09) && !last) token = String.fromCharCode(b);
-    else if (b >= 33 && b <= 126 && b !== 61) token = String.fromCharCode(b);
-    else token = escape(b);
-    if (cur.length + token.length > 75) {
-      out.push(`${cur}=`);
-      cur = "";
+  for (let s = 0; ; ) {
+    let e = Math.min(line.length, s + QP_SLICE);
+    // never between a surrogate pair
+    if (e < line.length && (line.charCodeAt(e - 1) & 0xfc00) === 0xd800) e--;
+    const bytes = utf8.encode(line.slice(s, e));
+    const end = e === line.length;
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i]!;
+      const last = end && i === bytes.length - 1;
+      let token: string;
+      if (s === 0 && i === 0 && b === 0x46 && from) token = escape(b);
+      else if ((b === 0x20 || b === 0x09) && !last) token = String.fromCharCode(b);
+      else if (b >= 33 && b <= 126 && b !== 61) token = String.fromCharCode(b);
+      else token = escape(b);
+      if (cur.length + token.length > 75) {
+        yield `${cur}=`;
+        cur = "";
+      }
+      cur += token;
     }
-    cur += token;
+    if (end) break;
+    s = e;
   }
-  out.push(cur);
-  return out;
+  yield cur;
 }
+
+export const qpLine = (line: string): string[] => [...qpLines(line)];
 
 /** Collects whole lines into pieces of at most MBOX_PIECE characters, mboxrd-quoted. */
 class Pieces {
@@ -216,10 +231,12 @@ function* quotedPrintable(out: Pieces, text: string): Generator<string, void> {
   let batch = "";
   // a line at a time, so a large body's encoding is never one string
   for (const line of text.split(/\r\n|\r|\n/)) {
-    batch += `${qpLine(line).join("\n")}\n`;
-    if (batch.length >= 16 * 1024) {
-      yield* put(out, batch);
-      batch = "";
+    for (const l of qpLines(line)) {
+      batch += `${l}\n`;
+      if (batch.length >= 16 * 1024) {
+        yield* put(out, batch);
+        batch = "";
+      }
     }
   }
   if (batch) yield* put(out, batch);
