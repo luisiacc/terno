@@ -248,6 +248,7 @@ describe("site copy catalog boundary", () => {
     for (const code of [
       en.replace("export const", "const"), en.replace("const en", "let en"),
       en.replace("typeof en", "typeof other"), en.replace("export type", "type"),
+      en.replace("const en =", "const en: any ="),
       en.replace('lang: "en"', 'lang: "es"'), en.replace('lang: "en", ', ""),
       en.replace('lang: "en"', '[lang]: "en"'), en.replace('lang: "en"', 'lang: "en", lang: "es"'),
       en.replace('meta: {', 'meta: { ...extra,'),
