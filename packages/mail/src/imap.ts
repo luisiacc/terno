@@ -420,13 +420,20 @@ const CHECK_EVERY = 4;
 
 type ListedMailbox = Awaited<ReturnType<ImapFlow["list"]>>[number];
 
-function hasMailboxFlag(mailbox: ListedMailbox, flag: string): boolean {
-  for (const value of mailbox.flags) if (value.length === flag.length && value.toLowerCase() === flag) return true;
-  return false;
+function classifyMailbox(mailbox: ListedMailbox) {
+  let groupOnly = false, unusable = false, specialUse = false;
+  for (const flag of mailbox.flags) {
+    const value = flag.toLowerCase();
+    if (value === "\\noselect") groupOnly = true;
+    else if (value === "\\nonexistent") unusable = true;
+    else if (SPECIAL_USE_LOWER.has(value) || value === "\\flagged" || value === "\\important") specialUse = true;
+  }
+  return { mailbox, groupOnly, unusable, specialUse };
 }
-const unusable = (m: ListedMailbox) => hasMailboxFlag(m, "\\nonexistent");
-const groupOnly = (m: ListedMailbox) => hasMailboxFlag(m, "\\noselect");
-const selectableMailbox = (m: ListedMailbox) => !groupOnly(m) && !unusable(m);
+const selectableMailbox = (m: ListedMailbox) => {
+  const attributes = classifyMailbox(m);
+  return !attributes.groupOnly && !attributes.unusable;
+};
 
 /**
  * Plan 68: the account's own folders in a LIST: what holds no role, isn't a server special (Gmail's Starred,
@@ -438,10 +445,18 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   const rolePaths = new Set(Object.values(roles) as string[]);
   // (a long name is never upper-cased only to be compared with INBOX: Codex R17)
   const isInbox = (name: string) => name.length === 5 && name.toUpperCase() === "INBOX";
-  const isRole = (m: ListedMailbox) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || [...m.flags].some(isSpecialUseFlag);
+  const isRole = (m: ListedMailbox, specialUse: boolean) => rolePaths.has(m.path) || isInbox(m.path) || Boolean(m.specialUse && m.specialUseSource !== "name") || specialUse;
   // bounded before any work (Codex R1): a server listing more than this is cut, never walked whole
   const bounded = list.length > LISTED_MAX ? list.slice(0, LISTED_MAX) : list;
-  const candidates = bounded.filter((m) => (!isRole(m) || (groupOnly(m) && !isInbox(m.path))) && !unusable(m) && m.path.length <= 1000);
+  const candidates: ReturnType<typeof classifyMailbox>[] = [];
+  const groups = new Set<string>();
+  for (const m of bounded) {
+    if (m.path.length > 1000) continue;
+    const candidate = classifyMailbox(m);
+    if (candidate.unusable || (isRole(m, candidate.specialUse) && (!candidate.groupOnly || isInbox(m.path)))) continue;
+    candidates.push(candidate);
+    if (candidate.groupOnly) groups.add(m.path);
+  }
   const names = (m: ListedMailbox) => {
     const parts = m.delimiter ? m.path.split(m.delimiter) : [m.path];
     if (parts.length > 1 && isInbox(parts[0]!)) parts.shift();
@@ -454,11 +469,10 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
   // recognised by its prefix, never its parent built and hashed again (Codex R46: 10,000 paths sharing twenty
   // levels rebuilt every shared prefix, 153 ms)
   const ancestors = new Set<string>();
-  const groups = new Set(candidates.filter(groupOnly).map((m) => m.path));
   const groupLengths = new Set([...groups].map((p) => p.length));
   let lastParent = "";
-  for (const m of groups.size ? candidates : []) {
-    if (groupOnly(m) || !m.delimiter) continue;
+  for (const { mailbox: m, groupOnly } of groups.size ? candidates : []) {
+    if (groupOnly || !m.delimiter) continue;
     const parent = m.path.lastIndexOf(m.delimiter);
     if (parent > 0 && parent === lastParent.length && m.path[parent] === m.delimiter && m.path.startsWith(lastParent)) continue;
     for (let i = parent; i > 0; i = m.path.lastIndexOf(m.delimiter, i - 1)) {
@@ -470,8 +484,8 @@ export function customFolders(list: readonly ListedMailbox[], roles: Partial<Rec
     lastParent = parent > 0 ? m.path.slice(0, parent) : "";
   }
   return candidates
-    .filter((m) => !groupOnly(m) || ancestors.has(m.path))
-    .map((m) => ({ key: m.path, path: names(m), selectable: !groupOnly(m) }))
+    .filter((candidate) => !candidate.groupOnly || ancestors.has(candidate.mailbox.path))
+    .map(({ mailbox: m, groupOnly }) => ({ key: m.path, path: names(m), selectable: !groupOnly }))
     // in the server's order: the sidebar draws them by name, a step at a time (Codex R17: a sort here of 10,000 long
     // names was 50 ms on the backend's loop, every pass)
     .slice(0, FOLDERS_PER_ACCOUNT_MAX);
@@ -686,8 +700,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const list = listed ?? (await c.list());
     if (!listed) {
       const persisted = roles ? null : await ctx.loadCursor<Cursor>();
-      // A foreground action can be the first discovery after reopen; keep a concurrent sync's newer choice.
-      previous = roles ?? persisted?.roles ?? null;
+      // A sync may have published a newer LIST during either await; never reinterpret it through this old LIST.
+      if (roles) return roles;
+      previous = persisted?.roles ?? null;
     }
     const selectable = list.filter(selectableMailbox);
     for (const mb of selectable) for (const flag of mb.flags) {
