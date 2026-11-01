@@ -18,9 +18,10 @@ vi.hoisted(() => {
   g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   g.requestAnimationFrame = () => 0;
 });
-vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}), on: () => () => {} } }));
+const rpc = vi.hoisted(() => ({ call: (..._args: unknown[]): Promise<unknown> => new Promise(() => {}) }));
+vi.mock("~/rpc/connection", () => ({ client: { call: (...args: unknown[]) => rpc.call(...args), on: () => () => {} } }));
 
-const { applyFavoriteFolders, applyFolderRenames, nameProblem, siblingsOf, startCreate, startRename, stopEditing, useFolderEdit } = await import("./folders");
+const { applyFavoriteFolders, applyFolderRenames, favoritesApplied, nameProblem, setFavorite, siblingsOf, startCreate, startRename, stopEditing, useFolderEdit } = await import("./folders");
 const { useOpenAccount } = await import("./account-folders");
 const { getApp, setApp } = await import("~/state/app");
 
@@ -78,10 +79,35 @@ describe("applyFolderRenames", () => {
 });
 
 describe("the backend's favorites (Codex code review round 11 #2)", () => {
+  beforeEach(() => {
+    favoritesApplied.revision = 0;
+  });
   it("every window takes the list the backend announces: a delete that failed midway, or one made in another window", () => {
     setApp({ settings: { favoriteFolders: [{ accountId: 2, folder: "Work/Sub", view: null }, { accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }] } as never });
-    applyFavoriteFolders([{ accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }]);
+    applyFavoriteFolders({ favorites: [{ accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }], revision: 1 });
     expect(getApp().settings!.favoriteFolders).toEqual([{ accountId: 1, folder: "Label_1", view: null }, { accountId: 1, folder: null, view: "inbox" }]);
+  });
+  it("a call's answer older than an announcement that came first is dropped (Codex code review round 12 #2)", async () => {
+    const a = { accountId: 1, folder: "Label_1", view: null };
+    const b = { accountId: 2, folder: "Work", view: null };
+    setApp({ settings: { favoriteFolders: [] } as never });
+    let answer!: (value: unknown) => void;
+    rpc.call = () => new Promise((resolve) => (answer = resolve));
+    try {
+      // this window favorites A; another window favorites B, announced (revision 11) before A's answer (revision 10)
+      const asked = setFavorite({ accountId: 1, folder: "Label_1", view: null }, true);
+      applyFavoriteFolders({ favorites: [a, b], revision: 11 });
+      answer({ favorites: [a], revision: 10 });
+      await asked;
+      expect(getApp().settings!.favoriteFolders).toEqual([a, b]);
+      // an answer newer than what was announced is applied
+      const again = setFavorite({ accountId: 2, folder: "Work", view: null }, false);
+      answer({ favorites: [a], revision: 12 });
+      await again;
+      expect(getApp().settings!.favoriteFolders).toEqual([a]);
+    } finally {
+      rpc.call = () => new Promise(() => {});
+    }
   });
   it("boot listens for it", () => {
     const boot = readFileSync(new URL("./boot.ts", import.meta.url), "utf8");

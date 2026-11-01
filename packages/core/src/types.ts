@@ -266,6 +266,14 @@ export interface FavoriteFolder {
   view: FolderView | null;
 }
 export const FAVORITES_MAX = 50;
+/**
+ * Plan 107: the favorites as the backend kept them, numbered (Codex code review round 12 #2): a window applies a list
+ * only when its revision is newer than the last it applied, so an older answer never undoes a newer announcement.
+ */
+export interface FavoriteFoldersSnapshot {
+  favorites: FavoriteFolder[];
+  revision: number;
+}
 /** Plan 107: a folder an account's change renamed (IMAP: a new key; Gmail: the same key, a new name) */
 export interface FolderRename {
   accountId: AccountId;

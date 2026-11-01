@@ -749,7 +749,7 @@ it("the ops worker passes an account by during its change, and a change waits fo
 it("favorites: on once each, an own folder must be listed, the account must exist; removing the account drops its own", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);
-  const on = (folder: string | null, view: "inbox" | null, value = true) => t.client.call("folders.favorite", { accountId: t.account.id, folder, view, on: value });
+  const on = (folder: string | null, view: "inbox" | null, value = true) => t.client.call("folders.favorite", { accountId: t.account.id, folder, view, on: value }).then((r) => r.favorites);
   await on("Work", null);
   await on("Work", null);
   expect(await on(null, "inbox")).toEqual([{ accountId: t.account.id, folder: "Work", view: null }, { accountId: t.account.id, folder: null, view: "inbox" }]);
@@ -826,7 +826,7 @@ it("every window hears the favorites the backend kept: a delete that fails midwa
   t.backend.connect(s, { clientId: "p107-other", origin: "renderer" });
   const window2 = new RpcClient(c);
   const heard: unknown[] = [];
-  window2.on("favoriteFolders", (f) => heard.push(f));
+  window2.on("favoriteFolders", (f) => heard.push(f.favorites));
   try {
     await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
     await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work/Sub", view: null, on: true });
@@ -879,5 +879,5 @@ it("favorites whose folders went in another app don't count toward the limit (Co
   for (const name of names) t.server.control.deleteMailbox(name);
   t.server.control.createMailbox("Kept");
   await t.backend.syncAccount(t.account.id);
-  expect(await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Kept", view: null, on: true })).toEqual([{ accountId: t.account.id, folder: "Kept", view: null }]);
+  expect((await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Kept", view: null, on: true })).favorites).toEqual([{ accountId: t.account.id, folder: "Kept", view: null }]);
 });

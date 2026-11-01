@@ -5,7 +5,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -195,6 +195,8 @@ export class BackendCore {
   /** plan 107 (Codex code review round 10 #4): an account's folder list and the favorites that follow it, written one at a time */
   private readonly folderLists = new Map<number, Promise<unknown>>();
   private favoriteWrites: Promise<unknown> = Promise.resolve();
+  /** the last favorites write's number (writeFavorites) */
+  private favoritesRevision = 0;
   /** plan 107: what talks to an account's provider now (sync passes, ops, body reads, copy repairs): a folder change waits for it */
   private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
   private readonly capacitySync = new Set<number>();
@@ -1825,13 +1827,20 @@ export class BackendCore {
    * Plan 107 (Codex code review round 11 #2): the favorites written one at a time, each write announced
    * (`favoriteFolders`) before the next: every window keeps the backend's list, a partial delete's or another
    * window's change included, and never an older one after a newer. `write` answers null when it changed nothing.
+   * Each write is numbered, the number in its announcement and its answer (Codex code review round 12 #2): a window
+   * applies only a list newer than the last it applied, so a call's answer arriving after a newer announcement is
+   * dropped.
    */
-  async writeFavorites<T extends FavoriteFolder[] | null>(write: () => Promise<T>): Promise<T> {
+  async writeFavorites(write: () => Promise<FavoriteFolder[] | null>): Promise<FavoriteFoldersSnapshot | null> {
     const mine = (async () => {
       await this.favoriteWrites;
       const next = await write();
-      if (next) this.server.emit("favoriteFolders", next);
-      return next;
+      if (!next) return null;
+      // never lower, after a restart too (a window outlives its backend): the clock's, or one past the last
+      this.favoritesRevision = Math.max(this.favoritesRevision + 1, Date.now());
+      const snapshot = { favorites: next, revision: this.favoritesRevision };
+      this.server.emit("favoriteFolders", snapshot);
+      return snapshot;
     })();
     this.favoriteWrites = mine.catch(() => {});
     return mine;

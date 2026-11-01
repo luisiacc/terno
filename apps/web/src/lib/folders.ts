@@ -1,4 +1,4 @@
-import { FOLDER_NAME_MAX, type Account, type FavoriteFolder, type Folder, type FolderRename, type FolderView } from "@terno/core";
+import { FOLDER_NAME_MAX, type Account, type FavoriteFolder, type FavoriteFoldersSnapshot, type Folder, type FolderRename, type FolderView } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
@@ -107,10 +107,9 @@ export function isFavorite(favorites: readonly FavoriteFolder[] | undefined, tar
   return (favorites ?? []).some((f) => sameTarget(f, target));
 }
 
-/** Adds it below Starred, or takes it away; the list the backend kept. */
+/** Adds it below Starred, or takes it away; the list the backend kept, unless a newer one came meanwhile. */
 export async function setFavorite(target: FolderTarget, on: boolean): Promise<void> {
-  const favoriteFolders = await client.call("folders.favorite", { ...target, on });
-  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders } } : {}));
+  applyFavoriteFolders(await client.call("folders.favorite", { ...target, on }));
 }
 
 // ── renames from the backend (sent right before the folders they produced)
@@ -151,11 +150,16 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
 
 /**
  * The favorites as the backend now keeps them (Codex code review round 11 #2): what a delete that failed midway took
- * with it, and what another window changed, reach this one too.
+ * with it, and what another window changed, reach this one too. A list older than the last applied is dropped (Codex
+ * code review round 12 #2): another window's favorite announced before this window's call is answered.
  */
-export function applyFavoriteFolders(favoriteFolders: FavoriteFolder[]): void {
-  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders } } : {}));
+export function applyFavoriteFolders({ favorites, revision }: FavoriteFoldersSnapshot): void {
+  if (revision <= favoritesApplied.revision) return;
+  favoritesApplied.revision = revision;
+  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: favorites } } : {}));
 }
+/** the revision of the favorites last applied (an object: React Compiler and module lets) */
+export const favoritesApplied = { revision: 0 };
 
 /** A delete's folders leave this window's favorites too at once (Codex code review round 2 #11), before the backend's `favoriteFolders`. */
 export function dropFavorites(accountId: number, keys: readonly string[]): void {

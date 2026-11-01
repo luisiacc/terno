@@ -1,4 +1,4 @@
-import type { FavoriteFolder, Folder, FolderRename } from "@terno/core";
+import type { FavoriteFolder, FavoriteFoldersSnapshot, Folder, FolderRename } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { ProviderError, type FolderChange, type FolderMove, type MailProvider } from "@terno/mail/portable";
@@ -161,13 +161,13 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
 }
 
 /** Plan 107: a folder (or standard row) below Starred, or not: the account must exist, an own folder must be listed. */
-export function favoriteFolder(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+export function favoriteFolder(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFoldersSnapshot> {
   // checked and written alone among the account's folder-list writes: a rename or delete between them had its key
   // written back (Codex code review round 10 #4)
   return b.withFolderList(target.accountId, () => favoriteAlone(b, target, on));
 }
 
-async function favoriteAlone(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+async function favoriteAlone(b: Backend, target: FavoriteFolder, on: boolean): Promise<FavoriteFoldersSnapshot> {
   if (!(await b.store.accounts.get(target.accountId))) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   const keys = new Set((await accountFolders(b, target.accountId)).map((f) => f.key));
   if (on && target.folder !== null && !keys.has(target.folder)) throw new RpcError("BAD_REQUEST", L("errors.folder.favoriteUnknown"));
@@ -175,7 +175,8 @@ async function favoriteAlone(b: Backend, target: FavoriteFolder, on: boolean): P
   // (Codex code review round 11 #1: a snapshot of every account's pruned a favorite another's rename had just moved)
   const live = (f: FavoriteFolder) => f.accountId !== target.accountId || f.folder === null || keys.has(f.folder);
   try {
-    return await b.writeFavorites(() => setFavoriteFolder(b.store, target, on, live));
+    // setFavoriteFolder always answers the list: a snapshot
+    return (await b.writeFavorites(() => setFavoriteFolder(b.store, target, on, live)))!;
   } catch (error) {
     if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", error.message, undefined, { i18n: error.i18n });
     throw error;

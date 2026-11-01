@@ -38,6 +38,7 @@ import {
   type Category,
   type Folder,
   type FavoriteFolder,
+  type FavoriteFoldersSnapshot,
   type FolderRename,
   type Counts,
   type OpState,
@@ -972,8 +973,8 @@ export const contract = {
   "folders.delete": m<{ deleted: string[] }>()(z.object({ accountId: id, key: folderKey }), { timeoutMs: 300_000 }),
   /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
   "folders.count": m<{ messages: number; folders: number }>()(z.object({ accountId: id, key: folderKey })),
-  /** Plan 107: a folder (or a standard row) below Starred, or not */
-  "folders.favorite": m<FavoriteFolder[]>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: "folder or view" })),
+  /** Plan 107: a folder (or a standard row) below Starred, or not: the list kept, with its revision (as `favoriteFolders`) */
+  "folders.favorite": m<FavoriteFoldersSnapshot>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: "folder or view" })),
   /**
    * Plan 107: an .mbox of a folder's messages from this computer's copy, as a session: `start` fixes the messages
    * (by date, then id) and says how many; each `next` gives the following text (bounded by size and time), until
@@ -1072,8 +1073,8 @@ export interface Events {
   folders: Folder[];
   /** plan 107: sent right before the `folders` its change produced: where a renamed folder went (the view and favorites follow) */
   foldersRenamed: FolderRename[];
-  /** plan 107: the favorites below Starred, as the backend now keeps them, whenever it changed them (every window follows) */
-  favoriteFolders: FavoriteFolder[];
+  /** plan 107: the favorites below Starred, as the backend now keeps them, whenever it changed them (every window follows a newer revision) */
+  favoriteFolders: FavoriteFoldersSnapshot;
   op: OpInfo;
   recipientReceiptRetired: { opId: string };
   owner: OwnerIdentity | null;
