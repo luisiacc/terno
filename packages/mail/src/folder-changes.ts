@@ -214,9 +214,11 @@ const under = (path: readonly string[], prefix: readonly string[]) => path.lengt
 
 /**
  * Plan 107: the demo's change, computed from the account's list as stored (no server): Gmail-like accounts get a new
- * `Label_n` key and keep keys on a rename; IMAP-like ones key by path ("/").
+ * `Label_n` key and keep keys on a rename; IMAP-like ones key by path ("/"). `lastLabel`: the highest label number the
+ * account ever gave (the provider keeps it), so a new label never takes a deleted one's id, whose mail the demo keeps
+ * labelled (Codex code review round 19 #4: the highest deleted, the next one created took its id and its mail).
  */
-export function demoFolderChange(folders: readonly ProviderFolder[], gmail: boolean, change: { create: { parent: string | null; name: string } } | { rename: { key: string; name: string } } | { delete: { key: string } }): { folders: ProviderFolder[]; key?: string; renamed?: { from: string; to: string }[]; deleted?: string[] } {
+export function demoFolderChange(folders: readonly ProviderFolder[], gmail: boolean, change: { create: { parent: string | null; name: string } } | { rename: { key: string; name: string } } | { delete: { key: string } }, lastLabel = 0): { folders: ProviderFolder[]; key?: string; renamed?: { from: string; to: string }[]; deleted?: string[] } {
   const find = (key: string) => {
     const f = folders.find((x) => x.key === key);
     if (!f) throw notFound();
@@ -230,7 +232,7 @@ export function demoFolderChange(folders: readonly ProviderFolder[], gmail: bool
     const at = parent === null ? null : find(parent);
     const path = [...(at?.path ?? []), name];
     if (taken(at?.path ?? [], name)) throw nameTaken(name);
-    const next = folders.reduce((n, f) => Math.max(n, Number(/^Label_(\d+)$/.exec(f.key)?.[1] ?? 0)), 0) + 1;
+    const next = folders.reduce((n, f) => Math.max(n, Number(/^Label_(\d+)$/.exec(f.key)?.[1] ?? 0)), lastLabel) + 1;
     const key = gmail ? `Label_${next}` : at ? `${at.key}/${name}` : name;
     return { folders: [...folders, { key, path, selectable: true }], key };
   }

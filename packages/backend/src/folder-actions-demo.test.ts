@@ -101,3 +101,17 @@ it("IMAP-like: a renamed folder keeps its mail: counted, exported and through a 
   expect(await threadsIn("Job/Sub")).toEqual(new Set());
   expect(await t.client.call("folders.count", { accountId: t.imap, key: "Job/Sub" })).toEqual({ messages: 0, folders: 1 });
 });
+
+it("Gmail-like: a new label never takes a deleted one's id, so none of its mail (Codex code review round 19 #4)", async () => {
+  const t = await setup();
+  const made = await t.client.call("folders.create", { accountId: t.gmail, parent: null, name: "Viajes" });
+  expect(made.key).toBe("Label_24");
+  // the demo keeps a deleted label's mail, labelled as it was
+  await ingest(t.backend.store, [msg({ accountId: t.gmail, providerMsgId: "v1", subject: "Billetes", gmailLabels: ["INBOX", "Label_24"] })]);
+  expect(await t.client.call("folders.count", { accountId: t.gmail, key: "Label_24" })).toEqual({ messages: 1, folders: 1 });
+  await t.client.call("folders.delete", { accountId: t.gmail, key: "Label_24" });
+  const next = await t.client.call("folders.create", { accountId: t.gmail, parent: null, name: "Recibos" });
+  expect(next.key).not.toBe("Label_24");
+  expect((await t.client.call("threads.list", { view: "all", accountId: t.gmail, folder: next.key })).items).toEqual([]);
+  expect(await t.client.call("folders.count", { accountId: t.gmail, key: next.key })).toEqual({ messages: 0, folders: 1 });
+});

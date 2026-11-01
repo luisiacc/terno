@@ -46,7 +46,10 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
     async createFolder({ parent, name, folders }) {
       await wait();
       await forgetPlaces();
-      const r = demoFolderChange(folders, gmail, { create: { parent, name } });
+      const cursor = gmail ? await ctx.loadCursor<DemoCursor>() : null;
+      const r = demoFolderChange(folders, gmail, { create: { parent, name } }, cursor?.lastLabel);
+      // the id given is kept before it's answered: a label deleted later never hands it out again (round 19 #4)
+      if (gmail) await ctx.saveCursor({ ...cursor, lastLabel: Number(/^Label_(\d+)$/.exec(r.key!)?.[1] ?? cursor?.lastLabel ?? 0) });
       return { folders: r.folders, key: r.key! };
     },
     async renameFolder({ key, name, folders }) {
@@ -91,7 +94,7 @@ export function createDemoProvider(ctx: ProviderContext, latencyMs = 40): MailPr
 const DEMO_UIDVALIDITY = 1;
 
 /** plan 107: paths whose places a rename moved or a delete took, to forget once the backend stored the new list */
-type DemoCursor = { forget?: string[] };
+type DemoCursor = { forget?: string[]; lastLabel?: number };
 
 const parseFlags = (flags: string): string[] => {
   try {

@@ -166,6 +166,9 @@ describe("the demo's folders", () => {
     });
     expect(demoFolderChange(gmail, true, { delete: { key: "Label_21" } })).toEqual({ folders: [gmail[2]], deleted: ["Label_21", "Label_22"] });
     expect(throwsKey(() => demoFolderChange(gmail, true, { create: { parent: null, name: "equipo" } }))).toBe("errors.folder.nameTaken");
+    // never a deleted label's id: past the highest ever given (Codex code review round 19 #4)
+    expect(demoFolderChange([gmail[2]!], true, { create: { parent: null, name: "Viajes" } }, 24).key).toBe("Label_25");
+    expect(demoFolderChange(gmail, true, { create: { parent: null, name: "Viajes" } }, 2).key).toBe("Label_24");
   });
 
   it("IMAP-like: keys are paths, so a rename moves the subtree's keys", () => {
