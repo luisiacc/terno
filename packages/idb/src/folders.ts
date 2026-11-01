@@ -1,8 +1,8 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
 import type { FolderCountCursor, FolderPlace, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
-import { keepInPage } from "@terno/store";
-import { pendingAfter, stretch, threadStretch } from "./folder-export";
-import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
+import { keepInPage, mergedBehind } from "@terno/store";
+import { forgetStretch, pendingAfter, stretch, threadStretch } from "./folder-export";
+import { FILTER_TEST, seekAfter, T, threadMerges, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
 
 /**
@@ -97,7 +97,7 @@ export function threadsOfMessages(c: Ctx, messageIds: readonly number[]): number
  * when no folder places them). What's looked at is bounded by `limit` (Codex code review round 4 #3: every sublabel
  * read the same long conversation again, five million visits in one call).
  */
-export function countFolderMessages(c: Ctx, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+export function countFolderMessages(c: Ctx, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null; restarted?: true } {
   const places = keys.map((k): { mailbox: string; uidvalidity?: number; except?: readonly number[] } => (typeof k === "string" ? { mailbox: k } : k));
   // the folders' keys (labels and rows: a renamed folder's old path under one UIDVALIDITY has neither), and each
   // mailbox's places in order: a path made again after a rename here holds two folders' mail (Codex code review round 6 #2)
@@ -127,6 +127,19 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     for (const l of locations.by("fk_message_id", id)) first = Math.min(first, placeOf(l.mailbox as string, l.uidvalidity as number));
     return first;
   };
+  // a merge since the last slice into a thread the count passed took messages it hadn't read behind it: it starts over,
+  // its place walks let go (Codex code review round 19 #2: thread 2 merged into thread 1 after the walk passed 1)
+  const merges = threadMerges(c);
+  const into = after?.merges !== undefined ? merges.into(after.merges) : [];
+  const restarted = !!after && mergedBehind(after, into, places, (t) => memberships.by("fk_thread_id", t).map((r) => r.folder as string));
+  if (restarted && after.walk !== undefined) {
+    // (a Map's keys may be deleted while they're iterated)
+    const walks = countWalks.get(c);
+    for (const token of walks?.keys() ?? []) if (token.startsWith(`${after.walk}\u0000`)) walks!.delete(token);
+  }
+  // one ahead of the count may be a member its kept runs don't have: they're read again
+  if (!restarted && after && !after.places && (into === null || into.length) && places[after.key]) forgetStretch(c, { accountId, folder: places[after.key]!.mailbox });
+  const answer = (next: FolderCountCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(restarted && { restarted: true as const }) });
   let messages = 0;
   let budget = Math.max(1, limit);
   /** a thread's messages past `from` (null: its start), up to the budget: the last one looked at, or null when read to its end */
@@ -138,9 +151,9 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     budget -= rows.length;
     return more && rows.length ? (rows.at(-1)!.id as number) : null;
   };
-  let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
+  let at: FolderCountCursor = (!restarted && after) || { key: 0, places: true, after: [] };
   while (at.key < places.length) {
-    if (budget <= 0) return { messages, next: at };
+    if (budget <= 0) return answer(at);
     const place = places[at.key]!;
     const key = place.mailbox;
     if (firsts.get(JSON.stringify(place)) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
@@ -197,7 +210,7 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     const asked = budget;
     const top = stretch(c, { accountId, folder: key }, thread, asked);
     // a big folder's members still being read: the next slice goes on (Codex code review round 8 #5)
-    if (top === null) return { messages, next: { key: at.key, places: false, after: [pendingAfter(thread)] } };
+    if (top === null) return answer({ key: at.key, places: false, after: [pendingAfter(thread)] });
     let stopped: FolderCountCursor | null = null;
     for (const id of top) {
       budget--;
@@ -209,7 +222,7 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     }
     at = stopped ?? (top.length >= asked ? { key: at.key, places: false, after: [top.at(-1)!] } : { key: at.key + 1, places: true, after: [] });
   }
-  return { messages, next: null };
+  return answer(null);
 }
 
 /** a count's walks of a folder's places, per store, by the count's walk and the folder (exported for tests) */

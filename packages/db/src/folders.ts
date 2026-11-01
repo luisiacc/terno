@@ -1,5 +1,6 @@
 import type { Folder } from "@terno/core";
-import type { FolderCountCursor, FolderPlace, ProviderFolder } from "@terno/store";
+import { mergedBehind, type FolderCountCursor, type FolderPlace, type ProviderFolder } from "@terno/store";
+import { threadMerges } from "./ingest";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
@@ -143,17 +144,22 @@ const placesJson = (places: readonly Place[]) => JSON.stringify(places.map((p) =
  * thread index (counted by label when no folder places them). What's looked at is bounded by `limit`, never by how
  * many match (Codex code review round 4 #3: every sublabel read the same long conversation again, in one call).
  */
-export function countFolderMessages(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+export function countFolderMessages(db: Db, accountId: number, keys: readonly FolderPlace[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null; restarted?: true } {
   const places = keys.map(toPlace);
   const all = placesJson(places);
   // the folders' keys, for labels and rows (a renamed folder's old path under one UIDVALIDITY has neither)
   const folders = (to: number) => JSON.stringify(places.slice(0, to).filter((p) => p.uidvalidity === undefined).map((p) => p.mailbox));
   const labels = folders(places.length);
+  // a merge since the last slice into a thread the count passed took messages it hadn't read behind it: it starts over
+  // (Codex code review round 19 #2: thread 2 merged into thread 1 after the walk passed 1 left thread 2's out)
+  const merges = threadMerges(db);
+  const restarted = after?.merges !== undefined && mergedBehind(after, merges.into(after.merges), places, (t) => db.all<{ folder: string }>("SELECT folder FROM thread_folders WHERE thread_id = ?", t).map((r) => r.folder));
   let messages = 0;
   let budget = Math.max(1, limit);
-  let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
+  let at: FolderCountCursor = (!restarted && after) || { key: 0, places: true, after: [] };
+  const answer = (next: FolderCountCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(restarted && { restarted: true as const }) });
   while (at.key < places.length) {
-    if (budget <= 0) return { messages, next: at };
+    if (budget <= 0) return answer(at);
     const place = places[at.key]!;
     const key = place.mailbox;
     if (at.places) {
@@ -212,7 +218,7 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly Fo
     if (stopped) at = stopped;
     else at = threads.length >= asked ? { key: at.key, places: false, after: [threads.at(-1)!.id] } : { key: at.key + 1, places: true, after: [] };
   }
-  return { messages, next: null };
+  return answer(null);
 
   /** a thread's messages from `from` (null: its start), up to the budget: where it stopped, or null when read to its end */
   function countThread(thread: number, from: { date: number; id: number } | null): { date: number; id: number } | null {

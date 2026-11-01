@@ -529,8 +529,10 @@ export interface MailStore {
      * rows, never the whole mailbox. A slice at a time (Codex code review round 4 #3: overlapping sublabels over one
      * long conversation were seconds in one call): `limit` bounds what's looked at, each thread and message once
      * however many of the folders hold it; `messages` is this slice's; `next`: where the count goes on, null when done.
+     * `restarted`: a thread merge since the last slice moved messages into a thread already passed, so the count began
+     * again with this slice (what earlier slices counted is dropped: Codex code review round 19 #2).
      */
-    count(accountId: number, keys: readonly import("./types").FolderPlace[], after: import("./types").FolderCountCursor | null, limit: number): Promise<{ messages: number; next: import("./types").FolderCountCursor | null }>;
+    count(accountId: number, keys: readonly import("./types").FolderPlace[], after: import("./types").FolderCountCursor | null, limit: number): Promise<{ messages: number; next: import("./types").FolderCountCursor | null; restarted?: true }>;
     /**
      * Plan 107: a renamed IMAP folder keeps its threads under its new key until the next pass proves where its mail
      * went (membership is derived: that pass, or any refresh of a thread, rewrites it from locations). Up to `limit`

@@ -34,6 +34,7 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
     for (let after: Parameters<MailStore["folders"]["count"]>[2] = null; ; ) {
       const r = await store.folders.count(accountId, keys, after, limit);
       calls++;
+      if (r.restarted) messages = 0;
       messages += r.messages;
       if (!r.next) return { messages, calls };
       after = r.next;
@@ -616,6 +617,57 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       await ingest(store, Array.from({ length: 7 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, inInbox: false, locations: i % 2 ? [loc("Work", i + 1), loc("Work/Sub", i + 1)] : [loc("Work/Sub", i + 1)] })));
       expect(await count(store, m!, ["Work", "Work/Sub"])).toBe(7);
       expect(await count(store, m!, ["Work"])).toBe(3);
+    });
+
+    it("plan 107: a thread merged into one a count already passed is counted again, once: in the same label or an earlier one (Codex code review round 19 #2)", async () => {
+      for (const across of [false, true]) {
+        const store = await fresh();
+        const [g] = await withAccounts(store, 1);
+        await store.folders.replace(g!, [{ key: "Label_x", path: ["X"], selectable: true }, { key: "Label_w", path: ["X", "W"], selectable: true }]);
+        // across: a's thread is the first label's, b's and c's the second's; else all of them the second's
+        const first = across ? ["Label_x"] : ["Label_w"];
+        await ingest(store, [
+          msg({ accountId: g!, providerMsgId: "a1", rfcMessageId: "a1@test", gmailLabels: first }),
+          msg({ accountId: g!, providerMsgId: "b1", rfcMessageId: "b1@test", gmailLabels: ["Label_w"] }),
+          msg({ accountId: g!, providerMsgId: "b2", rfcMessageId: "b2@test", inReplyTo: "b1@test", references: ["b1@test"], gmailLabels: ["Label_w"] }),
+          msg({ accountId: g!, providerMsgId: "c1", rfcMessageId: "c1@test", gmailLabels: ["Label_w"] }),
+        ]);
+        const keys = ["Label_x", "Label_w"];
+        let messages = 0;
+        let restarted = false;
+        let merged = false;
+        let calls = 0;
+        for (let after: Parameters<MailStore["folders"]["count"]>[2] = null; ; ) {
+          const r = await store.folders.count(g!, keys, after, 1);
+          if (r.restarted) { restarted = true; messages = 0; }
+          messages += r.messages;
+          if (!r.next) break;
+          after = r.next;
+          // once a's thread is passed (the first label read, or the second's walk past it), a reply to a1 and b2 merges
+          // b's thread into a's, the lower id
+          const passed = across ? after.key >= 1 : !after.places && after.key === 1 && (after.after[0] ?? 0) > 0;
+          if (!merged && passed) {
+            merged = true;
+            await ingest(store, [msg({ accountId: g!, providerMsgId: "bridge", rfcMessageId: "bridge@test", inReplyTo: "b2@test", references: ["a1@test", "b2@test"], gmailLabels: ["Label_w"] })]);
+            expect(new Set((await store.debug.snapshot()).messages.map((m) => m.threadId)).size).toBe(2);
+          }
+          expect(++calls).toBeLessThan(100);
+        }
+        expect(merged).toBe(true);
+        // a1, b1, b2, c1 and the bridge, each once
+        expect(messages).toBe(5);
+        expect(restarted).toBe(true);
+        expect(await count(store, g!, keys)).toBe(5);
+        // a count with no merge during it never starts over
+        let again = false;
+        for (let after: Parameters<MailStore["folders"]["count"]>[2] = null; ; ) {
+          const r = await store.folders.count(g!, keys, after, 1);
+          if (r.restarted) again = true;
+          if (!r.next) break;
+          after = r.next;
+        }
+        expect(again).toBe(false);
+      }
     });
 
     it("plan 107: a renamed IMAP folder's threads are carried to its new key in slices, once each, with their unread count", async () => {

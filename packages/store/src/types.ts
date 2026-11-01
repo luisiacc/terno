@@ -413,6 +413,11 @@ export interface FolderCountCursor {
   after: number[];
   /** the count's own walk of the places, where the store keeps one between slices (Codex code review round 17 #3) */
   walk?: number;
+  /**
+   * the store's thread merges the count has seen (`ThreadMerges`): a merge since into a thread the count already
+   * passed starts it over (`restarted`), the messages merged in counted once (Codex code review round 19 #2)
+   */
+  merges?: number;
 }
 
 /** Plan 107: a message as the .mbox export writes it, from this computer's copy */

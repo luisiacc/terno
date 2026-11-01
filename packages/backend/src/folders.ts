@@ -181,6 +181,8 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
     const started = performance.now();
     const r = await b.store.folders.count(accountId, keys, after, sizer.size);
     sizer.record(sizer.size, performance.now() - started);
+    // a thread merge moved messages behind the count: it began again (Codex code review round 19 #2)
+    if (r.restarted) messages = 0;
     messages += r.messages;
     if (!r.next) break;
     after = r.next;

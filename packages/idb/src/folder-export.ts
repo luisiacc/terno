@@ -48,6 +48,14 @@ export function stretch(c: Ctx, target: { accountId: number; folder: string }, a
 }
 
 /**
+ * A folder's members read while their order builds are let go: a thread merge since may have made one a member the
+ * kept runs don't have (a count goes on past it: Codex code review round 19 #2)
+ */
+export function forgetStretch(c: Ctx, target: { accountId: number; folder: string }): void {
+  memberRuns.get(c)?.delete(`f\u0000${target.accountId}\u0000${target.folder}`);
+}
+
+/**
  * A standard view's stretch: the account's smallest thread ids above `after`, from its own threads (the account
  * index) read a run a call, sorted and kept between calls, as a folder's members are while their order builds. null:
  * still being read; the caller asks again with `pendingAfter(after)`. Never the store's ascending ids: an empty
