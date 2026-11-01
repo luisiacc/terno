@@ -24,6 +24,9 @@ for (const theme of ["light", "dark"] as const) {
     const card = page.getByTestId("first-sync-pill");
     const toggle = page.getByTestId("first-sync-toggle");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // closed, its bars' light is paused (nothing animates out of sight); e2e runs with motion reduced, which turns every
+    // animation off anyway, so the pause is checked as the card sets it
+    await expect(card.locator(".sync-sheen").first()).toHaveClass(/animation-play-state:paused/);
     // the caret shows on hover
     const caret = toggle.locator("svg").last();
     await expect(caret).toHaveCSS("opacity", "0");
@@ -31,6 +34,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(caret).toHaveCSS("opacity", "1");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(card.locator(".sync-sheen").first()).not.toHaveClass(/animation-play-state:paused/);
     const row = (id: number) => card.getByTestId(`first-sync-account-${id}`);
     await expect(row(personal.id)).toContainText("Personal");
     await expect(row(personal.id)).toContainText("~4,321 left");
@@ -44,6 +48,9 @@ for (const theme of ["light", "dark"] as const) {
     await page.waitForTimeout(300);
     await page.getByTestId("sidebar").screenshot({ path: info.outputPath(`sync-progress-${theme}.png`) });
     await card.screenshot({ path: `/tmp/terno-p99/sync-progress-${theme}.png` });
+    // live progress (its own event) moves the row without an accounts event
+    server.backend.server.emit("syncProgress", { accountId: acme.id, progress: { done: 6, total: 7, unit: "folders" } });
+    await expect(row(acme.id)).toContainText("1 folder left");
     // and closes again
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");

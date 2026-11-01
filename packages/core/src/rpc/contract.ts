@@ -1054,5 +1054,11 @@ export interface Events {
   reminders: RemindersSnapshot;
   /** plan 94: the scheduled sends changed (scheduled, sent, failed) */
   scheduled: ScheduledSnapshot;
+  /**
+   * plan 103: a long sync's progress, at most every 2 s an account; null: it's over. Its own event (only the sync
+   * card listens): the accounts event would re-render everything that reads accounts (the reader, the composer).
+   * The account's syncState keeps the last one saved (at a chunk's end), for a window that opens meanwhile.
+   */
+  syncProgress: { accountId: number; progress: import("../types").SyncProgress | null };
 }
 export type EventName = keyof Events;

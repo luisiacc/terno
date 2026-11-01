@@ -136,7 +136,11 @@ it("a stored older message whose flags changed on the server shows the change af
 it("plan 103: an IMAP first read says how many folders it has read", async () => {
   const { vi } = await import("vitest");
   const writes: unknown[] = [];
-  const t = await setup({ before: (backend) => { const real = backend.store.accounts.setSyncState.bind(backend.store.accounts); vi.spyOn(backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => { if (patch.progress) writes.push(patch.progress); return real(id, patch); }); } });
+  const t = await setup({ before: (backend) => {
+    const server = (backend as unknown as { server: { emit: (name: string, payload: unknown) => void } }).server;
+    const emit = server.emit.bind(server);
+    vi.spyOn(server, "emit").mockImplementation((name, payload) => { if (name === "syncProgress" && (payload as { progress: unknown }).progress) writes.push((payload as { progress: unknown }).progress); emit(name, payload); });
+  } });
   expect(writes[0]).toEqual({ done: 0, total: 2, unit: "folders" });
   // done: nothing left to show
   expect((await t.backend.store.accounts.get(t.account.id))?.syncState.progress).toBeNull();

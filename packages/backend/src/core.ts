@@ -1574,7 +1574,9 @@ export class BackendCore {
           const now = performance.now();
           if (!phase && now - progressAt < PROGRESS_EVERY_MS) return;
           progressAt = now;
-          void setState({ progress }).catch(() => {});
+          // only to the sync card (an accounts event would re-render the reader and the composer
+          // every 2 s for the whole sync); saved with the pass's own state writes, at a chunk's end
+          if (this.current(life)) this.server.emit("syncProgress", { accountId, progress });
         },
         ...(backfill && {
           backfill: { since: backfill.since, until: backfill.until },
@@ -1667,7 +1669,11 @@ export class BackendCore {
         // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
         const firstChunk = more && before?.syncState.lastSyncAt === null;
         // plan 103: a chunk leaves its latest progress; a sync that's done leaves none
-        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: more || (backfill && !backfillFinished) ? (progress ?? before?.syncState.progress ?? null) : null, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        const kept = more || (backfill && !backfillFinished) ? (progress ?? before?.syncState.progress ?? null) : null;
+        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        // the card hears the end too (a sync done: nothing left to show)
+        // (only an account that showed some: a regular poll sends nothing)
+        if (progress !== null || before?.syncState.progress) this.server.emit("syncProgress", { accountId, progress: kept });
         if (!this.current(life)) return;
         this.connectivity.waitForSignIn(accountId, false);
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)

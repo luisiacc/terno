@@ -1,5 +1,6 @@
 import { installSendWarnings } from "./send-warning";
 import { reconcileAccounts } from "~/lib/account-folders";
+import { setSyncProgress } from "~/state/sync-progress";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import type { DesignId } from "@terno/core";
@@ -92,6 +93,8 @@ export async function boot(): Promise<void> {
       accountsChanged(accounts);
     });
     client.on("categories", (categories) => setCategories(categories));
+    // plan 103: live sync progress, for the sync card alone
+    client.on("syncProgress", ({ accountId, progress }) => setSyncProgress(accountId, progress));
     client.on("folders", (folders) => setFolders(folders));
     // plan 87: the reminders (bells, the sidebar's count, the Inbox's top); a failure leaves the Inbox as it is
     client.on("reminders", applyReminders);

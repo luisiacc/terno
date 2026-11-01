@@ -5,6 +5,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { useId, useState } from "react";
 import { windowLabel } from "~/lib/settings-values";
 import { useApp } from "~/state/app";
+import { useSyncProgress } from "~/state/sync-progress";
 
 const DAY = 86_400_000;
 
@@ -58,6 +59,8 @@ export function FirstSyncPill() {
   const general = useApp((s) => s.settings?.syncWindowDays ?? 180);
   const [open, setOpen] = useState(false);
   const panel = useId();
+  // live progress (its own event), else what the account's state saved
+  const live = useSyncProgress((s) => s.byAccount);
   const first = accounts.filter(firstSyncing);
   const older = first.length ? [] : accounts.filter(backfilling);
   const syncing = first.length ? first : older;
@@ -104,7 +107,7 @@ export function FirstSyncPill() {
             <ul className="space-y-2.5 px-2.5 pt-0.5 pb-2.5" data-testid="first-sync-progress">
               {rows.map((a) => {
                 const stopsAt = firstSyncing(a) ? Date.now() - (a.syncWindowDays ?? general) * DAY : (a.backfillSince ?? Date.now());
-                const { label, short, fraction } = syncLeft(a.syncState.progress, stopsAt);
+                const { label, short, fraction } = syncLeft(live.has(a.id) ? live.get(a.id) : a.syncState.progress, stopsAt);
                 return (
                   <li key={a.id} data-testid={`first-sync-account-${a.id}`}>
                     <div className="flex items-baseline justify-between gap-2">
@@ -126,7 +129,8 @@ export function FirstSyncPill() {
                         className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-motion"
                         style={{ width: `${fraction === null ? 30 : Math.max(4, fraction * 100)}%` }}
                       />
-                      <div aria-hidden className="sync-sheen absolute inset-y-0 left-0 w-2/5" />
+                      {/* paused while the card is closed: nothing animates out of sight (idle means idle) */}
+                      <div aria-hidden className={cn("sync-sheen absolute inset-y-0 left-0 w-2/5", !open && "[animation-play-state:paused]")} />
                     </div>
                   </li>
                 );

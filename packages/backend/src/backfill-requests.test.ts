@@ -152,8 +152,13 @@ it("plan 103 (Codex review): finishing is written at once, never held back by th
     sink.progress?.({ finishing: true, unit: "messages", done: 100, total: 100 });
     await gate;
   });
+  // live progress is its own event (only the sync card listens)
+  const heard: unknown[] = [];
+  const server = (t.backend as unknown as { server: { emit: (name: string, payload: unknown) => void } }).server;
+  const emit = server.emit.bind(server);
+  server.emit = (name, payload) => { if (name === "syncProgress") heard.push(payload); emit(name, payload); };
   const pass = t.backend.syncAccount(t.id);
-  await expect.poll(async () => (await t.backend.store.accounts.get(t.id))?.syncState.progress?.finishing).toBe(true);
+  await expect.poll(() => heard.some((p) => (p as { progress: { finishing?: boolean } | null }).progress?.finishing === true)).toBe(true);
   release();
   await pass;
 });
@@ -165,4 +170,18 @@ it("plan 103 (Codex review): a pass that leaves its backfill still pending keeps
   await t.backend.syncAccount(t.id);
   // neither done nor asking for another pass (a folder to retry later): the card keeps where it was
   expect((await t.backend.store.accounts.get(t.id))?.syncState.progress).toEqual({ done: 3, total: 7, unit: "folders" });
+});
+
+it("plan 103: live progress never sends the accounts event (the reader and the composer would re-render every 2 s)", async () => {
+  const count = async (reports: number) => {
+    const t = await chunked(async (sink) => { for (let i = 0; i < reports; i++) { sink.progress?.({ done: i, total: reports, unit: "messages" }); await new Promise((r) => setTimeout(r, reports > 1 ? 25 : 0)); } });
+    let accounts = 0;
+    const server = (t.backend as unknown as { server: { emit: (name: string, payload: unknown) => void } }).server;
+    const emit = server.emit.bind(server);
+    server.emit = (name, payload) => { if (name === "accounts") accounts++; emit(name, payload); };
+    await t.backend.syncAccount(t.id);
+    return accounts;
+  };
+  // a pass reporting 120 times over 3 s sends as many accounts events as one reporting once
+  expect(await count(120)).toBe(await count(1));
 });
