@@ -17,7 +17,7 @@ const STATUSES = ["thanks", "invalid", "busy", "full", "error"] as const;
  * /waitlist/#<status>, where `:target` shows the message (site.css). With JS (client.ts) it posts in place and
  * shows the same message in the live region. `platform` preselects (the /download/ page asks for Mac).
  */
-export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }: { copy: SiteCopy; id?: string; platform?: "windows" | "linux" | "mac"; c?: WaitlistClasses }) {
+export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }: { copy: SiteCopy; id?: string; platform?: "windows" | "linux" | "mac" | "mac-intel"; c?: WaitlistClasses }) {
   const w = copy.waitlist;
   return (
     <form method="post" action="/api/waitlist" className={`site-waitlist ${c.form ?? ""}`} data-waitlist data-sending={w.sending} noValidate={false}>
@@ -43,6 +43,7 @@ export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }
           <option value="windows">{w.platforms.windows}</option>
           <option value="linux">{w.platforms.linux}</option>
           <option value="mac">{w.platforms.mac}</option>
+          <option value="mac-intel">{w.platforms["mac-intel"]}</option>
         </select>
       </div>
       <button type="submit" className={c.button}>

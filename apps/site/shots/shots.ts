@@ -158,16 +158,21 @@ async function main() {
   mkdirSync(out, { recursive: true });
   execFileSync(process.execPath, [join(repo, "packages/backend/scripts/build-incoming-worker.mjs")], { stdio: "inherit" });
 
-  const template = mkdtempSync(join(tmpdir(), "terno-shots-template-"));
-  await seedProfile(template);
-
-  const webPort = await freePort();
-  const dist = `dist-shots-${webPort}`;
-  execFileSync("pnpm", ["vite", "build", "--outDir", dist], { cwd: web, stdio: "inherit" });
-  let preview: ChildProcess | null = spawn("pnpm", ["vite", "preview", "--outDir", dist, "--port", String(webPort), "--strictPort", "--host", "127.0.0.1"], { cwd: web, stdio: "ignore" });
-  const browser = await chromium.launch();
+  // every resource registers its disposal before it's acquired, and each disposal is tried on its own (Codex review 3)
+  const cleanup: (() => unknown)[] = [];
   const blocked = new Set<string>();
   try {
+    const template = mkdtempSync(join(tmpdir(), "terno-shots-template-"));
+    cleanup.push(() => rmSync(template, { recursive: true, force: true }));
+    await seedProfile(template);
+    const webPort = await freePort();
+    const dist = `dist-shots-${webPort}`;
+    cleanup.push(() => rmSync(join(web, dist), { recursive: true, force: true }));
+    execFileSync("pnpm", ["vite", "build", "--outDir", dist], { cwd: web, stdio: "inherit" });
+    const preview: ChildProcess = spawn("pnpm", ["vite", "preview", "--outDir", dist, "--port", String(webPort), "--strictPort", "--host", "127.0.0.1"], { cwd: web, stdio: "ignore" });
+    cleanup.push(() => preview.kill());
+    const browser = await chromium.launch();
+    cleanup.push(() => browser.close());
     for (let i = 0; i < 100; i++) {
       const up = await fetch(`http://127.0.0.1:${webPort}`).then((r) => r.ok, () => false);
       if (up) break;
@@ -178,9 +183,10 @@ async function main() {
       for (const mode of shot.modes ?? (["light", "dark"] as const)) {
         // a fresh copy of the profile per picture: actions in one never show in the next
         const dir = mkdtempSync(join(tmpdir(), "terno-shots-"));
-        execFileSync("cp", ["-R", `${template}/.`, dir]);
-        const server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
+        let server: Awaited<ReturnType<typeof startDevServer>> | null = null;
         try {
+          execFileSync("cp", ["-R", `${template}/.`, dir]);
+          server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
           const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(shot.palette?.light && { lightTheme: shot.palette.light }), ...(shot.palette?.dark && { darkTheme: shot.palette.dark }) };
           await server.backend.server.invoke("settings.update", settings as never, ctx);
           const backendPort = new URL(server.url).port;
@@ -206,17 +212,19 @@ async function main() {
           await page.close();
           console.log(`✓ ${shot.name} (${mode})`);
         } finally {
-          await server.close();
+          await server?.close().catch((e) => console.error(e));
           rmSync(dir, { recursive: true, force: true });
         }
       }
     }
   } finally {
-    await browser.close();
-    preview?.kill();
-    preview = null;
-    rmSync(join(web, dist), { recursive: true, force: true });
-    rmSync(template, { recursive: true, force: true });
+    for (const dispose of cleanup.reverse()) {
+      try {
+        await dispose();
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
   if (blocked.size) console.log(`(aborted requests to: ${[...blocked].join(", ")})`);
   encode();

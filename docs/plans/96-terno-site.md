@@ -110,3 +110,23 @@ Codex (read-only) raised 12 points against the plan; all are accepted. Each repl
 10. **Screenshots run isolated:** a fresh temp profile, `autoSync: false`, accounts marked demo as `seedDemo` does, website icons off, the backend and page clocks frozen, `en-US`, and Playwright aborts any request that isn't to the local servers. Everything closes in `finally`.
 11. **Copy is in `en` and `es`** (`src/copy/en.ts`, `src/copy/es.ts`, typed so a missing key fails the type check): `/` in English and `/es/` in Spanish with `hreflang`. Design previews are English only, while a design is being chosen.
 12. **Gates run it:** Worker unit tests live in `apps/site/src/worker/*.test.ts` (the root `unit` project includes them); `pnpm test:site` runs Playwright against the built site under `wrangler dev` with local D1 migrations (headers, status codes, redirects, waitlist with and without JS, axe in light and dark).
+
+## Built
+
+- `apps/site` (`@terno/site`): five home designs at `/designs/<id>/` (Lumen, Atelier, Midnight, Bento, Letter), `/` and `/es/` render `SITE_DESIGN` (`src/site.ts`). The page ships 0.5 KB of script (the waitlist's in-place submit) and 15 KB of CSS, gzipped; no React runs in the browser.
+- Screenshots: 25 captures of the real app on the showcase mailbox (`shots/showcase.ts`, a fictional Sam Rivera), `pnpm --filter @terno/site shots`.
+- Commands: `pnpm dev:site` (live SSR on :5190), `pnpm --filter @terno/site preview` (the built site under `wrangler dev`), `pnpm test:site`, `pnpm deploy:site`, `pnpm deploy:site:preview`.
+- The license is BSL 1.1 ("not an Open Source license"), so the copy says "source available" and that each version becomes AGPL after three years, never "open source".
+- Four icons joined the app's catalog for the site: Apple, Command, Github, Zap.
+
+## What the Codex code review changed
+
+Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each with a test that fails without the fix (`src/worker/worker.test.ts`, `e2e/site.spec.ts`).
+
+1. **Deploy order:** the database is created (its id written into `wrangler.jsonc` once) and migrated before `wrangler deploy`; any failing step stops the rest (`src/deploy-steps.mjs`, tested for order and for a failing migration).
+2. **Atomic cap:** one `INSERT … SELECT … WHERE count < cap ON CONFLICT DO NOTHING`; a repeat sign-up is still thanked once the list is full. The waitlist tests now run on real SQLite with the real migration.
+3. **Screenshot cleanup:** every resource registers its disposal before it's acquired; each disposal runs on its own.
+4. **robots.txt** no longer disallows `/designs/`, so crawlers can read the previews' `noindex`.
+5. **Platforms:** `mac` is the first Apple-silicon build (what `/download/` asks for while none is published), `mac-intel` is Intel Macs; the migration and labels say so.
+6. **Email check** refuses control characters and invalid domain labels.
+7. **Download lookups** that fail are cached for a minute (found ones for ten), so an outage or GitHub's rate limit isn't hit per click.

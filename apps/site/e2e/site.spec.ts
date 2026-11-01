@@ -53,7 +53,9 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
   expect(privacy.status()).toBeGreaterThanOrEqual(301);
   expect(privacy.headers().location).toBe("/privacy/");
   expect((await request.get("/download/mac", { maxRedirects: 0 })).headers().location).toMatch(/\/download\/$|Terno-.*-arm64\.dmg$/);
-  expect(await (await request.get("/robots.txt")).text()).toContain("Disallow: /designs/");
+  // previews stay crawlable so search engines can read their noindex (a Disallow would hide it)
+  expect(await (await request.get("/robots.txt")).text()).not.toContain("/designs/");
+  expect(await (await request.get("/designs/bento/")).text()).toContain('<meta name="robots" content="noindex"/>');
   const sitemap = await (await request.get("/sitemap.xml")).text();
   expect(sitemap).toContain("<loc>https://terno.app/es/</loc>");
   expect(sitemap).not.toContain("/designs/");

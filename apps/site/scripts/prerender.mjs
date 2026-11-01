@@ -26,5 +26,5 @@ writeFileSync(
     .map((r) => `  <url><loc>${ORIGIN}${r.path}</loc>${r.alternate ? `<xhtml:link rel="alternate" hreflang="${r.lang === "en" ? "es" : "en"}" href="${ORIGIN}${r.alternate}"/>` : ""}</url>`)
     .join("\n")}\n</urlset>\n`,
 );
-writeFileSync(join(dist, "robots.txt"), `User-agent: *\nAllow: /\nDisallow: /designs/\nDisallow: /api/\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
+writeFileSync(join(dist, "robots.txt"), `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
 console.log(`prerendered ${all.length} pages (${indexed.length} in the sitemap)`);

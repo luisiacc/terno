@@ -115,7 +115,7 @@ export const es: SiteCopy = {
     email: "Correo",
     placeholder: "tu@ejemplo.com",
     platform: "Plataforma",
-    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Intel)" },
+    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Apple silicon)", "mac-intel": "Mac (Intel)" },
     submit: "Unirme a la lista",
     sending: "Uniéndote…",
     thanks: "Ya estás en la lista. Te escribiremos cuando esté listo.",

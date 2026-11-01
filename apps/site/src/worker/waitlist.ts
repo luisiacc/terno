@@ -5,7 +5,7 @@
  */
 export const MAX_BODY = 2048;
 export const MAX_ROWS = 50_000;
-const PLATFORMS = new Set(["windows", "linux", "mac"]);
+const PLATFORMS = new Set(["windows", "linux", "mac", "mac-intel"]);
 export type Outcome = "thanks" | "invalid" | "busy" | "full" | "error";
 
 export interface WaitlistEnv {
@@ -38,11 +38,16 @@ export async function readCapped(req: Request, max: number): Promise<string | nu
   return new TextDecoder().decode(all);
 }
 
-/** A deliberately plain check: one @, a dot in the domain, no spaces, the lengths SMTP allows. */
+/** A deliberately plain check: no spaces or control characters, a dotted domain of valid labels, the lengths SMTP allows. */
+const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 export function validEmail(email: string): boolean {
-  if (email.length > 254) return false;
-  const m = /^([^\s@]{1,64})@([^\s@]+\.[^\s@]{2,})$/.exec(email);
-  return Boolean(m && !m[2]!.startsWith(".") && !m[2]!.includes(".."));
+  // oxlint-disable-next-line no-control-regex -- refusing control characters is the point
+  if (email.length > 254 || /[\s\u0000-\u001f\u007f]/.test(email)) return false;
+  const at = email.lastIndexOf("@");
+  const local = email.slice(0, at);
+  const labels = email.slice(at + 1).split(".");
+  if (at < 1 || local.length > 64 || local.includes("@") || labels.length < 2) return false;
+  return labels.every((l) => LABEL.test(l)) && /^[a-z]{2,63}$/i.test(labels.at(-1)!);
 }
 
 type Fields = { email: string; platform: string; lang: string; website: string };
@@ -73,7 +78,7 @@ export function parseFields(body: string, type: string): Fields | null {
   return out;
 }
 
-export async function handleWaitlist(req: Request, env: WaitlistEnv): Promise<Response> {
+export async function handleWaitlist(req: Request, env: WaitlistEnv, maxRows = MAX_ROWS): Promise<Response> {
   const type = (req.headers.get("content-type") ?? "").toLowerCase();
   const json = type.startsWith("application/json");
   let lang = "en";
@@ -98,10 +103,17 @@ export async function handleWaitlist(req: Request, env: WaitlistEnv): Promise<Re
     if (!success) return answer("busy", 429);
   }
   try {
-    const row = await env.DB.prepare("SELECT count(*) AS n FROM waitlist").first<{ n: number }>();
-    if ((row?.n ?? 0) >= MAX_ROWS) return answer("full", 503);
-    // a repeat is a quiet success: the person is on the list either way
-    await env.DB.prepare("INSERT INTO waitlist (email, platform, created_at) VALUES (?, ?, ?) ON CONFLICT (email, platform) DO NOTHING").bind(email, fields.platform, Date.now()).run();
+    // one statement, so the cap holds under concurrent sign-ups (D1 runs each statement atomically)
+    const insert = await env.DB.prepare(
+      "INSERT INTO waitlist (email, platform, created_at) SELECT ?1, ?2, ?3 WHERE (SELECT count(*) FROM waitlist) < ?4 ON CONFLICT (email, platform) DO NOTHING",
+    )
+      .bind(email, fields.platform, Date.now(), maxRows)
+      .run();
+    if (!insert.meta.changes) {
+      // a repeat is a quiet success, even once the list is full: the person is on it either way
+      const there = await env.DB.prepare("SELECT 1 AS one FROM waitlist WHERE email = ?1 AND platform = ?2").bind(email, fields.platform).first();
+      if (!there) return answer("full", 503);
+    }
   } catch {
     return answer("error", 500);
   }

@@ -25,18 +25,21 @@ export async function handleDownload(req: Request, fetcher: typeof fetch = fetch
   const url = new URL(req.url);
   const fallback = () => Response.redirect(`${url.origin}/download/`, 302);
   const key = new Request(`https://cache.terno.app/download/mac`);
-  let target: string | null = null;
   const cached = await cache?.match(key);
-  if (cached) target = (await cached.text()) || null;
-  else {
-    try {
-      const res = await fetcher(`https://api.github.com/repos/${REPO}/releases?per_page=20`, { headers: { accept: "application/vnd.github+json", "user-agent": "terno.app" } });
-      if (!res.ok) return fallback();
-      target = pickDmg((await res.json()) as Release[]);
-      await cache?.put(key, new Response(target ?? "", { headers: { "Cache-Control": "max-age=600" } }));
-    } catch {
-      return fallback();
-    }
+  if (cached) {
+    const target = await cached.text();
+    return target ? Response.redirect(target, 302) : fallback();
   }
+  let target: string | null = null;
+  // a failed lookup is remembered for a minute too, so an outage or GitHub's rate limit isn't hit on every click
+  let ttl = 60;
+  try {
+    const res = await fetcher(`https://api.github.com/repos/${REPO}/releases?per_page=20`, { headers: { accept: "application/vnd.github+json", "user-agent": "terno.app" } });
+    if (res.ok) {
+      target = pickDmg((await res.json()) as Release[]);
+      ttl = 600;
+    }
+  } catch {}
+  await cache?.put(key, new Response(target ?? "", { headers: { "Cache-Control": `max-age=${ttl}` } }));
   return target ? Response.redirect(target, 302) : fallback();
 }

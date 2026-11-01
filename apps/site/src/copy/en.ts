@@ -114,7 +114,7 @@ export const en = {
     email: "Email",
     placeholder: "you@example.com",
     platform: "Platform",
-    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Intel)" },
+    platforms: { windows: "Windows", linux: "Linux", mac: "Mac (Apple silicon)", "mac-intel": "Mac (Intel)" },
     submit: "Join the waitlist",
     sending: "Joining…",
     thanks: "You’re on the list. We’ll write when it’s ready.",
