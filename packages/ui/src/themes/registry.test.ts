@@ -8,7 +8,7 @@ describe("theme registry", () => {
     expect(THEMES.map((t) => ({ id: t.id, mode: t.mode }))).toEqual(BUILTIN_THEMES.map((t) => ({ id: t.id, mode: t.mode })));
     expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);
     expect(themesFor("light")).toHaveLength(8);
-    expect(themesFor("dark")).toHaveLength(9);
+    expect(themesFor("dark")).toHaveLength(10);
   });
 
   it("has defaults for both modes", () => {

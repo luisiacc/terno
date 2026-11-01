@@ -63,10 +63,10 @@ describe("custom theme schema", () => {
     expect(customThemesSchema.safeParse(big).success).toBe(false);
   });
 
-  it("knows 6 light and 7 dark built-ins with unique ids", () => {
+  it("knows 8 light and 10 dark built-ins with unique ids", () => {
     expect(BUILTIN_THEMES.filter((t) => t.mode === "light")).toHaveLength(8);
-    expect(BUILTIN_THEMES.filter((t) => t.mode === "dark")).toHaveLength(9);
-    expect(new Set(BUILTIN_THEMES.map((t) => t.id)).size).toBe(17);
+    expect(BUILTIN_THEMES.filter((t) => t.mode === "dark")).toHaveLength(10);
+    expect(new Set(BUILTIN_THEMES.map((t) => t.id)).size).toBe(18);
     expect(new Set(THEME_TOKENS).size).toBe(THEME_TOKENS.length);
   });
 });

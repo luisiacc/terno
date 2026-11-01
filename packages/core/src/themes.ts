@@ -111,6 +111,7 @@ export const BUILTIN_THEMES = [
   { id: "tokyo-night", mode: "dark" },
   { id: "gruvbox-dark", mode: "dark" },
   { id: "nord", mode: "dark" },
+  { id: "github-dark", mode: "dark" },
   { id: "catppuccin-mocha", mode: "dark" },
   { id: "lumen-dark", mode: "dark" },
   { id: "atelier-dark", mode: "dark" },
