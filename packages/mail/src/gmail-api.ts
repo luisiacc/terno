@@ -274,7 +274,21 @@ async function download<T>(items: T[], work: (item: T) => Promise<void>): Promis
 
 type GmailFailureReason = GoogleFailureReason | "DOMAIN_POLICY";
 
+/** Google's own reason for a refusal (e.g. "rateLimitExceeded"), for the console: a short token, never body text. */
+export function googleReasonOf(text: string): string | undefined {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!isRecord(value) || !isRecord(value.error)) return;
+    for (const detail of [value.error.errors, value.error.details].flatMap((items) => Array.isArray(items) ? items : [])) {
+      if (isRecord(detail) && typeof detail.reason === "string" && /^[A-Za-z_.]{1,64}$/.test(detail.reason)) return detail.reason;
+    }
+    if (typeof value.error.status === "string" && /^[A-Z_]{1,64}$/.test(value.error.status)) return value.error.status;
+  } catch { /* Invalid bodies carry only their HTTP status. */ }
+}
+
 class GmailApiError extends ProviderError {
+  /** Google's reason token, for the console log (see googleReasonOf) */
+  googleReason?: string;
   constructor(readonly resource: string, readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GmailFailureReason, httpResponse?: HttpResponseEvidence) {
     super(reason === "DOMAIN_POLICY" ? L("errors.gmail.adminPolicy") : reason === "SERVICE_DISABLED" ? L("errors.gmail.serviceDisabled") : reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" ? L("errors.gmail.permissionRequired") : L("errors.gmail.requestFailed", { status }), retryable, ambiguous, false, httpResponse);
   }
@@ -614,7 +628,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const reason = res.status === 403 ? googleFailureReason(text) : undefined;
         await settleForbidden?.(deadline.signal.aborted ? "none" : quota ? "quota" : reason ? "policy" : "none");
         const retryable = res.status === 429 || res.status >= 500 || quota;
-        throw new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), reason, httpResponse);
+        const failure = new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), reason, httpResponse);
+        failure.googleReason = googleReasonOf(text);
+        throw failure;
       }
       if (responseMode === "void") {
         discard(res);

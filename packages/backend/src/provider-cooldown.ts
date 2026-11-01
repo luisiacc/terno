@@ -239,6 +239,7 @@ export class ProviderCooldown {
     const sample = retryJitter(RETRY_DELAYS_MS[position]!, this.clock.random());
     const elapsed = this.clock.elapsedNow();
     const wall = e.received.kind === "wall" ? e.received.wallMs : NaN;
+    const now = this.clock.wallNow();
     let known = previous?.minimum ?? null;
     let hold = previous?.hold ?? null;
     let replay = BigInt(previous?.replay ?? "0");
@@ -251,13 +252,18 @@ export class ProviderCooldown {
       else known = larger(known, floor.toString());
       if (known !== null) replay = replay > BigInt(known) - BigInt(wall) ? replay : BigInt(known) - BigInt(wall);
       if (!elapsedValid(elapsed) && (hold === null || hold === "clock")) hold = "clock";
-      if ((hold === null || hold === "clock") && checkpoint && (wall < checkpoint.lastWall || elapsed < checkpoint.lastElapsed)) hold = "clock";
+      // a rollback is the clock *now* behind what it said before; a receipt from earlier isn't (concurrent
+      // quota 403s are observed after their bodies are read, so one stamped before the last observed is normal)
+      if ((hold === null || hold === "clock") && checkpoint && (!epoch(now) || now < checkpoint.lastWall || elapsed < checkpoint.lastElapsed)) hold = "clock";
     }
     const revision = this.revision();
     const row: CooldownRow = { owner, service, revision, phaseRevision: revision, minimum: known, wall: epoch(wall) ? String(wall) : null, replay: (replay < 0n ? 0n : replay).toString(), sample, position: Math.min(position + 1, 6), hold, repair: hold ? null : previous?.repair ?? null };
     reservation.row = row;
     this.put(row);
     this.anchor(row, wall, elapsed);
+    // the rollback check's high-water mark is the clock as last read, never an earlier receipt
+    const anchored = this.anchors.get(keyOf(owner, service))!;
+    anchored.lastWall = Math.max(anchored.lastWall, checkpoint?.lastWall ?? -Infinity, epoch(now) ? now : -Infinity);
     this.enqueue(row, false, false);
     const result = new Promise<"committed" | "unconfirmed">((resolve) => {
       reservation.notify = resolve;
@@ -399,6 +405,10 @@ export class ProviderCooldown {
     return this.state(owner, service);
   }
   revisionFor(owner: string, service: CooldownService): string | null { return this.row(owner, service)?.revision ?? null; }
+  /** Every clock hold, for the host's Check clock on start (no control ships, so a hold would otherwise never end). */
+  clockHolds(): { owner: string; service: CooldownService; revision: string }[] {
+    return this.ledger.rows.filter((row) => row.hold === "clock").map((row) => ({ owner: row.owner, service: row.service, revision: row.revision }));
+  }
   async recoverStorage(): Promise<"confirmed" | "pending-terminal" | "unconfirmed"> {
     if (this.physical) return "pending-terminal";
     if (this.closing && this.pending.size === 0 && !this.overflowRequested) return "unconfirmed";

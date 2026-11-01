@@ -744,3 +744,43 @@ describe("R2 anchor reconciliation", () => {
     });
   }
 });
+
+describe("concurrent quota refusals (a real sync's 403 burst)", () => {
+  it("a refusal received before the last one observed is not a clock rollback", async () => {
+    // six downloads in flight; quota 403s are observed after their bodies are read, so out of receipt order
+    const f = fixture(); f.time(1000, 10);
+    const g = await f.open(), policy = g.requestsFor(A);
+    const first = policy.reserve(gmail), late = policy.reserve(gmail);
+    await first.dispatch(async () => new Response(null, { status: 403 }));
+    await late.dispatch(async () => new Response(null, { status: 403 }));
+    f.time(1005, 15);
+    expect(await first.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1004 } })).toBe("committed"); first.release();
+    await g.drain(5000);
+    f.time(1006, 16);
+    // received at 1002, observed after the one received at 1004: the clock itself never went back
+    expect(await late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1002 } })).toBe("committed"); late.release();
+    await g.drain(5000);
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ hold: null });
+    expect(g.state(A, "gmail-api")).toMatchObject({ kind: "at" });
+    expect(g.clockHolds()).toEqual([]);
+  });
+
+  it("a real rollback between two observations still holds (Codex review: the clock as read is the high-water mark)", async () => {
+    const f = fixture(); f.time(1000, 10);
+    const g = await f.open(), policy = g.requestsFor(A);
+    const first = policy.reserve(gmail), late = policy.reserve(gmail);
+    await first.dispatch(async () => new Response(null, { status: 403 }));
+    await late.dispatch(async () => new Response(null, { status: 403 }));
+    // received at 1000, observed with the clock at 2000
+    f.time(2000, 1010);
+    // the first write is still pending when the second refusal is observed
+    const saved = first.headers429(none);
+    // the clock went back to 1500 although the next receipt (1100) is later than the first one
+    f.time(1500, 1020);
+    const savedLate = late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1100 } });
+    expect(await saved).toBe("committed"); expect(await savedLate).toBe("committed");
+    first.release(); late.release();
+    await g.drain(5000);
+    expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
+  });
+});

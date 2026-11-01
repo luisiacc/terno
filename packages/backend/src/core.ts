@@ -1,7 +1,7 @@
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
-import { copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission } from "@terno/store";
+import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownStamp, type OpAdmission } from "@terno/store";
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
@@ -81,6 +81,8 @@ export interface BackendCoreOptions {
   googleClients?: GoogleClients | null;
   now?: () => number;
   log?: (level: "info" | "warn" | "error", message: string, extra?: unknown) => void;
+  /** lift plan 62 clock holds on start (default); tests of its explicit Check clock contract disable it */
+  checkClockOnStart?: boolean;
   /** start sync loops and the ops worker on start() (tests disable) */
   autoSync?: boolean;
   syncIntervalMs?: number;
@@ -366,6 +368,18 @@ export class BackendCore {
 
   private async init(): Promise<void> {
     this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() });
+    // A clock hold (plan 62) is only lifted by Check clock, and no control for it ships: each start checks
+    // the clock, which re-waits the hold's full retained pause from now (nothing is released early).
+    // In batches below the gate's write slots (each repair takes one until it is saved), drained between.
+    const holds = this.options.checkClockOnStart === false ? [] : this.cooldown.clockHolds();
+    for (let i = 0; i < holds.length; i += COOLDOWN_TICKETS / 2) {
+      for (const hold of holds.slice(i, i + COOLDOWN_TICKETS / 2)) this.cooldown.checkClock(hold.owner, hold.service, hold.revision);
+      if ((await this.cooldown.drain(5000)) !== "drained") break;
+    }
+    if (holds.length) {
+      const wait = this.cooldown.nextWakeDelay();
+      this.log("info", `${holds.length} Google pause(s) held by a clock check were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
+    }
     for (const id of this.cooldown.boundAccountIds()) {
       const stamp = await this.store.accounts.stamp(id);
       if (stamp) this.cooldownAccounts.set(id, { ...stamp, kind: (await this.store.accounts.get(id))?.kind ?? "" });
@@ -1603,7 +1617,8 @@ export class BackendCore {
         if (error instanceof ProviderCooldownError && error.cooldown.kind === "capacity") this.capacitySync.add(accountId);
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });
-        this.log("warn", `sync failed for account ${accountId}`, message);
+        const wake = error instanceof ProviderCooldownError ? this.cooldown?.nextWakeDelay() : null;
+        this.log("warn", `sync failed for account ${accountId}`, `${message}${syncFailureDetail(error)}${wake != null ? ` (tries again in ${Math.ceil(wake / 1000)} s)` : error instanceof ProviderCooldownError ? " (no retry scheduled)" : ""}`);
         if (!this.store.isOpen) return;
         if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
@@ -2227,4 +2242,27 @@ export class BackendCore {
     return this.aiService.current();
   }
 
+}
+
+/**
+ * What the console adds to a failed sync (never mail content): the HTTP status, Google's reason token and
+ * the request's shape with ids replaced; a pause says why and for which service.
+ */
+export function syncFailureDetail(error: unknown): string {
+  if (error instanceof ProviderCooldownError) return ` [paused: ${error.cooldown.service}, ${error.cooldown.kind}]`;
+  if (!(error instanceof ProviderError)) return "";
+  const e = error as ProviderError & { status?: unknown; googleReason?: unknown; resource?: unknown };
+  const status = typeof e.status === "number" ? e.status : e.httpResponse?.status;
+  const parts = [status !== undefined && `HTTP ${status}`, typeof e.googleReason === "string" && e.googleReason,
+    typeof e.resource === "string" && requestShape(e.resource)].filter(Boolean);
+  return parts.length ? ` [${parts.join(", ")}]` : "";
+}
+
+// the route words Google's mail, people and identity requests use; any other segment is an id
+const ROUTE_WORDS = new Set(["messages", "threads", "attachments", "drafts", "labels", "history", "profile", "send", "import", "insert", "modify", "trash", "untrash", "batchModify", "batchDelete", "watch", "stop", "people", "me", "connections", "otherContacts", "userinfo", "v1", "v2", "v3", "oauth2", "gmail", "users", "token", "settings", "sendAs", "filters"]);
+
+/** A request's path with its origin, query and every id-like segment removed (only route words stay). */
+export function requestShape(resource: string): string {
+  const path = resource.replace(/^https?:\/\/[^/]+/, "").replace(/[?#].*$/, "");
+  return path.split("/").map((part) => (part === "" || ROUTE_WORDS.has(part) ? part : ":id")).join("/");
 }

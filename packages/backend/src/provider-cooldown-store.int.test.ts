@@ -279,7 +279,7 @@ async function storeFixture(mode: StoreMode) {
   let owner: Backend | undefined;
   cleanup.push(async () => { try { await owner?.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } });
   const open = async () => {
-    owner = new Backend({ dbPath: join(dir, "fixture.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+    owner = new Backend({ dbPath: join(dir, "fixture.db"), store: mode === "SQL" ? undefined : await IdbMailStore.open({ name, factory, platform, instantSearch: mode === "IDB on" }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null, checkClockOnStart: false });
     await owner.ready;
     return owner.store;
   };

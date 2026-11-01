@@ -607,3 +607,20 @@ GREEN exact command (same NODE_OPTIONS guard): `pnpm exec vitest run --project u
 One completed native read-only `codex exec -s read-only -C <worktree> -m gpt-6.1-sol -c 'model_reasoning_effort="high"' -` reviewed complete `016aa223..b5419017` against Standards+Spec. Verdict: **Standards PASS (0 findings), Spec PASS (0 findings)**. It confirmed503 existing-backoff eligibility with real OAuth holds retained, native folders429 propagation, unchanged durable deadline and stale-generation/lifetime fences, and SQL/IDB regressions. No finding-driven fix or new backlog entry was suggested. No second code review ran. Exact prompt/output: `/tmp/terno-w05-followup/code-review.txt`; reviewer did not execute tests or read the prohibited baseline file.
 
 Remaining limits: public error status uses the existing429 localization reference rather than a new structured deadline DTO. The deadline stays private/durable. Actual automatic worker retry is qualified; cooldown-expiry recovery uses explicit sync with both clocks advanced. Hosted OAuth, desktop physical retirement, real user profiles, browser UI, full release/perf/build qualification and the rest of W05 remain outside this follow-up. Root owns worklist edits, integration/rebase/retest and landing.
+
+## Fix (2026-10-31): a first Gmail sync stuck on "Gmail is paused"
+
+Reported: a fresh account downloaded ~20 messages, Gmail answered 403, then "Gmail is paused" forever.
+
+- **Cause.** The six concurrent downloads hit Google's per-user rate limit (403 `rateLimitExceeded`, retryable). A quota 403 is observed only after its body is read (`provider-http.ts` → `onForbidden`), so concurrent refusals reach `observe()` out of receipt order. `observe()` compared each receipt's wall time with the last observed one and read an earlier receipt as a clock rollback: a persisted `clock` hold. Only Check clock lifts that, and no Check clock control ships, so the account stayed paused across restarts.
+- **Fix.** The rollback test compares the clock *now* (`wallNow()`) with the checkpoint, and the checkpoint's high-water mark never moves back to an earlier receipt. A real rollback still holds.
+- **Way out.** On start the backend runs `checkClock` for every saved clock hold (it re-waits the full retained pause from now, so nothing is released early; `checkClockOnStart: false` keeps the explicit contract tests). This lifts holds already saved in profiles.
+- **Console.** "sync failed" now says the HTTP status, Google's reason token and the request shape (`/messages/:id`), and for a pause its service, kind and when it tries again. No mail content.
+- Not changed: each concurrently observed 429/quota 403 still advances the backoff one step (this plan's "one RNG per actual 429").
+- Tests: `provider-cooldown.test.ts` (out-of-order receipts are no rollback), `provider-cooldown-start.test.ts` (a saved hold is lifted on start, full pause kept), `sync-failure-detail.test.ts`.
+
+**What the Codex review of this fix changed** (four findings, each with a regression that fails without its fix):
+1. The rollback high-water mark now records the clock as read at each observation, so a real rollback between two delayed observations still holds.
+2. The start-up Check clock runs in batches below the gate's write slots, drained between: 65 saved holds no longer overflow it (which would have blocked every Google request).
+3. The console's request shape keeps only known route words (`requestShape`); every other segment, whatever it looks like, becomes `:id`.
+4. The start-up log reports the real remaining wait (`nextWakeDelay`), not the stale wall minimum.
