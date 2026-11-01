@@ -821,6 +821,51 @@ it("a RENAME whose answer was lost is announced by the next pass even when anoth
   expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
 });
 
+it("a RENAME whose answer was lost never carries the old folder's mail into a new one another app made under its name before the pass (Codex code review round 19 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const original = ImapFlow.prototype.mailboxRename;
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  // another app deletes Job (Work's mail with it) and makes a Job of its own
+  t.server.control.deleteMailbox("Job");
+  t.server.control.createMailbox("Job");
+  t.server.control.addMessage("Job", { raw: rawIdleMail("Fresh in job") });
+  const reopened = await t.reopen();
+  // the new Job can't be read this pass: what the store shows for it is only what the recovery gave it
+  const lock = ImapFlow.prototype.getMailboxLock;
+  const closed = vi.spyOn(ImapFlow.prototype, "getMailboxLock").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof lock>) {
+    if (args[0] === "Job") throw Object.assign(new Error("No access"), { responseStatus: "NO", responseText: "No access" });
+    return lock.apply(this, args);
+  });
+  try {
+    await reopened.backend.syncAccount(t.account.id);
+  } finally {
+    closed.mockRestore();
+  }
+  expect(await t.threadsIn("Job")).toEqual([]);
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).toEqual({ messages: 0, folders: 1 });
+  const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder: "Job", view: null });
+  await t.client.call("folders.exportCancel", { exportId: started.exportId });
+  expect(started.total).toBe(0);
+  // read, the new Job has only its own
+  await reopened.backend.syncAccount(t.account.id);
+  await reopened.backend.rebuildFolders();
+  const job = await t.threadsIn("Job");
+  expect(job).toHaveLength(1);
+  expect(job).not.toContain(a);
+  expect((await t.messageOf(job[0]!)).subject).toBe("Fresh in job");
+});
+
 it("a RENAME whose answer was lost waits for the old name's generation: a STATUS that fails keeps its record, and a later pass announces it (Codex code review round 10 #1)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

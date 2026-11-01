@@ -74,8 +74,11 @@ interface Cursor {
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
    * `answered`: the backend stored, announced and followed the move the change heard the server's answer to
    * (`renamesFollowed`, Codex code review round 14 #1).
+   * `to`: the new path's UIDVALIDITY read after the RENAME (Codex code review round 19 #1); unread (an answer lost), the
+   * moved one's. Its places and membership go to the new path only while it's that generation: one deleted and made
+   * again by another app is another mailbox, read afresh.
    */
-  renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true }>;
+  renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true; to?: number }>;
 }
 
 /** plan 107: a generation deleted here: the path its mail is cached under, its UIDVALIDITY, whether the backend followed it */
@@ -1057,7 +1060,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    */
   async function recordedGenerations(c: ImapFlow, list: readonly ListedMailbox[], cursor: Cursor | null | undefined): Promise<Map<string, number | null>> {
     const named = new Set<string>();
-    for (const r of Object.values(cursor?.renamed ?? {})) { named.add(r.from); if (r.key) named.add(r.key); }
+    for (const [to, r] of Object.entries(cursor?.renamed ?? {})) { named.add(r.from); named.add(to); if (r.key) named.add(r.key); }
     for (const { path, d } of allDeletions(cursor)) { named.add(path); named.add(d.from); }
     const out = new Map<string, number | null>();
     if (!named.size) return out;
@@ -1070,6 +1073,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * that are another folder's: a pending rename's or delete's, the path listed again under another UIDVALIDITY (one
    * STATUS couldn't read is left out too: a generation's mail is never shown under another).
    */
+  /**
+   * Plan 107 (Codex code review round 19 #1): the new path of a rename here is the mailbox that moved (the generation
+   * recorded after the RENAME, else the moved one's: a server keeps it), never one another app deleted and made again
+   * since, nor one STATUS can't tell: those take no alias and no carry, their mail is read afresh.
+   */
+  const arrived = (to: string, r: { uidvalidity: number; to?: number }, generations: ReadonlyMap<string, number | null>) => {
+    const now = generations.get(to);
+    return now != null && now === (r.to ?? r.uidvalidity);
+  };
+
   function withExcept(folders: ProviderFolder[], cursor: Cursor | null | undefined, generations: ReadonlyMap<string, number | null>): ProviderFolder[] {
     const except = new Map<string, number[]>();
     const away = (path: string, uidvalidity: number) => {
@@ -1085,7 +1098,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const aliases = new Map<string, { mailbox: string; uidvalidity: number }[]>();
     const own = new Set(folders.map((f) => f.key));
     for (const [to, r] of Object.entries(cursor?.renamed ?? {})) {
-      if (r.stale || !r.uidvalidity || r.from === to || !own.has(to) || generations.get(r.from) === r.uidvalidity) continue;
+      if (r.stale || !r.uidvalidity || r.from === to || !own.has(to) || generations.get(r.from) === r.uidvalidity || !arrived(to, r, generations)) continue;
       const list = aliases.get(to) ?? [];
       if (!list.some((a) => a.mailbox === r.from && a.uidvalidity === r.uidvalidity)) aliases.set(to, [...list, { mailbox: r.from, uidvalidity: r.uidvalidity }]);
     }
@@ -1722,7 +1735,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const from = m.key ?? m.from;
           const now = generations.get(from);
           if (m.answered || waiting.has(to)) return [];
-          return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== m.uidvalidity)) ? [{ from, to, ...(m.stale && { stale: true as const }) }] : [];
+          // announced, but carried only into the generation that moved (round 19 #1: Job deleted and made again by
+          // another app before this pass took Work's mail)
+          return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== m.uidvalidity)) ? [{ from, to, ...((m.stale || !arrived(to, m, generations)) && { stale: true as const }) }] : [];
         });
         // plan 107: deletions made here that this LIST shows done (the path gone, or another mailbox there now) and that
         // nothing announced (their answer was lost): their favorites go with the list, once (Codex code review round 12 #3)
@@ -2056,6 +2071,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // marked answered only once the backend has stored, announced and followed the move (renamesFollowed): a LIST
         // here that fails leaves them for a pass, which holds one whose old path's STATUS fails (Codex code review
         // round 14 #1: answered here, Job was stored unannounced and the view and favorite stayed on a Work made again)
+        // the generation each new path has now, so a pass whose LIST finds another mailbox there carries nothing into
+        // it (Codex code review round 19 #1); STATUS failing leaves the moved one's, what a server keeps on RENAME
+        if (cursor && Object.keys(intent).length) {
+          const arrivedAt = new Map<string, number>();
+          for (const m of plan.moves) {
+            if (!intent[m.to] || intent[m.to] === cursor.renamed?.[m.to]) continue;
+            const v = await generationOf(c, m.to);
+            if (v) arrivedAt.set(m.to, v);
+          }
+          const now = arrivedAt.size ? await ctx.loadCursor<Cursor>() : null;
+          if (now?.renamed) {
+            for (const [to, v] of arrivedAt) if (now.renamed[to]) now.renamed[to] = { ...now.renamed[to]!, to: v };
+            await ctx.saveCursor(now);
+          }
+        }
         const after = await folderCatalog(c);
         return { folders: after.folders, renamed: plan.moves.filter((m) => after.own.has(m.to)).map((m) => (stale.has(m.from) ? { ...m, stale: true as const } : m)) };
       } catch (error) {
