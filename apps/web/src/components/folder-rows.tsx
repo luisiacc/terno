@@ -92,8 +92,9 @@ export function FolderNameRow({
     if (document.activeElement === document.body || document.activeElement === input.current) input.current?.focus();
   };
   return (
-    <div data-testid={`${testId}-row`} className={cn("py-px", inset)}>
-      <div className="type-nav flex h-(--nav-h) w-full items-center gap-2.5 px-2 text-sidebar-foreground">
+    <div data-testid={`${testId}-row`} className="min-w-0">
+      {/* the indent replaces the row's own left padding, as a folder row's does: the icon sits on its siblings' line */}
+      <div className={cn("type-nav flex h-(--nav-h) min-w-0 items-center gap-2.5 px-2 text-sidebar-foreground", inset)}>
         <span className="flex size-4 items-center justify-center text-sidebar-glyph">
           <FolderIcon className="size-4" />
         </span>
@@ -130,8 +131,9 @@ export function FolderNameRow({
         />
       </div>
       {error && (
-        <p id={errorId} role="alert" data-testid={`${testId}-error`} className="pr-2 pb-1 pl-8.5 text-xs text-destructive-ink">
-          {error}
+        <p id={errorId} role="alert" data-testid={`${testId}-error`} className={cn("px-2 pb-1 text-xs text-destructive-ink", inset)}>
+          {/* under the name: past the icon and its gap */}
+          <span className="block pl-6.5">{error}</span>
         </p>
       )}
     </div>
