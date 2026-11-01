@@ -147,3 +147,11 @@ Round 2 (2 findings; round 1's fixes confirmed):
 
 4. **Coming back from the detour ran the local-model discovery again**, overwriting an AI chosen in Settings meanwhile. It now runs once per setup session. Test with the Ollama stub: discovery picks Ollama, the user picks none in Settings during the detour, coming back keeps none.
 5. **brand.spec and the web first-run spec still expected the old welcome.** The brand test names the dialog by step 1's title; the web test walks to the account step and finds the Mac nudge under the form.
+
+## Follow-up: bigger window, bigger preview
+
+> the initial window size of the entire ap should be bigger, and also the preview of the app when chaning grid/list and palette should also be bigger
+
+- **The desktop window** opens at 92% of the primary display's work area, at most 1920×1200 and never below 980×600 (`apps/desktop/src/window-size.ts`, unit-tested), instead of a fixed 1400×880: 1590×993 on a 16-inch MacBook Pro, and it now fits a 13-inch Air, which 1400×880 overflowed. Sizes aren't remembered across launches (out of scope).
+- **The setup** is up to 1360×860 (380 px of choices). The preview's canvas keeps a 1180 px width and takes its height from the panel's shape (680 to 980 px), so it fills the panel at about twice the old scale.
+- Codex review of both: no findings. Checked: the first-run, identity, brand and visual specs (baselines regenerated and looked at, light and dark), `pnpm dist:mac` and the packaged smoke (75 passed).
