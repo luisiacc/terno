@@ -124,3 +124,10 @@ git diff --check
 ```
 
 The two specifically authorized R2 cleanup items are ready for Root's serial integration review/retest. This handoff is committed and unlanded. Qualification remains limited to the actual host callback/helper boundaries and installed native fixture described above. It does not close broader A09/W05 or establish release readiness. Earlier exhausted/held findings outside this scope remain unchanged.
+
+
+### Root serial integration after user mailbox work committed
+
+Root rebased the complete follow-up onto committed main9d7b097d, preserving the user's Plan95 mailbox/update/restore work. The source diff remains exactly the reviewed stopBackend readiness release and connectWindow pre-await retirement/destroyed check, plus the native fixture supervision tests. No source conflict or new behavior was introduced during reconciliation. Root reran43direct controls and3installed-Electron native cases on that base; both pass. The initial package type attempt failed because this older worktree lacked the newly declared @terno/db workspace link. Frozen offline install refreshed links without source changes; desktop full-package types, dedicated retirement-config types, five exact changed-code lint paths and whitespace then pass. No runtime tests were repeated after dependency-only link repair.
+
+Root evidence: /var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-root-desktop-final-rebase-88lrxt70 (results.json, remaining-checks.json and per-command logs). All owned test sessions are joined and original generated artifact state is restored. Original sole follow-up native Sol/high StandardsPASS/SpecPASS0 remains the review; this mechanical rebase has no independent re-review. No app build, packaged smoke, full gates, user WIP change or broad A09 closure. Root owns final ff-only landing and separate worklist reconciliation.
