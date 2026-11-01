@@ -1,0 +1,7 @@
+import { defineConfig } from "vite";
+import app from "../../vite.config";
+
+export default defineConfig(async (env) => {
+  const config = typeof app === "function" ? await app(env) : app;
+  return { ...config, cacheDir: "/tmp/terno-w11-tall-mail-61630/vite", server: { host: "127.0.0.1", port: 61630, strictPort: true, hmr: false } };
+});
