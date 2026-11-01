@@ -1927,3 +1927,12 @@ Quote's serial measurement slot is released. SQL and IDB preparations remain sou
 ## Localization source-contract investigation started — 2026-11-01
 
 A separate isolated series owns only the i18n hard-coded-string scanner and direct controls. It will reproduce the archived website English-copy finding, establish whether the committed en/es copy module is a legitimate catalog, and preserve detection of actual hard-coded UI text. No blanket site exclusion or website copy migration is preapproved. User's live website copy/design/screenshot WIP remains untouched; only committed source in the isolated checkout is eligible. SQL/IDB preparations continue without timing runs; quote is landed and no benchmark is currently running under Root.
+
+
+## SQL diagnostic released; IDB investigation narrowed — 2026-11-01
+
+SQL preparation eaaff471 (base8f373950) includes one nine-point native critique; source reviews remain 0/2. Root released exactly one instrumented original R37 expunge/concurrent-write attempt: 150k messages, original same-connection 1 ms writer, checkpoint worker and 16 ms stall boundary. Test-owned bounded chronological/aggregate observation may separate scan/native statements/explicit COMMIT/implicit writer autocommit/settle/JS gaps. Observation is diagnostic, never a green qualification. No production implementation, durability/cadence/threshold change or all-file rerun is released; an actual measured mechanism and specific ordinary RED must precede a proposed fix.
+
+IDB preparation bbaa5946 correctly notes that the timed-out 12,289-message case has one pending conversation. Its proposed 4,096-pending-thread comparator optimization therefore cannot explain that failure. Root deferred that optimization and requested source-only refinement around the actual ingest/persist/reset/backfill/snapshot/close phases, retaining the original 20-second case. No tests, source edits or second critique are released for this refinement. Seven initial critique revisions and 0/2 source reviews remain recorded.
+
+New localization CPU checks are briefly held for the SQL measurement; already-running commands finish naturally. Quote timing is complete, and no root benchmark competes with SQL. No parked source, user WIP or original failure budget is changed.
