@@ -5,8 +5,9 @@ import { expect, it } from "vitest";
 import type { IncomingMessage } from "@terno/store";
 import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
+import type { QuotaPacer } from "./gmail-quota";
 
-function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>) {
+function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>, o: { unitsPerSecond?: number; quota?: QuotaPacer; unauthorizedOnce?: string } = {}) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   const ids = Array.from({ length: count }, (_, i) => `m${i}`);
@@ -15,6 +16,7 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
   const checkpoints: unknown[] = [];
   const abort = new AbortController();
   let downloads = 0, firstIngestAt = 0, activeSink = 0, maxSink = 0;
+  const started: number[] = [];
   let gate: Promise<void> | undefined;
   const ctx = {
     incoming, incomingProcessor: processor,
@@ -27,7 +29,9 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
       if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/messages")) return Response.json({ messages: ids.map((id) => ({ id })) });
       downloads++;
+      started.push(performance.now());
       await gate;
+      if (o.unauthorizedOnce && url.pathname.endsWith(`/${o.unauthorizedOnce}`)) { o.unauthorizedOnce = undefined; return new Response(null, { status: 401 }); }
       const id = url.pathname.split("/").at(-1)!;
       return Response.json({ id, threadId: id, raw });
     },
@@ -42,8 +46,8 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
     },
     async updateFlags() {}, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
   };
-  const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
-  return { p, async close() { await p.close(); await processor.close(); incoming.close(); }, sync: () => p.sync(sink), abort: () => abort.abort(), batches, checkpoints, get downloads() { return downloads; }, get firstIngestAt() { return firstIngestAt; }, get maxSink() { return maxSink; }, setGate(value: Promise<void>) { gate = value; } };
+  const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(), unitsPerSecond: o.unitsPerSecond, quota: o.quota });
+  return { p, started, async close() { await p.close(); await processor.close(); incoming.close(); }, sync: () => p.sync(sink), abort: () => abort.abort(), batches, checkpoints, get downloads() { return downloads; }, get firstIngestAt() { return firstIngestAt; }, get maxSink() { return maxSink; }, setGate(value: Promise<void>) { gate = value; } };
 }
 
 it("flushes completed message bytes before retaining the whole count batch", async () => {
@@ -134,4 +138,44 @@ it.each([1, 49, 50])("reset during the last admitted write of %i messages finish
     expect(t.batches.flat()).toHaveLength(count);
     expect(completedGmailCursors(t.checkpoints)).toEqual([]);
   } finally { release(); await result; await t.close(); }
+});
+
+it("paces full downloads under Gmail's per-user quota: a burst at once, then one per interval", async () => {
+  // 6,000 units a second and the 900-unit burst: 15 reads at once, the other 15 at least 150 ms later
+  const t = setup(30, "ordinary small mail", undefined, { unitsPerSecond: 6000 });
+  try {
+    await t.sync();
+    expect(t.started).toHaveLength(30);
+    expect(t.started.at(-1)! - t.started[0]!).toBeGreaterThanOrEqual(140);
+    expect(t.batches.flat()).toHaveLength(30);
+  } finally { await t.close(); }
+});
+
+it("a reset while downloads wait on the quota fails as offline (retryable), at once (Codex review)", async () => {
+  // one full read every 10 s after the burst: the next waits; a network change resets the provider
+  const t = setup(30, "ordinary small mail", undefined, { unitsPerSecond: 6 });
+  try {
+    const result = t.sync().then(() => null, (error: unknown) => error);
+    // the burst (less the list and profile calls) has gone; the next read waits seconds
+    await expect.poll(() => t.downloads).toBe(14);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(t.downloads).toBe(14);
+    const before = performance.now();
+    t.p.reset!();
+    const error = await result;
+    expect(performance.now() - before).toBeLessThan(1000);
+    expect(error).toMatchObject({ name: "ProviderError", retryable: true });
+  } finally { await t.close(); }
+});
+
+it("a download refused with 401 and retried spends its quota again (Codex review)", async () => {
+  const spent: number[] = [];
+  const quota: QuotaPacer = { async spend(units) { spent.push(units); }, charge(units) { spent.push(-units); } };
+  const t = setup(1, "ordinary small mail", undefined, { quota, unauthorizedOnce: "m0" });
+  try {
+    await t.sync();
+    expect(t.batches.flat()).toHaveLength(1);
+    // the list (5), then the raw read paid before its slot (60) and again for its retry (60)
+    expect(spent.filter((units) => units === 60)).toHaveLength(2);
+  } finally { await t.close(); }
 });

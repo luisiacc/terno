@@ -11,7 +11,8 @@ export interface RegistryOptions {
   imap?: ImapProviderOptions;
   /** tests only: the demo provider sends through the real SMTP path to 127.0.0.1 on this port */
   demoSmtpPort?: number;
-  gmail?: { endpoints?: Partial<import("./gmail").GmailEndpoints> };
+  /** unitsPerSecond: Gmail quota units a second (default Google's per-user limit; synthetic servers lift it) */
+  gmail?: { endpoints?: Partial<import("./gmail").GmailEndpoints>; unitsPerSecond?: number };
 }
 
 /** The demo provider, except that a send is built and sent over SMTP to a local test server (the packaged smoke). */

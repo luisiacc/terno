@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { DEFAULT_LOCALE, L, LOCALE_IDS, LOCALES } from "@terno/i18n";
 import { buildRaw } from "./compose";
 import { readGoogleIdentity, withGoogleSignIn } from "./gmail-web";
+import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
 import { exchangeGmailRefresh, type GmailRefreshExchange } from "./gmail-refresh";
 import { createGmailApiProvider, GMAIL_SCOPES as SCOPES, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { ProviderAuthError, ProviderError, type GmailConnectResult, type MailProvider, type ProviderContext, type RequestRun, type MailAdmission, type GoogleRequests } from "./types";
@@ -149,7 +150,7 @@ export async function connectGmail(options: ConnectOptions): Promise<GmailConnec
 // ───────────────────────────── provider (refresh token) ─────────────────────────────
 
 /** Desktop: the API client with tokens refreshed from the stored refresh token, and nodemailer's MIME. */
-export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints> } = {}): MailProvider {
+export function createGmailProvider(ctx: ProviderContext, options: { endpoints?: Partial<GmailEndpoints>; unitsPerSecond?: number } = {}): MailProvider {
   const ep = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
   let access: GmailRefreshExchange | null = null;
   let refreshing: Promise<string> | null = null;
@@ -242,6 +243,8 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
 
   const provider = createGmailApiProvider(ctx, {
     endpoints: options.endpoints,
+    // plan 62 fix: paced under Google's per-user quota rather than refused
+    unitsPerSecond: options.unitsPerSecond ?? GMAIL_UNITS_PER_SECOND,
     tokens: {
       get: async (run, admission) => {
         assertOpen();

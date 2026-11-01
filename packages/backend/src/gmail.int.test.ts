@@ -270,7 +270,7 @@ async function setup(behaviour?: Parameters<typeof browser>[1], options: { ciphe
     dbPath: join(dir, "u.db"),
     version: "t",
     cipher: options.cipher ?? plaintextCipher,
-    providers: createRegistry({ gmail: { endpoints: google.endpoints() } }),
+    providers: createRegistry({ gmail: { endpoints: google.endpoints(), unitsPerSecond: Infinity } }),
     openExternal: browser(google, behaviour),
     autoSync: false,
   });
@@ -386,7 +386,7 @@ describe("Gmail attachment capture", () => {
     await ctx.backend.syncAccount(ctx.account.id);
     await ctx.stopBackend();
     ctx.client.close();
-    const backend = new Backend({ dbPath: join(ctx.dir, "u.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ gmail: { endpoints: ctx.google.endpoints() } }), autoSync: false });
+    const backend = new Backend({ dbPath: join(ctx.dir, "u.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ gmail: { endpoints: ctx.google.endpoints(), unitsPerSecond: Infinity } }), autoSync: false });
     cleanups.push(() => backend.stop());
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "restarted", origin: "renderer" });

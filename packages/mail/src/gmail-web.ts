@@ -1,5 +1,6 @@
 import { isValidEmail } from "@terno/core";
 import { L } from "@terno/i18n";
+import { GMAIL_UNITS_PER_SECOND } from "./gmail-quota";
 import { createGmailApiProvider, isRateLimit, GOOGLE_ENDPOINTS, type GmailEndpoints } from "./gmail-api";
 import { buildRawPortable } from "./compose-portable";
 import { ProviderAuthError, ProviderError, type GoogleRequests, type GmailTokenBroker, type HttpRequestContext, type HttpResponseEvidence, type MailProvider, type ProviderContext } from "./types";
@@ -147,6 +148,7 @@ export function createGmailTokenBroker(o: { endpoints?: Partial<GmailEndpoints>;
       const id = ctx.account.id;
       return createGmailApiProvider(ctx, {
         endpoints: o.endpoints,
+        unitsPerSecond: GMAIL_UNITS_PER_SECOND,
         tokens: {
           async get() {
             const t = tokens.get(id);

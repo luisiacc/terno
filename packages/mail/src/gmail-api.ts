@@ -10,6 +10,7 @@ import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
+import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
@@ -359,6 +360,10 @@ export interface GmailApiOptions {
   tokens: GmailTokenSource;
   /** the RFC 5322 source of a message to send (Bcc kept: the Gmail API reads recipients from headers) */
   buildRaw(payload: SendPayload): Promise<Uint8Array>;
+  /** Gmail quota units a second (gmail-quota.ts). The adapter alone doesn't pace: the Gmail providers pass Google's limit */
+  unitsPerSecond?: number;
+  /** tests only: the pacer itself (to observe what is spent) */
+  quota?: QuotaPacer;
   /** tests only: a read's and a send's deadlines */
   readTimeoutMs?: number;
   sendTimeoutMs?: number;
@@ -502,6 +507,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   const accountId = ctx.account.id;
   const yieldPage = () => ctx.yield?.() ?? new Promise<void>((resolve) => setTimeout(resolve, 0));
   const tokens = options.tokens;
+  // one budget per account: Google's quota is the user's, shared by every call of every sync
+  const quota = options.quota ?? createQuotaPacer({ perSecond: options.unitsPerSecond ?? Infinity });
 
   /** reads in flight listen here: reset() aborts them all at once (a send never does) */
   let reads = new AbortController();
@@ -552,8 +559,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     void readResponseText(response, 65_536, deadline.signal).catch(() => "").finally(() => deadline.done());
   }
 
-  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission } = {}, retried = false): Promise<T> {
-    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, ...request } = init;
+  async function api<T>(path: string, init: RequestInit & { ambiguousOnFailure?: boolean; responseMode?: "json" | "void" | "incoming"; incomingId?: string; readReset?: AbortSignal; preparationSignal?: AbortSignal; httpContext?: HttpRequestContext; requestRun?: RequestRun; proofToken?: string; requestGeneration?: number; admission?: MailAdmission; prepaid?: boolean } = {}, retried = false): Promise<T> {
+    const { ambiguousOnFailure, responseMode = "json", incomingId, readReset, preparationSignal, httpContext, requestRun, proofToken, requestGeneration, admission, prepaid, ...request } = init;
     const context = httpContext ?? (path.startsWith("https://") ? { endpoint: "unknown", purpose: "unknown" } as const : { endpoint: "gmail-api", purpose: "mail" } as const);
     ctx.google?.check(context, admission);
     const generation = requestGeneration ?? ctx.google?.generation();
@@ -594,6 +601,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
         deadline.signal.throwIfAborted();
+        // Gmail's per-user quota, paced just before the request leaves; a send the user asked for
+        // counts but never waits, a full download paid before taking its read slot (fetchFull)
+        const units = context.endpoint === "gmail-api" && !prepaid && !quota.unpaced ? gmailUnits(path, request.method) : 0;
+        if (units && sending) quota.charge(units);
+        else if (units) {
+          // a pass that gave up (a sibling failed, the caller left) doesn't send its paced siblings
+          await quota.spend(units, preparationSignal ? AbortSignal.any([deadline.signal, preparationSignal]) : deadline.signal);
+          preparationSignal?.throwIfAborted();
+        }
         const url = path.startsWith("https://") ? path : `${ep.api}${path}`;
         const wire = { ...request, signal: deadline.signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...request.headers } };
         const responsePromise = ctx.google ? ctx.google.request({ request: context, admission, run: sending && requestRun ? { markDispatched() { requestRun.markDispatched(); requestRun.markSubmissionDispatched?.(); } } : requestRun, generation, onForbidden: (settle) => {
@@ -620,7 +636,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         }
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
         if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
-        return await api<T>(path, init, true);
+        // a prepayment covered the first attempt only: the retry is another request Google counts
+        return await api<T>(path, { ...init, prepaid: false }, true);
       }
       if (!res.ok) {
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
@@ -723,11 +740,13 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const repair = await store.repairs?.get(accountId, locator);
         if (repair?.state === "blocked") return;
         try {
+          // its quota first, so no shared read slot waits on this account's pace
+          if (!quota.unpaced) await quota.spend(gmailUnits(`/messages/${id}?format=raw`), pass.signal);
           release = ctx.incoming ? await ctx.incoming.acquire(accountId, pass.signal, reset) : undefined;
           check();
           let m: GmailMessage;
           try {
-            resource = await api<IncomingResource>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset, preparationSignal: pass.signal, responseMode: "incoming", incomingId: id });
+            resource = await api<IncomingResource>(`/messages/${id}?format=raw`, { signal: sink.signal, readReset: reset, preparationSignal: pass.signal, responseMode: "incoming", incomingId: id, prepaid: true });
             m = resource.metadata;
           } catch (error) {
             // Enumeration isn't a snapshot: a message may disappear before its download.

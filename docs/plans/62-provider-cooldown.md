@@ -624,3 +624,14 @@ Reported: a fresh account downloaded ~20 messages, Gmail answered 403, then "Gma
 2. The start-up Check clock runs in batches below the gate's write slots, drained between: 65 saved holds no longer overflow it (which would have blocked every Google request).
 3. The console's request shape keeps only known route words (`requestShape`); every other segment, whatever it looks like, becomes `:id`.
 4. The start-up log reports the real remaining wait (`nextWakeDelay`), not the stale wall minimum.
+
+## Gmail calls paced under Google's per-user quota (2026-11-01)
+
+Asked: download more than six at a time. No: the limit is Google's quota, not concurrency. Projects created on or after 2026-05-01 (Terno's is) get **6,000 units a minute per user**, and a full (raw) message read costs **60**: about 100 messages a minute, which is where the first sync was refused. Concurrency can't buy more; going over only earns 403s and pauses.
+
+- `packages/mail/src/gmail-quota.ts`: Google's unit table (`gmailUnits`) and a generic cell rate limiter over units: 85 units a second with a 900-unit burst (a burst plus a minute of pacing stays within 6,000; an everyday sync never waits). A wait that ends more than a second late (a suspended Mac) spends again, so overdue reads and a refilled burst can't overspend together.
+- Every Gmail API call pays inside `api()`, just before it leaves, under the request's deadline and its pass's preparation signal (a pass that gave up sends none of its waiting siblings; a reset fails as offline, retryable). A send the user asked for counts but never waits. A full download (`fetchFull`) pays *before* it takes one of the backend's six shared read slots, so no other account waits on this one's pace, and marks that attempt prepaid; a 401 retry pays again.
+- The raw adapter doesn't pace; the desktop (`createGmailProvider`) and web Gmail providers pass Google's rate, and the registry takes `gmail.unitsPerSecond` (tests against synthetic servers lift it).
+- Six concurrent reads stay: the incoming memory budget and its perf gates assume six.
+- Codex review (two rounds): reset during pacing escaped as a raw abort; reconcile and body reads were unpaced; stale-signal waits; grants bunching before preparation (pacing moved to dispatch); perf fixtures would time out (the adapter is unpaced by default); trash costs 20, not 5; late wakes overspend; a failed pass's siblings still left; a 401 retry reused its prepayment. Each has a regression test that fails without its fix.
+- Not done: projects with older (grandfathered) quotas, or a quota increase Google grants, would sync faster than this pace allows; the rate is a constant for now.
