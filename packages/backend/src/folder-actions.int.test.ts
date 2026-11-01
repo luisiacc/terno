@@ -561,6 +561,35 @@ it("a folder deleted before the pass after its rename takes the mail that was on
   expect(config?.config.cursor?.renamed).toBeUndefined();
 });
 
+it("a folder deleted after a rename that changed its UIDVALIDITY takes the mail cached under its old name (Codex code review round 24 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  // a server that gives a renamed mailbox a new UIDVALIDITY
+  const original = ImapFlow.prototype.mailboxRename;
+  const renumbered = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    const r = await original.apply(this, args);
+    t.server.control.resetUidValidity(String(args[1]), { uidvalidity: 900 });
+    return r;
+  });
+  try {
+    await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  } finally {
+    renumbered.mockRestore();
+  }
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Job" });
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  expect(await t.locations([ma.id])).toEqual([]);
+  expect(await t.held([ma.id])).toEqual([]);
+  expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; renamed?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+  expect(config?.config.cursor?.renamed).toBeUndefined();
+});
+
 it("a folder deleted after its rename leaves a mailbox created again under its old name alone (Codex code review round 6 #1)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });

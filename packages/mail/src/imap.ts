@@ -81,8 +81,15 @@ interface Cursor {
   renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true; to?: number }>;
 }
 
-/** plan 107: a generation deleted here: the path its mail is cached under, its UIDVALIDITY, whether the backend followed it */
-type Deletion = { from: string; uidvalidity: number; answered?: true };
+/**
+ * plan 107: a generation deleted here: the path its mail is cached under, its UIDVALIDITY, whether the backend followed
+ * it. `cached`: the generation its mail is cached under at `from` when that's not `uidvalidity` (a rename here no pass
+ * read gave the mailbox a new one: Codex code review round 24 #1)
+ */
+type Deletion = { from: string; uidvalidity: number; cached?: number; answered?: true };
+
+/** plan 107: the generation a deletion's mail is cached under at its `from` */
+const cachedGeneration = (d: { uidvalidity: number; cached?: number }) => d.cached ?? d.uidvalidity;
 
 /** plan 107: a path's pending deletions, one per generation (round 15 #1); the old shape's bare UIDVALIDITY names its own path */
 function deletionsAt(cursor: Cursor | null | undefined, path: string): Deletion[] {
@@ -1090,7 +1097,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       except.set(path, [...(except.get(path) ?? []), uidvalidity]);
     };
     for (const r of Object.values(cursor?.renamed ?? {})) away(r.from, r.uidvalidity);
-    for (const { d } of allDeletions(cursor)) away(d.from, d.uidvalidity);
+    for (const { d } of allDeletions(cursor)) away(d.from, cachedGeneration(d));
     // and each new path with the generation a pending rename here moved to it, still cached under its old path: its
     // places are the new path's membership until the pass reads it and the record goes (Codex code review round 16 #1:
     // a thread's refresh dropped the carried row). Never a `stale` one (nothing of it cached), never one not done (the
@@ -1128,7 +1135,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     // plan 107: the old UIDVALIDITY is a mailbox renamed away and deleted here, the path a new one: its places are the
     // deletion's to forget once every folder is read, never held as a reset's (Codex code review round 6 #1); one
     // deleted here and made again likewise (Codex code review round 7 #2)
-    if (allDeletions(cursor).some(({ d }) => d.from === path && d.uidvalidity === olduidvalidity)) return new Set();
+    if (allDeletions(cursor).some(({ d }) => d.from === path && cachedGeneration(d) === olduidvalidity)) return new Set();
     // one renamed away and made again: its places are the rename's proof, for the new path to claim (Codex code review
     // round 7 #1); the path's state goes now, so a folder read before it this pass knows it's another mailbox
     if (Object.values(cursor.renamed ?? {}).some((r) => r.from === path && r.uidvalidity === olduidvalidity)) {
@@ -1782,7 +1789,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // the rest are forgotten once every folder here has been read (Codex code review round 4 #1): mail another app
         // moved out first is met there, so only what no folder has is proven gone. Each by where its mail is cached:
         // its own path, or the one it had before a rename no pass read (round 4 #2)
-        const deletions = allDeletions(cursor).filter(({ path }) => !unsettled.has(path)).map(({ path, d }) => ({ path, from: d.from, uidvalidity: d.uidvalidity }));
+        const deletions = allDeletions(cursor).filter(({ path }) => !unsettled.has(path)).map(({ path, d }) => ({ path, from: d.from, uidvalidity: d.uidvalidity, cached: cachedGeneration(d) }));
         const seen = new Set<number>();
         // Gmail-style servers keep archived mail only in "All Mail"
         const boxes = new Set([r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p)));
@@ -1945,7 +1952,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const state = cursor.mailboxes[to];
           // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
           const live = listed.has(r.from);
-          if (replaced(r) && !deletions.some((d) => d.from === r.from && d.uidvalidity === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
+          if (replaced(r) && !deletions.some((d) => d.from === r.from && d.cached === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
             await forgetMailbox(cursor, r.from, r.uidvalidity, "hold", sink, c, check, undefined, live);
           }
           delete cursor.renamed![to];
@@ -1957,7 +1964,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           check();
           // the record's UIDVALIDITY, never the path's now: a mailbox created there since is another (Codex code review round 6 #1)
           const live = listed.has(d.from);
-          await forgetMailbox(cursor, d.from, d.uidvalidity || (live ? undefined : cursor.mailboxes[d.from]?.uidvalidity), uncovered ? "hold" : "remove", sink, c, check, seen, live);
+          await forgetMailbox(cursor, d.from, d.cached || (live ? undefined : cursor.mailboxes[d.from]?.uidvalidity), uncovered ? "hold" : "remove", sink, c, check, seen, live);
           // only this generation's record: another deleted under the path is its own (round 15 #1)
           setDeletionsAt(cursor, d.path, deletionsAt(cursor, d.path).filter((x) => !sameGeneration(x, d)));
           await ctx.saveCursor(cursor);
@@ -2137,10 +2144,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const cursor = await ctx.loadCursor<Cursor>();
           const now = generations.get(path)!;
           // a path renamed here that no pass has read keeps its mail under the old one: the record names it (Codex code
-          // review round 4 #2: Work → Job, then Job deleted, left Work's mail behind holds)
+          // review round 4 #2: Work → Job, then Job deleted, left Work's mail behind holds). Matched by the generation
+          // the RENAME arrived as (`to`), its mail by the one it left (Codex code review round 24 #1: a server that gave
+          // Job a new UIDVALIDITY recorded Job's, and Work's cached mail was held as a vanished folder's)
           const state = cursor?.mailboxes[path];
           const was = cursor?.renamed?.[path];
-          const record: Deletion = { from: !now || state?.uidvalidity === now ? path : was?.uidvalidity === now ? was.from : path, uidvalidity: now };
+          const record: Deletion = !now || state?.uidvalidity === now || !was || (was.to ?? was.uidvalidity) !== now
+            ? { from: path, uidvalidity: now }
+            : { from: was.from, uidvalidity: now, ...(was.uidvalidity !== now && { cached: was.uidvalidity }) };
           // beside the path's other generations deleted here and not yet reconciled, never over them (Codex code review
           // round 15 #1: Work deleted, made again and deleted again forgot the first one's mail)
           const prior = deletionsAt(cursor, path);
