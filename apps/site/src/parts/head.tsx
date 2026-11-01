@@ -3,6 +3,7 @@ import { GITHUB, ORIGIN, type Route } from "../site";
 
 /** Everything search engines and link previews read (plan 97 §SEO). Rendered into <head> by the prerender step. */
 export function Head({ route, copy, title, description }: { route: Route; copy: SiteCopy; title: string; description: string }) {
+  const followsSystem = route.page === "home" && route.design !== "midnight";
   const url = `${ORIGIN}${route.path === "/404.html" ? "/" : route.path}`;
   const app = {
     "@context": "https://schema.org",
@@ -30,9 +31,19 @@ export function Head({ route, copy, title, description }: { route: Route; copy: 
           <link rel="alternate" hrefLang="x-default" href={`${ORIGIN}${copy.lang === "en" ? route.path : route.alternate}`} />
         </>
       )}
-      <meta name="color-scheme" content="light dark" />
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content={route.page === "home" && route.design === "midnight" ? "#08090b" : "#ffffff"} />
-      <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111214" />
+      {/* the site is dark whatever the system says; only the Lumen and Letter previews follow it */}
+      {followsSystem ? (
+        <>
+          <meta name="color-scheme" content="light dark" />
+          <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+          <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111214" />
+        </>
+      ) : (
+        <>
+          <meta name="color-scheme" content="dark" />
+          <meta name="theme-color" content={route.page === "home" ? "#08090b" : "#111214"} />
+        </>
+      )}
       <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

@@ -133,3 +133,18 @@ test("on a phone the hero picture's tools stay on screen, and Midnight's stay re
   // light on the dark toolbar (it was near-black there before), after the 80 ms color transition
   await expect.poll(() => inactive.evaluate((b) => getComputedStyle(b).color)).toBe("rgb(255, 255, 255)");
 });
+
+test("every page of the site is dark even when the system is light", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  for (const path of ["/", "/es/", "/privacy/", "/es/privacy/", "/download/", "/waitlist/", "/no-such-page/"]) {
+    await page.goto(path);
+    const [html, text, scheme] = await page.evaluate(() => {
+      const main = document.querySelector("main")!;
+      return [getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(main).color, document.querySelector('meta[name="color-scheme"]')?.getAttribute("content")];
+    });
+    const sum = (c: string) => c.match(/\d+/g)!.slice(0, 3).map(Number).reduce((a, b) => a + b, 0);
+    expect(sum(html), `${path} background ${html}`).toBeLessThan(100);
+    expect(sum(text), `${path} text ${text}`).toBeGreaterThan(500);
+    expect(scheme, path).toBe("dark");
+  }
+});
