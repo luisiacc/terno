@@ -1827,6 +1827,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.folder.nameSeparator": "El nombre de una carpeta no puede contener «{separator}».",
   "errors.folder.nameTooLong": "Ese nombre es demasiado largo para este servidor. Prueba con uno más corto.",
   "errors.folder.notFound": "Esa carpeta ya no está en el servidor. Se actualizó tu lista de carpetas.",
+  "errors.folder.reservedName": "“{name}” es un nombre que tu servidor de correo reserva para una carpeta propia. Elige otro nombre.",
   "errors.folder.standard": "Las carpetas estándar, como Entrada y Enviados, no se pueden renombrar, eliminar ni usar así.",
   "errors.folder.noNesting": "Este servidor no guarda carpetas dentro de otras carpetas.",
   "errors.folder.unsupported": "Las carpetas de esta cuenta no se pueden cambiar desde Terno.",

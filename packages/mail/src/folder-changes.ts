@@ -15,6 +15,7 @@ const fail = (message: Localized) => new ProviderError(message, false);
 export const nameTaken = (name: string) => fail(L("errors.folder.nameTaken", { name }));
 export const notFound = () => fail(L("errors.folder.notFound"));
 export const standardFolder = () => fail(L("errors.folder.standard"));
+export const reservedName = (name: string) => fail(L("errors.folder.reservedName", { name }));
 
 /** Names compare as servers and people do: case aside (Gmail refuses "work" beside "Work"; IMAP's INBOX is any case). */
 export const sameName = (a: string, b: string) => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
@@ -76,6 +77,28 @@ function subtree(list: readonly ListedPath[], target: ListedPath): ListedPath[] 
 
 const selectable = (m: ListedPath) => ![...m.flags].some((f) => f.toLowerCase() === "\\noselect");
 
+/** Name heuristics for servers without SPECIAL-USE (es/en/de variants): what role discovery takes a mailbox for by its path. */
+export const ROLE_NAME_HINTS = {
+  sent: /^(inbox[./])?(sent|sent items|sent messages|sent mail|enviados|elementos enviados|gesendet)$/i,
+  archive: /^(inbox[./])?(archive|archives|archivo|archivados|archiv)$/i,
+  junk: /^(inbox[./])?(junk|spam|junk e-?mail|correo no deseado|bulk mail)$/i,
+  trash: /^(inbox[./])?(trash|deleted items|deleted messages|papelera|elementos eliminados|bin|papierkorb)$/i,
+  drafts: /^(inbox[./])?(drafts|borradores|entwürfe)$/i,
+} as const;
+
+/**
+ * Codex code review round 9 #1: a path role discovery would take by its name for a role no mailbox holds by its flag
+ * (\Archive, \Sent…; the flag is the role's name) would leave the own folders after the change, with no mapping:
+ * the view, a favorite and the row would be lost. A role held by name only may move to the new path too (the first
+ * match in the server's LIST order wins), so that is refused as well.
+ */
+function assertNoRoleName(list: readonly ListedPath[], paths: readonly string[], name: string): void {
+  for (const [role, hint] of Object.entries(ROLE_NAME_HINTS)) {
+    if (!paths.some((p) => hint.test(p))) continue;
+    if (!list.some((m) => exists(m) && selectable(m) && [...m.flags].some((f) => f.toLowerCase() === "\\" + role))) throw reservedName(name);
+  }
+}
+
 /**
  * A change that would take a role mailbox or INBOX with it (one nested under an own folder) is refused whole, and so
  * is one taking a mailbox the sidebar doesn't show as the account's own (Codex code review round 2 #1: a child marked
@@ -103,6 +126,7 @@ export function planImapCreate(list: readonly ListedPath[], own: ReadonlySet<str
   checkName(name, delimiter ?? null);
   if (path.length > PATH_MAX) throw fail(L("errors.folder.nameTooLong"));
   if (siblingTaken(list, path, delimiter, name)) throw nameTaken(name);
+  assertNoRoleName(list, [path], name);
   return path;
 }
 
@@ -116,7 +140,9 @@ export function planImapRename(list: readonly ListedPath[], own: ReadonlySet<str
   assertOwnSubtree(moved, own, roles);
   if (moved.some((m) => path.length + m.path.length - key.length > PATH_MAX)) throw fail(L("errors.folder.nameTooLong"));
   if (siblingTaken(list, path, target.delimiter, name, key)) throw nameTaken(name);
-  return { path, moves: moved.map((m) => ({ from: m.path, to: path + m.path.slice(key.length) })) };
+  const moves = moved.map((m) => ({ from: m.path, to: path + m.path.slice(key.length) }));
+  if (path !== key) assertNoRoleName(list, moves.map((m) => m.to), name);
+  return { path, moves };
 }
 
 /** Plan 107: the mailboxes a delete takes, deepest first (some servers refuse a parent that still has children). */

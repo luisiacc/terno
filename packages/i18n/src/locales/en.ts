@@ -1839,6 +1839,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.folder.nameSeparator": "A folder’s name can’t contain “{separator}”.",
   "errors.folder.nameTooLong": "That name is too long for this server. Try a shorter one.",
   "errors.folder.notFound": "That folder isn’t on the server any more. Your folder list has been refreshed.",
+  "errors.folder.reservedName": "“{name}” is a name your mail server keeps for its own folder. Choose another name.",
   "errors.folder.standard": "Standard folders, like the Inbox and Sent, can’t be renamed, deleted or used this way.",
   "errors.folder.noNesting": "This server doesn’t keep folders inside other folders.",
   "errors.folder.unsupported": "This account’s folders can’t be changed from Terno.",

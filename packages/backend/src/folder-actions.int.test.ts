@@ -99,6 +99,18 @@ it("creates a folder at the top and inside another, on the server's names; a sib
   expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash", "Travel", "Work", "Work/Clients"]);
 });
 
+it("never makes or renames a folder into a name the account would read as a standard folder: nothing is sent, the folder stays (Codex code review round 9 #1)", async () => {
+  const t = await setup(["Work"]);
+  await t.backend.syncAccount(t.account.id);
+  // no archive mailbox here: "Archive" would be taken as the account's by its name, and Work would vanish unmapped
+  expect(errorKey(await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Archive" }).catch((e: unknown) => e))).toBe("errors.folder.reservedName");
+  expect(errorKey(await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "archive" }).catch((e: unknown) => e))).toBe("errors.folder.reservedName");
+  expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash", "Work"]);
+  expect(await t.ownFolders()).toEqual(["Work"]);
+  // nested, it's just a name
+  expect((await t.client.call("folders.create", { accountId: t.account.id, parent: "Work", name: "Archive" })).key).toBe("Work/Archive");
+});
+
 it("renames a folder with its subfolder: the move is announced before the list, favorites follow, and after the next pass the mail is there with the same identity", async () => {
   const t = await setup(["Work", "Work/Sub"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });

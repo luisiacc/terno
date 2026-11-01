@@ -69,6 +69,26 @@ describe("IMAP: a change checked on a fresh LIST", () => {
     expect(throwsKey(() => planImapRename(nested, own, { ...roles, sent: "Work/Sent" }, "Work", "Job", ""))).toBe("errors.folder.standard");
   });
 
+  it("never makes a folder role discovery would take for a standard one by its name (Codex code review round 9 #1)", () => {
+    // no archive or trash here: "Archive" or "trash" would be read as the account's, and the folder would vanish
+    expect(throwsKey(() => planImapRename(list, own, roles, "Work", "Archive", ""))).toBe("errors.folder.reservedName");
+    expect(throwsKey(() => planImapCreate(list, own, null, "trash", ""))).toBe("errors.folder.reservedName");
+    expect(throwsKey(() => planImapCreate(list, own, null, "Papelera", ""))).toBe("errors.folder.reservedName");
+    // under INBOX, where such servers keep the top
+    const dotted = [box("INBOX", { delimiter: "." }), box("INBOX.Clientes", { delimiter: "." })];
+    expect(throwsKey(() => planImapRename(dotted, new Set(["INBOX.Clientes"]), { inbox: "INBOX" }, "INBOX.Clientes", "Archivo", "INBOX."))).toBe("errors.folder.reservedName");
+    // a role held by name only could move to the new one (the LIST's first match wins)
+    const named = [...list, box("Archives")];
+    expect(throwsKey(() => planImapCreate(named, own, null, "Archive", ""))).toBe("errors.folder.reservedName");
+    // a role a mailbox holds by its flag stays there: the name is just a name
+    const flagged = [...list, box("Old Mail", { flags: ["\\Archive"] })];
+    expect(planImapCreate(flagged, own, null, "Archive", "")).toBe("Archive");
+    expect(planImapRename(flagged, own, roles, "Work", "Archive", "").path).toBe("Archive");
+    // nested, a name is only a name
+    expect(planImapCreate(list, own, "Work", "Archive", "")).toBe("Work/Archive");
+    expect(planImapRename(list, own, roles, "Work/Clients", "Trash", "").path).toBe("Work/Trash");
+  });
+
   it("deletes a subtree deepest first; never a standard folder or one holding one", () => {
     expect(planImapDelete(list, own, roles, "Work")).toEqual(["Work/Clients/Acme", "Work/Clients", "Work"]);
     expect(planImapDelete(list, own, roles, "Lists")).toEqual(["Lists/News", "Lists"]);

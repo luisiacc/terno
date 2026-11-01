@@ -9,7 +9,7 @@ import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from 
 import { isNetworkError } from "./net-errors";
 import { ImapIdentityError } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
-import { nameTaken, planImapCreate, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
+import { nameTaken, planImapCreate, ROLE_NAME_HINTS, planImapDelete, planImapRename, refusedBy, serverReason } from "./folder-changes";
 import { BACKFILL_CHUNK_MS, type FolderChange, type FolderMove, ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
@@ -562,14 +562,7 @@ const SPECIAL_USE_LOWER = new Map(Object.entries(SPECIAL_USE).map(([flag, role])
 const roleForFlag = (flag: string): Role | undefined => SPECIAL_USE_LOWER.get(flag.toLowerCase());
 const isSpecialUseFlag = (flag: string) => roleForFlag(flag) !== undefined || flag.toLowerCase() === "\\flagged" || flag.toLowerCase() === "\\important";
 
-/** Name heuristics for servers without SPECIAL-USE (es/en/de variants). */
-const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
-  sent: /^(inbox[./])?(sent|sent items|sent messages|sent mail|enviados|elementos enviados|gesendet)$/i,
-  archive: /^(inbox[./])?(archive|archives|archivo|archivados|archiv)$/i,
-  junk: /^(inbox[./])?(junk|spam|junk e-?mail|correo no deseado|bulk mail)$/i,
-  trash: /^(inbox[./])?(trash|deleted items|deleted messages|papelera|elementos eliminados|bin|papierkorb)$/i,
-  drafts: /^(inbox[./])?(drafts|borradores|entwürfe)$/i,
-};
+const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = ROLE_NAME_HINTS;
 
 // RFC 5530 codes for a refusal that passes: the server is busy, the mailbox in use, a limit hit, its own bug
 const TEMPORARY_CODES = new Set(["UNAVAILABLE", "INUSE", "LIMIT", "SERVERBUG", "THROTTLED"]);
