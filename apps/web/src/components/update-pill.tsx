@@ -19,7 +19,7 @@ import { useWeb } from "~/web/lifecycle";
 export function UpdatePill() {
   const pill = usePill();
   if (pill.kind === "hidden") return null;
-  return <div className="flex shrink-0 px-2 pt-1 pb-2">{pill.kind === "web" ? <WebReload /> : <DesktopPill pill={pill} />}</div>;
+  return <div className="flex shrink-0 px-2 pt-1">{pill.kind === "web" ? <WebReload /> : <DesktopPill pill={pill} />}</div>;
 }
 
 const capsule =

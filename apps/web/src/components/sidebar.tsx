@@ -969,10 +969,13 @@ export function Sidebar() {
           </button>
         </div>
       </nav>
-      <SignInNotice />
-      <ConnectionPill />
-      <FirstSyncPill />
-      <UpdatePill />
+      {/* The last pill stands clear of the footer's hairline; empty, the stack takes no room. */}
+      <div className="flex shrink-0 flex-col pb-2 empty:hidden">
+        <SignInNotice />
+        <ConnectionPill />
+        <FirstSyncPill />
+        <UpdatePill />
+      </div>
       <div className="hairline-t hairline-strong flex shrink-0 items-center gap-1 px-2 py-2">
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-glyph" /> {t("sidebar.filters")}
