@@ -1,7 +1,8 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { open } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MBOX_WRITE_MAX, MboxFiles, mboxFileName } from "./mbox-files";
 
 const dirs: string[] = [];
@@ -50,6 +51,40 @@ describe("mbox export file (plan 107)", () => {
     await files.abortAll(1);
     expect(readdirSync(d)).toEqual([]);
     expect(await files.end(1, second)).toBeNull();
+  });
+
+  it("a cancel while the file syncs keeps it out of place, and the old file whole (Codex code review round 2 #8)", async () => {
+    const d = dir();
+    const target = join(d, "Clients.mbox");
+    writeFileSync(target, "old");
+    const files = new MboxFiles();
+    const id = await files.begin(1, target);
+    expect(await files.write(1, id, "From - a\n")).toBe(true);
+    // a slow disk: the sync waits until the cancel has come
+    const handle = await open(join(d, "probe"), "w");
+    const proto = Object.getPrototypeOf(handle) as { sync(): Promise<void> };
+    await handle.close();
+    rmSync(join(d, "probe"));
+    const real = proto.sync;
+    let release!: () => void;
+    const synced = new Promise<void>((r) => (release = r));
+    const spy = vi.spyOn(proto, "sync").mockImplementation(async function (this: unknown) {
+      await synced;
+      return real.call(this);
+    });
+    try {
+      const ending = files.end(1, id);
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+      expect(await files.write(1, id, "late")).toBe(false);
+      await files.abort(1, id);
+      release();
+      expect(await ending).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(readFileSync(target, "utf8")).toBe("old");
+    expect(readdirSync(d)).toEqual(["Clients.mbox"]);
+    expect(files.size).toBe(0);
   });
 
   it("names the file from the folder, never a path", () => {

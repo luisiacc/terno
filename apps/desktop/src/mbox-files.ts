@@ -22,6 +22,10 @@ interface Pending {
   /** writes in order, each after the last */
   queue: Promise<void>;
   failed: boolean;
+  /** being synced and renamed: no more writes */
+  ending: boolean;
+  /** cancelled or gone: never renamed into place */
+  aborted: boolean;
 }
 
 /** `<name>.mbox`, or the fallback's when nothing of the name is left */
@@ -54,14 +58,14 @@ export class MboxFiles {
     const tmp = tempSibling(dirname(path), randomBytes(8).toString("hex"));
     const file = await open(tmp, "wx", 0o600);
     const id = randomUUID();
-    this.pending.set(id, { id, owner, path, tmp, file, queue: Promise.resolve(), failed: false });
+    this.pending.set(id, { id, owner, path, tmp, file, queue: Promise.resolve(), failed: false, ending: false, aborted: false });
     return id;
   }
 
   /** false: it isn't open (any more), or writing failed (it's gone then) */
   async write(owner: number, id: string, chunk: string): Promise<boolean> {
     const p = this.own(owner, id);
-    if (!p || chunk.length > MBOX_WRITE_MAX) return false;
+    if (!p || p.ending || chunk.length > MBOX_WRITE_MAX) return false;
     p.queue = p.queue.then(async () => {
       if (!p.failed) await p.file.appendFile(chunk, "utf8");
     });
@@ -78,18 +82,22 @@ export class MboxFiles {
   /** synced and renamed into place: its file name; null: it isn't open, or it couldn't be */
   async end(owner: number, id: string): Promise<string | null> {
     const p = this.own(owner, id);
-    if (!p) return null;
-    this.pending.delete(id);
+    if (!p || p.ending) return null;
+    // still pending while it syncs, so a cancel then is heard (Codex code review round 2 #8: it found nothing to abort
+    // and the file went into place anyway)
+    p.ending = true;
     try {
       await p.queue;
       await p.file.sync();
       await p.file.close();
+      if (p.aborted) return null;
       await rename(p.tmp, p.path);
       return basename(p.path);
     } catch {
       await p.file.close().catch(() => {});
       return null;
     } finally {
+      this.pending.delete(id);
       await rm(p.tmp, { force: true });
     }
   }
@@ -110,6 +118,9 @@ export class MboxFiles {
   }
 
   private async drop(p: Pending): Promise<void> {
+    p.aborted = true;
+    // one ending closes and deletes its own file, checking `aborted` before the rename
+    if (p.ending) return;
     this.pending.delete(p.id);
     await p.queue.catch(() => {});
     await p.file.close().catch(() => {});

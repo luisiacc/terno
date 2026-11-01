@@ -108,6 +108,47 @@ describe("exportFolder (plan 107)", () => {
     expect(current()).toMatchObject({ message: "Export cancelled" });
   });
 
+  it("a file opened after its export was superseded is aborted, never left open (Codex code review round 2 #9)", async () => {
+    const opened: ((r: { status: "ready"; id: string }) => void)[] = [];
+    const aborted: string[] = [];
+    g.ternoDesktop = {
+      mboxExport: {
+        begin: () => new Promise((resolve) => opened.push(resolve)),
+        write: async () => true,
+        end: async () => ({ status: "saved", name: "x.mbox" }),
+        abort: async (id: string) => (aborted.push(id), true),
+      },
+    };
+    backend(1);
+    const first = exportFolder(target, "Clients");
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    // a second export while the first one's file is still being made
+    const second = exportFolder(target, "Clients");
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    opened[0]!({ status: "ready", id: "f1" });
+    await first;
+    expect(aborted).toEqual(["f1"]);
+    opened[1]!({ status: "ready", id: "f2" });
+    await second;
+    expect(aborted).toEqual(["f1"]);
+    expect(fake.calls.filter((c) => c.method === "folders.exportStart")).toHaveLength(1);
+  });
+
+  it("a cancel while the file is being saved never ends in a success (Codex code review round 2 #8)", async () => {
+    const file = desktop();
+    backend(1);
+    const bridge = (g.ternoDesktop as { mboxExport: { end: () => Promise<unknown> } }).mboxExport;
+    bridge.end = async () => {
+      // the user clicks Cancel while main syncs the file
+      runAction("action");
+      file.ended = true;
+      return { status: "saved", name: "Clients.mbox" };
+    };
+    await exportFolder(target, "Clients");
+    expect(file.aborted).toBe(true);
+    expect(current()).toMatchObject({ message: "Export cancelled" });
+  });
+
   it("a cancelled save panel starts nothing", async () => {
     desktop({ begin: "cancelled" });
     backend(1);

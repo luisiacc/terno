@@ -125,7 +125,9 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
   try {
     // the panel or picker first, while the click still counts as the user's
     sink = await openSink(label);
-    if (!sink || cancelled) return;
+    if (!sink) return;
+    // cancelled (or superseded) while the panel or file was opening: what it opened goes too (Codex code review round 2 #9)
+    if (cancelled) return void sink.abort().catch(() => {});
     const action = { label: t("common.cancel"), name: t("folder.export.cancelName"), onClick: cancel };
     snack.loading(t("folder.export.starting", { name: label }), { id: snackId, action });
     const start = await client.call("folders.exportStart", { accountId: target.accountId, folder: target.folder, view: target.view });
@@ -148,6 +150,8 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
       if (cancelled) return;
       if (r.finished) {
         await sink.close();
+        // cancelled while it was being saved: the cancel said so, never a success after it (Codex code review round 2 #8)
+        if (cancelled) return;
         const missing = [
           r.missingAttachments ? t("folder.export.missingAttachments", { count: r.missingAttachments }) : "",
           r.partialBodies ? t("folder.export.partialBodies", { count: r.partialBodies }) : "",
