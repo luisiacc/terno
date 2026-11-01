@@ -410,10 +410,19 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
   if (removed) pruneSelection(index);
 }
 
+/** plan 107: a rename being followed (an object property: memory note react-compiler-module-let) */
+export const followedRename: { from: string | null; to: string | null } = { from: null, to: null };
+
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
 useApp.subscribe((s, prev) => {
-  if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
+  // plan 107 (Codex code review #7): the folder you're in renamed (an IMAP one gets a new key) is the same mailbox:
+  // the open thread, the reader and the checked rows stay
+  const followed = s.folder !== prev.folder && followedRename.from === prev.folder && followedRename.to === s.folder && s.view === prev.view && s.accountId === prev.accountId && s.query === prev.query;
+  if (followed) {
+    if (s.scope) setApp({ scope: null });
+    void reloadList({ keepSelection: true });
+  } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });
     void reloadList();

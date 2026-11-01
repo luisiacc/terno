@@ -60,7 +60,8 @@ export function FolderNameRow({
   siblings: readonly Folder[];
   account: Pick<Account, "kind">;
   submit: (name: string) => Promise<string | null>;
-  cancel: () => void;
+  /** "escape": the user asked (focus goes back to the row); "blur": they went elsewhere (focus stays there) */
+  cancel: (how: "escape" | "blur") => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,11 +73,11 @@ export function FolderNameRow({
     if (settled.current || busy) return;
     if (value === null || (fromBlur && (!value.trim() || value.trim() === initial))) {
       settled.current = true;
-      return cancel();
+      return cancel(fromBlur ? "blur" : "escape");
     }
     if (value.trim() === initial && initial) {
       settled.current = true;
-      return cancel();
+      return cancel(fromBlur ? "blur" : "escape");
     }
     const problem = nameProblem(value, siblings, account);
     if (problem) return setError(problem);

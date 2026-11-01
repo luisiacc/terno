@@ -2,25 +2,35 @@ import { FOLDER_NAME_MAX, type Account, type FavoriteFolder, type Folder, type F
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, navigate, setApp } from "~/state/app";
+import { getApp, setApp } from "~/state/app";
+import { followedRename } from "~/state/list";
+import { mailboxKey, saveListFilters } from "./unread-filter";
 import { setOpenAccount } from "./account-folders";
 
 /**
  * Plan 107: the folder being named in the sidebar, at most one: a new one (under `parent`, null: the account's top)
  * or a rename of `key`. `done`: the folder a create or rename just made, kept mounted and given the focus.
  */
-export type FolderEdit = { kind: "create"; accountId: number; parent: string | null } | { kind: "rename"; accountId: number; key: string };
+export type FolderEdit = ({ kind: "create"; accountId: number; parent: string | null } | { kind: "rename"; accountId: number; key: string }) & { id: number };
 export const useFolderEdit = create<{ editing: FolderEdit | null; done: { accountId: number; key: string } | null }>(() => ({ editing: null, done: null }));
 
+const edits = { n: 0 };
 export function startCreate(accountId: number, parent: string | null): void {
   // the account opens to show where it goes (its children always show)
   setOpenAccount(accountId);
-  useFolderEdit.setState({ editing: { kind: "create", accountId, parent }, done: null });
+  useFolderEdit.setState({ editing: { kind: "create", accountId, parent, id: ++edits.n }, done: null });
 }
 export function startRename(accountId: number, key: string): void {
-  useFolderEdit.setState({ editing: { kind: "rename", accountId, key }, done: null });
+  // from a favorite, its account may be closed: it opens so the field is there (Codex code review #4)
+  setOpenAccount(accountId);
+  useFolderEdit.setState({ editing: { kind: "rename", accountId, key, id: ++edits.n }, done: null });
 }
-export function stopEditing(done?: { accountId: number; key: string }): void {
+/**
+ * Ends edit `id` (its answer came, or it was cancelled): only that one, so a slow answer never closes a newer field
+ * with its text (Codex code review #3). `done`: the folder it made, focused once listed.
+ */
+export function stopEditing(id: number, done?: { accountId: number; key: string }): void {
+  if (useFolderEdit.getState().editing?.id !== id) return;
   useFolderEdit.setState({ editing: null, done: done ?? null });
 }
 
@@ -92,7 +102,18 @@ export async function setFavorite(target: FolderTarget, on: boolean): Promise<vo
 export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   const s = getApp();
   const here = renamed.find((r) => r.accountId === s.accountId && r.from === s.folder && r.from !== r.to);
-  if (here) navigate({ accountId: here.accountId, folder: here.to });
+  if (here) {
+    // the same mailbox under a new key: not a navigation (Codex code review #7), its quick filter moves with it
+    const before = mailboxKey(s);
+    const after = mailboxKey({ ...s, folder: here.to });
+    const filter = s.listFilters.get(before);
+    const listFilters = filter === undefined ? s.listFilters : new Map([...s.listFilters].filter(([k]) => k !== before).concat([[after, filter]]));
+    followedRename.from = here.from;
+    followedRename.to = here.to;
+    if (listFilters !== s.listFilters) saveListFilters(listFilters);
+    setApp({ folder: here.to, listFilters });
+    followedRename.from = followedRename.to = null;
+  }
   const { editing, done } = useFolderEdit.getState();
   const moved = (accountId: number, key: string) => renamed.find((r) => r.accountId === accountId && r.from === key)?.to ?? key;
   // the backend rewrote its favorites the same way; this window's copy follows (no settings event comes)

@@ -96,6 +96,38 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect.poll(() => keyOf(server, acme, "Equipo", "Diseño")).toBeTruthy();
   });
 
+  test("an empty new-folder field left with a click elsewhere: it goes, the focus stays where the click put it (Codex code review #6)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    await openAccount(page, acme);
+    await page.getByTestId(`nav-account-${acme}`).hover();
+    await page.getByTestId(`nav-account-add-${acme}`).click();
+    await expect(page.getByTestId(`nav-own-new-${acme}`)).toBeFocused();
+    await page.getByTestId("nav-starred").click();
+    await expect(page.getByTestId(`nav-own-new-${acme}`)).toHaveCount(0);
+    await page.waitForTimeout(100);
+    await expect(page.getByTestId("nav-starred")).toBeFocused();
+  });
+
+  test("a folder created past the first 250 is mounted and focused (Codex code review #5)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    const many = Array.from({ length: 300 }, (_, i) => ({ key: `Label_9${String(i).padStart(3, "0")}`, path: [`Carpeta ${String(i).padStart(3, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, [...mine, ...many]);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await openAccount(page, acme);
+    await expect(page.getByTestId(`nav-own-more-${acme}`)).toBeVisible();
+    await page.getByTestId(`nav-account-${acme}`).hover();
+    await page.getByTestId(`nav-account-add-${acme}`).click();
+    // sorts after every "Carpeta …": past the first batch
+    await page.getByTestId(`nav-own-new-${acme}`).fill("Zeta");
+    await page.getByTestId(`nav-own-new-${acme}`).press("Enter");
+    await expect.poll(() => keyOf(server, acme, "Zeta")).toBeTruthy();
+    const key = (await keyOf(server, acme, "Zeta"))!;
+    await expect(own(page, acme, key)).toBeFocused();
+    await page.waitForTimeout(200);
+    await expect(own(page, acme, key)).toBeFocused();
+  });
+
   test("a refused create keeps the text in the field and says why", async ({ app: page, server }) => {
     const acme = accountOf(server, "Acme Studio");
     const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;

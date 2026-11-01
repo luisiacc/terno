@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}), on: () => () => {} } }));
 (globalThis as Record<string, unknown>).localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
-const { applyFolderRenames, nameProblem, siblingsOf, useFolderEdit } = await import("./folders");
+const { applyFolderRenames, nameProblem, siblingsOf, startCreate, startRename, stopEditing, useFolderEdit } = await import("./folders");
+const { useOpenAccount } = await import("./account-folders");
 const { getApp, setApp } = await import("~/state/app");
 
 const f = (accountId: number, key: string, ...path: string[]): Folder => ({ accountId, key, path, selectable: true });
@@ -50,12 +51,12 @@ describe("applyFolderRenames", () => {
   });
 
   it("the folder you're in, your favorites and the field follow an IMAP rename's new key", () => {
-    useFolderEdit.setState({ editing: { kind: "create", accountId: 2, parent: "Work" }, done: null });
+    useFolderEdit.setState({ editing: { kind: "create", accountId: 2, parent: "Work", id: 1 }, done: null });
     applyFolderRenames([{ accountId: 2, from: "Work", to: "Jobs" }]);
     expect(getApp().folder).toBe("Jobs");
     expect(getApp().accountId).toBe(2);
     expect(getApp().settings!.favoriteFolders).toEqual([{ accountId: 2, folder: "Jobs", view: null }, { accountId: 1, folder: "Label_1", view: null }]);
-    expect(useFolderEdit.getState().editing).toEqual({ kind: "create", accountId: 2, parent: "Jobs" });
+    expect(useFolderEdit.getState().editing).toEqual({ kind: "create", accountId: 2, parent: "Jobs", id: 1 });
   });
 
   it("a Gmail rename (same key) or another account's leaves where you are alone", () => {
@@ -63,5 +64,32 @@ describe("applyFolderRenames", () => {
     applyFolderRenames([{ accountId: 1, from: "Label_1", to: "Label_1" }, { accountId: 1, from: "Work", to: "Other" }]);
     expect(getApp().folder).toBe("Work");
     expect(getApp().settings).toBe(before);
+  });
+});
+
+describe("editing", () => {
+  it("a slow answer ends only its own edit, never a newer field (Codex code review #3)", () => {
+    startCreate(1, null);
+    const first = useFolderEdit.getState().editing!.id;
+    startRename(1, "Label_3");
+    stopEditing(first, { accountId: 1, key: "Label_9" });
+    expect(useFolderEdit.getState().editing).toMatchObject({ kind: "rename", key: "Label_3" });
+    expect(useFolderEdit.getState().done).toBeNull();
+  });
+
+  it("Rename opens its account (from a favorite it may be closed) (Codex code review #4)", () => {
+    useOpenAccount.setState({ id: 2 });
+    startRename(1, "Label_3");
+    expect(useOpenAccount.getState().id).toBe(1);
+  });
+});
+
+describe("following a rename", () => {
+  it("keeps the open thread, the reader and the checked rows; the list's filter moves to the new key (Codex code review #7)", () => {
+    setApp({ accountId: 2, folder: "Work", view: "all", query: "", categoryId: null, reviewCategoryId: null, gmailTab: null, reminders: false, selectedId: 7, readerOpen: true, checked: new Set([7, 8]), listFilters: new Map([["all|2||Work", "unread"]]), settings: { favoriteFolders: [] } as never });
+    applyFolderRenames([{ accountId: 2, from: "Work", to: "Jobs" }]);
+    expect(getApp()).toMatchObject({ folder: "Jobs", selectedId: 7, readerOpen: true });
+    expect([...getApp().checked]).toEqual([7, 8]);
+    expect([...getApp().listFilters]).toEqual([["all|2||Jobs", "unread"]]);
   });
 });

@@ -466,9 +466,9 @@ function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (
  * Plan 107: its menu, a hover "+" for a subfolder, and its name in place while renamed (only that row re-renders).
  */
 const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folderKey, name, depth, active, count }: { accountId: number; accountKind: Account["kind"]; folderKey: string; name: string; depth: number; active: boolean; count: number }) {
-  const renaming = useFolderEdit((s) => s.editing?.kind === "rename" && s.editing.accountId === accountId && s.editing.key === folderKey);
+  const renaming = useFolderEdit((s) => (s.editing?.kind === "rename" && s.editing.accountId === accountId && s.editing.key === folderKey ? s.editing.id : null));
   const account = { id: accountId, kind: accountKind } as Account;
-  if (renaming) {
+  if (renaming !== null) {
     const parent = getApp().folders.find((f) => f.accountId === accountId && f.key === folderKey);
     const parentKey = parent && parent.path.length > 1 ? (getApp().folders.find((f) => f.accountId === accountId && f.path.length === parent.path.length - 1 && f.path.every((p, i) => i >= parent.path.length - 1 || p === parent.path[i]))?.key ?? null) : null;
     return (
@@ -479,14 +479,15 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
         testId={`nav-own-rename-${accountId}-${folderKey}`}
         siblings={siblingsOf(getApp().folders, accountId, parentKey, folderKey)}
         account={account}
-        cancel={() => {
-          stopEditing();
-          focusRow(accountId, folderKey);
+        cancel={(how) => {
+          stopEditing(renaming);
+          // only Esc gives the row the focus back; a blur went somewhere on purpose (Codex code review #6)
+          if (how === "escape") focusRow(accountId, folderKey);
         }}
         submit={async (next) => {
           const r = await renameFolder(accountId, folderKey, next);
           if ("error" in r) return r.error;
-          stopEditing({ accountId, key: r.key });
+          stopEditing(renaming, { accountId, key: r.key });
           return null;
         }}
       />
@@ -513,16 +514,18 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
 });
 
 /** plan 107: a folder's row takes the focus (a rename ended, a create landed), unless the user put it elsewhere */
-function focusRow(accountId: number, key: string): void {
+function focusRow(accountId: number, key: string, then?: () => void): void {
   requestAnimationFrame(() => {
     const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected && !active.closest("[data-testid^=nav-own-rename-], [data-testid^=nav-own-new-]")) return;
-    document.querySelector<HTMLElement>(`[data-testid="nav-own-${accountId}-${CSS.escape(key)}"]`)?.focus({ preventScroll: false });
+    if (!(active && active !== document.body && active.isConnected && !active.closest("[data-testid^=nav-own-rename-], [data-testid^=nav-own-new-]"))) {
+      document.querySelector<HTMLElement>(`[data-testid="nav-own-${accountId}-${CSS.escape(key)}"]`)?.focus({ preventScroll: false });
+    }
+    then?.();
   });
 }
 
 /** Plan 107: the field of a new folder, where it will be (`depth`: one step in from its parent) */
-function NewFolderRow({ account, parent, depth }: { account: Account; parent: string | null; depth: number }) {
+function NewFolderRow({ account, parent, depth, id }: { account: Account; parent: string | null; depth: number; id: number }) {
   return (
     <FolderNameRow
       initial=""
@@ -531,15 +534,17 @@ function NewFolderRow({ account, parent, depth }: { account: Account; parent: st
       testId={`nav-own-new-${account.id}`}
       siblings={siblingsOf(getApp().folders, account.id, parent)}
       account={account}
-      cancel={() => {
-        stopEditing();
+      cancel={(how) => {
+        stopEditing(id);
+        // only Esc gives the focus back; a blur went somewhere on purpose (Codex code review #6)
+        if (how !== "escape") return;
         if (parent !== null) focusRow(account.id, parent);
         else requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus());
       }}
       submit={async (name) => {
         const r = await createFolder(account.id, parent, name);
         if ("error" in r) return r.error;
-        stopEditing({ accountId: account.id, key: r.folder.key });
+        stopEditing(id, { accountId: account.id, key: r.folder.key });
         return null;
       }}
     />
@@ -607,6 +612,7 @@ function AccountFolders({
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // plan 107: a new folder's parent, the one renamed and the one just made stay mounted too (Codex R8)
   const creating = useFolderEdit((s) => (s.editing?.kind === "create" && s.editing.accountId === account.id ? s.editing.parent : undefined));
+  const editId = useFolderEdit((s) => s.editing?.id ?? 0);
   const renamingKey = useFolderEdit((s) => (s.editing?.kind === "rename" && s.editing.accountId === account.id ? s.editing.key : null));
   const doneKey = useFolderEdit((s) => (s.done?.accountId === account.id ? s.done.key : null));
   const kept = new Set([activeFolder, focusedKey, creating ?? null, renamingKey, doneKey].filter((k): k is string => k !== null && k !== undefined));
@@ -663,8 +669,10 @@ function AccountFolders({
   // plan 107: the folder a create or rename just made takes the focus once it's listed
   useLayoutEffect(() => {
     if (doneKey === null || !rows.some((r) => r.key === doneKey)) return;
-    useFolderEdit.setState({ done: null });
-    focusRow(account.id, doneKey);
+    // the pin holds the row (past the first batch too) until it has the focus and focusedKey keeps it (Codex code review #5)
+    focusRow(account.id, doneKey, () => {
+      if (useFolderEdit.getState().done?.key === doneKey) useFolderEdit.setState({ done: null });
+    });
   }, [rows, doneKey, account.id]);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
@@ -731,14 +739,14 @@ function AccountFolders({
         {/* plan 68: its own folders, under its standard ones, nested by path */}
         {mounted && (rows.length > 0 || creating !== undefined) && <div role="separator" className="hairline-t my-1 ml-7" />}
         {/* plan 107: a new folder at the top goes first, where it's looked for */}
-        {mounted && creating === null && <NewFolderRow account={account} parent={null} depth={0} />}
+        {mounted && creating === null && <NewFolderRow key={editId} account={account} parent={null} depth={0} id={editId} />}
         {mounted &&
           visible.map((r) =>
             r.selectable && r.key !== null ? (
               // keyed by the provider's folder (Codex R9: a renamed label stays the same row, focus and all)
               <Fragment key={`own:${r.key}`}>
                 <OwnFolderRow accountId={account.id} accountKind={account.kind} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
-                {creating === r.key && <NewFolderRow account={account} parent={r.key} depth={r.depth + 1} />}
+                {creating === r.key && <NewFolderRow key={editId} account={account} parent={r.key} depth={r.depth + 1} id={editId} />}
               </Fragment>
             ) : (
               // a parent that only groups what's under it: not a place to go
