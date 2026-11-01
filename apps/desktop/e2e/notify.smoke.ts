@@ -29,7 +29,7 @@ import { blockExternal, cleanupOwned, closePackaged } from "./packaged-fixture";
 const smtpSockets = new Set<Socket>();
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE_APP = join(here, "../release/mac-arm64/Terno.app");
-const SHOTS = "/tmp/unica-scratch/notify";
+const SHOTS = "/tmp/terno-scratch/notify";
 const ME = "smoke@test.local";
 
 let workdir: string;

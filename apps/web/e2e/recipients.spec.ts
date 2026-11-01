@@ -19,7 +19,7 @@ import { E2E_NOW } from "./constants";
 import { addRecipients, chipsOf, expect, focusList, recipientEmails, selectThread, test } from "./fixtures";
 import type { DevServer } from "../../backend-dev/src/server";
 
-const SHOTS = "/tmp/unica-scratch/chips-26/shots";
+const SHOTS = "/tmp/terno-scratch/chips-26/shots";
 mkdirSync(SHOTS, { recursive: true });
 const ctx = { clientId: "setup", origin: "dev" as const };
 const to = (page: Page) => page.getByTestId("compose-to");

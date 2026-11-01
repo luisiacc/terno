@@ -10,7 +10,7 @@ import type { UpdateState } from "@terno/core/updates";
 import type { Page } from "@playwright/test";
 import { expect, stabilize, test } from "./fixtures";
 
-const SHOTS = "/tmp/unica-scratch/updates-11";
+const SHOTS = "/tmp/terno-scratch/updates-11";
 
 const base: UpdateState = {
   status: "idle",

@@ -341,7 +341,7 @@ test.describe(
         await page
           .getByTestId("composer")
           .screenshot({
-            path: `/tmp/unica-scratch/autolink/${info.project.name}-${mode}.png`,
+            path: `/tmp/terno-scratch/autolink/${info.project.name}-${mode}.png`,
           });
       });
   },

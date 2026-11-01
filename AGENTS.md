@@ -47,7 +47,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
    - perf gates for anything on a hot path
 
    Visually verify UI changes: take screenshots in light and dark and look at them.
-4. **Codex code review: always, for every feature and fix series.** Run `/tmp/unica-scratch/codex-review.sh <base> <name> <plan> <out>`, or the same prompt with `-C <worktree>`. **Fix every finding** with a regression test that fails without the fix. Record what the review changed in the plan.
+4. **Codex code review: always, for every feature and fix series.** Run `/tmp/terno-scratch/codex-review.sh <base> <name> <plan> <out>`, or the same prompt with `-C <worktree>`. **Fix every finding** with a regression test that fails without the fix. Record what the review changed in the plan.
 5. **Before calling it done,** these all pass: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:e2e`, `pnpm test:web`, `pnpm test:ui-perf`. Desktop changes also need `pnpm dist:mac` plus `pnpm --filter @terno/desktop test:smoke`, and hot paths need `pnpm test:perf`. Report failures honestly.
 
 ## Designs (styles)

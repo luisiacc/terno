@@ -14,7 +14,7 @@ import { E2E_NOW } from "./constants";
 import type { AppSettings } from "@terno/core/rpc";
 import { expect, readerSubject, test, type DevServerFixture } from "./fixtures";
 
-const SHOTS = "/tmp/unica-scratch/notify";
+const SHOTS = "/tmp/terno-scratch/notify";
 
 test.use({ backendOptions: { network: true } });
 

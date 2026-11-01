@@ -16,7 +16,7 @@ import { msg } from "@terno/store/conformance";
 import { chipsOf, expect, focusList, openRow, recipientEmails, test, type CapturedMail } from "./fixtures";
 import type { DevServer } from "../../backend-dev/src/server";
 
-const SHOTS = "/tmp/unica-scratch/autocomplete-18";
+const SHOTS = "/tmp/terno-scratch/autocomplete-18";
 mkdirSync(SHOTS, { recursive: true });
 const ctx = { clientId: "setup", origin: "dev" as const };
 const body = (page: Page) => page.getByTestId("compose-body");
