@@ -2,6 +2,8 @@
 
 > **Active user course correction:** resume provider needs-work rows (15 remaining). No new full typecheck/lint/unit/e2e/Web/UI-perf/backend-perf/dist/packaged-smoke runs until every needs-work row is complete or has a recorded disposition. Older release-milestone/continuation instructions below are historical and superseded. Editor/list performance is parked outside this goal.
 
+> **Latest user authorization (2026-11-01):** “One further fix-and-review round for all six, starting with S48 (Recommended).” S48 getsR5, W01feedbackR4, B35/S23R5, foregroundR4, W08assertionsR3 and S15rolesR4. Same fail-first/targeted/isolated/serial-hot/ff-only workflow. A newP1/P2 parks only that candidate; no subsequent review loop. No full gates or editor/list continuation. Older held/stop text below remains historical.
+
 > **User review override (latest 2026-10-31):** all four R3-stopped items (S48, B38, B35/S23, Web retirement) are authorized for fail-first fixes and ONE R4 each; Web fixture port may instead use the explicitly allowed test-only self-check. Any remaining R4 P1/P2 parks ONLY that item, committed/unlanded, while other work continues. B41 deadline, W01 warning Clear, S37 conflict-copy, W05 foreground and desktop retirement follow-ups each get one review after fixes under the same park-only rule. Serial hot order: S48 P1 → B38 → B35/S23 → W05 foreground → B41; non-overlapping slices start in parallel. No body cutoff, full release gates, editor/list continuation or user-WIP edits. Older blanket goal-stop/hold text below is superseded by this instruction.
 
 
@@ -1637,3 +1639,10 @@ A28/S11 move to **already protected in Terno** for this finite current-main cont
 | T09/S52 resources |cdfba0c7;3ownershipcontrols, full50kinitialfixture20scasetimeout; IMAP/decode/mirror/physicalmemory/tombstoneunqualified |Evidenceincomplete; no productdeadline/perfclaim or extendedtimeout. |
 
 All candidates remain committed/unlanded in their retained worktrees. This snapshot records outstanding decisions/dependencies, not rowcompletion or releasegreen. No further authorized independent slice remains active; do not start another full milestone or exceed a parked candidate's review limit without the user's next decision.
+
+
+## Next six-candidate repair pass authorized — 2026-11-01
+
+User chose “One further fix-and-review round for all six, starting with S48 (Recommended).” Root released exclusive hot source to S48tokenless-positive search ordinaryRED→fix→oneR5, and disjoint rendererfeedback to W01two deferredraces→oneR4. Root directly handles the small W08staged-to-first-queue inventory assertion fix→oneR3; preserves every currenttypeconfiguration entry on rebase. Sharedsourcequeue thenB35/S23mixedfailureprojection→oneR5, foregroundcapacityhandoff→oneR4, S15staleLIST+actualfoldercost→oneR4. No count/reset/extra critique, no newlyfoundP1/P2 loop, no parkededitor/list work.
+
+All newsource starts on currentcommittedmain only, live userdesktopupdates/backendprivacysettings/Webtheme/i18n/Plan98WIP excluded and untouched. S48mustreconcile its unapplied migration after authoritativeSQL40 rather than import parkedW06SQL41. Exact plan/userseams remain approved. Everyfix starts with ordinary executed regression, wholecoherentcandidate targetedchecks/types/exactlint and oneactualSol/highcombinedStandards+Spec review. NewP1/P2parksONLYthatitem while remainingauthorizedwork continues. Earlier W06performancehold/T09readerdesign/resourcequalification remain separate, not silentlycleared bythissix-itemauthorization. Counts75covered/12needs-work/31protected/14N-A/21Outlook=153; no full release gates or sourcecutoff.
