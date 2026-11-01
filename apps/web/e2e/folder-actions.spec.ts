@@ -236,6 +236,23 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(dialog).toContainText("deleted on the server");
   });
 
+  test("Export mailbox…: an .mbox of the folder's messages from this computer, with progress and a summary", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    // the download path (Chromium's file picker would open a native dialog)
+    await page.evaluate(() => { (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined; });
+    await openAccount(page, acme);
+    await own(page, acme, "Label_22").click({ button: "right" });
+    const download = page.waitForEvent("download");
+    await page.getByTestId("folder-menu-export").click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("Rediseño web.mbox");
+    const text = await (await import("node:fs/promises")).readFile((await file.path())!, "utf8");
+    const messages = sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM messages WHERE account_id = ? AND instr(gmail_labels, '\"Label_22\"') > 0 AND is_trash = 0 AND is_spam = 0 AND is_draft = 0", acme)!.c;
+    expect(messages).toBeGreaterThan(0);
+    expect(text.match(/^From - /gm)?.length).toBe(messages);
+    await expect(page.getByTestId("snack").filter({ hasText: /Exported/ })).toBeVisible();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
