@@ -123,12 +123,19 @@ function* encodedWords(v: string): Generator<string, void> {
 /** A word longer than this can't stay on one line (RFC 5322's 998): it goes as encoded words, which fold. */
 const LONG = 900;
 
-/** A text value's words: ASCII as it is, the rest (and an over-long word) as encoded words. */
+/**
+ * A text value's words: ASCII as it is, the rest (and an over-long word) as encoded words. A word carries the spaces
+ * before it but the one `header()` puts back, so a run of them survives folding (Codex code review round 22 #2:
+ * `Invoice  42` was read back as `Invoice 42`); unfolding only takes out the line break.
+ */
 function* textWords(value: string): Generator<string, void> {
   const v = oneLine(value).trim();
   if (!ASCII.test(v)) return yield* encodedWords(v);
   let encoded = false;
-  for (const [w] of v.matchAll(/[^ ]+/g)) {
+  let first = true;
+  for (const [m] of v.matchAll(/ *[^ ]+/g)) {
+    const w = first ? m : m.slice(1);
+    first = false;
     // the space between two encoded words is dropped by a reader: one after another carries it inside
     if (w.length > LONG) yield* encodedWords(encoded ? ` ${w}` : w);
     else yield w;
@@ -151,6 +158,44 @@ function* header(name: string, words: Iterable<string>): Generator<string, void>
 }
 
 const angle = (id: string) => `<${oneLine(id).replace(/[<>\s]/g, "")}>`;
+
+/**
+ * The longest identifier written (Message-ID, In-Reply-To, References' ids, List-Id, Content-ID), in characters
+ * between its brackets: its line stays within RFC 5322's 998 (`In-Reply-To: <…>` is 15 more). Ingestion doesn't
+ * bound them (Codex code review round 22 #1: a 200,000-character Message-ID was one 200,017-character piece); a real
+ * one is well under 250. Longer is left out, named in `X-Terno-Omitted-Id`.
+ */
+const ID_MAX = 900;
+/** References' ids, all told: the newest that fit are kept, the count left out in `X-Terno-Omitted-References` */
+const REFERENCES_MAX = 8 * 1024;
+
+/** `<id>`, or null when it's empty or over ID_MAX (one that long isn't cleaned: its length says enough) */
+function boundedId(id: string): string | null {
+  if (id.length > 4 * ID_MAX) return null;
+  const a = angle(id);
+  return a.length > 2 && a.length <= ID_MAX + 2 ? a : null;
+}
+
+/** an identifier header, or the diagnostic that names it left out */
+function* idHeader(name: string, id: string): Generator<string, void> {
+  const a = boundedId(id);
+  yield a ? `${name}: ${a}\n` : `X-Terno-Omitted-Id: ${name}\n`;
+}
+
+/** References: the newest ids that fit REFERENCES_MAX, oldest first, folded a line an id at most */
+function* referencesHeader(refs: readonly string[]): Generator<string, void> {
+  const kept: string[] = [];
+  let size = 0;
+  for (let i = refs.length - 1; i >= 0; i--) {
+    const a = boundedId(refs[i]!);
+    if (a === null) continue;
+    if (size + a.length > REFERENCES_MAX) break;
+    kept.push(a);
+    size += a.length + 1;
+  }
+  if (kept.length) yield* header("References", kept.reverse());
+  if (kept.length < refs.length) yield `X-Terno-Omitted-References: ${refs.length - kept.length}\n`;
+}
 
 /** Each address's words (its name's, then `<email>`), a comma after all but the last. */
 function* addressWords(list: readonly Address[]): Generator<string, void> {
@@ -206,10 +251,10 @@ function* extendedName(v: string): Generator<string, void> {
 }
 
 /** An attachment's Content-Type and Content-Disposition lines, a long or non-ASCII name folded (round 21 #5). */
-function* partHeaders(a: MboxAttachment): Generator<string, void> {
+function* partHeaders(a: MboxAttachment, cid: string | null): Generator<string, void> {
   const v = oneLine(a.filename).trim() || "attachment";
   const type = mimeType(a.mime);
-  const disposition = a.contentId ? "inline" : "attachment";
+  const disposition = cid ? "inline" : "attachment";
   if (ASCII.test(v) && v.length <= LONG) {
     const q = `"${v.replace(/["\\]/g, "\\$&")}"`;
     yield `Content-Type: ${type}; name=${q}\n`;
@@ -457,16 +502,16 @@ export async function* mboxMessage(m: MboxMessage, read: MboxChunkReader): Async
   const alternative = text !== null && m.bodyHtml !== null;
   // line by line into the pieces: a header of any length is never one string (Codex code review round 21 #5)
   yield* putLines(out, (function* () {
-    if (m.rfcMessageId) yield* header("Message-ID", [angle(m.rfcMessageId)]);
-    if (m.inReplyTo) yield* header("In-Reply-To", [angle(m.inReplyTo)]);
-    if (m.references.length) yield* header("References", (function* () { for (const r of m.references) yield angle(r); })());
+    if (m.rfcMessageId) yield* idHeader("Message-ID", m.rfcMessageId);
+    if (m.inReplyTo) yield* idHeader("In-Reply-To", m.inReplyTo);
+    if (m.references.length) yield* referencesHeader(m.references);
     yield* addresses("From", [m.from]);
     yield* addresses("To", m.to);
     yield* addresses("Cc", m.cc);
     yield* addresses("Reply-To", m.replyTo);
     yield* header("Date", [rfc5322Date(m.date)]);
     yield* header("Subject", textWords(m.subject));
-    if (m.listId) yield* header("List-Id", [angle(m.listId)]);
+    if (m.listId) yield* idHeader("List-Id", m.listId);
     for (const a of m.attachments) if (!a.stored) yield* header("X-Terno-Missing-Attachment", textWords(a.filename || "attachment"));
     if (m.partial) yield "X-Terno-Partial-Body: true\n";
     yield "MIME-Version: 1.0\n";
@@ -483,8 +528,11 @@ export async function* mboxMessage(m: MboxMessage, read: MboxChunkReader): Async
   for (const { a, i } of stored) {
     yield* putLines(out, (function* () {
       yield `--${MIXED}\n`;
-      yield* partHeaders(a);
-      if (a.contentId) yield `Content-ID: ${angle(a.contentId)}\n`;
+      // inline only with its Content-ID: without one a reader takes an inline text part for the body
+      const cid = a.contentId ? boundedId(a.contentId) : null;
+      yield* partHeaders(a, cid);
+      if (cid) yield `Content-ID: ${cid}\n`;
+      else if (a.contentId) yield "X-Terno-Omitted-Id: Content-ID\n";
       yield "Content-Transfer-Encoding: base64\n\n";
     })());
     if (!(yield* base64Part(out, a, i, read))) missing++;

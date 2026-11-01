@@ -248,6 +248,53 @@ describe("mbox (plan 107)", () => {
     expect(new Uint8Array(email.attachments[0]!.content as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("an over-long identifier is left out with a diagnostic, References keeps the newest that fit, every line within 998 (Codex code review round 22 #1)", async () => {
+    const huge = "a".repeat(200_000);
+    const refs = Array.from({ length: 600 }, (_, i) => `ref-${String(i).padStart(3, "0")}@example.com`);
+    refs.splice(590, 0, `${huge}@x`);
+    const read: MboxChunkReader = async () => bytesBase64(new Uint8Array([1, 2, 3]));
+    const { pieces, text } = await serialize({
+      ...base,
+      rfcMessageId: `${huge}@terno`,
+      inReplyTo: `${huge}@x`,
+      references: refs,
+      listId: huge,
+      attachments: [{ filename: "a.txt", mime: "text/plain", size: 3, contentId: `${huge}@cid`, stored: true }],
+    }, read);
+    expect(Math.max(...pieces.map((p) => p.length))).toBeLessThanOrEqual(MBOX_PIECE);
+    for (const line of text.split("\n")) expect(line.length).toBeLessThanOrEqual(998);
+    expect(text).not.toContain("aaaa");
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.messageId).toBeUndefined();
+    expect(email.inReplyTo).toBeUndefined();
+    const kept = email.references!.split(/\s+/);
+    expect(kept.length).toBeGreaterThan(100);
+    expect(kept.length).toBeLessThan(600);
+    // the newest, in order
+    expect(kept).toEqual(refs.filter((r) => r.length < 100).slice(-kept.length).map((r) => `<${r}>`));
+    const diag = (key: string) => email.headers.filter((h) => h.key === key).map((h) => h.value);
+    expect(diag("x-terno-omitted-id")).toEqual(["Message-ID", "In-Reply-To", "List-Id"]);
+    expect(diag("x-terno-omitted-references")).toEqual([String(601 - kept.length)]);
+    expect(email.attachments).toHaveLength(1);
+    expect(email.attachments[0]!.contentId).toBeUndefined();
+    expect(text).toContain("X-Terno-Omitted-Id: Content-ID\n");
+  });
+
+  it("folding keeps runs of spaces in a subject and a missing attachment's name (Codex code review round 22 #2)", async () => {
+    const long = `Invoice  42 ${"word  ".repeat(30)}end   x`;
+    const { text } = await serialize({
+      ...base,
+      subject: long,
+      attachments: [{ filename: "annual  report.pdf", mime: "application/pdf", size: 9, contentId: null, stored: false }],
+    });
+    for (const line of text.split("\n\n")[0]!.split("\n")) expect(line.length).toBeLessThanOrEqual(78);
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.subject).toBe(long);
+    const short = await PostalMime.parse(readMbox((await serialize({ ...base, subject: "Invoice  42" })).text)[0]!);
+    expect(short.subject).toBe("Invoice  42");
+    expect(email.headers.filter((h) => h.key === "x-terno-missing-attachment").map((h) => h.value.replace(/\r?\n(?=[ \t])/g, ""))).toEqual(["annual  report.pdf"]);
+  });
+
   it("a chunk that's gone mid-way ends the part and counts it missing", async () => {
     const chunk = bytesBase64(new Uint8Array(ATTACHMENT_CHUNK).fill(7));
     const read: MboxChunkReader = async (_, index) => (index === 0 ? chunk : null);
