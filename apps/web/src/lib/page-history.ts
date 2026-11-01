@@ -86,6 +86,12 @@ export interface PageHistory {
 
 export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   const { history, mailbox } = deps;
+  // plan 107: lists renamed while this document lives (a folder's new key), followed through a chain of renames
+  const renamedLists = new Map<string, string>();
+  const listNow = (list: string) => {
+    for (let i = 0; i < 16 && renamedLists.has(list); i++) list = renamedLists.get(list)!;
+    return list;
+  };
   let shown: Shown = { page: "list", id: null, list: "" };
   /** a back() on its way: the generation it belongs to, and its fallback */
   let traversal: { gen: number; timer: unknown } | null = null;
@@ -160,6 +166,9 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   return {
     sync: apply,
     relist(from, to) {
+      // entries other than this one (Forward's, Back's) can't be rewritten: their list is translated as they come
+      // back (Codex code review round 16 #3)
+      if (from !== to) renamedLists.set(from, to);
       if (shown.list !== from) return;
       flushReplace(false);
       shown = { ...shown, list: to };
@@ -174,8 +183,9 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
       }
       flushReplace(false);
       const e = entryOf(state, mailbox);
-      if (e?.page === "thread" && e.list === currentList) {
-        shown = { page: "thread", id: e.id!, list: e.list };
+      if (e?.page === "thread" && listNow(e.list) === currentList) {
+        shown = { page: "thread", id: e.id!, list: currentList };
+        if (e.list !== currentList) history.replaceState(entry(shown), "", threadUrl(e.id!));
         deps.open(e.id!);
         return;
       }

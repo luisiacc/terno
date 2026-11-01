@@ -165,6 +165,23 @@ describe("page history (plan 24)", () => {
     expect(t.calls).toEqual(["push #/thread/7"]);
   });
 
+  it("Back, the list's folder renamed (a new key), then Forward: the conversation reopens over the renamed list (Codex code review round 16 #3)", () => {
+    const t = harness();
+    t.h.sync(thread(7, "Work"));
+    t.browser(-1, "Work");
+    expect(t.closed).toBe(1);
+    t.h.relist("Work", "Job");
+    t.browser(1, "Job");
+    expect(t.opened).toEqual([7]);
+    // its entry now says the list it's over
+    expect(entryOf(t.entries[t.at]!.state, "/?mailbox=a")?.list).toBe("Job");
+    // renamed twice: still followed
+    t.browser(-1, "Job");
+    t.h.relist("Job", "Next");
+    t.browser(1, "Next");
+    expect(t.opened).toEqual([7, 7]);
+  });
+
   it("j → Back → Forward within 300 ms: the replace still waiting is dropped (never written over the list), Forward reopens the entry as written", () => {
     const t = harness();
     t.h.sync(thread(1));
