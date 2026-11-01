@@ -231,6 +231,7 @@ function siteCatalog(program: Node, file: string): Node | null {
     if (declaration.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
     for (const binding of declaration.declarations as Node[]) {
       if (!named(binding.id, locale)) continue;
+      if (locale === "en" && (binding.id as Node).typeAnnotation) continue;
       if (locale === "es") {
         const annotation = (binding.id as Node).typeAnnotation;
         if (!isNode(annotation) || !isNode(annotation.typeAnnotation)) continue;

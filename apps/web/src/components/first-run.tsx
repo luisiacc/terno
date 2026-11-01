@@ -201,6 +201,7 @@ export function FirstRun() {
               >
                 {/* the style's own type, in its own design */}
                 <span data-design={d.id} aria-hidden className="flex h-10 w-14 items-center justify-center rounded-lg bg-background text-xl text-foreground shadow-hairline" style={{ fontFamily: "var(--type-list-title-family)", fontWeight: "var(--type-list-title-weight)", fontStyle: "var(--type-list-title-style)" }}>
+                  {/* i18n-ignore: aria-hidden typography specimen, identical in every language */}
                   Aa
                 </span>
                 <span className="text-sm font-medium">{designName(d.id)}</span>

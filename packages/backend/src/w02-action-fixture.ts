@@ -66,7 +66,7 @@ export async function actionFixture(kind: "SQL" | "IDB", count = 1, shared = tru
       mutation.applied = true;
     }
     if (held) { held.entered.release(); await held.response.promise; }
-    return held && held.status !== 204 ? Response.json({ error: { message: "Synthetic refusal" } }, { status: held.status }) : new Response(null, { status: 204 });
+    return held && held.status !== 204 ? Response.json({ error: { message: "Synthetic refusal" } }, { status: held.status }) : new Response(null, { status: 204 }); // i18n-ignore: controlled provider-fixture response body, not product copy
   });
   const providers: ProviderRegistry = {
     create(ctx) { return createGmailApiProvider(ctx, { endpoints: { api: `http://127.0.0.1/fixture/${ctx.account.id}` }, tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() }); },

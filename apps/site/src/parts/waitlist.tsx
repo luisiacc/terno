@@ -25,6 +25,7 @@ export function Waitlist({ copy, id = "waitlist", platform = "windows", c = {} }
       {/* a field people never see; a bot that fills it is thanked and ignored */}
       <div className="site-hp" aria-hidden="true">
         <label>
+          {/* i18n-ignore: aria-hidden honeypot label for bots, never shown to people */}
           Website
           <input type="text" name="website" tabIndex={-1} autoComplete="off" />
         </label>
