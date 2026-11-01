@@ -58,9 +58,10 @@ describe("latent cooldown policy", () => {
   });
   it("09 valid minimum beats local floor", async () => { const f = fixture(), g = await f.open(); await observe(g, at(121000)); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 }); });
   it("10 late weaker evidence keeps D", async () => { const f = fixture(), g = await f.open(); const p = g.requestsFor(A), a = p.reserve(gmail), b = p.reserve(gmail), success = p.reserve(gmail); await success.dispatch(async () => new Response()); await a.dispatch(async () => new Response(null, { status: 429 })); await b.dispatch(async () => new Response(null, { status: 429 })); await a.headers429(at(121000)); await b.headers429(none); a.release(); b.release(); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 }); success.headers(200); success.release(); await g.drain(5000); expect(decodeCooldown(f.encoded()).rows[0]?.position).toBe(2); expect(f.samples()).toBe(2); });
-  it("11 calendar hold is never fallback", async () => { const f = fixture(), g = await f.open(); await observe(g, { ...none, minimum: { kind: "hold", reason: "calendar" } }); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "calendar" }); expect(g.checkClock(A, "gmail-api", g.revisionFor(A, "gmail-api")!)).toEqual({ kind: "hold", reason: "calendar" }); });
-  it("12 leap hold keeps known D", async () => { const f = fixture(), g = await f.open(); const p = g.requestsFor(A), a = p.reserve(gmail), b = p.reserve(gmail); await a.dispatch(async () => new Response(null, { status: 429 })); await b.dispatch(async () => new Response(null, { status: 429 })); await a.headers429(at(121000)); await b.headers429({ ...none, minimum: { kind: "hold", reason: "leap-second" } }); a.release(); b.release(); const row = decodeCooldown(f.encoded()).rows[0]!; expect(row.minimum).toBe("121000"); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "leap-second" }); });
-  it("13 range hold has no timed authority", async () => { const f = fixture(), g = await f.open(); await observe(g, { ...none, minimum: { kind: "hold", reason: "range" } }); f.time(9000000, 9000000); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "range" }); });
+  // A Retry-After date the server got wrong is a bad header: the timed fallback, never a hold (a hold had no way out)
+  it("11 a calendar-invalid date falls back to the timed pause", async () => { const f = fixture(), g = await f.open(); await observe(g, { ...none, minimum: { kind: "hold", reason: "calendar" } }); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 3000 }); expect(decodeCooldown(f.encoded()).rows[0]?.hold).toBe(null); });
+  it("12 a leap-second date keeps known D and holds nothing", async () => { const f = fixture(), g = await f.open(); const p = g.requestsFor(A), a = p.reserve(gmail), b = p.reserve(gmail); await a.dispatch(async () => new Response(null, { status: 429 })); await b.dispatch(async () => new Response(null, { status: 429 })); await a.headers429(at(121000)); await b.headers429({ ...none, minimum: { kind: "hold", reason: "leap-second" } }); a.release(); b.release(); const row = decodeCooldown(f.encoded()).rows[0]!; expect(row.minimum).toBe("121000"); expect(g.state(A, "gmail-api")).toEqual({ kind: "at", atMs: 121000 }); });
+  it("13 an out-of-range date falls back and ends", async () => { const f = fixture(), g = await f.open(); await observe(g, { ...none, minimum: { kind: "hold", reason: "range" } }); f.time(9000000, 9000000); expect(g.state(A, "gmail-api")).toEqual({ kind: "ready" }); });
   it("14 invalid receipt stays unresolved", async () => { const f = fixture(), g = await f.open(); await observe(g, { received: { source: "date-now", kind: "invalid" }, minimum: { kind: "hold", reason: "clock" } }); expect(g.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock-evidence" });
     const valid = fixture(); valid.time(1000, NaN); const repairable = await valid.open(); await observe(repairable);
     expect(repairable.state(A, "gmail-api")).toEqual({ kind: "hold", reason: "clock" });
@@ -438,17 +439,17 @@ describe("cooldown review unit", () => {
     expect(f.encoded()).toBe(stored); expect(f.samples()).toBe(2);
   });
 
-  it("R1 unresolved hold is never clock repair", async () => {
+  it("R1 a bad date beside a timed refusal holds nothing; Check clock has nothing to repair", async () => {
     const f = fixture(), g = await f.open(), policy = g.requestsFor(A), first = policy.reserve(gmail), late = policy.reserve(gmail);
     await first.dispatch(async () => new Response(null, { status: 429 }));
     await late.dispatch(async () => new Response(null, { status: 429 }));
     expect(await first.headers429({ ...none, minimum: { kind: "hold", reason: "calendar" } })).toBe("committed"); first.release(); await g.drain(5000);
-    f.time(1001, 9);
+    f.time(1001, 11);
     expect(await late.headers429({ ...none, received: { source: "date-now", kind: "wall", wallMs: 1001 } })).toBe("committed"); late.release(); await g.drain(5000);
-    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "6001", replay: "5000", sample: 5000, position: 2, hold: "calendar" });
+    expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ minimum: "6001", replay: "5000", sample: 5000, position: 2, hold: null });
     const stored = f.encoded(); f.time(8000, 7000);
-    expect(g.checkClock(A, "gmail-api", g.revisionFor(A, "gmail-api")!)).toEqual({ kind: "hold", reason: "calendar" });
-    expect(f.encoded()).toBe(stored); expect(g.nextWakeDelay()).toBe(null); expect(f.samples()).toBe(2);
+    expect(g.checkClock(A, "gmail-api", g.revisionFor(A, "gmail-api")!)).toEqual({ kind: "ready" });
+    expect(f.encoded()).toBe(stored); expect(f.samples()).toBe(2);
   });
 
   it("R1 admitted HTTP rollback cannot reopen", async () => {
@@ -762,7 +763,7 @@ describe("concurrent quota refusals (a real sync's 403 burst)", () => {
     await g.drain(5000);
     expect(decodeCooldown(f.encoded()).rows[0]).toMatchObject({ hold: null });
     expect(g.state(A, "gmail-api")).toMatchObject({ kind: "at" });
-    expect(g.clockHolds()).toEqual([]);
+    expect(g.holds()).toEqual([]);
   });
 
   it("a real rollback between two observations still holds (Codex review: the clock as read is the high-water mark)", async () => {

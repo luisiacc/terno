@@ -108,8 +108,10 @@ export function mergeCooldownRows(old: CooldownRow | undefined, candidate: Coold
   const newer = BigInt(old.revision) > BigInt(candidate.revision) ? old : candidate;
   const max = (a: string | null, b: string | null) => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
   let hold = newer.hold;
-  if (old.hold && old.hold !== "clock") hold = old.hold;
-  else if (candidate.hold && candidate.hold !== "clock") hold = candidate.hold;
+  // a repair fenced on the held revision (Check clock, or a start lifting a hold) may clear any hold
+  const repairs = (a: CooldownRow, b: CooldownRow) => a.repair === b.revision && BigInt(a.revision) > BigInt(b.revision);
+  if (old.hold && old.hold !== "clock" && !repairs(candidate, old)) hold = old.hold;
+  else if (candidate.hold && candidate.hold !== "clock" && !repairs(old, candidate)) hold = candidate.hold;
   else if (old.hold === "clock" && candidate.hold === null && !(candidate.repair === old.revision && BigInt(candidate.revision) > BigInt(old.revision))) hold = "clock";
   else if (candidate.hold === "clock" && old.hold === null && !(old.repair === candidate.revision && BigInt(old.revision) > BigInt(candidate.revision))) hold = "clock";
   return { ...newer, phaseRevision: phaseOf(phase), sample: phase.sample, position: phase.position, minimum: max(old.minimum, candidate.minimum), replay: max(old.replay, candidate.replay)!, hold, repair: hold ? null : newer.repair };

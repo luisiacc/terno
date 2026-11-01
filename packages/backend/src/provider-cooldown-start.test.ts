@@ -48,6 +48,23 @@ describe("a Gmail pause the clock check held (plan 62)", () => {
     expect(ledger.rows.filter((row) => row.hold !== null)).toEqual([]);
     expect(again["cooldown"]!.state(rows[64]!.owner, "gmail-api")).toMatchObject({ kind: "at" });
     // the full 30 s pause from this start, not the stale wall minimum (already past)
-    expect(logs.find((line) => line.includes("were lifted"))).toMatch(/65 Google pause\(s\) .* resume in 30 s/);
+    expect(logs.find((line) => line.includes("were lifted"))).toMatch(/65 held Google pause\(s\) .* resume in 30 s/);
+  });
+
+  it("a hold saved from a bad Retry-After date (no deadline) is lifted too, with the row's own pause from now", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-calendar-hold-"));
+    cleanups.push(async () => rmSync(dir, { recursive: true, force: true }));
+    const providers: ProviderRegistry = { create: () => ({ async verify() {}, async sync() {}, async execute() {}, async close() {} }), async verifyImap() {}, connectGmail: async () => { throw new Error("unused"); } };
+    const open = () => new Backend({ dbPath: join(dir, "test.db"), version: "test", cipher: plaintextCipher, providers, autoSync: false, now: () => 50_000 });
+    const first = open();
+    await first.ready;
+    const held = { owner: "installation", service: "gmail-api", revision: "3", phaseRevision: "3", minimum: null, wall: "10000", replay: "0", sample: 15000, position: 3, hold: "calendar", repair: null };
+    await first.store.providerCooldown.update(() => ({ encoded: encodeCooldown({ version: 1, revision: "3", overflow: false, bindings: [], rows: [held as never] }), result: undefined }));
+    await first.stop();
+    const again = open();
+    cleanups.push(() => again.stop());
+    await again.ready;
+    expect(decodeCooldown(await again.store.providerCooldown.read()).rows[0]).toMatchObject({ hold: null, repair: "3", minimum: "65000", replay: "15000" });
+    expect(again["cooldown"]!.state("installation", "gmail-api")).toEqual({ kind: "at", atMs: 65_000 });
   });
 });

@@ -368,17 +368,17 @@ export class BackendCore {
 
   private async init(): Promise<void> {
     this.cooldown = await ProviderCooldown.open(this.store.providerCooldown, { wallNow: () => this.now(), elapsedNow: () => performance.now(), random: () => Math.random() }, { changed: () => this.cooldownChanged() });
-    // A clock hold (plan 62) is only lifted by Check clock, and no control for it ships: each start checks
-    // the clock, which re-waits the hold's full retained pause from now (nothing is released early).
-    // In batches below the gate's write slots (each repair takes one until it is saved), drained between.
-    const holds = this.options.checkClockOnStart === false ? [] : this.cooldown.clockHolds();
+    // A hold (plan 62: a clock check, or evidence it couldn't resolve) is only lifted by Check clock, and no
+    // control for it ships: each start lifts them, re-waiting each hold's full retained pause from now
+    // (nothing is released early). In batches below the gate's write slots, drained between.
+    const holds = this.options.checkClockOnStart === false ? [] : this.cooldown.holds();
     for (let i = 0; i < holds.length; i += COOLDOWN_TICKETS / 2) {
-      for (const hold of holds.slice(i, i + COOLDOWN_TICKETS / 2)) this.cooldown.checkClock(hold.owner, hold.service, hold.revision);
+      for (const hold of holds.slice(i, i + COOLDOWN_TICKETS / 2)) this.cooldown.liftHold(hold.owner, hold.service, hold.revision);
       if ((await this.cooldown.drain(5000)) !== "drained") break;
     }
     if (holds.length) {
       const wait = this.cooldown.nextWakeDelay();
-      this.log("info", `${holds.length} Google pause(s) held by a clock check were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
+      this.log("info", `${holds.length} held Google pause(s) were lifted; ${wait === null ? "nothing waits" : `requests resume in ${Math.ceil(wait / 1000)} s`}`);
     }
     for (const id of this.cooldown.boundAccountIds()) {
       const stamp = await this.store.accounts.stamp(id);

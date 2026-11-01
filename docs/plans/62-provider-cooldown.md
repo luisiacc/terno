@@ -635,3 +635,10 @@ Asked: download more than six at a time. No: the limit is Google's quota, not co
 - Six concurrent reads stay: the incoming memory budget and its perf gates assume six.
 - Codex review (two rounds): reset during pacing escaped as a raw abort; reconcile and body reads were unpaced; stale-signal waits; grants bunching before preparation (pacing moved to dispatch); perf fixtures would time out (the adapter is unpaced by default); trash costs 20, not 5; late wakes overspend; a failed pass's siblings still left; a 401 retry reused its prepayment. Each has a regression test that fails without its fix.
 - Not done: projects with older (grandfathered) quotas, or a quota increase Google grants, would sync faster than this pace allows; the rate is a constant for now.
+
+## More permanent pauses (2026-11-01 audit)
+
+- **A bad Retry-After date paused Gmail for good.** A date with the wrong weekday, a leap second or out of range made a `calendar`/`leap-second`/`range` hold, which nothing lifts (Check clock refuses them, and no control ships). One malformed header from a server stopped the account. Now such a date is a bad header like any other: the timed fallback applies. Our own clock's invalid evidence (`clock-evidence`) still holds.
+- **Saved holds of every kind are lifted on start**, not only clock holds: `liftHold` re-waits the row's full pause from now (a hold with no deadline gets its own sample from now). The store's merge lets a repair fenced on the held revision clear any hold, as it already did for clock holds.
+- Tests 11–13 and "R1 unresolved hold" pinned the old forever-hold; they now pin the fallback. New: a saved `calendar` hold is lifted on start with its own pause.
+- Known, not changed: the 64 KB ledger never drops rows or bindings of removed accounts; about 200 accounts ever bound would set the sticky `overflow` (all Google requests held). Far beyond normal use; worth a compaction on start later.

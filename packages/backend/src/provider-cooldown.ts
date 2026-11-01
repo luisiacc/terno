@@ -244,7 +244,9 @@ export class ProviderCooldown {
     let hold = previous?.hold ?? null;
     let replay = BigInt(previous?.replay ?? "0");
     if (e.minimum.kind === "at") known = larger(known, String(e.minimum.atMs));
-    if (e.minimum.kind === "hold") hold = e.minimum.reason === "clock" ? "clock-evidence" : e.minimum.reason;
+    // A Retry-After date the server got wrong (calendar, leap second, range) is a bad header like any
+    // other: the timed fallback below applies. Holding on it would pause the account for good.
+    if (e.minimum.kind === "hold" && e.minimum.reason === "clock") hold = "clock-evidence";
     if (!epoch(wall)) hold = "clock-evidence";
     else {
       const floor = BigInt(wall) + BigInt(sample);
@@ -405,9 +407,28 @@ export class ProviderCooldown {
     return this.state(owner, service);
   }
   revisionFor(owner: string, service: CooldownService): string | null { return this.row(owner, service)?.revision ?? null; }
-  /** Every clock hold, for the host's Check clock on start (no control ships, so a hold would otherwise never end). */
-  clockHolds(): { owner: string; service: CooldownService; revision: string }[] {
-    return this.ledger.rows.filter((row) => row.hold === "clock").map((row) => ({ owner: row.owner, service: row.service, revision: row.revision }));
+  /** Every held row, for the host to lift on start (no control ships, so a hold would otherwise never end). */
+  holds(): { owner: string; service: CooldownService; revision: string }[] {
+    return this.ledger.rows.filter((row) => row.hold !== null).map((row) => ({ owner: row.owner, service: row.service, revision: row.revision }));
+  }
+  /**
+   * A start's repair of any hold (Check clock's, for every reason): it re-waits the row's full retained
+   * pause from now and keeps every known minimum, revision-fenced like Check clock.
+   */
+  liftHold(owner: string, service: CooldownService, revision: string): CooldownState {
+    const row = this.row(owner, service);
+    if (!row || row.revision !== revision || !row.hold || this.closing || this.storageFault || this.ledger.overflow) return this.state(owner, service);
+    if (row.hold === "clock") return this.checkClock(owner, service, revision);
+    const wall = this.clock.wallNow(), elapsed = this.clock.elapsedNow();
+    if (!epoch(wall) || !elapsedValid(elapsed)) return this.state(owner, service);
+    // a hold from bad evidence may have no deadline: the row's own pause from now stands in for it
+    const minimum = larger(row.minimum, String(wall + row.sample));
+    const replay = BigInt(row.replay) > BigInt(row.sample) ? row.replay : String(row.sample);
+    const repaired = { ...row, revision: this.revision(), wall: String(wall), minimum, replay, hold: null, repair: row.revision };
+    this.put(repaired);
+    this.anchor(repaired, wall, elapsed);
+    this.enqueue(repaired);
+    return this.state(owner, service);
   }
   async recoverStorage(): Promise<"confirmed" | "pending-terminal" | "unconfirmed"> {
     if (this.physical) return "pending-terminal";
