@@ -388,6 +388,7 @@ const es = {
   "account.menu.rename": "Cambiar nombre",
   "account.menu.newFolder": "Carpeta nueva…",
   "sidebar.favorites": "Favoritos",
+  "errors.folder.target": "Elige una carpeta o uno de los lugares estándar de la cuenta, no ambos.",
   "folder.nameEmpty": "Escribe un nombre.",
   "folder.nameTooLong": "Usa {max} caracteres como máximo.",
   "folder.nameSeparator": "El nombre de una carpeta no puede llevar “{separator}”.",

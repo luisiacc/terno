@@ -974,14 +974,14 @@ export const contract = {
   /** Plan 107: what a delete takes with it, for its confirmation (messages in the folder and its subfolders, here) */
   "folders.count": m<{ messages: number; folders: number }>()(z.object({ accountId: id, key: folderKey })),
   /** Plan 107: a folder (or a standard row) below Starred, or not: the list kept, with its revision (as `favoriteFolders`) */
-  "folders.favorite": m<FavoriteFoldersSnapshot>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: "folder or view" })),
+  "folders.favorite": m<FavoriteFoldersSnapshot>()(folderTarget.extend({ on: z.boolean() }).refine(oneTarget, { message: t("errors.folder.target") })),
   /**
    * Plan 107: an .mbox of a folder's messages from this computer's copy, as a session: `start` fixes the messages
    * (by date, then id) and says how many; each `next` gives the following text (bounded by size and time), until
    * `done`; `cancel` ends it early. A session idle for a minute ends by itself.
    */
   // `requestId`: the renderer's own, so a cancel while it starts (no exportId yet) stops it (Codex code review round 14 #3)
-  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.extend({ requestId: z.string().min(1).max(100).optional() }).refine(oneTarget, { message: "folder or view" })),
+  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.extend({ requestId: z.string().min(1).max(100).optional() }).refine(oneTarget, { message: t("errors.folder.target") })),
   "folders.exportNext": m<{ text: string; done: number; total: number; finished: boolean; missingAttachments: number; partialBodies: number }>()(z.object({ exportId: z.string().min(1).max(100) }), { timeoutMs: 60_000 }),
   // a session's exportId, or a start's requestId while it starts
   "folders.exportCancel": m<{ ok: true }>()(z.object({ exportId: z.string().min(1).max(100) })),

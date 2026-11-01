@@ -394,6 +394,7 @@ const en = {
   "account.menu.rename": "Rename",
   "account.menu.newFolder": "New folder…",
   "sidebar.favorites": "Favorites",
+  "errors.folder.target": "Choose a folder or one of the account’s standard places, not both.",
   "folder.nameEmpty": "Enter a name.",
   "folder.nameTooLong": "Use {max} characters or fewer.",
   "folder.nameSeparator": "A folder name can’t contain “{separator}”.",
