@@ -20,7 +20,7 @@ export const useFolderEdit = create<{ editing: FolderEdit | null; done: { accoun
  * answers; it comes back with the text, what went wrong, and whether the server is still answering (round 3 #4:
  * a row back while it is can't send it again). Gone with the edit.
  */
-export type FieldDraft = { text: string; error: string | null; pending: boolean };
+export type FieldDraft = { text: string; error: string | null; pending: boolean; focused?: boolean };
 export const useFieldDrafts = create<Record<number, FieldDraft>>(() => ({}));
 export function setFieldDraft(id: number, patch: Partial<FieldDraft>): void {
   useFieldDrafts.setState((s) => ({ [id]: { text: "", error: null, pending: false, ...s[id], ...patch } }));

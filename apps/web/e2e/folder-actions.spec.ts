@@ -471,6 +471,26 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(own(page, freelance, 'A"B')).toBeFocused();
   });
 
+  test("a slow IMAP rename whose new row arrives after the user went elsewhere doesn't take the focus back (Codex code review round 6 #3)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const rename = handlers["folders.rename"]!;
+    handlers["folders.rename"] = async (...a) => (await new Promise((r) => setTimeout(r, 800)), rename(...a));
+    await openAccount(page, freelance);
+    const from = (await server.backend.store.folders.list()).find((f) => f.accountId === freelance && f.selectable && f.path.length === 1)!;
+    await own(page, freelance, from.key).click({ button: "right" });
+    await page.getByTestId("folder-menu-rename").click();
+    const field = page.getByTestId(`nav-own-rename-${freelance}-${from.key}`);
+    await field.fill("Despacio");
+    await field.press("Enter");
+    await page.getByTestId("search-input").or(page.getByTestId("nav-starred")).first().click();
+    const elsewhere = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+    expect(elsewhere).toBeTruthy();
+    await expect.poll(() => keyOf(server, freelance, "Despacio")).toBeTruthy();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe(elsewhere);
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

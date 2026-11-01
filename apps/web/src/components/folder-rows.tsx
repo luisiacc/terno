@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { Download, Folder as FolderIcon, FolderPlus, PenLine, Plus, Star, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { isFavorite, setFieldDraft, useFieldDrafts, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
@@ -77,6 +77,14 @@ export function FolderNameRow({
     shownFields.set(editId, (shownFields.get(editId) ?? 0) + 1);
     return () => void shownFields.set(editId, shownFields.get(editId)! - 1);
   }, [editId]);
+  // the edit's first field takes the focus; one mounted again later (its row moved: an IMAP rename's new key, an
+  // account opened again) only if nothing else has it (Codex code review round 6 #3: never stolen back)
+  useLayoutEffect(() => {
+    const first = !useFieldDrafts.getState()[editId]?.focused;
+    const free = !document.activeElement || document.activeElement === document.body;
+    if (first || free) input.current?.focus();
+    if (first) setFieldDraft(editId, { focused: true, text: useFieldDrafts.getState()[editId]?.text ?? "" });
+  }, [editId]);
   // one answer per edit (Codex R6 of plan 106: the blur after Enter isn't a second submit)
   const settled = useRef(false);
   const input = useRef<HTMLInputElement>(null);
@@ -115,7 +123,6 @@ export function FolderNameRow({
         {/* the text starts where a name does: the field's padding sits outside the label's line */}
         <input
           ref={input}
-          autoFocus
           data-testid={testId}
           aria-label={label}
           aria-invalid={error ? true : undefined}
