@@ -124,6 +124,16 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     expect(classifyOpenError(error)).toMatchObject({ kind: "failed", reason: "unwritable" });
   });
 
+  it("an I/O error is the disk's room when it has less free than the update needs, and the folder's otherwise", () => {
+    const ioerr = Object.assign(new Error("disk I/O error"), { errcode: 4874 });
+    expect(classifyOpenError(new MigrationError(38, "x", ioerr), () => ({ needBytes: 100, freeBytes: 0 }))).toEqual({ kind: "no-room", stage: "migrate", needBytes: 100, freeBytes: 0, canSkipBackup: false });
+    expect(classifyOpenError(new MigrationError(38, "x", ioerr), () => ({ needBytes: 100, freeBytes: 10_000 }))).toEqual({ kind: "failed", reason: "unwritable", step: 38 });
+    // the WAL a full disk can't create
+    const cantopen = Object.assign(new Error("unable to open database file"), { errcode: 14 });
+    expect(classifyOpenError(cantopen, () => ({ needBytes: 100, freeBytes: 0 }))).toMatchObject({ kind: "no-room", stage: "migrate" });
+    expect(classifyOpenError(cantopen, () => ({ needBytes: 100, freeBytes: 10_000 }))).toMatchObject({ kind: "failed", reason: "unwritable" });
+  });
+
   it("an error it doesn't recognise stays a crash", () => {
     expect(classifyOpenError(new Error("something else"))).toBeNull();
   });

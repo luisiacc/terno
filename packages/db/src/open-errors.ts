@@ -92,9 +92,17 @@ export function classifyOpenError(error: unknown, estimate: () => { needBytes: n
   if (error instanceof NoRoomError) return { kind: "no-room", stage: error.stage, needBytes: error.needBytes, freeBytes: error.freeBytes, canSkipBackup: error.canSkipBackup };
   const step = error instanceof MigrationError ? error.step : null;
   const { sqlite, errno } = codes(error);
-  if (sqlite.includes(SQLITE_FULL) || errno.includes("ENOSPC") || errno.includes("EDQUOT")) {
+  const room = () => {
     const { needBytes, freeBytes } = estimate();
-    return { kind: "no-room", stage: error instanceof BackupError ? "backup" : "migrate", needBytes, freeBytes, canSkipBackup: false };
+    return { kind: "no-room", stage: error instanceof BackupError ? "backup" : "migrate", needBytes, freeBytes, canSkipBackup: false } as const;
+  };
+  if (sqlite.includes(SQLITE_FULL) || errno.includes("ENOSPC") || errno.includes("EDQUOT")) return room();
+  // a full disk rarely reaches SQLite as SQLITE_FULL: the WAL it can't create is SQLITE_CANTOPEN, a write the volume
+  // refuses SQLITE_IOERR, the same as a failing or locked disk. With less free than the update needs, it is the
+  // disk's room (found on a real full APFS volume: upgrade.volumes.int.test.ts)
+  if (sqlite.includes(SQLITE_IOERR) || sqlite.includes(SQLITE_CANTOPEN) || errno.includes("EIO")) {
+    const r = room();
+    if (r.needBytes > 0 && r.freeBytes < r.needBytes) return r;
   }
   if (sqlite.includes(SQLITE_CORRUPT) || sqlite.includes(SQLITE_NOTADB)) return { kind: "failed", reason: "corrupt", step };
   if (error instanceof BackupError) return { kind: "failed", reason: error.kind === "unwritable" ? "unwritable" : "backup", step: null };
