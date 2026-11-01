@@ -2004,3 +2004,10 @@ IDB diagnostic **169c2736** is clean committed evidence only, based on368de33b. 
 The original wall assertion prevented the additional exact-membership audit and original close. Neither ran, and touched count alone is not exact row/rollback/reopen evidence. All observed calls/transactions had completed before the failure; the connection remained until the test process exited. No competing close or further execution was added. Test restored byte-exact, actor artifacts removed, runner joined normally, no retry/source edit/review; usage remains0/2. Evidence is retained on the candidate branch under `post-final-idb-million-label-evidence/README.md`.
 
 SQL ingestion preparation has the next available slot after its concrete scoped handoff. Other SQL/IDB failures remain queued, and normal interface counts do not clear them or justify an unrelated optimization. No broad rerun, budget change, user-WIP edit or release-green claim.
+
+
+## Ingest diagnostic released — 2026-11-01
+
+Root read **44108f93** and its four-point critique revisions, then released one selected original store-ingest throughput diagnostic. It retains the native store, original 29.5k-thread / 8-account / bodyScale4 seed with at least 50k messages, full extra generated payload, original 200-message caller batches, filters/classifier behavior, total-rate endpoint, >=1,000 msgs/s target and outbox ratio control flow. Selected seed context omits prior triage/body-edit mutations; it cannot reproduce the historical whole-file timeline exactly.
+
+Observers must preserve real synchronous transactions/savepoints/hooks/errors and attribute native statements, body/message costs, commit and unsplit outside-transaction intervals with bounded nested receipts. Seed observation stays off; no new SQL/timer/pragma/checkpoint/GC/warmup runs inside the rate window. Instrumented timing is diagnostic only. No production edit, batch/threshold/durability/schema/index change, paired alternative run or automatic retry is released. A defect-specific ordinary RED must precede any later fix. R37/counts evidence remains unchanged, and other historical failures remain queued.
