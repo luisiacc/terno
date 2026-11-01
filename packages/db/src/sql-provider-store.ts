@@ -255,15 +255,25 @@ class SqlImapLocations implements ImapLocationStore {
   }
 
   async upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
+    this.db.tx(() => this.place(messageId, mailbox, uidvalidity, uid, flags));
+  }
+
+  async upsertMany(mailbox: string, uidvalidity: number, places: readonly { messageId: number; uid: number; flags: string[] }[]) {
     this.db.tx(() => {
-      if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return;
-      // a known location (new flags, a new UID) moves no membership; one under another generation may (round 8 #1)
-      const known = this.db.get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
-      this.write(messageId, mailbox, uidvalidity, uid, flags);
-      if (known?.uidvalidity === uidvalidity) return;
-      if (known) this.located([messageId], mailbox, false);
-      this.located([messageId], mailbox, true, uidvalidity);
+      for (const p of places) this.place(p.messageId, mailbox, uidvalidity, p.uid, p.flags);
     });
+    // a bulk writer lets the checkpoint catch up (Codex code review round 20 #5)
+    await this.settle();
+  }
+
+  private place(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
+    if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return;
+    // a known location (new flags, a new UID) moves no membership; one under another generation may (round 8 #1)
+    const known = this.db.get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
+    this.write(messageId, mailbox, uidvalidity, uid, flags);
+    if (known?.uidvalidity === uidvalidity) return;
+    if (known) this.located([messageId], mailbox, false);
+    this.located([messageId], mailbox, true, uidvalidity);
   }
 
   private write(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {

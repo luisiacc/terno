@@ -334,18 +334,26 @@ class IdbImapLocations implements ImapLocationStore {
   }
 
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
+    return this.command(() => this.place(messageId, mailbox, uidvalidity, uid, flags));
+  }
+
+  upsertMany(mailbox: string, uidvalidity: number, places: readonly { messageId: number; uid: number; flags: string[] }[]) {
     return this.command(() => {
-      if (T(this.c, "imap_identity_holds").has(messageId)) return;
-      // a known location (new flags, a new UID) moves no membership
-      const prior = this.t.get(messageId, mailbox);
-      if (prior && (prior.uid !== uid || prior.uidvalidity !== uidvalidity)) retireLocationCapture(this.c,messageId,mailbox);
-      // one under another generation may move it (Codex code review round 8 #1)
-      const was = prior?.uidvalidity as number | undefined;
-      this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
-      if (was === uidvalidity) return;
-      if (was !== undefined) this.located([messageId], mailbox, false);
-      this.located([messageId], mailbox, true, uidvalidity);
+      for (const p of places) this.place(p.messageId, mailbox, uidvalidity, p.uid, p.flags);
     });
+  }
+
+  private place(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
+    if (T(this.c, "imap_identity_holds").has(messageId)) return;
+    // a known location (new flags, a new UID) moves no membership
+    const prior = this.t.get(messageId, mailbox);
+    if (prior && (prior.uid !== uid || prior.uidvalidity !== uidvalidity)) retireLocationCapture(this.c,messageId,mailbox);
+    // one under another generation may move it (Codex code review round 8 #1)
+    const was = prior?.uidvalidity as number | undefined;
+    this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
+    if (was === uidvalidity) return;
+    if (was !== undefined) this.located([messageId], mailbox, false);
+    this.located([messageId], mailbox, true, uidvalidity);
   }
 
   remove(messageId: number, mailbox: string) {

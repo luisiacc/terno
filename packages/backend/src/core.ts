@@ -1259,6 +1259,7 @@ export class BackendCore {
         mappedMove: (...args) => write(() => locations.mappedMove(...args)),
         refused: (...args) => write(() => locations.refused(...args)),
         upsert: (...args) => write(() => locations.upsert(...args)),
+        upsertMany: (...args) => write(() => locations.upsertMany(...args)),
         remove: (...args) => write(() => locations.remove(...args)),
         removeMany: (...args) => write(() => locations.removeMany(...args)),
         setFlags: (...args) => write(() => locations.setFlags(...args)),

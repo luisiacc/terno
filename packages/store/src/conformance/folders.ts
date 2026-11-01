@@ -313,6 +313,24 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Work")).toEqual([]);
     });
 
+    it("IMAP: many places written at once are each an upsert: membership in a listed folder, a held message skipped (plan 107, Codex code review round 20 #5)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }]);
+      const r = await ingest(store, [msg({ accountId: m!, providerMsgId: "u1", locations: [loc("A", 1)] }), msg({ accountId: m!, providerMsgId: "u2", locations: [loc("A", 2)] }), msg({ accountId: m!, providerMsgId: "u3", locations: [loc("A", 3)] })]);
+      const [t1, t2] = [await threadOf(store, "u1"), await threadOf(store, "u2")];
+      const locations = store.providerStore(m!).locations;
+      // u3 held (its place in A went the way a sweep's does)
+      await locations.removeMany([r.inserted[2]!], "A");
+      await locations.upsertMany("Work", 1, [{ messageId: r.inserted[0]!, uid: 1, flags: ["\\Seen"] }, { messageId: r.inserted[1]!, uid: 2, flags: [] }, { messageId: r.inserted[2]!, uid: 3, flags: [] }]);
+      expect(new Set(await ids(store, m!, "Work"))).toEqual(new Set([t1, t2]));
+      expect((await locations.inMailbox("Work", 1)).map((l) => [l.message_id, l.uid, JSON.parse(l.flags)])).toEqual([[r.inserted[0]!, 1, ["\\Seen"]], [r.inserted[1]!, 2, []]]);
+      // an unlisted path: places, no membership
+      await locations.upsertMany("Job", 1, [{ messageId: r.inserted[0]!, uid: 1, flags: [] }]);
+      expect(await ids(store, m!, "Job")).toEqual([]);
+      expect(await locations.get(r.inserted[0]!, "Job")).toMatchObject({ uid: 1, uidvalidity: 1 });
+    });
+
     it("IMAP: listing a mailbox that already has locations brings its threads in (a sliced rebuild); unlisting takes them out", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);

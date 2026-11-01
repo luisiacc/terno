@@ -239,6 +239,11 @@ export interface ImapLocationStore {
   /** The server refused the one command a dispatch started (a tagged NO/BAD): nothing moved, so this admission's holds go. */
   refused(messageIds: readonly number[], holdOwner: string): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
+  /**
+   * plan 107 (Codex code review round 20 #5): many places of one mailbox and generation, each as `upsert`, in one unit
+   * (the caller bounds how many): one transaction a place grew SQLite's WAL past 300 MB for a 20,000-message folder
+   */
+  upsertMany(mailbox: string, uidvalidity: number, places: readonly { messageId: number; uid: number; flags: string[] }[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
   /**
    * plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield
