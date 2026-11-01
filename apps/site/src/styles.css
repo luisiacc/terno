@@ -60,9 +60,10 @@ html {
 /* a macOS window around a screenshot */
 .site-window { position: relative; overflow: hidden; background: #fff; }
 .site-window-dark { background: #1c1c1e; }
+@media (prefers-color-scheme: dark) { .site-window { background: #1c1c1e; } }
 .site-window-bar { position: absolute; top: 0.9%; left: 1.1%; display: flex; gap: 0.55%; width: 6%; z-index: 1; pointer-events: none; }
 .site-window-bar span { display: block; aspect-ratio: 1; width: 22%; border-radius: 999px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15); }
-.site-window img { display: block; width: 100%; height: auto; }
+:where(.site-window) img { display: block; width: 100%; height: auto; }
 
 /* secondary pages: one quiet column */
 .site-plain {
@@ -85,3 +86,6 @@ html {
 .site-preview-bar a { padding: 0.5rem 0.8rem; border-radius: 999px; color: #e4e4e7; text-decoration: none; }
 .site-preview-bar a:hover { background: rgb(255 255 255 / 0.1); }
 .site-preview-bar a[aria-current="page"] { background: #fff; color: #111; }
+.site-window-bar span:nth-child(1) { background: #ff5f57; }
+.site-window-bar span:nth-child(2) { background: #febc2e; }
+.site-window-bar span:nth-child(3) { background: #28c840; }

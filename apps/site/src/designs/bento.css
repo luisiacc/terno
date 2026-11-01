@@ -1,1 +1,128 @@
 /* bento: design-specific CSS, scoped under html[data-design="bento"] */
+html[data-design="bento"] {
+  --b-page: #f5f5f7;
+  --b-tile: #ffffff;
+  --b-line: rgb(0 0 0 / 0.07);
+  --b-line-strong: rgb(0 0 0 / 0.12);
+  --b-fg: #1d1d1f;
+  --b-muted: #6e6e73;
+  --b-accent: #2f5bff;
+  --b-key: #fbfbfd;
+  --b-shot: #ffffff;
+  --b-invert-bg: #1d1d1f;
+  --b-invert-fg: #ffffff;
+  color-scheme: light;
+  background: var(--b-page);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="bento"] {
+    --b-page: #000000;
+    --b-tile: #161618;
+    --b-line: rgb(255 255 255 / 0.08);
+    --b-line-strong: rgb(255 255 255 / 0.14);
+    --b-fg: #f5f5f7;
+    --b-muted: #a1a1a6;
+    --b-accent: #8ea6ff;
+    --b-key: #232326;
+    --b-shot: #1c1c1e;
+    --b-invert-bg: #f5f5f7;
+    --b-invert-fg: #1d1d1f;
+    color-scheme: dark;
+  }
+}
+html[data-design="bento"] body { margin: 0; background: var(--b-page); color: var(--b-fg); }
+html[data-design="bento"] ::selection { background: rgb(47 91 255 / 0.22); }
+
+/* the grid: four columns on a desktop, two on a tablet, one on a phone; areas follow the reading order */
+html[data-design="bento"] .bento-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 720px) {
+  html[data-design="bento"] .bento-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "unified unified"
+      "search search"
+      "local zero"
+      "codes codes"
+      "triage triage"
+      "speed ms"
+      "palette palette"
+      "snippets snippets"
+      "keyboard keyboard"
+      "themes themes"
+      "open seventeen";
+  }
+}
+@media (min-width: 1080px) {
+  html[data-design="bento"] .bento-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+      "unified unified search search"
+      "unified unified local zero"
+      "codes codes triage triage"
+      "speed ms triage triage"
+      "palette palette snippets snippets"
+      "keyboard keyboard themes themes"
+      "open seventeen themes themes";
+  }
+}
+@media (min-width: 720px) {
+  html[data-design="bento"] [data-area="unified"] { grid-area: unified; }
+  html[data-design="bento"] [data-area="search"] { grid-area: search; }
+  html[data-design="bento"] [data-area="local"] { grid-area: local; }
+  html[data-design="bento"] [data-area="zero"] { grid-area: zero; }
+  html[data-design="bento"] [data-area="codes"] { grid-area: codes; }
+  html[data-design="bento"] [data-area="triage"] { grid-area: triage; }
+  html[data-design="bento"] [data-area="speed"] { grid-area: speed; }
+  html[data-design="bento"] [data-area="ms"] { grid-area: ms; }
+  html[data-design="bento"] [data-area="palette"] { grid-area: palette; }
+  html[data-design="bento"] [data-area="snippets"] { grid-area: snippets; }
+  html[data-design="bento"] [data-area="keyboard"] { grid-area: keyboard; }
+  html[data-design="bento"] [data-area="themes"] { grid-area: themes; }
+  html[data-design="bento"] [data-area="open"] { grid-area: open; }
+  html[data-design="bento"] [data-area="seventeen"] { grid-area: seventeen; }
+}
+
+/* a cropped detail of a shot: the frame peeks up from the tile's bottom edge */
+html[data-design="bento"] .bento-crop {
+  position: relative;
+  overflow: hidden;
+  background: var(--b-shot);
+  border: 1px solid var(--b-line-strong);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+}
+html[data-design="bento"] .bento-crop img { position: absolute; max-width: none; height: auto; }
+html[data-design="bento"] .bento-thumb {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--b-line-strong);
+}
+html[data-design="bento"] .bento-thumb img { position: absolute; left: 0; top: 0; width: 170%; max-width: none; height: auto; }
+
+/* keycaps */
+html[data-design="bento"] .bento-key {
+  box-shadow: inset 0 -2px 0 var(--b-line-strong), 0 0 0 1px var(--b-line-strong);
+}
+
+/* the hero window */
+html[data-design="bento"] .bento-window {
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--b-line-strong), 0 30px 60px -30px rgb(0 0 0 / 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="bento"] .bento-window { box-shadow: 0 0 0 1px var(--b-line-strong), 0 30px 80px -30px rgb(47 91 255 / 0.25); }
+}
+
+/* hover: a quiet lift of the link tiles' arrow, inside the motion cap */
+html[data-design="bento"] .bento-arrow { transition: transform 90ms ease-out; }
+html[data-design="bento"] a:hover .bento-arrow { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  html[data-design="bento"] .bento-arrow { transition: none; }
+  html[data-design="bento"] a:hover .bento-arrow { transform: none; }
+}

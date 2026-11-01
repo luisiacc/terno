@@ -1,1 +1,114 @@
 /* atelier: design-specific CSS, scoped under html[data-design="atelier"] */
+html[data-design="atelier"] {
+  /* paper and ink; the accent is a printer's oxblood (AA on paper in both schemes) */
+  --a-paper: #f5f0e6;
+  --a-mat: #ebe4d6;
+  --a-ink: #1c1915;
+  --a-muted: #5c5448;
+  --a-rule: #d5cbb9;
+  --a-rule-strong: #1c1915;
+  --a-accent: #9c3a24;
+  --a-accent-strong: #7e2c1a;
+  background: var(--a-paper);
+  color: var(--a-ink);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="atelier"] {
+    --a-paper: #1a1814;
+    --a-mat: #24211c;
+    --a-ink: #efe8d9;
+    --a-muted: #ada392;
+    --a-rule: #3a352d;
+    --a-rule-strong: #8a8172;
+    --a-accent: #e39a7f;
+    --a-accent-strong: #c96f52;
+    color-scheme: dark;
+  }
+}
+
+html[data-design="atelier"] body { background: var(--a-paper); }
+html[data-design="atelier"] ::selection { background: var(--a-accent); color: var(--a-paper); }
+html[data-design="atelier"] :focus-visible { outline-color: var(--a-accent); }
+
+html[data-design="atelier"] .atl {
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* the measure: generous margins, a 1280 px type area */
+html[data-design="atelier"] .atl-wrap {
+  margin-inline: auto;
+  max-width: 82rem;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 768px) { html[data-design="atelier"] .atl-wrap { padding-inline: 2.5rem; } }
+@media (min-width: 1280px) { html[data-design="atelier"] .atl-wrap { padding-inline: 3.5rem; } }
+
+/* a masthead's double rule */
+html[data-design="atelier"] .atl-double {
+  height: 5px;
+  border-top: 1.5px solid var(--a-rule-strong);
+  border-bottom: 1px solid var(--a-rule-strong);
+}
+
+/* each numbered section opens on an ink hairline */
+html[data-design="atelier"] .atl-section {
+  margin-top: 6rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--a-rule-strong);
+  scroll-margin-top: 1.5rem;
+}
+@media (min-width: 768px) { html[data-design="atelier"] .atl-section { margin-top: 9rem; } }
+/* the spread: two pages side by side, a gutter rule between them on wide screens */
+html[data-design="atelier"] .atl-spread .atl-spread-page { margin-top: 6rem; }
+@media (min-width: 768px) { html[data-design="atelier"] .atl-spread .atl-spread-page { margin-top: 9rem; } }
+
+/* display italics take the accent */
+html[data-design="atelier"] .atl-em { font-style: italic; color: var(--a-accent); }
+
+/* plates: the screenshot on a mat, a hairline edge */
+html[data-design="atelier"] .atl-mat {
+  background: var(--a-mat);
+  border: 1px solid var(--a-rule);
+  padding: clamp(0.4rem, 1.2vw, 1rem);
+}
+html[data-design="atelier"] .atl-mat img { border: 1px solid var(--a-rule); background: var(--a-paper); }
+html[data-design="atelier"] .atl-mat .relative { border: 1px solid var(--a-rule); }
+html[data-design="atelier"] .atl-mat .relative img { border: 0; }
+
+html[data-design="atelier"] .atl-hero-window {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgb(28 25 21 / 0.12), 0 2px 4px rgb(28 25 21 / 0.04), 0 30px 60px -20px rgb(60 40 20 / 0.22);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="atelier"] .atl-hero-window { box-shadow: 0 0 0 1px rgb(239 232 217 / 0.12), 0 30px 70px -20px rgb(0 0 0 / 0.6); }
+}
+
+/* links: quiet, underlined on hover; the contents rows draw a dotted leader */
+html[data-design="atelier"] .atl-nav { color: var(--a-ink); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 0.3em; text-decoration-thickness: 1px; transition: text-decoration-color 100ms ease-out; }
+html[data-design="atelier"] .atl-nav:hover { text-decoration-color: currentColor; }
+html[data-design="atelier"] .atl-link { text-decoration: underline; text-decoration-color: var(--a-rule-strong); text-underline-offset: 0.3em; text-decoration-thickness: 1px; transition: color 100ms ease-out; }
+html[data-design="atelier"] .atl-link:hover { color: var(--a-accent); text-decoration-color: currentColor; }
+html[data-design="atelier"] .atl-toc { transition: color 100ms ease-out; }
+html[data-design="atelier"] .atl-toc:hover { color: var(--a-accent); }
+html[data-design="atelier"] .atl-leader { flex: 1; align-self: center; border-bottom: 1px dotted var(--a-rule); min-width: 1rem; }
+html[data-design="atelier"] .atl-press { transition: background-color 100ms ease-out, color 100ms ease-out; }
+
+/* keycaps, set like type */
+html[data-design="atelier"] .atl-key {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; height: 2rem; padding: 0 0.5rem;
+  border: 1px solid var(--a-rule); border-bottom-width: 2px; border-radius: 4px;
+  background: var(--a-mat); color: var(--a-ink);
+  font: 500 0.875rem/1 var(--font-mono);
+}
+
+/* the waitlist's fields: a ruled line to write on */
+html[data-design="atelier"] .atl-field {
+  border: 0; border-bottom: 1px solid var(--a-rule-strong); border-radius: 0;
+  background: transparent; color: var(--a-ink); padding: 0 0.125rem;
+  font-family: var(--font-geist);
+}
+html[data-design="atelier"] .atl-field::placeholder { color: var(--a-muted); opacity: 0.8; }
+html[data-design="atelier"] .atl-field:focus-visible { outline-offset: 2px; border-radius: 2px; }
+html[data-design="atelier"] select.atl-field option { background: var(--a-paper); color: var(--a-ink); }

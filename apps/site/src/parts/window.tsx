@@ -8,9 +8,9 @@ export function Window({ children, className = "", dark }: { children: ReactNode
   return (
     <div className={`site-window ${dark ? "site-window-dark" : ""} ${className}`}>
       <div className="site-window-bar" aria-hidden="true">
-        <span style={{ background: "#ff5f57" }} />
-        <span style={{ background: "#febc2e" }} />
-        <span style={{ background: "#28c840" }} />
+        <span />
+        <span />
+        <span />
       </div>
       {children}
     </div>

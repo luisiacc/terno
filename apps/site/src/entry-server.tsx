@@ -18,8 +18,8 @@ export function render(route: Route): { head: string; body: string; lang: string
   const preview = route.path.startsWith("/designs/");
   const body = route.page === "home" ? (
     <>
-      {preview && <PreviewBar current={route.design} copy={copy} />}
       <Home copy={copy} route={route} />
+      {preview && <PreviewBar current={route.design} copy={copy} />}
     </>
   ) : (
     <SecondaryPage route={route} copy={copy} />

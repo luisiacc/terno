@@ -1,0 +1,60 @@
+/** Plan 96: terno.app as deployed (the built pages behind the Worker). */
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "@playwright/test";
+import { DESIGNS } from "../src/site";
+
+const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+
+for (const design of DESIGNS)
+  for (const colorScheme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`${design} (${colorScheme}, ${width}px) is axe-clean and reaches the download by keyboard`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+        await page.setViewportSize({ width, height: 900 });
+        const errors: string[] = [];
+        page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+        await page.goto(`/designs/${design}/`);
+        const axe = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+        expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+        // nothing wider than the screen
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        await page.keyboard.press("Tab");
+        await expect(page.locator(":focus")).toHaveAttribute("href", "#main");
+        // the CSP refuses nothing the page uses
+        expect(errors.filter((e) => /Content Security Policy/i.test(e))).toEqual([]);
+      });
+
+test("the waitlist joins in place with JS", async ({ page }) => {
+  await page.goto("/");
+  const form = page.locator("#waitlist form");
+  await form.getByLabel("Email").fill("js@example.com");
+  await form.getByLabel("Platform").selectOption("linux");
+  await form.getByRole("button", { name: "Join the waitlist" }).click();
+  await expect(form.getByRole("status")).toHaveText("You’re on the list. We’ll write when it’s ready.");
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("the waitlist works without JS and says how it went", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto("/es/");
+  const form = page.locator("#waitlist form");
+  await form.getByLabel("Correo").fill("nojs@example.com");
+  await form.getByRole("button", { name: "Unirme a la lista" }).click();
+  await expect(page).toHaveURL(/\/es\/waitlist\/#thanks$/);
+  await expect(page.locator("#thanks")).toBeVisible();
+  await expect(page.locator("#invalid")).toBeHidden();
+  await context.close();
+});
+
+test("routing: real 404s, trailing slashes, the download stand-in, robots and sitemap", async ({ request }) => {
+  expect((await request.get("/no-such-page/")).status()).toBe(404);
+  const privacy = await request.get("/privacy", { maxRedirects: 0 });
+  expect(privacy.status()).toBeGreaterThanOrEqual(301);
+  expect(privacy.headers().location).toBe("/privacy/");
+  expect((await request.get("/download/mac", { maxRedirects: 0 })).headers().location).toMatch(/\/download\/$|Terno-.*-arm64\.dmg$/);
+  expect(await (await request.get("/robots.txt")).text()).toContain("Disallow: /designs/");
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  expect(sitemap).toContain("<loc>https://terno.app/es/</loc>");
+  expect(sitemap).not.toContain("/designs/");
+});

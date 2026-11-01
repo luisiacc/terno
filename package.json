@@ -30,7 +30,11 @@
     "test:web-perf": "pnpm --filter @terno/web test:web-perf",
     "test:ui-perf": "pnpm --filter @terno/web test:ui-perf",
     "diag:symbolicate": "node scripts/symbolicate.mjs",
-    "brand": "pnpm --filter @terno/ui gen:brand"
+    "brand": "pnpm --filter @terno/ui gen:brand",
+    "dev:site": "pnpm --filter @terno/site dev",
+    "deploy:site": "pnpm --filter @terno/site run deploy",
+    "deploy:site:preview": "pnpm --filter @terno/site run deploy:preview",
+    "test:site": "pnpm --filter @terno/site test:site"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "catalog:",

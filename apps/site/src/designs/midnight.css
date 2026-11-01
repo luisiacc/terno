@@ -1,1 +1,219 @@
 /* midnight: design-specific CSS, scoped under html[data-design="midnight"] */
+
+html[data-design="midnight"] {
+  /* light: crisp white and zinc */
+  --mn-bg: #ffffff;
+  --mn-raised: #fafafa;
+  --mn-shot: #f4f4f5;
+  --mn-fg: #09090b;
+  --mn-muted: #52525b;
+  --mn-dim: #6b6b74;
+  --mn-line: #e7e7ea;
+  --mn-accent: #2f5bff;
+  --mn-glow: rgb(47 91 255 / 0.16);
+  --mn-cap-top: #ffffff;
+  --mn-cap-bottom: #f1f1f3;
+  --mn-cap-side: #d4d4d8;
+  --mn-cap-edge: rgb(9 9 11 / 0.1);
+  --mn-cap-fg: #27272a;
+  --mn-cap-shine: rgb(255 255 255 / 1);
+  --mn-field: #ffffff;
+  --mn-grain: 0.035;
+  background: var(--mn-bg);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="midnight"] {
+    --mn-bg: #08090b;
+    --mn-raised: #0e0f12;
+    --mn-shot: #161618;
+    --mn-fg: #ededef;
+    --mn-muted: #a1a1aa;
+    --mn-dim: #8b8b94;
+    --mn-line: rgb(255 255 255 / 0.08);
+    --mn-accent: #8aa2ff;
+    --mn-glow: rgb(47 91 255 / 0.32);
+    --mn-cap-top: #26272c;
+    --mn-cap-bottom: #1a1b1f;
+    --mn-cap-side: #0b0c0e;
+    --mn-cap-edge: rgb(255 255 255 / 0.07);
+    --mn-cap-fg: #e4e4e7;
+    --mn-cap-shine: rgb(255 255 255 / 0.1);
+    --mn-field: #0b0c0e;
+    --mn-grain: 0.06;
+    color-scheme: dark;
+  }
+}
+
+html[data-design="midnight"] ::selection { background: rgb(47 91 255 / 0.3); }
+
+/* the page's grain: a fixed layer of SVG noise (a data: URI, which the CSP's img-src allows) */
+html[data-design="midnight"] .mn { position: relative; isolation: isolate; }
+html[data-design="midnight"] .mn::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: var(--mn-grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* header: translucent over the page */
+html[data-design="midnight"] .mn-header {
+  background: color-mix(in srgb, var(--mn-bg) 78%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+}
+
+/* hero: a blue aurora above, a dotted floor */
+html[data-design="midnight"] .mn-hero::before {
+  content: ""; position: absolute; inset: -20% -10% auto; height: 820px; pointer-events: none;
+  background:
+    radial-gradient(42% 40% at 50% 0%, var(--mn-glow), transparent 70%),
+    radial-gradient(28% 26% at 22% 18%, rgb(47 91 255 / 0.08), transparent 70%),
+    radial-gradient(28% 26% at 78% 14%, rgb(120 90 255 / 0.07), transparent 70%);
+}
+html[data-design="midnight"] .mn-hero::after {
+  content: ""; position: absolute; inset: 0 0 auto; height: 760px; pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--mn-fg) 14%, transparent) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(60% 60% at 50% 30%, #000 10%, transparent 75%);
+  -webkit-mask-image: radial-gradient(60% 60% at 50% 30%, #000 10%, transparent 75%);
+}
+html[data-design="midnight"] .mn-hero > * { position: relative; z-index: 1; }
+
+html[data-design="midnight"] .mn-title {
+  background: linear-gradient(180deg, var(--mn-fg) 30%, color-mix(in srgb, var(--mn-fg) 62%, var(--mn-bg)));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+html[data-design="midnight"] .mn-pill { background: color-mix(in srgb, var(--mn-raised) 70%, transparent); }
+html[data-design="midnight"] .mn-dot {
+  width: 6px; height: 6px; border-radius: 999px; background: #2f5bff; box-shadow: 0 0 0 3px rgb(47 91 255 / 0.2), 0 0 10px #2f5bff;
+}
+html[data-design="midnight"] .mn-rule { display: block; width: 24px; height: 1px; background: var(--mn-accent); }
+
+/* buttons */
+html[data-design="midnight"] .mn-btn {
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 500; white-space: nowrap;
+  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease, box-shadow 100ms ease;
+}
+html[data-design="midnight"] .mn-btn:active { transform: translateY(1px); }
+html[data-design="midnight"] .mn-btn-primary {
+  background: #2f5bff; color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 0 0 1px rgb(47 91 255 / 0.9), 0 8px 24px -8px rgb(47 91 255 / 0.65);
+}
+html[data-design="midnight"] .mn-btn-primary:hover { background: #2450f0; }
+html[data-design="midnight"] .mn-btn-ghost {
+  color: var(--mn-fg); background: color-mix(in srgb, var(--mn-raised) 80%, transparent); box-shadow: inset 0 0 0 1px var(--mn-line);
+}
+html[data-design="midnight"] .mn-btn-ghost:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mn-fg) 22%, transparent); }
+
+/* keycaps: a top face over a darker skirt, lit from above */
+html[data-design="midnight"] .mn-cap {
+  display: inline-grid; place-items: center; min-width: 1.75rem; height: 1.75rem; padding: 0 0.45rem; border-radius: 6px;
+  font: 500 0.78rem/1 var(--font-mono); color: var(--mn-cap-fg);
+  background: linear-gradient(180deg, var(--mn-cap-top), var(--mn-cap-bottom));
+  box-shadow: inset 0 1px 0 var(--mn-cap-shine), 0 0 0 1px var(--mn-cap-edge), 0 2px 0 var(--mn-cap-side), 0 2px 0 1px var(--mn-cap-edge);
+  transform: translateY(-1px);
+}
+html[data-design="midnight"] .mn-cap-big {
+  position: relative; min-width: 4.75rem; height: 4.75rem; padding: 0 1.1rem; border-radius: 16px;
+  font: 400 1.75rem/1 var(--font-geist); letter-spacing: -0.01em;
+  background: linear-gradient(180deg, var(--mn-cap-top) 0%, var(--mn-cap-bottom) 100%);
+  box-shadow:
+    inset 0 1px 0 var(--mn-cap-shine),
+    inset 0 -10px 14px -10px rgb(0 0 0 / 0.18),
+    0 0 0 1px var(--mn-cap-edge),
+    0 6px 0 0 var(--mn-cap-side),
+    0 6px 0 1px var(--mn-cap-edge),
+    0 18px 30px -8px rgb(0 0 0 / 0.35),
+    0 26px 60px -20px var(--mn-glow);
+  transform: translateY(-6px);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+/* the dished top face */
+html[data-design="midnight"] .mn-cap-big::before {
+  content: ""; position: absolute; inset: 6px 7px 9px; border-radius: 11px; pointer-events: none;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.04), rgb(0 0 0 / 0.05));
+  box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.06), 0 1px 0 rgb(255 255 255 / 0.03);
+}
+html[data-design="midnight"] li:hover > span > .mn-cap-big {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 var(--mn-cap-shine),
+    inset 0 -10px 14px -10px rgb(0 0 0 / 0.18),
+    0 0 0 1px var(--mn-cap-edge),
+    0 2px 0 0 var(--mn-cap-side),
+    0 2px 0 1px var(--mn-cap-edge),
+    0 8px 18px -8px rgb(0 0 0 / 0.35),
+    0 20px 50px -16px var(--mn-glow);
+}
+@media (max-width: 639px) {
+  html[data-design="midnight"] .mn-cap-big { min-width: 3.6rem; height: 3.6rem; font-size: 1.35rem; border-radius: 13px; padding: 0 0.8rem; }
+}
+
+/* the product shot: a soft blue glow under the window */
+html[data-design="midnight"] .mn-glow {
+  position: absolute; inset: 8% 4% -6%; border-radius: 40px; pointer-events: none;
+  background: radial-gradient(50% 50% at 50% 50%, var(--mn-glow), transparent 72%); filter: blur(30px);
+}
+html[data-design="midnight"] .mn-glow-soft { inset: 0; opacity: 0.8; }
+html[data-design="midnight"] .mn-window {
+  background: var(--mn-shot);
+  box-shadow: 0 0 0 1px var(--mn-line), 0 1px 0 0 rgb(255 255 255 / 0.06) inset, 0 40px 90px -30px rgb(0 0 0 / 0.45), 0 0 120px -40px var(--mn-glow);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="midnight"] .mn-window { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 40px 100px -30px rgb(0 0 0 / 0.9), 0 0 140px -30px var(--mn-glow); }
+}
+
+/* stats: a terminal line */
+html[data-design="midnight"] .mn-prompt { margin-right: 0.5ch; color: var(--mn-accent); font-weight: 400; }
+
+/* feature cards */
+html[data-design="midnight"] .mn-card { transition: background-color 100ms ease; }
+html[data-design="midnight"] .mn-card:hover { background: var(--mn-raised); }
+html[data-design="midnight"] .mn-icon { display: inline-flex; }
+
+/* local: your Mac and your mail server, nothing between */
+html[data-design="midnight"] .mn-node {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--mn-muted);
+  background: var(--mn-bg); box-shadow: 0 0 0 1px var(--mn-line);
+}
+html[data-design="midnight"] .mn-wire {
+  flex: 1; height: 1px;
+  background: repeating-linear-gradient(90deg, var(--mn-accent) 0 6px, transparent 6px 11px);
+  opacity: 0.7;
+}
+
+/* crops of a 1440×900 shot: aspect (x1-x0)/(y1-y0), width 1440/(x1-x0), left -x0/(x1-x0), top -y0/(y1-y0) */
+html[data-design="midnight"] .mn-crop { position: relative; }
+html[data-design="midnight"] .mn-crop picture { display: contents; }
+html[data-design="midnight"] .mn-crop img { position: absolute; max-width: none; height: auto; }
+html[data-design="midnight"] .mn-crop-unified { aspect-ratio: 900 / 560; }
+html[data-design="midnight"] .mn-crop-unified img { width: calc(1440 / 900 * 100%); left: 0; top: calc(-30 / 560 * 100%); }
+html[data-design="midnight"] .mn-crop-search { aspect-ratio: 395 / 342; }
+html[data-design="midnight"] .mn-crop-search img { width: calc(1440 / 395 * 100%); left: calc(-250 / 395 * 100%); top: 0; }
+html[data-design="midnight"] .mn-crop-triage { aspect-ratio: 395 / 342; }
+html[data-design="midnight"] .mn-crop-triage img { width: calc(1440 / 395 * 100%); left: calc(-250 / 395 * 100%); top: calc(-558 / 342 * 100%); }
+html[data-design="midnight"] .mn-crop-code { aspect-ratio: 395 / 250; }
+html[data-design="midnight"] .mn-crop-code img { width: calc(1440 / 395 * 100%); left: calc(-250 / 395 * 100%); top: calc(-138 / 250 * 100%); }
+html[data-design="midnight"] .mn-crop-palette { aspect-ratio: 628 / 254; }
+html[data-design="midnight"] .mn-crop-palette img { width: calc(1440 / 628 * 100%); left: calc(-406 / 628 * 100%); top: calc(-168 / 254 * 100%); }
+html[data-design="midnight"] .mn-crop-snippets { aspect-ratio: 628 / 268; }
+html[data-design="midnight"] .mn-crop-snippets img { width: calc(1440 / 628 * 100%); left: calc(-406 / 628 * 100%); top: calc(-168 / 268 * 100%); }
+html[data-design="midnight"] .mn-crop-shortcuts { aspect-ratio: 768 / 530; }
+html[data-design="midnight"] .mn-crop-shortcuts img { width: calc(1440 / 768 * 100%); left: calc(-336 / 768 * 100%); top: calc(-72 / 530 * 100%); }
+
+html[data-design="midnight"] .mn-thumb img { display: block; width: 100%; height: auto; }
+
+/* closing: the aurora again, from below */
+html[data-design="midnight"] .mn-closing {
+  background:
+    radial-gradient(60% 70% at 50% 0%, var(--mn-glow), transparent 70%),
+    var(--mn-raised);
+}
+
+/* the waitlist's fields */
+html[data-design="midnight"] .mn-field {
+  width: 100%; background: var(--mn-field); color: var(--mn-fg); border: 1px solid var(--mn-line);
+  transition: border-color 100ms ease;
+}
+html[data-design="midnight"] .mn-field::placeholder { color: var(--mn-dim); }
+html[data-design="midnight"] .mn-field:hover { border-color: color-mix(in srgb, var(--mn-fg) 22%, transparent); }
+html[data-design="midnight"] .mn-field:focus-visible { outline: 2px solid #2f5bff; outline-offset: 1px; border-radius: 8px; }

@@ -1,1 +1,145 @@
 /* lumen: design-specific CSS, scoped under html[data-design="lumen"] */
+html[data-design="lumen"] {
+  --l-bg: #fbf9f5;
+  --l-raise: #ffffff;
+  --l-band: #f4f1ea;
+  --l-fg: #1c1a17;
+  --l-muted: #615c53;
+  --l-line: #e6e1d6;
+  --l-accent: #2f5bff;
+  --l-accent-ink: #2449d8;
+  --l-accent-soft: rgb(47 91 255 / 0.08);
+  --l-ring: rgb(28 26 23 / 0.07);
+  --l-shadow: 0 1px 2px rgb(60 45 20 / 0.06), 0 24px 60px -24px rgb(60 45 20 / 0.28);
+  --l-shadow-hero: 0 2px 4px rgb(60 45 20 / 0.05), 0 40px 100px -30px rgb(60 45 20 / 0.35), 0 18px 40px -20px rgb(60 45 20 / 0.18);
+  background: var(--l-bg);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="lumen"] {
+    --l-bg: #141311;
+    --l-raise: #1c1b18;
+    --l-band: #1a1916;
+    --l-fg: #f3f0ea;
+    --l-muted: #aaa49a;
+    --l-line: #2f2c27;
+    --l-accent: #7f9cff;
+    --l-accent-ink: #9db3ff;
+    --l-accent-soft: rgb(127 156 255 / 0.1);
+    --l-ring: rgb(255 255 255 / 0.08);
+    --l-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 24px 60px -24px rgb(0 0 0 / 0.7);
+    --l-shadow-hero: 0 2px 4px rgb(0 0 0 / 0.3), 0 40px 100px -30px rgb(0 0 0 / 0.8), 0 0 120px -20px rgb(127 156 255 / 0.12);
+    color-scheme: dark;
+  }
+}
+html[data-design="lumen"] body { margin: 0; background: var(--l-bg); }
+html[data-design="lumen"] ::selection { background: rgb(47 91 255 / 0.2); }
+
+/* a warm light from the top of the page, and a faint blue one behind the hero shot */
+html[data-design="lumen"] .lumen {
+  background:
+    radial-gradient(ellipse 75% 1100px at 50% -300px, rgb(255 206 150 / 0.22), transparent 70%),
+    var(--l-bg);
+}
+html[data-design="lumen"] .lumen-hero { background: radial-gradient(ellipse 60% 40% at 50% 80%, rgb(47 91 255 / 0.07), transparent 70%); }
+@media (prefers-color-scheme: dark) {
+  html[data-design="lumen"] .lumen {
+    background:
+      radial-gradient(ellipse 75% 1100px at 50% -300px, rgb(255 190 120 / 0.07), transparent 70%),
+      var(--l-bg);
+  }
+  html[data-design="lumen"] .lumen-hero { background: radial-gradient(ellipse 60% 40% at 50% 80%, rgb(127 156 255 / 0.09), transparent 70%); }
+}
+
+/* frames */
+html[data-design="lumen"] .lumen-window { box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow); }
+html[data-design="lumen"] .lumen-window-hero { box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow-hero); }
+html[data-design="lumen"] .lumen-card { background: var(--l-raise); box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow); }
+html[data-design="lumen"] .lumen-thumb { box-shadow: 0 0 0 1px var(--l-ring), 0 12px 30px -16px rgb(60 45 20 / 0.3); }
+html[data-design="lumen"] .lumen-thumb img { display: block; width: 100%; height: auto; }
+
+/* crops of a 1440×900 shot: the wrapper's aspect is the region, the image is scaled and moved to show it */
+html[data-design="lumen"] .lumen-crop { position: relative; overflow: hidden; }
+html[data-design="lumen"] .lumen-crop img { display: block; max-width: none; height: auto; }
+/* the sidebar and list: x 0–645, y 0–640 */
+html[data-design="lumen"] .lumen-crop-unified { aspect-ratio: 645 / 640; }
+html[data-design="lumen"] .lumen-crop-unified img { width: 223.26%; }
+/* the "everything like it" snackbar after filing, edge to edge: x 258–639, y 747–891 */
+html[data-design="lumen"] .lumen-crop-file { aspect-ratio: 381 / 144; }
+html[data-design="lumen"] .lumen-crop-file img { width: 377.95%; transform: translate(-17.917%, -83%); }
+/* the snackbar after archiving: x 258–639, y 823–891 */
+html[data-design="lumen"] .lumen-crop-archive { aspect-ratio: 381 / 68; }
+html[data-design="lumen"] .lumen-crop-archive img { width: 377.95%; transform: translate(-17.917%, -91.444%); }
+/* the snippets list, edge to edge: x 402–1038, y 164–438 */
+html[data-design="lumen"] .lumen-crop-overlay { aspect-ratio: 636 / 274; }
+html[data-design="lumen"] .lumen-crop-overlay img { width: 226.42%; transform: translate(-27.917%, -18.222%); }
+/* the palette is shorter: y 164–425 */
+html[data-design="lumen"] .lumen-crop-palette { aspect-ratio: 636 / 261; }
+html[data-design="lumen"] .lumen-crop-palette img { width: 226.42%; transform: translate(-27.917%, -18.222%); }
+/* the first two rows of the list, the code chip in the first: x 250–645, y 132–300 */
+html[data-design="lumen"] .lumen-crop-code { aspect-ratio: 395 / 168; }
+html[data-design="lumen"] .lumen-crop-code img { width: 364.56%; transform: translate(-17.361%, -14.667%); }
+/* a soft ring around the chip (x 495–574, y 147–168) */
+html[data-design="lumen"] .lumen-ring {
+  position: absolute; left: 61.4%; top: 7.6%; width: 21.2%; height: 15.2%;
+  border-radius: 999px; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--l-accent), 0 0 0 8px var(--l-accent-soft);
+}
+
+/* surfaces */
+html[data-design="lumen"] .lumen-stage {
+  background: radial-gradient(120% 90% at 30% 0%, rgb(255 214 170 / 0.35), transparent 60%), radial-gradient(100% 80% at 100% 100%, rgb(47 91 255 / 0.1), transparent 60%), var(--l-band);
+  box-shadow: inset 0 0 0 1px var(--l-ring);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="lumen"] .lumen-stage {
+    background: radial-gradient(120% 90% at 30% 0%, rgb(255 190 120 / 0.07), transparent 60%), radial-gradient(100% 80% at 100% 100%, rgb(127 156 255 / 0.1), transparent 60%), var(--l-band);
+  }
+}
+html[data-design="lumen"] .lumen-band { background: var(--l-band); border-block: 1px solid var(--l-line); }
+html[data-design="lumen"] .lumen-tile { background: var(--l-raise); box-shadow: 0 0 0 1px var(--l-ring); }
+html[data-design="lumen"] .lumen-panel { background: var(--l-raise); box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow); }
+html[data-design="lumen"] .lumen-badge { background: var(--l-accent-soft); color: var(--l-accent); }
+html[data-design="lumen"] .lumen-pill { background: var(--l-raise); color: var(--l-fg); box-shadow: 0 0 0 1px var(--l-ring), 0 1px 2px rgb(60 45 20 / 0.06); }
+
+/* keycaps */
+html[data-design="lumen"] .lumen-key {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.25rem; height: 2.25rem; padding: 0 0.6rem; border-radius: 0.6rem;
+  font: 500 0.95rem/1 var(--font-figtree); color: var(--l-fg);
+  background: linear-gradient(to bottom, var(--l-raise), var(--l-band));
+  box-shadow: 0 0 0 1px var(--l-line), 0 2px 0 var(--l-line);
+}
+
+/* controls */
+html[data-design="lumen"] .lumen-btn {
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 600;
+  background: #2f5bff; color: #fff; text-decoration: none;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.2) inset, 0 8px 20px -8px rgb(47 91 255 / 0.6);
+  transition: background-color 100ms ease;
+}
+html[data-design="lumen"] .lumen-btn:hover { background: #2449d8; }
+html[data-design="lumen"] .lumen-btn-quiet {
+  display: inline-flex; align-items: center; font-weight: 600; color: var(--l-fg);
+  background: var(--l-bg); box-shadow: 0 0 0 1px var(--l-line);
+  transition: box-shadow 100ms ease;
+}
+html[data-design="lumen"] .lumen-btn-quiet:hover { box-shadow: 0 0 0 1px var(--l-muted); }
+html[data-design="lumen"] .lumen-link {
+  color: var(--l-accent-ink); font-weight: 500; text-decoration: underline; text-decoration-color: transparent;
+  text-underline-offset: 4px; transition: text-decoration-color 100ms ease;
+}
+html[data-design="lumen"] .lumen-link:hover { text-decoration-color: currentColor; }
+html[data-design="lumen"] .lumen-quietlink { color: var(--l-muted); font-weight: 500; transition: color 100ms ease; }
+html[data-design="lumen"] .lumen-quietlink:hover { color: var(--l-fg); }
+html[data-design="lumen"] .lumen-navlink {
+  padding: 0.4rem 0.75rem; border-radius: 999px; color: var(--l-muted); transition: color 100ms ease;
+}
+html[data-design="lumen"] .lumen-navlink:hover { color: var(--l-fg); }
+html[data-design="lumen"] .lumen-footlink:hover { color: var(--l-fg); }
+html[data-design="lumen"] .lumen-field {
+  background: var(--l-raise); color: var(--l-fg); border: 1px solid var(--l-line);
+}
+html[data-design="lumen"] .lumen-field::placeholder { color: var(--l-muted); }
+html[data-design="lumen"] .lumen-field:focus-visible { outline: 2px solid var(--l-accent); outline-offset: 1px; border-radius: 0.75rem; }
+html[data-design="lumen"] :focus-visible { outline-color: var(--l-accent); }

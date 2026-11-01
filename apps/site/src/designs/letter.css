@@ -1,1 +1,171 @@
 /* letter: design-specific CSS, scoped under html[data-design="letter"] */
+
+html[data-design="letter"] {
+  --l-bg: #ffffff;
+  --l-ink: #111214;
+  --l-soft: #3a3c42;
+  --l-muted: #676a72;
+  --l-line: #e8e8eb;
+  --l-key: #f5f5f6;
+  --l-link: #2f5bff;
+  --l-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 24px 60px -24px rgb(17 18 20 / 0.22);
+  background: var(--l-bg);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="letter"] {
+    --l-bg: #0a0a0b;
+    --l-ink: #ededef;
+    --l-soft: #c8c9ce;
+    --l-muted: #8f929a;
+    --l-line: #232428;
+    --l-key: #17181b;
+    /* the brand blue, lifted to keep AA on near-black */
+    --l-link: #8ea7ff;
+    --l-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 24px 60px -24px rgb(0 0 0 / 0.8);
+    color-scheme: dark;
+  }
+}
+html[data-design="letter"] ::selection { background: rgb(47 91 255 / 0.18); }
+
+/* the column and the wider measure figures break out to: 40rem of text inside ~68rem */
+html[data-design="letter"] .letter-flow {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(1.25rem, 1fr)
+    [wide-start] minmax(0, 14rem)
+    [col-start] min(40rem, calc(100% - 2.5rem))
+    [col-end] minmax(0, 14rem)
+    [wide-end] minmax(1.25rem, 1fr)
+    [full-end];
+}
+html[data-design="letter"] .letter-flow > *,
+html[data-design="letter"] .letter-sub > * { grid-column: col; min-width: 0; }
+html[data-design="letter"] .letter-sub { grid-column: full; display: grid; grid-template-columns: subgrid; }
+html[data-design="letter"] .letter-flow > .letter-wide,
+html[data-design="letter"] .letter-sub > .letter-wide { grid-column: wide; }
+
+html[data-design="letter"] .letter-bar {
+  background: color-mix(in srgb, var(--l-bg) 82%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--l-line) 70%, transparent);
+}
+
+html[data-design="letter"] .letter-label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--l-muted);
+}
+
+html[data-design="letter"] .letter-prose {
+  font-size: 1.1875rem;
+  line-height: 1.62;
+  letter-spacing: -0.006em;
+  color: var(--l-soft);
+  text-wrap: pretty;
+}
+@media (min-width: 640px) {
+  html[data-design="letter"] .letter-prose { font-size: 1.3125rem; }
+}
+html[data-design="letter"] .letter-lead { color: var(--l-ink); }
+@media (min-width: 640px) {
+  html[data-design="letter"] .letter-lead { font-size: 1.4375rem; line-height: 1.55; }
+}
+
+html[data-design="letter"] .letter-points {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 1rem;
+  color: var(--l-muted);
+}
+html[data-design="letter"] .letter-points li { position: relative; padding-left: 1.4rem; }
+html[data-design="letter"] .letter-points li::before { content: "—"; position: absolute; left: 0; color: var(--l-line); }
+@media (prefers-color-scheme: dark) {
+  html[data-design="letter"] .letter-points li::before { color: #3a3c42; }
+}
+
+/* a key where the text mentions it */
+html[data-design="letter"] .letter-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.45em;
+  padding: 0 0.4em;
+  margin: 0 0.08em;
+  vertical-align: 0.08em;
+  border-radius: 0.32em;
+  border: 1px solid var(--l-line);
+  border-bottom-width: 2px;
+  background: var(--l-key);
+  color: var(--l-ink);
+  font: 500 0.72em/1 var(--font-system);
+  letter-spacing: 0;
+}
+
+/* figures */
+html[data-design="letter"] .letter-window { border-radius: 12px; box-shadow: var(--l-shadow); }
+html[data-design="letter"] .letter-window-small { border-radius: 8px; }
+html[data-design="letter"] .letter-caption {
+  margin-top: 1rem;
+  max-width: 40rem;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--l-muted);
+  text-wrap: pretty;
+}
+html[data-design="letter"] .letter-wide > .letter-caption { margin-inline: auto; text-align: center; }
+html[data-design="letter"] li > figure > .letter-caption { text-align: left; }
+
+/* a detail of a 1440×900 shot: aspect = the frame, img sized and moved so the frame shows */
+html[data-design="letter"] .letter-crop {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: var(--l-shadow);
+}
+html[data-design="letter"] .letter-crop img { position: absolute; max-width: none; height: auto; }
+/* search: x 248–648, y 0–292 */
+html[data-design="letter"] .letter-crop-search { aspect-ratio: 400 / 292; }
+html[data-design="letter"] .letter-crop-search img { width: 360%; left: -62%; top: 0; }
+/* the code chip: x 256–640, y 138–298 */
+html[data-design="letter"] .letter-crop-code { aspect-ratio: 384 / 160; }
+html[data-design="letter"] .letter-crop-code img { width: 375%; left: -66.6667%; top: -86.25%; }
+/* ⌘K: x 384–1056, y 148–442 */
+html[data-design="letter"] .letter-crop-palette { aspect-ratio: 672 / 294; }
+html[data-design="letter"] .letter-crop-palette img { width: 214.2857%; left: -57.1429%; top: -50.3401%; }
+
+/* stats: three figures under a hairline */
+html[data-design="letter"] .letter-stats { display: grid; gap: 2rem; border-top: 1px solid var(--l-line); padding-top: 2rem; }
+@media (min-width: 640px) {
+  html[data-design="letter"] .letter-stats { grid-template-columns: repeat(3, 1fr); gap: 2.5rem; }
+}
+
+/* the shortcuts, as a compact two-column list */
+html[data-design="letter"] .letter-keys { display: grid; column-gap: 2.5rem; border-top: 1px solid var(--l-line); }
+@media (min-width: 640px) {
+  html[data-design="letter"] .letter-keys { grid-template-columns: 1fr 1fr; }
+}
+html[data-design="letter"] .letter-keys > div {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--l-line);
+  font-size: 16px;
+}
+html[data-design="letter"] .letter-keys dt { display: flex; gap: 0.15rem; min-width: 4.25rem; font-size: 1.15rem; }
+html[data-design="letter"] .letter-keys dd { color: var(--l-soft); }
+
+html[data-design="letter"] .letter-field {
+  border-radius: 12px;
+  border: 1px solid var(--l-line);
+  background: var(--l-bg);
+  color: var(--l-ink);
+  font-size: 17px;
+}
+html[data-design="letter"] .letter-field::placeholder { color: var(--l-muted); }
+html[data-design="letter"] .letter-field:focus-visible { outline-offset: 1px; border-color: transparent; }
