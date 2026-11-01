@@ -128,16 +128,26 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   if (keyed.length && s.folders.some((f) => keyed.some((r) => r.accountId === f.accountId && r.from === f.key))) {
     setApp({ folders: s.folders.map((f) => ({ ...f, key: keyed.find((r) => r.accountId === f.accountId && r.from === f.key)?.to ?? f.key })) });
   }
-  const here = renamed.find((r) => r.accountId === s.accountId && r.from === s.folder && r.from !== r.to);
+  // every renamed folder's quick filter moves with it, shown or not; the new key gets exactly what the old one had
+  // (round 26 #2: none clears a stale one saved under it)
+  let listFilters = s.listFilters;
+  for (const r of keyed) {
+    const box = (folder: string) => mailboxKey({ view: "all", accountId: r.accountId, categoryId: null, folder, gmailTab: null } as Parameters<typeof mailboxKey>[0]);
+    const filter = listFilters.get(box(r.from));
+    if (filter === undefined && !listFilters.has(box(r.to))) continue;
+    const next = new Map(listFilters);
+    next.delete(box(r.from));
+    if (filter === undefined) next.delete(box(r.to));
+    else next.set(box(r.to), filter);
+    listFilters = next;
+  }
+  if (listFilters !== s.listFilters) saveListFilters(listFilters);
+  const here = keyed.find((r) => r.accountId === s.accountId && r.from === s.folder);
+  if (!here && listFilters !== s.listFilters) setApp({ listFilters });
   if (here) {
-    // the same mailbox under a new key: not a navigation (Codex code review #7), its quick filter moves with it
-    const before = mailboxKey(s);
-    const after = mailboxKey({ ...s, folder: here.to });
-    const filter = s.listFilters.get(before);
-    const listFilters = filter === undefined ? s.listFilters : new Map([...s.listFilters].filter(([k]) => k !== before).concat([[after, filter]]));
+    // the same mailbox under a new key: not a navigation (Codex code review #7)
     followedRename.from = here.from;
     followedRename.to = here.to;
-    if (listFilters !== s.listFilters) saveListFilters(listFilters);
     const fromList = listKey();
     setApp({ folder: here.to, listFilters });
     followedRename.from = followedRename.to = null;

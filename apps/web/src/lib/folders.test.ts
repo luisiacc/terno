@@ -153,3 +153,18 @@ describe("a settings answer with the whole settings", () => {
     expect(getApp().settings).toMatchObject({ theme: "dark", favoriteFolders: [{ accountId: 1, folder: "Label_1", view: null }] });
   });
 });
+
+describe("quick filters follow every rename", () => {
+  it("a folder you're not in takes its filter along, and a stale one under the new name doesn't stick (Codex code review round 26 #2)", () => {
+    setApp({ accountId: null, folder: null, view: "inbox", query: "", categoryId: null, reviewCategoryId: null, gmailTab: null, reminders: false, folders: [], listFilters: new Map([["all|2||Work", "unread"], ["all|2||Old", "starred"]]), settings: { favoriteFolders: [] } as never });
+    applyFolderRenames([{ accountId: 2, from: "Work", to: "Job" }]);
+    expect([...getApp().listFilters]).toEqual([["all|2||Old", "starred"], ["all|2||Job", "unread"]]);
+    // Job (now holding the filter) renamed to Old: Old's stale filter is replaced, not kept
+    applyFolderRenames([{ accountId: 2, from: "Job", to: "Old" }]);
+    expect([...getApp().listFilters]).toEqual([["all|2||Old", "unread"]]);
+    // an unfiltered folder renamed onto a name with a stale filter: none
+    setApp({ listFilters: new Map([["all|2||New", "unread"]]) });
+    applyFolderRenames([{ accountId: 2, from: "Plain", to: "New" }]);
+    expect([...getApp().listFilters]).toEqual([]);
+  });
+});
