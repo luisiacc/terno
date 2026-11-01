@@ -458,15 +458,15 @@ class SqlImapLocations implements ImapLocationStore {
    * UIDVALIDITY changed (or the folder is gone): forgets every location in the mailbox, a slice at a time with a
    * yield between (Codex R2: a big folder in one transaction held the backend for tens of milliseconds). Membership
    * in an IMAP folder is its locations there, so its rows go as they are, with no thread refolded; re-identified
-   * mail comes back location by location.
+   * mail comes back location by location. `deleted` (plan 107): the user deleted it on the server: no hold.
    */
-  async resetMailbox(mailbox: string) {
+  async resetMailbox(mailbox: string, o?: { deleted?: true }) {
     // the ids as each slice deletes them (Codex R41: never the whole mailbox read first)
     const ids: number[] = [];
     for (;;) {
       const removed = this.db.tx(
         () => {
-          this.db.run("INSERT INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id=? AND mailbox=? LIMIT ? ON CONFLICT(message_id) DO UPDATE SET owner=NULL", this.accountId, mailbox, RESET_SLICE);
+          if (!o?.deleted) this.db.run("INSERT INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id=? AND mailbox=? LIMIT ? ON CONFLICT(message_id) DO UPDATE SET owner=NULL", this.accountId, mailbox, RESET_SLICE);
           return this.db
             .all<{ message_id: number }>(
               "DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (SELECT message_id FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT ?) RETURNING message_id",

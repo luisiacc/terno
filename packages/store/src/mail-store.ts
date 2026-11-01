@@ -253,8 +253,11 @@ export interface ImapLocationStore {
    * loop (SQLite's) pages a big mailbox; one in memory may leave it out (its whole read is quick)
    */
   inMailboxPage?(mailbox: string, uidvalidity: number, afterUid: number, limit: number): Promise<{ message_id: number; uid: number; flags: string }[]>;
-  /** UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one */
-  resetMailbox(mailbox: string): Promise<number[]>;
+  /**
+   * UIDVALIDITY changed: forgets every location in the mailbox, returns the messages that had one. `deleted` (plan
+   * 107): the user deleted the mailbox on its server, so what was in it is gone, not moved: no identity is held.
+   */
+  resetMailbox(mailbox: string, o?: { deleted?: true }): Promise<number[]>;
   /**
    * plan 68 (Codex R15): the account's messages with no location, ids in (afterId, afterId + span], ascending; `more`
    * while messages above the window exist. A cut journal's messages are found again this way, a window at a time.
@@ -510,6 +513,12 @@ export interface MailStore {
     replace(accountId: number, folders: readonly ProviderFolder[]): Promise<{ changed: boolean; touched: number[] }>;
     /** one slice (up to `limit` rows) of a pending rebuild, durable and resumable (Codex R5); `more`: a job remains */
     rebuild(limit: number): Promise<{ more: boolean; touched: number[] }>;
+    /**
+     * plan 107: how many of the account's messages are in these folders (a delete's confirmation): IMAP, a location
+     * in one; Gmail, one of them in its labels, outside trash and spam as membership is. Read through the folders' own
+     * rows, never the whole mailbox.
+     */
+    count(accountId: number, keys: readonly string[]): Promise<number>;
   };
 
   /**

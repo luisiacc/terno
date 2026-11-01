@@ -457,10 +457,11 @@ class IdbImapLocations implements ImapLocationStore {
     );
   }
 
-  resetMailbox(mailbox: string) {
+  resetMailbox(mailbox: string, o?: { deleted?: true }) {
     return this.command(() => {
       const rows: R[] = this.t.by("mailbox", this.accountId, mailbox);
-      for (const r of rows) { T(this.c, "imap_identity_holds").put({ message_id: r.message_id, account_id: this.accountId, owner: null }); retireLocationCapture(this.c,r.message_id,mailbox); this.t.deleteRow(r); }
+      // plan 107: a mailbox the user deleted held nothing that can turn up elsewhere: no identity is held
+      for (const r of rows) { if (!o?.deleted) T(this.c, "imap_identity_holds").put({ message_id: r.message_id, account_id: this.accountId, owner: null }); retireLocationCapture(this.c,r.message_id,mailbox); this.t.deleteRow(r); }
       // membership in an IMAP folder is its locations there: with every one gone its rows go, no thread refolded (Codex R2)
       for (const r of T(this.c, "thread_folders").by("folder", this.accountId, mailbox)) T(this.c, "thread_folders").deleteRow(r);
       return rows.map((r) => r.message_id as number);

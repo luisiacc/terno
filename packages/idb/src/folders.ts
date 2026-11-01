@@ -84,6 +84,22 @@ export function threadsOfMessages(c: Ctx, messageIds: readonly number[]): number
   return [...new Set(messageIds.map((id) => messages.get(id)?.thread_id as number | undefined).filter((t): t is number => t !== undefined))];
 }
 
+/** Plan 107: the account's messages in these folders (the SQL adapter's countFolderMessages), through the folders' own rows. */
+export function countFolderMessages(c: Ctx, accountId: number, keys: readonly string[]): number {
+  const want = new Set(keys);
+  const ids = new Set<number>();
+  const locations = T(c, "message_locations");
+  const memberships = T(c, "thread_folders");
+  const messages = T(c, "messages");
+  for (const key of want) {
+    for (const l of locations.by("mailbox", accountId, key)) ids.add(l.message_id as number);
+    for (const r of memberships.by("folder", accountId, key)) {
+      for (const m of messages.by("fk_thread_id", r.thread_id)) if (!m.is_trash && !m.is_spam && userLabels(m).some((l) => want.has(l))) ids.add(m.id as number);
+    }
+  }
+  return ids.size;
+}
+
 export function isFolder(c: Ctx, accountId: number, key: string): boolean {
   return T(c, "folders").has(accountId, key);
 }

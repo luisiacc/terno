@@ -98,6 +98,21 @@ export function threadsOfMessages(db: Db, messageIds: readonly number[]): number
   return [...out];
 }
 
+/** Plan 107: the account's messages in these folders (MailStore.folders.count): a location in one, or a label (through its threads' rows). */
+export function countFolderMessages(db: Db, accountId: number, keys: readonly string[]): number {
+  if (!keys.length) return 0;
+  return db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT l.message_id FROM message_locations l WHERE l.account_id = ?1 AND l.mailbox IN (SELECT value FROM json_each(?2))
+       UNION
+       SELECT m.id FROM thread_folders f JOIN messages m ON m.thread_id = f.thread_id
+        WHERE f.account_id = ?1 AND f.folder IN (SELECT value FROM json_each(?2)) AND m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'Label_') > 0
+          AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?2))))`,
+    accountId,
+    JSON.stringify(keys),
+  )!.n;
+}
+
 /** Whether a mailbox is one of the account's listed folders (a role mailbox's locations decide no membership). */
 export function isFolder(db: Db, accountId: number, key: string): boolean {
   return db.get("SELECT 1 FROM folders WHERE account_id = ? AND key = ?", accountId, key) !== undefined;

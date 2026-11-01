@@ -524,6 +524,53 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(Object.values(seeded.members).filter((l) => l.length > 0).length).toBeGreaterThan(3);
     });
 
+    it("plan 107: a folder subtree's messages are counted once each: Gmail by label (outside trash and spam), IMAP by location", async () => {
+      const store = await fresh();
+      const [g, m] = await withAccounts(store);
+      await store.folders.replace(g!, [{ key: "Label_1", path: ["A"], selectable: true }, { key: "Label_2", path: ["A", "B"], selectable: true }, { key: "Label_3", path: ["C"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: g!, providerMsgId: "g1", rfcMessageId: "g1@test", gmailLabels: ["Label_1"] }),
+        // in both: once
+        msg({ accountId: g!, providerMsgId: "g2", gmailLabels: ["Label_1", "Label_2"] }),
+        // the same conversation as g1: one in trash, one with no label, neither counts
+        msg({ accountId: g!, providerMsgId: "g3", inReplyTo: "g1@test", references: ["g1@test"], subject: "Re: x", gmailLabels: ["Label_1"], isTrash: true, inInbox: false }),
+        msg({ accountId: g!, providerMsgId: "g4", inReplyTo: "g1@test", references: ["g1@test"], subject: "Re: x", gmailLabels: ["INBOX"] }),
+        msg({ accountId: g!, providerMsgId: "g5", gmailLabels: ["Label_3"] }),
+      ]);
+      expect(await store.folders.count(g!, ["Label_1", "Label_2"])).toBe(2);
+      expect(await store.folders.count(g!, ["Label_2"])).toBe(1);
+      expect(await store.folders.count(g!, ["Label_3"])).toBe(1);
+      expect(await store.folders.count(g!, [])).toBe(0);
+      await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }, { key: "Work/Sub", path: ["Work", "Sub"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "i1", inInbox: false, locations: [loc("Work", 1)] }),
+        msg({ accountId: m!, providerMsgId: "i2", inInbox: false, locations: [loc("Work", 2), loc("Work/Sub", 1)] }),
+        msg({ accountId: m!, providerMsgId: "i3", locations: [loc("INBOX", 1)] }),
+      ]);
+      expect(await store.folders.count(m!, ["Work", "Work/Sub"])).toBe(2);
+      expect(await store.folders.count(m!, ["Work/Sub"])).toBe(1);
+      // another account's folder of the same key isn't this one's
+      expect(await store.folders.count(g!, ["Work"])).toBe(0);
+    });
+
+    it("plan 107: a mailbox deleted on its server forgets its locations with no identity hold (a reset holds them)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      await store.folders.replace(m!, [{ key: "Gone", path: ["Gone"], selectable: true }, { key: "Reset", path: ["Reset"], selectable: true }]);
+      const r = await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "i1", inInbox: false, locations: [loc("Gone", 1), loc("Keep", 1)] }),
+        msg({ accountId: m!, providerMsgId: "i2", inInbox: false, locations: [loc("Reset", 1)] }),
+      ]);
+      const [kept, reset] = r.inserted as [number, number];
+      const locations = store.providerStore(m!).locations;
+      expect(await locations.resetMailbox("Gone", { deleted: true })).toEqual([kept]);
+      expect(await locations.unresolved([kept])).toEqual([]);
+      expect((await locations.of([kept])).map((l) => l.mailbox)).toEqual(["Keep"]);
+      expect(await ids(store, m!, "Gone")).toEqual([]);
+      expect(await locations.resetMailbox("Reset")).toEqual([reset]);
+      expect(await locations.unresolved([reset])).toEqual([reset]);
+    });
+
     it("an account's removal takes its folders; folders survive a reopen", async () => {
       let store = await fresh();
       const [g, m] = await withAccounts(store);
