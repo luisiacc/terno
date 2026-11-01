@@ -10,7 +10,7 @@ import { nodePlatform, sqlDb } from "@terno/db";
 import { databaseName, IdbMailStore } from "@terno/idb";
 import { createRegistry, parseRaw } from "@terno/mail";
 import { SMTPServer } from "smtp-server";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, chai, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanup: (() => Promise<void> | void)[] = [];
@@ -144,6 +144,7 @@ it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy ref
   const { opId } = await send(t, corrected), queued = await captured(t, opId), message = await publication(t, opId);
   expect(await t.client.call("drafts.list", {})).toEqual([]);
   const queuedRows = await t.rows();
+  const oldInventory = [{ opId, messageId: message.id }]; await inventory(t, oldInventory);
   expect(JSON.parse(queued.payload).attachments).toEqual(refs); expect(message.attachments).toMatchObject(refs);
   expect(staged.attachment_assets).toHaveLength(2); expect(queuedRows.attachments).toHaveLength(2);
   await t.backend.runWorker();
@@ -152,41 +153,55 @@ it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy ref
   expect(smtp.transcript.join("\n")).toContain("C: MAIL FROM:");
   expect(smtp.received).toEqual([]); expect(smtp.transcript.some((line) => /C: DATA\b/.test(line))).toBe(false);
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), queuedRows); unchanged(await publication(t, opId), message); await bytesIntact(t, refs, bytes);
+  await inventory(t, oldInventory);
   await expect(t.client.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   smtp.accept(); await t.reopen(); await t.backend.runWorker(); expect(smtp.received).toEqual([]); expect(smtp.refused).toBe(1);
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), queuedRows); await bytesIntact(t, refs, bytes);
+  await inventory(t, oldInventory);
   const replacement = await save(t, refs), next = await send(t, replacement);
   expect(replacement.id).not.toBe(draft.id); expect(next.opId).not.toBe(opId);
   const acceptedMessage = await publication(t, next.opId); expect(acceptedMessage.id).not.toBe(message.id);
+  const replacementOp = await captured(t, next.opId), replacementRows = await t.rows();
+  const bothInventory = [...oldInventory, { opId: next.opId, messageId: acceptedMessage.id }]; await inventory(t, bothInventory);
+  const newParts = replacementRows.attachments.filter((part) => part.message_id === acceptedMessage.id);
+  expect(newParts).toHaveLength(refs.length);
+  for (const [i, ref] of refs.entries()) expect(newParts[i]).toMatchObject({ asset_id: ref.assetId, filename: ref.filename, mime: ref.mime, size: ref.size });
+  unchanged(replacementRows.attachments.filter((part) => part.message_id !== acceptedMessage.id), queuedRows.attachments);
+  const newMessageLinks = refs.map((ref) => ({ ...queuedRows.attachment_links.find((link) => link.asset_id === ref.assetId && link.message_id === message.id)!, id: `${ref.assetId}:message:${acceptedMessage.id}`, message_id: acceptedMessage.id }));
+  const newOpLinks = refs.map((ref) => ({ ...queuedRows.attachment_links.find((link) => link.asset_id === ref.assetId && link.op_id === opId)!, id: `${ref.assetId}:op:${next.opId}`, op_id: next.opId }));
+  const expectedAccepted = { ...queuedRows, attachments: replacementRows.attachments, attachment_links: sort([...queuedRows.attachment_links, ...newMessageLinks]) };
+  ownership(replacementRows, { ...expectedAccepted, attachment_links: sort([...expectedAccepted.attachment_links, ...newOpLinks]) });
   await t.backend.runWorker(); expect((await t.backend.store.ops.get(next.opId))?.state).toBe("succeeded");
   expect(smtp.received).toHaveLength(1); expect(smtp.envelopes).toEqual([[to[0]!.email]]);
-  await wire(smtp.received[0]!, bytes, JSON.parse((await captured(t, next.opId)).payload).messageId);
-  unchanged(await publication(t, next.opId, JSON.parse((await captured(t, next.opId)).payload).messageId), acceptedMessage);
+  await wire(smtp.received[0]!, bytes, JSON.parse(replacementOp.payload).messageId);
+  unchanged(await publication(t, next.opId, JSON.parse(replacementOp.payload).messageId), acceptedMessage);
   expect((await t.backend.store.ops.get(opId))?.state).toBe("failed"); unchanged(await captured(t, opId), queued);
-  const accepted = await t.rows();
-  for (const key of ["attachment_assets", "attachment_chunks", "attachment_bytes"] as const) unchanged(accepted[key], staged[key]);
-  await t.reopen(); await t.backend.runWorker(); unchanged(await t.rows(), accepted); unchanged(await publication(t, next.opId), acceptedMessage); await bytesIntact(t, refs, bytes); expect(smtp.received).toHaveLength(1);
+  acceptedIdentity(await captured(t, next.opId), replacementOp); await inventory(t, bothInventory);
+  ownership(await t.rows(), expectedAccepted);
+  await t.reopen(); await t.backend.runWorker(); acceptedIdentity(await captured(t, next.opId), replacementOp); await inventory(t, bothInventory); ownership(await t.rows(), expectedAccepted); unchanged(await publication(t, next.opId, JSON.parse(replacementOp.payload).messageId), acceptedMessage); await bytesIntact(t, refs, bytes); expect(smtp.received).toHaveLength(1);
 });
 
 it.each(["sql", "idb"] as const)("%s: managed Gmail unknown survives reopen and only public explicit retry publishes", async (adapter) => {
   const t = await setup(adapter), bytes = [binary(ATTACHMENT_CHUNK + 7, 17), binary(ATTACHMENT_CHUNK * 2 + 13, 43)];
   const refs = await Promise.all(bytes.map((b, i) => stage(t, b, i))), draft = await save(t, refs);
   const { opId } = await send(t, draft), queued = await captured(t, opId), message = await publication(t, opId), rows = await t.rows();
+  const expectedInventory = [{ opId, messageId: message.id }]; await inventory(t, expectedInventory);
   expect(JSON.parse(queued.payload).attachments).toEqual(refs); expect(message.attachments).toMatchObject(refs);
   expect(rows.attachment_assets).toHaveLength(2); expect(rows.attachments).toHaveLength(2);
   await t.backend.runWorker(); expect((await t.backend.store.ops.get(opId))?.state).toBe("unknown"); expect(t.sends).toHaveLength(1);
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), rows); unchanged(await publication(t, opId), message); await bytesIntact(t, refs, bytes);
+  await inventory(t, expectedInventory);
   t.accept(); await t.reopen(); await t.backend.runWorker(); expect(t.sends).toHaveLength(1);
   expect((await t.backend.store.ops.get(opId))?.state).toBe("unknown"); unchanged(await captured(t, opId), queued); unchanged(await t.rows(), rows); unchanged(await publication(t, opId), message); await bytesIntact(t, refs, bytes);
+  await inventory(t, expectedInventory);
   await t.client.call("ops.resolveUnknown", { opId, resolution: "retry" }); await t.backend.runWorker();
   expect((await t.backend.store.ops.get(opId))?.state).toBe("succeeded"); expect(t.sends).toHaveLength(2);
   for (const body of t.sends) await wire(Buffer.from(JSON.parse(body).raw, "base64url"), bytes, JSON.parse(queued.payload).messageId);
-  const acceptedOp = { ...queued, target: JSON.stringify({ ...JSON.parse(queued.target), submissionAccepted: true }) };
-  unchanged(await captured(t, opId), acceptedOp); unchanged(await publication(t, opId, "accepted-id"), message);
+  acceptedIdentity(await captured(t, opId), queued); await inventory(t, expectedInventory); unchanged(await publication(t, opId, "accepted-id"), message);
   const accepted = await t.rows();
   for (const key of ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachments"] as const) unchanged(accepted[key], rows[key]);
   unchanged(accepted.attachment_links, rows.attachment_links.filter((link) => (link.op_id === null || link.op_id === undefined)));
-  await t.reopen(); await t.backend.runWorker(); unchanged(await t.rows(), accepted); unchanged(await captured(t, opId), acceptedOp); unchanged(await publication(t, opId, "accepted-id"), message); await bytesIntact(t, refs, bytes); expect(t.sends).toHaveLength(2);
+  await t.reopen(); await t.backend.runWorker(); unchanged(await t.rows(), accepted); acceptedIdentity(await captured(t, opId), queued); await inventory(t, expectedInventory); unchanged(await publication(t, opId, "accepted-id"), message); await bytesIntact(t, refs, bytes); expect(t.sends).toHaveLength(2);
 });
 
 it.each(["chunk bytes", "duplicate asset", "operation target", "wire bytes", "extra part", "wire identity"] as const)("qualification rejects %s corruption using the real predicate", async (fault) => {
@@ -210,5 +225,42 @@ it.each(["chunk bytes", "duplicate asset", "operation target", "wire bytes", "ex
       wireContents(bad, bytes, id);
     }
   };
-  expect(check).toThrowError(/expected/);
+  const patterns = { "chunk bytes": /deeply equal/, "duplicate asset": /deeply equal/, "operation target": /deeply equal/, "wire bytes": /false to be true/, "extra part": /length of 1 but got 2/, "wire identity": /wrong@example.test/ };
+  assertionFailure(check, patterns[fault]);
+});
+
+
+function acceptedIdentity(actual: Awaited<ReturnType<typeof captured>>, before: Awaited<ReturnType<typeof captured>>) {
+  unchanged(actual, { ...before, target: JSON.stringify({ ...JSON.parse(before.target), submissionAccepted: true }) });
+}
+function exactInventory(actual: { ops: string[]; messages: number[]; targets: Record<string, number[]> }, expected: { ops: string[]; messages: number[]; targets: Record<string, number[]> }) {
+  unchanged(actual, expected);
+}
+function ownership(actual: Rows, expected: Rows) {
+  unchanged(actual, expected);
+}
+function assertionFailure(check: () => void, pattern: RegExp) {
+  let caught: unknown;
+  try { check(); } catch (error) { caught = error; }
+  expect(caught).toBeInstanceOf(chai.AssertionError);
+  expect((caught as Error).message).toMatch(pattern);
+}
+async function inventory(t: Fixture, entries: { opId: string; messageId: number }[]) {
+  const snapshot = await t.backend.store.debug.snapshot(), ops = snapshot.ops;
+  const targets = Object.fromEntries(await Promise.all(ops.map(async (op) => [op.id, JSON.parse((await t.backend.store.ops.get(op.id))!.target_json).messageIds as number[]])));
+  exactInventory({ ops: ops.map((o) => o.id).sort(), messages: snapshot.messages.map((m) => m.id).sort((a, b) => a - b), targets }, { ops: entries.map((e) => e.opId).sort(), messages: entries.map((e) => e.messageId).sort((a, b) => a - b), targets: Object.fromEntries(entries.map((e) => [e.opId, [e.messageId]])) });
+}
+
+it.each(["accepted identity", "extra inventory", "lost ownership", "generic error"] as const)("R1 qualification rejects %s using the strengthened predicate", (fault) => {
+  const op = { id: "operation", payload: '{"messageId":"original@example.test"}', target: '{"messageIds":[1]}' };
+  const rows: Rows = { attachment_assets: [], attachment_chunks: [], attachment_bytes: [], attachments: [{ id: 1, message_id: 1 }], attachment_links: [{ id: "old-owner", message_id: 1 }] };
+  const inventory = { ops: ["operation"], messages: [1], targets: { operation: [1] } };
+  if (fault === "accepted identity") {
+    const accepted = { ...op, target: '{"messageIds":[1],"submissionAccepted":true}' };
+    acceptedIdentity(accepted, op);
+    expect(() => acceptedIdentity({ ...accepted, payload: '{"messageId":"rewritten@example.test"}' }, op)).toThrowError(/deeply equal/);
+  }
+  if (fault === "extra inventory") expect(() => exactInventory({ ...inventory, messages: [1, 2] }, inventory)).toThrowError(/expected/);
+  if (fault === "lost ownership") expect(() => ownership({ ...rows, attachments: [], attachment_links: [] }, rows)).toThrowError(/expected/);
+  if (fault === "generic error") expect(() => assertionFailure(() => { throw new Error("expected synthetic non-assertion failure"); }, /expected/)).toThrowError(/expected/);
 });
