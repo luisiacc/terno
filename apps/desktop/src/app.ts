@@ -15,6 +15,7 @@ import {
   powerMonitor,
   protocol,
   safeStorage,
+  screen,
   session,
   shell,
   utilityProcess,
@@ -23,6 +24,7 @@ import {
   type WebContents,
   type BaseWindow,
 } from "electron";
+import { initialWindowSize, MIN_WINDOW } from "./window-size";
 import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
@@ -625,11 +627,12 @@ function createWindow() {
   }
   // named palettes render exactly: no vibrancy, the theme's own background from the first frame
   const vibrancy = windowVibrancy(isMac, saved, nativeTheme.prefersReducedTransparency);
+  // most of the screen it opens on (centered there), not a fixed size a small screen can't hold
+  const size = initialWindowSize(screen.getPrimaryDisplay().workAreaSize);
   const win = new BrowserWindow({
-    width: 1400,
-    height: 880,
-    minWidth: 980,
-    minHeight: 600,
+    ...size,
+    minWidth: MIN_WINDOW.width,
+    minHeight: MIN_WINDOW.height,
     show: false,
     title: "Terno",
     titleBarStyle: isMac ? "hiddenInset" : "default",
