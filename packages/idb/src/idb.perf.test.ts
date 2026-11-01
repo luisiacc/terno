@@ -147,6 +147,41 @@ it("select all N pages seek, never rescan: a 28,000-thread view, account and cat
   await store.categories.delete(cat);
 }, 900_000);
 
+it("plan 107: an .mbox export's id stretches seek, never rescan: an account and a 28,000-thread folder (members in reverse) in bounded time (Codex code review #9)", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  const account = all[0]!.accountId;
+  // every thread a member, written newest id first (the index's order is the reverse of the ids')
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void } } } }).c;
+  const rows = [...all].sort((a, b) => b.id - a.id).map((t) => ({ thread_id: t.id, account_id: account, folder: "Export", last_date: 0, unread: 0 }));
+  c.db.tx(() => rows.forEach((r) => c.db.table("thread_folders").put(r)));
+  try {
+    for (const [label, target, expected] of [
+      ["folder", { accountId: account, folder: "Export" }, all.length],
+      ["account", { accountId: account, view: "archive" as const }, all.filter((t) => t.accountId === account).length],
+    ] as const) {
+      for (const limit of [200, 5000]) {
+        const samples: Sample[] = [];
+        for (let after = 0; ; ) {
+          const s = await sampleAsync(() => store.folderExport.ids(target, after, limit));
+          samples.push(s);
+          if (s.result.next === null) break;
+          after = s.result.next;
+        }
+        const pages = settle(samples).ms;
+        const sorted = [...pages].sort((a, b) => a - b);
+        const total = pages.reduce((a, b) => a + b, 0);
+        console.log(`export ${label}, stretches of ${limit}: ${pages.length} stretches, ${total.toFixed(1)} ms in all, max ${sorted.at(-1)!.toFixed(2)} ms`);
+        expect(pages.length).toBe(Math.floor(expected / limit) + 1);
+        // rescanning every member per stretch cost ~12.5 million visits in stretches of 200 at 50,000
+        expect(total, `${label} / ${limit}: all stretches`).toBeLessThanOrEqual(60 * MULT);
+        expect(sorted.at(-1)!, `${label} / ${limit}: one stretch`).toBeLessThanOrEqual(FRAME * MULT);
+      }
+    }
+  } finally {
+    c.db.tx(() => rows.forEach((r) => c.db.table("thread_folders").deleteRow(r)));
+  }
+}, 900_000);
+
 it("an account's own folders (plan 68) page from their members: big, sparse, empty, deep, filtered, select all and counts within a frame", async () => {
   const all = (await store.debug.snapshot()).threads;
   // the biggest account's every thread in one folder: the store's own membership writes (a label on each message)

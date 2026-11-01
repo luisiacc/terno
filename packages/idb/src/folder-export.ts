@@ -25,20 +25,37 @@ const hasLabel = (m: R, key: string): boolean => {
   }
 };
 
-export function exportIds(c: Ctx, target: FolderExportTarget, after: number, limit: number): { messages: { id: number; date: number }[]; next: number | null } {
-  const top: number[] = [];
-  const consider = (id: number) => {
-    if (id <= after || (top.length >= limit && id > top[limit - 1]!)) return;
-    top.splice(seekAfter(top, id - 1), 0, id);
-    if (top.length > limit) top.pop();
-  };
+/**
+ * The smallest `limit` thread ids of the place above `after`, from a seek into an ascending order (Codex code review
+ * #9: every stretch walked every member again, 12.5 million visits in stretches of 200 at 50,000, and placing them by
+ * splice was quadratic): a folder's kept members, the store's thread ids for an account (walked from `after` on, so
+ * the stretches together walk them once).
+ */
+function stretch(c: Ctx, target: FolderExportTarget, after: number, limit: number): number[] {
   if (target.folder !== undefined) {
+    const ids = c.scopes.folder(c, target.accountId, target.folder);
+    if (ids) {
+      const from = seekAfter(ids, after);
+      return ids.slice(from, from + limit);
+    }
+    // its order still being built (in the background): one walk and one native sort
     const memberships = T(c, "thread_folders");
-    for (const k of memberships.keysBy("folder", target.accountId, target.folder)) consider(memberships.rows.get(k)!.thread_id as number);
-  } else {
-    const threads = T(c, "threads");
-    for (const k of threads.keysBy("fk_account_id", target.accountId)) consider(threads.rows.get(k)!.id as number);
+    const found: number[] = [];
+    for (const k of memberships.keysBy("folder", target.accountId, target.folder)) {
+      const id = memberships.rows.get(k)!.thread_id as number;
+      if (id > after) found.push(id);
+    }
+    return Array.from(Float64Array.from(found).sort().subarray(0, limit));
   }
+  const threads = T(c, "threads");
+  const ids = c.scopes.threads(c);
+  const out: number[] = [];
+  for (let i = seekAfter(ids, after); i < ids.length && out.length < limit; i++) if (threads.get(ids[i]!)?.account_id === target.accountId) out.push(ids[i]!);
+  return out;
+}
+
+export function exportIds(c: Ctx, target: FolderExportTarget, after: number, limit: number): { messages: { id: number; date: number }[]; next: number | null } {
+  const top = stretch(c, target, after, limit);
   if (!top.length) return { messages: [], next: null };
   const messages = T(c, "messages");
   const locations = T(c, "message_locations");
