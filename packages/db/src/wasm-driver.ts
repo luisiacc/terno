@@ -43,8 +43,10 @@ class WasmStatement implements SqliteStatement {
 
   // Positional arrays with cached column names: half the cost of object rows (the 04 prototype measured 1.54 → 0.88 ms per list).
   private row(stmt: PreparedStatement): Row {
-    const names = (this.names ??= stmt.getColumnNames());
     const values = stmt.get([]);
+    // A migration can reprepare a cached SELECT * with newly added columns.
+    if (!this.names || this.names.length !== values.length) this.names = stmt.getColumnNames();
+    const names = this.names;
     const row: Row = {};
     for (let i = 0; i < names.length; i++) row[names[i]!] = values[i];
     return row;

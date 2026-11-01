@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createMemDb, databaseName } from "./schema";
 import { createCategory } from "./mail";
 import { IdbMailStore } from "./store";
+import { identityImage, physicalImage } from "./test/legacy-stores";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 const stores = new Set<IdbMailStore>();
@@ -95,12 +96,7 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("upgrades a v19
   await s.settings.set("import:pending", { filters: [{ rule: rule(ids.pending) }] });
   await t.close(s);
   const source = await request(t.factory.open(databaseName(t.name)));
-  const names = [...source.objectStoreNames].filter((name) => name !== "category_counter");
-  const tx = source.transaction(names);
-  const image = await Promise.all(names.map(async (name) => {
-    const table = tx.objectStore(name);
-    return { name, keys: await request(table.getAllKeys()), values: await request(table.getAll()), indexes: [...table.indexNames].map((key) => ({ name: key, keyPath: table.index(key).keyPath, unique: table.index(key).unique, multiEntry: table.index(key).multiEntry })) };
-  }));
+  const image = identityImage(await physicalImage(source), 19);
   source.close();
   const meta = image.find((table) => table.name === "meta")!;
   meta.values[meta.keys.indexOf("logicalSchema")] = 30;
@@ -112,22 +108,26 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("upgrades a v19
   const make = t.factory.open(databaseName(legacyName), 19);
   make.onupgradeneeded = () => {
     for (const table of image) {
-      const out = make.result.createObjectStore(table.name);
+      const out = make.result.createObjectStore(table.name, { keyPath: table.keyPath, autoIncrement: table.autoIncrement });
       for (const ix of table.indexes) out.createIndex(ix.name, ix.keyPath!, ix);
       table.keys.forEach((key, i) => out.put(table.values[i], key));
     }
   };
   (await request(make)).close();
+  const before = await request(t.factory.open(databaseName(legacyName)));
+  const original = await physicalImage(before); before.close();
+  let hits = 0, aborted = false;
   const put = IDBObjectStore.prototype.put;
   const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
-    if (this.name === "category_counter") throw new Error("interrupted upgrade");
+    if (this.name === "category_counter") { hits++; this.transaction.addEventListener("abort", () => { aborted = true; }); throw new Error("interrupted upgrade"); }
     return put.call(this, ...args);
   });
   const failed = await IdbMailStore.open({ name: legacyName, factory: t.factory, platform, instantSearch: false }).then((opened) => { stores.add(opened); return null; }, (error: unknown) => error);
-  expect(failed).not.toBeNull(); spy.mockRestore();
+  expect(failed).not.toBeNull(); expect(hits).toBe(1); expect(aborted).toBe(true); spy.mockRestore();
   const unchanged = await request(t.factory.open(databaseName(legacyName), 19));
-  expect(unchanged.objectStoreNames.contains("category_counter")).toBe(false); unchanged.close();
+  expect(unchanged.objectStoreNames.contains("category_counter")).toBe(false);
+  expect(await physicalImage(unchanged)).toEqual(original); unchanged.close();
   s = await IdbMailStore.open({ name: legacyName, factory: t.factory, platform, instantSearch: false }); stores.add(s);
   expect(await s.categories.list()).toEqual([survivor]); expect(await s.filters.list()).toEqual([f]);
-  expect((await s.categories.create("After upgrade", "amber")).id).toBeGreaterThan(200);
+  expect((await s.categories.create("After upgrade", "amber")).id).toBe(201);
 });

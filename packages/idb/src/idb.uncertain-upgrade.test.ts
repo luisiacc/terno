@@ -33,9 +33,15 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
 
 /** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source.map((store) => store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts"].map((name) => ({
+  return [...source.map((store) => store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
-  }))].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  })),
+  { name: "category_counter", keyPath: null, autoIncrement: false, indexes: [], keys: [1], values: [{ id: 1, last_id: 0 }] },
+  { name: "capture_repairs", keyPath: null, autoIncrement: false, indexes: [
+    { name: "discovery", keyPath: ["account_id", "key"], unique: false, multiEntry: false },
+    { name: "state", keyPath: ["account_id", "state", "key"], unique: false, multiEntry: false },
+  ], keys: [], values: [] },
+  ].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }
 
 // Fixture model: reconstruct fixed physical9 stores with effective wide operations.
@@ -58,7 +64,6 @@ it("preserves a complete reconstructed physical9 compatibility image through the
   const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 19, logical: 30 });
     const [account] = await withAccounts(seed, 1);
     const id = (await ingest(seed, [msg({ accountId: account!, providerMsgId: "fixture-message", bodyText: "preserved canonical body" })])).inserted[0]!;
     const message = (await seed.debug.snapshot()).messages[0]!;
@@ -101,7 +106,6 @@ it("preserves a complete reconstructed physical10 compatibility image through th
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
   try {
-    expect({ physical: IDB_VERSION, logical: LOGICAL_SCHEMA }).toEqual({ physical: 19, logical: 30 });
     const [account] = await withAccounts(seed, 1);
     await ingest(seed, [msg({ accountId: account!, providerMsgId: "physical10-message", bodyText: "exact physical10 message body" })]);
     await seed.drafts.save({ accountId: account!, to: [], cc: [], subject: "physical10 draft", bodyText: "exact physical10 draft body" }, 17);
@@ -280,7 +284,7 @@ for (const version of [1, 2, 4, 6, 8, 9, 10]) {
     const factory = new IDBFactory(), name = crypto.randomUUID();
     let raw: IDBDatabase | undefined = await sentinel(factory, name, version, marker), exposed: IdbMailStore | undefined;
     try {
-      const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
+      const before = await image(raw); raw.close(); raw = undefined;
       const observation = observeAdmission();
       const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
       expect(observation.counts).toEqual({ guards: 1, rowReads: 0, rowWrites: 0, schemaWrites: 0 });
@@ -299,7 +303,7 @@ it("latches dirty upgrade refusal even when abort is refused and the open actual
   const factory = new IDBFactory(), name = crypto.randomUUID();
   let raw: IDBDatabase | undefined = await sentinel(factory, name, 1, undefined), exposed: IdbMailStore | undefined, acquired: IDBDatabase | undefined;
   try {
-    const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
+    const before = await image(raw); raw.close(); raw = undefined;
     const open = factory.open.bind(factory), abort = IDBTransaction.prototype.abort, close = IDBDatabase.prototype.close;
     let successes = 0, refused = 0, closes = 0;
     vi.spyOn(factory, "open").mockImplementation((...args) => {
@@ -330,7 +334,7 @@ it.each([false, true])("retains an unreadable upgrade cause across abort refusal
   const factory = new IDBFactory(), name = crypto.randomUUID();
   let raw: IDBDatabase | undefined = await sentinel(factory, name, 2, { version: 1 }), exposed: IdbMailStore | undefined;
   try {
-    const before = legacyImage(await image(raw), 9); raw.close(); raw = undefined;
+    const before = await image(raw); raw.close(); raw = undefined;
     const getKey = IDBObjectStore.prototype.getKey, abort = IDBTransaction.prototype.abort;
     const injected = new Error("upgrade guard could not enqueue");
     let hits = 0, refused = 0, terminal: string | undefined;

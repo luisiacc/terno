@@ -3,6 +3,7 @@ import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { generateDataset } from "@terno/mock-data";
 import { IdbMailStore } from "./store";
 import { Table } from "./mem";
+import { identityImage, physicalImage } from "./test/legacy-stores";
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -90,30 +91,29 @@ it("upgrades a populated v18 image atomically and reopens the new indexed reader
   await ingest(source, [msg({ accountId: account!, providerMsgId: "local:draft" }), msg({ accountId: account!, providerMsgId: "remote" })]);
   await source.close();
   const raw = await request(indexedDB.open(databaseName(name)));
-  const names = Array.from(raw.objectStoreNames);
-  const images = await Promise.all(names.map(async (table) => {
-    const tx = raw.transaction(table), os = tx.objectStore(table);
-    return { table, keys: await request(os.getAllKeys()), rows: await request(os.getAll()), indexes: Array.from(os.indexNames).filter((index) => index !== "cached_provider").map((index) => ({ name: index, keyPath: os.index(index).keyPath!, unique: os.index(index).unique })) };
-  }));
+  const images = identityImage(await physicalImage(raw), 18);
   raw.close();
   const old = indexedDB.open(databaseName(legacyName), 18);
   old.onupgradeneeded = () => {
     for (const image of images) {
-      const os = old.result.createObjectStore(image.table);
-      for (const index of image.indexes) os.createIndex(index.name, index.keyPath, { unique: index.unique });
-      image.rows.forEach((row, i) => os.put(row, image.keys[i]));
+      const os = old.result.createObjectStore(image.name, { keyPath: image.keyPath, autoIncrement: image.autoIncrement });
+      for (const index of image.indexes) os.createIndex(index.name, index.keyPath, index);
+      image.values.forEach((row, i) => os.put(row, image.keys[i]));
     }
   };
   (await request(old)).close();
+  const before = await request(indexedDB.open(databaseName(legacyName)));
+  const original = await physicalImage(before); before.close();
+  let hits = 0, aborted = false;
   const create = IDBObjectStore.prototype.createIndex;
   const failure = vi.spyOn(IDBObjectStore.prototype, "createIndex").mockImplementation(function (this: IDBObjectStore, ...args) {
-    if (args[0] === "cached_provider") throw new Error("upgrade refused");
+    if (args[0] === "cached_provider") { hits++; this.transaction.addEventListener("abort", () => { aborted = true; }); throw new Error("upgrade refused"); }
     return create.call(this, ...args);
   });
   await expect(IdbMailStore.open({ name: legacyName, factory: indexedDB, platform, instantSearch: false })).rejects.toThrow();
-  failure.mockRestore();
+  expect(hits).toBe(1); expect(aborted).toBe(true); failure.mockRestore();
   const unchanged = await request(indexedDB.open(databaseName(legacyName)));
-  expect(unchanged.version).toBe(18); unchanged.close();
+  expect(unchanged.version).toBe(18); expect(await physicalImage(unchanged)).toEqual(original); unchanged.close();
   const upgraded = await IdbMailStore.open({ name: legacyName, factory: indexedDB, platform, instantSearch: false });
   expect((await upgraded.providerStore(account!).syncedMessagePage()).items.map((r) => r.providerMsgId)).toEqual(["remote"]);
   await upgraded.close();

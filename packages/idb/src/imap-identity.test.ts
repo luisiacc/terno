@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { databaseName } from "./schema";
 import { IdbMailStore } from "./store";
+import { identityImage, physicalImage } from "./test/legacy-stores";
 
 const stores: IdbMailStore[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const store of stores.splice(0)) if (store.isOpen) await store.close(); });
@@ -13,7 +14,6 @@ async function open(factory = new IDBFactory(), name: string = crypto.randomUUID
 }
 const location = { mailbox: "INBOX", uidvalidity: 7, uid: 1, flags: [] };
 const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-const done = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); });
 
 it("identity: a real IDB abort cannot dispatch or leave a partly prepared hold through reopen", async () => {
   const factory = new IDBFactory();
@@ -43,17 +43,20 @@ it("identity: physical17 upgrade holds legacy locators before the first provider
   const [, account] = await withAccounts(source);
   const { inserted: ids } = await ingest(source, [msg({ accountId: account!, locations: [location] }), msg({ accountId: account!, locations: [] })]);
   const db = await request(factory.open(databaseName(source.name)));
-  const names = [...db.objectStoreNames].filter((name) => name !== "imap_identity_holds");
-  const tx = db.transaction(names, "readonly"), complete = done(tx);
-  const images = await Promise.all(names.map(async (name) => ({ name, keys: await request(tx.objectStore(name).getAllKeys()), values: await request(tx.objectStore(name).getAll()) })));
-  await complete; db.close();
+  const images = identityImage(await physicalImage(db), 17); db.close();
+  const historicalMessages = images.find((image) => image.name === "messages")!.values;
+  expect(historicalMessages).toHaveLength(2);
+  for (const row of historicalMessages) expect(row).not.toHaveProperty("category");
   const legacyName = crypto.randomUUID();
   const opening = factory.open(databaseName(legacyName), 17);
-  opening.onupgradeneeded = () => { for (const name of names) opening.result.createObjectStore(name); };
-  const legacy = await request(opening);
-  const write = legacy.transaction(names, "readwrite"), written = done(write);
-  for (const image of images) image.keys.forEach((key, i) => write.objectStore(image.name).put(image.values[i], key));
-  await written; legacy.close();
+  opening.onupgradeneeded = () => {
+    for (const image of images) {
+      const store = opening.result.createObjectStore(image.name, { keyPath: image.keyPath, autoIncrement: image.autoIncrement });
+      for (const index of image.indexes) store.createIndex(index.name, index.keyPath, index);
+      image.keys.forEach((key, i) => store.put(image.values[i], key));
+    }
+  };
+  (await request(opening)).close();
   const upgraded = await open(factory, legacyName);
   const locations = upgraded.providerStore(account!).locations;
   expect(await locations.unresolved(ids)).toEqual(ids);
