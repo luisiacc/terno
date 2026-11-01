@@ -2,7 +2,7 @@ import { FOLDER_NAME_MAX, type Account, type FavoriteFolder, type FavoriteFolder
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
-import { getApp, setApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { followedRename, listKey } from "~/state/list";
 import { relistPage } from "./page";
 import { mailboxKey, saveListFilters } from "./unread-filter";
@@ -141,7 +141,7 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   // the backend rewrote its favorites the same way; this window's copy follows at once (its `favoriteFolders` comes after)
   const favorites = s.settings?.favoriteFolders;
   if (favorites?.some((f) => f.folder !== null && moved(f.accountId, f.folder) !== f.folder)) {
-    setApp((st) => (st.settings ? { settings: { ...st.settings, favoriteFolders: favorites.map((f) => (f.folder === null ? f : { ...f, folder: moved(f.accountId, f.folder) })) } } : {}));
+    writeFavorites(favorites.map((f) => (f.folder === null ? f : { ...f, folder: moved(f.accountId, f.folder) })));
   }
   if (editing?.kind === "rename") useFolderEdit.setState({ editing: { ...editing, key: moved(editing.accountId, editing.key) } });
   if (editing?.kind === "create" && editing.parent !== null) useFolderEdit.setState({ editing: { ...editing, parent: moved(editing.accountId, editing.parent) } });
@@ -156,13 +156,36 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
 export function applyFavoriteFolders({ favorites, revision }: FavoriteFoldersSnapshot): void {
   if (revision <= favoritesApplied.revision) return;
   favoritesApplied.revision = revision;
-  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: favorites } } : {}));
+  writeFavorites(favorites);
 }
-/** the revision of the favorites last applied (an object: React Compiler and module lets) */
-export const favoritesApplied = { revision: 0 };
+/**
+ * The revision of the favorites last applied, and the list this window holds (an object: React Compiler and module
+ * lets). Settings answers carry the whole settings (settings.update): their favorites may be older than what this
+ * window holds, so a settings replaced with another list gets this one back (round 12's open end). A bootstrap is
+ * the backend's word: it resets this (`acceptNextFavorites`).
+ */
+export const favoritesApplied: { revision: number; list: readonly FavoriteFolder[] | null } = { revision: 0, list: null };
+
+function writeFavorites(list: FavoriteFolder[]): void {
+  favoritesApplied.list = list;
+  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: list } } : {}));
+}
+
+/** Before a bootstrap's settings land: its favorites are the backend's (a reconnect may bring a newer list). */
+export function acceptNextFavorites(): void {
+  favoritesApplied.list = null;
+}
+
+useApp.subscribe((s, prev) => {
+  if (s.settings === prev.settings || !s.settings) return;
+  const mine = favoritesApplied.list;
+  if (mine === null) favoritesApplied.list = s.settings.favoriteFolders;
+  // the same list (not a copy): setting it again finds it equal and stops here
+  else if (s.settings.favoriteFolders !== mine) setApp({ settings: { ...s.settings, favoriteFolders: mine as FavoriteFolder[] } });
+});
 
 /** A delete's folders leave this window's favorites too at once (Codex code review round 2 #11), before the backend's `favoriteFolders`. */
 export function dropFavorites(accountId: number, keys: readonly string[]): void {
   const gone = new Set(keys);
-  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: s.settings.favoriteFolders.filter((f) => f.accountId !== accountId || f.folder === null || !gone.has(f.folder)) } } : {}));
+  writeFavorites((getApp().settings?.favoriteFolders ?? []).filter((f) => f.accountId !== accountId || f.folder === null || !gone.has(f.folder)));
 }

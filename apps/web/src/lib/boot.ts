@@ -22,7 +22,7 @@ import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { withPendingEdits } from "~/lib/accounts";
-import { applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
+import { acceptNextFavorites, applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
@@ -40,6 +40,7 @@ export async function boot(): Promise<void> {
     await connectBackend();
     const b = await client.call("app.bootstrap", {});
     applyAppearance(reconcileSettings(b.settings));
+    acceptNextFavorites();
     setApp({ ready: true, accounts: b.accounts, categories: b.categories, folders: b.folders ?? [], counts: b.counts, settings: b.settings, owner: b.owner, demo: b.demo, version: b.version, host: b.host, supportedFilters: supportedFilters(b.filters) });
     // a remembered open account that's no longer there (plan 67)
     reconcileAccounts(b.accounts);

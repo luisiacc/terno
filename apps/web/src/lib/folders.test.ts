@@ -141,3 +141,15 @@ describe("following a rename", () => {
     expect([...getApp().listFilters]).toEqual([["all|2||Jobs", "unread"]]);
   });
 });
+
+describe("a settings answer with the whole settings", () => {
+  it("never puts back an older favorites list than this window holds (round 12's open end)", async () => {
+    const { applyFavoriteFolders, favoritesApplied } = await import("./folders");
+    favoritesApplied.revision = 0;
+    setApp({ settings: { favoriteFolders: [] } as never });
+    applyFavoriteFolders({ favorites: [{ accountId: 1, folder: "Label_1", view: null }], revision: 5 });
+    // a settings.update answer computed before that favorite: no favorites in it
+    setApp({ settings: { favoriteFolders: [], theme: "dark" } as never });
+    expect(getApp().settings).toMatchObject({ theme: "dark", favoriteFolders: [{ accountId: 1, folder: "Label_1", view: null }] });
+  });
+});
