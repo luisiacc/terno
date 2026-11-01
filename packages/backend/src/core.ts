@@ -1875,7 +1875,12 @@ export class BackendCore {
       const provider = await this.provider(accountId);
       this.assertCurrent(life);
       if (!provider) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-      return await this.accountWrite(life, () => change(provider, { write: (work) => this.accountWrite(life, work), check: () => this.assertCurrent(life) }));
+      // a request the account's removal or reconnect interrupted fails as the lifetime's end, never as the server's
+      // error: teardown waits for this and rethrows any other (Codex code review round 21 #2)
+      return await this.accountWrite(life, () => change(provider, { write: (work) => this.accountWrite(life, work), check: () => this.assertCurrent(life) }).catch((error: unknown) => {
+        this.assertCurrent(life);
+        throw error;
+      }));
     } finally {
       if (this.folderChanges.get(accountId) === gate) {
         this.folderChanges.delete(accountId);

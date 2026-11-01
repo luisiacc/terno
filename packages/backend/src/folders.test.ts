@@ -24,13 +24,15 @@ async function setup() {
     sync: async (_sink: SyncSink) => {},
     folders: undefined as undefined | ((sink: SyncSink) => Promise<void>),
     foldersCalls: 0,
+    createFolder: undefined as MailProvider["createFolder"],
+    closed: () => {},
   };
   const registry: ProviderRegistry = {
     create() {
       const p: MailProvider = {
         async verify() {},
         async execute() {},
-        async close() {},
+        async close() { script.closed(); },
         async sync(sink) {
           await sink.setFolders?.(script.list);
           await script.sync(sink);
@@ -39,6 +41,7 @@ async function setup() {
           script.foldersCalls++;
           await script.folders?.(sink);
         },
+        createFolder: (input) => script.createFolder!(input),
       };
       return p;
     },
@@ -101,5 +104,23 @@ describe("an account's own folders (plan 68): the backend", () => {
     };
     await t.backend.syncAccount(t.account.id).catch(() => {});
     expect((await t.backend.store.accounts.get(t.account.id))!.syncState.authRequired).toBe(true);
+  });
+
+  it("an account removed while a folder change waits on the server is removed: the interrupted request isn't the removal's error (Codex code review round 21 #2)", async () => {
+    const t = await setup();
+    await t.backend.syncAccount(t.account.id);
+    let started!: () => void;
+    const asked = new Promise<void>((resolve) => { started = resolve; });
+    // the connection closing under it fails the CREATE, as imapflow's does
+    t.script.createFolder = () => new Promise((_resolve, reject) => {
+      t.script.closed = () => reject(new ProviderError("synthetic connection closed", true));
+      started();
+    });
+    const creating = t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Travel" });
+    creating.catch(() => {});
+    await asked;
+    await t.client.call("accounts.remove", { id: t.account.id });
+    expect(await t.backend.store.accounts.get(t.account.id)).toBeFalsy();
+    await expect(creating).rejects.toBeTruthy();
   });
 });
