@@ -871,6 +871,38 @@ it("a folder renamed onto a name whose folder another app deleted shows none of 
   expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
 });
 
+it("a thread of a folder another app deleted, updated during a rename onto its name, stays out of it (Codex code review round 25 #2)", async () => {
+  const t = await setup(["Work", "Job"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Job", { raw: rawIdleMail("In the old job") });
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  const [a] = await t.threadsIn("Work");
+  const [b] = await t.threadsIn("Job");
+  // another app deletes Job; Work is renamed onto its name, and the old Job's thread is marked read at the carry's turn
+  t.server.control.deleteMailbox("Job");
+  let armed = false;
+  let acted = false;
+  const yieldTurn = t.backend.yieldTurn.bind(t.backend);
+  vi.spyOn(t.backend, "yieldTurn").mockImplementation(async () => {
+    if (armed && t.calls.includes("rename:end")) {
+      armed = false;
+      await t.client.call("threads.act", { threadIds: [b!], action: "markRead" });
+      acted = true;
+    }
+    return yieldTurn();
+  });
+  armed = true;
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  expect(acted).toBe(true);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await t.client.call("counts.get", {})).folderUnread?.[folderRef(t.account.id, "Job")] ?? 0).toBe(1);
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+});
+
 it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

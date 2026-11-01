@@ -55,11 +55,12 @@ export async function carryRenamed(
   // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
   for (const m of renamed) {
     if (m.from === m.to) continue;
+    // its aliases and the generations it leaves out, before its rows are cleared and carried (round 25 #2)
+    await aliasAhead(b, accountId, listing.find((f) => f.key === m.to), write);
     // the new key starts empty: rows a folder that had the name left (renamed away before a pass) aren't this one's
     // (Codex code review round 14 #2: Work → Job, then Other → Work, showed Job's threads in Work), a slice at a time
     while ((await write(() => b.store.folders.clear(accountId, m.to, CARRY_SLICE))).more) await b.yieldTurn();
     if (m.stale) continue;
-    await aliasAhead(b, accountId, listing.find((f) => f.key === m.to), write);
     for (let after: number | null = 0; after !== null; ) {
       const from: number = after;
       const r = await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE));
@@ -76,14 +77,17 @@ export async function carryRenamed(
 /**
  * The new key's aliases (`Folder.aliases`), stored before its rows are carried: a thread refreshed during the carry's
  * turns (another window marking it read) derives the new key from its places under the old path, never drops the row
- * just carried (Codex code review round 18 #1). The rest of the list stays as stored until the change's own listing.
+ * just carried (Codex code review round 18 #1). And the generations it leaves out (`except`), stored with them, before
+ * the clear: a folder of the name another app deleted still has its places under the path, and a thread of it updated
+ * during those turns was derived back into the new key, which the listing then kept as carried (Codex code review
+ * round 25 #2). The rest of the list stays as stored until the change's own listing.
  */
 async function aliasAhead(b: Backend, accountId: number, to: ProviderFolder | undefined, write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
-  if (!to?.aliases?.length) return;
+  if (!to?.aliases?.length && !to?.except?.length) return;
   await b.withFolderList(accountId, () => write(async () => {
     const stored = (await accountFolders(b, accountId)).map(({ accountId: _a, ...f }): ProviderFolder => f);
     const known = stored.some((f) => f.key === to.key);
-    const next = known ? stored.map((f) => (f.key === to.key ? { ...f, aliases: to.aliases } : f)) : [...stored, to];
+    const next = known ? stored.map((f) => (f.key === to.key ? { ...f, aliases: to.aliases, except: to.except } : f)) : [...stored, to];
     // never a rebuild of it: the carry writes its rows
     await b.store.folders.replace(accountId, next, [to.key]);
   }));
