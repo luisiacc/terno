@@ -67,7 +67,10 @@ async function legacyProfile(name: string): Promise<{ appData: string; profile: 
   const app = await launch({ profile }, { TERNO_TEST_APP_NAME: LEGACY });
   const page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
-  const sealed = await app.evaluate(({ safeStorage }, secrets) => Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, [...safeStorage.encryptString(v)]])), SECRETS);
+  const sealed = await app.evaluate(
+    async ({ safeStorage }, secrets) => Object.fromEntries(await Promise.all(Object.entries(secrets).map(async ([k, v]) => [k, [...(await safeStorage.encryptStringAsync(v))]]))),
+    SECRETS,
+  );
   await page.goto("app://unica/__storage-migration");
   await page.evaluate(() => {
     localStorage.setItem("unica:first-run", "done");
@@ -127,7 +130,10 @@ test("a legacy profile is renamed, its secrets sealed again under the new keycha
   expect(rows.map((r) => r.name)).toEqual(Object.keys(SECRETS));
   for (const r of rows) expect([...r.blob]).not.toEqual(sealed[r.name]);
   expect(state).toEqual({ generation: "terno", pending: {} });
-  const opened = await app.evaluate(({ safeStorage }, blobs) => blobs.map((b) => safeStorage.decryptString(Buffer.from(b))), rows.map((r) => [...r.blob]));
+  const opened = await app.evaluate(
+    ({ safeStorage }, blobs) => Promise.all(blobs.map(async (b) => (await safeStorage.decryptStringAsync(Buffer.from(b))).result)),
+    rows.map((r) => [...r.blob]),
+  );
   expect(opened).toEqual(Object.values(SECRETS));
 
   // the renderer's localStorage came along from app://unica, under Terno's key names

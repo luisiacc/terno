@@ -39,7 +39,7 @@ export function runKeychainHelper(): void {
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (d: string) => (input += d));
   process.stdin.on("end", () => {
-    void app.whenReady().then(() => {
+    void app.whenReady().then(async () => {
       let blobs: string[] = [];
       try {
         blobs = (JSON.parse(input) as { blobs: string[] }).blobs;
@@ -47,13 +47,14 @@ export function runKeychainHelper(): void {
         return finish([]);
       }
       finish(
-        blobs.map((b) => {
-          try {
-            return safeStorage.decryptString(Buffer.from(b, "base64"));
-          } catch {
-            return null;
-          }
-        }),
+        await Promise.all(
+          blobs.map((b) =>
+            safeStorage.decryptStringAsync(Buffer.from(b, "base64")).then(
+              (d) => d.result,
+              () => null,
+            ),
+          ),
+        ),
       );
     });
   });

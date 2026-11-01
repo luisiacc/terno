@@ -89,9 +89,9 @@ test.beforeAll(async () => {
   await blockExternal(app);
   // Only synthetic passwords in this temporary profile; never open the native Keychain.
   await app.evaluate(({ safeStorage }) => {
-    safeStorage.isEncryptionAvailable = () => true;
-    safeStorage.encryptString = (value) => Buffer.from(value, "utf8");
-    safeStorage.decryptString = (value) => value.toString("utf8");
+    safeStorage.isAsyncEncryptionAvailable = async () => true;
+    safeStorage.encryptStringAsync = async (value) => Buffer.from(value, "utf8");
+    safeStorage.decryptStringAsync = async (value) => ({ result: value.toString("utf8"), shouldReEncrypt: false });
   });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });

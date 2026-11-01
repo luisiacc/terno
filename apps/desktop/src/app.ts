@@ -255,14 +255,17 @@ function startBackend() {
         if (/^https:\/\//i.test(msg.url)) void shell.openExternal(msg.url);
         break;
       case "secret":
-        try {
-          if (!safeStorage.isEncryptionAvailable()) throw new Error("Keychain encryption unavailable");
-          const value = msg.op === "encrypt" ? [...safeStorage.encryptString(msg.plain)] : safeStorage.decryptString(Buffer.from(msg.blob));
-          child.postMessage({ type: "secret-result", id: msg.id, ok: true, value } satisfies MainToBackend);
-        } catch (error) {
-          diagLog.warn("keychain.secret_failed", { op: msg.op, errorClass: error instanceof Error ? error.name : "Error" });
-          child.postMessage({ type: "secret-result", id: msg.id, ok: false, error: String(error) } satisfies MainToBackend);
-        }
+        // the async API: the sync one is deprecated, and reads blobs it sealed
+        void (async () => {
+          if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error("Keychain encryption unavailable");
+          return msg.op === "encrypt" ? [...(await safeStorage.encryptStringAsync(msg.plain))] : (await safeStorage.decryptStringAsync(Buffer.from(msg.blob))).result;
+        })().then(
+          (value) => child.postMessage({ type: "secret-result", id: msg.id, ok: true, value } satisfies MainToBackend),
+          (error: unknown) => {
+            diagLog.warn("keychain.secret_failed", { op: msg.op, errorClass: error instanceof Error ? error.name : "Error" });
+            child.postMessage({ type: "secret-result", id: msg.id, ok: false, error: String(error) } satisfies MainToBackend);
+          },
+        );
         break;
       case "legacy-secrets":
         // sealed by Única: opened by the helper under the old name, sealed again by the backend
