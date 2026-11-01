@@ -442,3 +442,31 @@ it("retains known quota refusal when cancellation interrupts its bounded error b
   await expect(inspectGmailToken("synthetic-body-cancel", transport, { signal: abort.signal })).rejects.toMatchObject({ i18n: { key: "errors.google.quota" }, retryable: true });
   expect(transport).toHaveBeenCalledOnce();
 });
+
+it("observes a late rejected forbidden settlement after logical cancellation", async () => {
+  const abort = new AbortController();
+  let fail!: (error: Error) => void;
+  let started!: () => void;
+  const settling = new Promise<void>((resolve) => { started = resolve; });
+  const durable = new Promise<void>((_resolve, reject) => { fail = reject; });
+  const settled = vi.fn(() => { started(); return durable; });
+  const fallback = vi.fn<typeof fetch>(async () => { throw new Error("Unexpected unmanaged request"); });
+  const result = inspectGmailToken("synthetic-late-failure", fallback, { signal: abort.signal, google: {
+    async request(descriptor) {
+      descriptor.onForbidden!(settled);
+      return new Response('{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}', { status: 403 });
+    },
+  } });
+  const outcome = expect(result).rejects.toMatchObject({ i18n: { key: "errors.google.cancelled" } });
+  try {
+    await settling;
+    abort.abort();
+    await outcome;
+    expect(settled).toHaveBeenCalledExactlyOnceWith("quota");
+  } finally {
+    fail(new Error("Synthetic late settlement rejection"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await outcome;
+  }
+  expect(fallback).not.toHaveBeenCalled();
+});

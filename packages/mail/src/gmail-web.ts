@@ -57,7 +57,10 @@ export async function withGoogleSignIn<T>(options: { signal?: AbortSignal; timeo
       try {
         const text = await wait(readResponseText(response, 65_536, signal)).catch(() => "");
         quota ||= response.status === 403 && !signal.aborted && isRateLimit(text);
-      } finally { await settleForbidden?.(quota && !signal.aborted ? "quota" : "none"); }
+      } finally {
+        // Logical sign-in can end while the coordinator still owns the durable ticket.
+        if (settleForbidden) await wait(settleForbidden(quota && !signal.aborted ? "quota" : "none"));
+      }
       throw new ProviderError(quota ? L("errors.google.quota") : L("errors.google.signInFailed", { detail: response.status }), quota || response.status >= 500, false, false, httpResponse);
     }
     const reader = response.body?.getReader();

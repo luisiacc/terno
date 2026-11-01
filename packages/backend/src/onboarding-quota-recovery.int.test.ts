@@ -18,7 +18,7 @@ afterEach(async () => {
   finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
 
-async function setup() {
+async function setup(profileHeaders?: { wait: Promise<void>; started(): void }) {
   let status = 200, who = email, reason = "insufficientPermissions", failAt = profile;
   let clock = 1_800_000_000_000, elapsed = 1000;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -38,6 +38,7 @@ async function setup() {
       return new Response(new ReadableStream<Uint8Array>({ start(c) { nativeBodies.add(c); } }));
     }
     expect([profile, userinfo, tokenUrl]).toContain(request.url);
+    if (request.url === profile && profileHeaders) { profileHeaders.started(); await profileHeaders.wait; }
     expect(request.method).toBe(request.url === tokenUrl ? "POST" : "GET");
     if (request.url !== tokenUrl) expect(request.headers.get("authorization")).toMatch(/^Bearer synthetic-/);
     if (status !== 200 && request.url === failAt) return new Response(reason === "malformed" ? "{broken" : JSON.stringify({ error: { message: marker, errors: [{ reason }] } }), { status, headers: { "retry-after": "120" } });
@@ -286,4 +287,52 @@ it("targeted sign-in and rediscovered Add Account cannot publish access through 
   await t.expire();
   await t.connect("synthetic-target-recovered", account.id);
   expect(t.installed).toHaveBeenCalledExactlyOnceWith(account.id, "synthetic-target-recovered", expect.any(Number));
+});
+
+it.each(["cancel", "deadline"] as const)("initial public auth ends on %s during durable403 settlement and cannot install late credentials", async (stop) => {
+  let publish!: () => void, dispatched!: () => void, persist!: () => void, started!: () => void;
+  const headers = new Promise<void>((resolve) => { publish = resolve; });
+  const dispatch = new Promise<void>((resolve) => { dispatched = resolve; });
+  const write = new Promise<void>((resolve) => { persist = resolve; });
+  const writing = new Promise<void>((resolve) => { started = resolve; });
+  const t = await setup({ wait: headers, started: dispatched });
+  t.refuse(403, profile, "rateLimitExceeded");
+  const original = t.backend.store.providerCooldown.update.bind(t.backend.store.providerCooldown);
+  const update = vi.spyOn(t.backend.store.providerCooldown, "update").mockImplementation(async (fn) => {
+    started(); await write;
+    return original(fn);
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let finished = false;
+  const result = t.connect("synthetic-stalled-public").then(() => { throw new Error("Unexpected auth success"); }, (error: unknown) => { finished = true; return error; });
+  try {
+    await dispatch;
+    if (stop === "deadline") await vi.advanceTimersByTimeAsync(29_000);
+    publish();
+    await writing;
+    if (stop === "cancel") t.backend.abort.abort();
+    else await vi.advanceTimersByTimeAsync(1000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(finished).toBe(true);
+    expect(await result).toMatchObject({ code: "BAD_REQUEST", i18n: { key: stop === "cancel" ? "errors.google.cancelled" : "errors.google.timedOut" } });
+    expect(t.installed).not.toHaveBeenCalled();
+    expect(await t.backend.store.accounts.list()).toEqual([]);
+    expect(decodeCooldown(await t.backend.store.providerCooldown.read()).rows).toEqual([]);
+    expect(update).toHaveBeenCalledOnce();
+    if (stop === "deadline") {
+      await expect(t.connect("synthetic-early-retry")).rejects.toMatchObject({ i18n: { key: "errors.gmail.paused" } });
+    }
+    expect(t.routes).toEqual([profile]);
+  } finally {
+    publish(); persist();
+    await result;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    vi.useRealTimers();
+  }
+  expect(decodeCooldown(await t.backend.store.providerCooldown.read()).rows).toHaveLength(1);
+  expect(await t.backend.store.accounts.list()).toEqual([]);
+  expect(t.installed).not.toHaveBeenCalled();
+  expect(JSON.stringify(t.frames)).not.toContain("synthetic-stalled-public");
+  expect(JSON.stringify(t.frames)).not.toContain(marker);
+  expect(t.backend.net.googlePending()).toBe(0);
 });
