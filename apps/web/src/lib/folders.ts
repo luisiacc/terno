@@ -184,8 +184,3 @@ useApp.subscribe((s, prev) => {
   else if (s.settings.favoriteFolders !== mine) setApp({ settings: { ...s.settings, favoriteFolders: mine as FavoriteFolder[] } });
 });
 
-/** A delete's folders leave this window's favorites too at once (Codex code review round 2 #11), before the backend's `favoriteFolders`. */
-export function dropFavorites(accountId: number, keys: readonly string[]): void {
-  const gone = new Set(keys);
-  writeFavorites((getApp().settings?.favoriteFolders ?? []).filter((f) => f.accountId !== accountId || f.folder === null || !gone.has(f.folder)));
-}

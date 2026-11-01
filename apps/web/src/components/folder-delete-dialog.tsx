@@ -1,7 +1,6 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
-import { dropFavorites } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
@@ -51,8 +50,9 @@ export function FolderDeleteDialog({ account, folderKey, name, open, onOpenChang
       finalFocus={() => row() ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`) ?? true}
       onConfirm={async () => {
         try {
-          const { deleted } = await client.call("folders.delete", { accountId: account.id, key: folderKey });
-          dropFavorites(account.id, deleted);
+          // its favorites leave with the backend's revisioned `favoriteFolders` (round 13 #3: a late answer here
+          // must not take away a favorite another window made since)
+          await client.call("folders.delete", { accountId: account.id, key: folderKey });
           snack.success(t("folder.deleted", { name }));
         } catch (e) {
           snack.error(t("folder.deleteFailed", { error: errorText(e) }));

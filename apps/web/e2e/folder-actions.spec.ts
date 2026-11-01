@@ -531,6 +531,34 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_99")?.path.at(-1)).toBe("Jota");
   });
 
+  test("a late delete answer never takes away a favorite another window made since (Codex code review round 13 #3)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    const other = { clientId: "other-window", origin: "dev" as const };
+    const made = await server.backend.server.invoke("folders.create", { accountId: freelance, parent: null, name: "Efimera" }, other) as { key: string };
+    await openAccount(page, freelance);
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const remove = handlers["folders.delete"]!;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    handlers["folders.delete"] = async (...a) => {
+      const r = await remove(...a);
+      await held;
+      return r;
+    };
+    await own(page, freelance, made.key).click({ button: "right" });
+    await page.getByTestId("folder-menu-delete").click();
+    await page.getByTestId("folder-delete-dialog-confirm").click();
+    await expect(own(page, freelance, made.key)).toHaveCount(0);
+    // meanwhile another window makes it again and favorites it
+    const again = await server.backend.server.invoke("folders.create", { accountId: freelance, parent: null, name: "Efimera" }, other) as { key: string };
+    await server.backend.server.invoke("folders.favorite", { accountId: freelance, folder: again.key, view: null, on: true }, other);
+    await expect(page.getByTestId(`nav-fav-${freelance}-${again.key}`)).toBeVisible();
+    release();
+    await expect(page.getByTestId("snack").filter({ hasText: "deleted" })).toBeVisible();
+    await page.waitForTimeout(200);
+    await expect(page.getByTestId(`nav-fav-${freelance}-${again.key}`)).toBeVisible();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
