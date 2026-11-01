@@ -731,10 +731,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       try {
         if (responseMode === "incoming") return await incomingResponse(res, incomingId!, deadline, preparationSignal, admission) as T;
-        if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
-        if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal)) as T;
-        if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal)) as T;
-        if (path.startsWith("/messages/") && path.endsWith("?format=minimal")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal)) as T;
+        if (path === "/profile" || path === "/messages/send" || path === ep.userinfo) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
+        if (path === "/labels") return JSON.parse(await readResponseText(res, LABELS_BYTES, deadline.signal, yieldPage)) as T;
+        if (path.startsWith("/history?") || path.startsWith("/messages?")) return JSON.parse(await readResponseText(res, HISTORY_BYTES, deadline.signal, yieldPage)) as T;
+        if (path.startsWith("/messages/") && path.endsWith("?format=minimal")) return JSON.parse(await readResponseText(res, 65_536, deadline.signal, yieldPage)) as T;
         return await untilAborted(res.json(), deadline.signal) as T;
       } catch (e) {
         if (path.startsWith("/history?") && e instanceof ResponseBodyLimitError) throw new HistoryOverflow();

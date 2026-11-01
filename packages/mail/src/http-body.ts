@@ -23,7 +23,7 @@ export function cancelResponse(response: Response): void {
 }
 
 /** Small control/error bodies only; large mail processing needs separate admission. */
-export async function readResponseText(response: Response, limit: number, signal: AbortSignal): Promise<string> {
+export async function readResponseText(response: Response, limit: number, signal: AbortSignal, yieldTo?: () => Promise<void>): Promise<string> {
   const reader = response.body?.getReader();
   if (!reader) {
     signal.throwIfAborted();
@@ -71,6 +71,7 @@ export async function readResponseText(response: Response, limit: number, signal
   } finally {
     signal.removeEventListener("abort", cancel);
     if (!complete) { void reader.cancel(overflow).catch(() => {}); }
-    reader.releaseLock();
+    try { if (complete) await yieldTo?.(); } finally { reader.releaseLock(); }
+    if (complete) { await yieldTo?.(); signal.throwIfAborted(); }
   }
 }

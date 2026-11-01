@@ -46,3 +46,22 @@ it("hands the admitted native raw reader directly to physical tracking without a
     expect(fixture.requests.filter(({ url }) => url.searchParams.get("format") === "minimal")).toHaveLength(1); expect(fixture.unexpected).toEqual([]);
   } finally { try { controller.close(); } catch { /* already physically closed */ } await work; try { await backend.stop(); } finally { reading.mockRestore(); for (const spy of readerSpies) spy.mockRestore(); fixture.transport.mockRestore(); rmSync(directory, { recursive: true, force: true }); } }
 });
+
+it("separates completed native control-reader retirement from the next provider work slice", async () => {
+  const { nodePlatform } = await import("@terno/db");
+  const directory = mkdtempSync(join(tmpdir(), "terno-control-retirement-"));
+  let active = false, turns = 0, atRelease = -1, atLabels = -1;
+  const fixture = incomingGmailFixture({ ids: [], raw: () => { throw new Error("Unexpected raw route"); }, profile(email) { active = true; turns = 0; return { historyId: "10", emailAddress: email }; }, observe(url) { if (url.pathname.endsWith("/labels")) atLabels = turns; } });
+  const release = ReadableStreamDefaultReader.prototype.releaseLock;
+  const spy = vi.spyOn(ReadableStreamDefaultReader.prototype, "releaseLock").mockImplementation(function (this: ReadableStreamDefaultReader<Uint8Array>) { if (active && atRelease < 0) atRelease = turns; return release.call(this); });
+  const providers: ProviderRegistry = { create: (ctx) => createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() }), async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); } };
+  const backend = new Backend({ dbPath: join(directory, "synthetic.db"), platform: { ...nodePlatform, async yield() { turns++; await nodePlatform.yield(); } }, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
+  try {
+    await backend.ready;
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 }); fixture.accounts.set("synthetic", account.email);
+    await backend.syncAccount(account.id);
+    expect(atRelease, "actual native retirement has its own cooperative work turn").toBeGreaterThan(0);
+    expect(atLabels, "subsequent provider work follows a separate turn").toBeGreaterThan(atRelease);
+    expect(backend.net.googlePending()).toBe(0); expect(fixture.unexpected).toEqual([]);
+  } finally { await backend.stop(); spy.mockRestore(); fixture.transport.mockRestore(); rmSync(directory, { recursive: true, force: true }); }
+});
