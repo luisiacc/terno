@@ -47,7 +47,8 @@ function Row({ label, htmlFor, children, hidden }: { label: string; htmlFor?: st
 const input = "h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground";
 
 /** The draft's fields, shared by the inline reply and the new message in the reader. */
-export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; flat?: boolean }) {
+/** `corner`: a control at the end of the first row, the form's top right (the inline draft's Pin, plan 115) */
+export function DraftFieldsForm({ d, accounts, showSubject, flat, corner }: { d: LocalDraft; accounts: Account[]; showSubject: boolean; flat?: boolean; corner?: React.ReactNode }) {
   const id = useId();
   const cancelReveal = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelReveal.current?.(), []);
@@ -127,9 +128,12 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
         {label}
       </button>
     );
+  const fromRow = accounts.length > 1 || !accounts.some((a) => a.id === d.accountId);
+  // on the first row's line (its label's), whichever row that is
+  const cornerSlot = corner && <span className="-mr-1 mt-[5px] flex shrink-0 self-start">{corner}</span>;
   return (
     <div className={cn(flat && "hairline-t")} data-draft-key={d.key}>
-      {(accounts.length > 1 || !accounts.some((a) => a.id === d.accountId)) && (
+      {fromRow && (
         <Row label={t("compose.from")}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
             <SelectTrigger size="sm" aria-label={t("compose.from")}className="-ml-2 h-7 border-0 bg-transparent shadow-none dark:bg-transparent" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
@@ -143,6 +147,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
               ))}
             </SelectContent>
           </Select>
+          {cornerSlot && <span className="ml-auto flex">{cornerSlot}</span>}
         </Row>
       )}
       <Row label={t("compose.to")} htmlFor={`${id}-to`}>
@@ -152,6 +157,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, flat }: { d: LocalDr
           {toggle(bcc, setBcc, t("compose.bcc"), "bcc", "compose-show-bcc")}
           {toggle(subject, setSubject, t("compose.subject"), "subject", "compose-show-subject")}
         </span>
+        {!fromRow && cornerSlot}
       </Row>
       <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc}>
         <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} />
@@ -469,7 +475,17 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
               }
             }}
           >
-            <DraftFieldsForm d={d} accounts={accounts} showSubject={d.mode === "forward" || d.mode === "new"} />
+            <DraftFieldsForm
+              d={d}
+              accounts={accounts}
+              showSubject={d.mode === "forward" || d.mode === "new"}
+              // plan 115: not from Review drafts, which owns the draft while it's open
+              corner={!recovering && (
+                <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
+                  <Pin />
+                </ToolIcon>
+              )}
+            />
             <ComposerBody draftKey={d.key} checkpoint={checkpoint} placeholder={d.mode === "new" ? t("compose.bodyPlaceholder.new") : d.mode === "forward" ? t("compose.bodyPlaceholder.forward") : t("compose.bodyPlaceholder.reply")} className="block min-h-[132px] w-full px-3.5 pt-3 pb-1 text-base" />
             <DraftAttachments d={d} />
             <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
@@ -484,12 +500,6 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
-                {/* plan 115: not from Review drafts, which owns the draft while it's open */}
-                {!recovering && (
-                  <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
-                    <Pin />
-                  </ToolIcon>
-                )}
                 <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </ToolIcon>
