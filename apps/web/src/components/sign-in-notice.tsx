@@ -139,13 +139,16 @@ const markers = new Map<number, () => void>();
  */
 export async function openSignInMarker(account: Account): Promise<void> {
   const mine = ++opening.seq;
+  // where focus was when asked: the menu's item, still there while the menu closes (Codex code review round 4)
+  const from = document.activeElement;
   if (WEB && account.kind === "gmail") prepareGoogle();
   await loadPanel().catch(() => {});
   // the user moved on while the panel loaded (a field, the list, another request): it doesn't open over that
-  // (Codex code review round 3 #2); the menu left focus nowhere, or on the account's row
+  // (Codex code review round 3 #2); the closing menu, nowhere or the account's row isn't moving on
   const at = document.activeElement;
   const row = document.querySelector(`[data-testid="nav-account-${account.id}"]`);
-  if (mine !== opening.seq || (at && at !== document.body && at !== row && at.isConnected)) return;
+  const stayed = !at || at === document.body || at === row || at === from || !at.isConnected || at.closest("[role=menu]") !== null;
+  if (mine !== opening.seq || !stayed) return;
   markers.get(account.id)?.();
 }
 const opening = { seq: 0 };
