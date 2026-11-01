@@ -19,6 +19,17 @@ import { placeholders, type Db } from "./sqlite";
  */
 const OWN = (l: string, f: string) => `(${f}.except_json IS NULL OR ${l}.uidvalidity NOT IN (SELECT value FROM json_each(${f}.except_json)))`;
 
+/**
+ * a location under a generation a pending rename here moved (`folder_aliases`: its old path and UIDVALIDITY) is the
+ * new key's membership until the pass that reads it retires the rename (Codex code review round 16 #1: a thread's
+ * refresh dropped the carried row, and the renamed folder lost its mail and unread count until the pass). By the
+ * alias's primary key, one probe a location; none at all when no rename is pending (the table is empty).
+ */
+const ALIASED = (ids: string) => /* sql */ `
+  SELECT m.thread_id AS tid, a.key AS folder FROM messages m JOIN message_locations l ON l.message_id = m.id
+   JOIN folder_aliases a ON a.account_id = l.account_id AND a.mailbox = l.mailbox AND a.uidvalidity = l.uidvalidity
+   WHERE m.thread_id IN (SELECT value FROM json_each(${ids})) AND m.is_trash = 0 AND m.is_spam = 0`;
+
 const MEMBERSHIP = /* sql */ `
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
 SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
@@ -28,6 +39,8 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
   UNION
   SELECT m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
    WHERE m.thread_id IN (SELECT value FROM json_each(?1)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
+  UNION
+  ${ALIASED("?1")}
 ) k JOIN threads t ON t.id = k.tid`;
 
 /**
@@ -76,6 +89,8 @@ export function writeFolders(db: Db, threads: readonly FoldedThread[]): void {
        WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}`,
       json,
     )) want.get(r.thread_id)?.add(r.mailbox);
+    // and a pending rename's (round 16 #1): read only while one is
+    if (db.get("SELECT 1 FROM folder_aliases LIMIT 1")) for (const r of db.all<{ tid: number; folder: string }>(ALIASED("?"), json)) want.get(r.tid)?.add(r.folder);
   }
   const have = new Map<number, Map<string, { last_date: number; unread: number }>>();
   for (const r of db.all<{ thread_id: number; folder: string; last_date: number; unread: number }>("SELECT thread_id, folder, last_date, unread FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json)) {
@@ -247,10 +262,30 @@ interface FolderRow {
   except_json: string | null;
 }
 
-const toFolder = (r: FolderRow): Folder => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...(r.except_json && { except: exceptOf(r.except_json) }) });
+type Alias = { mailbox: string; uidvalidity: number };
+/** a folder's aliases as compared and stored: one each, by path then UIDVALIDITY */
+const aliasesOf = (aliases: readonly Alias[] | undefined): Alias[] =>
+  [...new Map((aliases ?? []).map((a) => [`${a.uidvalidity}\u0000${a.mailbox}`, { mailbox: a.mailbox, uidvalidity: a.uidvalidity }])).values()].sort((a, b) => (a.mailbox < b.mailbox ? -1 : a.mailbox > b.mailbox ? 1 : a.uidvalidity - b.uidvalidity));
+/** the account's aliases, by folder key (a handful: only while a rename here waits for its pass) */
+function aliasesByKey(db: Db, accountId?: number): Map<string, Alias[]> {
+  const out = new Map<string, Alias[]>();
+  const rows = accountId === undefined
+    ? db.all<{ account_id: number; key: string; mailbox: string; uidvalidity: number }>("SELECT account_id, key, mailbox, uidvalidity FROM folder_aliases")
+    : db.all<{ account_id: number; key: string; mailbox: string; uidvalidity: number }>("SELECT account_id, key, mailbox, uidvalidity FROM folder_aliases WHERE account_id = ?", accountId);
+  for (const r of rows) {
+    const at = `${r.account_id}\u0000${r.key}`;
+    out.set(at, [...(out.get(at) ?? []), { mailbox: r.mailbox, uidvalidity: r.uidvalidity }]);
+  }
+  for (const [at, list] of out) out.set(at, aliasesOf(list));
+  return out;
+}
+const sameAliases = (a: readonly Alias[], b: readonly Alias[]) => a.length === b.length && a.every((x, i) => x.mailbox === b[i]!.mailbox && x.uidvalidity === b[i]!.uidvalidity);
+
+const toFolder = (r: FolderRow, aliases?: readonly Alias[]): Folder => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...(r.except_json && { except: exceptOf(r.except_json) }), ...(aliases?.length && { aliases: aliases.map((a) => ({ ...a })) }) });
 
 export function listFolders(db: Db): Folder[] {
-  return db.all<FolderRow>("SELECT account_id, key, path_json, selectable, except_json FROM folders ORDER BY account_id, position").map(toFolder);
+  const aliases = aliasesByKey(db);
+  return db.all<FolderRow>("SELECT account_id, key, path_json, selectable, except_json FROM folders ORDER BY account_id, position").map((r) => toFolder(r, aliases.get(`${r.account_id}\u0000${r.key}`)));
 }
 
 /**
@@ -268,6 +303,9 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
     const next = new Set<string>();
     // listed before with other generations left out: its memberships are derived again (Codex code review round 8 #1)
     const regenerated = new Set<string>();
+    // a pending rename's aliases, as stored (round 16 #1): written where they differ, never a rebuild (the rename's
+    // carry already wrote the rows they derive)
+    const aliasesBefore = aliasesByKey(db, accountId);
     let position = Math.max(-1, ...[...before.values()].map((r) => r.position));
     let changed = false;
     for (const f of folders) {
@@ -282,6 +320,12 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
       } else if (was.path_json !== path || (was.selectable === 1) !== f.selectable || was.except_json !== except) {
         db.run("UPDATE folders SET path_json = ?, selectable = ?, except_json = ? WHERE account_id = ? AND key = ?", path, f.selectable ? 1 : 0, except, accountId, f.key);
         if (was.except_json !== except) regenerated.add(f.key);
+        changed = true;
+      }
+      const aliases = aliasesOf(f.aliases);
+      if (!sameAliases(aliasesBefore.get(`${accountId}\u0000${f.key}`) ?? [], aliases)) {
+        db.run("DELETE FROM folder_aliases WHERE account_id = ? AND key = ?", accountId, f.key);
+        for (const a of aliases) db.run("INSERT INTO folder_aliases (account_id, key, mailbox, uidvalidity) VALUES (?, ?, ?, ?)", accountId, f.key, a.mailbox, a.uidvalidity);
         changed = true;
       }
     }
@@ -299,7 +343,8 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
         if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
         // only where there's something to rebuild: its mailbox has locations, or rows a past listing left
         const any =
-          db.get("SELECT 1 FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT 1", accountId, f.key) ??
+          f.aliases?.length ||
+          db.get("SELECT 1 FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT 1", accountId, f.key) ||
           db.get("SELECT 1 FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT 1", accountId, f.key);
         if (any) db.run("INSERT OR REPLACE INTO folder_rebuilds (account_id, key, phase, after_uidvalidity, after_uid) VALUES (?, ?, 0, 0, 0)", accountId, f.key);
       }
@@ -385,18 +430,41 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
       if (gone.length < limit) db.run("UPDATE folder_rebuilds SET phase = 1 WHERE account_id = ? AND key = ?", job.account_id, job.key);
       return { more: true, touched: gone.map((r) => r.thread_id) };
     }
-    const rows = db.all<{ message_id: number; uidvalidity: number; uid: number }>(
-      `SELECT message_id, uidvalidity, uid FROM message_locations INDEXED BY message_locations_uid
-       WHERE account_id = ? AND mailbox = ? AND (uidvalidity, uid) > (?, ?) ORDER BY uidvalidity, uid LIMIT ?`,
-      job.account_id,
-      job.key,
-      job.after_uidvalidity,
-      job.after_uid,
-      limit,
-    );
+    // phase 1 walks the folder's own places; phase 2 + i the i-th place a pending rename here still caches its mail
+    // under (its alias: old path and UIDVALIDITY, round 16 #1), so a rebuild never drops what the rename carried
+    const aliases = job.phase >= 2 ? (aliasesByKey(db, job.account_id).get(`${job.account_id}\u0000${job.key}`) ?? []) : [];
+    const alias = job.phase >= 2 ? aliases[job.phase - 2] : undefined;
+    const nextPhase = () => {
+      const more = job.phase === 1 ? db.get("SELECT 1 FROM folder_aliases WHERE account_id = ? AND key = ? LIMIT 1", job.account_id, job.key) !== undefined : job.phase - 1 < aliases.length;
+      if (more) db.run("UPDATE folder_rebuilds SET phase = ?, after_uidvalidity = 0, after_uid = 0 WHERE account_id = ? AND key = ?", job.phase + 1, job.account_id, job.key);
+      else done();
+    };
+    if (job.phase >= 2 && !alias) {
+      done();
+      return { more: left(), touched: [] };
+    }
+    const rows = alias
+      ? db.all<{ message_id: number; uidvalidity: number; uid: number }>(
+          `SELECT message_id, uidvalidity, uid FROM message_locations INDEXED BY message_locations_uid
+           WHERE account_id = ? AND mailbox = ? AND uidvalidity = ? AND uid > ? ORDER BY uid LIMIT ?`,
+          job.account_id,
+          alias.mailbox,
+          alias.uidvalidity,
+          job.after_uid,
+          limit,
+        )
+      : db.all<{ message_id: number; uidvalidity: number; uid: number }>(
+          `SELECT message_id, uidvalidity, uid FROM message_locations INDEXED BY message_locations_uid
+           WHERE account_id = ? AND mailbox = ? AND (uidvalidity, uid) > (?, ?) ORDER BY uidvalidity, uid LIMIT ?`,
+          job.account_id,
+          job.key,
+          job.after_uidvalidity,
+          job.after_uid,
+          limit,
+        );
     // this folder's rows only (its old ones went in phase 0): from the batch's messages, never a refold of their
     // whole threads (Codex R11: a long conversation re-read per slice); never another folder's generation (round 8 #1)
-    const except = folderExcept(db, job.account_id, job.key) ?? [];
+    const except = alias ? [] : (folderExcept(db, job.account_id, job.key) ?? []);
     const ids = JSON.stringify(rows.filter((r) => !except.includes(r.uidvalidity)).map((r) => r.message_id));
     const threads = db
       .all<{ thread_id: number }>(
@@ -408,7 +476,7 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
       )
       .map((r) => r.thread_id);
     const last = rows.at(-1);
-    if (rows.length < limit) done();
+    if (rows.length < limit) nextPhase();
     else db.run("UPDATE folder_rebuilds SET after_uidvalidity = ?, after_uid = ? WHERE account_id = ? AND key = ?", last!.uidvalidity, last!.uid, job.account_id, job.key);
     return { more: left(), touched: threads };
   });

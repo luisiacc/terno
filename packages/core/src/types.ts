@@ -254,6 +254,13 @@ export interface Folder {
    * here, and a count or export of it leaves them out. Absent: none.
    */
   except?: number[];
+  /**
+   * plan 107 (IMAP): where this folder's mail is still cached while a rename made here waits for the pass that reads
+   * it: the old path and the UIDVALIDITY the rename recorded (a generation, never the path alone). Their places make
+   * membership here until the pass places the mail under this path and the rename's record is retired (Codex code
+   * review round 16 #1: a thread's refresh dropped the carried row). Absent: none.
+   */
+  aliases?: { mailbox: string; uidvalidity: number }[];
 }
 
 /** Plan 107: an account's standard places a favorite can point at (the rows under an open account). */

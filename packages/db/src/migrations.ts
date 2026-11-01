@@ -1136,6 +1136,19 @@ INSERT INTO view_unread_backfill (after_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM
 ` },
   // plan 107 (Codex code review round 8 #1): an IMAP path's generations that are another folder's (JSON array; NULL: none)
   { version: 41, name: "folder generations left out (plan 107)", sql: "ALTER TABLE folders ADD COLUMN except_json TEXT;" },
+  // plan 107 (Codex code review round 16 #1): a renamed IMAP folder's mail still cached under its old path, by the
+  // generation the rename moved (path + UIDVALIDITY), until the pass that reads it retires the rename
+  { version: 42, name: "folder aliases (plan 107)", sql: `
+CREATE TABLE folder_aliases (
+  account_id INTEGER NOT NULL,
+  key TEXT NOT NULL,
+  mailbox TEXT NOT NULL,
+  uidvalidity INTEGER NOT NULL,
+  PRIMARY KEY (account_id, mailbox, uidvalidity, key),
+  FOREIGN KEY (account_id, key) REFERENCES folders(account_id, key) ON DELETE CASCADE
+) WITHOUT ROWID;
+CREATE INDEX folder_aliases_key ON folder_aliases(account_id, key);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

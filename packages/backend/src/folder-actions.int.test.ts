@@ -675,6 +675,34 @@ it("a renamed folder's old name made again before the next pass shows none of th
   expect(await t.threadsIn("Work")).toEqual([]);
 });
 
+it("a folder renamed here keeps its mail and unread count through a thread update before the next pass; the pass retires the alias (Codex code review round 16 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("First") });
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Second") });
+  await t.backend.syncAccount(t.account.id);
+  const before = await t.threadsIn("Work");
+  expect(before).toHaveLength(2);
+  const unread = async () => (await t.client.call("counts.get", {})).folderUnread ?? {};
+  const job = async () => (await t.client.call("app.bootstrap", {})).folders.find((f) => f.accountId === t.account.id && f.key === "Job");
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  expect((await job())?.aliases).toEqual([{ mailbox: "Work", uidvalidity: expect.any(Number) }]);
+  // marked read before a pass: its folders are derived again from its places, still under Work's generation
+  await t.client.call("threads.act", { threadIds: [before[0]!], action: "markRead" });
+  await t.backend.rebuildFolders();
+  expect(new Set(await t.threadsIn("Job"))).toEqual(new Set(before));
+  expect((await unread())[folderRef(t.account.id, "Job")]).toBe(1);
+  // the pass places the mail under Job and retires the rename, its alias with it
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(new Set(await t.threadsIn("Job"))).toEqual(new Set(before));
+  expect((await unread())[folderRef(t.account.id, "Job")]).toBe(1);
+  expect((await job())?.aliases).toBeUndefined();
+  await t.client.call("threads.act", { threadIds: [before[1]!], action: "markRead" });
+  expect(new Set(await t.threadsIn("Job"))).toEqual(new Set(before));
+  expect((await unread())[folderRef(t.account.id, "Job")]).toBeUndefined();
+  expect(await t.held((await Promise.all(before.map((id) => t.messageOf(id)))).map((m) => m.id))).toEqual([]);
+});
+
 it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

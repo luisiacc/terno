@@ -60,7 +60,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "category_counter", early: true, key: ["id"] },
   { name: "categories", early: true, key: ["id"], autoId: true },
   // plan 68: an account's own folders, and which threads are in them (the sidebar and counts read both at startup)
-  { name: "folders", early: true, key: ["account_id", "key"], indexes: fk("account_id") },
+  // (`aliased`: the few a pending IMAP rename here still caches mail for elsewhere, plan 107 round 16 #1; in memory only)
+  { name: "folders", early: true, key: ["account_id", "key"], indexes: { ...fk("account_id"), aliased: { columns: ["account_id"], where: (r) => Array.isArray(r.aliases) && r.aliases.length > 0 } } },
   { name: "folder_rebuilds", key: ["account_id", "key"], indexes: fk("account_id") },
   { name: "thread_folders", early: true, key: ["thread_id", "folder"], indexes: { ...fk("thread_id"), folder: ["account_id", "folder"], unread: { columns: ["account_id", "folder"], where: (r) => r.unread === 1 } } },
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },

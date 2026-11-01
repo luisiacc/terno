@@ -1078,8 +1078,19 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     };
     for (const r of Object.values(cursor?.renamed ?? {})) away(r.from, r.uidvalidity);
     for (const { d } of allDeletions(cursor)) away(d.from, d.uidvalidity);
-    if (!except.size) return folders;
-    return folders.map((f) => (except.has(f.key) ? { ...f, except: except.get(f.key)! } : f));
+    // and each new path with the generation a pending rename here moved to it, still cached under its old path: its
+    // places are the new path's membership until the pass reads it and the record goes (Codex code review round 16 #1:
+    // a thread's refresh dropped the carried row). Never a `stale` one (nothing of it cached), never one not done (the
+    // new path not listed, or the old one still that generation).
+    const aliases = new Map<string, { mailbox: string; uidvalidity: number }[]>();
+    const own = new Set(folders.map((f) => f.key));
+    for (const [to, r] of Object.entries(cursor?.renamed ?? {})) {
+      if (r.stale || !r.uidvalidity || r.from === to || !own.has(to) || generations.get(r.from) === r.uidvalidity) continue;
+      const list = aliases.get(to) ?? [];
+      if (!list.some((a) => a.mailbox === r.from && a.uidvalidity === r.uidvalidity)) aliases.set(to, [...list, { mailbox: r.from, uidvalidity: r.uidvalidity }]);
+    }
+    if (!except.size && !aliases.size) return folders;
+    return folders.map((f) => (except.has(f.key) || aliases.has(f.key) ? { ...f, ...(except.has(f.key) && { except: except.get(f.key)! }), ...(aliases.has(f.key) && { aliases: aliases.get(f.key)! }) } : f));
   }
 
   /** Plan 107: a CREATE, RENAME or DELETE the server refused, in its own words (null: not a refusal, e.g. the connection). */
@@ -1890,7 +1901,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // UIDVALIDITY, or a new path that's gone, leaves it to the vanished-folder path; one not read yet waits. An old
         // path made again has only the record's UIDVALIDITY's places forgotten, whatever the new path read as (its reset
         // left them to the record: Codex code review round 7 #1).
+        // records retired below: the list is stored again without what they added (round 16 #1)
+        let retired = false;
         for (const [to, r] of incomplete ? [] : Object.entries(cursor.renamed ?? {})) {
+          retired = true;
           const state = cursor.mailboxes[to];
           // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
           const live = listed.has(r.from);
@@ -1910,6 +1924,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // only this generation's record: another deleted under the path is its own (round 15 #1)
           setDeletionsAt(cursor, d.path, deletionsAt(cursor, d.path).filter((x) => !sameGeneration(x, d)));
           await ctx.saveCursor(cursor);
+          retired = true;
+        }
+        // their mail is placed where it is now (or forgotten): the list as the records left it, with no rename's aliases
+        // and no generation left out that's gone (Codex code review round 16 #1: kept until the next pass, an alias
+        // outlived its record). A crash first lists them again from the records still in the cursor.
+        if (retired) {
+          await ctx.saveCursor(cursor);
+          await sink.setFolders?.(withExcept(customFolders(list, r), cursor, generations), [], []);
         }
         // Forget vanished paths, retaining their cached identities behind durable holds.
         // (one a record forgot has no state left; another generation cached for its path is a vanished folder's: round 8)

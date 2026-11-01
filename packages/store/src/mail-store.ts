@@ -517,6 +517,8 @@ export interface MailStore {
      * an account's list now (a sync pass); `changed`: false when it's the same; a newly listed IMAP folder whose mailbox
      * already has locations gets a rebuild job, as does one whose `except` changed (plan 107, Codex code review round 8
      * #1). `carried`: keys a rename's threads were just carried to (`carry`, before this): they keep those rows.
+     * A folder's `aliases` (a pending rename's old path and generation) derive its membership too, in every derivation
+     * and rebuild, until a listing without them (Codex code review round 16 #1); a change of them rebuilds nothing.
      */
     replace(accountId: number, folders: readonly ProviderFolder[], carried?: readonly string[]): Promise<{ changed: boolean; touched: number[] }>;
     /** one slice (up to `limit` rows) of a pending rebuild, durable and resumable (Codex R5); `more`: a job remains */

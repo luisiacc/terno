@@ -32,10 +32,15 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
     const t = threads.get(id);
     const keys = new Set<string>();
     if (t) {
+      // a pending rename's aliases (round 16 #1): the account's few folders that have any, by the partial index
+      const aliased = folders.count("aliased", t.account_id) ? folders.by("aliased", t.account_id) : null;
       for (const m of messages.by("fk_thread_id", id)) {
         if (m.is_trash || m.is_spam) continue;
         for (const l of userLabels(m)) keys.add(l);
-        for (const l of locations.by("fk_message_id", m.id)) if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) keys.add(l.mailbox as string);
+        for (const l of locations.by("fk_message_id", m.id)) {
+          if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) keys.add(l.mailbox as string);
+          if (aliased) for (const f of aliased) if (aliasOf(f, l)) keys.add(f.key as string);
+        }
       }
     }
     const unread = t && t.unread_count > 0 ? 1 : 0;
@@ -226,6 +231,18 @@ export function folderExcept(c: Ctx, accountId: number, key: string): readonly n
   return f ? ((f.except as number[] | undefined) ?? []) : null;
 }
 
+/**
+ * a location under a generation a pending rename here moved to this folder (its alias: the old path and the
+ * UIDVALIDITY the rename recorded) is membership here until the pass retires the rename (Codex code review round 16 #1)
+ */
+const aliasOf = (folder: R, l: R): boolean => ((folder.aliases as Alias[] | undefined) ?? []).some((a) => a.mailbox === l.mailbox && a.uidvalidity === l.uidvalidity);
+type Alias = { mailbox: string; uidvalidity: number };
+/** a folder's aliases as stored: one each, by path then UIDVALIDITY; absent when there's none */
+const aliasesOf = (aliases: readonly Alias[] | undefined): Alias[] | undefined => {
+  if (!aliases?.length) return undefined;
+  return [...new Map(aliases.map((a) => [`${a.uidvalidity}\u0000${a.mailbox}`, { mailbox: a.mailbox, uidvalidity: a.uidvalidity }])).values()].sort((a, b) => (a.mailbox < b.mailbox ? -1 : a.mailbox > b.mailbox ? 1 : a.uidvalidity - b.uidvalidity));
+};
+const sameAliases = (a: readonly Alias[] | undefined, b: readonly Alias[] | undefined) => (a?.length ?? 0) === (b?.length ?? 0) && (a ?? []).every((x, i) => x.mailbox === b![i]!.mailbox && x.uidvalidity === b![i]!.uidvalidity);
 /** a location under a listed folder (its row) is membership there: one of its own generations */
 const ownGeneration = (folder: R | undefined, uidvalidity: number): boolean => !!folder && !(folder.except as number[] | undefined)?.includes(uidvalidity);
 /** a folder's `except` as stored: sorted, absent when there's none */
@@ -235,7 +252,7 @@ const sameExcept = (a: readonly number[] | undefined, b: readonly number[] | und
 export function listFolders(c: Ctx): Folder[] {
   return [...T(c, "folders").all()]
     .sort((x, y) => x.account_id - y.account_id || x.position - y.position)
-    .map((r) => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...((r.except as number[] | undefined)?.length && { except: [...(r.except as number[])] }) }));
+    .map((r) => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...((r.except as number[] | undefined)?.length && { except: [...(r.except as number[])] }), ...((r.aliases as Alias[] | undefined)?.length && { aliases: (r.aliases as Alias[]).map((a) => ({ ...a })) }) }));
 }
 
 /**
@@ -258,10 +275,12 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
     listed.add(f.key);
     const path = JSON.stringify(f.path);
     const except = exceptOf(f.except);
+    // a pending rename's aliases (round 16 #1): no rebuild (the rename's carry wrote the rows they derive)
+    const aliases = aliasesOf(f.aliases);
     const was = before.get(f.key);
-    const row = { account_id: accountId, key: f.key, path_json: path, selectable: f.selectable ? 1 : 0, ...(except && { except }) };
+    const row = { account_id: accountId, key: f.key, path_json: path, selectable: f.selectable ? 1 : 0, ...(except && { except }), ...(aliases && { aliases }) };
     if (!was) folders.put({ ...row, position: ++position });
-    else if (was.path_json !== path || (was.selectable === 1) !== f.selectable || !sameExcept(was.except as number[] | undefined, except)) {
+    else if (was.path_json !== path || (was.selectable === 1) !== f.selectable || !sameExcept(was.except as number[] | undefined, except) || !sameAliases(was.aliases as Alias[] | undefined, aliases)) {
       if (!sameExcept(was.except as number[] | undefined, except)) regenerated.add(f.key);
       folders.put({ ...row, position: was.position });
     } else continue;
@@ -287,7 +306,7 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
     for (const f of next) {
       // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1)
       if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
-      if (T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) {
+      if (f.aliases?.length || T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) {
         jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
         forget(f.key);
       }
@@ -327,7 +346,15 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   let cached = rebuildOrders.get(c);
   if (!cached) rebuildOrders.set(c, (cached = new Map()));
   let walk = cached.get(at);
-  if (!walk) cached.set(at, (walk = { keys: T(c, "message_locations").keysBy("mailbox", job.account_id, job.key), pending: null, done: false }));
+  // its own places, then those of each pending rename's alias (round 16 #1: the rows a rename carried are derived
+  // again, never dropped), the aliases as they are when the walk reaches them
+  const placesOf = function* (): Generator<Key> {
+    const locations = T(c, "message_locations");
+    yield* locations.keysBy("mailbox", job.account_id, job.key);
+    const paths = new Set(((T(c, "folders").get(job.account_id, job.key)?.aliases as Alias[] | undefined) ?? []).map((a) => a.mailbox));
+    for (const path of paths) if (path !== job.key) yield* locations.keysBy("mailbox", job.account_id, path);
+  };
+  if (!walk) cached.set(at, (walk = { keys: placesOf(), pending: null, done: false }));
   // a slice not yet saved (its command rolled back) is walked again first (Codex R48); `confirmRebuilt` lets it go
   if (!walk.pending) {
     walk.pending = [];
@@ -350,7 +377,7 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
     const l = locations.rows.get(key);
     // this folder's rows only (its old ones went in phase 0), from its messages: no thread refolded (Codex R11); never
     // another folder's generation (Codex code review round 8 #1)
-    if (!l || !ownGeneration(folder, l.uidvalidity as number)) continue;
+    if (!l || !folder || !(l.mailbox === job.key ? ownGeneration(folder, l.uidvalidity as number) : aliasOf(folder, l))) continue;
     const m = messages.get(l.message_id);
     if (!m || m.is_trash || m.is_spam || memberships.has(m.thread_id, job.key)) continue;
     const t = threadRows.get(m.thread_id);

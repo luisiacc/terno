@@ -759,6 +759,51 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect((await again.folders.list()).find((f) => f.key === "Work")?.except).toEqual([1]);
     });
 
+    it("plan 107: a pending rename's alias (old path and generation) keeps the renamed folder's threads, however they're derived (Codex code review round 16 #1)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const job = { key: "Job", path: ["Job"], selectable: true };
+      await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }]);
+      await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "moved", inInbox: false, locations: [loc("Work", 1)] }),
+        msg({ accountId: m!, providerMsgId: "other", inInbox: false, locations: [{ mailbox: "Work", uidvalidity: 2, uid: 1, flags: [] }] }),
+      ]);
+      const [moved, other] = [await threadOf(store, "moved"), await threadOf(store, "other")];
+      // Work → Job here, no pass yet: the threads carried, the locations still under Work's generation 1
+      await store.folders.carry(m!, "Work", "Job", 0, 10);
+      await store.folders.replace(m!, [{ ...job, aliases: [{ mailbox: "Work", uidvalidity: 1 }] }], ["Job"]);
+      expect((await store.folders.list()).filter((f) => f.accountId === m).map((f) => [f.key, f.aliases])).toEqual([["Job", [{ mailbox: "Work", uidvalidity: 1 }]]]);
+      // a thread update (mark read, then unread) derives its folders again: Job keeps it, with its unread count
+      await store.threads.act({ threadIds: [moved], action: "markRead", signal: null, now: NOW });
+      expect(await ids(store, m!, "Job")).toContain(moved);
+      expect((await unread(store))[folderRef(m!, "Job")]).toBe(1);
+      await store.threads.act({ threadIds: [moved], action: "markUnread", signal: null, now: NOW });
+      expect((await unread(store))[folderRef(m!, "Job")]).toBe(2);
+      // another generation cached under the old path is never Job's
+      await store.threads.act({ threadIds: [other], action: "markRead", signal: null, now: NOW });
+      await store.threads.act({ threadIds: [other], action: "markUnread", signal: null, now: NOW });
+      // (carried by the slice above: the alias derives only its own generation, so `other` goes once it's refreshed)
+      expect(await ids(store, m!, "Job")).toEqual([moved]);
+      // a rebuild of Job (its listing regenerated) derives it from the alias's places too
+      await store.folders.replace(m!, [{ ...job, except: [7], aliases: [{ mailbox: "Work", uidvalidity: 1 }] }]);
+      await drain(store);
+      expect(await ids(store, m!, "Job")).toEqual([moved]);
+      expect((await unread(store))[folderRef(m!, "Job")]).toBe(1);
+      // survives a reopen
+      const again = await harness.reopen(store);
+      open.push(again);
+      await again.threads.act({ threadIds: [moved], action: "markRead", signal: null, now: NOW });
+      expect(await ids(again, m!, "Job")).toEqual([moved]);
+      expect((await again.folders.list()).find((f) => f.key === "Job")?.aliases).toEqual([{ mailbox: "Work", uidvalidity: 1 }]);
+      // the pass places it under Job and retires the rename: its own place keeps it, the alias is gone
+      await again.providerStore(m!).locations.upsert((await again.threads.get(moved))!.messages[0]!.id, "Job", 1, 1, []);
+      await again.folders.replace(m!, [job]);
+      await again.threads.act({ threadIds: [moved], action: "markUnread", signal: null, now: NOW });
+      expect(await ids(again, m!, "Job")).toEqual([moved]);
+      expect((await unread(again))[folderRef(m!, "Job")]).toBe(1);
+      expect((await again.folders.list()).find((f) => f.key === "Job")?.aliases).toBeUndefined();
+    });
+
     it("an account's removal takes its folders; folders survive a reopen", async () => {
       let store = await fresh();
       const [g, m] = await withAccounts(store);
