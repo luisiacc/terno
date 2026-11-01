@@ -5,6 +5,7 @@
  * ends the last.
  */
 import { randomBytes, randomUUID } from "node:crypto";
+import type { EventEmitter } from "node:events";
 import { open, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { safeFileName, tempSibling } from "./print-policy";
@@ -26,6 +27,18 @@ interface Pending {
 /** `<name>.mbox`, or the fallback's when nothing of the name is left */
 export function mboxFileName(name: string, fallback: string): string {
   return `${safeFileName(name) || safeFileName(fallback) || "Mailbox"}.mbox`;
+}
+
+/**
+ * A window's exports end with its page (Codex code review #10: only `destroyed` was heard, so a reload kept a
+ * half-written temp file open): a main-frame navigation (a reload too), the renderer gone, or the window gone.
+ * `contents` is the window's WebContents.
+ */
+export function abortWithPage(files: MboxFiles, owner: number, contents: EventEmitter): void {
+  const end = () => void files.abortAll(owner);
+  contents.on("did-start-navigation", (_event: unknown, _url: string, inPlace: boolean, main: boolean) => { if (main && !inPlace) end(); });
+  contents.on("render-process-gone", end);
+  contents.once("destroyed", end);
 }
 
 export class MboxFiles {

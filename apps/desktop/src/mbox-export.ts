@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { t } from "@terno/i18n";
-import { MboxFiles, mboxFileName } from "./mbox-files";
+import { abortWithPage, MboxFiles, mboxFileName } from "./mbox-files";
 
 export interface MboxExportDeps {
   /** the main window's top frame, on the app's own URL */
@@ -23,9 +23,8 @@ export function registerMboxExport(deps: MboxExportDeps): void {
   const watch = (sender: WebContents) => {
     if (watched.has(sender)) return;
     watched.add(sender);
-    const owner = sender.id;
-    // a window that goes (or reloads away) leaves no temp file behind
-    sender.once("destroyed", () => void files.abortAll(owner));
+    // a window that goes, reloads or crashes leaves no temp file behind
+    abortWithPage(files, sender.id, sender);
   };
   ipcMain.handle("terno:export-begin", async (event, name: unknown): Promise<MboxBeginResult> => {
     if (!deps.trusted(event) || typeof name !== "string") return { status: "failed" };
