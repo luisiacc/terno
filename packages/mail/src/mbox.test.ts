@@ -295,6 +295,29 @@ describe("mbox (plan 107)", () => {
     expect(email.headers.filter((h) => h.key === "x-terno-missing-attachment").map((h) => h.value.replace(/\r?\n(?=[ \t])/g, ""))).toEqual(["annual  report.pdf"]);
   });
 
+  it("ASCII text that reads as an encoded word is encoded itself, so a reader gives it back literally (Codex code review round 23 #2)", async () => {
+    const literal = "=?UTF-8?B?SGVsbG8=?=";
+    const read: MboxChunkReader = async () => bytesBase64(new Uint8Array([1, 2, 3]));
+    const { text } = await serialize({
+      ...base,
+      subject: `Re: ${literal} and =?ISO-8859-1?Q?caf=E9?=`,
+      to: [{ name: literal, email: "luis@example.com" }],
+      attachments: [
+        { filename: `${literal}.txt`, mime: "text/plain", size: 3, contentId: null, stored: true },
+        { filename: `${literal}.pdf`, mime: "application/pdf", size: 9, contentId: null, stored: false },
+      ],
+    }, read);
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.subject).toBe(`Re: ${literal} and =?ISO-8859-1?Q?caf=E9?=`);
+    expect(email.to?.[0]).toMatchObject({ name: literal, address: "luis@example.com" });
+    expect(email.attachments[0]?.filename).toBe(`${literal}.txt`);
+    const word = (v: string) => v.replace(/\r?\n(?=[ \t])/g, "").replace(/=\?UTF-8\?B\?([^?]*)\?=/g, (_, b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0))));
+    expect(email.headers.filter((h) => h.key === "x-terno-missing-attachment").map((h) => word(h.value))).toEqual([`${literal}.pdf`]);
+    // plain ASCII still goes as it is
+    expect(text).toContain("Subject: =?UTF-8?B?");
+    expect((await serialize({ ...base, subject: "a = b? c" })).text).toContain("Subject: a = b? c\n");
+  });
+
   it("a chunk that's gone mid-way ends the part and counts it missing", async () => {
     const chunk = bytesBase64(new Uint8Array(ATTACHMENT_CHUNK).fill(7));
     const read: MboxChunkReader = async (_, index) => (index === 0 ? chunk : null);

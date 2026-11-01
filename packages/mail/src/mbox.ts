@@ -60,6 +60,9 @@ export interface MboxStats {
 export const MBOX_PIECE = 128 * 1024;
 
 const ASCII = /^[\x20-\x7e]*$/;
+/** ASCII that can go as it is: never what a reader takes for an encoded word (Codex code review round 23 #2: a
+ * subject `=?UTF-8?B?SGVsbG8=?=` came back `Hello`), which goes encoded like any other text */
+const plain = (v: string) => ASCII.test(v) && !v.includes("=?");
 /** whole base64 lines (the store's chunks are canonical: only the last one is padded) */
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const CHUNK_B64 = (ATTACHMENT_CHUNK / 3) * 4;
@@ -130,7 +133,7 @@ const LONG = 900;
  */
 function* textWords(value: string): Generator<string, void> {
   const v = oneLine(value).trim();
-  if (!ASCII.test(v)) return yield* encodedWords(v);
+  if (!plain(v)) return yield* encodedWords(v);
   let encoded = false;
   let first = true;
   for (const [m] of v.matchAll(/ *[^ ]+/g)) {
@@ -208,7 +211,7 @@ function* addressWords(list: readonly Address[]): Generator<string, void> {
       yield `${email}${comma}`;
       continue;
     }
-    if (!ASCII.test(name) || name.length > LONG) yield* encodedWords(name);
+    if (!plain(name) || name.length > LONG) yield* encodedWords(name);
     else yield /[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name;
     yield `<${email}>${comma}`;
   }
@@ -255,7 +258,7 @@ function* partHeaders(a: MboxAttachment, cid: string | null): Generator<string, 
   const v = oneLine(a.filename).trim() || "attachment";
   const type = mimeType(a.mime);
   const disposition = cid ? "inline" : "attachment";
-  if (ASCII.test(v) && v.length <= LONG) {
+  if (plain(v) && v.length <= LONG) {
     const q = `"${v.replace(/["\\]/g, "\\$&")}"`;
     yield `Content-Type: ${type}; name=${q}\n`;
     yield `Content-Disposition: ${disposition}; filename=${q}\n`;
