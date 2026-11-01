@@ -591,7 +591,7 @@ for (const guard of ["retired", "auth", "quota", "policy"] as const) it(`capacit
 });
 
 
-for (const mode of ["available", "refilled", "retired", "credentials", "automatic-off"] as const) it(`capacity state-write handoff retains native progress (${mode})`, async () => {
+for (const mode of ["available", "refilled", "retired", "removed", "credentials", "automatic-off"] as const) it(`capacity state-write handoff retains native progress (${mode})`, async () => {
   const t = await setup(true, "SQL", false, mode !== "automatic-off", true);
   await t.sixNativeBodies;
   const sibling = (await t.rpc.call("threads.list", { view: "inbox", accountId: 2 })).items[0]!;
@@ -641,6 +641,7 @@ for (const mode of ["available", "refilled", "retired", "credentials", "automati
   }
   let cancelled: Promise<void> | undefined;
   if (mode === "retired") cancelled = t.backend.dropAccount(12);
+  if (mode === "removed") cancelled = t.rpc.call("accounts.remove", { id: 12 }).then(() => {});
   if (mode === "credentials") { cancelled = t.backend.signedIn(12); await newCredentials; }
   unblock(); await first; await cancelled;
   if (mode !== "available") {
@@ -659,9 +660,9 @@ for (const mode of ["available", "refilled", "retired", "credentials", "automati
   const detail = list.items[0] ? await t.rpc.call("threads.get", { threadId: list.items[0].id }) : null;
   expect.soft({ runs: t.syncRuns.get(12), reads: t.requests.filter((request) => new URL(request.url).pathname === "/12/gmail/messages/header").map((request) => ({ method: request.method, format: new URL(request.url).searchParams.get("format") })),
     cursor: (await t.backend.store.accounts.config<{ cursor?: unknown }>(12))?.config.cursor ?? null,
-    bodies: detail?.messages.map((message) => ({ body: message.bodyText, assets: message.attachments })) ?? [] }).toEqual({
+    bodies: detail?.messages.map((message) => ({ accountId: message.accountId, bodyState: message.bodyState, isRead: message.isRead, isStarred: message.isStarred, body: message.bodyText, assets: message.attachments })) ?? [] }).toEqual({
     runs: eligible ? 2 : 1, reads: eligible ? [{ method: "GET", format: "raw" }, { method: "GET", format: "minimal" }] : [], cursor: eligible ? { historyId: "10" } : null,
-    bodies: eligible ? [{ body: "Exact downloaded body\n", assets: [] }] : [],
+    bodies: eligible ? [{ accountId: 12, bodyState: "full", isRead: true, isStarred: false, body: "Exact downloaded body\n", assets: [] }] : [],
   });
   await t.finishBackfill();
   await Promise.all(calls.mock.results.filter((_, i) => calls.mock.calls[i]![0] === 12).map((result) => result.value));

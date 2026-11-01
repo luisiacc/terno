@@ -389,7 +389,7 @@ export class BackendCore {
     }, delay);
     this.kickWorker();
     for (const id of this.capacitySync) {
-      if (!this.connectivity.canSync(id) || !this.googleReady(id)) continue;
+      if (this.syncing.has(id) || !this.connectivity.canSync(id) || !this.googleReady(id)) continue;
       this.capacitySync.delete(id);
       void this.syncAccount(id);
     }
@@ -1351,6 +1351,7 @@ export class BackendCore {
     this.attention.forget(accountId);
     this.unwatch.get(accountId)?.();
     this.unwatch.delete(accountId);
+    this.capacitySync.delete(accountId);
     this.syncAgain.delete(accountId);
     this.flagSyncAgain.delete(accountId);
     this.syncing.delete(accountId);
@@ -1756,6 +1757,7 @@ export class BackendCore {
     const life = this.lifetime(accountId);
     if (flow) this.assertSignIn(accountId, flow);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
+    this.capacitySync.delete(accountId);
     this.cooldownChanged();
     this.connectivity.waitForSignIn(accountId, false);
     await this.accountWrite(life, async () => {
