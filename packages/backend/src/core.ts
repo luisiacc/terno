@@ -101,7 +101,7 @@ export interface BackendCoreOptions {
   connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
   /** plan 22: how website icons are fetched (Node: node-transport.ts); none: this host shows no website icons (the web) */
   iconTransport?: IconTransport | null;
-  /** plan 94: how a one-click unsubscribe is POSTed (Node: unsubscribe-node.ts; the web: a no-cors fetch); null: never, its page opens instead */
+  /** plan 96: how a one-click unsubscribe is POSTed (Node: unsubscribe-node.ts; the web: a no-cors fetch); null: never, its page opens instead */
   unsubscribeTransport?: UnsubscribeTransport | null;
   /** tests: the icon fetcher's deadlines */
   iconTimeouts?: { requestMs?: number; budgetMs?: number };

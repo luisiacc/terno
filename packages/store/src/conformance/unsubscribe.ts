@@ -6,11 +6,11 @@ const addr = (email: string, name = "") => ({ name, email });
 const ONE_CLICK = { oneClick: "https://news.example/u/1", url: "https://news.example/u/1" };
 
 /**
- * Plan 94: List-Unsubscribe kept at ingest (a later copy without it keeps it), and the message a
+ * Plan 96: List-Unsubscribe kept at ingest (a later copy without it keeps it), and the message a
  * conversation's Unsubscribe acts on: the newest that isn't yours with the header, else the newest's body.
  */
 export function defineUnsubscribeConformance(fresh: () => Promise<MailStore>, reopen: (store: MailStore) => Promise<MailStore>): void {
-  describe("unsubscribe (plan 94)", () => {
+  describe("unsubscribe (plan 96)", () => {
     it("keeps the header through a reopen and a re-ingest without it", async () => {
       const s = await fresh();
       const [a] = await withAccounts(s, 1);

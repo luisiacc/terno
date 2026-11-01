@@ -413,7 +413,7 @@ function updateExisting(db: Db, id: number, msg: IncomingMessage, observation?: 
     // plan 86: a category the user just set is theirs until Gmail confirms it
     b(!msg.gmailLabels || !!protectedField("category")),
     categoryOf(msg.gmailLabels),
-    // plan 94: a copy without the header (an older parse, a header-only fetch) keeps what was read
+    // plan 96: a copy without the header (an older parse, a header-only fetch) keeps what was read
     unsubscribeJson(msg.unsubscribe),
     id,
   );

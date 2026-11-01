@@ -10,7 +10,7 @@ interface Row {
   unsubscribe: string | null;
 }
 
-/** Plan 94: one thread's newest messages by its index, and one body only when none has the header. */
+/** Plan 96: one thread's newest messages by its index, and one body only when none has the header. */
 export function unsubscribeSource(db: Db, threadId: number): UnsubscribeSource | null {
   const rows = db.all<Row>(
     `SELECT id, account_id, from_name, from_email, unsubscribe FROM messages

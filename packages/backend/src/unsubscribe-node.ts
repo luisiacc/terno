@@ -4,7 +4,7 @@ import { publicOnlyLookup, type NodeIconTransportOptions } from "./icons/node-tr
 import { ONE_CLICK_BODY, postAllowed, type UnsubscribeTransport } from "./unsubscribe";
 
 /**
- * Plan 94's one-click POST on Node: `node:https`, one socket, the icons' lookup (every answer
+ * Plan 96's one-click POST on Node: `node:https`, one socket, the icons' lookup (every answer
  * public, the socket on the address it checked), the URL checked first (an IP literal never
  * reaches the lookup), no redirect followed and no answer body read.
  */

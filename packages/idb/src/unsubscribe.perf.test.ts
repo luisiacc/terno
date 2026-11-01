@@ -5,7 +5,7 @@ import { sampleAsync, settle } from "../../db/src/test/timing";
 import { IdbMailStore } from "./store";
 
 /**
- * Plan 94 on IndexedDB (Codex review #5): opening the menu on a 60,000-message conversation reads its
+ * Plan 96 on IndexedDB (Codex review #5): opening the menu on a 60,000-message conversation reads its
  * Unsubscribe source in one bounded pass (no copy and sort of the conversation), within a frame.
  */
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};

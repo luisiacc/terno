@@ -947,7 +947,7 @@ const en = {
   "threadMenu.copyAddress": "Copy address",
   "threadMenu.copied": "Copied: {email}",
   "threadMenu.copyFailed": "Couldn’t copy",
-  // plan 94
+  // plan 96
   "threadMenu.unsubscribe": "Unsubscribe",
   "unsubscribe.done": "Unsubscribed from {name}.",
   "unsubscribe.requested": "Sent an unsubscribe request to {host}.",

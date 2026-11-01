@@ -30,7 +30,7 @@ export interface DevServerOptions {
   connectivity?: BackendOptions["connectivity"];
   /** plan 22: how website icons are fetched (default: the real one; E2E passes a stub that never touches the internet) */
   iconTransport?: BackendOptions["iconTransport"];
-  /** plan 94: how one-click unsubscribes are POSTed (default: the real one; E2E records them instead) */
+  /** plan 96: how one-click unsubscribes are POSTed (default: the real one; E2E records them instead) */
   unsubscribeTransport?: BackendOptions["unsubscribeTransport"];
   /** E2E (plan 25): where Google's sign-in page would open (a test's fake Google never needs a browser) */
   openExternal?: BackendOptions["openExternal"];

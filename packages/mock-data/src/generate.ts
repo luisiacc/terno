@@ -23,7 +23,7 @@ export interface MockMessage {
   listId: string | null;
   /** sent with bulk headers (List-Unsubscribe, Precedence): newsletters, notifications, spam */
   bulk: boolean;
-  /** plan 94: newsletters' List-Unsubscribe, a mailto only (the demo provider never sends, so the demo reaches no real site) */
+  /** plan 96: newsletters' List-Unsubscribe, a mailto only (the demo provider never sends, so the demo reaches no real site) */
   unsubscribe?: Unsubscribe;
   isRead: boolean;
   isStarred: boolean;

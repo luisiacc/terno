@@ -1,7 +1,7 @@
 import { isValidEmail } from "./address";
 
 /**
- * Plan 94: how a sender says to stop their mail, from List-Unsubscribe (RFC 2369) and
+ * Plan 96: how a sender says to stop their mail, from List-Unsubscribe (RFC 2369) and
  * List-Unsubscribe-Post (RFC 8058). Each URI as sent; absent when there is none.
  */
 export interface Unsubscribe {
@@ -96,7 +96,7 @@ const INNER_MAX = 2000;
 /**
  * Each `<a …>…</a>` (attributes, inner HTML), in one forward pass: every search starts where the last one
  * ended, so malformed mail (an `<a` never closed, thousands of unclosed anchors) costs linear time, never a
- * rescan of the rest of the body per anchor (Codex review of plan 94, #1).
+ * rescan of the rest of the body per anchor (Codex review of plan 96, #1).
  */
 function* anchors(html: string): Generator<{ tag: string; inner: string }> {
   const open = /<a\b/gi;
@@ -130,7 +130,7 @@ function* anchors(html: string): Generator<{ tag: string; inner: string }> {
 const SCAN_MAX = 512 * 1024;
 
 /**
- * The link in the mail itself that unsubscribes (plan 94 §1.4): the last http(s) anchor
+ * The link in the mail itself that unsubscribes (plan 96 §1.4): the last http(s) anchor
  * whose text, title or aria-label says so; in a text body, a URL right after such words.
  */
 export function findUnsubscribeLink(html: string | null | undefined, text: string | null | undefined): string | null {
@@ -178,7 +178,7 @@ export function storedUnsubscribe(json: unknown): Unsubscribe | null {
   }
 }
 
-/** Plan 94: the message a conversation's Unsubscribe acts on, as a store reads it (a body only when it has no header data). */
+/** Plan 96: the message a conversation's Unsubscribe acts on, as a store reads it (a body only when it has no header data). */
 export interface UnsubscribeSource {
   messageId: number;
   accountId: number;
@@ -207,7 +207,7 @@ export function pickUnsubscribeMessage<T extends { from_email: string; unsubscri
   return newest && { row: newest, unsubscribe: null };
 }
 
-/** Plan 94: what Unsubscribe does for a conversation, as the menu shows it (`target`: a host, or the address mail goes to). */
+/** Plan 96: what Unsubscribe does for a conversation, as the menu shows it (`target`: a host, or the address mail goes to). */
 export interface UnsubscribeOffer {
   messageId: number;
   method: "oneClick" | "mailto" | "page";
@@ -222,7 +222,7 @@ export type UnsubscribePlan = UnsubscribeOffer & ({ method: "oneClick"; url: str
 
 const hostOf = (url: string) => new URL(url).hostname;
 
-/** One-click, then mail, then the header's page, then the link in the mail (plan 94 §1). */
+/** One-click, then mail, then the header's page, then the link in the mail (plan 96 §1). */
 export function unsubscribePlan(src: UnsubscribeSource): UnsubscribePlan | null {
   const base = { messageId: src.messageId, name: src.fromName.trim() || src.fromEmail };
   const u = src.unsubscribe;
@@ -238,7 +238,7 @@ export function unsubscribeOffer(plan: UnsubscribePlan): UnsubscribeOffer {
   return { messageId: plan.messageId, method: plan.method, target: plan.target, name: plan.name, ...(plan.method === "page" && { url: plan.url }) };
 }
 
-/** Plan 94: what happened. `requested`: the request went out but its answer can't be read (a redirect, the web's opaque answer). */
+/** Plan 96: what happened. `requested`: the request went out but its answer can't be read (a redirect, the web's opaque answer). */
 export type UnsubscribeOutcome =
   | { outcome: "unsubscribed" | "requested"; target: string }
   | { outcome: "queued"; target: string; opId: string }

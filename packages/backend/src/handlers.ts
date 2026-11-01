@@ -535,7 +535,7 @@ export function createHandlers(b: Backend): Handlers {
       );
       return { senderName, offers, automated };
     },
-    /** Plan 94: what Unsubscribe would do here, read when the menu opens (no network). */
+    /** Plan 96: what Unsubscribe would do here, read when the menu opens (no network). */
     "unsubscribe.find": ({ threadId }) => findUnsubscribe(store, threadId),
     "unsubscribe.run": ({ threadId, messageId, method, target }) =>
       runUnsubscribe(

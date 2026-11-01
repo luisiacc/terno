@@ -7,7 +7,7 @@ import { expect, search, stabilize, test, type DevServerFixture } from "./fixtur
 const ctx = { clientId: "setup", origin: "dev" as const };
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
-/** Plan 94: one conversation from a sender, with what its mail says about unsubscribing. */
+/** Plan 96: one conversation from a sender, with what its mail says about unsubscribing. */
 async function ingest(server: DevServerFixture, o: { id: string; subject: string; from?: { name: string; email: string }; unsubscribe?: IncomingMessage["unsubscribe"]; bodyHtml?: string }): Promise<number> {
   const [account] = await server.backend.store.accounts.list();
   const text = "This week: three things worth reading.";

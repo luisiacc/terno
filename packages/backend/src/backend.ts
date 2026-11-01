@@ -68,7 +68,7 @@ export class Backend extends BackendCore {
     }
     // plan 22: website icons over node:https (public addresses only) unless the host says otherwise (null: none)
     const iconTransport = options.iconTransport === undefined ? nodeIconTransport() : options.iconTransport;
-    // plan 94: one-click unsubscribe over node:https (public addresses only) unless the host says otherwise
+    // plan 96: one-click unsubscribe over node:https (public addresses only) unless the host says otherwise
     const unsubscribeTransport = options.unsubscribeTransport === undefined ? nodeUnsubscribeTransport() : options.unsubscribeTransport;
     super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport, unsubscribeTransport, incomingProcessor: options.incomingProcessor ?? createNodeIncomingProcessor() });
   }

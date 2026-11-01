@@ -79,7 +79,7 @@ async function setup(o: { transport?: UnsubscribeTransport | null; localMode?: b
 
 const ONE_CLICK = { oneClick: "https://weekly.example/u/1", url: "https://weekly.example/u/1" };
 
-describe("unsubscribe (plan 94)", () => {
+describe("unsubscribe (plan 96)", () => {
   it("one-click: offered by host, POSTed once, said as done on a 2xx (also in local mode)", async () => {
     const { posted, transport } = recorder();
     const { client, thread } = await setup({ transport, localMode: true });
@@ -173,14 +173,14 @@ describe("unsubscribe (plan 94)", () => {
   });
 });
 
-describe("where a one-click POST may go (plan 94)", () => {
+describe("where a one-click POST may go (plan 96)", () => {
   it("https on the default port to a public name or address, without credentials", () => {
     for (const ok of ["https://weekly.example/u", "https://list.news.example.com/u?t=1", "https://93.184.216.34/u", "https://[2606:2800:220:1::1]/u"]) expect(postAllowed(new URL(ok)), ok).toBe(true);
     for (const no of ["http://weekly.example/u", "https://weekly.example:8443/u", "https://a:b@weekly.example/u", "https://127.0.0.1/u", "https://10.0.0.5/u", "https://[::1]/u", "https://[::ffff:192.168.0.1]/u", "https://localhost/u", "https://printer/u", "https://nas.local/u", "https://router.home.arpa/u", "https://svc.internal/u"]) expect(postAllowed(new URL(no)), no).toBe(false);
   });
 });
 
-describe("the web's transport (plan 94, Codex review #2)", () => {
+describe("the web's transport (plan 96, Codex review #2)", () => {
   /** what a browser's fetch would get: the init it was handed, and an answer */
   const browser = (answer: (init: RequestInit) => Response | Promise<Response>) => {
     const asked: RequestInit[] = [];
@@ -203,7 +203,7 @@ describe("the web's transport (plan 94, Codex review #2)", () => {
   });
 });
 
-describe("the Node transport (plan 94)", () => {
+describe("the Node transport (plan 96)", () => {
   let server: Server;
   let port = 0;
   const seen: { method: string; url: string; headers: Record<string, string | string[] | undefined>; body: string }[] = [];

@@ -23,7 +23,7 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     const reminder={threadId:before[0]!.threadId,dueAt:1000,kind:"always" as const,setAt:1};
     await store.reminders.put([reminder],100);
     await store.accounts.setCursor(account.id, { historyId: "100" }); await store.close();
-    // Remove only migration36's additions (and the later migrations', plan 86's v37 and plan 94's v38) to create the exact prior schema shape with populated data.
+    // Remove only migration36's additions (and the later migrations', plan 86's v37, plan 94's v38 and plan 96's v39) to create the exact prior schema shape with populated data.
     const legacy = new DatabaseSync(path);
     legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
     legacy.exec("DROP TABLE scheduled_sends; DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key = 'tabs_backfill'");

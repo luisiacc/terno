@@ -2082,7 +2082,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         const { store, before } = await harness.upgraded!();
         open.push(store);
         let after = await store.debug.snapshot();
-        // the bulk headers were never stored before v14, nor List-Unsubscribe before v38: old mail has none (plan 17 §4.2, plan 94)
+        // the bulk headers were never stored before v14, nor List-Unsubscribe before v39: old mail has none (plan 17 §4.2, plan 96)
         expect(after.messages).toEqual(before.messages.map((m) => ({ ...m, isBulk: false, unsubscribe: null })));
         // plan 17: the old mail's facts aren't known until the backfill has run, and the waiting count says so
         expect(after.threads).toEqual(before.threads.map((t) => ({ ...t, person: null, waitingSince: null })));

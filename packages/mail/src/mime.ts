@@ -17,7 +17,7 @@ export interface ParsedMessage {
   listId: string | null;
   /** List-Unsubscribe, Precedence: bulk/list/junk or Auto-Submitted (plan 17) */
   bulk: boolean;
-  /** plan 94: List-Unsubscribe and List-Unsubscribe-Post, parsed */
+  /** plan 96: List-Unsubscribe and List-Unsubscribe-Post, parsed */
   unsubscribe: Unsubscribe | null;
   text: string | null;
   html: string | null;

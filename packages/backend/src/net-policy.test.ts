@@ -272,7 +272,7 @@ describe("network policy without DNS (the browser)", () => {
     }
   });
 
-  it("plan 94: an unsubscribe request is allowed in local mode and never follows a redirect", async () => {
+  it("plan 96: an unsubscribe request is allowed in local mode and never follows a redirect", async () => {
     const asked: RequestInit[] = [];
     const net = createNetworkPolicy({ localMode: () => true, fetch: async (_input, init) => (asked.push(init ?? {}), new Response(null, { status: 204 })) });
     await expect(net.assert("unsubscribe", "https://news.example/u")).resolves.toEqual({});

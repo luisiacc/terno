@@ -685,9 +685,9 @@ export const contract = {
   "snippets.save": m<Snippet>()(snippetFieldsSchema.extend({ id: snippetIdSchema, base: z.number().int().min(0).nullable(), force: z.boolean().optional() })),
   "snippets.delete": m<{ ok: true }>()(z.object({ id: snippetIdSchema })),
 
-  /** plan 94: what Unsubscribe would do for this conversation; null: nothing found (no menu item) */
+  /** plan 96: what Unsubscribe would do for this conversation; null: nothing found (no menu item) */
   "unsubscribe.find": m<import("../unsubscribe").UnsubscribeOffer | null>()(z.object({ threadId: id })),
-  /** plan 94: does what `find` offered, only if the conversation still offers exactly that */
+  /** plan 96: does what `find` offered, only if the conversation still offers exactly that */
   "unsubscribe.run": m<import("../unsubscribe").UnsubscribeOutcome>()(
     z.object({ threadId: id, messageId: id, method: z.enum(UNSUBSCRIBE_METHODS), target: z.string().min(1).max(400) }),
     { timeoutMs: 30_000 },

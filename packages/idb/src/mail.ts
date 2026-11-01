@@ -834,7 +834,7 @@ export function ingestMessages(c: Ctx, batch: readonly IncomingMessage[], now: n
         size: msg.size,
         created_at: now,
         is_bulk: b(msg.bulk ?? false),
-        // plan 94 (absent on records from before: none)
+        // plan 96 (absent on records from before: none)
         unsubscribe: unsubscribeJson(msg.unsubscribe),
       });
       if (msg.bodyText !== null || msg.bodyHtml !== null) T(c, "message_bodies").put({ message_id: id, body_text: msg.bodyText, body_html: msg.bodyHtml });
@@ -877,7 +877,7 @@ function updateExisting(c: Ctx, row: R, msg: IncomingMessage, observation?: Flag
     // plan 86: a category the user just set is theirs until Gmail confirms it
     category: !msg.gmailLabels || protectedField("category") ? (row.category ?? null) : categoryOf(msg.gmailLabels),
     ...(msg.replyTo === undefined ? {} : { reply_to_json: JSON.stringify(msg.replyTo) }),
-    // plan 94: a copy without the header (an older parse, a header-only fetch) keeps what was read
+    // plan 96: a copy without the header (an older parse, a header-only fetch) keeps what was read
     ...(unsubscribeJson(msg.unsubscribe) === null ? {} : { unsubscribe: unsubscribeJson(msg.unsubscribe) }),
   });
   if (msg.bodyState === "full") setMessageBody(c, row.id, msg.bodyText, msg.bodyHtml, "full");
@@ -2166,7 +2166,7 @@ export function requireIdbGmailRefresh(c: Ctx, ids: readonly number[], observati
 }
 
 /**
- * Plan 94: one thread's newest messages that aren't yours (sync: the body, if wanted, is read by the caller).
+ * Plan 96: one thread's newest messages that aren't yours (sync: the body, if wanted, is read by the caller).
  * One pass keeping the newest UNSUBSCRIBE_LOOKBACK in a small sorted window: no filtered copy, no sort of the
  * whole conversation (Codex review #5).
  */

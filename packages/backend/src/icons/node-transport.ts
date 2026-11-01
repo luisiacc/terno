@@ -17,7 +17,7 @@ export const ADDRESS_REFUSED = "ICON_ADDRESS_REFUSED";
 
 /**
  * A DNS lookup for node:http(s) that refuses a name with any non-public answer (refused, not filtered) and hands
- * the socket the address it checked. Shared with plan 94's unsubscribe requests.
+ * the socket the address it checked. Shared with plan 96's unsubscribe requests.
  */
 export function publicOnlyLookup(o: { lookup?: NodeIconTransportOptions["lookup"]; allowAddress?: (ip: string) => boolean; what: string }): LookupFunction {
   const allowed = o.allowAddress ?? isPublicAddress;

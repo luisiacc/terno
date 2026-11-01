@@ -123,7 +123,7 @@ async function networkRegistry(net: TestNetwork): Promise<import("@terno/mail").
   };
 }
 
-/** plan 94: the one-click POSTs a test's backend made (none leave the machine), and the status they get */
+/** plan 96: the one-click POSTs a test's backend made (none leave the machine), and the status they get */
 export interface UnsubscribeRecorder {
   posted: string[];
   status: number;
@@ -171,7 +171,7 @@ export const test = base.extend<Fixtures>({
     const connectivity = backendOptions.network ? { delays: [1000, 60_000] } : undefined;
     // plan 22: website icons never reach the internet from a test (a few seeded sites have icons, the rest 404)
     const icons = iconStub();
-    // plan 94: one-click unsubscribes never reach the internet either: recorded, answered 200
+    // plan 96: one-click unsubscribes never reach the internet either: recorded, answered 200
     const unsubscribes: UnsubscribeRecorder = { posted: [], status: 200, post: async (url) => (unsubscribes.posted.push(url.href), { status: unsubscribes.status }) };
     const server = await startDevServer({ port: 0, dataDir: dir, token: "e2e", now: () => E2E_NOW, autoSync: true, seed: !backendOptions.empty, ownerClaims: backendOptions.ownerClaims, agentSocket: backendOptions.agentSocket, providers, connectivity, iconTransport: icons, unsubscribeTransport: unsubscribes, openExternal: backendOptions.network ? async () => {} : undefined });
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });

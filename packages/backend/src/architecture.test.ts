@@ -36,7 +36,7 @@ const PATTERNS: { name: string; re: RegExp }[] = [
 const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "packages/backend/src/net-policy.ts": { patterns: ["globalThis.fetch"], why: "the policy itself performs the vetted request" },
   "packages/backend/src/icons/node-transport.ts": { patterns: ["node:http client imports"], why: "plan 22: one GET per hop for sender icons, each asserted by the policy (purpose icons) in fetcher.ts, to public addresses only" },
-  "packages/backend/src/unsubscribe-node.ts": { patterns: ["node:http client imports"], why: "plan 94: one POST per click on Unsubscribe, asserted by the policy (purpose unsubscribe) in unsubscribe.ts, to public addresses only, no redirects" },
+  "packages/backend/src/unsubscribe-node.ts": { patterns: ["node:http client imports"], why: "plan 96: one POST per click on Unsubscribe, asserted by the policy (purpose unsubscribe) in unsubscribe.ts, to public addresses only, no redirects" },
   "packages/mail/src/imap.ts": { patterns: ["IMAP client"], why: "IMAP to the account's own server (purpose mail, always allowed)" },
   "packages/mail/src/registry.ts": { patterns: ["IMAP client"], why: "verifying the account's own IMAP server" },
   "packages/mail/src/smtp.ts": { patterns: ["SMTP client"], why: "SMTP to the account's own server" },

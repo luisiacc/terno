@@ -6,7 +6,7 @@ import { isPublicAddress } from "./icons/transport";
 import { ipFamily, NetworkPolicyError } from "./net-policy";
 
 /**
- * Plan 94: how a one-click unsubscribe (RFC 8058) reaches the sender. One POST of
+ * Plan 96: how a one-click unsubscribe (RFC 8058) reaches the sender. One POST of
  * `List-Unsubscribe=One-Click`, no cookies, no referrer, no redirect followed, the answer's
  * body never read. `opaque`: the request went out but its answer can't be seen (a browser).
  */
@@ -69,7 +69,7 @@ export async function findUnsubscribe(store: MailStore, threadId: number): Promi
   return plan && unsubscribeOffer(plan);
 }
 
-/** Does what the menu offered, only if the conversation still offers exactly that (plan 94, Codex review #9). */
+/** Does what the menu offered, only if the conversation still offers exactly that (plan 96, Codex review #9). */
 export async function runUnsubscribe(deps: UnsubscribeDeps, threadId: number, shown: Pick<UnsubscribeOffer, "messageId" | "method" | "target">): Promise<UnsubscribeOutcome> {
   const source = await deps.store.threads.unsubscribeSource(threadId);
   const plan = source && unsubscribePlan(source);

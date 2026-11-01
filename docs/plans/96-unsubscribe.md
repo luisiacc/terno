@@ -1,4 +1,4 @@
-# Plan 94: Unsubscribe from the conversation menu
+# Plan 96: Unsubscribe from the conversation menu
 
 ## Request (verbatim)
 
@@ -30,10 +30,10 @@ Only `http:`, `https:` and `mailto:` URIs are kept; each at most 2,048 character
 
 - Core (`unsubscribe.ts`): `type Unsubscribe = { oneClick?: string; mailto?: string; url?: string }`, `parseListUnsubscribe(listUnsubscribe, listUnsubscribePost)`, `findUnsubscribeLink(html, text)`, `mailtoParts(uri)`, and `unsubscribePlan(source)`, the order of §1, shared by both stores and the backend.
 - `ParsedMessage.unsubscribe` and `IncomingMessage.unsubscribe?: Unsubscribe | null`. IMAP adds `list-unsubscribe-post` to the headers it already fetches; Gmail reads both from the raw message.
-- **SQL v38**: `ALTER TABLE messages ADD COLUMN unsubscribe TEXT` (compact JSON, NULL when none). Insert writes it; a re-ingest keeps it unless the new copy carries one (`coalesce`).
-- **IndexedDB**: the same field on the message record (absent reads as null), `LOGICAL_SCHEMA = 38`, no index, no IDB version change. Messages live in memory there: the field is absent for most mail and ≈150 bytes for a newsletter (at most 3 × 2 KB by the caps).
+- **SQL v39**: `ALTER TABLE messages ADD COLUMN unsubscribe TEXT` (compact JSON, NULL when none). Insert writes it; a re-ingest keeps it unless the new copy carries one (`coalesce`).
+- **IndexedDB**: the same field on the message record (absent reads as null), `LOGICAL_SCHEMA = 39`, no index, no IDB version change. Messages live in memory there: the field is absent for most mail and ≈150 bytes for a newsletter (at most 3 × 2 KB by the caps).
 - **`threads.unsubscribeSource(threadId)`** (both stores, one conformance suite): the thread's newest 50 messages that aren't sent or drafts (by the thread index), your addresses skipped; the first with the header wins, else the newest one and only its body (see the review's #5 and #6). The debug snapshot carries the column, so the stores' parity tests compare it.
-- Mail stored before v38 has no header data; the link in the mail (§1.4) still works. No backfill (the backfill never touches the network, as plan 17 §8).
+- Mail stored before v39 has no header data; the link in the mail (§1.4) still works. No backfill (the backfill never touches the network, as plan 17 §8).
 - Demo data: newsletters carry a `mailto:` header only (review #12).
 
 ### 3. Backend (`unsubscribe.ts`, `unsubscribe-node.ts`)
@@ -78,7 +78,7 @@ Only `http:`, `https:` and `mailto:` URIs are kept; each at most 2,048 character
 
 - Unsubscribing several conversations at once; a reader-pane button; the palette command.
 - Remembering that you unsubscribed (hiding the item, or archiving their mail afterwards).
-- Fetching headers again for mail stored before v38.
+- Fetching headers again for mail stored before v39.
 
 ## Revisions after the Codex review
 

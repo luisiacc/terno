@@ -355,7 +355,7 @@ function SimilarItems({ action, ids, byKey }: { action: SimilarAction; ids: numb
 }
 
 /**
- * Plan 94: "Unsubscribe", shown once the conversation is known to offer it (read from the store when the menu
+ * Plan 96: "Unsubscribe", shown once the conversation is known to offer it (read from the store when the menu
  * opens, no network). At the end of the sender group, so appearing moves nothing above it.
  */
 function UnsubscribeItem({ threadId }: { threadId: number }) {

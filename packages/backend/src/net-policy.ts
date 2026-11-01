@@ -176,7 +176,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
       if (!(await options.siteIcons?.())) throw new NetworkPolicyError(L("errors.net.iconsOff", { host: url.host }), purpose, url.host);
       return {};
     }
-    // plan 94: an unsubscribe request is the user's own click on one conversation, to the sender of that mail
+    // plan 96: an unsubscribe request is the user's own click on one conversation, to the sender of that mail
     if (purpose === "mail" || purpose === "unsubscribe" || !(await options.localMode())) return {};
     if (purpose !== "ai") throw new NetworkPolicyError(L("errors.net.localModeBlocks", { purpose, host: url.host }), purpose, url.host);
     if (meta.providerLocality !== "local") {
@@ -278,7 +278,7 @@ export function createNetworkPolicy(options: NetworkPolicyOptions): NetworkPolic
             }
             // no pinning and no manual redirects in a browser (they come back opaque): a vetted request may not be redirected at all
             const vetted = purpose === "ai" && (await options.localMode());
-            // plan 94: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque)
+            // plan 96: an unsubscribe request goes where the mail said and nowhere else (a redirect comes back opaque)
             return baseFetch(url, { ...request, redirect: purpose === "unsubscribe" ? "manual" : vetted ? "error" : "follow" });
           }
           const target = new URL(url);

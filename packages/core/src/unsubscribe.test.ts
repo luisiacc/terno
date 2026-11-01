@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findUnsubscribeLink, mailtoParts, parseListUnsubscribe, UNSUBSCRIBE_URI_MAX, unsubscribeOffer, unsubscribePlan, type UnsubscribeSource } from "./unsubscribe";
 
-describe("List-Unsubscribe (plan 94)", () => {
+describe("List-Unsubscribe (plan 96)", () => {
   it("keeps the first mailto and the first web URI, in the header's order", () => {
     expect(parseListUnsubscribe("<mailto:off@list.example?subject=stop>, <https://list.example/u/1>, <https://other.example/u>", null)).toEqual({ mailto: "mailto:off@list.example?subject=stop", url: "https://list.example/u/1" });
     expect(parseListUnsubscribe("<https://list.example/u>", "")).toEqual({ url: "https://list.example/u" });
@@ -42,7 +42,7 @@ describe("List-Unsubscribe (plan 94)", () => {
   });
 });
 
-describe("the link in the mail (plan 94)", () => {
+describe("the link in the mail (plan 96)", () => {
   it("finds the last anchor that says unsubscribe, by text, title or aria-label", () => {
     const html = `<p><a href="https://shop.example/">Shop</a></p><a href="https://a.example/unsub?x=1&amp;y=2"><span>Unsubscribe</span></a> · <a title="Opt out" href='https://b.example/o'>here</a>`;
     expect(findUnsubscribeLink(html, null)).toBe("https://b.example/o");
@@ -86,7 +86,7 @@ describe("the link in the mail (plan 94)", () => {
   });
 });
 
-describe("what Unsubscribe does (plan 94 §1)", () => {
+describe("what Unsubscribe does (plan 96 §1)", () => {
   const src = (o: Partial<UnsubscribeSource>): UnsubscribeSource => ({ messageId: 7, accountId: 1, fromName: "News", fromEmail: "news@news.example", unsubscribe: null, bodyHtml: null, bodyText: null, ...o });
   it("one-click, then mail, then the header's page, then the link in the mail", () => {
     expect(unsubscribePlan(src({ unsubscribe: { oneClick: "https://a.example/u", url: "https://a.example/u", mailto: "mailto:off@a.example" } }))).toEqual({ messageId: 7, name: "News", method: "oneClick", target: "a.example", url: "https://a.example/u", page: "https://a.example/u" });
