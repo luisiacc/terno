@@ -516,6 +516,28 @@ it("mail another app moved out of a folder before it was deleted here keeps its 
   expect(config?.config.cursor?.deleted).toBeUndefined();
 });
 
+it("mail another app moved from a folder into Drafts before it was deleted here keeps its identity: the cleanup pass reads every mailbox (Codex code review round 21 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.createMailbox("Drafts");
+  t.server.control.setSpecialUse("Drafts", ["\\Drafts"]);
+  const moved = t.server.control.addMessage("Work", { raw: rawIdleMail("Moved to drafts") });
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const [m, o] = await Promise.all((await t.threadsIn("Work")).map((id) => t.messageOf(id)));
+  const [mm, mo] = m!.subject === "Moved to drafts" ? [m!, o!] : [o!, m!];
+  // an ordinary pass never reads Drafts: the cleanup pass must, or the moved one looks gone
+  t.server.control.moveMessages("Work", [moved.uid], "Drafts");
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.backend.syncAccount(t.account.id);
+  expect((await t.messageOf(mm.threadId)).id).toBe(mm.id);
+  expect((await t.messageOf(mm.threadId)).bodyText).toBe(mm.bodyText);
+  // met there, so not proven gone: held (as a vanished folder's is) until its identity is told apart
+  expect(await t.held([mm.id])).toEqual([mm.id]);
+  expect((await t.client.call("threads.get", { threadId: mo.threadId }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+});
+
 it("a folder deleted before the pass after its rename takes the mail that was only under its old name (Codex code review round 4 #2)", async () => {
   const t = await setup(["Work", "Work/Sub"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });

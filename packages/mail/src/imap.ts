@@ -1814,6 +1814,28 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (forceSnapshots && list.length <= LISTED_MAX) for (const mailbox of list) {
           if (selectableMailbox(mailbox) && !boxes.has(mailbox.path) && !waiting.has(mailbox.path) && !custom.includes(mailbox.path)) custom.push(mailbox.path);
         }
+        // plan 107 (Codex code review round 21 #1): a deletion's cleanup removes what no mailbox has, so it looks at
+        // every selectable one, Drafts and the server's specials too (an ordinary pass reads neither): another app may
+        // have moved the mail there. Each is read unless STATUS says it's unchanged since read. A LIST too long to
+        // walk can't prove a message gone: the deleted folder's mail is held instead, as a vanished folder's is.
+        let uncovered = false;
+        if (deletions.length) {
+          if (list.length > LISTED_MAX) uncovered = true;
+          else {
+            const looked = new Set([...custom, ...folders.filter((f) => f.selectable).map((f) => f.key)]);
+            for (const mailbox of list) {
+              const path = mailbox.path;
+              if (!selectableMailbox(mailbox) || boxes.has(path) || waiting.has(path) || looked.has(path)) continue;
+              looked.add(path);
+              try {
+                if (cursor.mailboxes[path] === undefined || !(await unchanged(c, path, cursor))) custom.push(path);
+                else skipped++;
+              } catch (error) {
+                tolerate(error);
+              }
+            }
+          }
+        }
         // first what the server expunged everywhere, then new mail anywhere: a message moved between folders keeps its identity (Codex R5)
         const swept = new Map<string, Snapshot | null>();
         for (const path of boxes) {
@@ -1935,7 +1957,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           check();
           // the record's UIDVALIDITY, never the path's now: a mailbox created there since is another (Codex code review round 6 #1)
           const live = listed.has(d.from);
-          await forgetMailbox(cursor, d.from, d.uidvalidity || (live ? undefined : cursor.mailboxes[d.from]?.uidvalidity), "remove", sink, c, check, seen, live);
+          await forgetMailbox(cursor, d.from, d.uidvalidity || (live ? undefined : cursor.mailboxes[d.from]?.uidvalidity), uncovered ? "hold" : "remove", sink, c, check, seen, live);
           // only this generation's record: another deleted under the path is its own (round 15 #1)
           setDeletionsAt(cursor, d.path, deletionsAt(cursor, d.path).filter((x) => !sameGeneration(x, d)));
           await ctx.saveCursor(cursor);
