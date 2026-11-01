@@ -18,7 +18,7 @@
     { "pattern": "terno.app", "custom_domain": true },
     { "pattern": "www.terno.app", "custom_domain": true }
   ],
-  "d1_databases": [{ "binding": "DB", "database_name": "terno-site-waitlist", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "terno-site-waitlist", "database_id": "583eb555-f58b-471f-afc3-842e81b57b1f", "migrations_dir": "migrations" }],
   "ratelimits": [{ "name": "WAITLIST_LIMIT", "namespace_id": "9601", "simple": { "limit": 5, "period": 60 } }],
   "env": {
     "preview": {
