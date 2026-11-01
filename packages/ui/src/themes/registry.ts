@@ -637,8 +637,8 @@ export const THEMES: readonly Theme[] = [
     cats: cats(".606 .121 15 | .693 .096 38 | .855 .089 84 | .768 .075 131 | .763 .048 194 | .697 .059 249 | .692 .062 333 | .625 .041 263"),
   }),
   defineTheme({
-    // GitHub's dark default (Primer). Its link blue is the primary (GitHub's own buttons are green): #1f6feb with
-    // white reads at 4.1:1 on the canvas, below AA, so buttons are the lighter blue with dark text, like every dark palette
+    // GitHub's dark default (Primer), with Apple's dark-mode blue (#0a84ff) as the primary: vivid like GitHub Light's.
+    // White on any blue that also reads as text on this canvas is below AA, so buttons carry dark text, like every dark palette
     id: "github-dark",
     name: "GitHub Dark",
     mode: "dark",
@@ -656,11 +656,11 @@ export const THEMES: readonly Theme[] = [
       "accent-foreground": "0.943 0.011 244",
       border: "0.33 0.015 252",
       input: "0.33 0.015 252",
-      primary: "0.663 0.169 256",
+      primary: "0.624 0.206 255",
       "primary-foreground": "0.176 0.014 258",
       destructive: "0.665 0.205 27",
       success: "0.695 0.181 146",
-      unread: "0.663 0.169 256",
+      unread: "0.624 0.206 255",
       star: "0.72 0.14 80",
       "row-hover": "0.22 0.016 257",
       "row-selected": "0.255 0.048 259",
