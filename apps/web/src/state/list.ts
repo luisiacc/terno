@@ -423,7 +423,12 @@ useApp.subscribe((s, prev) => {
     // the same rows under the new key, the window and the checked rows as they are (Codex code review round 2 #5):
     // the backend carried the folder's threads over, the next refresh reads them there
     const key = listKey();
-    useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey }));
+    // a page or reload asked under the old key is no one's now (round 7 #3: it would return without clearing
+    // loadingMore, and paging would stop); the next one asks under the new key from the same cursor
+    pageSeq++;
+    seq++;
+    pendingMore = null;
+    useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey, loadingMore: false, loading: false }));
     if (s.scope) setApp({ scope: null });
   } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
     // "all N of that list" means nothing in another one
