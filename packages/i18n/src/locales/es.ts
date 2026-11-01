@@ -782,6 +782,7 @@ const es = {
   "firstSync.foldersLeft": { one: "Queda # carpeta", other: "Quedan # carpetas" },
   "firstSync.daysLeft": { one: "Queda # día", other: "Quedan # días" },
   "firstSync.finishing": "Terminando",
+  "firstSync.soFar": "{count} hasta ahora",
   "firstSync.starting": "Empezando",
   "firstSync.title": "Descargando tu correo",
   "firstSync.detail": "{window}, lo más reciente primero",

@@ -41,11 +41,18 @@ export function syncLeft(p: SyncProgress | null | undefined, stopsAt: number): {
     // the row says it short; the bar's name says it whole
     return { label: t("firstSync.messagesLeft", { count: left }), short: t("firstSync.messagesLeftShort", { count: formatNumber(left) }), fraction };
   }
-  if (p?.reachedAt !== undefined) {
-    const days = Math.max(0, Math.ceil((p.reachedAt - stopsAt) / DAY));
-    const span = Date.now() - stopsAt;
+  // plan 104: days to where the listing stops (as the provider says; else the account's window)
+  const stops = p?.since ?? stopsAt;
+  if (p?.reachedAt !== undefined && p.reachedAt > stops) {
+    const days = Math.ceil((p.reachedAt - stops) / DAY);
+    const span = Date.now() - stops;
     const label = t("firstSync.daysLeft", { count: days });
     return { label, short: label, fraction: span > 0 ? Math.min(1, Math.max(0, (Date.now() - p.reachedAt) / span)) : null };
+  }
+  // past it, or no date: never "0 days left" while mail still comes, only how much is here so far
+  if (p?.done !== undefined && p.done > 0) {
+    const label = t("firstSync.soFar", { count: formatNumber(p.done) });
+    return { label, short: label, fraction: null };
   }
   return { label: t("firstSync.starting"), short: t("firstSync.starting"), fraction: null };
 }

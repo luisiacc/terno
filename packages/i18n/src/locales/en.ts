@@ -791,6 +791,7 @@ const en = {
   "firstSync.foldersLeft": { one: "# folder left", other: "# folders left" },
   "firstSync.daysLeft": { one: "# day left", other: "# days left" },
   "firstSync.finishing": "Finishing up",
+  "firstSync.soFar": "{count} so far",
   "firstSync.starting": "Starting",
   "firstSync.title": "Downloading your mail",
   "firstSync.detail": "{window}, newest first",

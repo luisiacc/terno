@@ -24,3 +24,14 @@ describe("syncLeft", () => {
     expect(syncLeft({ done: 1200, total: 5521, unit: "messages" }, 0).label).toBe("Quedan cerca de 4,321 mensajes");
   });
 });
+
+describe("plan 104", () => {
+  it("never 0 days left while mail comes: days to where the listing stops, else how much is here so far", async () => {
+    await loadLocale("en");
+    const now = Date.now();
+    // the provider says where it stops
+    expect(syncLeft({ reachedAt: now - 100 * DAY, since: now - 180 * DAY, done: 900 }, now - 30 * DAY).short).toBe("80 days left");
+    // past the window (an older recovery listing all mail): no days, a count
+    expect(syncLeft({ reachedAt: now - 900 * DAY, done: 1950 }, now - 180 * DAY)).toEqual({ label: "1,950 so far", short: "1,950 so far", fraction: null });
+  });
+});

@@ -74,6 +74,14 @@ interface Reconciliation {
   estimate?: number;
   /** plan 103: messages the listing's saved pages held (pages aren't always full) */
   listed?: number;
+  /**
+   * plan 104: where the catch-up starts: as the flags were read again, every stored message's state was read (a
+   * deleted one answered 404), and the new mail before it was read by the look at history; so only what changed
+   * after the refresh began is replayed (hours of history from `baseline` overflowed, restarting the whole sync)
+   */
+  refreshFrom?: string;
+  /** plan 104: the look at new mail lost history once (it started again from now): the catch-up keeps `baseline` */
+  gap?: boolean;
 }
 interface ReconcileCursor {
   historyId?: string;
@@ -108,12 +116,18 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
     || (value.peek !== undefined && (!historyId(value.peek) || earlierHistory(value.peek, value.baseline)))
     || (value.startedAt !== undefined && (!Number.isSafeInteger(value.startedAt) || (value.startedAt as number) < 0))
     || (value.estimate !== undefined && (!Number.isSafeInteger(value.estimate) || (value.estimate as number) < 0))
-    || (value.listed !== undefined && (!Number.isSafeInteger(value.listed) || (value.listed as number) < 0))) return;
+    || (value.listed !== undefined && (!Number.isSafeInteger(value.listed) || (value.listed as number) < 0))
+    || (value.refreshFrom !== undefined && (!historyId(value.refreshFrom) || earlierHistory(value.refreshFrom, value.baseline)))
+    || (value.gap !== undefined && value.gap !== true)) return;
   // Pick only bounded known fields; a malformed/foreign cursor is never rewritten wholesale.
   return { version: 1, email, intent: value.intent as string, after: value.after as number, baseline: value.baseline,
     stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.refreshAfter !== undefined && { refreshAfter: value.refreshAfter as string }), ...(value.next !== undefined && { next: value.next as string }),
-    ...(value.peek !== undefined && { peek: value.peek as string }), ...(value.startedAt !== undefined && { startedAt: value.startedAt as number }), ...(value.estimate !== undefined && { estimate: value.estimate as number }), ...(value.listed !== undefined && { listed: value.listed as number }) };
+    ...(value.peek !== undefined && { peek: value.peek as string }), ...(value.startedAt !== undefined && { startedAt: value.startedAt as number }), ...(value.estimate !== undefined && { estimate: value.estimate as number }), ...(value.listed !== undefined && { listed: value.listed as number }),
+    ...(value.refreshFrom !== undefined && { refreshFrom: value.refreshFrom as string }), ...(value.gap === true && { gap: true }) };
 }
+
+/** plan 104: a sync running longer than this catches up from its refresh, not its start (hours of history overflowed) */
+export const LONG_SYNC_MS = 10 * 60_000;
 
 /** plan 102: a pass's share of a first sync; then another pass, which reads new mail first */
 export const FIRST_SYNC_CHUNK_MS = 60_000;
@@ -128,9 +142,9 @@ export const EARLY_LABELS_AFTER = 100;
  * it exactly (`pageEnd`); before it, Google's estimate, unless the pages already listed passed it (never "0 left"
  * with more to come): then only the oldest date reached is shown.
  */
-function progressOf(done: number, pageEnd: number, estimate: number | undefined, more: boolean, oldest: number | undefined): import("@terno/core").SyncProgress {
+function progressOf(done: number, pageEnd: number, estimate: number | undefined, more: boolean, oldest: number | undefined, since?: number): import("@terno/core").SyncProgress {
   const total = !more ? Math.max(estimate ?? 0, pageEnd) : estimate !== undefined && estimate > pageEnd ? estimate : undefined;
-  return { done, ...(total !== undefined && { total }), unit: "messages", ...(oldest !== undefined && { reachedAt: oldest }) };
+  return { done, ...(total !== undefined && { total }), unit: "messages", ...(oldest !== undefined && { reachedAt: oldest }), ...(since !== undefined && { since }) };
 }
 
 /** Plan 101: how far a backfill's listing got, for one request (its bounds, ms). */
@@ -986,7 +1000,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       // plan 103: where the backfill is (Google's estimate of the span; the oldest date reached)
       if (estimate === undefined && page.resultSizeEstimate !== undefined) estimate = page.resultSizeEstimate;
       const listed = page.messages?.length ?? 0;
-      const report = (downloaded: number) => sink.progress?.(progressOf((progress.listed ?? 0) + (listed - ids.length) + downloaded, (progress.listed ?? 0) + listed, estimate, next !== undefined, oldest));
+      const report = (downloaded: number) => sink.progress?.(progressOf((progress.listed ?? 0) + (listed - ids.length) + downloaded, (progress.listed ?? 0) + listed, estimate, next !== undefined, oldest, request.since));
       const counting: SyncPass = { ...sink, ingest: (messages, o) => { for (const m of messages) if (oldest === undefined || m.date < oldest) oldest = m.date; return sink.ingest(messages, o); } };
       for (let i = 0; i < ids.length; i += 50) {
         // out of this pass's time: this page again next pass (its stored messages skipped then)
@@ -1037,7 +1051,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         // never the same dead cursor every chunk)
         if ((error instanceof GmailApiError && error.resource === `/history?${q}` && error.status === 404) || error instanceof HistoryOverflow) {
           const now = readBaseline(await syncRead("/profile", sink));
-          if (!earlierHistory(now, from)) await save({ ...state, peek: now });
+          if (!earlierHistory(now, from)) await save({ ...state, peek: now, gap: true });
           return;
         }
         throw error;
@@ -1061,8 +1075,11 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     if (latest !== from) await save({ ...state, peek: latest });
   }
 
+  /** the reconciliation a catch-up follows, as it ended (plan 104: an overflowing catch-up reads its flags again) */
+  let lastReconciliation: Reconciliation | undefined;
+
   /** A first sync (or another reconciliation) a chunk at a time; undefined: more remains (another pass soon). */
-  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation, allMail = false): Promise<Cursor | undefined> {
+  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation): Promise<Cursor | undefined> {
     let state: Reconciliation;
     const save = async (value: Reconciliation) => {
       await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: value });
@@ -1079,7 +1096,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     } else {
       const baseline = readBaseline(await syncRead("/profile", sink));
       if (completed && earlierHistory(baseline, completed)) throw invalidResponse();
-      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: allMail ? 0 : Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0, startedAt: Date.now() };
+      // plan 104: always the account's window, a recovery too (all mail took days under the quota, and overflowed again)
+      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0, startedAt: Date.now() };
       await save(state);
     }
     const pages = new Set<string>();
@@ -1118,7 +1136,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       // plan 103: the listing's size, once (Google's estimate); the oldest date reached, for "days left"
       if (state.estimate === undefined && page.resultSizeEstimate !== undefined) state = { ...state, estimate: page.resultSizeEstimate };
       const listed = page.messages?.length ?? 0;
-      const report = (downloaded: number) => sink.progress?.(progressOf((current.listed ?? 0) + (listed - ids.length) + downloaded, (current.listed ?? 0) + listed, state.estimate, next !== undefined, oldest));
+      const report = (downloaded: number) => sink.progress?.(progressOf((current.listed ?? 0) + (listed - ids.length) + downloaded, (current.listed ?? 0) + listed, state.estimate, next !== undefined, oldest, current.after > 0 ? current.after * 1000 : undefined));
       const since = state.startedAt;
       const isNew = (m: IncomingMessage) => since !== undefined && (received?.get(m.providerMsgId!) ?? -1) >= since;
       const listing: SyncPass = { ...sink, ingest: async (messages, o) => {
@@ -1146,6 +1164,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
     if (state.stage === "refresh") {
       sink.check();
+      // plan 104: as the refresh begins, the new mail so far is read, and the catch-up will start from there
+      // only a long one (minutes of history to replay from its baseline); a short one keeps its baseline as before
+      if (state.refreshAfter === undefined && state.refreshFrom === undefined && !state.gap && state.startedAt !== undefined && Date.now() - state.startedAt > LONG_SYNC_MS) {
+        await peekArrivals(sink, state, save);
+        if (!state.gap) await save({ ...state, refreshFrom: state.peek ?? state.baseline });
+      }
       // plan 103: everything is here; what's left is reading the flags again
       sink.progress?.({ finishing: true, unit: "messages", ...(state.estimate !== undefined && { done: state.estimate, total: state.estimate }) });
       while (state.stage === "refresh") {
@@ -1176,7 +1200,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       }
       await save({ ...state, stage: "catchup" });
     }
-    return { historyId: state.baseline };
+    lastReconciliation = state;
+    return { historyId: state.refreshFrom ?? state.baseline };
   }
 
   async function incremental(sink: SyncPass, cursor: Cursor) {
@@ -1352,15 +1377,23 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       backfillProgress = sink.backfill && isRecord(cursor) ? readBackfill(cursor.backfill, sink.backfill) : undefined;
       const completed = isRecord(cursor) && historyId(cursor.historyId) ? cursor.historyId : undefined;
       const pending = isRecord(cursor) && Object.hasOwn(cursor, "reconciliation");
-      const resume = pending ? readReconciliation(cursor.reconciliation, sink, ctx.account.email, completed) : undefined;
+      let resume = pending ? readReconciliation(cursor.reconciliation, sink, ctx.account.email, completed) : undefined;
+      // plan 104: a listing of all mail (an older recovery's, `after: 0`) goes on within the window instead (from its
+      // start: its page tokens are another query's; what's stored is skipped)
+      const windowAfter = Math.floor(sink.windowStart / 1000);
+      // only those (Codex review: a first sync legitimately running for days keeps its own window and place)
+      if (resume?.stage === "enumerate" && resume.after === 0 && windowAfter > 0) {
+        const { next: _next, listed: _listed, ...rest } = resume;
+        resume = { ...rest, after: windowAfter, pages: 0 };
+      }
       let reconciled: Cursor | undefined;
       if (pending || completed === undefined) {
-        reconciled = await fullSync(sink, completed, resume, pending && !resume);
+        reconciled = await fullSync(sink, completed, resume);
       } else {
         try {
           await incremental(sink, { historyId: completed });
         } catch (e) {
-          if (e instanceof ExpiredHistory || e instanceof HistoryOverflow) reconciled = await fullSync(sink, completed, undefined, e instanceof HistoryOverflow);
+          if (e instanceof ExpiredHistory || e instanceof HistoryOverflow) reconciled = await fullSync(sink, completed, undefined);
           else throw e;
         }
       }
@@ -1368,7 +1401,12 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (reconciled) {
         try { await incremental(sink, reconciled); }
         catch (error) {
-          if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) await restart(sink, completed);
+          // plan 104 (Codex review): a catch-up from a refresh that overflowed reads the flags again (a new cut), the
+          // cheap part, rather than listing the whole window again; anything else restarts as before
+          if (error instanceof HistoryOverflow && lastReconciliation?.refreshFrom !== undefined) {
+            const { refreshFrom: _from, refreshAfter: _after, ...again } = lastReconciliation;
+            await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: { ...again, stage: "refresh" } });
+          } else if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) await restart(sink, completed);
           throw error;
         }
       }

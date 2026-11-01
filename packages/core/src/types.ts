@@ -129,6 +129,8 @@ export interface SyncProgress {
   reachedAt?: number;
   /** all downloaded; the rest is checking what's here */
   finishing?: boolean;
+  /** plan 104: where the listing stops (ms): what "days left" counts to (absent: the account's window) */
+  since?: number;
 }
 
 export const VIEWS = ["inbox", "starred", "sent", "archive", "spam", "trash", "all"] as const;

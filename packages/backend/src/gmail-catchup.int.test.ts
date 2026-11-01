@@ -355,7 +355,8 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public Gmail full-sync catch-up
     t.historyPayload(); t.afterCheckpoint(() => {});
     await t.reopen();
     await t.backend.syncAccount(t.account.id);
-    expect(t.requests.find((r) => r.pathname === "/messages")?.searchParams.get("q")).toBeNull();
+    // plan 104: the recovery lists the account's window (all mail took days under the quota and overflowed again)
+    expect(t.requests.find((r) => r.pathname === "/messages")?.searchParams.get("q")).toMatch(/^after:\d+$/);
     await t.assertFinal();
     const inserted = [...t.ingested];
     await t.backend.syncAccount(t.account.id);
