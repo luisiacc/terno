@@ -285,3 +285,15 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
     return { more: left(), touched: threads };
   });
 }
+
+/** Plan 107: a renamed IMAP folder's threads under its new key, a slice by thread id (Store.folders.carry). */
+export function carryFolder(db: Db, accountId: number, from: string, to: string, after: number, limit: number): { next: number | null } {
+  return db.tx(() => {
+    const rows = db.all<{ thread_id: number; last_date: number; unread: number }>(
+      "SELECT thread_id, last_date, unread FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? AND thread_id > ? ORDER BY thread_id LIMIT ?",
+      accountId, from, after, limit,
+    );
+    for (const r of rows) db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) VALUES (?, ?, ?, ?, ?)", r.thread_id, accountId, to, r.last_date, r.unread);
+    return { next: rows.length < limit ? null : rows.at(-1)!.thread_id };
+  });
+}

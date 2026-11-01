@@ -1,6 +1,7 @@
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { useEffect, useState } from "react";
+import { dropFavorites } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
@@ -48,7 +49,8 @@ export function FolderDeleteDialog({ account, folderKey, name, open, onOpenChang
       finalFocus={() => row() ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`) ?? true}
       onConfirm={async () => {
         try {
-          await client.call("folders.delete", { accountId: account.id, key: folderKey });
+          const { deleted } = await client.call("folders.delete", { accountId: account.id, key: folderKey });
+          dropFavorites(account.id, deleted);
           snack.success(t("folder.deleted", { name }));
         } catch (e) {
           snack.error(t("folder.deleteFailed", { error: errorText(e) }));

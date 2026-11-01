@@ -553,6 +553,31 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await store.folders.count(g!, ["Work"])).toBe(0);
     });
 
+    it("plan 107: a renamed IMAP folder's threads are carried to its new key in slices, once each, with their unread count", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      await store.folders.replace(m!, [{ key: "Old", path: ["Old"], selectable: true }]);
+      await ingest(store, [1, 2, 3, 4, 5].map((i) => msg({ accountId: m!, providerMsgId: `c${i}`, subject: `s${i}`, inInbox: false, locations: [loc("Old", i)] })));
+      const members = async (key: string) => (await store.threads.list({ view: "all", accountId: m!, folder: key, limit: 50 })).items.map((t) => t.id).sort((a, b) => a - b);
+      const before = await members("Old");
+      expect(before).toHaveLength(5);
+      // the rename's listing, then the carry two at a time
+      await store.folders.replace(m!, [{ key: "New", path: ["New"], selectable: true }]);
+      let after: number | null = 0;
+      let slices = 0;
+      while (after !== null) {
+        after = (await store.folders.carry(m!, "Old", "New", after, 2)).next;
+        slices++;
+      }
+      expect(slices).toBe(3);
+      expect(await members("New")).toEqual(before);
+      // carried again: nothing doubles
+      await store.folders.carry(m!, "Old", "New", 0, 10);
+      expect(await members("New")).toEqual(before);
+      // its unread count comes along (all five are unread)
+      expect((await store.threads.counts(0)).folderUnread?.[`${m!}:New`]).toBe(5);
+    });
+
     it("plan 107: a mailbox deleted on its server forgets its locations with no identity hold (a reset holds them)", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);

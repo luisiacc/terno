@@ -420,8 +420,11 @@ useApp.subscribe((s, prev) => {
   // the open thread, the reader and the checked rows stay
   const followed = s.folder !== prev.folder && followedRename.from === prev.folder && followedRename.to === s.folder && s.view === prev.view && s.accountId === prev.accountId && s.query === prev.query;
   if (followed) {
+    // the same rows under the new key, the window and the checked rows as they are (Codex code review round 2 #5):
+    // the backend carried the folder's threads over, the next refresh reads them there
+    const key = listKey();
+    useList.setState((l) => ({ key, itemsKey: l.itemsKey === l.key ? key : l.itemsKey }));
     if (s.scope) setApp({ scope: null });
-    void reloadList({ keepSelection: true });
   } else if (s.view !== prev.view || s.accountId !== prev.accountId || s.categoryId !== prev.categoryId || s.folder !== prev.folder || s.gmailTab !== prev.gmailTab || s.reviewCategoryId !== prev.reviewCategoryId || s.reminders !== prev.reminders || s.query !== prev.query) {
     // "all N of that list" means nothing in another one
     if (s.scope) setApp({ scope: null });

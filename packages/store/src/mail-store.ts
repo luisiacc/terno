@@ -519,6 +519,12 @@ export interface MailStore {
      * rows, never the whole mailbox.
      */
     count(accountId: number, keys: readonly string[]): Promise<number>;
+    /**
+     * Plan 107: a renamed IMAP folder keeps its threads under its new key until the next pass proves where its mail
+     * went (membership is derived: that pass, or any refresh of a thread, rewrites it from locations). Up to `limit`
+     * threads above `after`, by id; `next`: where the next slice starts, null when done.
+     */
+    carry(accountId: number, from: string, to: string, after: number, limit: number): Promise<{ next: number | null }>;
   };
 
   /**

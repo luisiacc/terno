@@ -383,3 +383,12 @@ export function folderUnreadCounts(c: Ctx): Record<string, number> {
   }
   return out;
 }
+
+/** Plan 107: a renamed IMAP folder's threads under its new key, a slice by thread id (the SQL adapter's carryFolder). */
+export function carryFolder(c: Ctx, accountId: number, from: string, to: string, after: number, limit: number): { next: number | null } {
+  const memberships = T(c, "thread_folders");
+  const rows = memberships.by("folder", accountId, from).filter((r) => (r.thread_id as number) > after).sort((a, b) => (a.thread_id as number) - (b.thread_id as number)).slice(0, limit);
+  const have = new Set(memberships.by("folder", accountId, to).map((r) => r.thread_id as number));
+  for (const r of rows) if (!have.has(r.thread_id as number)) memberships.insert({ thread_id: r.thread_id, account_id: accountId, folder: to, last_date: r.last_date, unread: r.unread });
+  return { next: rows.length < limit ? null : (rows.at(-1)!.thread_id as number) };
+}

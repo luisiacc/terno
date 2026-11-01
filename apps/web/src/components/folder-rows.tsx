@@ -4,8 +4,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { Download, Folder as FolderIcon, FolderPlus, PenLine, Plus, Star, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { lazy, Suspense, useId, useRef, useState, type ReactElement } from "react";
-import { isFavorite, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { fieldDrafts, isFavorite, nameProblem, setFavorite, startCreate, startRename, type FolderTarget } from "~/lib/folders";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 
@@ -52,6 +52,7 @@ export function FolderNameRow({
   account,
   submit,
   cancel,
+  editId,
 }: {
   initial: string;
   label: string;
@@ -60,10 +61,19 @@ export function FolderNameRow({
   siblings: readonly Folder[];
   account: Pick<Account, "kind">;
   submit: (name: string) => Promise<string | null>;
+  /** the edit it belongs to: its text and error outlive the row (fieldDrafts) */
+  editId: number;
   /** "escape": the user asked (focus goes back to the row); "blur": they went elsewhere (focus stays there) */
   cancel: (how: "escape" | "blur") => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
+  const kept = fieldDrafts.get(editId);
+  const [error, setErrorNow] = useState<string | null>(kept?.error ?? null);
+  const setError = (e: string | null) => {
+    setErrorNow(e);
+    fieldDrafts.set(editId, { text: input.current?.value ?? kept?.text ?? initial, error: e });
+  };
+  const live = useRef(true);
+  useEffect(() => () => void (live.current = false), []);
   const [busy, setBusy] = useState(false);
   // one answer per edit (Codex R6 of plan 106: the blur after Enter isn't a second submit)
   const settled = useRef(false);
@@ -82,12 +92,20 @@ export function FolderNameRow({
     const problem = nameProblem(value, siblings, account);
     if (problem) return setError(problem);
     setBusy(true);
+    fieldDrafts.set(editId, { text: value, error: null });
     const failed = await submit(value);
-    setBusy(false);
     if (failed === null) {
       settled.current = true;
+      if (live.current) setBusy(false);
       return;
     }
+    if (!live.current) {
+      // its row went meanwhile: the text waits for it (reopening shows it), and the failure is said now
+      fieldDrafts.set(editId, { text: value, error: failed });
+      snack.error(t("folder.saveFailed", { name: value.trim(), error: failed }));
+      return;
+    }
+    setBusy(false);
     setError(failed);
     // back to the field only if the focus is nowhere else (Codex R8: the user may have moved on)
     if (document.activeElement === document.body || document.activeElement === input.current) input.current?.focus();
@@ -109,11 +127,14 @@ export function FolderNameRow({
           aria-describedby={error ? errorId : undefined}
           aria-busy={busy || undefined}
           readOnly={busy}
-          defaultValue={initial}
+          defaultValue={kept?.text ?? initial}
           maxLength={1000}
           spellCheck={false}
           onFocus={(e) => e.currentTarget.select()}
-          onChange={() => error && setError(null)}
+          onChange={(e) => {
+            if (error) setErrorNow(null);
+            fieldDrafts.set(editId, { text: e.currentTarget.value, error: null });
+          }}
           onKeyDown={(e) => {
             // the field's keys are its own: never a row's or a shortcut
             e.stopPropagation();

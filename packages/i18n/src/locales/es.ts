@@ -413,6 +413,7 @@ const es = {
   "folder.delete.gmail.withSubfolders": { one: "Su subetiqueta también se borra. Los correos siguen en Todo el correo y en sus otras etiquetas.", other: "Sus # subetiquetas también se borran. Los correos siguen en Todo el correo y en sus otras etiquetas." },
   "folder.delete.confirm": "Borrar carpeta",
   "folder.deleted": "“{name}” borrada",
+  "folder.saveFailed": "No se pudo guardar la carpeta “{name}”: {error}",
   "folder.deleteFailed": "No se pudo borrar la carpeta: {error}",
   "account.menu.settings": "Ajustes de la cuenta…",
   "account.menu.remove": "Quitar la cuenta…",

@@ -50,6 +50,16 @@ async function change<R extends FolderChange>(
     account.check();
     const stored = await account.write(() => b.store.folders.replace(accountId, result.folders));
     const { renamed = [], deleted = [] } = follows(result);
+    // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
+    // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time
+    for (const m of renamed) {
+      if (m.from === m.to) continue;
+      for (let after: number | null = 0; after !== null; ) {
+        const from: number = after;
+        after = (await account.write(() => b.store.folders.carry(accountId, m.from, m.to, from, 2000))).next;
+        await b.yieldTurn();
+      }
+    }
     // the view, the back stack and favorites follow before the new list can send anyone to the Inbox (Codex R7)
     if (renamed.length) b.server.emit("foldersRenamed", renamed.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
     if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());

@@ -27,7 +27,7 @@ import { preloadComposer } from "./composer/lazy";
 import { CategoryMenu } from "./category-menu";
 import { AccountMenu } from "./account-menu";
 import { AddFolderButton, FolderMenu, FolderNameRow } from "./folder-rows";
-import { createFolder, renameFolder, siblingsOf, stopEditing, useFolderEdit, type FolderTarget } from "~/lib/folders";
+import { createFolder, renameFolder, siblingsAt, siblingsOf, stopEditing, useFolderEdit, type FolderTarget } from "~/lib/folders";
 import { accountLabels } from "~/lib/account-labels";
 import { patchAccount } from "~/lib/accounts";
 import { snack } from "~/lib/snack";
@@ -469,15 +469,15 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
   const renaming = useFolderEdit((s) => (s.editing?.kind === "rename" && s.editing.accountId === accountId && s.editing.key === folderKey ? s.editing.id : null));
   const account = { id: accountId, kind: accountKind } as Account;
   if (renaming !== null) {
-    const parent = getApp().folders.find((f) => f.accountId === accountId && f.key === folderKey);
-    const parentKey = parent && parent.path.length > 1 ? (getApp().folders.find((f) => f.accountId === accountId && f.path.length === parent.path.length - 1 && f.path.every((p, i) => i >= parent.path.length - 1 || p === parent.path[i]))?.key ?? null) : null;
+    const self = getApp().folders.find((f) => f.accountId === accountId && f.key === folderKey);
     return (
       <FolderNameRow
         initial={name}
         label={t("folder.rename.label", { name })}
         inset={INSET[depth] ?? INSET.at(-1)!}
         testId={`nav-own-rename-${accountId}-${folderKey}`}
-        siblings={siblingsOf(getApp().folders, accountId, parentKey, folderKey)}
+        editId={renaming}
+        siblings={siblingsAt(getApp().folders, accountId, self?.path.slice(0, -1) ?? [], folderKey)}
         account={account}
         cancel={(how) => {
           stopEditing(renaming);
@@ -532,6 +532,7 @@ function NewFolderRow({ account, parent, depth, id }: { account: Account; parent
       label={parent === null ? t("folder.add.inAccount", { account: account.displayName }) : t("folder.new.label")}
       inset={INSET[depth] ?? INSET.at(-1)!}
       testId={`nav-own-new-${account.id}`}
+      editId={id}
       siblings={siblingsOf(getApp().folders, account.id, parent)}
       account={account}
       cancel={(how) => {

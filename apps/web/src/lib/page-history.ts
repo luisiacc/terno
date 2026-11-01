@@ -78,6 +78,8 @@ export interface PageHistory {
   onPop(state: unknown, currentList: string): void;
   /** at boot, before the first list load: the thread to reopen (a reload on a conversation of this mailbox), or null */
   boot(currentList: string): number | null;
+  /** plan 107: the list it's on was renamed (a folder's new key): the page stays, its entry moves to the new list */
+  relist(from: string, to: string): void;
   /** for tests: what the machine believes is on screen, and whether a traversal is in flight */
   inspect(): { shown: Shown; traversing: boolean; pendingReplace: number | null };
 }
@@ -157,6 +159,13 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
 
   return {
     sync: apply,
+    relist(from, to) {
+      if (shown.list !== from) return;
+      flushReplace(false);
+      shown = { ...shown, list: to };
+      const top = entryOf(history.state, mailbox);
+      if (top && top.list === from && shown.page !== "list") history.replaceState(entry(shown), "", urlOf(shown));
+    },
     onPop(state, currentList) {
       if (traversal) {
         // the back() we asked for

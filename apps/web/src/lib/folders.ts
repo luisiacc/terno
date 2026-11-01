@@ -3,7 +3,8 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
-import { followedRename } from "~/state/list";
+import { followedRename, listKey } from "~/state/list";
+import { relistPage } from "./page";
 import { mailboxKey, saveListFilters } from "./unread-filter";
 import { setOpenAccount } from "./account-folders";
 
@@ -13,6 +14,12 @@ import { setOpenAccount } from "./account-folders";
  */
 export type FolderEdit = ({ kind: "create"; accountId: number; parent: string | null } | { kind: "rename"; accountId: number; key: string }) & { id: number };
 export const useFolderEdit = create<{ editing: FolderEdit | null; done: { accountId: number; key: string } | null }>(() => ({ editing: null, done: null }));
+
+/**
+ * What an edit's field holds, by edit: its row can unmount (its account closed, the batch moved) while the server
+ * answers; it comes back with the text and what went wrong (Codex code review round 2 #3). Gone with the edit.
+ */
+export const fieldDrafts = new Map<number, { text: string; error: string | null }>();
 
 const edits = { n: 0 };
 export function startCreate(accountId: number, parent: string | null): void {
@@ -30,16 +37,20 @@ export function startRename(accountId: number, key: string): void {
  * with its text (Codex code review #3). `done`: the folder it made, focused once listed.
  */
 export function stopEditing(id: number, done?: { accountId: number; key: string }): void {
+  fieldDrafts.delete(id);
   if (useFolderEdit.getState().editing?.id !== id) return;
   useFolderEdit.setState({ editing: null, done: done ?? null });
 }
 
 /** The folders a new name sits beside: the parent's children (the account's top ones for null). */
 export function siblingsOf(folders: readonly Folder[], accountId: number, parent: string | null, except?: string): Folder[] {
-  const own = folders.filter((f) => f.accountId === accountId);
-  const base = parent === null ? [] : (own.find((f) => f.key === parent)?.path ?? null);
-  if (base === null) return [];
-  return own.filter((f) => f.key !== except && f.path.length === base.length + 1 && base.every((p, i) => f.path[i] === p));
+  const base = parent === null ? [] : (folders.find((f) => f.accountId === accountId && f.key === parent)?.path ?? null);
+  return base === null ? [] : siblingsAt(folders, accountId, base, except);
+}
+
+/** The folders under a path (Codex code review round 2 #10: a renamed folder's parent may only group, with no key). */
+export function siblingsAt(folders: readonly Folder[], accountId: number, base: readonly string[], except?: string): Folder[] {
+  return folders.filter((f) => f.accountId === accountId && f.key !== except && f.path.length === base.length + 1 && base.every((p, i) => f.path[i] === p));
 }
 
 /**
@@ -111,8 +122,11 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
     followedRename.from = here.from;
     followedRename.to = here.to;
     if (listFilters !== s.listFilters) saveListFilters(listFilters);
+    const fromList = listKey();
     setApp({ folder: here.to, listFilters });
     followedRename.from = followedRename.to = null;
+    // List layout: the open conversation's history entry is over this list, under its new key (round 2 #4)
+    relistPage(fromList, listKey());
   }
   const { editing, done } = useFolderEdit.getState();
   const moved = (accountId: number, key: string) => renamed.find((r) => r.accountId === accountId && r.from === key)?.to ?? key;
@@ -124,4 +138,10 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   if (editing?.kind === "rename") useFolderEdit.setState({ editing: { ...editing, key: moved(editing.accountId, editing.key) } });
   if (editing?.kind === "create" && editing.parent !== null) useFolderEdit.setState({ editing: { ...editing, parent: moved(editing.accountId, editing.parent) } });
   if (done) useFolderEdit.setState({ done: { ...done, key: moved(done.accountId, done.key) } });
+}
+
+/** A delete's folders leave this window's favorites too (Codex code review round 2 #11: no settings event comes). */
+export function dropFavorites(accountId: number, keys: readonly string[]): void {
+  const gone = new Set(keys);
+  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders: s.settings.favoriteFolders.filter((f) => f.accountId !== accountId || f.folder === null || !gone.has(f.folder)) } } : {}));
 }

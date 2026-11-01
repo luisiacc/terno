@@ -285,6 +285,92 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(page.getByTestId("snack").filter({ hasText: /Exported/ })).toBeVisible();
   });
 
+  test("a rename beside a parent that only groups checks its own siblings (Codex code review round 2 #10)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    // "Grupo" isn't a label of its own: "Grupo/Cliente" is; "Archivo" is a top one
+    await server.backend.store.folders.replace(acme, [...mine, { key: "Label_801", path: ["Grupo", "Cliente"], selectable: true }, { key: "Label_802", path: ["Archivo"], selectable: true }]);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await openAccount(page, acme);
+    await own(page, acme, "Label_801").click({ button: "right" });
+    await page.getByTestId("folder-menu-rename").click();
+    const field = page.getByTestId(`nav-own-rename-${acme}-Label_801`);
+    await field.fill("Archivo");
+    await field.press("Enter");
+    await expect(page.getByTestId(`nav-own-rename-${acme}-Label_801-error`)).toHaveCount(0);
+    await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_801")?.path).toEqual(["Grupo", "Archivo"]);
+  });
+
+  test("a deleted favorite stays gone when a folder of that name comes back (Codex code review round 2 #11)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    await openAccount(page, freelance);
+    await page.getByTestId(`nav-account-${freelance}`).hover();
+    await page.getByTestId(`nav-account-add-${freelance}`).click();
+    await page.getByTestId(`nav-own-new-${freelance}`).fill("Temporal");
+    await page.getByTestId(`nav-own-new-${freelance}`).press("Enter");
+    await expect.poll(() => keyOf(server, freelance, "Temporal")).toBeTruthy();
+    const key = (await keyOf(server, freelance, "Temporal"))!;
+    await own(page, freelance, key).click({ button: "right" });
+    await page.getByTestId("folder-menu-favorite").click();
+    await expect(page.getByTestId(`nav-fav-${freelance}-${key}`)).toBeVisible();
+    await own(page, freelance, key).click({ button: "right" });
+    await page.getByTestId("folder-menu-delete").click();
+    await page.getByTestId("folder-delete-dialog-confirm").click();
+    await expect(own(page, freelance, key)).toHaveCount(0);
+    // the same path again (an IMAP key is its path)
+    await page.getByTestId(`nav-account-${freelance}`).hover();
+    await page.getByTestId(`nav-account-add-${freelance}`).click();
+    await page.getByTestId(`nav-own-new-${freelance}`).fill("Temporal");
+    await page.getByTestId(`nav-own-new-${freelance}`).press("Enter");
+    await expect(own(page, freelance, key)).toBeVisible();
+    await expect(page.getByTestId(`nav-fav-${freelance}-${key}`)).toHaveCount(0);
+  });
+
+  test("a field whose row closes while the server answers: a failure is said, and the text is there when it opens again (Codex code review round 2 #3)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    handlers["folders.create"] = async () => {
+      await new Promise((r) => setTimeout(r, 800));
+      throw new Error("the server said no");
+    };
+    await openAccount(page, acme);
+    await page.getByTestId(`nav-account-${acme}`).hover();
+    await page.getByTestId(`nav-account-add-${acme}`).click();
+    await page.getByTestId(`nav-own-new-${acme}`).fill("Pendiente");
+    // another account: the blur submits, this one closes
+    const other = (await server.backend.store.accounts.list()).find((a) => a.id !== acme)!.id;
+    await page.getByTestId(`nav-account-${other}`).click();
+    await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t save the folder “Pendiente”: the server said no" })).toBeVisible();
+    await openAccount(page, acme);
+    await expect(page.getByTestId(`nav-own-new-${acme}`)).toHaveValue("Pendiente");
+    await expect(page.getByTestId(`nav-own-new-${acme}-error`)).toContainText("the server said no");
+  });
+
+  test("an IMAP rename of the folder you're reading in: the conversation stays open and the rows stay (Codex code review round 2 #4, #5)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    await server.backend.server.invoke("settings.update", { layout: "list" }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openAccount(page, freelance);
+    const from = (await server.backend.store.folders.list()).find((f) => f.accountId === freelance && f.selectable && sqlDb(server.backend.store).get("SELECT 1 FROM thread_folders WHERE account_id = ? AND folder = ?", freelance, f.key))!;
+    await own(page, freelance, from.key).click();
+    const rows = page.getByTestId("thread-row");
+    await rows.first().waitFor();
+    const members = (key: string) => sqlDb(server.backend.store).get<{ c: number }>("SELECT count(*) AS c FROM thread_folders WHERE account_id = ? AND folder = ?", freelance, key)!.c;
+    const before = members(from.key);
+    await rows.first().click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await server.backend.server.invoke("folders.rename", { accountId: freelance, key: from.key, name: "Renombrada" }, { clientId: "other", origin: "dev" });
+    await expect.poll(() => keyOf(server, freelance, "Renombrada")).toBeTruthy();
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("reader")).toBeVisible();
+    // its threads under the new key at once, before any pass has read the server again
+    const to = (await keyOf(server, freelance, "Renombrada"))!;
+    expect(members(to)).toBe(before);
+    await page.keyboard.press("Escape");
+    await expect(rows.first()).toBeVisible();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

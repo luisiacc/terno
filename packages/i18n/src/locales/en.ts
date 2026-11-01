@@ -419,6 +419,7 @@ const en = {
   "folder.delete.gmail.withSubfolders": { one: "Its sublabel goes too. The mail stays in All Mail and in its other labels.", other: "Its # sublabels go too. The mail stays in All Mail and in its other labels." },
   "folder.delete.confirm": "Delete folder",
   "folder.deleted": "“{name}” deleted",
+  "folder.saveFailed": "Couldn’t save the folder “{name}”: {error}",
   "folder.deleteFailed": "Couldn’t delete the folder: {error}",
   "account.menu.settings": "Account settings…",
   "account.menu.remove": "Remove account…",
