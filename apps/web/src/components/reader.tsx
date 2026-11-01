@@ -31,6 +31,7 @@ import { inSeparateTab, setApp, useApp } from "~/state/app";
 import { hydrateSelectedThread, useThread, useThreadGone } from "~/state/threads";
 import { printCommand } from "~/lib/print-open";
 import { HtmlBody, TextBody } from "./mail-body";
+import { MailReaderView } from "./mail-reader-view";
 import { MessageMenu } from "./message-menu";
 import { reasonText } from "~/lib/reasons";
 import { useDesign, variant } from "~/lib/design";
@@ -499,6 +500,12 @@ function StepButtons({ id }: { id: number }) {
 const iconsFor = (t: { inSpam: boolean; hasSpam?: boolean }) => !t.inSpam && !t.hasSpam;
 
 export function Reader() {
+  const selectedId = useApp((s) => s.selectedId);
+  const focusRequest = useApp((s) => s.draftFocus?.seq ?? null);
+  return <MailReaderView identity={selectedId} focusRequest={focusRequest}><ReaderContent /></MailReaderView>;
+}
+
+function ReaderContent() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
   // List's page: the dock sits over the conversation's foot, so its end (the reply bar) scrolls clear of it

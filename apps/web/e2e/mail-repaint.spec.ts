@@ -28,8 +28,8 @@ test("switching the theme and the HTML mail setting doesn't reload the open mail
   expect(await frame.evaluate((f: HTMLIFrameElement) => (window as unknown as { __loads: number; __doc: Document | null }).__loads === 0 && (window as unknown as { __doc: Document | null }).__doc === f.contentDocument)).toBe(true);
 });
 
-// Codex review (plan 75): a repaint keeps the root's own style (a mail past the height cap scrolls inside its frame)
-test("a mail taller than the cap still scrolls after the theme changes", async ({ app: page, server }) => {
+// Plan75 repaint continuity also holds for the explicit clipped preview (W11 option b).
+test("a tall mail keeps its full-message entry after the theme changes", async ({ app: page, server }) => {
   const [account] = await server.backend.store.accounts.list();
   const html = `<div>${Array.from({ length: 1400 }, (_, i) => `<p style="margin:0;height:20px">Line ${i}</p>`).join("")}</div>`;
   const { touched } = await server.backend.store.sync.ingest([{
@@ -39,9 +39,12 @@ test("a mail taller than the cap still scrolls after the theme changes", async (
   }], { applyFilters: false, now: E2E_NOW, classifier: null });
   await selectThread(page, touched[0]!, 'subject:"Very tall repaint"');
   const frame = page.locator("iframe[data-mail]").first();
-  const overflow = () => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.documentElement.style.overflowY);
-  await expect.poll(overflow).toBe("auto");
+  const overflow = () => frame.evaluate((f: HTMLIFrameElement) => getComputedStyle(f.contentDocument!.documentElement).overflowY);
+  await expect.poll(overflow).toBe("clip");
+  await expect(page.getByRole("button", { name: "Show full message", exact: true })).toBeVisible();
   await page.evaluate(() => (window as unknown as Terno).__terno.updateAppearance({ theme: "dark" }));
   await expect.poll(() => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument!.documentElement.style.getPropertyValue("--m-scheme"))).toBe("dark");
-  expect(await overflow()).toBe("auto");
+  expect(await overflow()).toBe("clip");
+  await expect(page.getByRole("button", { name: "Show full message", exact: true })).toBeVisible();
+  expect(await frame.evaluate((f: HTMLIFrameElement) => f.contentWindow!.scrollY)).toBe(0);
 });

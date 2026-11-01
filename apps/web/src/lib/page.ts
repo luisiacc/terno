@@ -4,6 +4,7 @@
  * never has pages: everything here is a no-op there, and Split's behavior is
  * exactly what it was.
  */
+import { returnFromMailReaderView } from "~/components/mail-reader-back";
 import { flushSync } from "react-dom";
 import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
@@ -97,6 +98,7 @@ useAppearance.subscribe((s, p) => {
 
 /** ⌘[ / the menu's Back / the mouse's back button. */
 export function goBack(): void {
+  if (returnFromMailReaderView()) return;
   if (!listLayout()) return;
   if (currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
 }
@@ -207,11 +209,13 @@ export function bootPage(): number | null {
  * is handed over (a menu accelerator covers ⌘[ on desktop anyway).
  */
 export function forwardNavKey(e: KeyboardEvent): void {
-  if (!listLayout() || currentPage() === "list" || e.defaultPrevented || e.isComposing) return;
+  if (e.defaultPrevented || e.isComposing) return;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   const back = (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) || (e.key === "[" && mod && !e.altKey && !e.shiftKey);
   if (!back) return;
+  if (returnFromMailReaderView()) { e.preventDefault(); return; }
+  if (!listLayout() || currentPage() === "list") return;
   e.preventDefault();
   markSelectionIntent();
   closePage({ focus: true });

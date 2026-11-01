@@ -1,6 +1,8 @@
 import type { AttachmentInfo } from "@terno/core";
 import DOMPurify from "dompurify";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
 import { ImageOff } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { mailColors, useAppearance } from "~/lib/appearance";
@@ -45,17 +47,32 @@ function mailLook(paper: boolean, mode: string): MailLook {
   return { mail: paper ? "paper" : "themed", vars, style: Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";") };
 }
 
-/** Repaints a loaded mail document in place (no reload); one property at a time, so the root's own (its scrolling) stay. */
+/** Repaints the loaded document without replacing its own style properties. */
 function paint(root: HTMLElement, look: MailLook): void {
   for (const [k, v] of Object.entries(look.vars)) root.style.setProperty(k, v);
   root.dataset.mail = look.mail;
 }
 
-export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId }: { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper" }) {
+export interface HtmlBodyProps { attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean }
+
+export function HtmlBody({ html, messageId, remoteImages, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight }: HtmlBodyProps) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const heightRef = useRef(onSectionHeight);
+  useLayoutEffect(() => { heightRef.current = onSectionHeight; }, [onSectionHeight]);
+  const exitRef = useRef(onExit);
+  useLayoutEffect(() => { exitRef.current = onExit; }, [onExit]);
+  const view = useMailReaderView();
+  const closeView = view?.close;
+  const [opening, setOpening] = useState(0);
+  const lease = useMemo(() => ({}), [html, messageId, accountId, attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")]);
+  const FullMessage = useMemo(() => lazy(() => import("./full-message")), [lease, opening]);
+  const [clipping, setClipping] = useState({ source: "", clipped: false });
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+  useEffect(() => { if (view?.active !== lease) setCopiedText(null); }, [view?.active, lease]);
+  useLayoutEffect(() => () => closeView?.(lease, false), [lease, closeView]);
   // the setting or this message's "Load content", in either mode (plan 37)
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages }, s.allowed));
-  const [height, setHeight] = useState(() => heights.get(messageId) ?? 120);
+  const [height, setHeight] = useState(() => section ? 120 : heights.get(messageId) ?? 120);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
@@ -65,7 +82,7 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   const blocked = !allowRemote && remote;
   const [cidAllowed, setCidAllowed] = useState(false);
   const [cidResult, setCidResult] = useState<{ key: string; html: string } | null>(null);
-  const cidKey = `${html}\0${attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")}`;
+  const cidKey = `${accountId}\0${html}\0${attachments.map((a) => `${a.assetId}:${a.contentId}`).join("|")}`;
   const hasCid = /\bsrc\s*=\s*["']?cid:/i.test(html);
   useEffect(() => {
     if (!cidAllowed || accountId === undefined) return;
@@ -83,8 +100,8 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
   if (built.html !== visibleHtml || built.allowRemote !== allowRemote) setBuilt({ html: visibleHtml, allowRemote, look });
   const doc = useMemo(
     () =>
-      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:hidden}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad)}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}</style></head><body>${built.html}</body></html>`,
-    [built],
+      `<!doctype html><html data-mail="${built.look.mail}" style="${built.look.style}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(built.allowRemote)}"><base target="_blank"><style>html{overflow-y:clip}html,body{margin:0;padding:0;background:var(--m-bg);color:var(--m-fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Geist Variable",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;overflow-wrap:anywhere;color-scheme:var(--m-scheme)}body{padding:var(--m-pad);${section ? "" : "max-height:20000px;overflow:clip;box-sizing:border-box;position:relative;contain:paint"}}[data-terno-flow]{display:flow-root}img{max-width:100%;height:auto}a{color:var(--m-link)}table{max-width:100%}${section ? "body{padding:0}body *:not(svg,svg *){position:static!important;float:none!important;transform:none!important;zoom:1!important;writing-mode:horizontal-tb!important;height:auto!important;min-height:0!important;max-height:none!important;min-width:0!important;max-width:100%!important;margin:0!important;padding:0!important;border-width:0!important;border-spacing:0!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;overflow:visible!important;font-size:14px!important;line-height:1.55!important;overflow-wrap:anywhere!important;white-space:pre-wrap!important}body img,body svg,body video,body canvas,body input,body select{max-width:100%!important;max-height:2048px!important;object-fit:contain}body table{table-layout:auto}" : ""}</style></head><body><div data-terno-flow>${built.html}</div></body></html>`,
+    [built, section],
   );
   // the loaded document follows the colors (and gets them again once a rebuilt one loads)
   const lookRef = useRef(look);
@@ -98,25 +115,71 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
     const frame = ref.current;
     if (!frame) return;
     // everything attached to the loaded document goes when the document or the frame does
+    let active = true;
     let observer: ResizeObserver | null = null;
     let detach: (() => void) | null = null;
     const onLoad = () => {
       observer?.disconnect();
       detach?.();
       const d = frame.contentDocument;
-      if (!d) return;
+      const flow = d?.querySelector<HTMLElement>("[data-terno-flow]");
+      if (!d || !flow) return;
       paint(d.documentElement, lookRef.current);
-      // the frame is sized to its content, so it never scrolls inside. The box (not scrollHeight, which
-      // never drops below the frame and rounds down) shrinks back and covers fractional heights.
+      if (section) for (const svg of d.querySelectorAll<SVGSVGElement>("svg")) {
+        const bounds = svg.getBBox();
+        if (bounds.width > 0 && bounds.height > 0 && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+      }
+      const tabStops = [...d.querySelectorAll<HTMLElement>("a[href], area[href], button, input, select, textarea, [tabindex]")].map((element) => ({ element, tab: element.getAttribute("tabindex") }));
+      const styled = [...d.body.querySelectorAll<HTMLElement>("[style]")];
+      const positioned = styled.filter((element) => ["absolute", "fixed"].includes(getComputedStyle(element).position));
+      const cropped = styled.filter((element) => {
+        const overflow = getComputedStyle(element).overflowY;
+        if (overflow === "auto" || overflow === "scroll") element.style.setProperty("overflow-y", "clip", "important");
+        return overflow === "hidden" || overflow === "clip" || overflow === "auto" || overflow === "scroll";
+      });
+      // Reserve media growth before displaying a section, so late loads/width changes
+      // cannot force repartitioning underneath a native text selection.
+      const mediaAllowance = section ? [...d.querySelectorAll("img,svg,video,canvas,input,select")].filter((element) => !element.parentElement?.closest("svg")).length * 4096 : 0;
+      const clippedParents = new Set(cropped);
+      const disabledStops = new Map<HTMLElement, string | null>();
+      // Measure the flow independently of the preview box, including positioned overflow.
+      // Reset that box first so changed bodies and image reflows can shrink; round up fractional pixels.
       const measure = () => {
-        const content = Math.ceil(d.documentElement.getBoundingClientRect().height);
-        // past the cap the document scrolls: hidden content would be unreachable
-        d.documentElement.style.overflowY = content > MAX_HEIGHT ? "auto" : "";
-        const h = Math.min(MAX_HEIGHT, content);
-        rememberHeight(messageId, h);
+        if (!active || frame.contentDocument !== d || !flow.isConnected) return;
+        if (!section) d.body.style.height = "auto";
+        const padding = getComputedStyle(d.body);
+        const content = Math.ceil(Math.max(Math.max(flow.getBoundingClientRect().height, flow.scrollHeight) + Number.parseFloat(padding.paddingTop) + Number.parseFloat(padding.paddingBottom), d.body.scrollHeight, positioned.reduce((bottom, element) => Math.max(bottom, element.getBoundingClientRect().bottom), 0)));
+        if (section && heightRef.current?.(content + mediaAllowance) === false) { setHeight(120); return; }
+        if (!section) d.body.style.height = `${Math.min(MAX_HEIGHT, content)}px`;
+        const clipped = !section && (content > MAX_HEIGHT || cropped.some((element) => element.scrollHeight > element.clientHeight));
+        setClipping((previous) => previous.source === clean && previous.clipped === clipped ? previous : { source: clean, clipped });
+        if (!section && clipped) {
+          const boxes = new Map<HTMLElement, DOMRect>();
+          for (const { element, tab } of tabStops) {
+            const rect = element.getBoundingClientRect();
+            let hidden = rect.top >= MAX_HEIGHT;
+            for (let parent = element.parentElement; !hidden && parent; parent = parent.parentElement) {
+              if (!clippedParents.has(parent)) continue;
+              let box = boxes.get(parent);
+              if (!box) { box = parent.getBoundingClientRect(); boxes.set(parent, box); }
+              hidden = rect.top >= box.bottom;
+            }
+            if (hidden) { element.setAttribute("tabindex", "-1"); disabledStops.set(element, tab); }
+            else if (disabledStops.has(element)) {
+              if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab);
+              disabledStops.delete(element);
+            }
+          }
+        } else if (!section) {
+          for (const [element, tab] of disabledStops) { if (tab === null) element.removeAttribute("tabindex"); else element.setAttribute("tabindex", tab); }
+          disabledStops.clear();
+        }
+        const h = section ? content : Math.min(MAX_HEIGHT, content);
+        if (!section) rememberHeight(messageId, h);
         setHeight(h);
       };
       measure();
+      d.addEventListener("load", measure, true);
       observer = new ResizeObserver(measure);
       observer.observe(d.documentElement);
       const onClick = (e: MouseEvent) => {
@@ -137,40 +200,68 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
       d.addEventListener("contextmenu", onMenu);
       d.addEventListener("keydown", forwardPrintKey);
       // plan 24: Back from List's page (Esc, ⌘[, the mouse's side buttons) works with focus in the mail too
-      d.addEventListener("keydown", forwardNavKey);
+      const onNavKey = (event: KeyboardEvent) => {
+        if (section && event.key === "Escape" && !event.isComposing && !event.defaultPrevented) {
+          event.preventDefault(); event.stopImmediatePropagation(); exitRef.current?.();
+        } else forwardNavKey(event);
+      };
+      d.addEventListener("keydown", onNavKey);
       d.addEventListener("mouseup", forwardMouseNav, true);
       detach = () => {
+        d.removeEventListener("load", measure, true);
         d.removeEventListener("click", onClick);
         d.removeEventListener("contextmenu", onMenu);
         d.removeEventListener("keydown", forwardPrintKey);
-        d.removeEventListener("keydown", forwardNavKey);
+        d.removeEventListener("keydown", onNavKey);
         d.removeEventListener("mouseup", forwardMouseNav, true);
       };
     };
     frame.addEventListener("load", onLoad);
     return () => {
+      active = false;
       frame.removeEventListener("load", onLoad);
       observer?.disconnect();
       detach?.();
     };
-  }, [doc]);
+  }, [doc, section]);
 
+  const inlineControl = hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>;
+  const remoteControl = blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />;
   return (
     <div>
-      {hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
-      {blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />}
+      {!section && hasCid && !cidAllowed && <button type="button" data-testid="inline-load" className="mb-3 text-xs text-muted-foreground hover:text-foreground" onClick={() => setCidAllowed(true)}>{t("attachments.loadInline")}</button>}
+      {!section && blocked && <RemoteBlocked onLoad={() => allowRemoteFor(messageId)} />}
       {/* themed mail flows on the page with no box; mail with its own colors keeps a borderless paper surface */}
       <div className={paper ? "overflow-hidden rounded-lg bg-[var(--mail-paper)]" : undefined}>
         <iframe
           ref={ref}
           title={t("reader.mailContent")}
           sandbox="allow-same-origin allow-popups"
+          scrolling="no"
           srcDoc={doc}
           style={{ height }}
           data-mail={paper ? "paper" : "themed"}
           className="block w-full border-0"
         />
       </div>
+      {((clipping.source === clean && clipping.clipped) || (!section && view?.active === lease)) && <button type="button" className="mt-3 rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={(event) => {
+        const original = ref.current?.contentDocument;
+        const selection = original?.getSelection();
+        if (!original?.body || !selection || original.readyState !== "complete") return;
+        const previous = Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange());
+        try {
+          const range = original.createRange(); range.selectNodeContents(original.body);
+          selection.removeAllRanges(); selection.addRange(range);
+          setCopiedText(selection.toString());
+        } finally { selection.removeAllRanges(); for (const range of previous) selection.addRange(range); }
+        setOpening((value) => value + 1); view?.open(lease, event.currentTarget);
+      }}>{t("reader.full.show")}</button>}
+      {view?.active === lease && view.target && createPortal(
+        <FullMessageBoundary onClose={() => view.close(lease)} key={opening}>
+          <Suspense fallback={<section className="flex h-full flex-col p-3.5"><button type="button" onClick={() => view.close(lease)}>{t("reader.full.back")}</button><p role="status">{t("reader.full.loading")}</p></section>}>
+            <FullMessage html={visibleHtml} messageId={messageId} accountId={accountId} attachments={attachments} remoteImages={remoteImages} appearance={paper ? "paper" : appearance} onClose={() => view.close(lease)} controls={<>{inlineControl}{remoteControl}</>} copyText={() => { if (copiedText === null) throw new Error("Message selection is not ready"); return copiedText; }} />
+          </Suspense>
+        </FullMessageBoundary>, view.target)}
     </div>
   );
 }
