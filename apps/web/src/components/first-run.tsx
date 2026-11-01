@@ -31,6 +31,13 @@ function savedStep(): Step {
   return v === "look" ? "look" : v === "account" ? "account" : "layout";
 }
 
+/**
+ * What's typed for the account while the setup is away: the Google detour to
+ * Settings (no client ID yet) unmounts it, and it comes back with this. Memory
+ * only (a password may be in it), dropped when the setup ends.
+ */
+const kept = { draft: EMPTY_ACCOUNT_DRAFT };
+
 /** A local server we found on this Mac, offered as the AI in local mode. */
 type Found = { provider: AiProviderId; label: string; model: string };
 
@@ -100,7 +107,7 @@ export function FirstRun() {
   const [forward, setForward] = useState(true);
   /** step 2 shows (and sets) one mode's colors; the window itself keeps following the system */
   const [lookMode, setLookMode] = useState<ThemeMode>(systemMode);
-  const [draft, setDraft] = useState(EMPTY_ACCOUNT_DRAFT);
+  const [draft, setDraft] = useState(() => kept.draft);
   /** a connection in flight: Back, Skip and Esc wait for it */
   const [busy, setBusy] = useState(false);
   const sample = useMemo(() => sampleMailbox(), []);
@@ -121,6 +128,10 @@ export function FirstRun() {
     });
   }, []);
 
+  useEffect(() => {
+    kept.draft = draft;
+  }, [draft]);
+
   // a new step is announced by its heading (focused without a ring: it isn't Tab's)
   useEffect(() => {
     if (moved.current) heading.current?.focus({ preventScroll: true });
@@ -140,6 +151,7 @@ export function FirstRun() {
     setStep(next);
   };
   const done = () => {
+    kept.draft = EMPTY_ACCOUNT_DRAFT;
     localStorage.setItem(STEP_KEY, "done");
     setOpen(false);
   };
@@ -166,8 +178,8 @@ export function FirstRun() {
       </div>
     ),
     look: (
-      // the styles stay put; only the palettes scroll (the one in use is scrolled into view)
-      <div className="flex h-full min-h-0 flex-col">
+      // the styles stay put and the palettes scroll (the one in use scrolled into view); a window too short for a row of them scrolls as a whole
+      <div className="flex min-h-full flex-col">
         <h3 className="type-section-label mb-1.5 shrink-0 text-muted-foreground">{t("firstRun.look.style")}</h3>
         <div role="radiogroup" aria-label={t("firstRun.look.style")} aria-describedby="first-run-design-description" className="-mx-1 grid shrink-0 grid-cols-3 gap-1" onKeyDown={radioKeys}>
           {DESIGNS.map((d) => {
@@ -209,7 +221,7 @@ export function FirstRun() {
           </ToggleGroup>
         </div>
         <p className="mb-2 shrink-0 text-xs text-muted-foreground">{t("firstRun.look.modeHint")}</p>
-        <div role="group" aria-label={t("firstRun.look.colors")} className="hairline-t -mx-1.5 grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-1 overflow-y-auto pt-2 pb-1" data-testid="first-run-palettes">
+        <div role="group" aria-label={t("firstRun.look.colors")} className="hairline-t -mx-1.5 grid min-h-32 flex-1 basis-0 auto-rows-min grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-1 overflow-y-auto pt-2 pb-1" data-testid="first-run-palettes">
           <ThemeCard theme={own} base={own.id} name={t("settings.appearance.styleColors")} testId={`theme-card-design-${lookMode}`} selected={chosen === DESIGN_PALETTE} onSelect={() => pick({ [slot]: DESIGN_PALETTE })} />
           {themesFor(lookMode).map((p) => (
             <ThemeCard key={p.id} theme={p} base={p.id} selected={chosen === p.id} onSelect={() => pick({ [slot]: p.id })} />
@@ -258,7 +270,7 @@ export function FirstRun() {
               </DialogTitle>
               <DialogDescription className="mt-1.5">{titles[step][1]}</DialogDescription>
             </div>
-            <div className={cn("min-h-0 flex-1 px-6 pt-4 pb-5", step === "look" ? "flex flex-col" : "overflow-y-auto")}>{body[step]}</div>
+            <div className={cn("min-h-0 flex-1 px-6 pt-4 pb-5", step === "look" ? "flex flex-col overflow-y-auto" : "overflow-y-auto")}>{body[step]}</div>
           </div>
           <div className="hairline-t flex shrink-0 items-center gap-2 px-6 pt-4 pb-6">
             <Button variant="ghost" className="-ml-2.5 text-muted-foreground" disabled={busy} onClick={done} data-testid="first-run-skip">

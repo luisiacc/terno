@@ -11,6 +11,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { listDate, viewLabel } from "~/lib/format";
 import { variant } from "~/lib/design";
 import { ThreadRowView } from "./thread-row";
+import { tabClass } from "./list-tabs";
 import { SenderAvatar } from "./sender-avatar";
 import type { SampleMailbox } from "./first-run-sample";
 
@@ -165,10 +166,26 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
           </div>
         )}
         {quick === "chips" && (
-          <div className="-mx-1 mt-1 mb-2 flex gap-1.5 px-1 py-0.5">
-            {(["all", "unread", "people", "starred"] as const).map((f) => (
+          <div data-testid="first-run-preview-chips" className="-mx-1 mt-1 mb-2 flex gap-1.5 overflow-hidden px-1 py-0.5">
+            {(["all", "unread", "people", "attachments", "starred"] as const).map((f) => (
               <span key={f} className={cn("flex h-7 shrink-0 items-center rounded-full px-3 text-xs font-medium", f === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
                 {t(`list.filter.${f}`)}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* List: the inbox's tabs (list-tabs.tsx), All selected, in the design's tab variant */}
+        {wide && (
+          <div data-testid="first-run-preview-tabs" data-kind={v.categoryTabs} className={cn("relative -mx-1 mt-1 flex items-center gap-1 px-1", v.categoryTabs === "underline" ? "hairline-b -mb-2" : "mb-2 py-0.5")}>
+            <span aria-selected className={tabClass(v.categoryTabs)}>{t("list.filter.all")}</span>
+            <span aria-selected={false} className={tabClass(v.categoryTabs)}>
+              {t("list.filter.unread")}
+              <span className="tabular">{formatNumber(unread)}</span>
+            </span>
+            {sample.categories.map((c) => (
+              <span key={c.id} aria-selected={false} className={tabClass(v.categoryTabs)}>
+                <CategoryDot color={c.color} />
+                {c.name}
               </span>
             ))}
           </div>

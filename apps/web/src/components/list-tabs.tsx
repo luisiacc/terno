@@ -20,7 +20,8 @@ const tabId = (tab: Tab) => `list-tab-${tab}`;
 const GAP = 4;
 
 /** A tab's look (plan 24 §2.10): text over an indicator (macOS, Atelier), or a pill (Lumen). Shared by the tab and its measuring copy. */
-function tabClass(kind: "underline" | "pill") {
+/** A tab's look in the design's variant (the first-run preview draws the same). */
+export function tabClass(kind: "underline" | "pill") {
   return variant(kind, {
     underline: cn(
       "type-nav relative flex h-8 shrink-0 items-center gap-1.5 rounded-sm px-2 whitespace-nowrap text-muted-foreground hover:text-foreground",

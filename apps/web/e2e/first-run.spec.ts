@@ -148,6 +148,48 @@ test.describe("first-run setup", () => {
     expect(running).toBe(0);
   });
 
+  // Codex code review #1: the Google detour to Settings (no client ID yet) unmounts the setup; what was typed comes back with it
+  test("the Google client-ID detour keeps what was typed for the account", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { gmailClientId: "" }, ctx);
+    await open(page, server);
+    await page.getByTestId("first-run-continue").click();
+    await page.getByTestId("first-run-continue").click();
+    await page.getByTestId("imap-email").fill("ana@icloud.com");
+    await page.getByTestId("connect-gmail").click();
+    await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+    await expect(step(page)).toHaveAttribute("data-step", "account");
+    await expect(page.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
+  });
+
+  // Codex code review #2: a short window still reaches every palette and the footer
+  test.describe("a short window", () => {
+    test.use({ viewport: { width: 900, height: 400 } });
+    test("every palette can be scrolled to and picked; the footer stays in view", async ({ app: page, server }) => {
+      await open(page, server);
+      await page.getByTestId("first-run-continue").click();
+      const last = page.getByTestId("theme-card-catppuccin-latte");
+      await last.scrollIntoViewIfNeeded();
+      await expect(last).toBeInViewport({ ratio: 1 });
+      await last.click();
+      await expect(last).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("first-run-continue")).toBeInViewport({ ratio: 1 });
+    });
+  });
+
+  // Codex code review #3: List's preview has the inbox's tabs, Split's chips the whole filter set
+  test("the preview's list header is the real one: Split's filter chips, List's tabs", async ({ app: page, server }) => {
+    await open(page, server);
+    await expect(preview(page).getByTestId("first-run-preview-chips")).toContainText("With attachments");
+    await page.getByTestId("first-run-layout-list").click();
+    const tabs = preview(page).getByTestId("first-run-preview-tabs");
+    await expect(tabs).toHaveAttribute("data-kind", "pill");
+    await expect(tabs).toContainText("All");
+    await expect(tabs).toContainText("Unread");
+    await expect(tabs).toContainText("Travel");
+    await expect(preview(page).getByTestId("first-run-preview-chips")).toHaveCount(0);
+  });
+
   for (const scheme of ["light", "dark"] as const) {
     test.describe(scheme, () => {
       test.use({ colorScheme: scheme });
