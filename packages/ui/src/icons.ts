@@ -38,6 +38,7 @@ export { FileDown } from "./iconset/generated/FileDown";
 export { Filter } from "./iconset/generated/Filter";
 export { Folder } from "./iconset/generated/Folder";
 export { FolderInput } from "./iconset/generated/FolderInput";
+export { FolderPlus } from "./iconset/generated/FolderPlus";
 export { Forward } from "./iconset/generated/Forward";
 export { Github } from "./iconset/generated/Github";
 export { HardDrive } from "./iconset/generated/HardDrive";

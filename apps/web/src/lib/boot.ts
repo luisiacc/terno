@@ -22,6 +22,7 @@ import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { withPendingEdits } from "~/lib/accounts";
+import { applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
 import { startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
@@ -97,6 +98,8 @@ export async function boot(): Promise<void> {
     client.on("categories", (categories) => setCategories(categories));
     // plan 103: live sync progress, for the sync card alone
     client.on("syncProgress", ({ accountId, progress }) => setSyncProgress(accountId, progress));
+    // plan 107: a rename's mapping first, so the list you're in follows it before the new catalog lands
+    client.on("foldersRenamed", (renamed) => applyFolderRenames(renamed));
     client.on("folders", (folders) => setFolders(folders));
     // plan 87: the reminders (bells, the sidebar's count, the Inbox's top); a failure leaves the Inbox as it is
     client.on("reminders", applyReminders);

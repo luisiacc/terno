@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -26,6 +26,9 @@ import { UpdatePill } from "./update-pill";
 import { preloadComposer } from "./composer/lazy";
 import { CategoryMenu } from "./category-menu";
 import { AccountMenu } from "./account-menu";
+import { AddFolderButton, FolderMenu, FolderNameRow } from "./folder-rows";
+import { createFolder, renameFolder, siblingsOf, stopEditing, useFolderEdit, type FolderTarget } from "~/lib/folders";
+import { accountLabels } from "~/lib/account-labels";
 import { patchAccount } from "~/lib/accounts";
 import { snack } from "~/lib/snack";
 
@@ -89,6 +92,7 @@ function NavItem({
   countHelp,
   shortcut,
   note,
+  hoverAction,
 }: {
   active: boolean;
   onClick: () => void;
@@ -114,6 +118,8 @@ function NavItem({
   shortcut?: string;
   /** a quiet mark after the name (plan 83: a category hidden from the Inbox) */
   note?: React.ReactNode;
+  /** plan 107: a control over the row's end on hover (a folder's "+"): the count steps aside meanwhile */
+  hoverAction?: boolean;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -170,7 +176,7 @@ function NavItem({
       )}
       {drop === "already" && <Check aria-label={t("sidebar.alreadyHere")} className="size-3.5 text-muted-foreground" />}
       {count ? (
-        <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground")}>
+        <span data-slot="nav-count" className={cn("inline-block text-xs tabular", countTone === "unread" ? "font-semibold text-unread-ink" : "text-muted-foreground", hoverAction && "group-hover/row:invisible")}>
           {formatNumber(count)}
         </span>
       ) : null}
@@ -268,6 +274,60 @@ function ReviewBadge({ id, name, n, active }: { id: number; name: string; n: num
  */
 /** A row behind More: one of the views, or Reminders (plan 87) */
 type MoreSlot = View | "reminders";
+
+/**
+ * Plan 107: favorite folders, right below Starred: an account's own folder or one of its standard rows, each a way
+ * there with its unread count where the sidebar has one, its menu, and (with several accounts) whose it is.
+ * One that's gone (deleted elsewhere, its account removed) isn't drawn.
+ */
+function FavoriteRows() {
+  const favorites = useApp((s) => s.settings?.favoriteFolders);
+  const accounts = useApp((s) => s.accounts);
+  const folders = useApp((s) => s.folders);
+  const counts = useApp((s) => s.counts);
+  // where you are, as primitives (an object would re-render this on every change of the store)
+  const plain = useApp((s) => s.accountId !== null && s.reviewCategoryId === null && s.categoryId === null && s.gmailTab === null && !s.reminders);
+  const hereAccount = useApp((s) => s.accountId);
+  const hereFolder = useApp((s) => s.folder);
+  const hereView = useApp((s) => s.view);
+  const here = plain ? { accountId: hereAccount, folder: hereFolder, view: hereView } : null;
+  const labels = useMemo(() => accountLabels(accounts), [accounts]);
+  const rows = (favorites ?? []).flatMap((f) => {
+    const account = accounts.find((a) => a.id === f.accountId);
+    if (!account) return [];
+    if (f.folder !== null) {
+      const folder = folders.find((x) => x.accountId === f.accountId && x.key === f.folder && x.selectable);
+      return folder ? [{ f, account, name: folder.path.at(-1)!, icon: <FolderIcon className="size-4" />, count: counts.folderUnread?.[folderRef(f.accountId, f.folder)] }] : [];
+    }
+    const Icon = VIEWS.find((v) => v.view === f.view)!.icon;
+    return [{ f, account, name: viewLabel(f.view!), icon: <Icon className="size-4" />, count: f.view === "inbox" ? counts.inboxUnreadByAccount[f.accountId] : undefined }];
+  });
+  if (rows.length === 0) return null;
+  return (
+    <div role="group" aria-label={t("sidebar.favorites")} data-testid="nav-favorites">
+      {rows.map(({ f, account, name, icon, count }) => {
+        const target = (f.folder !== null ? { accountId: f.accountId, folder: f.folder, view: null } : { accountId: f.accountId, folder: null, view: f.view! }) as FolderTarget;
+        const active = here !== null && here.accountId === f.accountId && (f.folder !== null ? here.folder === f.folder : here.folder === null && here.view === f.view);
+        return (
+          <FolderMenu key={`${f.accountId}:${f.folder ?? `~${f.view}`}`} target={target} name={name} account={account}>
+            <div>
+              <NavItem
+                testId={`nav-fav-${f.accountId}-${f.folder ?? f.view}`}
+                active={active}
+                onClick={() => (f.folder !== null ? navigate({ accountId: f.accountId, folder: f.folder }) : navigate({ accountId: f.accountId, view: f.view! }))}
+                icon={icon}
+                label={name}
+                count={count || undefined}
+                // with several accounts, whose it is, quietly (plan 23's label)
+                note={accounts.length > 1 ? <span className="min-w-0 truncate text-2xs text-muted-foreground" title={account.email}>{labels.get(account.id)?.text}</span> : undefined}
+              />
+            </div>
+          </FolderMenu>
+        );
+      })}
+    </div>
+  );
+}
 
 /** The More row you're in (none inside an account, a category or its suggestions) */
 function moreSlotOf(s: AppState): MoreSlot | null {
@@ -401,21 +461,90 @@ function MoreFolders({ view, folder, reminders }: { view: View | null; folder: (
   );
 }
 
-/** One of an account's own folders (plan 68): memoized, so a counts update renders only the rows whose count moved. */
-const OwnFolderRow = memo(function OwnFolderRow({ accountId, folderKey, name, depth, active, count }: { accountId: number; folderKey: string; name: string; depth: number; active: boolean; count: number }) {
+/**
+ * One of an account's own folders (plan 68): memoized, so a counts update renders only the rows whose count moved.
+ * Plan 107: its menu, a hover "+" for a subfolder, and its name in place while renamed (only that row re-renders).
+ */
+const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folderKey, name, depth, active, count }: { accountId: number; accountKind: Account["kind"]; folderKey: string; name: string; depth: number; active: boolean; count: number }) {
+  const renaming = useFolderEdit((s) => s.editing?.kind === "rename" && s.editing.accountId === accountId && s.editing.key === folderKey);
+  const account = { id: accountId, kind: accountKind } as Account;
+  if (renaming) {
+    const parent = getApp().folders.find((f) => f.accountId === accountId && f.key === folderKey);
+    const parentKey = parent && parent.path.length > 1 ? (getApp().folders.find((f) => f.accountId === accountId && f.path.length === parent.path.length - 1 && f.path.every((p, i) => i >= parent.path.length - 1 || p === parent.path[i]))?.key ?? null) : null;
+    return (
+      <FolderNameRow
+        initial={name}
+        label={t("folder.rename.label", { name })}
+        inset={INSET[depth] ?? INSET.at(-1)!}
+        testId={`nav-own-rename-${accountId}-${folderKey}`}
+        siblings={siblingsOf(getApp().folders, accountId, parentKey, folderKey)}
+        account={account}
+        cancel={() => {
+          stopEditing();
+          focusRow(accountId, folderKey);
+        }}
+        submit={async (next) => {
+          const r = await renameFolder(accountId, folderKey, next);
+          if ("error" in r) return r.error;
+          stopEditing({ accountId, key: r.key });
+          return null;
+        }}
+      />
+    );
+  }
   return (
-    <NavItem
-      testId={`nav-own-${accountId}-${folderKey}`}
-      inset
-      depth={depth}
-      active={active}
-      onClick={() => navigate({ accountId, folder: folderKey })}
-      icon={<FolderIcon className="size-4" />}
-      label={name}
-      count={count || undefined}
-    />
+    <FolderMenu target={{ accountId, folder: folderKey, view: null }} name={name} account={account}>
+      <div className="group/row relative">
+        <NavItem
+          testId={`nav-own-${accountId}-${folderKey}`}
+          inset
+          depth={depth}
+          active={active}
+          onClick={() => navigate({ accountId, folder: folderKey })}
+          icon={<FolderIcon className="size-4" />}
+          label={name}
+          count={count || undefined}
+          hoverAction
+        />
+        <AddFolderButton accountId={accountId} parent={folderKey} label={t("folder.add.in", { name })} testId={`nav-own-add-${accountId}-${folderKey}`} />
+      </div>
+    </FolderMenu>
   );
 });
+
+/** plan 107: a folder's row takes the focus (a rename ended, a create landed), unless the user put it elsewhere */
+function focusRow(accountId: number, key: string): void {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected && !active.closest("[data-testid^=nav-own-rename-], [data-testid^=nav-own-new-]")) return;
+    document.querySelector<HTMLElement>(`[data-testid="nav-own-${accountId}-${CSS.escape(key)}"]`)?.focus({ preventScroll: false });
+  });
+}
+
+/** Plan 107: the field of a new folder, where it will be (`depth`: one step in from its parent) */
+function NewFolderRow({ account, parent, depth }: { account: Account; parent: string | null; depth: number }) {
+  return (
+    <FolderNameRow
+      initial=""
+      label={parent === null ? t("folder.add.inAccount", { account: account.displayName }) : t("folder.new.label")}
+      inset={INSET[depth] ?? INSET.at(-1)!}
+      testId={`nav-own-new-${account.id}`}
+      siblings={siblingsOf(getApp().folders, account.id, parent)}
+      account={account}
+      cancel={() => {
+        stopEditing();
+        if (parent !== null) focusRow(account.id, parent);
+        else requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus());
+      }}
+      submit={async (name) => {
+        const r = await createFolder(account.id, parent, name);
+        if ("error" in r) return r.error;
+        stopEditing({ accountId: account.id, key: r.folder.key });
+        return null;
+      }}
+    />
+  );
+}
 
 /** what the folder-focus recovery calls "N more folders" (no folder's key) */
 const MORE = "\u0000more";
@@ -476,7 +605,11 @@ function AccountFolders({
   // every row before it (Codex R7: a rename that sorts it last could otherwise mount the whole catalog)
   // and the one with the keyboard's focus (Codex R10: a rename that sorts it past the batches never drops focus)
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const kept = new Set([activeFolder, focusedKey].filter((k): k is string => k !== null));
+  // plan 107: a new folder's parent, the one renamed and the one just made stay mounted too (Codex R8)
+  const creating = useFolderEdit((s) => (s.editing?.kind === "create" && s.editing.accountId === account.id ? s.editing.parent : undefined));
+  const renamingKey = useFolderEdit((s) => (s.editing?.kind === "rename" && s.editing.accountId === account.id ? s.editing.key : null));
+  const doneKey = useFolderEdit((s) => (s.done?.accountId === account.id ? s.done.key : null));
+  const kept = new Set([activeFolder, focusedKey, creating ?? null, renamingKey, doneKey].filter((k): k is string => k !== null && k !== undefined));
   const beyond = rows.slice(cap).filter((r) => r.key !== null && kept.has(r.key));
   const visible = [...rows.slice(0, cap), ...beyond];
   const hidden = rows.length - visible.length;
@@ -527,6 +660,12 @@ function AccountFolders({
     const inbox = groupRef.current?.querySelector<HTMLElement>(`[data-testid="nav-folder-${account.id}-inbox"]`);
     (inbox ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`))?.focus({ preventScroll: true });
   }, [tabs, account.id]);
+  // plan 107: the folder a create or rename just made takes the focus once it's listed
+  useLayoutEffect(() => {
+    if (doneKey === null || !rows.some((r) => r.key === doneKey)) return;
+    useFolderEdit.setState({ done: null });
+    focusRow(account.id, doneKey);
+  }, [rows, doneKey, account.id]);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   useEffect(() => {
@@ -554,17 +693,21 @@ function AccountFolders({
           ACCOUNT_VIEWS.map((v) => {
             const Icon = VIEWS.find((f) => f.view === v)!.icon;
             return (
-              <NavItem
-                key={v}
-                testId={`nav-folder-${account.id}-${v}`}
-                inset
-                active={active === v}
-                onClick={() => navigate({ accountId: account.id, view: v })}
-                icon={<Icon className="size-4" />}
-                label={viewLabel(v)}
-                count={(v === "inbox" ? unread : isCounted(v) ? viewUnread[v] : 0) || undefined}
-                countTone={v === "inbox" ? countTone : "muted"}
-              />
+              // plan 107: a standard row's menu: favorite and export
+              <FolderMenu key={v} target={{ accountId: account.id, folder: null, view: v }} name={viewLabel(v)} account={account}>
+                <div>
+                  <NavItem
+                    testId={`nav-folder-${account.id}-${v}`}
+                    inset
+                    active={active === v}
+                    onClick={() => navigate({ accountId: account.id, view: v })}
+                    icon={<Icon className="size-4" />}
+                    label={viewLabel(v)}
+                    count={(v === "inbox" ? unread : isCounted(v) ? viewUnread[v] : 0) || undefined}
+                    countTone={v === "inbox" ? countTone : "muted"}
+                  />
+                </div>
+              </FolderMenu>
             );
           })}
         {/* plan 86: Gmail's Promotions and Social, out of the Inbox, after its standard folders */}
@@ -586,12 +729,17 @@ function AccountFolders({
             );
           })}
         {/* plan 68: its own folders, under its standard ones, nested by path */}
-        {mounted && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
+        {mounted && (rows.length > 0 || creating !== undefined) && <div role="separator" className="hairline-t my-1 ml-7" />}
+        {/* plan 107: a new folder at the top goes first, where it's looked for */}
+        {mounted && creating === null && <NewFolderRow account={account} parent={null} depth={0} />}
         {mounted &&
           visible.map((r) =>
             r.selectable && r.key !== null ? (
               // keyed by the provider's folder (Codex R9: a renamed label stays the same row, focus and all)
-              <OwnFolderRow key={`own:${r.key}`} accountId={account.id} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
+              <Fragment key={`own:${r.key}`}>
+                <OwnFolderRow accountId={account.id} accountKind={account.kind} folderKey={r.key} name={r.name} depth={r.depth} active={activeFolder === r.key} count={folderUnread[folderRef(account.id, r.key)] || 0} />
+                {creating === r.key && <NewFolderRow account={account} parent={r.key} depth={r.depth + 1} />}
+              </Fragment>
             ) : (
               // a parent that only groups what's under it: not a place to go
               // keyed by its full path (Codex R6: "A/X/Y" and "B/X/Z" both draw an "X")
@@ -788,7 +936,7 @@ const AccountEntry = memo(function AccountEntry({
     <div data-account-id={a.id}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below; its menu (plan 106) */}
       <AccountMenu account={a} unread={unread ?? 0} onRename={() => setRenaming(true)}>
-        <div className="relative">
+        <div className="group/row relative">
           {renaming ? (
             <RenameRow account={a} active={here && !childActive} count={open ? undefined : unread || undefined} reserveEnd={a.syncState.authRequired} onDone={() => setRenaming(false)} />
           ) : (
@@ -804,10 +952,12 @@ const AccountEntry = memo(function AccountEntry({
               label={a.displayName}
               // open, the count is its Inbox's row's
               count={open ? undefined : unread || undefined}
-              reserveEnd={a.syncState.authRequired ? "icon" : undefined}
+              // open, its "+" sits where the count was (plan 107)
+              reserveEnd={a.syncState.authRequired || open ? "icon" : undefined}
             />
           )}
           {a.syncState.authRequired && <SignInMarker account={a} />}
+          {open && !renaming && !a.syncState.authRequired && <AddFolderButton accountId={a.id} parent={null} label={t("folder.add.inAccount", { account: a.displayName })} testId={`nav-account-add-${a.id}`} />}
         </div>
       </AccountMenu>
       <AccountFolders
@@ -908,6 +1058,7 @@ export function Sidebar() {
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {VIEWS.slice(0, PINNED).map(folder)}
+        <FavoriteRows />
         <MoreFolders
           view={folderView}
           folder={folder}

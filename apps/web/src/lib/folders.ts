@@ -1,0 +1,106 @@
+import { FOLDER_NAME_MAX, type Account, type FavoriteFolder, type Folder, type FolderRename, type FolderView } from "@terno/core";
+import { t } from "@terno/i18n";
+import { create } from "zustand";
+import { client } from "~/rpc/connection";
+import { getApp, navigate, setApp } from "~/state/app";
+import { setOpenAccount } from "./account-folders";
+
+/**
+ * Plan 107: the folder being named in the sidebar, at most one: a new one (under `parent`, null: the account's top)
+ * or a rename of `key`. `done`: the folder a create or rename just made, kept mounted and given the focus.
+ */
+export type FolderEdit = { kind: "create"; accountId: number; parent: string | null } | { kind: "rename"; accountId: number; key: string };
+export const useFolderEdit = create<{ editing: FolderEdit | null; done: { accountId: number; key: string } | null }>(() => ({ editing: null, done: null }));
+
+export function startCreate(accountId: number, parent: string | null): void {
+  // the account opens to show where it goes (its children always show)
+  setOpenAccount(accountId);
+  useFolderEdit.setState({ editing: { kind: "create", accountId, parent }, done: null });
+}
+export function startRename(accountId: number, key: string): void {
+  useFolderEdit.setState({ editing: { kind: "rename", accountId, key }, done: null });
+}
+export function stopEditing(done?: { accountId: number; key: string }): void {
+  useFolderEdit.setState({ editing: null, done: done ?? null });
+}
+
+/** The folders a new name sits beside: the parent's children (the account's top ones for null). */
+export function siblingsOf(folders: readonly Folder[], accountId: number, parent: string | null, except?: string): Folder[] {
+  const own = folders.filter((f) => f.accountId === accountId);
+  const base = parent === null ? [] : (own.find((f) => f.key === parent)?.path ?? null);
+  if (base === null) return [];
+  return own.filter((f) => f.key !== except && f.path.length === base.length + 1 && base.every((p, i) => f.path[i] === p));
+}
+
+/**
+ * What the field can tell before asking the server (plan 107, Codex R12): empty, too long, Gmail's "/" and a
+ * sibling already shown with that name (case aside). The server checks the rest (an IMAP delimiter, its own names).
+ */
+export function nameProblem(name: string, siblings: readonly Folder[], account: Pick<Account, "kind">): string | null {
+  const n = name.trim();
+  if (!n) return t("folder.nameEmpty");
+  if (n.length > FOLDER_NAME_MAX) return t("folder.nameTooLong", { max: FOLDER_NAME_MAX });
+  if (account.kind === "gmail" && n.includes("/")) return t("folder.nameSeparator", { separator: "/" });
+  const lower = n.toLocaleLowerCase();
+  if (siblings.some((f) => f.path.at(-1)!.toLocaleLowerCase() === lower)) return t("folder.nameTaken", { name: n });
+  return null;
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Creates it on the server; the new folder, or what went wrong in words. */
+export async function createFolder(accountId: number, parent: string | null, name: string): Promise<{ folder: Folder } | { error: string }> {
+  try {
+    return { folder: await client.call("folders.create", { accountId, parent, name: name.trim() }) };
+  } catch (e) {
+    return { error: errorText(e) };
+  }
+}
+
+/** Renames it on the server; where it went (an IMAP folder gets a new key), or what went wrong. */
+export async function renameFolder(accountId: number, key: string, name: string): Promise<{ key: string } | { error: string }> {
+  try {
+    const { renamed } = await client.call("folders.rename", { accountId, key, name: name.trim() });
+    return { key: renamed.find((r) => r.accountId === accountId && r.from === key)?.to ?? key };
+  } catch (e) {
+    return { error: errorText(e) };
+  }
+}
+
+// ── favorites (below Starred)
+
+export type FolderTarget = { accountId: number; folder: string; view: null } | { accountId: number; folder: null; view: FolderView };
+export const sameTarget = (a: Pick<FavoriteFolder, "accountId" | "folder" | "view">, b: Pick<FavoriteFolder, "accountId" | "folder" | "view">) =>
+  a.accountId === b.accountId && a.folder === b.folder && a.view === b.view;
+
+export function isFavorite(favorites: readonly FavoriteFolder[] | undefined, target: FolderTarget): boolean {
+  return (favorites ?? []).some((f) => sameTarget(f, target));
+}
+
+/** Adds it below Starred, or takes it away; the list the backend kept. */
+export async function setFavorite(target: FolderTarget, on: boolean): Promise<void> {
+  const favoriteFolders = await client.call("folders.favorite", { ...target, on });
+  setApp((s) => (s.settings ? { settings: { ...s.settings, favoriteFolders } } : {}));
+}
+
+// ── renames from the backend (sent right before the folders they produced)
+
+/**
+ * A folder renamed (an IMAP one gets a new key): the list you're in follows it before the new catalog arrives, so
+ * the missing-folder check never sends you to the Inbox (Codex R7).
+ */
+export function applyFolderRenames(renamed: readonly FolderRename[]): void {
+  const s = getApp();
+  const here = renamed.find((r) => r.accountId === s.accountId && r.from === s.folder && r.from !== r.to);
+  if (here) navigate({ accountId: here.accountId, folder: here.to });
+  const { editing, done } = useFolderEdit.getState();
+  const moved = (accountId: number, key: string) => renamed.find((r) => r.accountId === accountId && r.from === key)?.to ?? key;
+  // the backend rewrote its favorites the same way; this window's copy follows (no settings event comes)
+  const favorites = s.settings?.favoriteFolders;
+  if (favorites?.some((f) => f.folder !== null && moved(f.accountId, f.folder) !== f.folder)) {
+    setApp((st) => (st.settings ? { settings: { ...st.settings, favoriteFolders: favorites.map((f) => (f.folder === null ? f : { ...f, folder: moved(f.accountId, f.folder) })) } } : {}));
+  }
+  if (editing?.kind === "rename") useFolderEdit.setState({ editing: { ...editing, key: moved(editing.accountId, editing.key) } });
+  if (editing?.kind === "create" && editing.parent !== null) useFolderEdit.setState({ editing: { ...editing, parent: moved(editing.accountId, editing.parent) } });
+  if (done) useFolderEdit.setState({ done: { ...done, key: moved(done.accountId, done.key) } });
+}

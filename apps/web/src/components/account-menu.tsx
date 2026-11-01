@@ -13,9 +13,10 @@ import {
   ContextMenuTrigger,
 } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
+import { FolderPlus, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useState, type ReactElement } from "react";
 import { patchAccount } from "~/lib/accounts";
+import { startCreate } from "~/lib/folders";
 import { markAccountRead, openCompose } from "~/lib/actions";
 import { COLOR_LABEL } from "~/lib/color-labels";
 import { needsSignIn } from "~/lib/sign-in";
@@ -76,6 +77,11 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
           <ContextMenuItem data-testid="account-menu-rename" onClick={away(onRename)}>
             <PenLine />
             <span className="flex-1">{t("account.menu.rename")}</span>
+          </ContextMenuItem>
+          {/* plan 107: the keyboard's way to the open row's "+" */}
+          <ContextMenuItem data-testid="account-menu-new-folder" onClick={away(() => startCreate(account.id, null))}>
+            <FolderPlus />
+            <span className="flex-1">{t("account.menu.newFolder")}</span>
           </ContextMenuItem>
           <ContextMenuSub>
             <ContextMenuSubTrigger data-testid="account-menu-color">

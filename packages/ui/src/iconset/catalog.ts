@@ -44,6 +44,8 @@ export const ICONS = {
   Filter: "FilterIcon",
   Folder: "Folder01Icon",
   FolderInput: "FolderInputIcon",
+  // plan 107: New folder… / New subfolder…
+  FolderPlus: "FolderAddIcon",
   Forward: "Redo01Icon",
   // terno.app (plan 97): the source link
   Github: "GithubIcon",
