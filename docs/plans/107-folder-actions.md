@@ -168,3 +168,57 @@ Every label, error, snack and confirmation above, under `folder.*`, in both loca
 - Exporting an exact copy from the server.
 - Importing an `.mbox`.
 - Renaming, deleting or nesting standard folders.
+
+## Revisions after the Codex review
+
+Codex (plan critique, 12 points) checked the plan against the code. Changes:
+
+1. **IMAP delete cleans up explicitly and durably.** The vanished-folder pass keeps orphans (`reconcile(…, keepOrphans = true)`), because a vanished folder may be a rename.
+   - `deleteFolders` writes the deleted paths into the cursor (`deleted: Record<path, uidvalidity>`) after the server's `DELETE`, then saves.
+   - The next sync pass, which the backend runs at once, reads each deleted path's locations and journals them (`unlocated`). It removes those locations and reconciles with `keepOrphans = false`: a message with a location elsewhere stays, and one that only lived there goes. A message under an unresolved hold (`locations.unresolved`) is left to the existing hold logic. Then the path is cleared.
+   - A restart in between resumes from the cursor.
+   - Tested with `imapkit` (backend integration), interruption included.
+2. **One folder change per account, and nothing else that touches the provider.** Folder changes take an account gate (`folderChange: Map<accountId, Promise>`). While it's held:
+   - A sync waits.
+   - The ops worker skips the account; it's kicked when the gate opens.
+   - `repairSentCopy` and body reads wait.
+   - The change itself waits for a running sync and the account's op in flight.
+   - Tests: a change during a sync, during an op, and two changes at once (the second waits; nothing interleaves).
+3. **IMAP rename doesn't migrate state.** Points 3 and 4 showed that moving the cursor and locations in place needs composite backfill keys (`path:uidvalidity`), bounded resumable rewrites, and IndexedDB iterator invalidation. The sync already handles a renamed folder: it vanishes under its old path, appears under its new one, and its messages are re-identified by the existing path (Codex R1/R2 of plan 68).
+   - After the server's `RENAME`, the backend writes the fresh `LIST`'s folders and kicks a sync.
+   - The renamed folder's mail is re-read under its new name. That's one envelope fetch of the folder, and until it lands the folder shows "Syncing…" in its empty list, never "No mail".
+   - Out of scope: carrying the cursor and locations over in place.
+4. **No rekey in the stores** (follows from 3). `folder_backfill` isn't touched.
+5. **Gmail works on the raw label catalog.** Every change first reads `/labels`, the exact names of every user label (hidden ones included). Sublabels are labels whose name starts with `Old/`. The new names are checked for collisions with *any* existing label before the first request.
+   - A partial failure (some PATCH/DELETE done, one refused or timed out) re-reads `/labels`, writes what's true to the store, and says what didn't happen ("2 of 3 labels renamed. “X” couldn't be: …").
+6. **Groups get no actions in this version.** Synthetic parents (`key: null`) and IMAP `\Noselect` parents keep rendering as today, as non-focusable `div`s. They get no "+", no menu and no rename or delete. Creating "under" one is done from its real child or the account. Out of scope until groups are focusable.
+7. **The folder event carries renames.**
+   - `folders` events gain an optional `renamed: { accountId, from, to }[]`, which the backend fills from the change it just made.
+   - IMAP's `to` is computed from the fresh `LIST` (the parent's path + delimiter + name).
+   - The renderer's `setFolders` applies the mapping before its missing-folder check: the current view, the back stack's entries and the favorites follow `to`, so the event never sends you to the Inbox. Favorites are also rewritten on the backend from the same mapping.
+   - Tested with the event arriving before the RPC's answer.
+8. **Focus hand-off, batching and ownership.**
+   - Menu items that open an editor use the account menu's hand-off: no `finalFocus` back to the row.
+   - `AccountFolders` keeps a pinned key (the pending create's parent, the row being renamed, the row just created) mounted like the focused one, beyond the first 250.
+   - Focus moves to a result only if it's still on the field or on `body`; otherwise it stays where the user put it.
+   - Tests: blur then navigate, a slow error, and creating beyond the first batch.
+9. **The export streams, bounded.**
+   - **Serializer:** an export-specific one (`packages/mail/src/mbox.ts`). It writes one message's parts in order: headers, then the text and HTML parts, then each attachment base64-encoded from its stored chunks. It emits ≤ 256 KB strings, so neither a page nor a message is ever whole in memory. It has no outgoing-size limits.
+   - **Backend:** `folders.export` is a session: `start` returns `{ exportId, total }` and fixes the message list; `next` returns up to ~1 MB of text or ~15 ms of work, then `cancel`. Sessions expire after 60 s idle, and one runs per renderer.
+   - **Desktop:** a save dialog first (`terno:export-begin` in main, with an atomic temp file), then each chunk is appended (`terno:export-write`), then `terno:export-end` renames the file into place. Cancel or an error deletes the temp file.
+   - **Web:** `showSaveFilePicker` and a writable stream where the browser has it (Chromium). Otherwise Blob parts up to 512 MB, which the snack says before it starts, then `<a download>`.
+   - Tests: a 40 MB attachment, a large total, and cancel cleanup (desktop smoke for the IPC).
+10. **The export's contract.** The serializer writes:
+    - Message-ID, In-Reply-To, References, From, To, Cc, Reply-To, Date, Subject and List-Id
+    - `X-Terno-Missing-Attachment: <name>` for each attachment that isn't here
+    - `X-Terno-Partial-Body: true` when the stored body is partial or missing
+    - The end reports both counts ("3 attachments and 2 messages' full text weren't on this computer").
+11. **The order is fixed at the start.** `start` resolves the folder's message ids once, sorted by `(date, id)`. That's ids only, bounded by the folder: 50k ids is 400 KB. Pages walk that list. A message deleted meanwhile is skipped; one added after `start` isn't in this export. Both stores. Tests: equal dates, and a deletion between pages.
+12. **The backend validates against the server, not the display.**
+    - IMAP: a fresh `LIST` gives the delimiter and the real parent path (with its `INBOX` prefix). The checks:
+      - the name has no delimiter
+      - the full path is ≤ `FOLDER_NAME_MAX` per segment
+      - no sibling has the same name (case-insensitive, compared on the server's names)
+      - the target isn't a role mailbox or INBOX, and is an own folder in that `LIST`
+    - Gmail: the raw catalog, the same way, and a target must be a user label.
+    - The UI checks only what it knows: empty, length, "/" on Gmail, and siblings shown. Everything else comes back as an error under the field.
