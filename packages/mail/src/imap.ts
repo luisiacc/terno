@@ -1748,19 +1748,34 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const before = await folderCatalog(c);
         const plan = planImapRename(before.list, before.own, before.roles, key, name, before.prefix);
         if (plan.path === key) return { folders: before.folders, renamed: [] };
-        // written down first: the next pass knows the moved mail by its UIDs (a RENAME that fails takes it back; a
-        // crash before it leaves a new path that never appears, which the pass drops)
+        // written down first: the next pass knows the moved mail by its UIDs (a RENAME the server refuses takes it back;
+        // a crash before it leaves a new path that never appears, which the pass drops)
         const cursor = await ctx.loadCursor<Cursor>();
         const intent = (cursor?.renamed ? Object.assign(Object.create(null) as NonNullable<Cursor["renamed"]>, cursor.renamed) : Object.create(null)) as NonNullable<Cursor["renamed"]>;
         for (const m of plan.moves) {
           const state = cursor?.mailboxes[m.from];
-          if (state) intent[m.to] = { from: m.from, uidvalidity: state.uidvalidity };
+          // a path renamed here that no pass has read yet passes its own proof on (Codex code review round 3 #2:
+          // Work → Job → New, New's UIDs are Work's)
+          const proof = state ? { from: m.from, uidvalidity: state.uidvalidity } : cursor?.renamed?.[m.from];
+          if (proof && proof.from !== m.to) intent[m.to] = proof;
         }
         if (cursor && Object.keys(intent).length) await ctx.saveCursor({ ...cursor, renamed: intent });
         try {
           await c.mailboxRename(key, plan.path);
         } catch (error) {
-          if (cursor) await ctx.saveCursor(cursor);
+          // refused: nothing moved, so the record goes now (Codex code review round 3 #1: an answer lost may hide a
+          // RENAME the server carried out; the record stays for the next pass, whose LIST settles it)
+          if (folderRefusal(error) && cursor) {
+            const now = await ctx.loadCursor<Cursor>();
+            if (now?.renamed) {
+              for (const m of plan.moves) {
+                const was = cursor.renamed?.[m.to];
+                if (was) now.renamed[m.to] = was;
+                else delete now.renamed[m.to];
+              }
+              await ctx.saveCursor(Object.keys(now.renamed).length ? now : { ...now, renamed: undefined });
+            }
+          }
           throw refused(error, name);
         }
         const after = await folderCatalog(c);

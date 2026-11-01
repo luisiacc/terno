@@ -123,6 +123,67 @@ it("renames a folder with its subfolder: the move is announced before the list, 
   expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
 });
 
+it("a RENAME the server carried out but whose answer was lost still keeps the mail, with its identity, after a restart (Codex code review round 3 #1)", async () => {
+  const t = await setup(["Work", "Keep"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Keep", { raw: rawIdleMail("In keep") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const [k] = await t.threadsIn("Keep");
+  const ma = await t.messageOf(a!);
+  const original = ImapFlow.prototype.mailboxRename;
+  // Work: renamed, then the connection drops before the answer; Keep: the connection drops before it's sent
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    if (args[0] === "Work") await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Keep", name: "Kept" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  expect(t.mailboxes()).toEqual(["INBOX", "Job", "Keep", "Sent", "Trash"]);
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+  expect(await t.held([ma.id])).toEqual([]);
+  expect(await t.threadsIn("Keep")).toEqual([k]);
+  // both settled by the pass: nothing left recorded
+  const config = await t.backend.store.accounts.config<{ cursor?: { renamed?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.renamed).toBeUndefined();
+});
+
+it("a RENAME the server refuses leaves no record behind (Codex code review round 3 #1)", async () => {
+  const t = await setup(["Work"]);
+  await t.backend.syncAccount(t.account.id);
+  const refused = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockRejectedValue(Object.assign(new Error("Command failed"), { responseStatus: "NO", responseText: "Not now" }));
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toMatchObject({ i18n: { key: "errors.folder.refused" } });
+  } finally {
+    refused.mockRestore();
+  }
+  const config = await t.backend.store.accounts.config<{ cursor?: { renamed?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.renamed).toBeUndefined();
+});
+
+it("renamed twice before a pass (Work, Job, New), the folder keeps its mail with its identity (Codex code review round 3 #2)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Job", name: "New" });
+  expect(t.mailboxes()).toEqual(["INBOX", "New", "Sent", "Trash"]);
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.threadsIn("New")).toEqual([a]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["New"]);
+  expect(await t.held([ma.id])).toEqual([]);
+  expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
+});
+
 it("deletes a folder and its subfolder: what was only there goes with the next pass, mail also elsewhere stays, favorites go", async () => {
   const t = await setup(["Work", "Work/Sub"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
