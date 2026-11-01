@@ -44,7 +44,7 @@ const SERVER: AppSettings = {
   localMode: true,
   composeSuggestions: true,
   senderIcons: false,
-  googlePhotos: {}, googlePhotosPending: [],
+  googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],
   dockBadge: true,
   notifications: true,
   notificationPreview: true,
