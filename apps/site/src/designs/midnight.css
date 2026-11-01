@@ -1,7 +1,7 @@
 /* midnight: design-specific CSS, scoped under html[data-design="midnight"] */
 
 html[data-design="midnight"] {
-  /* light: crisp white and zinc */
+  /* overridden below: Midnight is always dark */
   --mn-bg: #ffffff;
   --mn-raised: #fafafa;
   --mn-shot: #f4f4f5;
@@ -22,7 +22,7 @@ html[data-design="midnight"] {
   background: var(--mn-bg);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
+/* always dark (Midnight is a dark design whatever the system says) */
   html[data-design="midnight"] {
     --mn-bg: #08090b;
     --mn-raised: #0e0f12;
@@ -43,7 +43,7 @@ html[data-design="midnight"] {
     --mn-grain: 0.06;
     color-scheme: dark;
   }
-}
+
 
 html[data-design="midnight"] ::selection { background: rgb(47 91 255 / 0.3); }
 
@@ -158,9 +158,9 @@ html[data-design="midnight"] .mn-window {
   background: var(--mn-shot);
   box-shadow: 0 0 0 1px var(--mn-line), 0 1px 0 0 rgb(255 255 255 / 0.06) inset, 0 40px 90px -30px rgb(0 0 0 / 0.45), 0 0 120px -40px var(--mn-glow);
 }
-@media (prefers-color-scheme: dark) {
+/* always dark (Midnight is a dark design whatever the system says) */
   html[data-design="midnight"] .mn-window { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 40px 100px -30px rgb(0 0 0 / 0.9), 0 0 140px -30px var(--mn-glow); }
-}
+
 
 /* stats: a terminal line */
 html[data-design="midnight"] .mn-prompt { margin-right: 0.5ch; color: var(--mn-accent); font-weight: 400; }
@@ -183,7 +183,7 @@ html[data-design="midnight"] .mn-wire {
 
 /* crops of a 1440×900 shot: aspect (x1-x0)/(y1-y0), width 1440/(x1-x0), left -x0/(x1-x0), top -y0/(y1-y0) */
 html[data-design="midnight"] .mn-crop { position: relative; }
-html[data-design="midnight"] .mn-crop picture { display: contents; }
+html[data-design="midnight"] .mn-crop .site-shot { display: contents; }
 html[data-design="midnight"] .mn-crop img { position: absolute; max-width: none; height: auto; }
 html[data-design="midnight"] .mn-crop-unified { aspect-ratio: 900 / 560; }
 html[data-design="midnight"] .mn-crop-unified img { width: calc(1440 / 900 * 100%); left: 0; top: calc(-30 / 560 * 100%); }

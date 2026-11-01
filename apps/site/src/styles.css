@@ -89,3 +89,60 @@ html {
 .site-window-bar span:nth-child(1) { background: #ff5f57; }
 .site-window-bar span:nth-child(2) { background: #febc2e; }
 .site-window-bar span:nth-child(3) { background: #28c840; }
+
+/* screenshots (parts/shot.tsx): both modes in the page, one shown. The wrapper adds no box, so the designs' crops
+   apply to the images as before; hiding only (never showing) keeps each design's own display values */
+.site-shot { display: contents; }
+@media (prefers-color-scheme: light) {
+  html:not([data-design="midnight"]) .site-shot:not([data-show]) > img[data-mode="dark"] { display: none !important; }
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-design="midnight"]) .site-shot:not([data-show]) > img[data-mode="light"] { display: none !important; }
+}
+html[data-design="midnight"] .site-shot:not([data-show]) > img[data-mode="light"],
+.site-shot[data-show="light"] > img[data-mode="dark"],
+.site-shot[data-show="dark"] > img[data-mode="light"] { display: none !important; }
+.site-shot > img { cursor: zoom-in; }
+
+/* the switch and the enlarge button: only with the script that runs them */
+.site-shot-tools {
+  position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px;
+  font: 500 12px/1 var(--font-system);
+}
+html:not(.js) .site-shot-tools { display: none; }
+.site-shot-modes, .site-shot-tools > button {
+  display: flex; padding: 3px; border-radius: 999px;
+  background: rgb(255 255 255 / 0.82); color: #3f3f46;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(10px) saturate(1.6);
+}
+.site-shot-modes button, .site-shot-tools > button {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; color: inherit; cursor: pointer;
+  transition: background-color 80ms ease, color 80ms ease;
+}
+.site-shot-tools > button { padding: 0; width: 32px; height: 32px; }
+.site-shot-modes button:hover, .site-shot-tools > button:hover { color: #09090b; }
+.site-shot-modes button[aria-pressed="true"] { background: #18181b; color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .site-shot-modes, .site-shot-tools > button { background: rgb(28 28 30 / 0.82); color: #d4d4d8; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.16), 0 2px 8px rgb(0 0 0 / 0.4); }
+  .site-shot-modes button:hover, .site-shot-tools > button:hover { color: #fff; }
+  .site-shot-modes button[aria-pressed="true"] { background: #f4f4f5; color: #09090b; }
+}
+html[data-design="midnight"] .site-shot-modes, html[data-design="midnight"] .site-shot-tools > button { background: rgb(28 28 30 / 0.82); color: #d4d4d8; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.16), 0 2px 8px rgb(0 0 0 / 0.4); }
+html[data-design="midnight"] .site-shot-modes button[aria-pressed="true"] { background: #f4f4f5; color: #09090b; }
+
+/* the enlarged picture */
+.site-lightbox {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 3vmin; border: 0;
+  background: rgb(10 10 12 / 0.9); display: none; place-items: center;
+}
+.site-lightbox[open] { display: grid; }
+.site-lightbox::backdrop { background: transparent; }
+.site-lightbox img { max-width: 100%; max-height: calc(100dvh - 6vmin); width: auto; height: auto; border-radius: 10px; box-shadow: 0 30px 80px rgb(0 0 0 / 0.5); }
+.site-lightbox .site-lightbox-close {
+  position: fixed; top: 16px; right: 16px; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px;
+  background: rgb(255 255 255 / 0.14); color: #fff; cursor: pointer;
+}
+.site-lightbox .site-lightbox-close:hover { background: rgb(255 255 255 / 0.24); }
+/* thumbnails: the same tools tucked into the corner (still 24 px targets, WCAG 2.2) */
+.lumen-thumb .site-shot-tools, .mn-thumb .site-shot-tools, .letter-window-small .site-shot-tools { top: 6px; right: 6px; }

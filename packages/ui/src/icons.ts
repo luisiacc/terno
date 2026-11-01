@@ -66,6 +66,7 @@ export { MailCheck } from "./iconset/generated/MailCheck";
 export { MailMinus } from "./iconset/generated/MailMinus";
 export { MailOpen } from "./iconset/generated/MailOpen";
 export { Mails } from "./iconset/generated/Mails";
+export { Maximize } from "./iconset/generated/Maximize";
 export { MessageSquareReply } from "./iconset/generated/MessageSquareReply";
 export { MessageSquareText } from "./iconset/generated/MessageSquareText";
 export { Moon } from "./iconset/generated/Moon";

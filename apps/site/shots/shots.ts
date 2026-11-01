@@ -71,12 +71,12 @@ const SHOTS: Shot[] = [
   { name: "inbox", setup: (p) => open(p, "Homepage concepts, round two") },
   { name: "inbox-macos", design: "macos", setup: (p) => open(p, "Homepage concepts, round two") },
   { name: "inbox-atelier", design: "atelier", setup: (p) => open(p, "Homepage concepts, round two") },
-  // palettes in a design that isn't theirs: any palette works with any design
-  { name: "palette-dracula", design: "macos", palette: { dark: "dracula" }, modes: ["dark"], setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
-  { name: "palette-nord", design: "lumen", palette: { dark: "nord" }, modes: ["dark"], setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
-  { name: "palette-solarized", design: "macos", palette: { light: "solarized-light" }, modes: ["light"], setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
-  { name: "palette-catppuccin", design: "lumen", palette: { light: "catppuccin-latte" }, modes: ["light"], setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
-  { name: "palette-gruvbox", design: "atelier", palette: { dark: "gruvbox-dark" }, modes: ["dark"], setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
+  // color themes, each a light and dark pair, in a design that isn't theirs: any palette works with any design
+  { name: "palette-dracula", design: "macos", palette: { light: "apple-light", dark: "dracula" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
+  { name: "palette-nord", design: "lumen", palette: { light: "terno-light", dark: "nord" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
+  { name: "palette-solarized", design: "macos", palette: { light: "solarized-light", dark: "tokyo-night" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
+  { name: "palette-catppuccin", design: "lumen", palette: { light: "catppuccin-latte", dark: "catppuccin-mocha" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
+  { name: "palette-gruvbox", design: "atelier", palette: { light: "gruvbox-light", dark: "gruvbox-dark" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
   {
     name: "code",
     setup: async (p) => {
@@ -187,7 +187,9 @@ async function main() {
         try {
           execFileSync("cp", ["-R", `${template}/.`, dir]);
           server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
-          const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(shot.palette?.light && { lightTheme: shot.palette.light }), ...(shot.palette?.dark && { darkTheme: shot.palette.dark }) };
+          // the feature shots are Lumen; in light mode with the GitHub light palette (plan 96)
+          const palette = shot.palette ?? (shot.design ? {} : { light: "github-light" });
+          const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
           await server.backend.server.invoke("settings.update", settings as never, ctx);
           const backendPort = new URL(server.url).port;
           const page = await browser.newPage({ viewport: shot.viewport ?? { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: "en-US", timezoneId: "America/Los_Angeles", colorScheme: mode, reducedMotion: "reduce" });

@@ -130,3 +130,11 @@ Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each wit
 5. **Platforms:** `mac` is the first Apple-silicon build (what `/download/` asks for while none is published), `mac-intel` is Intel Macs; the migration and labels say so.
 6. **Email check** refuses control characters and invalid domain labels.
 7. **Download lookups** that fail are cached for a minute (found ones for ten), so an outage or GitHub's rate limit isn't hit per click.
+
+## Second round (maintainer's notes)
+
+- Atelier and Bento are dropped; Lumen, Midnight and Letter remain.
+- Feature pictures are Lumen with the GitHub light palette in light mode, and Lumen's own dark palette in dark mode.
+- Midnight is always dark, its pictures included, whatever the system says.
+- Plainer words: no milliseconds, IMAP, search operators or AGPL in the copy ("Results arrive instantly").
+- Every picture is in the page twice (light and dark); a switch at its top right shows the other, and a click, double-click or the enlarge button opens it full size in a `<dialog>` (Esc, the close button or the backdrop close it). Hidden pictures aren't fetched until shown. Color-theme pictures are light/dark pairs (Apple · Dracula, Terno · Nord, Solarized · Tokyo Night, Catppuccin Latte · Mocha, Gruvbox light · dark).

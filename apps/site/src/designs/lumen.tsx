@@ -84,9 +84,9 @@ function Crop({ name, copy, crop, className = "" }: { name: ShotName; copy: Site
 }
 
 const PALETTES = [
-  ["palette-dracula", "Dracula"],
-  ["palette-nord", "Nord"],
-  ["palette-solarized", "Solarized"],
+  ["palette-dracula", "Apple · Dracula"],
+  ["palette-nord", "Terno · Nord"],
+  ["palette-solarized", "Solarized · Tokyo Night"],
   ["palette-catppuccin", "Catppuccin"],
   ["palette-gruvbox", "Gruvbox"],
 ] as const;
@@ -318,7 +318,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
               {PALETTES.map(([name, label], i) => (
                 <li key={name} className={i === PALETTES.length - 1 ? "max-sm:col-span-2 max-sm:mx-auto max-sm:w-1/2" : ""}>
                   <figure>
-                    <div className="lumen-thumb overflow-hidden rounded-lg">
+                    <div className="lumen-thumb relative overflow-hidden rounded-lg">
                       <Shot name={name} copy={copy} sizes="(min-width: 1024px) 220px, 46vw" />
                     </div>
                     <figcaption className="mt-2.5 text-center text-sm text-(--l-muted)">{label}</figcaption>

@@ -73,6 +73,8 @@ export const ICONS = {
   MailMinus: "MailMinus01Icon",
   MailOpen: "MailOpen01Icon",
   Mails: "MailsIcon",
+  // terno.app (plan 96): enlarge a screenshot
+  Maximize: "ArrowExpandDiagonal01Icon",
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",
   Moon: "MoonIcon",

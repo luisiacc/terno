@@ -29,3 +29,57 @@ for (const form of document.querySelectorAll<HTMLFormElement>("form[data-waitlis
     if (outcome === "thanks") form.querySelector<HTMLInputElement>("input[type=email]")!.value = "";
   });
 }
+
+// screenshots (parts/shot.tsx): the light/dark switch and the enlarged view; their tools show once this runs
+document.documentElement.classList.add("js");
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+const shownMode = (shot: HTMLElement) => shot.dataset.show ?? (document.documentElement.dataset.design === "midnight" || systemDark.matches ? "dark" : "light");
+const syncShot = (shot: HTMLElement) => {
+  const mode = shownMode(shot);
+  for (const b of shot.querySelectorAll<HTMLButtonElement>("button[data-show]")) b.setAttribute("aria-pressed", String(b.dataset.show === mode));
+};
+const shots = [...document.querySelectorAll<HTMLElement>("[data-shot]")];
+shots.forEach(syncShot);
+systemDark.addEventListener("change", () => shots.forEach(syncShot));
+
+const lightbox = document.querySelector<HTMLDialogElement>("dialog[data-lightbox]");
+const big = lightbox?.querySelector<HTMLImageElement>("[data-lightbox-img]");
+// a double-click opens it with the first click; the second, landing on the backdrop, mustn't close it
+let openedAt = 0;
+function enlarge(shot: HTMLElement) {
+  if (!lightbox || !big) return;
+  const img = shot.querySelector<HTMLImageElement>(`img[data-mode="${shownMode(shot)}"]`);
+  if (!img) return;
+  big.src = img.dataset.full ?? img.currentSrc;
+  big.alt = img.alt;
+  openedAt = performance.now();
+  lightbox.showModal();
+}
+lightbox?.addEventListener("click", (e) => {
+  // the close button always; anywhere but the picture once the opening click (or double-click) is over
+  const onClose = (e.target as Element).closest("[data-close]");
+  if (onClose || (e.target !== big && performance.now() - openedAt > 400)) lightbox.close();
+});
+// Esc closes it whatever happened before (the browser's own handling can need a second press after a double-click)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && lightbox?.open) {
+    e.preventDefault();
+    lightbox.close();
+  }
+});
+lightbox?.addEventListener("close", () => big?.removeAttribute("src"));
+
+document.addEventListener("click", (e) => {
+  const target = e.target as Element;
+  const shot = target.closest<HTMLElement>("[data-shot]");
+  if (!shot) return;
+  const mode = target.closest<HTMLButtonElement>("button[data-show]");
+  if (mode) {
+    e.preventDefault();
+    shot.dataset.show = mode.dataset.show;
+    syncShot(shot);
+  } else if (target.closest("button[data-zoom]") || (target instanceof HTMLImageElement && target.parentElement === shot)) {
+    e.preventDefault();
+    enlarge(shot);
+  }
+});

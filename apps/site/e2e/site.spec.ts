@@ -60,3 +60,38 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
   expect(sitemap).toContain("<loc>https://terno.app/es/</loc>");
   expect(sitemap).not.toContain("/designs/");
 });
+
+test("a picture switches between light and dark and opens full size (click, double-click, Esc)", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/designs/lumen/");
+  const shot = page.locator("[data-shot]").nth(2);
+  await shot.scrollIntoViewIfNeeded();
+  await expect(shot.locator("img[data-mode=light]")).toBeVisible();
+  await expect(shot.locator("img[data-mode=dark]")).toBeHidden();
+  await expect(shot.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
+  await shot.getByRole("button", { name: "Dark" }).click();
+  await expect(shot.locator("img[data-mode=dark]")).toBeVisible();
+  await expect(shot.locator("img[data-mode=light]")).toBeHidden();
+  await expect(shot.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
+  const box = page.locator("dialog[data-lightbox]");
+  await shot.locator("img[data-mode=dark]").dblclick();
+  await expect(box).toBeVisible();
+  await expect(box.locator("img")).toHaveAttribute("src", /-dark@2x\.webp$/);
+  await page.keyboard.press("Escape");
+  await expect(box).toBeHidden();
+  await shot.getByRole("button", { name: "Enlarge picture" }).click();
+  await expect(box).toBeVisible();
+  await box.getByRole("button", { name: "Close" }).click();
+  await expect(box).toBeHidden();
+});
+
+test("Midnight is dark even when the system is light, pictures included", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/designs/midnight/");
+  const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
+  const [r, g, b] = bg.match(/\d+/g)!.map(Number);
+  expect(r! + g! + b!).toBeLessThan(60);
+  const hero = page.locator("[data-shot]").first();
+  await expect(hero.locator("img[data-mode=dark]")).toBeVisible();
+  await expect(hero.locator("img[data-mode=light]")).toBeHidden();
+});

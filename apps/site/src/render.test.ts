@@ -10,7 +10,7 @@ describe("prerendered pages", () => {
       expect(doc.querySelectorAll("h1")).toHaveLength(1);
       expect(doc.title.length).toBeGreaterThan(10);
       expect(doc.querySelector('meta[name="description"]')?.getAttribute("content")?.length).toBeGreaterThan(50);
-      for (const img of doc.querySelectorAll("img")) expect(img.getAttribute("alt"), img.outerHTML).toBeTruthy();
+      for (const img of doc.querySelectorAll("img:not([data-lightbox-img])")) expect(img.getAttribute("alt"), img.outerHTML).toBeTruthy();
       expect(doc.querySelector("main#main")).not.toBeNull();
       // no inline style or script: the CSP (style-src/script-src 'self') would refuse them
       expect(doc.querySelectorAll("[style]")).toHaveLength(0);
@@ -40,5 +40,22 @@ describe("prerendered pages", () => {
     const es = routes().find((r) => r.path === "/es/")!;
     expect(render(es).body).toContain("Tu correo, a la medida.");
     expect(render(es).body).not.toContain("Your mail, made to measure.");
+  });
+});
+
+describe("screenshots", () => {
+  it("every picture is in the page in light and dark, with its switch and enlarge button", () => {
+    const home = routes().find((r) => r.path === "/")!;
+    const doc = new JSDOM(render(home).body).window.document;
+    const shots = [...doc.querySelectorAll("[data-shot]")];
+    expect(shots.length).toBeGreaterThan(5);
+    for (const shot of shots) {
+      const modes = [...shot.querySelectorAll(":scope > img")].map((i) => i.getAttribute("data-mode"));
+      expect(modes).toEqual(["light", "dark"]);
+      for (const img of shot.querySelectorAll(":scope > img")) expect(img.getAttribute("data-full")).toMatch(/^\/shots\/.+-(light|dark)@2x\.webp$/);
+      expect(shot.querySelectorAll("button[data-show]")).toHaveLength(2);
+      expect(shot.querySelector("button[data-zoom]")).not.toBeNull();
+    }
+    expect(doc.querySelector("dialog[data-lightbox]")).not.toBeNull();
   });
 });

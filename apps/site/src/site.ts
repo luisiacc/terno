@@ -3,9 +3,9 @@ export const ORIGIN = "https://terno.app";
 export const GITHUB = "https://github.com/luisiacc/terno";
 export const LICENSE_URL = `${GITHUB}/blob/main/LICENSE`;
 
-export const DESIGNS = ["lumen", "atelier", "midnight", "bento", "letter"] as const;
+export const DESIGNS = ["lumen", "midnight", "letter"] as const;
 export type SiteDesign = (typeof DESIGNS)[number];
-export const DESIGN_NAMES: Record<SiteDesign, string> = { lumen: "Lumen", atelier: "Atelier", midnight: "Midnight", bento: "Bento", letter: "Letter" };
+export const DESIGN_NAMES: Record<SiteDesign, string> = { lumen: "Lumen", midnight: "Midnight", letter: "Letter" };
 /** the design `/` and `/es/` render; the others are previews at /designs/<id>/ until one is chosen */
 export const SITE_DESIGN: SiteDesign = "lumen";
 

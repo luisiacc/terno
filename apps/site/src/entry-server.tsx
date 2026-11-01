@@ -3,6 +3,7 @@ import { COPY } from "./copy";
 import { DESIGN_HOMES } from "./designs";
 import { Head } from "./parts/head";
 import { SecondaryPage } from "./parts/pages";
+import { Lightbox } from "./parts/lightbox";
 import { PreviewBar } from "./parts/preview-bar";
 import { routes, type Route } from "./site";
 
@@ -19,6 +20,7 @@ export function render(route: Route): { head: string; body: string; lang: string
   const body = route.page === "home" ? (
     <>
       <Home copy={copy} route={route} />
+      <Lightbox copy={copy} />
       {preview && <PreviewBar current={route.design} copy={copy} />}
     </>
   ) : (

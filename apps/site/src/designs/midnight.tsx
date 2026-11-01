@@ -207,14 +207,14 @@ export const Midnight: HomeDesign = ({ copy }) => {
             <Card f={f.themes} n={10} icon={<Palette size="1em" />} className="md:col-span-2 lg:col-span-6">
               <div className="grid gap-3 sm:grid-cols-3">
                 {(["inbox", "inbox-macos", "inbox-atelier"] as const).map((s) => (
-                  <div key={s} className="mn-thumb overflow-hidden rounded-lg border border-(--mn-line)">
+                  <div key={s} className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
                     <Shot name={s} copy={copy} sizes="(min-width: 1024px) 340px, (min-width: 640px) 30vw, 90vw" />
                   </div>
                 ))}
               </div>
               <div className="-mt-5 grid grid-cols-3 gap-3 sm:grid-cols-5">
                 {(["palette-dracula", "palette-nord", "palette-gruvbox", "palette-solarized", "palette-catppuccin"] as const).map((s) => (
-                  <div key={s} className="mn-thumb overflow-hidden rounded-md border border-(--mn-line)">
+                  <div key={s} className="mn-thumb relative overflow-hidden rounded-md border border-(--mn-line)">
                     <Shot name={s} copy={copy} sizes="(min-width: 1024px) 200px, 30vw" />
                   </div>
                 ))}

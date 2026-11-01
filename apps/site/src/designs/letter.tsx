@@ -136,7 +136,7 @@ export const Letter: HomeDesign = ({ copy }) => {
             {(["inbox-atelier", "inbox-macos", "palette-dracula"] as const).map((name) => (
               <li key={name}>
                 <figure>
-                  <Window className="letter-window letter-window-small" dark={name === "palette-dracula"}>
+                  <Window className="letter-window letter-window-small">
                     <Shot name={name} copy={copy} sizes="(min-width: 1180px) 350px, (min-width: 640px) 31vw, calc(100vw - 2.5rem)" />
                   </Window>
                   <figcaption className="letter-caption">{copy.alt[name]}</figcaption>

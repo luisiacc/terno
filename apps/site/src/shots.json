@@ -98,5 +98,25 @@
   "snippets-light": {
     "width": 1440,
     "height": 900
+  },
+  "palette-catppuccin-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-dracula-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-gruvbox-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-nord-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "palette-solarized-dark": {
+    "width": 1440,
+    "height": 900
   }
 }

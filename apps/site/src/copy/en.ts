@@ -24,26 +24,26 @@ export const en = {
     unified: {
       kicker: "Unified inbox",
       title: "Every account. One inbox.",
-      body: "Gmail and any IMAP account side by side, in one list. Each row says which account it came to, so you never answer from the wrong one.",
+      body: "Gmail, iCloud, Outlook and any other email account side by side, in one list. Each row says which account it came to, so you never answer from the wrong one.",
       points: ["Gmail, iCloud, Fastmail, your own domain", "Unlimited accounts", "Categories that span them all"],
     },
     local: {
       kicker: "Completely local",
       title: "No account. No cloud. Just your Mac.",
       body: "Terno talks to your mail servers and nothing else. There is no Terno account to create and no server in between: your mail, contacts and search index live on your Mac.",
-      points: ["Local mode on from the first launch", "Remote images only when you ask", "No tracking, no analytics"],
+      points: ["Private from the very first launch", "Pictures from the web load only when you ask", "No tracking of any kind"],
     },
     search: {
       kicker: "Instant search",
       title: "Found before you finish typing.",
-      body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive in a couple of milliseconds, even with fifty thousand conversations.",
-      points: ["Every folder, every account", "from:, to:, has:attachment and more", "Works offline"],
+      body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive instantly, even with years of mail.",
+      points: ["Every folder, every account", "Search by person, subject or attachment", "Works offline"],
     },
     speed: {
       kicker: "Very fast",
       title: "Nothing to wait for.",
       body: "Every action happens the instant you press the key, and the server catches up in the background. Opening a conversation, archiving, switching inboxes: no spinners.",
-      points: ["Opens in under a second", "Light on memory and battery", "Idle means idle"],
+      points: ["Opens in under a second", "Light on memory and battery", "Quiet when you’re not using it"],
     },
     triage: {
       kicker: "Out of your way",
@@ -84,7 +84,7 @@ export const en = {
     open: {
       kicker: "Source available",
       title: "Don’t take our word for it.",
-      body: "Every line of Terno is public. Read exactly how your mail is stored, what goes over the network and what never does. Each version becomes open source (AGPL) three years after its release.",
+      body: "Every line of Terno is public. Read exactly how your mail is stored, what goes over the network and what never does. And three years after each release, that version becomes fully open source.",
       points: [],
       cta: "Read the source on GitHub",
     },
@@ -100,7 +100,7 @@ export const en = {
     { keys: ["?"], label: "Every shortcut" },
   ],
   stats: [
-    { value: "2 ms", label: "to search 50,000 conversations" },
+    { value: "Instant", label: "search across every account" },
     { value: "0", label: "Terno servers between you and your mail" },
     { value: "17", label: "color themes, in three designs" },
   ],
@@ -136,17 +136,17 @@ export const en = {
     "inbox-macos": "Terno in the macOS design, compact and Apple-Mail-like",
     "inbox-atelier": "Terno in the Atelier design, with serif titles on paper",
     code: "A verification code shown on its message in the list, with a copy button",
-    search: "Search results for “hopper ride”: more than 100 results in 2 milliseconds",
+    search: "Search results for “hopper ride”: more than 100 results, instantly",
     palette: "The command palette open, with archive commands matching what was typed",
     snippets: "The snippets list open over a reply, each with a preview",
     "archive-similar": "After archiving a promotion, Terno offers to archive all 14 more from the same sender",
     "file-similar": "After filing a newsletter in Reading, Terno offers to file all 87 more from it, and its future mail",
     shortcuts: "The keyboard shortcuts sheet",
-    "palette-dracula": "Terno with the Dracula color theme",
-    "palette-nord": "Terno with the Nord color theme",
-    "palette-solarized": "Terno with the Solarized light color theme",
-    "palette-catppuccin": "Terno with the Catppuccin Latte color theme",
-    "palette-gruvbox": "Terno with the Gruvbox dark color theme",
+    "palette-dracula": "Terno with the Apple color theme in light mode and Dracula in dark mode",
+    "palette-nord": "Terno with its own color theme in light mode and Nord in dark mode",
+    "palette-solarized": "Terno with Solarized in light mode and Tokyo Night in dark mode",
+    "palette-catppuccin": "Terno with the Catppuccin color theme, Latte in light mode and Mocha in dark mode",
+    "palette-gruvbox": "Terno with the Gruvbox color theme",
   },
   pages: {
     download: {
@@ -178,6 +178,7 @@ export const en = {
       ],
     },
   },
+  shot: { appearance: "Picture appearance", light: "Light", dark: "Dark", enlarge: "Enlarge picture", close: "Close" },
   preview: { label: "Design preview", of: "of" },
 };
 
