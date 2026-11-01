@@ -187,8 +187,8 @@ async function main() {
         try {
           execFileSync("cp", ["-R", `${template}/.`, dir]);
           server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
-          // the feature shots are Lumen; in light mode with the GitHub light palette (plan 96)
-          const palette = shot.palette ?? (shot.design ? {} : { light: "github-light" });
+          // the feature shots are Lumen with the GitHub palettes, light and dark (plan 96)
+          const palette = shot.palette ?? (shot.design ? {} : { light: "github-light", dark: "github-dark" });
           const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
           await server.backend.server.invoke("settings.update", settings as never, ctx);
           const backendPort = new URL(server.url).port;

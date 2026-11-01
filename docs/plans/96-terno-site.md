@@ -142,3 +142,4 @@ Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each wit
 ### What the Codex review of the second round changed
 
 Five points, all fixed with tests (`e2e/site.spec.ts`): the tools move in to the visible part of a frame wider than the screen (Lumen's hero on a phone); the hero's two modes are both lazy so only the shown one downloads (a network assertion); Midnight's inactive switch stays light on hover; the interaction test scrolls the picture, not its box-less wrapper; previews are checked for a 200 and `noindex`, and the dropped designs for a 404.
+- Third round: the feature pictures are Lumen with **GitHub light** and a new **GitHub Dark** palette (`packages/ui/src/themes/registry.ts`, now 18 palettes). GitHub's button blue (#1f6feb) with white text reads at 4.1:1 as text on its canvas, below AA, so GitHub Dark's primary is GitHub's link blue (#4493f8) with dark text on buttons, as every dark palette does.

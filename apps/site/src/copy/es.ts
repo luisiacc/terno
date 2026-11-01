@@ -60,7 +60,7 @@ export const es: SiteCopy = {
     },
     themes: {
       kicker: "Diseños y colores",
-      title: "Tres diseños. Diecisiete paletas.",
+      title: "Tres diseños. Dieciocho paletas.",
       body: "Elige un diseño para la forma de la app (Lumen cálido, Atelier editorial o macOS al estilo de Apple Mail) y cualquier tema de color encima, de Solarized a Dracula. O trae el tuyo.",
       points: ["Claro y oscuro en todos", "Todos revisados en contraste", "Animaciones que puedes reducir o quitar"],
     },
@@ -103,7 +103,7 @@ export const es: SiteCopy = {
   stats: [
     { value: "Al instante", label: "búsqueda en todas tus cuentas" },
     { value: "0", label: "servidores de Terno entre tú y tu correo" },
-    { value: "17", label: "temas de color, en tres diseños" },
+    { value: "18", label: "temas de color, en tres diseños" },
   ],
   closing: {
     title: "Recupera tu bandeja de entrada.",

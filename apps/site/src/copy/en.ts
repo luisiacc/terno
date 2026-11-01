@@ -59,7 +59,7 @@ export const en = {
     },
     themes: {
       kicker: "Designs and colors",
-      title: "Three designs. Seventeen palettes.",
+      title: "Three designs. Eighteen palettes.",
       body: "Pick a design for the shape of the app (warm Lumen, editorial Atelier or Apple-Mail-like macOS) and any color theme on top, from Solarized to Dracula. Or bring your own.",
       points: ["Light and dark in every one", "All checked for contrast", "Motion you can turn down or off"],
     },
@@ -102,7 +102,7 @@ export const en = {
   stats: [
     { value: "Instant", label: "search across every account" },
     { value: "0", label: "Terno servers between you and your mail" },
-    { value: "17", label: "color themes, in three designs" },
+    { value: "18", label: "color themes, in three designs" },
   ],
   closing: {
     title: "Take back your inbox.",
