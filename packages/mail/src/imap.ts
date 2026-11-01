@@ -264,6 +264,66 @@ export async function readMailbox<L extends { uid: number }>(
 }
 
 /**
+ * Plan 107 (Codex code review round 11 #4): a mailbox generation's message ids, a page at a time with a turn between
+ * (never a whole mailbox's places mapped at once)
+ */
+export async function mailboxIds(
+  locations: { inMailbox(mailbox: string, uidvalidity: number): Promise<{ message_id: number }[]>; inMailboxPage?(mailbox: string, uidvalidity: number, afterUid: number, limit: number): Promise<{ message_id: number; uid: number }[]> },
+  mailbox: string,
+  uidvalidity: number,
+): Promise<number[]> {
+  const breathe = breather();
+  const ids: number[] = [];
+  if (!locations.inMailboxPage) {
+    const all = await locations.inMailbox(mailbox, uidvalidity);
+    for (let i = 0; i < all.length; i++) {
+      ids.push(all[i]!.message_id);
+      if ((i & 4095) === 4095) await breathe();
+    }
+    return ids;
+  }
+  for (let after = 0; ; ) {
+    const page = await locations.inMailboxPage(mailbox, uidvalidity, after, 2000);
+    for (const l of page) ids.push(l.message_id);
+    if (page.length < 2000) return ids;
+    after = page.at(-1)!.uid;
+    await breathe();
+  }
+}
+
+/**
+ * Plan 107: what a forgotten mailbox's messages become, 500 at a time with a turn whenever a few ms went: `only`
+ * placed nowhere else (removed), `kept` held (journaled), and `rest`, the places that just go (the mail in them is
+ * placed elsewhere, or a local one). Gathered in the one pass (Codex code review round 11 #4: a Set of the first two
+ * and a filter of the whole mailbox after it was ~72 ms for a million ids, at once).
+ */
+export async function sortForgotten(
+  ids: readonly number[],
+  path: string,
+  hold: (id: number) => boolean,
+  read: { unresolved(ids: readonly number[]): Promise<number[]>; of(ids: readonly number[]): Promise<{ message_id: number; mailbox: string }[]>; providerIds(ids: readonly number[]): Promise<Map<number, string | null>> },
+  check: () => void = () => {},
+): Promise<{ only: number[]; kept: number[]; rest: number[] }> {
+  const only: number[] = [];
+  const kept: number[] = [];
+  const rest: number[] = [];
+  const breathe = breather();
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const held = new Set(await read.unresolved(chunk));
+    const elsewhere = new Set((await read.of(chunk)).filter((l) => l.mailbox !== path).map((l) => l.message_id));
+    const identities = await read.providerIds(chunk);
+    for (const id of chunk) {
+      if (!held.has(id) && !elsewhere.has(id) && !identities.get(id)?.startsWith("local:")) (hold(id) ? kept : only).push(id);
+      else rest.push(id);
+    }
+    check();
+    await breathe();
+  }
+  return { only, kept, rest };
+}
+
+/**
  * Plan 68 (Codex R44): the journal with these ids added, gathered a few thousand at a time (a big expunge's 500,000
  * onto 200,000 was 28 ms at once); null when nothing new
  */
@@ -895,20 +955,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * that's gone is left to the vanished-folder pass). With no UIDVALIDITY (a record from before), a gone path's all go.
    */
   async function forgetMailbox(cursor: Cursor, path: string, uidvalidity: number | undefined, gone: "remove" | "hold", sink: SyncSink, c: ImapFlow, check: () => void, seen?: ReadonlySet<number>, live = false) {
-    const ids = uidvalidity ? (await readMailbox(locations, path, uidvalidity)).map((l) => l.message_id) : [];
-    const only: number[] = [];
-    const kept: number[] = [];
+    const ids = uidvalidity ? await mailboxIds(locations, path, uidvalidity) : [];
+    // one a folder read this pass met again (`seen`: moved there by another app) isn't proven gone: it's held
+    const read = { unresolved: (x: readonly number[]) => locations.unresolved(x), of: (x: readonly number[]) => locations.of(x), providerIds: (x: readonly number[]) => store.providerIds(x) };
+    const { only, kept, rest: placed } = await sortForgotten(ids, path, (id) => gone === "hold" || Boolean(seen?.has(id)), read, check);
     const breathe = breather();
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      const held = new Set(await locations.unresolved(chunk));
-      const elsewhere = new Set((await locations.of(chunk)).filter((l) => l.mailbox !== path).map((l) => l.message_id));
-      const identities = await store.providerIds(chunk);
-      // one a folder read this pass met again (`seen`: moved there by another app) isn't proven gone: it's held
-      for (const id of chunk) if (!held.has(id) && !elsewhere.has(id) && !identities.get(id)?.startsWith("local:")) (gone === "hold" || seen?.has(id) ? kept : only).push(id);
-      check();
-      await breathe();
-    }
     for (let i = 0; i < only.length; i += 100) {
       await sink.removeMessages(only.slice(i, i + 100));
       await breathe();
@@ -922,8 +973,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const scoped = live || uidvalidity !== undefined;
     let rest: number[];
     if (scoped) {
-      const going = new Set([...only, ...kept]);
-      rest = ids.filter((id) => !going.has(id));
+      rest = placed;
       await locations.removeMany(rest, path, { deleted: true });
     } else rest = await locations.resetMailbox(path, { deleted: true });
     await reconcile(rest, sink, gone === "hold", c, false, check);

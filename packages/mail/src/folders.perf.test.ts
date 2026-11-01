@@ -5,7 +5,7 @@
 import { FOLDER_NAME_MAX } from "@terno/core";
 import { expect, it } from "vitest";
 import { labelFolders } from "./gmail-api";
-import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, partitionKnown, planSteps, planTellApart, readTwins, reconcileMessages, storedIds } from "./imap";
+import { addAll, customFolders, gatherPlaces, joinGroups, journalUnion, mailboxIds, partitionKnown, planSteps, planTellApart, readTwins, reconcileMessages, sortForgotten, storedIds } from "./imap";
 
 const prefix = "Proyectos y clientes de la oficina central — ".repeat(5);
 const name = (i: number) => `${prefix}${String((i * 7919) % 10_000).padStart(5, "0")}`.slice(-FOLDER_NAME_MAX);
@@ -321,3 +321,39 @@ it("Codex R52: the sync cursor at its largest (every journal full) is written an
   const cursor = { mailboxes: { INBOX: { uidvalidity: 1, uidnext: 2 } }, unlocated: ids(200_000, 1), orphans: ids(100_000, 300_000), resetPending: { A: ids(100_000, 500_000), B: ids(100_000, 700_000) }, overflow: true };
   expect(best(() => JSON.parse(JSON.stringify(cursor)))).toBeLessThan(16);
 });
+
+it("Codex code review round 11 #4: a deleted folder's million places gathered and sorted out without holding the loop past the slicer's budget", async () => {
+  const N = 1_000_000;
+  // the store's pages of places, by uid, as SQLite's and IndexedDB's are read
+  const locations = {
+    inMailbox: async () => [] as { message_id: number }[],
+    inMailboxPage: async (_m: string, _v: number, after: number, limit: number) => Array.from({ length: Math.max(0, Math.min(limit, N - after)) }, (_, i) => ({ message_id: after + i + 1, uid: after + i + 1 })),
+  };
+  // a third placed elsewhere too, a few held or local: most are removed, the rest's places just go
+  const read = {
+    unresolved: async (chunk: readonly number[]) => chunk.filter((id) => id % 97 === 0),
+    of: async (chunk: readonly number[]) => chunk.map((id) => ({ message_id: id, mailbox: id % 3 === 0 ? "Other" : "Work" })),
+    providerIds: async (chunk: readonly number[]) => new Map(chunk.map((id) => [id, id % 101 === 0 ? `local:${id}` : `k${id}`] as const)),
+  };
+  let sorted: Awaited<ReturnType<typeof sortForgotten>> | null = null;
+  const stall = async () => {
+    let last = performance.now();
+    let worst = 0;
+    const tick = setInterval(() => {
+      const now = performance.now();
+      worst = Math.max(worst, now - last);
+      last = now;
+    }, 1);
+    const ids = await mailboxIds(locations, "Work", 7);
+    sorted = await sortForgotten(ids, "Work", (id) => id % 2 === 0, read);
+    clearInterval(tick);
+    return Math.max(worst, performance.now() - last);
+  };
+  await stall();
+  const { only, kept, rest } = sorted!;
+  expect(only.length + kept.length + rest.length).toBe(N);
+  expect(rest[0]).toBe(3);
+  expect(kept[0]).toBe(2);
+  expect(only[0]).toBe(1);
+  expect(Math.min(await stall(), await stall())).toBeLessThan(16);
+}, 120_000);
