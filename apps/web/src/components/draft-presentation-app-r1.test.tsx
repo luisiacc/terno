@@ -114,6 +114,8 @@ it.each(["matched", "no selection", "newer", "control", "same key", "same key ma
 
 it("stored open cannot cancel a successor created by its synchronous UI publication", async () => {
   const h = await setup("list", false, { rpc: presentationOwnedRpc }), newerContext = deferred<{ threadId: number; accountId: number }>();
+  // This source is already downloaded; the closed RPC fixture covers draft lookups only.
+  for (const message of h.detail.messages) message.bodyState = "full";
   const { openCompose, composeFocusPending } = await import("~/lib/compose");
   let newer: Promise<void> | undefined;
   h.drafts.useDrafts.setState((s) => ({ drafts: { ...s.drafts, [h.key]: { ...s.drafts[h.key]!, uiState: "collapsed" } } }));
