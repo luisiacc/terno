@@ -278,6 +278,12 @@ export interface MailProvider {
   renameFolder?(input: { key: string; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { renamed: FolderMove[] }>;
   /** Plan 107: with its subfolders (IMAP: and their mail, which the next sync forgets here); `deleted`: the keys that went */
   deleteFolder?(input: { key: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { deleted: string[] }>;
+  /**
+   * Plan 107: the host has persisted what followed these deletions (their favorites went), so no pass announces them
+   * again. Called only after that write: a change that failed before it (a LIST after the DELETE) leaves them for the
+   * pass that shows them gone (Codex code review round 13 #1).
+   */
+  deletionsFollowed?(deleted: readonly string[]): Promise<void>;
   /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
   photos?(want: import("./google-photos").PhotoWant, signal?: AbortSignal): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;

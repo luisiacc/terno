@@ -60,8 +60,8 @@ interface Cursor {
    * while it's pending the path's listing leaves its generation out (`except`), so no membership, count or export of
    * a path made again shows it.
    *
-   * `answered`: the backend followed it (its favorites went): the change heard every DELETE's answer, or a pass
-   * announced it (Codex code review round 12 #3). One whose answer was lost is announced by the pass whose LIST shows
+   * `answered`: the backend followed it (its favorites went): the backend persisted the change's favorites
+   * (`deletionsFollowed`, Codex code review round 13 #1), or a pass announced it (Codex code review round 12 #3). One whose answer was lost is announced by the pass whose LIST shows
    * it done, once.
    */
   deleted?: Record<string, number | { from: string; uidvalidity: number; answered?: true }>;
@@ -2059,17 +2059,22 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           deleted.push(path);
         }
-        // every DELETE that went was answered: the backend follows them (their favorites go), so no pass announces them
-        // again (Codex code review round 12 #3)
-        const now = deleted.length ? await ctx.loadCursor<Cursor>() : null;
-        if (now?.deleted && deleted.some((p) => Object.hasOwn(now.deleted!, p))) {
-          for (const p of deleted) if (Object.hasOwn(now.deleted, p)) now.deleted[p] = answeredDeletion(p, now.deleted[p]!);
-          await ctx.saveCursor(now);
-        }
+        // what went is marked answered only once the backend has followed it (deletionsFollowed): a LIST here that
+        // fails leaves them for the pass that shows them gone (Codex code review round 13 #1)
         const after = await folderCatalog(c);
         return { folders: after.folders, deleted, ...(partial && { partial }) };
       } catch (error) {
         throw toProviderError(error);
+      }
+    },
+
+    async deletionsFollowed(deleted) {
+      // the backend followed every DELETE that went (their favorites went), so no pass announces them again (Codex
+      // code review round 12 #3)
+      const now = deleted.length ? await ctx.loadCursor<Cursor>() : null;
+      if (now?.deleted && deleted.some((p) => Object.hasOwn(now.deleted!, p))) {
+        for (const p of deleted) if (Object.hasOwn(now.deleted, p)) now.deleted[p] = answeredDeletion(p, now.deleted[p]!);
+        await ctx.saveCursor(now);
       }
     },
 

@@ -386,6 +386,39 @@ it("a DELETE whose answer came took its favorite already: a Work made again here
   expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Work", view: null }]);
 });
 
+it("a DELETE answered but whose LIST after it failed: the next pass takes its favorite, and a Work made again isn't one (Codex code review round 13 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const favorites = async () => (await t.client.call("app.bootstrap", {})).settings.favoriteFolders;
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  const original = ImapFlow.prototype.list;
+  const deleting = ImapFlow.prototype.mailboxDelete;
+  let sent = false;
+  const answered = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof deleting>) {
+    const r = await deleting.apply(this, args);
+    sent = true;
+    return r;
+  });
+  // the DELETE is answered; the LIST after it fails, so the change never hands the backend what went
+  const failing = vi.spyOn(ImapFlow.prototype, "list").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    if (sent) { sent = false; throw Object.assign(new Error("Connection closed"), { code: "NoConnection" }); }
+    return original.apply(this, args);
+  });
+  try {
+    await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Work" })).rejects.toBeTruthy();
+  } finally {
+    failing.mockRestore();
+    answered.mockRestore();
+  }
+  expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash"]);
+  await t.backend.syncAccount(t.account.id);
+  expect(await favorites()).toEqual([]);
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.backend.syncAccount(t.account.id);
+  expect(await favorites()).toEqual([]);
+});
+
 it("a DELETE the server refuses leaves no record behind, and its mail stays", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });

@@ -114,6 +114,9 @@ async function change<R extends FolderChange>(
       void b.rebuildFolders();
       if (renamed.length || deleted.length) await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted }));
     });
+    // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
+    // a LIST failing after the DELETE left the favorite for good)
+    if (deleted.length) await provider.deletionsFollowed?.(deleted);
     resync();
     if (result.partial) throw folderError(b, result.partial);
     return result;
