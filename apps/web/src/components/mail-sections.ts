@@ -1,7 +1,7 @@
 /** Full-reader display sections; the original sanitized document is never edited. */
 const TEXT_BUDGET = 4096;
 const NODE_BUDGET = 64;
-const APPEARANCE = ["color", "background-color", "font-family", "font-weight", "font-style", "text-decoration", "text-align"];
+const APPEARANCE = ["color", "background-color", "background-image", "background-position", "background-size", "background-repeat", "font-family", "font-weight", "font-style", "text-decoration", "text-align"];
 interface Point { node: Node; offset: number }
 interface Section { start: Point; end: Point; offset: number }
 
@@ -9,6 +9,18 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
   const template = document.createElement("template");
   template.innerHTML = clean;
   const root = template.content;
+  // Background assets are payload, not duplicated ancestor context on every section.
+  for (const element of root.querySelectorAll<HTMLElement>("[style], [background]")) {
+    const style = element.style;
+    const backgrounds = [...style.backgroundImage.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/g)].map((match) => match[1] ?? match[2] ?? match[3]!);
+    const background = element.getAttribute("background");
+    if (background) backgrounds.push(background);
+    for (const src of backgrounds) {
+      const image = root.ownerDocument.createElement("img");
+      image.setAttribute("src", src); image.setAttribute("alt", "");
+      element.appendChild(image);
+    }
+  }
   const sections: Section[] = [];
   const numbered = new WeakSet<HTMLOListElement>();
   const ordinals = new WeakMap<Element, number>();
@@ -90,9 +102,13 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
       const output = document.createElement("template");
       output.content.appendChild(fragment);
       const tables = [...root.querySelectorAll("table")].filter((table) => range.intersectsNode(table));
+      let contextChars = 512; let contextNodes = 32;
       for (const [i, table] of [...output.content.querySelectorAll("table")].entries()) {
         const heading = tables[i]?.querySelector(":scope > thead");
-        if (heading && (heading.textContent?.length ?? 0) <= 512 && heading.querySelectorAll("*").length <= 32 && !table.querySelector(":scope > thead")) {
+        const chars = heading?.textContent?.length ?? 0;
+        const nodes = heading ? heading.querySelectorAll("*").length + 1 : 0;
+        if (heading && chars <= contextChars && nodes <= contextNodes && !table.querySelector(":scope > thead")) {
+          contextChars -= chars; contextNodes -= nodes;
           const context = heading.cloneNode(true) as Element;
           context.setAttribute("data-mail-context", "");
           table.prepend(context);
@@ -105,15 +121,6 @@ export function mailSections(clean: string, nodeBudget = NODE_BUDGET) {
         }
         if (element.closest("svg") && element.localName !== "svg") continue;
         const style = element.style;
-        const backgrounds = [...style.backgroundImage.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/g)].map((match) => match[1] ?? match[2] ?? match[3]!);
-        const background = element.getAttribute("background");
-        if (background) backgrounds.push(background);
-        element.removeAttribute("background");
-        for (const src of backgrounds) {
-          const image = output.content.ownerDocument.createElement("img");
-          image.setAttribute("src", src); image.setAttribute("alt", "");
-          element.appendChild(image);
-        }
         const retained = APPEARANCE.map((name) => [name, style.getPropertyValue(name)] as const);
         element.removeAttribute("style");
         for (const name of ["height", "width", "depth", "voffset", "lspace", "mathsize", "minsize", "maxsize", "rowspacing", "columnspacing", "framespacing"]) element.removeAttribute(name);

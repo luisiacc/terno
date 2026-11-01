@@ -288,7 +288,7 @@ test("deep repeated display context is adaptively bounded without losing payload
   for (;;) {
     await expect(full(page)).toHaveAttribute("aria-busy", "false");
     const frame = full(page).locator("iframe");
-    await expect.poll(() => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument?.readyState === "complete" && f.contentDocument.body.textContent!.length > 0 && Math.abs(f.getBoundingClientRect().height - f.contentDocument.documentElement.getBoundingClientRect().height) < 1)).toBe(true);
+    await expect.poll(() => frame.evaluate((f: HTMLIFrameElement) => f.contentDocument?.readyState === "complete" && f.contentDocument.querySelector("[data-terno-flow]") !== null && Math.abs(f.getBoundingClientRect().height - f.contentDocument.documentElement.getBoundingClientRect().height) < 1)).toBe(true);
     expect(await frame.evaluate((f) => f.getBoundingClientRect().height)).toBeLessThanOrEqual(4_000_000);
     parts.push((await mail(page).locator("body").textContent())!);
     if (await full(page).getByRole("button", { name: "Next section", exact: true }).isDisabled()) break;
@@ -339,4 +339,33 @@ test("a new reader focus request retires the child page without stealing its foc
   await expect(show(page)).not.toBeFocused();
   await page.evaluate(async () => { const path = "/src/state/app.ts"; (await import(path)).setApp({ draftFocus: null }); });
   await expect(full(page)).toHaveCount(0);
+});
+
+test("multiple background assets on ancestor context still expose the complete payload", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?background-cap");
+  await expect(show(page)).toBeVisible();
+  await show(page).click();
+  let images = 0; const text: string[] = [];
+  for (;;) {
+    await expect(full(page)).toHaveAttribute("aria-busy", "false");
+    images += await mail(page).locator("img").count();
+    text.push((await mail(page).locator("body").textContent())!);
+    expect(await full(page).locator("iframe").evaluate((frame) => frame.getBoundingClientRect().height)).toBeLessThanOrEqual(4_000_000);
+    if (await full(page).getByRole("button", { name: "Next section", exact: true }).isDisabled()) break;
+    await full(page).getByRole("button", { name: "Next section", exact: true }).click();
+  }
+  expect(images).toBe(960);
+  expect(text.join("")).toBe("Exact final mail text");
+});
+
+test("the full-width preview affordance aligns in the actual reader in both themes", async ({ page }) => {
+  for (const mode of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: mode });
+    await page.goto("/e2e/full-message/index.html?reader");
+    await show(page).scrollIntoViewIfNeeded();
+    await expect(show(page)).toBeVisible();
+    const frame = page.getByTestId("reader").locator("iframe");
+    expect(await frame.evaluate((element) => element.getBoundingClientRect().width === element.parentElement!.getBoundingClientRect().width)).toBe(true);
+    await page.screenshot({ path: `/tmp/terno-w11-full-61640/preview-${mode}.png` });
+  }
 });

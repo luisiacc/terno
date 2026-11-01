@@ -67,3 +67,24 @@ it("continues ordered list numbering after explicit values and in reversed lists
   const reversed = mailSections(`<ol reversed><li>${"x".repeat(4096)}</li><li>Second</li><li>Third</li></ol>`);
   expect(parsed(reversed.html(1)).querySelector("ol")?.getAttribute("start")).toBe("2");
 });
+it("carries background media once as payload while retaining the painted text backdrop", () => {
+  const sections = mailSections('<div style="color:white;background-image:url(data:image/png;base64,AAAA)">' + 'x'.repeat(9000) + '</div>');
+  const bodies = Array.from({ length: sections.count }, (_, i) => parsed(sections.html(i)));
+  expect(bodies.flatMap((body) => [...body.querySelectorAll("img")])).toHaveLength(1);
+  expect(bodies[0]!.querySelector("div")!.style.backgroundImage).toContain("data:image/png;base64,AAAA");
+  expect(bodies.map((body) => body.textContent).join("")).toBe('x'.repeat(9000));
+});
+it("bounds repeated table context globally without removing original header payload", () => {
+  const open = '<table><thead><tr><th>' + 'h'.repeat(300) + '</th></tr></thead><tbody><tr><td>';
+  const close = '</td></tr></tbody></table>';
+  const source = open.repeat(3) + 'x'.repeat(9000) + close.repeat(3);
+  const sections = mailSections(source);
+  const bodies = Array.from({ length: sections.count }, (_, i) => parsed(sections.html(i)));
+  for (const body of bodies) {
+    const repeated = [...body.querySelectorAll("[data-mail-context]")];
+    expect(repeated.reduce((sum, element) => sum + element.textContent!.length, 0)).toBeLessThanOrEqual(512);
+    expect(repeated.reduce((sum, element) => sum + element.querySelectorAll("*").length + 1, 0)).toBeLessThanOrEqual(32);
+    for (const element of repeated) element.remove();
+  }
+  expect(bodies.map((body) => body.textContent).join("")).toBe('h'.repeat(900) + 'x'.repeat(9000));
+});
