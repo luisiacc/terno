@@ -106,7 +106,7 @@ html[data-design="midnight"] .site-shot:not([data-show]) > img[data-mode="light"
 
 /* the switch and the enlarge button: only with the script that runs them */
 .site-shot-tools {
-  position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px;
+  position: absolute; top: 10px; right: var(--tools-right, 10px); z-index: 3; display: flex; gap: 6px;
   font: 500 12px/1 var(--font-system);
 }
 html:not(.js) .site-shot-tools { display: none; }
@@ -130,6 +130,7 @@ html:not(.js) .site-shot-tools { display: none; }
 }
 html[data-design="midnight"] .site-shot-modes, html[data-design="midnight"] .site-shot-tools > button { background: rgb(28 28 30 / 0.82); color: #d4d4d8; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.16), 0 2px 8px rgb(0 0 0 / 0.4); }
 html[data-design="midnight"] .site-shot-modes button[aria-pressed="true"] { background: #f4f4f5; color: #09090b; }
+html[data-design="midnight"] .site-shot-modes button:not([aria-pressed="true"]):hover, html[data-design="midnight"] .site-shot-tools > button:hover { color: #fff; }
 
 /* the enlarged picture */
 .site-lightbox {

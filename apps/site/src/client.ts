@@ -40,6 +40,29 @@ const syncShot = (shot: HTMLElement) => {
 };
 const shots = [...document.querySelectorAll<HTMLElement>("[data-shot]")];
 shots.forEach(syncShot);
+
+// a frame wider than what shows of it (Lumen's hero on a phone runs off the edge): the tools move in to stay at
+// the top right of the visible part (CSSOM, which the CSP allows)
+function placeTools() {
+  for (const shot of shots) {
+    const tools = shot.querySelector<HTMLElement>(".site-shot-tools");
+    const frame = tools?.offsetParent;
+    if (!tools || !frame) continue;
+    let visibleRight = Math.min(frame.getBoundingClientRect().right, document.documentElement.clientWidth);
+    for (let el = frame.parentElement; el; el = el.parentElement) {
+      if (getComputedStyle(el).overflowX !== "visible") visibleRight = Math.min(visibleRight, el.getBoundingClientRect().right);
+    }
+    const hidden = Math.max(0, frame.getBoundingClientRect().right - visibleRight);
+    if (hidden) tools.style.setProperty("--tools-right", `${Math.round(hidden + 10)}px`);
+    else tools.style.removeProperty("--tools-right");
+  }
+}
+placeTools();
+let placing = 0;
+addEventListener("resize", () => {
+  cancelAnimationFrame(placing);
+  placing = requestAnimationFrame(placeTools);
+});
 systemDark.addEventListener("change", () => shots.forEach(syncShot));
 
 const lightbox = document.querySelector<HTMLDialogElement>("dialog[data-lightbox]");

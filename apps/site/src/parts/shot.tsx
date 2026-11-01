@@ -27,7 +27,9 @@ export function Shot({ name, copy, eager, sizes = "(min-width: 1280px) 1200px, 1
         width={dims.width}
         height={dims.height}
         alt={copy.alt[name]}
-        loading={eager ? "eager" : "lazy"}
+        // lazy even for the hero: a hidden lazy image is never fetched, so only the shown mode downloads (Codex
+        // review 2.3); high priority still puts the hero first
+        loading="lazy"
         decoding="async"
         {...(eager && { fetchPriority: "high" as const })}
         className={className}

@@ -55,7 +55,13 @@ test("routing: real 404s, trailing slashes, the download stand-in, robots and si
   expect((await request.get("/download/mac", { maxRedirects: 0 })).headers().location).toMatch(/\/download\/$|Terno-.*-arm64\.dmg$/);
   // previews stay crawlable so search engines can read their noindex (a Disallow would hide it)
   expect(await (await request.get("/robots.txt")).text()).not.toContain("/designs/");
-  expect(await (await request.get("/designs/bento/")).text()).toContain('<meta name="robots" content="noindex"/>');
+  for (const design of DESIGNS) {
+    const preview = await request.get(`/designs/${design}/`);
+    expect(preview.status()).toBe(200);
+    expect(await preview.text()).toContain('<meta name="robots" content="noindex"/>');
+  }
+  // the dropped candidates are gone
+  for (const gone of ["atelier", "bento"]) expect((await request.get(`/designs/${gone}/`)).status()).toBe(404);
   const sitemap = await (await request.get("/sitemap.xml")).text();
   expect(sitemap).toContain("<loc>https://terno.app/es/</loc>");
   expect(sitemap).not.toContain("/designs/");
@@ -65,7 +71,8 @@ test("a picture switches between light and dark and opens full size (click, doub
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/designs/lumen/");
   const shot = page.locator("[data-shot]").nth(2);
-  await shot.scrollIntoViewIfNeeded();
+  // the wrapper has no box (display: contents): scroll its picture
+  await shot.locator("img[data-mode=light]").scrollIntoViewIfNeeded();
   await expect(shot.locator("img[data-mode=light]")).toBeVisible();
   await expect(shot.locator("img[data-mode=dark]")).toBeHidden();
   await expect(shot.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
@@ -94,4 +101,32 @@ test("Midnight is dark even when the system is light, pictures included", async 
   const hero = page.locator("[data-shot]").first();
   await expect(hero.locator("img[data-mode=dark]")).toBeVisible();
   await expect(hero.locator("img[data-mode=light]")).toBeHidden();
+});
+
+test("only the shown mode of a picture downloads; the other waits for the switch", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const fetched: string[] = [];
+  page.on("request", (r) => r.url().includes("/shots/") && fetched.push(new URL(r.url()).pathname));
+  await page.goto("/designs/lumen/");
+  await page.waitForLoadState("networkidle");
+  expect(fetched.some((f) => f.startsWith("/shots/inbox-light"))).toBe(true);
+  expect(fetched.filter((f) => f.includes("-dark"))).toEqual([]);
+});
+
+test("on a phone the hero picture's tools stay on screen, and Midnight's stay readable on hover", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const design of DESIGNS) {
+    await page.goto(`/designs/${design}/`);
+    const box = await page.locator(".site-shot-tools").first().boundingBox();
+    expect(box, design).not.toBeNull();
+    expect(box!.x, design).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width, design).toBeLessThanOrEqual(390);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/designs/midnight/");
+  const inactive = page.locator("[data-shot]").first().getByRole("button", { name: "Light" });
+  await inactive.hover();
+  // light on the dark toolbar (it was near-black there before), after the 80 ms color transition
+  await expect.poll(() => inactive.evaluate((b) => getComputedStyle(b).color)).toBe("rgb(255, 255, 255)");
 });

@@ -138,3 +138,7 @@ Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each wit
 - Midnight is always dark, its pictures included, whatever the system says.
 - Plainer words: no milliseconds, IMAP, search operators or AGPL in the copy ("Results arrive instantly").
 - Every picture is in the page twice (light and dark); a switch at its top right shows the other, and a click, double-click or the enlarge button opens it full size in a `<dialog>` (Esc, the close button or the backdrop close it). Hidden pictures aren't fetched until shown. Color-theme pictures are light/dark pairs (Apple · Dracula, Terno · Nord, Solarized · Tokyo Night, Catppuccin Latte · Mocha, Gruvbox light · dark).
+
+### What the Codex review of the second round changed
+
+Five points, all fixed with tests (`e2e/site.spec.ts`): the tools move in to the visible part of a frame wider than the screen (Lumen's hero on a phone); the hero's two modes are both lazy so only the shown one downloads (a network assertion); Midnight's inactive switch stays light on hover; the interaction test scrolls the picture, not its box-less wrapper; previews are checked for a 200 and `noindex`, and the dropped designs for a 404.
