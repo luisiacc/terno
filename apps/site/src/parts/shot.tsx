@@ -7,10 +7,10 @@ const size = (name: string) => (manifest as Record<string, { width: number; heig
 
 /**
  * A screenshot of the app (plan 96, `pnpm --filter @terno/site shots`), taken in light and dark. Both are in the
- * page; CSS shows the one matching the visitor's system (Midnight: dark), and the switch at the top right
+ * page; CSS shows the one matching the visitor's system (Midnight: dark), and the switch at the bottom right
  * (client.ts) shows the other. Hidden <img>s aren't fetched, so the switch costs nothing until used. A click on the
  * picture or the enlarge button opens it full size. WebP at 1× and 2×, sized so nothing shifts as it loads.
- * `className` goes on both images (the designs crop with it). The tools sit at the top right of the nearest
+ * `className` goes on both images (the designs crop with it). The tools sit at the bottom right of the nearest
  * positioned ancestor: the design's frame.
  */
 export function Shot({ name, copy, eager, sizes = "(min-width: 1280px) 1200px, 100vw", className }: { name: ShotName; copy: SiteCopy; eager?: boolean; sizes?: string; className?: string }) {

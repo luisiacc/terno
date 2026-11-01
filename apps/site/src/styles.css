@@ -106,7 +106,7 @@ html[data-design="midnight"] .site-shot:not([data-show]) > img[data-mode="light"
 
 /* the switch and the enlarge button: only with the script that runs them */
 .site-shot-tools {
-  position: absolute; top: 10px; right: var(--tools-right, 10px); z-index: 3; display: flex; gap: 6px;
+  position: absolute; bottom: var(--tools-bottom, 10px); right: var(--tools-right, 10px); z-index: 3; display: flex; gap: 6px;
   font: 500 12px/1 var(--font-system);
 }
 html:not(.js) .site-shot-tools { display: none; }
@@ -146,4 +146,4 @@ html[data-design="midnight"] .site-shot-modes button:not([aria-pressed="true"]):
 }
 .site-lightbox .site-lightbox-close:hover { background: rgb(255 255 255 / 0.24); }
 /* thumbnails: the same tools tucked into the corner (still 24 px targets, WCAG 2.2) */
-.lumen-thumb .site-shot-tools, .mn-thumb .site-shot-tools, .letter-window-small .site-shot-tools { top: 6px; right: 6px; }
+.lumen-thumb .site-shot-tools, .mn-thumb .site-shot-tools, .letter-window-small .site-shot-tools { --tools-bottom: 6px; --tools-right: 6px; }

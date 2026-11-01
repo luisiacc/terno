@@ -121,6 +121,9 @@ test("on a phone the hero picture's tools stay on screen, and Midnight's stay re
     expect(box, design).not.toBeNull();
     expect(box!.x, design).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width, design).toBeLessThanOrEqual(390);
+    // at the bottom right of the picture
+    const frame = await page.locator(".site-shot-tools").first().evaluate((t) => (t as HTMLElement).offsetParent!.getBoundingClientRect().bottom);
+    expect(frame - (box!.y + box!.height), design).toBeLessThan(40);
   }
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 1440, height: 900 });
