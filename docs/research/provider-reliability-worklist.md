@@ -1823,3 +1823,32 @@ FinalactualnativeSol/high R2 **StandardsFAIL/SpecFAIL,4P2/0P1**: lazyfullmodulem
 **Final row totals for this pass remain81covered/4needs-work/33protected/14N-A/21Outlook=153.** Fourneeds-work rows have explicit finalparkdispositions: B35/S23 accountstatusowner (5P2+1P3, cbe1d7cc), S48bodyownership (3P2, f155dab7), T09reader(4P2,f7b84790). OptionalW06automaticrecovery is separately parked3c9a6fa3 on inheritednativeCOMMIT diagnostic38.06/16ms/no candidate-localfix, originalcleanR3/newperffixreviewunused. Existingfour editor/listbranches remain parked/outside providergoal; no budgetwaiver or unlandedsourcecredit. S52finiteactualnativeSQLite/Gmail50k and every other row remain qualified/deferredwithin explicit scopes. No further userapprovalneeded to continue.
 
 Root now authorizes the user's **ONEFINAL fullreleasegate run** in a FRESHISOLATEDCOMMITTEDsnapshot after this dispositionrecord: pnpmtypecheck/lint/test/test:e2e/test:web/test:ui-perf/test:perf/dist:mac/desktoptest:smoke, unique free E2E_PORT/WEB_PORT, serialonce. No sourcefixes/parkedbranchimports in gate runner; preserve outputs/exactHEAD/argv/PIDs/ports/results/freshbinaryidentity, runallindependentgates despite failures. Mainmayadvanceindependently; frozencheckoutdoesnotdrift or includeuserWIP. OnlyifunitcommandskipsnormalWASMproject, one explicitWASMfallbackfillsNOTRUNscope (no repeatofexecutedtests). Smokeonlyfreshsuccessfullybuiltbinary, neveroldarchive. Reportallfailed/unrun/skips and knownreleaseissues honestly. Parentthenfocusedworktreefail-firstrepairsasuserauthorized, not another broadmilestoneloop. Userlivewebsite/accountlabel/providerWIP untouched.
+
+## One final gate run completed; focused repairs started — 2026-11-01
+
+The frozen committed snapshot was **be2efa231e3dbbe543e2f2cca32503fc5dedabd1**. The requested gates returned **1 PASS / 7 FAIL / 1 NOTRUN**. This is not release-green. Every independent stage ran once, serially; the normal WASM project ran separately because the failed unit command had not reached it. No repeat full milestone is authorized by this result.
+
+| Gate | Result |
+| --- | --- |
+| Typecheck | FAIL: committed imports reference missing `account-label.ts` |
+| Lint | PASS |
+| Unit | FAIL: 10,701 passed, 84 failed, 3 skipped; 141 files failed, including collection failures |
+| Normal WASM fallback | FAIL: 1,939 passed, 4 failed, 2 skipped |
+| E2E | FAIL during setup; test bodies did not run |
+| Standalone Web | FAIL during build setup; source-map closure error retained |
+| UI performance | FAIL during setup; test bodies did not run |
+| Backend performance | FAIL: 218 passed, 38 failed, 1 skipped; natural exit |
+| macOS build | FAIL: required release Google client configuration missing in isolated build |
+| Fresh packaged smoke | NOTRUN: no fresh binary was produced |
+
+The frozen checkout stayed clean and unchanged. Generated outputs were restored, captured owned processes exited, and no signals were issued. Detailed signatures, commands, ports and process evidence remain in `/tmp/terno-final-gate-7ukzyk6i/report.md` and `results.json`. Later main commits are outside the tested snapshot. Earlier known release issues and every parked candidate remain unwaived.
+
+Committed backend handlers import `./account-label`, while the corresponding file is currently untracked user work. Root will not read, copy, stage, replace or shim that file. Missing-module cascades must not be presented as independent product defects. Existing root release configuration may be consumed opaquely by the normal build; credential values must never enter diagnostics or chat, and no empty or fabricated client configuration may substitute for the intended build.
+
+Three isolated, disjoint focused series have started:
+
+1. **Storage upgrade contracts:** retained category references, historical IDB schemas and uncertain-upgrade fixtures. Preserve all identities, rows, ownership and atomicity assertions. Any actual migration change requires an executed regression and targeted native/WASM/IDB checks.
+2. **Renderer hydration and draft fixtures:** distinguish missing-module cascades from stale RPC and hydration assumptions. Preserve saved work, exact ACK ownership, source context and focus guarantees; no editor/list performance or parked reader work.
+3. **Build closure and release configuration:** diagnose the committed dependency and Web build error without importing user WIP. After a meaningful correction, qualify the failed build and previously unrun smoke against the same fresh binary; no archived-binary substitution.
+
+Each series uses test-first targeted checks, touched-package types and exact-file lint, native Codex critique/review within its stated cap, serial reconciliation and ff-only landing. No new full suite or performance sweep starts. Backend performance failures remain a separate focused investigation queue; none is excused by timing noise or relaxed budgets. Shared storage sections stay serial. The four final needs-work dispositions and totals remain **81 covered / 4 needs work / 33 already protected / 14 N/A / 21 Outlook-deferred = 153**.
