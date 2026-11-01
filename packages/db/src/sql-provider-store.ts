@@ -1,5 +1,5 @@
 import { sqlCaptureRepairs } from "./capture-repair";
-import { isFolder } from "./folders";
+import { folderExcept } from "./folders";
 import type { ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
 import { getSetting } from "./repos";
@@ -194,7 +194,7 @@ class SqlImapLocations implements ImapLocationStore {
           const old = this.db.get<{ uid: number; uidvalidity: number }>("SELECT uid,uidvalidity FROM message_locations WHERE message_id=? AND mailbox=? AND account_id=?", item.message_id, item.mailbox, this.accountId);
           if (!old || old.uid !== item.uid || old.uidvalidity !== item.uidvalidity) throw new ImapIdentityError();
           this.write(item.message_id, mailbox, uidvalidity, mapped, []);
-          this.located([item.message_id], mailbox, true);
+          this.located([item.message_id], mailbox, true, uidvalidity);
           this.db.run("DELETE FROM imap_identity_holds WHERE message_id=?", item.message_id);
         }
         if (!copy) {
@@ -227,8 +227,10 @@ class SqlImapLocations implements ImapLocationStore {
    * (Codex R10: refolding the whole thread per location was quadratic in a long conversation): a new location adds
    * its thread's row; one that goes takes it only when no other message of the thread is still there.
    */
-  private located(messageIds: readonly number[], mailbox: string, added: boolean) {
-    if (!messageIds.length || !isFolder(this.db, this.accountId, mailbox)) return;
+  private located(messageIds: readonly number[], mailbox: string, added: boolean, uidvalidity?: number) {
+    // never by another folder's generation cached under the path (Codex code review round 8 #1)
+    const except = messageIds.length ? folderExcept(this.db, this.accountId, mailbox) : null;
+    if (!except || (added && uidvalidity !== undefined && except.includes(uidvalidity))) return;
     for (const id of messageIds) {
       if (added) {
         this.db.run(
@@ -242,10 +244,11 @@ class SqlImapLocations implements ImapLocationStore {
         this.db.run(
           `DELETE FROM thread_folders WHERE folder = ? AND thread_id = (SELECT thread_id FROM messages WHERE id = ?)
              AND NOT EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
-                             WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`,
+                             WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND l.uidvalidity NOT IN (SELECT value FROM json_each(?)) AND o.is_trash = 0 AND o.is_spam = 0)`,
           mailbox,
           id,
           mailbox,
+          JSON.stringify(except),
         );
       }
     }
@@ -254,10 +257,12 @@ class SqlImapLocations implements ImapLocationStore {
   async upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]) {
     this.db.tx(() => {
       if (this.db.get("SELECT 1 FROM imap_identity_holds WHERE message_id=?", messageId)) return;
-      // a known location (new flags, a new UID) moves no membership
-      const known = this.db.get("SELECT 1 FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox) !== undefined;
+      // a known location (new flags, a new UID) moves no membership; one under another generation may (round 8 #1)
+      const known = this.db.get<{ uidvalidity: number }>("SELECT uidvalidity FROM message_locations WHERE message_id = ? AND mailbox = ?", messageId, mailbox);
       this.write(messageId, mailbox, uidvalidity, uid, flags);
-      if (!known) this.located([messageId], mailbox, true);
+      if (known?.uidvalidity === uidvalidity) return;
+      if (known) this.located([messageId], mailbox, false);
+      this.located([messageId], mailbox, true, uidvalidity);
     });
   }
 
@@ -294,7 +299,9 @@ class SqlImapLocations implements ImapLocationStore {
       await this.settle();
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    if (!isFolder(this.db, this.accountId, mailbox)) return;
+    const except = folderExcept(this.db, this.accountId, mailbox);
+    if (!except) return;
+    const own = JSON.stringify(except);
     // then each thread's row, once all its locations are gone: it goes only when none of its messages is still there,
     // decided where it's deleted (Codex R36: a message made eligible meanwhile, "Not spam", kept its row's place):
     // - a short thread (its message count from the thread row) in a batch's own transaction, the check inside the
@@ -310,9 +317,9 @@ class SqlImapLocations implements ImapLocationStore {
       since = performance.now();
     };
     const stillThere = `EXISTS (SELECT 1 FROM messages o JOIN message_locations l ON l.message_id = o.id
-                               WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND o.is_trash = 0 AND o.is_spam = 0)`;
+                               WHERE o.thread_id = thread_folders.thread_id AND l.mailbox = ? AND l.uidvalidity NOT IN (SELECT value FROM json_each(?)) AND o.is_trash = 0 AND o.is_spam = 0)`;
     const conditional = (ids: readonly number[]) =>
-      this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(ids.length)}) AND NOT ${stillThere}`, mailbox, ...ids, mailbox));
+      this.db.tx(() => this.db.run(`DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (${placeholders(ids.length)}) AND NOT ${stillThere}`, mailbox, ...ids, mailbox, own));
     // a long thread being decided is watched (temporary triggers, this connection's): a location written for one of
     // its messages, or one of them changing spam, trash or thread, marks it (Codex R37: any write anywhere moved
     // total_changes, and three scans in a row fell back to the whole thread in one statement)
@@ -360,9 +367,10 @@ class SqlImapLocations implements ImapLocationStore {
         let here = false;
         for (;;) {
           const page = this.db.all<{ id: number; date: number; here: number }>(
-            `SELECT o.id, o.date, (o.is_trash = 0 AND o.is_spam = 0 AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = o.id AND l.mailbox = ?)) AS here
+            `SELECT o.id, o.date, (o.is_trash = 0 AND o.is_spam = 0 AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = o.id AND l.mailbox = ? AND l.uidvalidity NOT IN (SELECT value FROM json_each(?)))) AS here
                FROM messages o INDEXED BY messages_thread WHERE o.thread_id = ? AND (o.date, o.id) > (?, ?) ORDER BY o.date, o.id LIMIT ?`,
             mailbox,
+            own,
             thread,
             after.date,
             after.id,

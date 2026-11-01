@@ -678,6 +678,58 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await ids(store, m!, "Work")).toEqual([await threadOf(store, "new")]);
     });
 
+    it("plan 107: a path's generations another folder holds (`except`) make no membership there, however it's derived (Codex code review round 8 #1)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const work = { key: "Work", path: ["Work"], selectable: true };
+      await store.folders.replace(m!, [work]);
+      // the old Work's (UIDVALIDITY 1), renamed to Job here
+      const r = await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "old", inInbox: false, locations: [loc("Work", 1)] }),
+        msg({ accountId: m!, providerMsgId: "new", locations: [loc("INBOX", 1)] }),
+      ]);
+      const [old, made] = r.inserted as [number, number];
+      const [tOld, tNew] = [await threadOf(store, "old"), await threadOf(store, "new")];
+      await store.folders.carry(m!, "Work", "Job", 0, 10);
+      // the rename's listing, Work made again (2) before a pass: Job keeps the rows carried to it, Work leaves the old
+      // generation out and is derived again
+      expect(await store.folders.replace(m!, [{ ...work, except: [1] }, { key: "Job", path: ["Job"], selectable: true }], ["Job"])).toEqual({ changed: true, touched: [] });
+      const locations = store.providerStore(m!).locations;
+      await locations.upsert(made, "Work", 2, 1, []);
+      expect((await store.folders.list()).filter((f) => f.accountId === m).map((f) => [f.key, f.except])).toEqual([["Work", [1]], ["Job", undefined]]);
+      await drain(store);
+      expect(await ids(store, m!, "Work")).toEqual([tNew]);
+      expect(await ids(store, m!, "Job")).toEqual([tOld]);
+      expect((await unread(store))[folderRef(m!, "Work")]).toBe(1);
+      // a refresh of the thread (read state)
+      await store.threads.act({ threadIds: [tOld], action: "markRead", signal: null, now: NOW });
+      await store.threads.act({ threadIds: [tOld], action: "markUnread", signal: null, now: NOW });
+      expect(await ids(store, m!, "Work")).toEqual([tNew]);
+      // a location write under the left-out generation, and its removal while the new one's stays
+      await locations.upsert(old, "Work", 1, 5, []);
+      expect(await ids(store, m!, "Work")).toEqual([tNew]);
+      // the same message met under the new generation is Work's; back under the old one it isn't
+      await locations.upsert(old, "Work", 2, 9, []);
+      expect(new Set(await ids(store, m!, "Work"))).toEqual(new Set([tOld, tNew]));
+      await locations.upsert(old, "Work", 1, 5, []);
+      expect(await ids(store, m!, "Work")).toEqual([tNew]);
+      await locations.removeMany([old], "Work", { deleted: true });
+      expect(await ids(store, m!, "Work")).toEqual([tNew]);
+      expect((await locations.of([made])).map((l) => [l.mailbox, l.uidvalidity])).toContainEqual(["Work", 2]);
+      // a listing that leaves nothing out any more derives it again from what's there
+      await locations.upsert(old, "Work", 1, 5, []);
+      await store.folders.replace(m!, [work, { key: "Job", path: ["Job"], selectable: true }]);
+      await drain(store);
+      expect(new Set(await ids(store, m!, "Work"))).toEqual(new Set([tOld, tNew]));
+      // survives a reopen
+      const again = await harness.reopen(store);
+      open.push(again);
+      await again.folders.replace(m!, [{ ...work, except: [1] }, { key: "Job", path: ["Job"], selectable: true }]);
+      await drain(again);
+      expect(await ids(again, m!, "Work")).toEqual([tNew]);
+      expect((await again.folders.list()).find((f) => f.key === "Work")?.except).toEqual([1]);
+    });
+
     it("an account's removal takes its folders; folders survive a reopen", async () => {
       let store = await fresh();
       const [g, m] = await withAccounts(store);

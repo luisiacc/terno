@@ -35,7 +35,7 @@ export function refreshFolders(c: Ctx, threadIds: Iterable<number>): void {
       for (const m of messages.by("fk_thread_id", id)) {
         if (m.is_trash || m.is_spam) continue;
         for (const l of userLabels(m)) keys.add(l);
-        for (const l of locations.by("fk_message_id", m.id)) if (folders.has(t.account_id, l.mailbox)) keys.add(l.mailbox as string);
+        for (const l of locations.by("fk_message_id", m.id)) if (ownGeneration(folders.get(t.account_id, l.mailbox), l.uidvalidity as number)) keys.add(l.mailbox as string);
       }
     }
     const unread = t && t.unread_count > 0 ? 1 : 0;
@@ -206,33 +206,54 @@ export function isFolder(c: Ctx, accountId: number, key: string): boolean {
   return T(c, "folders").has(accountId, key);
 }
 
+/**
+ * A listed folder's generations that are another folder's (`except`), or null when the mailbox isn't a listed folder:
+ * a location under one of them makes no membership (Codex code review round 8 #1).
+ */
+export function folderExcept(c: Ctx, accountId: number, key: string): readonly number[] | null {
+  const f = T(c, "folders").get(accountId, key);
+  return f ? ((f.except as number[] | undefined) ?? []) : null;
+}
+
+/** a location under a listed folder (its row) is membership there: one of its own generations */
+const ownGeneration = (folder: R | undefined, uidvalidity: number): boolean => !!folder && !(folder.except as number[] | undefined)?.includes(uidvalidity);
+/** a folder's `except` as stored: sorted, absent when there's none */
+const exceptOf = (except: readonly number[] | undefined): number[] | undefined => (except?.length ? [...new Set(except)].sort((a, b) => a - b) : undefined);
+const sameExcept = (a: readonly number[] | undefined, b: readonly number[] | undefined) => (a?.length ?? 0) === (b?.length ?? 0) && (a ?? []).every((v, i) => b![i] === v);
+
 export function listFolders(c: Ctx): Folder[] {
   return [...T(c, "folders").all()]
     .sort((x, y) => x.account_id - y.account_id || x.position - y.position)
-    .map((r) => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1 }));
+    .map((r) => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...((r.except as number[] | undefined)?.length && { except: [...(r.except as number[])] }) }));
 }
 
 /**
  * An account's list now; nothing written when it's the same (the SQL adapter's replaceFolders): memberships never
  * wait on the list; only a newly listed IMAP folder's located threads, and rows a past listing left, are rewritten.
  */
-export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
+export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[], carried: readonly string[] = []): { changed: boolean; touched: number[] } {
   const folders = T(c, "folders");
   // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
   // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
   const before = new Map(folders.by("fk_account_id", accountId).map((r) => [r.key as string, r]));
   const known = new Set(before.keys());
   const listed = new Set<string>();
+  // listed before with other generations left out: its memberships are derived again (Codex code review round 8 #1)
+  const regenerated = new Set<string>();
   let position = Math.max(-1, ...[...before.values()].map((r) => r.position as number));
   let changed = false;
   for (const f of next) {
     if (listed.has(f.key)) continue;
     listed.add(f.key);
     const path = JSON.stringify(f.path);
+    const except = exceptOf(f.except);
     const was = before.get(f.key);
-    if (!was) folders.put({ account_id: accountId, key: f.key, path_json: path, selectable: f.selectable ? 1 : 0, position: ++position });
-    else if (was.path_json !== path || (was.selectable === 1) !== f.selectable) folders.put({ ...was, path_json: path, selectable: f.selectable ? 1 : 0 });
-    else continue;
+    const row = { account_id: accountId, key: f.key, path_json: path, selectable: f.selectable ? 1 : 0, ...(except && { except }) };
+    if (!was) folders.put({ ...row, position: ++position });
+    else if (was.path_json !== path || (was.selectable === 1) !== f.selectable || !sameExcept(was.except as number[] | undefined, except)) {
+      if (!sameExcept(was.except as number[] | undefined, except)) regenerated.add(f.key);
+      folders.put({ ...row, position: was.position });
+    } else continue;
     changed = true;
   }
   for (const [key, r] of before) {
@@ -253,7 +274,8 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
   }
   if (T(c, "accounts").get(accountId)?.kind === "imap") {
     for (const f of next) {
-      if (known.has(f.key)) continue;
+      // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1)
+      if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
       if (T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) {
         jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
         forget(f.key);
@@ -312,10 +334,12 @@ export function rebuildFolders(c: Ctx, limit: number): { more: boolean; touched:
   const threadRows = T(c, "threads");
   const threads: number[] = [];
   const done = walk.done;
+  const folder = T(c, "folders").get(job.account_id, job.key);
   for (const key of walk.pending) {
     const l = locations.rows.get(key);
-    // this folder's rows only (its old ones went in phase 0), from its messages: no thread refolded (Codex R11)
-    if (!l) continue;
+    // this folder's rows only (its old ones went in phase 0), from its messages: no thread refolded (Codex R11); never
+    // another folder's generation (Codex code review round 8 #1)
+    if (!l || !ownGeneration(folder, l.uidvalidity as number)) continue;
     const m = messages.get(l.message_id);
     if (!m || m.is_trash || m.is_spam || memberships.has(m.thread_id, job.key)) continue;
     const t = threadRows.get(m.thread_id);

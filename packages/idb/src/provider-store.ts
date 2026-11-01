@@ -3,7 +3,7 @@ import { captureKey } from "@terno/store";
 import { ImapIdentityError, AWAITING_IDENTITY, sameImapLocations } from "@terno/store";
 import type { FlagSnapshotRequest, FlagSnapshotPage, ImapLocation, ImapLocationStore, ProviderStore } from "@terno/store";
 import { getSetting, T, type Ctx, type R } from "./mail";
-import { isFolder } from "./folders";
+import { folderExcept } from "./folders";
 
 const identityVersions = new WeakMap<object, { value: number }>();
 function identityVersion(c: Ctx) {
@@ -288,7 +288,7 @@ class IdbImapLocations implements ImapLocationStore {
           if (this.t.by("uid", this.accountId, mailbox, uidvalidity, mapped).some((l) => l.message_id !== item.message_id)) throw new ImapIdentityError();
           retireLocationCapture(this.c,item.message_id,mailbox);
           this.t.put({ message_id: item.message_id, account_id: this.accountId, mailbox, uidvalidity, uid: mapped, flags: "[]" });
-          this.located([item.message_id], mailbox, true);
+          this.located([item.message_id], mailbox, true, uidvalidity);
           if (!copy) { retireLocationCapture(this.c,item.message_id,item.mailbox); this.t.delete(item.message_id, item.mailbox); this.located([item.message_id], item.mailbox, false); }
           T(this.c, "imap_identity_holds").delete(item.message_id);
         }
@@ -312,8 +312,11 @@ class IdbImapLocations implements ImapLocationStore {
   }
 
   /** plan 68: a location in a listed folder decides membership, in the same unit and incrementally (the SQL adapter's, Codex R10) */
-  private located(messageIds: readonly number[], mailbox: string, added: boolean) {
-    if (!messageIds.length || !isFolder(this.c, this.accountId, mailbox)) return;
+  private located(messageIds: readonly number[], mailbox: string, added: boolean, uidvalidity?: number) {
+    // never by another folder's generation cached under the path (Codex code review round 8 #1)
+    const except = messageIds.length ? folderExcept(this.c, this.accountId, mailbox) : null;
+    if (!except || (added && uidvalidity !== undefined && except.includes(uidvalidity))) return;
+    const own = (id: number) => { const l = this.t.get(id, mailbox); return !!l && !except.includes(l.uidvalidity as number); };
     const messages = T(this.c, "messages");
     const threads = T(this.c, "threads");
     const memberships = T(this.c, "thread_folders");
@@ -325,7 +328,7 @@ class IdbImapLocations implements ImapLocationStore {
         if (t && !m.is_trash && !m.is_spam && !memberships.has(t.id, mailbox)) memberships.insert({ thread_id: t.id, account_id: t.account_id, folder: mailbox, last_date: t.last_date, unread: t.unread_count > 0 ? 1 : 0 });
       } else {
         const row = memberships.get(m.thread_id, mailbox);
-        if (row && !messages.by("fk_thread_id", m.thread_id).some((o) => !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox))) memberships.deleteRow(row);
+        if (row && !messages.by("fk_thread_id", m.thread_id).some((o) => !o.is_trash && !o.is_spam && own(o.id as number))) memberships.deleteRow(row);
       }
     }
   }
@@ -336,9 +339,12 @@ class IdbImapLocations implements ImapLocationStore {
       // a known location (new flags, a new UID) moves no membership
       const prior = this.t.get(messageId, mailbox);
       if (prior && (prior.uid !== uid || prior.uidvalidity !== uidvalidity)) retireLocationCapture(this.c,messageId,mailbox);
-      const known = this.t.has(messageId, mailbox);
+      // one under another generation may move it (Codex code review round 8 #1)
+      const was = prior?.uidvalidity as number | undefined;
       this.t.put({ message_id: messageId, account_id: this.accountId, mailbox, uidvalidity, uid, flags: JSON.stringify(flags) });
-      if (!known) this.located([messageId], mailbox, true);
+      if (was === uidvalidity) return;
+      if (was !== undefined) this.located([messageId], mailbox, false);
+      this.located([messageId], mailbox, true, uidvalidity);
     });
   }
 
@@ -369,6 +375,9 @@ class IdbImapLocations implements ImapLocationStore {
     // in the deleting command, 75 ms at once); a thread being decided is watched (any write that could put one of its
     // messages back here marks it), so the delete needs no second walk: unmarked, its row goes in a batch of 500.
     const watch = expungeWatch(this.c);
+    // a place under another folder's generation keeps no membership (Codex code review round 8 #1)
+    const except = (await this.read(() => folderExcept(this.c, this.accountId, mailbox))) ?? [];
+    const own = (id: number) => { const l = this.t.get(id, mailbox); return !!l && !except.includes(l.uidvalidity as number); };
     let since = performance.now();
     const turn = async () => {
       if (performance.now() - since < 4) return;
@@ -380,7 +389,7 @@ class IdbImapLocations implements ImapLocationStore {
       const batch = going.splice(0);
       if (!batch.length) return;
       await this.command(() => {
-        if (!isFolder(this.c, this.accountId, mailbox)) return;
+        if (folderExcept(this.c, this.accountId, mailbox) === null) return;
         const memberships = T(this.c, "thread_folders");
         for (const thread of batch) {
           // marked while it was decided: it keeps its row (shown a while longer, never a whole thread walked here)
@@ -406,7 +415,7 @@ class IdbImapLocations implements ImapLocationStore {
               return false;
             }
             const o = messages.rows.get(next.value);
-            if (o && !o.is_trash && !o.is_spam && this.t.has(o.id, mailbox)) return true;
+            if (o && !o.is_trash && !o.is_spam && own(o.id as number)) return true;
           }
           return false;
         });

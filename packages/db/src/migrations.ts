@@ -1134,6 +1134,8 @@ END;
 CREATE TABLE view_unread_backfill (after_id INTEGER NOT NULL);
 INSERT INTO view_unread_backfill (after_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM threads WHERE unread_count > 0);
 ` },
+  // plan 107 (Codex code review round 8 #1): an IMAP path's generations that are another folder's (JSON array; NULL: none)
+  { version: 41, name: "folder generations left out (plan 107)", sql: "ALTER TABLE folders ADD COLUMN except_json TEXT;" },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

@@ -13,6 +13,12 @@ import { placeholders, type Db } from "./sqlite";
  *  - IMAP: a location in a mailbox the account lists as a folder (role mailboxes never are).
  * `last_date` and `unread` are the thread's, so pages and counts never touch threads.
  */
+/**
+ * a location in a listed folder's own generation: never one its path's `except_json` names (another folder's mail,
+ * cached under a path made again after a rename or delete here: Codex code review round 8 #1)
+ */
+const OWN = (l: string, f: string) => `(${f}.except_json IS NULL OR ${l}.uidvalidity NOT IN (SELECT value FROM json_each(${f}.except_json)))`;
+
 const MEMBERSHIP = /* sql */ `
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
 SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
@@ -21,7 +27,7 @@ SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
      AND instr(m.gmail_labels, 'Label_') > 0 AND j.value LIKE 'Label\\_%' ESCAPE '\\'
   UNION
   SELECT m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
-   WHERE m.thread_id IN (SELECT value FROM json_each(?1)) AND m.is_trash = 0 AND m.is_spam = 0
+   WHERE m.thread_id IN (SELECT value FROM json_each(?1)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
 ) k JOIN threads t ON t.id = k.tid`;
 
 /**
@@ -67,7 +73,7 @@ export function writeFolders(db: Db, threads: readonly FoldedThread[]): void {
   if (db.get("SELECT 1 FROM folders LIMIT 1")) {
     for (const r of db.all<{ thread_id: number; mailbox: string }>(
       `SELECT m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
-       WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0`,
+       WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}`,
       json,
     )) want.get(r.thread_id)?.add(r.mailbox);
   }
@@ -212,17 +218,39 @@ export function isFolder(db: Db, accountId: number, key: string): boolean {
   return db.get("SELECT 1 FROM folders WHERE account_id = ? AND key = ?", accountId, key) !== undefined;
 }
 
+/**
+ * A listed folder's generations that are another folder's (`except_json`), or null when the mailbox isn't a listed
+ * folder: a location under one of them makes no membership (Codex code review round 8 #1).
+ */
+export function folderExcept(db: Db, accountId: number, key: string): readonly number[] | null {
+  const r = db.get<{ except_json: string | null }>("SELECT except_json FROM folders WHERE account_id = ? AND key = ?", accountId, key);
+  return r ? exceptOf(r.except_json) : null;
+}
+
+const exceptOf = (json: string | null): number[] => {
+  if (!json) return [];
+  try {
+    const v: unknown = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
+  } catch {
+    return [];
+  }
+};
+/** a folder's `except` as stored: sorted, NULL when there's none */
+const exceptJson = (except: readonly number[] | undefined): string | null => (except?.length ? JSON.stringify([...new Set(except)].sort((a, b) => a - b)) : null);
+
 interface FolderRow {
   account_id: number;
   key: string;
   path_json: string;
   selectable: number;
+  except_json: string | null;
 }
 
-const toFolder = (r: FolderRow): Folder => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1 });
+const toFolder = (r: FolderRow): Folder => ({ accountId: r.account_id, key: r.key, path: JSON.parse(r.path_json) as string[], selectable: r.selectable === 1, ...(r.except_json && { except: exceptOf(r.except_json) }) });
 
 export function listFolders(db: Db): Folder[] {
-  return db.all<FolderRow>("SELECT account_id, key, path_json, selectable FROM folders ORDER BY account_id, position").map(toFolder);
+  return db.all<FolderRow>("SELECT account_id, key, path_json, selectable, except_json FROM folders ORDER BY account_id, position").map(toFolder);
 }
 
 /**
@@ -231,25 +259,29 @@ export function listFolders(db: Db): Folder[] {
  * list). A newly listed IMAP folder gets a rebuild job instead of a rebuild here (Codex R5: one transaction over a
  * big folder held the backend): `rebuildFolders` runs it a slice at a time, resumable.
  */
-export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[]): { changed: boolean; touched: number[] } {
+export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[], carried: readonly string[] = []): { changed: boolean; touched: number[] } {
   return db.tx(() => {
     // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
     // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
-    const before = new Map(db.all<FolderRow & { position: number }>("SELECT account_id, key, path_json, selectable, position FROM folders WHERE account_id = ?", accountId).map((r) => [r.key, r]));
+    const before = new Map(db.all<FolderRow & { position: number }>("SELECT account_id, key, path_json, selectable, except_json, position FROM folders WHERE account_id = ?", accountId).map((r) => [r.key, r]));
     const known = new Set(before.keys());
     const next = new Set<string>();
+    // listed before with other generations left out: its memberships are derived again (Codex code review round 8 #1)
+    const regenerated = new Set<string>();
     let position = Math.max(-1, ...[...before.values()].map((r) => r.position));
     let changed = false;
     for (const f of folders) {
       if (next.has(f.key)) continue;
       next.add(f.key);
       const path = JSON.stringify(f.path);
+      const except = exceptJson(f.except);
       const was = before.get(f.key);
       if (!was) {
-        db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, ?, ?, ?, ?)", accountId, f.key, path, f.selectable ? 1 : 0, ++position);
+        db.run("INSERT INTO folders (account_id, key, path_json, selectable, position, except_json) VALUES (?, ?, ?, ?, ?, ?)", accountId, f.key, path, f.selectable ? 1 : 0, ++position, except);
         changed = true;
-      } else if (was.path_json !== path || (was.selectable === 1) !== f.selectable) {
-        db.run("UPDATE folders SET path_json = ?, selectable = ? WHERE account_id = ? AND key = ?", path, f.selectable ? 1 : 0, accountId, f.key);
+      } else if (was.path_json !== path || (was.selectable === 1) !== f.selectable || was.except_json !== except) {
+        db.run("UPDATE folders SET path_json = ?, selectable = ?, except_json = ? WHERE account_id = ? AND key = ?", path, f.selectable ? 1 : 0, except, accountId, f.key);
+        if (was.except_json !== except) regenerated.add(f.key);
         changed = true;
       }
     }
@@ -263,7 +295,8 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
     db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key NOT IN (SELECT key FROM folders WHERE account_id = ?)", accountId, accountId);
     if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "imap") {
       for (const f of folders) {
-        if (known.has(f.key)) continue;
+        // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1)
+        if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
         // only where there's something to rebuild: its mailbox has locations, or rows a past listing left
         const any =
           db.get("SELECT 1 FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT 1", accountId, f.key) ??
@@ -362,8 +395,9 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
       limit,
     );
     // this folder's rows only (its old ones went in phase 0): from the batch's messages, never a refold of their
-    // whole threads (Codex R11: a long conversation re-read per slice)
-    const ids = JSON.stringify(rows.map((r) => r.message_id));
+    // whole threads (Codex R11: a long conversation re-read per slice); never another folder's generation (round 8 #1)
+    const except = folderExcept(db, job.account_id, job.key) ?? [];
+    const ids = JSON.stringify(rows.filter((r) => !except.includes(r.uidvalidity)).map((r) => r.message_id));
     const threads = db
       .all<{ thread_id: number }>(
         `INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)

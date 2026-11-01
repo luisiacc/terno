@@ -248,6 +248,12 @@ export interface Folder {
   path: string[];
   /** false: it only groups the folders under it (an IMAP \Noselect parent) */
   selectable: boolean;
+  /**
+   * plan 107 (IMAP): UIDVALIDITYs cached under this path that are another folder's: a generation a rename or delete
+   * made here took away, the path made again since (Codex code review round 8 #1). Their places make no membership
+   * here, and a count or export of it leaves them out. Absent: none.
+   */
+  except?: number[];
 }
 
 /** Plan 107: an account's standard places a favorite can point at (the rows under an open account). */

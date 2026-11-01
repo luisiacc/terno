@@ -898,7 +898,7 @@ export class SqlMailStore implements MailStore {
 
   readonly folders: MailStore["folders"] = {
     list: async () => listFolders(this.db),
-    replace: async (accountId, folders) => replaceFolders(this.db, accountId, folders),
+    replace: async (accountId, folders, carried) => replaceFolders(this.db, accountId, folders, carried),
     rebuild: async (limit) => rebuildFolders(this.db, limit),
     count: async (accountId, keys, after, limit) => countFolderMessages(this.db, accountId, keys, after, limit),
     carry: async (accountId, from, to, after, limit) => carryFolder(this.db, accountId, from, to, after, limit),

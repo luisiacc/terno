@@ -1484,7 +1484,7 @@ export class IdbMailStore implements MailStore {
 
   readonly folders: MailStore["folders"] = {
     list: () => this.early(() => listFolders(this.c)),
-    replace: (accountId, folders) => this.command(() => replaceFolders(this.c, accountId, folders)),
+    replace: (accountId, folders, carried) => this.command(() => replaceFolders(this.c, accountId, folders, carried)),
     count: (accountId, keys, after, limit) => this.read(() => countFolderMessages(this.c, accountId, keys, after, limit)),
     carry: (accountId, from, to, after, limit) => this.command(() => carryFolder(this.c, accountId, from, to, after, limit)),
     rebuild: async (limit) => {
