@@ -46,6 +46,8 @@ export interface DesktopBridge {
   print?(job: DesktopPrintJob): Promise<DesktopPrintResult>;
   /** reveals a PDF this session exported, by the id its export returned */
   showSaved?(exportId: string): Promise<boolean>;
+  /** plan 107: a folder's .mbox, written by main (older shells don't have it) */
+  mboxExport?: DesktopMboxExport;
   /** the menu's commands (Archivo, Ver) */
   onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread" | "updates.check" | "nav.back" | "nav.forward") => void): () => void;
   /** plan 41: a notification's click opens this conversation (null: the Inbox); older shells don't have it */
@@ -60,6 +62,18 @@ export interface DesktopBridge {
   onFlushDrafts?(flush: () => Promise<boolean>, acquire?: () => (() => void) | null): () => void;
   /** A refused native reload; the action is bound to that exact disclosed window/document request. */
   onReloadRefused?(listener: (anyway: () => void) => void): () => void;
+}
+
+/** Plan 107: an .mbox export's file through main (apps/desktop/src/mbox-export.ts): the save panel, then appends, then the rename. */
+export interface DesktopMboxExport {
+  /** the save panel for `<name>.mbox`, then a temp file beside the target */
+  begin(name: string): Promise<{ status: "ready"; id: string } | { status: "cancelled" | "failed" }>;
+  /** false: the file can't be written (it's gone) */
+  write(id: string, chunk: string): Promise<boolean>;
+  /** renamed into place */
+  end(id: string): Promise<{ status: "saved"; name: string } | { status: "failed" }>;
+  /** the temp file is deleted */
+  abort(id: string): Promise<boolean>;
 }
 
 /** In-app updates through main (apps/desktop/src/updates/main.ts validates every call). */

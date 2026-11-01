@@ -43,6 +43,13 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
   // the print document and its options; main validates every field and owns the CSP, title and footer
   print: (job: unknown) => ipcRenderer.invoke("terno:print", job),
   showSaved: (exportId: string) => ipcRenderer.invoke("terno:show-saved", String(exportId)),
+  // plan 107: a folder's .mbox: main shows the save panel, appends each piece to a temp file, renames it into place
+  mboxExport: {
+    begin: (name: string) => ipcRenderer.invoke("terno:export-begin", String(name)),
+    write: (id: string, chunk: string) => ipcRenderer.invoke("terno:export-write", String(id), String(chunk)),
+    end: (id: string) => ipcRenderer.invoke("terno:export-end", String(id)),
+    abort: (id: string) => ipcRenderer.invoke("terno:export-abort", String(id)),
+  },
   // diagnostics: main validates every batch (schema, size, rate) and owns files, reports and the export dialog
   diag: {
     info: () => ipcRenderer.sendSync("terno:diag-info") as unknown,

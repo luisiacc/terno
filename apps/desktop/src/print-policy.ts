@@ -100,12 +100,17 @@ function capName(s: string): string {
 
 /** The same rule as the renderer's: no path or reserved characters, capped, a generic name ("Email", in main's locale) when nothing is left. */
 export function pdfFileName(subject: string): string {
-  const clean = subject
+  return safeFileName(subject) || t("print.fileName");
+}
+
+/** A name with no path or reserved characters, capped; "" when nothing is left (plan 107's export uses it too). */
+export function safeFileName(name: string): string {
+  const clean = name
     // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name can't hold
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[\s.]+|[\s.]+$/g, "");
-  return capName(clean) || t("print.fileName");
+  return capName(clean);
 }
 
 /** The export's temp file: beside the target (same volume, so the rename is atomic), short and random whatever the name. */

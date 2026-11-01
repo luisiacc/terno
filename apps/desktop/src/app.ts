@@ -38,6 +38,7 @@ import { NetworkWatch } from "./network-watch";
 import { backstopAllows, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
+import { registerMboxExport } from "./mbox-export";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
@@ -780,6 +781,7 @@ if (!app.requestSingleInstanceLock()) {
       trusted,
       testPdfDir: testPdfDir(process.env, app.isPackaged, demo),
     });
+    registerMboxExport({ trusted, testDir: testPdfDir(process.env, app.isPackaged, demo) });
     await switchLanguage(language, systemLanguages());
     buildMenu();
     startBackend();
