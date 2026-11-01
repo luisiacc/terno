@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
-import type { Platform } from "@terno/store";
+import type { FolderExportCursor, Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { confirmRebuilt, rebuildFolders } from "./folders";
@@ -155,13 +155,17 @@ it("plan 107: an .mbox export's id stretches seek, never rescan: an account and 
   const rows = [...all].sort((a, b) => b.id - a.id).map((t) => ({ thread_id: t.id, account_id: account, folder: "Export", last_date: 0, unread: 0 }));
   c.db.tx(() => rows.forEach((r) => c.db.table("thread_folders").put(r)));
   try {
+    // a stretch's limit bounds threads visited and messages looked at together (Codex code review round 2 #6)
+    const perThread = new Map<number, number>();
+    for (const m of (await store.debug.snapshot()).messages) perThread.set(m.threadId, (perThread.get(m.threadId) ?? 0) + 1);
+    const work = (threads: readonly { id: number }[]) => threads.reduce((n, t) => n + Math.max(1, perThread.get(t.id) ?? 0), 0);
     for (const [label, target, expected] of [
-      ["folder", { accountId: account, folder: "Export" }, all.length],
-      ["account", { accountId: account, view: "archive" as const }, all.filter((t) => t.accountId === account).length],
+      ["folder", { accountId: account, folder: "Export" }, work(all)],
+      ["account", { accountId: account, view: "archive" as const }, work(all.filter((t) => t.accountId === account))],
     ] as const) {
       for (const limit of [200, 5000]) {
         const samples: Sample[] = [];
-        for (let after = 0; ; ) {
+        for (let after: FolderExportCursor | null = null; ; ) {
           const s = await sampleAsync(() => store.folderExport.ids(target, after, limit));
           samples.push(s);
           if (s.result.next === null) break;

@@ -1,7 +1,7 @@
 import { ATTACHMENT_CHUNK } from "@terno/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
-import type { FolderExportTarget } from "../types";
+import type { FolderExportCursor, FolderExportTarget } from "../types";
 import { ingest, msg, withAccounts } from "./fixtures";
 import type { StoreHarness } from "./store";
 
@@ -26,8 +26,10 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
   const walk = async (store: MailStore, target: FolderExportTarget, limit = 1, between?: (stretch: number) => Promise<void>) => {
     const out: { id: number; date: number }[] = [];
     let stretches = 0;
-    for (let after = 0; ;) {
+    for (let after: FolderExportCursor | null = null; ;) {
       const r = await store.folderExport.ids(target, after, limit);
+      // the limit bounds what a stretch looks at, so it never returns more messages than that
+      expect(r.messages.length).toBeLessThanOrEqual(limit);
       out.push(...r.messages);
       stretches++;
       if (r.next === null) return { ids: out.map((m) => m.id).sort((a, b) => a - b), dates: out, stretches };
@@ -109,6 +111,33 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       expect(cut.stretches).toBe(3);
       // a batch read leaves out what's gone and keeps the order asked
       expect((await store.folderExport.messages([all[2]!, gone!, all[0]!])).map((m) => m.id)).toEqual([all[2], all[0]]);
+    });
+
+    it("a long conversation is read a stretch of its messages at a time, each once, a deletion between stretches skipped (Codex code review round 2 #6)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store, 1);
+      const day = Date.UTC(2026, 0, 1);
+      // one thread of 9 (equal dates among them, one archived so the inbox skips it) between two short ones
+      await ingest(store, [
+        msg({ accountId: a!, providerMsgId: "before", providerThreadId: "x", date: day }),
+        ...Array.from({ length: 9 }, (_, i) => msg({ accountId: a!, providerMsgId: `c${i}`, providerThreadId: "long", subject: "Hilo", date: day + Math.floor(i / 3) * 1000, inInbox: i !== 4 })),
+        msg({ accountId: a!, providerMsgId: "after", providerThreadId: "z", date: day }),
+      ]);
+      const inbox = await idsOf(store, ["before", "after", ...Array.from({ length: 9 }, (_, i) => `c${i}`).filter((p) => p !== "c4")]);
+      for (const limit of [1, 2, 4]) {
+        const r = await walk(store, { accountId: a!, view: "inbox" }, limit);
+        expect(r.ids).toEqual(inbox);
+        expect(r.dates).toHaveLength(inbox.length);
+        // the 9 never came in one stretch
+        expect(r.stretches).toBeGreaterThanOrEqual(Math.ceil(9 / limit));
+      }
+      const archive = await walk(store, { accountId: a!, view: "archive" }, 2);
+      expect(archive.ids).toEqual(await idsOf(store, ["c4"]));
+      const [gone] = await idsOf(store, ["c7"]);
+      const cut = await walk(store, { accountId: a!, view: "inbox" }, 3, async (stretch) => {
+        if (stretch === 1) await store.sync.remove([gone!]);
+      });
+      expect(cut.ids).toEqual(inbox.filter((id) => id !== gone));
     });
 
     it("reads a batch: stored headers, bodies, and which attachments' bytes are here", async () => {

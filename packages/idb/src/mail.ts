@@ -567,7 +567,7 @@ function datedPlace(order: readonly Dated[], d: Dated): number {
 }
 
 /** the first position in an ascending list holding a value greater than `after` */
-export function seekAfter(ids: readonly number[], after: number): number {
+export function seekAfter(ids: ArrayLike<number>, after: number): number {
   let lo = 0;
   let hi = ids.length;
   while (lo < hi) {

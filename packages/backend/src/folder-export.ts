@@ -2,7 +2,7 @@ import { RpcError } from "@terno/core/rpc";
 import type { FolderView } from "@terno/core";
 import { L } from "@terno/i18n";
 import { mboxMessage, type MboxStats } from "@terno/mail/portable";
-import type { ExportMessage, FolderExportTarget } from "@terno/store";
+import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore } from "./core";
 
@@ -16,7 +16,7 @@ import type { BackendCore } from "./core";
 
 /** What one `next` may work (the bulk slicer's budget). */
 const NEXT_MS = BULK_SLICE.targetMs;
-/** Id reads: a stretch of threads a slice, sized by time. */
+/** Id reads: a stretch of threads and messages looked at a slice, sized by time. */
 const IDS_SLICE = { ...BULK_SLICE, initial: 200, floor: 20, ceiling: 5000 };
 /** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ 256 KB). */
 export const EXPORT_TEXT_MAX = 1024 * 1024;
@@ -148,12 +148,12 @@ export class FolderExports {
     return folder.path.at(-1) || folder.key;
   }
 
-  /** every message id of the place, a stretch of threads a slice with a turn between */
+  /** every message id of the place, a stretch a slice (of threads, or of one long conversation) with a turn between */
   private async resolve(target: FolderExportTarget, superseded: () => boolean): Promise<{ ids: number[]; dates: number[] }> {
     const sizer = new SliceSizer(IDS_SLICE);
     const ids: number[] = [];
     const dates: number[] = [];
-    for (let after = 0; !superseded(); ) {
+    for (let after: FolderExportCursor | null = null; !superseded(); ) {
       const started = performance.now();
       const r = await this.b.store.folderExport.ids(target, after, sizer.size);
       sizer.record(sizer.size, performance.now() - started);

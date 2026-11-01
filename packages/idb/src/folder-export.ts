@@ -1,11 +1,11 @@
 import { storedAddresses, type FolderView } from "@terno/core";
-import type { ExportMessage, FolderExportTarget } from "@terno/store";
+import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
 import { seekAfter, T, type Ctx, type R } from "./mail";
 
 /**
  * Plan 107: what an .mbox export reads (the SQL adapter's folder-export.ts): a stretch of a place's threads at a
- * time (the smallest `limit` ids above `after`, placed as found), the messages there that are in it. The backend
- * sorts what it collected by (date, id).
+ * time (the smallest ids above `after`, placed as found), the messages there that are in it, a long conversation a
+ * stretch of its messages at a time. The backend sorts what it collected by (date, id).
  */
 const PLACE: Record<FolderView, (m: R) => boolean> = {
   inbox: (m) => m.in_inbox === 1 && !m.is_trash && !m.is_spam,
@@ -54,18 +54,49 @@ function stretch(c: Ctx, target: FolderExportTarget, after: number, limit: numbe
   return out;
 }
 
-export function exportIds(c: Ctx, target: FolderExportTarget, after: number, limit: number): { messages: { id: number; date: number }[]; next: number | null } {
-  const top = stretch(c, target, after, limit);
-  if (!top.length) return { messages: [], next: null };
+/**
+ * A thread's messages after `from` (by id), at most `n` looked at: all of a short one as the index holds them; a long
+ * one's ids sorted natively (one numeric sort, a few milliseconds at 50,000) to seek into, so a conversation of any
+ * length is read a stretch a call (Codex code review round 2 #6: one of 50,000 was read whole in one call).
+ */
+function threadStretch(c: Ctx, thread: number, from: number | null, n: number): { rows: R[]; more: boolean } {
   const messages = T(c, "messages");
+  if (from === null && messages.count("fk_thread_id", thread) <= n) return { rows: messages.by("fk_thread_id", thread), more: false };
+  const ids = Float64Array.from(messages.keysBy("fk_thread_id", thread) as IterableIterator<number>).sort();
+  let at = from === null ? 0 : seekAfter(ids, from);
+  const rows: R[] = [];
+  for (const end = Math.min(ids.length, at + n); at < end; at++) rows.push(messages.get(ids[at]!)!);
+  return { rows, more: at < ids.length };
+}
+
+export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
   const locations = T(c, "message_locations");
   const folder = target.folder;
   const test = folder !== undefined ? (m: R) => !m.is_trash && !m.is_spam && (hasLabel(m, folder) || locations.has(m.id, folder)) : PLACE[target.view];
   const out: { id: number; date: number }[] = [];
-  for (const id of top) {
-    for (const m of messages.by("fk_thread_id", id)) if (m.account_id === target.accountId && !m.is_draft && test(m)) out.push({ id: m.id as number, date: m.date as number });
+  let budget = limit;
+  /** a thread from `from`: where it stopped, or null when it's read to its end */
+  const read = (thread: number, from: number | null): { id: number; date: number } | null => {
+    const { rows, more } = threadStretch(c, thread, from, budget);
+    for (const m of rows) if (m.account_id === target.accountId && !m.is_draft && test(m)) out.push({ id: m.id as number, date: m.date as number });
+    budget -= Math.max(1, rows.length);
+    const last = rows.at(-1);
+    return more && last ? { id: last.id as number, date: last.date as number } : null;
+  };
+  if (after?.message) {
+    const cut = read(after.thread, after.message.id);
+    if (cut) return { messages: out, next: { thread: after.thread, message: cut } };
+    if (budget <= 0) return { messages: out, next: { thread: after.thread } };
   }
-  return { messages: out, next: top.length < limit ? null : top[top.length - 1]! };
+  const asked = budget;
+  const top = stretch(c, target, after?.thread ?? 0, asked);
+  for (const id of top) {
+    const cut = read(id, null);
+    if (cut) return { messages: out, next: { thread: id, message: cut } };
+    if (budget <= 0) return { messages: out, next: { thread: id } };
+  }
+  // each thread took at least one of the budget: a full stretch returned above, so this one was the last
+  return { messages: out, next: null };
 }
 
 /** these messages, their bodies read ahead by the caller */

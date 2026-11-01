@@ -368,6 +368,15 @@ export interface DraftInput {
 /** Plan 107: what an .mbox export reads: an account's own folder (`folder`: its key) or one of its standard rows */
 export type FolderExportTarget = { accountId: number; folder: string; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
 
+/**
+ * Plan 107: where an export's id walk goes on: past thread `thread`, or inside it past `message` (a long conversation
+ * is read a stretch at a time, in the store's own order). Given back as the store returned it.
+ */
+export interface FolderExportCursor {
+  thread: number;
+  message?: { id: number; date: number };
+}
+
 /** Plan 107: a message as the .mbox export writes it, from this computer's copy */
 export interface ExportMessage {
   id: number;

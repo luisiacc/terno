@@ -534,10 +534,12 @@ export interface MailStore {
    */
   folderExport: {
     /**
-     * One stretch of the place: up to `limit` of its threads after thread `after` (by id), and the messages there
-     * that are in it (unordered). `next`: the last thread read; null: none left.
+     * One stretch of the place, from `after` (null: the start): its threads by id, and the messages there that are in
+     * it (unordered). `limit` bounds the work, threads visited and messages looked at together, so one long
+     * conversation is read a stretch at a time too (Codex code review round 2 #6). `next`: where the walk goes on;
+     * null: none left.
      */
-    ids(target: import("./types").FolderExportTarget, after: number, limit: number): Promise<{ messages: { id: number; date: number }[]; next: number | null }>;
+    ids(target: import("./types").FolderExportTarget, after: import("./types").FolderExportCursor | null, limit: number): Promise<{ messages: { id: number; date: number }[]; next: import("./types").FolderExportCursor | null }>;
     /** these messages (a batch), in this order; gone ones are left out */
     messages(ids: readonly number[]): Promise<import("./types").ExportMessage[]>;
   };

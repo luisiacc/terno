@@ -1,7 +1,7 @@
 /**
  * Plan 107: exporting a 5,000-message folder (bodies, some attachments) as an .mbox, in both stores. Each `next`
  * stays within the slicer's budget (plus at most one unit begun inside it), and nothing in start or the nexts
- * stalls the event loop past it.
+ * stalls the event loop past it. One 50,000-message conversation's ids are read a bounded stretch at a time.
  */
 import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -62,6 +62,8 @@ async function exportAll(name: string, store: MailStore, accountId: number) {
   const startedAt = performance.now();
   const start = await exports.start({ accountId, folder: "Label_big" }, "perf");
   const startMs = performance.now() - startedAt;
+  // the renderer's first call comes on a turn of its own, as every later one does
+  await yieldTurn();
   const nexts: number[] = [];
   let bytes = 0;
   let last;
@@ -83,7 +85,76 @@ async function exportAll(name: string, store: MailStore, accountId: number) {
   expect(r.stall, `${name}: event-loop stall`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
 }
 
+const CONVERSATION = 50_000;
+/** one id read: the slicer's budget plus a stretch begun inside it */
+const IDS_MS = 25;
+
+/** one Gmail conversation of CONVERSATION messages (half of them on one date), every one in the folder, beside a few short ones */
+async function seedConversation(store: MailStore): Promise<number> {
+  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+  await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
+  const all: IncomingMessage[] = [];
+  for (let i = 0; i < CONVERSATION + 20; i++) {
+    const long = i < CONVERSATION;
+    all.push(msg({ accountId: account.id, providerMsgId: `c${i}`, providerThreadId: long ? "one" : `s${i}`, subject: `Hilo ${i}`, date: i < CONVERSATION / 2 ? NOW : NOW - (i % 5000) * 60_000, bodyText: `Hola ${i}`, gmailLabels: ["INBOX", "Label_big"] }));
+  }
+  for (let i = 0; i < all.length; i += 1000) await store.sync.ingest(all.slice(i, i + 1000), { applyFilters: false, now: NOW, classifier: null });
+  return account.id;
+}
+
+/** start: every id read stays bounded inside the one long conversation, and the loop never stalls (Codex code review round 2 #6) */
+async function startConversation(name: string, store: MailStore, accountId: number) {
+  const ids = store.folderExport.ids.bind(store.folderExport);
+  const reads: number[] = [];
+  store.folderExport.ids = async (...a) => {
+    const t = performance.now();
+    const r = await ids(...a);
+    reads.push(performance.now() - t);
+    return r;
+  };
+  const exports = new FolderExports({ store, isStopped: false, yieldTurn } as unknown as BackendCore);
+  const loop = watchLoop(STALL_MS * BUDGET_MULTIPLIER);
+  const startedAt = performance.now();
+  const start = await exports.start({ accountId, folder: "Label_big" }, "perf");
+  const startMs = performance.now() - startedAt;
+  // the renderer's call comes on a turn of its own
+  await yieldTurn();
+  const first = await exports.next(start.exportId, "perf");
+  const r = loop.stop();
+  exports.cancel(start.exportId, "perf");
+  const sorted = [...reads].sort((a, b) => a - b);
+  const max = sorted.at(-1)!;
+  stats.push({ name: `${name}: one ${CONVERSATION}-message conversation, start ${startMs.toFixed(0)} ms, ${reads.length} id reads, max stall ${r.stall.toFixed(1)} ms (longest ${describeGap(r.longest)})`, budgetMs: IDS_MS, p50: sorted[Math.floor(sorted.length / 2)]!, p95: sorted[Math.ceil(sorted.length * 0.95) - 1]!, max, iterations: reads.length });
+  expect(start.total).toBe(CONVERSATION + 20);
+  expect(first.done).toBeGreaterThan(0);
+  // read a stretch at a time, never whole
+  expect(reads.length).toBeGreaterThan(CONVERSATION / 5000);
+  expect(max, `${name}: one id read`).toBeLessThanOrEqual(IDS_MS * BUDGET_MULTIPLIER);
+  expect(r.stall, `${name}: event-loop stall`).toBeLessThanOrEqual(STALL_MS * BUDGET_MULTIPLIER);
+}
+
 describe("folder export (plan 107)", () => {
+  it("SQLite: one 50,000-message conversation's ids, a bounded stretch a read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
+    dirs.push(dir);
+    const store = new SqlMailStore(openDatabase(join(dir, "perf.db")));
+    try {
+      await startConversation("SQLite", store, await seedConversation(store));
+    } finally {
+      await store.close();
+    }
+  }, 300_000);
+
+  it("IndexedDB: one 50,000-message conversation's ids, a bounded stretch a read", async () => {
+    const store = await IdbMailStore.open({ name: `export-conversation-perf-${Date.now()}`, factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: yieldTurn }, instantSearch: false });
+    try {
+      await startConversation("IndexedDB", store, await seedConversation(store));
+    } finally {
+      await store.close();
+    }
+  }, 900_000);
+
+
   it("SQLite: a 5,000-message folder, each next within budget", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-export-perf-"));
     dirs.push(dir);
