@@ -209,6 +209,29 @@ describe("page history (plan 24)", () => {
     expect(t.opened).toEqual([7]);
   });
 
+  it("a list renamed, then its folder renamed again while elsewhere: Forward composes both (Codex code review round 21 #3)", () => {
+    const t = harness();
+    const key = (f: string) => JSON.stringify(["all", 2, null, null, null, f, ""]);
+    t.h.sync(thread(7, key("Work")));
+    t.browser(-1, key("Work"));
+    t.h.refolder(2, "Work", "Job");
+    t.h.relist(key("Work"), key("Job"));
+    t.h.refolder(2, "Job", "Other");
+    t.browser(1, key("Other"));
+    expect(t.opened).toEqual([7]);
+  });
+
+  it("a folder made again under a renamed one's old name: its own new entries aren't translated (Codex code review round 21 #4)", () => {
+    const t = harness();
+    const key = (f: string) => JSON.stringify(["all", 2, null, null, null, f, ""]);
+    t.h.refolder(2, "Work", "Job");
+    // a new Work, its conversation opened after the rename
+    t.h.sync(thread(9, key("Work")));
+    t.browser(-1, key("Work"));
+    t.browser(1, key("Work"));
+    expect(t.opened).toEqual([9]);
+  });
+
   it("j → Back → Forward within 300 ms: the replace still waiting is dropped (never written over the list), Forward reopens the entry as written", () => {
     const t = harness();
     t.h.sync(thread(1));

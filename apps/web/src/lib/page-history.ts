@@ -22,6 +22,10 @@ export interface EntryState {
   id?: number;
   list: string;
   mailbox: string;
+  /** plan 107: how many renames this document had seen when the entry was written (only later ones apply to it) */
+  renames?: number;
+  /** plan 107: the document that wrote it (renames are this document's own; a reload's entries can't be translated) */
+  doc?: string;
 }
 
 export interface HistoryLike {
@@ -88,23 +92,28 @@ export interface PageHistory {
 
 export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   const { history, mailbox } = deps;
-  // plan 107: lists renamed while this document lives (a folder's new key): each old key to the list it is now
-  const renamedLists = new Map<string, string>();
-  // folders renamed: [accountId, from] → to, applied to a list key's folder slot ([view, account, category, review,
-  // filter, folder, …, query]: listKey's shape), each key straight to its folder now
-  const renamedFolders = new Map<string, string>();
-  const listNow = (list: string) => {
-    const direct = renamedLists.get(list);
-    if (direct) return direct;
-    if (renamedFolders.size === 0) return list;
-    try {
-      const k = JSON.parse(list) as unknown[];
-      if (!Array.isArray(k) || k.length < 7 || typeof k[5] !== "string") return list;
-      const to = renamedFolders.get(JSON.stringify([k[1], k[5]]));
-      return to === undefined ? list : JSON.stringify([...k.slice(0, 5), to, ...k.slice(6)]);
-    } catch {
-      return list;
+  // plan 107: renames while this document lives, in order: a list's (the one shown) and a folder's (shown or not).
+  // An entry follows only those after it was written (round 21 #3, #4: chained renames compose; a folder made
+  // again under an old name keeps its own new entries)
+  type Rename = { kind: "list"; from: string; to: string } | { kind: "folder"; accountId: number; from: string; to: string };
+  const renames: Rename[] = [];
+  const doc = Math.random().toString(36).slice(2);
+  const listNow = (list: string, since: number) => {
+    for (let i = Math.max(0, since); i < renames.length; i++) {
+      const r = renames[i]!;
+      if (r.kind === "list") {
+        if (list === r.from) list = r.to;
+        continue;
+      }
+      try {
+        // listKey's shape: [view, account, category, review, filter, folder, …, query]
+        const k = JSON.parse(list) as unknown[];
+        if (Array.isArray(k) && k.length >= 7 && k[1] === r.accountId && k[5] === r.from) list = JSON.stringify([...k.slice(0, 5), r.to, ...k.slice(6)]);
+      } catch {
+        // not a list key: as it is
+      }
     }
+    return list;
   };
   let shown: Shown = { page: "list", id: null, list: "" };
   /** a back() on its way: the generation it belongs to, and its fallback */
@@ -114,7 +123,7 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   let queued: Shown | null = null;
   let replace: { id: number; list: string; timer: unknown } | null = null;
 
-  const entry = (s: Shown): EntryState => (s.page === "thread" ? { terno: 1, page: "thread", id: s.id!, list: s.list, mailbox } : { terno: 1, page: "compose", list: s.list, mailbox });
+  const entry = (s: Shown): EntryState => (s.page === "thread" ? { terno: 1, page: "thread", id: s.id!, list: s.list, mailbox, renames: renames.length, doc } : { terno: 1, page: "compose", list: s.list, mailbox, renames: renames.length, doc });
   const urlOf = (s: Shown) => (s.page === "thread" ? threadUrl(s.id!) : COMPOSE_URL);
   const ours = () => entryOf(history.state, mailbox) !== null;
 
@@ -180,21 +189,12 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   return {
     sync: apply,
     refolder(accountId, from, to) {
-      if (from === to) return;
-      for (const [k, v] of renamedFolders) if (v === from && JSON.parse(k)[0] === accountId) renamedFolders.set(k, to);
-      renamedFolders.delete(JSON.stringify([accountId, to]));
-      renamedFolders.set(JSON.stringify([accountId, from]), to);
+      if (from !== to) renames.push({ kind: "folder", accountId, from, to });
     },
     relist(from, to) {
       // entries other than this one (Forward's, Back's) can't be rewritten: their list is translated as they come
       // back (Codex code review round 16 #3)
-      if (from !== to) {
-        // every key maps straight to its list now: earlier names of `from` follow it, and `to` is a list again (a
-        // rename back), so no chain and no cycle (round 17 #4)
-        for (const [k, v] of renamedLists) if (v === from) renamedLists.set(k, to);
-        renamedLists.delete(to);
-        renamedLists.set(from, to);
-      }
+      if (from !== to) renames.push({ kind: "list", from, to });
       if (shown.list !== from) return;
       flushReplace(false);
       shown = { ...shown, list: to };
@@ -209,7 +209,7 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
       }
       flushReplace(false);
       const e = entryOf(state, mailbox);
-      if (e?.page === "thread" && listNow(e.list) === currentList) {
+      if (e?.page === "thread" && (e.doc === doc ? listNow(e.list, e.renames ?? 0) : e.list) === currentList) {
         shown = { page: "thread", id: e.id!, list: currentList };
         if (e.list !== currentList) history.replaceState(entry(shown), "", threadUrl(e.id!));
         deps.open(e.id!);
