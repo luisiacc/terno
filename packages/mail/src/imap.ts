@@ -1067,8 +1067,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     const settle = async () => { if (touched.size) { await reconcile(touched, sink, true, c, false, check); touched.clear(); } };
     let waiting = false;
     const keys = Object.keys(cursor.mailboxes).flatMap((path) => { const known = cursor.mailboxes[path]; return known ? [{ path, known, key: `${path}:${known.uidvalidity}` }] : []; });
+    // plan 103: folders done of the run's folders
+    // a count kept as folders finish (Codex review: never a scan per report)
+    const finished = new Set(state.done);
+    let doneCount = keys.filter((k) => finished.has(k.key)).length;
+    const report = () => sink.progress?.({ done: doneCount, total: keys.length, unit: "folders" });
+    report();
     for (const { path, known, key } of keys) {
-      if (state.done.includes(key)) continue;
+      if (finished.has(key)) continue;
       if (sink.signal.aborted) return;
       if (over()) return pause();
       try {
@@ -1103,8 +1109,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (state.failed![key]! < BACKFILL_FOLDER_TRIES) { waiting = true; continue; }
       }
       state.done.push(key);
+      if (!finished.has(key)) { finished.add(key); doneCount++; }
       delete state.below[key];
       await ctx.saveCursor(cursor);
+      report();
     }
     await settle();
     // a folder still to retry: the next regular pass (not a chunk a second later: the server refused it)
@@ -1541,9 +1549,15 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           if (sink.signal.aborted) return;
         }
+        // plan 103: a first read says how far it is, a folder at a time (a regular pass says nothing)
+        const firstRead = [...boxes, ...custom].every((path) => cursor.mailboxes[path] === undefined);
+        let foldersDone = 0;
+        const folderRead = () => { if (firstRead) sink.progress?.({ done: ++foldersDone, total: boxes.size + custom.length, unit: "folders" }); };
+        if (firstRead) sink.progress?.({ done: 0, total: boxes.size + custom.length, unit: "folders" });
         for (const path of boxes) {
           if (sink.signal.aborted) return;
           await syncMailbox(c, path, cursor, sink, touched, { introduced, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
+          folderRead();
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
@@ -1552,6 +1566,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           } catch (error) {
             tolerate(error);
           }
+          folderRead();
         }
         // Forget vanished paths, retaining their cached identities behind durable holds.
         for (const path of incomplete ? [] : vanished) {

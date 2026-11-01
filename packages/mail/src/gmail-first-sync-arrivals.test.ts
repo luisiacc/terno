@@ -11,7 +11,7 @@ const NOW = Date.UTC(2026, 10, 1);
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const c of closers.splice(0)) await c(); });
 
-function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]; historyId?: () => string; listed?: () => string[]; historyGone?: () => boolean }) {
+function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]; historyId?: () => string; listed?: () => string[]; historyGone?: () => boolean; estimate?: number; pageSize?: number }) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   const mailbox = Array.from({ length: o.mailbox }, (_, i) => `m${String(i).padStart(5, "0")}`);
@@ -22,6 +22,7 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
   const ingested: { ids: string[]; live: boolean }[] = [];
   const histories: string[] = [];
   let again = 0;
+  const progress: unknown[] = [];
   const ctx = {
     incoming, incomingProcessor: processor, account: { id: 1, email: "reader@example.test" }, config: {},
     store: { messageByProviderId: async (id: string) => (stored.has(id) ? { id: 1 } : null), syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
@@ -37,11 +38,12 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
       }
       if (url.pathname.endsWith("/labels")) return Response.json({ labels: [] });
       if (url.pathname.endsWith("/messages")) {
+        const size = o.pageSize ?? 500;
         const from = Number(url.searchParams.get("pageToken") ?? 0);
-        const next = from + 500 < mailbox.length ? String(from + 500) : undefined;
+        const next = from + size < mailbox.length ? String(from + size) : undefined;
         // what arrived since appears at the top of the listing (newest first)
         const top = from === 0 ? (o.listed?.() ?? []) : [];
-        return Response.json({ messages: [...top, ...mailbox.slice(from, from + 500)].map((id) => ({ id })), ...(next && { nextPageToken: next }) });
+        return Response.json({ messages: [...top, ...mailbox.slice(from, from + size)].map((id) => ({ id })), ...(next && { nextPageToken: next }), ...(o.estimate !== undefined && { resultSizeEstimate: o.estimate }) });
       }
       const id = url.pathname.split("/").at(-1)!;
       downloads.push(id);
@@ -52,12 +54,13 @@ function setup(o: { mailbox: number; cursor?: unknown; arrivals?: () => string[]
   const sink: SyncSink = {
     signal: new AbortController().signal, windowStart: NOW - 180 * DAY, windowDays: 180,
     again: () => { again++; },
+    progress: (p) => { progress.push(p); },
     async ingest(batch: IncomingMessage[], opts) { ingested.push({ ids: batch.map((m) => m.providerMsgId!), live: opts?.live === true }); batch.forEach((m) => stored.add(m.providerMsgId!)); },
     async updateFlags() {}, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
   };
   const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
   closers.push(async () => { await p.close(); await processor.close(); incoming.close(); });
-  return { p, sink, downloads, ingested, histories, stored, cursor: () => cursor as { reconciliation?: Record<string, unknown>; historyId?: string }, again: () => again };
+  return { p, sink, progress, downloads, ingested, histories, stored, cursor: () => cursor as { reconciliation?: Record<string, unknown>; historyId?: string }, again: () => again };
 }
 
 it("a first sync longer than its chunk stops between batches, asks for another pass, and that pass reads new mail first, as live mail", async () => {
@@ -114,4 +117,32 @@ it("the next look at new mail starts where the last one ended", async () => {
   const t = setup({ mailbox: 10, cursor: { reconciliation: { version: 1, email: "reader@example.test", intent: "days:180", after: Math.floor((NOW - 180 * DAY) / 1000), baseline: "100", stage: "enumerate", pages: 1, next: "5", peek: "104" } }, historyId: () => "104" });
   await t.p.sync(t.sink);
   expect(t.histories[0]).toBe("104");
+});
+
+it("plan 103: a first sync says how far it is: Google's estimate, the oldest date reached, then finishing", async () => {
+  vi.spyOn(Date, "now").mockImplementation(() => NOW);
+  const t = setup({ mailbox: 120, estimate: 6000 });
+  await t.p.sync(t.sink);
+  const reports = t.progress as { done?: number; total?: number; unit?: string; reachedAt?: number; finishing?: boolean }[];
+  // a report a batch of 50: done counts up against the estimate, the oldest mail reached alongside
+  expect(reports.slice(0, 3)).toEqual([
+    { done: 50, total: 6000, unit: "messages", reachedAt: NOW - 10 * DAY },
+    { done: 100, total: 6000, unit: "messages", reachedAt: NOW - 10 * DAY },
+    { done: 120, total: 6000, unit: "messages", reachedAt: NOW - 10 * DAY },
+  ]);
+  // all downloaded: the flags are read again
+  expect(reports.at(-1)).toEqual({ finishing: true, unit: "messages", done: 6000, total: 6000 });
+});
+
+it("plan 103 (Codex review): pages that aren't full count what they held, and an estimate already reached shows no count", async () => {
+  vi.spyOn(Date, "now").mockImplementation(() => NOW);
+  // 360 messages in pages of 120; Google guessed 200
+  const t = setup({ mailbox: 360, estimate: 200, pageSize: 120 });
+  await t.p.sync(t.sink);
+  const reports = (t.progress as { done?: number; total?: number; finishing?: boolean }[]).filter((r) => !r.finishing);
+  // counted, not pages × 500: the second page's first batch is 170 done, not 550
+  expect(reports.map((r) => r.done)).toEqual([50, 100, 120, 170, 220, 240, 290, 340, 360]);
+  // the estimate while the pages listed are under it; past it with pages to come, no count ("0 left" would be wrong);
+  // the last page knows it exactly
+  expect(reports.map((r) => r.total)).toEqual([200, 200, 200, undefined, undefined, undefined, 360, 360, 360]);
 });

@@ -111,6 +111,24 @@ export interface AccountSyncState {
    * works: a sync doesn't prove it, so only signing in again clears it). Absent: the whole account.
    */
   authScope?: "send" | null;
+  /**
+   * plan 103: how far a first sync (or a backfill, plan 101) has got, for the sidebar's card: messages done of a
+   * total when the provider can say (Gmail's estimate, IMAP's folders), and the oldest date it has reached
+   * (newest first: what's left is the days between it and the window's start). null: nothing running.
+   */
+  progress?: SyncProgress | null;
+}
+
+/** Plan 103: a long sync's progress, as its provider can tell it. */
+export interface SyncProgress {
+  done?: number;
+  total?: number;
+  /** what done/total count */
+  unit?: "messages" | "folders";
+  /** the oldest received date downloaded so far (ms) */
+  reachedAt?: number;
+  /** all downloaded; the rest is checking what's here */
+  finishing?: boolean;
 }
 
 export const VIEWS = ["inbox", "starred", "sent", "archive", "spam", "trash", "all"] as const;
@@ -237,6 +255,14 @@ export const FOLDERS_PER_ACCOUNT_MAX = 10_000;
 export const folderRef = (accountId: AccountId, key: string) => `${accountId}:${key}`;
 /** A Gmail tab's place in counts: "accountId:promotions" (plan 86) */
 export const tabRef = (accountId: AccountId, tab: "promotions" | "social") => `${accountId}:${tab}`;
+/**
+ * The standard folders whose unread threads the sidebar counts besides the Inbox: Sent's would only repeat it, and
+ * Trash has none (a trashed message is never unread).
+ */
+export const COUNTED_VIEWS = ["archive", "spam"] as const;
+export type CountedView = (typeof COUNTED_VIEWS)[number];
+/** A counted folder's place in counts: "accountId:archive" */
+export const viewRef = (accountId: AccountId, view: CountedView) => `${accountId}:${view}`;
 
 export const CATEGORY_COLORS = [
   "rose",
@@ -265,6 +291,8 @@ export interface Counts {
   folderUnread?: Record<string, number>;
   /** plan 86: unread threads per Gmail tab, by tabRef (accounts that separate them; absent from an older backend) */
   tabUnread?: Record<string, number>;
+  /** unread threads in each account's Archive and Spam, by viewRef (absent from an older backend) */
+  viewUnread?: Record<string, number>;
 }
 
 /** Plan 87: "always" comes back at its time; "noReply" only if nobody but you wrote in the thread since it was set. */

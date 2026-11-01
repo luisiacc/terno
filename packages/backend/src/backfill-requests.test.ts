@@ -129,3 +129,40 @@ it("plan 102 (Codex review): after a failed first chunk, the retry's new mail is
   const attention = (t.backend as unknown as { attention: { primedAccounts: Set<number> } }).attention;
   expect(attention.primedAccounts.has(t.id)).toBe(true);
 });
+
+it("plan 103: a first sync's progress is kept between chunks and cleared when it's done", async () => {
+  const t = await chunked(async (sink, pass) => {
+    sink.progress?.({ done: 10, total: 100, unit: "messages" });
+    sink.progress?.({ done: 20, total: 100, unit: "messages" });
+    if (pass === 1) sink.again?.();
+  });
+  await t.backend.syncAccount(t.id);
+  // the chunk's latest, not the first one written (writes are throttled)
+  expect((await t.backend.store.accounts.get(t.id))?.syncState.progress).toEqual({ done: 20, total: 100, unit: "messages" });
+  await expect.poll(async () => (await t.backend.store.accounts.get(t.id))?.syncState.lastSyncAt, { timeout: 5000 }).not.toBeNull();
+  expect((await t.backend.store.accounts.get(t.id))?.syncState.progress).toBeNull();
+});
+
+it("plan 103 (Codex review): finishing is written at once, never held back by the throttle", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const t = await chunked(async (sink) => {
+    sink.progress?.({ done: 90, total: 100, unit: "messages" });
+    // a moment later (inside the throttle's window) the download ends and the flags are read again, for a while
+    sink.progress?.({ finishing: true, unit: "messages", done: 100, total: 100 });
+    await gate;
+  });
+  const pass = t.backend.syncAccount(t.id);
+  await expect.poll(async () => (await t.backend.store.accounts.get(t.id))?.syncState.progress?.finishing).toBe(true);
+  release();
+  await pass;
+});
+
+it("plan 103 (Codex review): a pass that leaves its backfill still pending keeps the progress shown", async () => {
+  const t = await chunked(async (sink) => { sink.progress?.({ done: 3, total: 7, unit: "folders" }); });
+  const now = Date.now();
+  await t.backend.store.accounts.update(t.id, { backfill: { merge: { since: now - 365 * DAY, until: now - 180 * DAY } } });
+  await t.backend.syncAccount(t.id);
+  // neither done nor asking for another pass (a folder to retry later): the card keeps where it was
+  expect((await t.backend.store.accounts.get(t.id))?.syncState.progress).toEqual({ done: 3, total: 7, unit: "folders" });
+});

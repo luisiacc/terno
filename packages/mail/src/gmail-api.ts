@@ -70,6 +70,10 @@ interface Reconciliation {
   peek?: string;
   /** plan 102: when this sync began (ms): what the listing finds received after it is new mail, and notifies */
   startedAt?: number;
+  /** plan 103: Google's estimate of the listing's size (its first page's), for progress */
+  estimate?: number;
+  /** plan 103: messages the listing's saved pages held (pages aren't always full) */
+  listed?: number;
 }
 interface ReconcileCursor {
   historyId?: string;
@@ -102,11 +106,13 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
     || (value.stage !== "enumerate" && (value.next !== undefined || value.pages === 0))
     || (value.stage === "enumerate" && ((value.pages === 0) !== (value.next === undefined)))
     || (value.peek !== undefined && (!historyId(value.peek) || earlierHistory(value.peek, value.baseline)))
-    || (value.startedAt !== undefined && (!Number.isSafeInteger(value.startedAt) || (value.startedAt as number) < 0))) return;
+    || (value.startedAt !== undefined && (!Number.isSafeInteger(value.startedAt) || (value.startedAt as number) < 0))
+    || (value.estimate !== undefined && (!Number.isSafeInteger(value.estimate) || (value.estimate as number) < 0))
+    || (value.listed !== undefined && (!Number.isSafeInteger(value.listed) || (value.listed as number) < 0))) return;
   // Pick only bounded known fields; a malformed/foreign cursor is never rewritten wholesale.
   return { version: 1, email, intent: value.intent as string, after: value.after as number, baseline: value.baseline,
     stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.refreshAfter !== undefined && { refreshAfter: value.refreshAfter as string }), ...(value.next !== undefined && { next: value.next as string }),
-    ...(value.peek !== undefined && { peek: value.peek as string }), ...(value.startedAt !== undefined && { startedAt: value.startedAt as number }) };
+    ...(value.peek !== undefined && { peek: value.peek as string }), ...(value.startedAt !== undefined && { startedAt: value.startedAt as number }), ...(value.estimate !== undefined && { estimate: value.estimate as number }), ...(value.listed !== undefined && { listed: value.listed as number }) };
 }
 
 /** plan 102: a pass's share of a first sync; then another pass, which reads new mail first */
@@ -117,15 +123,26 @@ export const LABELS_EVERY_MS = 15 * 60_000;
 /** a first-sync page with more new messages than this (minutes of downloads under the quota) reads the labels first */
 export const EARLY_LABELS_AFTER = 100;
 
+/**
+ * Plan 103: a listing's progress: messages done (counted, not pages × 500) of a total. The listing's last page knows
+ * it exactly (`pageEnd`); before it, Google's estimate, unless the pages already listed passed it (never "0 left"
+ * with more to come): then only the oldest date reached is shown.
+ */
+function progressOf(done: number, pageEnd: number, estimate: number | undefined, more: boolean, oldest: number | undefined): import("@terno/core").SyncProgress {
+  const total = !more ? Math.max(estimate ?? 0, pageEnd) : estimate !== undefined && estimate > pageEnd ? estimate : undefined;
+  return { done, ...(total !== undefined && { total }), unit: "messages", ...(oldest !== undefined && { reachedAt: oldest }) };
+}
+
 /** Plan 101: how far a backfill's listing got, for one request (its bounds, ms). */
-interface BackfillProgress { since: number; until: number; pages: number; next?: string }
+interface BackfillProgress { since: number; until: number; pages: number; next?: string; listed?: number }
 
 /** A saved backfill progress, field by field, only for this request; anything else starts the listing over. */
 function readBackfill(value: unknown, request: { since: number; until: number }): BackfillProgress | undefined {
   if (!isRecord(value) || value.since !== request.since || value.until !== request.until) return;
   if (!Number.isSafeInteger(value.pages) || (value.pages as number) < 0 || (value.pages as number) > LIST_PAGES_MAX) return;
   if (value.next !== undefined && (typeof value.next !== "string" || value.next === "" || value.next.length > LIST_TOKEN_MAX)) return;
-  return { since: request.since, until: request.until, pages: value.pages as number, ...(value.next !== undefined && { next: value.next as string }) };
+  const listed = Number.isSafeInteger(value.listed) && (value.listed as number) >= 0 ? value.listed as number : undefined;
+  return { since: request.since, until: request.until, pages: value.pages as number, ...(value.next !== undefined && { next: value.next as string }), ...(listed !== undefined && { listed }) };
 }
 /**
  * /labels read bounded: Gmail's 10,000 labels (and a few system ones) of at most 225 characters, each up to six
@@ -163,7 +180,7 @@ export function labelFolders(labels: readonly GmailLabel[]): ProviderFolder[] {
 }
 
 interface MessageRef { id: string }
-interface MessagePage { messages?: MessageRef[]; nextPageToken?: string }
+interface MessagePage { messages?: MessageRef[]; nextPageToken?: string; resultSizeEstimate?: number }
 interface HistoryEntry {
   messages?: MessageRef[];
   messagesAdded?: { message: MessageRef }[];
@@ -234,6 +251,8 @@ function messageRef(value: unknown): boolean {
 function readList(value: unknown): MessagePage {
   if (isRecord(value) && Array.isArray(value.messages) && value.messages.length > 500) throw new ProviderError(L("errors.gmail.invalidResponse"), false);
   if (!isRecord(value) || !optionalArray(value.messages, messageRef)) throw invalidResponse();
+  // plan 103: Google's estimate of the whole listing, for progress only (a bad one is just not shown)
+  if (value.resultSizeEstimate !== undefined && (!Number.isSafeInteger(value.resultSizeEstimate) || (value.resultSizeEstimate as number) < 0)) delete value.resultSizeEstimate;
   return value as MessagePage;
 }
 
@@ -932,6 +951,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     const tokens = new Set<string>();
     if (progress.next) tokens.add(progress.next);
     const query = `after:${Math.floor(request.since / 1000)} before:${Math.ceil(request.until / 1000)}`;
+    let estimate: number | undefined, oldest: number | undefined;
     for (;;) {
       sink.check();
       // a listing this long starts over rather than claim the span is done (Codex review); what's stored is skipped
@@ -963,13 +983,20 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         if (!(await store.messageByProviderId(m.id))) ids.push(m.id);
       }
+      // plan 103: where the backfill is (Google's estimate of the span; the oldest date reached)
+      if (estimate === undefined && page.resultSizeEstimate !== undefined) estimate = page.resultSizeEstimate;
+      const listed = page.messages?.length ?? 0;
+      const report = (downloaded: number) => sink.progress?.(progressOf((progress.listed ?? 0) + (listed - ids.length) + downloaded, (progress.listed ?? 0) + listed, estimate, next !== undefined, oldest));
+      const counting: SyncPass = { ...sink, ingest: (messages, o) => { for (const m of messages) if (oldest === undefined || m.date < oldest) oldest = m.date; return sink.ingest(messages, o); } };
       for (let i = 0; i < ids.length; i += 50) {
         // out of this pass's time: this page again next pass (its stored messages skipped then)
         if (Date.now() - started > BACKFILL_CHUNK_MS) { sink.backfillMore?.(); return; }
         sink.check();
-        await fetchFull(ids.slice(i, i + 50), sink);
+        await fetchFull(ids.slice(i, i + 50), counting);
+        report(Math.min(i + 50, ids.length));
       }
-      progress = { since: request.since, until: request.until, pages: progress.pages + 1, ...(next !== undefined && { next }) };
+      if (!ids.length) report(0);
+      progress = { since: request.since, until: request.until, pages: progress.pages + 1, listed: (progress.listed ?? 0) + listed, ...(next !== undefined && { next }) };
       if (next === undefined) break;
       backfillProgress = progress;
       await saveProgress(sink, base);
@@ -1042,6 +1069,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       state = value;
     };
     const started = Date.now();
+    let oldest: number | undefined;
     // out of this pass's time: the next pass (a second later) reads new mail, then goes on from here
     const pause = () => { sink.again?.(); return undefined; };
     if (resume) {
@@ -1087,9 +1115,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (catalog === null && !earlyTried && ids.length > EARLY_LABELS_AFTER) await earlyLabels(sink);
       // plan 102 (Codex review): a message the listing finds that was received after this sync began is new mail (it
       // notifies), as the look at history would have said had it come a moment earlier
+      // plan 103: the listing's size, once (Google's estimate); the oldest date reached, for "days left"
+      if (state.estimate === undefined && page.resultSizeEstimate !== undefined) state = { ...state, estimate: page.resultSizeEstimate };
+      const listed = page.messages?.length ?? 0;
+      const report = (downloaded: number) => sink.progress?.(progressOf((current.listed ?? 0) + (listed - ids.length) + downloaded, (current.listed ?? 0) + listed, state.estimate, next !== undefined, oldest));
       const since = state.startedAt;
       const isNew = (m: IncomingMessage) => since !== undefined && (received?.get(m.providerMsgId!) ?? -1) >= since;
-      const listing: SyncPass = since === undefined ? sink : { ...sink, ingest: async (messages, o) => {
+      const listing: SyncPass = { ...sink, ingest: async (messages, o) => {
+        for (const m of messages) if (oldest === undefined || m.date < oldest) oldest = m.date;
+        if (since === undefined) return sink.ingest(messages, o);
         const fresh = messages.filter(isNew), old = messages.filter((m) => !isNew(m));
         for (const m of messages) received?.delete(m.providerMsgId!);
         if (old.length) await sink.ingest(old, o);
@@ -1099,17 +1133,21 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         received = since === undefined ? null : new Map();
         try { await fetchFull(ids.slice(i, i + 50), listing); } finally { received = null; }
+        report(Math.min(i + 50, ids.length));
         // out of this pass's time (Codex review: a page is minutes under the quota): this page again next pass,
         // its stored messages skipped then
         if (i + 50 < ids.length && Date.now() - started > FIRST_SYNC_CHUNK_MS) return pause();
       }
+      if (!ids.length) report(0);
       // All effects precede this independent durable command. A rejected write is resolved by reopening.
-      await save({ ...current, stage: next ? "enumerate" : "refresh", next, pages: current.pages + 1 });
+      await save({ ...current, ...(state.estimate !== undefined && { estimate: state.estimate }), listed: (current.listed ?? 0) + listed, stage: next ? "enumerate" : "refresh", next, pages: current.pages + 1 });
       if (Date.now() - started > FIRST_SYNC_CHUNK_MS) return pause();
       if (!ids.length) await yieldPage();
     }
     if (state.stage === "refresh") {
       sink.check();
+      // plan 103: everything is here; what's left is reading the flags again
+      sink.progress?.({ finishing: true, unit: "messages", ...(state.estimate !== undefined && { done: state.estimate, total: state.estimate }) });
       while (state.stage === "refresh") {
         sink.check();
         const page = await store.syncedMessagePage(state.refreshAfter);

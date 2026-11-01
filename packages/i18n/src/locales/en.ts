@@ -786,6 +786,12 @@ const en = {
   "connection.retryNow": "Retry now",
   // plan 79: the sidebar's pill while an account's first sync runs
   "firstSync.older": "Downloading older mail",
+  "firstSync.messagesLeftShort": "~{count} left",
+  "firstSync.messagesLeft": { one: "About # message left", other: "About # messages left" },
+  "firstSync.foldersLeft": { one: "# folder left", other: "# folders left" },
+  "firstSync.daysLeft": { one: "# day left", other: "# days left" },
+  "firstSync.finishing": "Finishing up",
+  "firstSync.starting": "Starting",
   "firstSync.title": "Downloading your mail",
   "firstSync.detail": "{window}, newest first",
   "firstSync.accounts": { one: "# account, newest first", other: "# accounts, newest first" },

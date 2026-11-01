@@ -18,7 +18,7 @@ afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c();
 const raw = (subject: string, date: number) => [`From: Synthetic <sender@example.test>`, "To: Test <test@example.test>", `Subject: ${subject}`,
   `Message-ID: <${subject}@backfill.example.test>`, `Date: ${new Date(date).toUTCString()}`, "Content-Type: text/plain; charset=utf-8", "", `${subject} body`, ""].join("\r\n");
 
-async function setup(o: { firstWindow?: number; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void } = {}) {
+async function setup(o: { firstWindow?: number; extra?: (add: (path: string, subject: string, age: number, flags?: string[]) => { uid: number }) => void; before?: (backend: Backend) => void } = {}) {
   const w = await flagsFixture(false);
   cleanups.push(() => w.stop());
   const ctl = w.server.control;
@@ -40,6 +40,7 @@ async function setup(o: { firstWindow?: number; extra?: (add: (path: string, sub
   cleanups.push(async () => { await bounded(backend.stop(), "stop"); client.close(); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
   await client.call("settings.update", { syncWindowDays: o.firstWindow ?? 30 });
+  o.before?.(backend);
   const account = await client.call("accounts.addImap", { email: "test@example.test", displayName: "Synthetic", verify: false,
     imap: { host: "127.0.0.1", port: w.port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" }, password: "testpass" });
   await bounded(backend.syncAccount(account.id), "first sync");
@@ -130,4 +131,13 @@ it("a stored older message whose flags changed on the server shows the change af
   // and the next pass's sweep agrees (nothing was swallowed)
   await bounded(t.backend.syncAccount(t.account.id), "next pass");
   expect(sqlDb(t.backend.store).get<{ s: number }>("SELECT is_starred s FROM messages WHERE id = ?", id)!.s).toBe(1);
+});
+
+it("plan 103: an IMAP first read says how many folders it has read", async () => {
+  const { vi } = await import("vitest");
+  const writes: unknown[] = [];
+  const t = await setup({ before: (backend) => { const real = backend.store.accounts.setSyncState.bind(backend.store.accounts); vi.spyOn(backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => { if (patch.progress) writes.push(patch.progress); return real(id, patch); }); } });
+  expect(writes[0]).toEqual({ done: 0, total: 2, unit: "folders" });
+  // done: nothing left to show
+  expect((await t.backend.store.accounts.get(t.account.id))?.syncState.progress).toBeNull();
 });

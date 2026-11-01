@@ -342,6 +342,22 @@
     transform: translateY(-2px) scale(1.2);
   }
 }
+/*
+ * Plan 103: a sync's progress bar is alive while it runs: a soft light passes along it, like the spinner beside
+ * it (a loop, not a transition: off when motion is reduced or off, as every animation is above)
+ */
+@keyframes sync-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@utility sync-sheen {
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-background) 70%, transparent), transparent);
+  animation: sync-sheen calc(var(--motion-slow) * 18) var(--motion-ease) infinite;
+}
 
 /* switching theme or motion repaints in one frame: no color transitions */
 :root[data-theme-switching] *,

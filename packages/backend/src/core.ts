@@ -5,7 +5,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -57,6 +57,9 @@ export const plaintextCipher: SecretCipher = {
 
 /** Electron and the Node dev host: everything. */
 export const FULL_HOST: HostInfo = { kind: "desktop", capabilities: { imap: true, agents: true, backgroundSync: true, network: "pinned" } };
+
+/** plan 103: a sync's progress is written at most this often (the sidebar's card reads it) */
+const PROGRESS_EVERY_MS = 2000;
 
 export interface BackendCoreOptions {
   store: MailStore;
@@ -1541,6 +1544,9 @@ export class BackendCore {
       const backfill = before?.backfillSince != null ? (await this.store.accounts.config<AccountPrefs>(accountId))?.config.backfill : undefined;
       // plan 101/102: more of this account's sync remains (older mail, or a first sync's next chunk)
       let more = false;
+      // plan 103: progress, written at most every PROGRESS_EVERY_MS (a batch can report many times a second)
+      let progress: SyncProgress | null = null, progressAt = Number.NEGATIVE_INFINITY;
+      let backfillFinished = false;
       const sink: SyncSink = {
         ...(captureRetry && { captureRetry: { locator: captureRetry.locator, revision: captureRetry.revision } }),
         signal: life.abort.signal,
@@ -1561,10 +1567,20 @@ export class BackendCore {
         windowDays,
         windowStart: this.now() - windowDays * 86_400_000,
         again: () => { more = true; },
+        progress: (p) => {
+          // a change of phase (downloading → finishing) is written at once, never held back (Codex review)
+          const phase = Boolean(p.finishing) !== Boolean(progress?.finishing);
+          progress = { ...p };
+          const now = performance.now();
+          if (!phase && now - progressAt < PROGRESS_EVERY_MS) return;
+          progressAt = now;
+          void setState({ progress }).catch(() => {});
+        },
         ...(backfill && {
           backfill: { since: backfill.since, until: backfill.until },
           backfillMore: () => { more = true; },
           backfillDone: async (done) => {
+            backfillFinished = true;
             checkCurrent();
             // only that request, compared and cleared in one store transaction: a wider one recorded meanwhile stays
             await this.accountWrite(life, () => this.store.accounts.update(accountId, { backfill: { clearIf: done } }));
@@ -1650,7 +1666,8 @@ export class BackendCore {
         if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) return;
         // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
         const firstChunk = more && before?.syncState.lastSyncAt === null;
-        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        // plan 103: a chunk leaves its latest progress; a sync that's done leaves none
+        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: more || (backfill && !backfillFinished) ? (progress ?? before?.syncState.progress ?? null) : null, ...(!sendOnly && { authRequired: false, authScope: null }) });
         if (!this.current(life)) return;
         this.connectivity.waitForSignIn(accountId, false);
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
