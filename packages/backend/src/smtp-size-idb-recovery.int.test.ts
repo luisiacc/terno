@@ -83,6 +83,9 @@ async function bytesIntact(t: Fixture, refs: AttachmentRef[], bytes: Buffer[]) {
   }
 }
 function unchanged(actual: unknown, expected: unknown) { expect(actual).toEqual(expected); }
+function firstQueueAssets(staged: Rows, queued: Rows) {
+  expect(staged.attachment_assets).toHaveLength(2); expect(queued.attachments).toHaveLength(2);
+}
 async function save(t: Fixture, refs: AttachmentRef[], bodyText = "Exact body") {
   return (await t.client.call("drafts.save", { accountId: t.accountId, to, subject: "Recovery witness", bodyText, attachments: refs }))!;
 }
@@ -146,7 +149,7 @@ it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy ref
   const queuedRows = await t.rows();
   const oldInventory = [{ opId, messageId: message.id }]; await inventory(t, oldInventory);
   expect(JSON.parse(queued.payload).attachments).toEqual(refs); expect(message.attachments).toMatchObject(refs);
-  expect(staged.attachment_assets).toHaveLength(2); expect(queuedRows.attachments).toHaveLength(2);
+  firstQueueAssets(staged, queuedRows);
   await t.backend.runWorker();
   expect((await t.backend.store.ops.get(opId))?.state).toBe("failed"); expect(smtp.refused).toBe(1);
   expect(smtp.transcript.join("\n")).toContain("SIZE 1"); expect(smtp.transcript.join("\n")).toContain("552 Message exceeds advertised SIZE 1");
@@ -263,4 +266,20 @@ it.each(["accepted identity", "extra inventory", "lost ownership", "generic erro
   if (fault === "extra inventory") expect(() => exactInventory({ ...inventory, messages: [1, 2] }, inventory)).toThrowError(/expected/);
   if (fault === "lost ownership") expect(() => ownership({ ...rows, attachments: [], attachment_links: [] }, rows)).toThrowError(/expected/);
   if (fault === "generic error") expect(() => assertionFailure(() => { throw new Error("expected synthetic non-assertion failure"); }, /expected/)).toThrowError(/expected/);
+});
+
+it.each([
+  ["sql", "attachment_assets"], ["sql", "attachment_chunks"], ["sql", "attachment_bytes"],
+  ["idb", "attachment_assets"], ["idb", "attachment_chunks"], ["idb", "attachment_bytes"],
+] as const)("%s: first queue rejects an added %s row against its staged snapshot", async (adapter, table) => {
+  const t = await setup(adapter);
+  const refs = [await stage(t, binary(ATTACHMENT_CHUNK + 7, 23), 0), await stage(t, binary(31, 67), 1)];
+  const draft = await save(t, refs, "Body before correction"), staged = await t.rows();
+  const corrected = (await t.client.call("drafts.save", { ...draft, bodyText: "Exact body" }))!;
+  await send(t, corrected);
+  const queued = await t.rows();
+  firstQueueAssets(staged, queued);
+  const bad = structuredClone(queued);
+  bad[table].push({ ...bad[table][0]!, id: "unused-row" });
+  assertionFailure(() => firstQueueAssets(staged, bad), /deeply equal/);
 });
