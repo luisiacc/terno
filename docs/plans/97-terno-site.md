@@ -143,3 +143,10 @@ Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each wit
 
 Five points, all fixed with tests (`e2e/site.spec.ts`): the tools move in to the visible part of a frame wider than the screen (Lumen's hero on a phone); the hero's two modes are both lazy so only the shown one downloads (a network assertion); Midnight's inactive switch stays light on hover; the interaction test scrolls the picture, not its box-less wrapper; previews are checked for a 200 and `noindex`, and the dropped designs for a 404.
 - Third round: the feature pictures are Lumen with **GitHub light** and a new **GitHub Dark** palette (`packages/ui/src/themes/registry.ts`, now 18 palettes). GitHub's button blue (#1f6feb) with white text reads at 4.1:1 as text on its canvas, below AA, so GitHub Dark's primary is Apple's dark-mode blue (#0a84ff, vivid like GitHub Light's) with dark text on buttons, as every dark palette does.
+
+## Deploying from GitHub
+
+`.github/workflows/deploy-site.yml` runs `pnpm deploy:site` on every push to main that touches `apps/site/**`, the app's icon set (`packages/ui/src/icons.ts`, `packages/ui/src/iconset/**`) or the workflow itself, and by hand from the Actions tab. One deploy at a time, in push order. A failing test, build or migration stops it before the Worker changes.
+
+- Secret `CLOUDFLARE_API_TOKEN`: a user API token from the "Edit Cloudflare Workers" template plus Account → D1 → Edit and Zone → DNS → Edit, scoped to the account and the terno.app zone. Replace it there if it's revoked or expires.
+- Variable `CLOUDFLARE_ACCOUNT_ID`: the account the Worker and the D1 database live in.

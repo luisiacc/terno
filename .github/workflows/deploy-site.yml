@@ -1,0 +1,54 @@
+# terno.app (plan 97): a push to main that changes the site deploys it. The same steps as `pnpm deploy:site`
+# (apps/site/scripts/deploy.mjs): the site's tests, the build, the waitlist migrations, then the Worker. A failing
+# step stops the rest, so the live site only changes when everything passed.
+#
+# Needs, in the repository's settings: the secret CLOUDFLARE_API_TOKEN (Workers Scripts, D1 and Workers Routes
+# edit; see docs/plans/97-terno-site.md) and the variable CLOUDFLARE_ACCOUNT_ID.
+name: Deploy terno.app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/site/**"
+      # the icons the site draws come from the app's set
+      - "packages/ui/src/icons.ts"
+      - "packages/ui/src/iconset/**"
+      - ".github/workflows/deploy-site.yml"
+  # by hand, from the Actions tab (a redeploy without a change)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# one deploy at a time, in push order; a newer push waits rather than cancelling one halfway
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://terno.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # the whole workspace (the site's tests run from the root config), without Electron's binary
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - run: pnpm deploy:site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
