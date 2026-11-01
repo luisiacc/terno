@@ -3,12 +3,12 @@ import type { DesignDefinition } from "./types";
 const SANS = '"Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif';
 const SERIF = '"Instrument Serif", ui-serif, Georgia, serif';
 
-/** Atelier (plan 15, picture 1): editorial. Ink and paper, Instrument Serif titles and italic section labels, avatars in rows. */
+/** Atelier (plan 15, picture 1): editorial. Ink and paper, Instrument Serif titles and serif section labels, avatars in rows. */
 export const atelier: DesignDefinition = {
   id: "atelier",
   palette: { light: "atelier-light", dark: "atelier-dark" },
   vibrancy: false,
-  fonts: { sans: SANS, display: SERIF, features: '"cv11", "ss01"', faces: ['400 1em "Instrument Sans Variable"', '600 1em "Instrument Sans Variable"', '400 1em "Instrument Serif"', 'italic 400 1em "Instrument Serif"'] },
+  fonts: { sans: SANS, display: SERIF, features: '"cv11", "ss01"', faces: ['400 1em "Instrument Sans Variable"', '600 1em "Instrument Sans Variable"', '400 1em "Instrument Serif"'] },
   text: {
     "2xs": ["0.6875rem", "0.875rem"],
     xs: ["0.75rem", "1rem"],
@@ -24,7 +24,7 @@ export const atelier: DesignDefinition = {
     listTitle: { family: "display", size: "1.875rem", leading: "1", weight: 400, strong: 400, tracking: "-0.005em", style: "normal" },
     greeting: { family: "display", size: "1.875rem", leading: "1", weight: 400, strong: 400, tracking: "-0.005em", style: "normal" },
     listSubtitle: { family: "sans", size: "0.75rem", leading: "1rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
-    sectionLabel: { family: "display", size: "1.0625rem", leading: "1.375rem", weight: 400, strong: 400, tracking: "0em", style: "italic" },
+    sectionLabel: { family: "display", size: "1.0625rem", leading: "1.375rem", weight: 400, strong: 400, tracking: "0em", style: "normal" },
     nav: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },
     rowFrom: { family: "sans", size: "0.84375rem", leading: "1.25rem", weight: 500, strong: 600, tracking: "0em", style: "normal" },
     rowSubject: { family: "sans", size: "0.8125rem", leading: "1.25rem", weight: 400, strong: 500, tracking: "0em", style: "normal" },

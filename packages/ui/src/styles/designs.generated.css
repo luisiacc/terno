@@ -196,7 +196,7 @@
   --type-section-label-weight: 400;
   --type-section-label-strong: 400;
   --type-section-label-tracking: 0em;
-  --type-section-label-style: italic;
+  --type-section-label-style: normal;
   --type-nav-family: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --type-nav-size: 0.84375rem;
   --type-nav-leading: 1.25rem;

@@ -12,7 +12,6 @@
 @import "@fontsource-variable/figtree";
 @import "@fontsource-variable/instrument-sans";
 @import "@fontsource/instrument-serif/400.css";
-@import "@fontsource/instrument-serif/400-italic.css";
 /* every theme's token values (generated from src/themes/registry.ts) */
 @import "./themes.generated.css";
 /* every design's type, shape and density (generated from src/designs/*.ts) */
