@@ -8,7 +8,7 @@ import { sqlDb } from "@terno/db";
 import { createGmailProvider, createRegistry, parseRaw, type ProviderRegistry } from "@terno/mail";
 import imapkit from "imapkit";
 import { SMTPServer } from "smtp-server";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, chai, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { startNetProxy, type NetProxy } from "./test/net-proxy";
 
@@ -22,6 +22,22 @@ function durable(backend: Backend) {
     parts: db.all("SELECT message_id, filename, mime, size, asset_id FROM attachments ORDER BY id"),
     messageLinks: db.all("SELECT asset_id, message_id FROM attachment_links WHERE message_id IS NOT NULL ORDER BY id"),
   };
+}
+
+function storedAttachmentContents(chunks: string[], bytes: Buffer) {
+  expect(chunks.at(-1)).toBe(bytes.subarray(ATTACHMENT_CHUNK).toString("base64"));
+}
+async function storedAttachment(client: RpcClient, accountId: number, assetId: string, bytes: Buffer) {
+  const chunks: string[] = [];
+  for (let index = 0; index < Math.ceil(bytes.length / ATTACHMENT_CHUNK); index++) {
+    const part = await client.call("attachments.read", { accountId, assetId, index });
+    expect(part).not.toBeNull();
+    chunks.push(part!.dataBase64);
+  }
+  storedAttachmentContents(chunks, bytes);
+}
+function gmailAttachmentContents(parsed: Awaited<ReturnType<typeof parseRaw>>, bytes: Buffer) {
+  expect(parsed.subject).toBe("Gmail attachment"); expect(Buffer.from(parsed.attachments[0]!.bytes!).equals(bytes)).toBe(true);
 }
 
 async function setup(mode: "accept" | "refuse" | "lost") {
@@ -91,7 +107,7 @@ it.each(["accept", "refuse", "lost"] as const)("preserves a staged attachment th
   expect((await t.backend.store.ops.get(opId))?.payload_json).toBe(payload);
   expect(durable(t.backend)).toEqual(before);
   expect(sqlDb(t.backend.store).get<{ count: number }>("SELECT count(*) AS count FROM attachment_assets WHERE account_id = ?", accountId)?.count).toBe(1);
-  expect(await t.client.call("attachments.read", { accountId, assetId: ref.assetId, index: 1 })).toEqual({ dataBase64: bytes.subarray(ATTACHMENT_CHUNK).toString("base64") });
+  await storedAttachment(t.client, accountId, ref.assetId, bytes);
   if (mode === "lost") {
     t.accept();
     await t.client.call("ops.resolveUnknown", { opId, resolution: "retry" });
@@ -104,6 +120,7 @@ it.each(["accept", "refuse", "lost"] as const)("preserves a staged attachment th
     expect(t.starts).toBe(2);
     expect(durable(t.backend)).toEqual(before);
     expect(sqlDb(t.backend.store).get<{ count: number }>("SELECT count(*) AS count FROM attachment_assets WHERE account_id = ?", accountId)?.count).toBe(1);
+    await storedAttachment(t.client, accountId, ref.assetId, bytes);
   }
 });
 
@@ -152,13 +169,29 @@ it.each(["accept", "refuse", "lost"] as const)("sends exact staged bytes through
   const wire = Buffer.from((JSON.parse(requests[0]!.toString()) as { raw: string }).raw, "base64url");
   const parsed = await parseRaw(wire);
   expect(parsed.to.map((a) => a.email)).toEqual(["to@example.test"]); expect(parsed.bcc.map((a) => a.email)).toEqual(["bcc@example.test"]);
-  expect(parsed.subject).toBe("Gmail attachment"); expect(Buffer.from(parsed.attachments[0]!.bytes!)).toEqual(bytes);
+  gmailAttachmentContents(parsed, bytes);
   expect((await backend.store.ops.get(opId))?.state).toBe(mode === "accept" ? "succeeded" : mode === "refuse" ? "failed" : "unknown");
   client.close(); await backend.stop(); open(); await backend.ready; await backend.runWorker();
   expect(starts).toBe(1); expect(requests).toHaveLength(1); expect((await backend.store.ops.get(opId))?.payload_json).toBe(payload);
   expect(durable(backend)).toEqual(before);
   expect(sqlDb(backend.store).get<{ count: number }>("SELECT count(*) AS count FROM attachment_assets WHERE account_id = ?", account.id)?.count).toBe(1);
   expect(await client.call("attachments.read", { accountId: account.id, assetId: ref.assetId, index: 0 })).toEqual({ dataBase64: bytes.toString("base64") });
+});
+
+it("delivery oracle rejects corruption in an earlier SMTP chunk", () => {
+  const bytes = Buffer.alloc(ATTACHMENT_CHUNK + 5, 0x61);
+  const chunks = [bytes.subarray(0, ATTACHMENT_CHUNK).toString("base64"), bytes.subarray(ATTACHMENT_CHUNK).toString("base64")];
+  storedAttachmentContents(chunks, bytes);
+  expect(() => storedAttachmentContents(["AAAA", chunks[1]!], bytes)).toThrowError(chai.AssertionError);
+});
+
+it.each(["Cc recipient", "MIME part"] as const)("delivery oracle rejects an extra Gmail %s", async (extra) => {
+  const bytes = Buffer.from([0, 255, 128, 13, 10]);
+  const parsed = await parseRaw(Buffer.from("Subject: Gmail attachment\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=witness\r\n\r\n--witness\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=exact.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAP+ADQo=\r\n--witness--\r\n"));
+  gmailAttachmentContents(parsed, bytes);
+  if (extra === "Cc recipient") parsed.cc.push({ name: "", email: "unexpected@example.test" });
+  else parsed.attachments.push({ ...parsed.attachments[0]! });
+  expect(() => gmailAttachmentContents(parsed, bytes)).toThrowError(chai.AssertionError);
 });
 
 it("refuses an encoded-budget overflow before queueing and retains the draft and asset", async () => {
