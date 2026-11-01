@@ -20,7 +20,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 34: an invalid recipient chip's mark on the chip
     // plan 66: a hovered sidebar row's four inks and its glyph
     // a chosen outline toggle's text on the accent's wash over a tint group
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1);
+    // plan 94: a filled button's text on its hover fill
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1);
   });
 
   it("reports a failing pair with its ratio", () => {

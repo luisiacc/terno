@@ -54,6 +54,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   // plan 15: "N unread" and unread counts as text; avatars and badges on rows hovered, selected and checked, on drafts and panes
   ...text("unread-ink", ["background", "pane", "sidebar", "sidebar-accent"]),
   ...text("sidebar-primary-ink", ["sidebar", "sidebar-accent"]),
+  // plan 94: a filled button under the pointer
+  ...text("primary-foreground", ["primary-hover"]),
   // plan 66: a hovered sidebar row's text, counts and glyph, its translucent fill painted over the sidebar
   ...(["sidebar-foreground", "sidebar-accent-foreground", "muted-foreground", "unread-ink"] as const).map((fg): ContrastPair => ({ fg, bg: "sidebar-hover", min: 4.5, overToken: "sidebar" })),
   { fg: "sidebar-glyph", bg: "sidebar-hover", min: 3, overToken: "sidebar" },

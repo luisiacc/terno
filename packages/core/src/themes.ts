@@ -85,6 +85,8 @@ export const THEME_TOKENS = [
   "sidebar-translucent",
   // plan 66: a sidebar row under the pointer, a step softer than the selected one
   "sidebar-hover",
+  // plan 94: a filled (primary) button under the pointer, a visible step whose text still reads
+  "primary-hover",
   // HTML mail
   "mail-paper",
   "mail-ink",

@@ -177,6 +177,15 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("unread-ink", () => stepUntil(o("unread"), [...["background", "pane", "sidebar", "sidebar-accent"].map((k) => formatOklch(o(k as ThemeToken))), hovered], 4.5, bg, o("foreground"), light));
   def("sidebar-primary-ink", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent"))], 4.5, bg, o("sidebar-foreground"), light));
   def("sidebar-glyph", () => stepUntil(o("sidebar-primary"), [formatOklch(o("sidebar")), formatOklch(o("sidebar-accent")), hovered], 3, bg, o("muted-foreground"), light));
+  // plan 94: toward its text while that still reads at 4.5:1, else away from it (a fill already near 4.5:1 can only darken)
+  def("primary-hover", () => {
+    for (let t = 0.14; t >= 0.06; t = Math.round((t - 0.01) * 100) / 100) {
+      const c = mixOklab(o("primary"), o("primary-foreground"), t);
+      if (contrast(o("primary-foreground"), c, bg) >= 4.5) return c;
+    }
+    const pr = o("primary");
+    return { ...pr, l: Math.max(0, Math.min(1, pr.l + (o("primary-foreground").l > pr.l ? -0.06 : 0.06))) };
+  });
   def("popover-glass", () => withAlpha(o("popover"), glassAlpha(o("popover"), GLASS_TEXT.map((k) => o(k)))));
   // badges and avatars: the reader and menus, and (plan 15) rows hovered, selected and checked, drafts and panes
   // (translucent surfaces as painted: over the background)

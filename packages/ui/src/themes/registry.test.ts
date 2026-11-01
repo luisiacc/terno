@@ -107,6 +107,13 @@ describe("custom themes", () => {
   });
 });
 
+describe("plan 94: a filled button under the pointer", () => {
+  it.each(THEMES.map((t) => [t.id, t] as const))("%s: is a visible step from the fill", (_, t) => {
+    const [a, b] = [oklchToRgb(parseColor(t.tokens.primary)), oklchToRgb(parseColor(t.tokens["primary-hover"]))];
+    expect(Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b)).toBeGreaterThan(0.04);
+  });
+});
+
 describe("plan 66: a hovered sidebar row", () => {
   // a fill as painted over the sidebar, and how far it sits from the bare sidebar
   const away = (fill: string, sidebar: string) => {
