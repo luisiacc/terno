@@ -137,3 +137,5 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
 
 **Round 3.** Codex found one more problem (the first attempt hit "model at capacity" again and was rerun):
 5. **A background account update could pull focus back to the sidebar.** The last focused account was remembered after focus left on purpose. Focus that leaves is now forgotten once the next frame shows the row is still in the page, and recovery runs only when rows actually went away (an account removed, or two accounts down to one). Test: e2e, with the account's IDs unchanged and an account update.
+
+**Superseded (2026-11-01):** rule 10 is reversed at the user's request: a lone account opens to its standard folders too (see plan 68's note of that date).

@@ -15,7 +15,7 @@ import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
-import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, setOpenAccount, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
+import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
 import { CloudAiPill } from "./cloud-ai-pill";
@@ -431,7 +431,6 @@ const CLOSING_MS = 400;
 function AccountFolders({
   account,
   open,
-  standard,
   active,
   activeFolder,
   rows,
@@ -444,8 +443,6 @@ function AccountFolders({
 }: {
   account: Account;
   open: boolean;
-  /** its Inbox, Sent… (with one account they'd be the top ones: plan 67) */
-  standard: boolean;
   active: View | null;
   /** plan 68: the account's own folder you're in */
   activeFolder: string | null;
@@ -548,7 +545,6 @@ function AccountFolders({
     >
       <div className="min-h-0 overflow-clip [overflow-clip-margin:3px]">
         {mounted &&
-          standard &&
           ACCOUNT_VIEWS.map((v) => {
             const Icon = VIEWS.find((f) => f.view === v)!.icon;
             return (
@@ -584,7 +580,7 @@ function AccountFolders({
             );
           })}
         {/* plan 68: its own folders, under its standard ones, nested by path */}
-        {mounted && (standard || tabs) && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
+        {mounted && rows.length > 0 && <div role="separator" className="hairline-t my-1 ml-7" />}
         {mounted &&
           visible.map((r) =>
             r.selectable && r.key !== null ? (
@@ -658,7 +654,6 @@ function useFolderUnreadByAccount(all: Record<string, number> | undefined): Read
  */
 const AccountEntry = memo(function AccountEntry({
   account: a,
-  many,
   open: openHere,
   here,
   view,
@@ -673,7 +668,6 @@ const AccountEntry = memo(function AccountEntry({
   socialUnread,
 }: {
   account: Account;
-  many: boolean;
   open: boolean;
   here: boolean;
   view: View | null;
@@ -688,76 +682,51 @@ const AccountEntry = memo(function AccountEntry({
   promotionsUnread: number;
   socialUnread: number;
 }) {
-  // with one account its standard folders would be the top ones: it lists only its own (plan 68),
-  // and with none of those its row just scopes to it
-  const hasOwn = useMemo(() => folders.some((f) => f.accountId === a.id), [folders, a.id]);
+  // every account opens to its standard folders, a lone one too (its Inbox, Sent, Spam… inside it, as Mail
+  // shows them), then its own folders and Gmail tabs
   const rows = useFolderRows(folders, a.id, openHere);
-  // plan 86: its Gmail tabs are places of its own, so a lone Gmail account discloses them too
+  // plan 86: its Gmail tabs are places of its own
   const tabs = separatesTabs(a);
-  const discloses = many || hasOwn || tabs;
-  const open = discloses && openHere;
-  // with one account, its last own folder taken away takes the whole group: focus in it goes to the account's row
-  // (Codex R23), as when a focused folder goes with others left (AccountFolders)
-  const focusInFolders = useRef(false);
-  const noteFocus = (e: React.FocusEvent) => {
-    focusInFolders.current = (e.target as HTMLElement).closest(`#account-folders-${a.id}`) !== null;
-  };
-  const noteBlur = (e: React.FocusEvent) => {
-    if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) return;
-    const left = e.target as HTMLElement;
-    requestAnimationFrame(() => {
-      if (left.isConnected) focusInFolders.current = false;
-    });
-  };
-  useLayoutEffect(() => {
-    if (discloses || !focusInFolders.current) return;
-    focusInFolders.current = false;
-    if (document.activeElement && document.activeElement !== document.body) return;
-    document.querySelector<HTMLElement>(`[data-testid="nav-account-${a.id}"]`)?.focus({ preventScroll: true });
-  }, [discloses, a.id]);
+  const open = openHere;
   // the account's folder you're in: one of its own, else a standard one (a category tab filters its Inbox)
   const ownActive = here && open && ownFolder !== null && rows.some((r) => r.key === ownFolder);
   const tabActive = here && open && tabs && gmailTab !== null;
-  const child = here && open && many && ownFolder === null && gmailTab === null && view !== null ? (inCategory ? "inbox" : view) : null;
+  const child = here && open && ownFolder === null && gmailTab === null && view !== null ? (inCategory ? "inbox" : view) : null;
   const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
   const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
   return (
-    <div data-account-id={a.id} onFocus={noteFocus} onBlur={noteBlur}>
+    <div data-account-id={a.id}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below */}
       <div className="relative">
         <NavItem
           testId={`nav-account-${a.id}`}
           // closed over where you are, the account is what's selected
           active={here && !childActive}
-          expanded={discloses ? open : undefined}
-          controls={discloses ? `account-folders-${a.id}` : undefined}
-          // one account: its own folders open and close, where you are stays (its Inbox is the top one)
-          onClick={() => (many ? toggleAccount(a.id) : discloses ? setOpenAccount(open ? null : a.id) : navigate({ accountId: a.id, view: "inbox" }))}
+          expanded={open}
+          controls={`account-folders-${a.id}`}
+          onClick={() => toggleAccount(a.id)}
           // syncing stays quiet here: the first-sync and connection pills speak for it
           icon={<CategoryDot color={a.color as CategoryColor} />}
           label={a.displayName}
-          // open, the count is its Inbox's (with one account, the top Inbox's)
-          count={open && many ? undefined : unread || undefined}
+          // open, the count is its Inbox's row's
+          count={open ? undefined : unread || undefined}
           reserveEnd={a.syncState.authRequired ? "icon" : undefined}
         />
         {a.syncState.authRequired && <SignInMarker account={a} />}
       </div>
-      {discloses && (
-        <AccountFolders
-          account={a}
-          open={open}
-          standard={many}
-          active={child !== null && listedByAccount(child) ? child : null}
-          activeFolder={ownActive ? ownFolder : null}
-          rows={rows}
-          folderUnread={folderUnread ?? NO_UNREAD}
-          unread={unread}
-          countTone={countTone}
-          tabs={tabs}
-          activeTab={tabActive ? gmailTab : null}
-          tabUnread={tabUnread}
-        />
-      )}
+      <AccountFolders
+        account={a}
+        open={open}
+        active={child !== null && listedByAccount(child) ? child : null}
+        activeFolder={ownActive ? ownFolder : null}
+        rows={rows}
+        folderUnread={folderUnread ?? NO_UNREAD}
+        unread={unread}
+        countTone={countTone}
+        tabs={tabs}
+        activeTab={tabActive ? gmailTab : null}
+        tabUnread={tabUnread}
+      />
     </div>
   );
 });
@@ -938,7 +907,6 @@ export function Sidebar() {
               <AccountEntry
                 key={a.id}
                 account={a}
-                many={accounts.length > 1}
                 open={openAccount === a.id}
                 // where you are, only for the account it's in: the others' props stay the same, so they don't render
                 here={accountId === a.id && reviewCategoryId === null}

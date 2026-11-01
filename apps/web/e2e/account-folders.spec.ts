@@ -207,7 +207,7 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
   });
 
-  test("two accounts to one: a focused folder of the one that stays hands focus to its row (Codex R1)", async ({ app: page, server }) => {
+  test("two accounts to one: a focused folder of the one that stays keeps focus (its folders stay listed)", async ({ app: page, server }) => {
     const ids = await accountIds(page);
     for (const id of ids.slice(2)) await server.backend.server.invoke("accounts.remove", { id }, ctx);
     await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(2);
@@ -215,7 +215,7 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await child(page, ids[0]!, "sent").focus();
     await server.backend.server.invoke("accounts.remove", { id: ids[1] }, ctx);
     await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
-    await expect(row(page, ids[0]!)).toBeFocused();
+    await expect(child(page, ids[0]!, "sent")).toBeFocused();
   });
 
   test("an account update after focus left the sidebar never pulls focus back (Codex R3)", async ({ app: page, server }) => {
@@ -243,18 +243,21 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
   }
 });
 
-test("with one account it lists no folders of its own: the top ones are the same mail", async ({ app: page, server }) => {
+test("with one account it opens to its Inbox, Sent, Archive, Spam and Trash like any account (as Mail lists them)", async ({ app: page, server }) => {
   const ids = await accountIds(page);
   for (const id of ids.slice(1)) await server.backend.server.invoke("accounts.remove", { id }, ctx);
-  // plan 68: an account with folders of its own lists those; this one has none (plan 86: nor Gmail tabs apart)
+  // no folders of its own and no Gmail tabs: its standard folders alone
   await server.backend.store.folders.replace(ids[0]!, []);
   await server.backend.server.invoke("accounts.update", { id: ids[0]!, separateTabs: false }, ctx);
   server.backend.server.emit("folders", await server.backend.store.folders.list());
   await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
   const only = row(page, ids[0]!);
-  await expect(only).not.toHaveAttribute("aria-expanded");
-  await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(0);
+  await expect(only).toHaveAttribute("aria-expanded", "false");
   await only.click();
+  await expect(only).toHaveAttribute("aria-expanded", "true");
   await expect.poll(() => listFor(page)).toEqual(["inbox", ids[0], null, null, null, ""]);
-  await expect(only).toHaveAttribute("aria-current", "page");
+  for (const v of ["inbox", "sent", "archive", "spam", "trash"]) await expect(child(page, ids[0]!, v)).toBeVisible();
+  await child(page, ids[0]!, "sent").click();
+  await expect.poll(() => listFor(page)).toEqual(["sent", ids[0], null, null, null, ""]);
+  await expect(child(page, ids[0]!, "sent")).toHaveAttribute("aria-current", "page");
 });

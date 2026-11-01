@@ -9,7 +9,7 @@ import { cancelResponse, readResponseText, ResponseBodyLimitError, untilAborted 
 import { readIncomingBody, type IncomingBody } from "./incoming-body";
 import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
-import { failedBeforeRequest, isFetchNetworkFailure, RequestNotDispatchedError } from "./net-errors";
+import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
 import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
@@ -104,6 +104,8 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
 
 /** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
 export const LABELS_EVERY_MS = 15 * 60_000;
+/** a first-sync page with more new messages than this (minutes of downloads under the quota) reads the labels first */
+export const EARLY_LABELS_AFTER = 100;
 /**
  * /labels read bounded: Gmail's 10,000 labels (and a few system ones) of at most 225 characters, each up to six
  * bytes as JSON (a \uXXXX escape; UTF-8 is at most three a character), with room for its id and the rest
@@ -929,6 +931,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         if (!(await store.messageByProviderId(m.id))) ids.push(m.id);
       }
+      // a long download ahead (a first sync of a large mailbox takes hours under Gmail's quota): the labels first,
+      // so the account's folders show now rather than after the pass (the core reads them after it as usual)
+      if (catalog === null && !earlyTried && ids.length > EARLY_LABELS_AFTER) await earlyLabels(sink);
       for (let i = 0; i < ids.length; i += 50) {
         sink.check();
         await fetchFull(ids.slice(i, i + 50), sink);
@@ -1051,6 +1056,25 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
   /** plan 68: what /labels said last (in memory: once a launch, then only when it may have changed); a label met that it lacks */
   let catalog: { at: number; known: Set<string> } | null = null;
   let unknownLabel = false;
+  /** the early read is tried once per provider: a failure waits for the core's read after the pass (Codex review) */
+  let earlyTried = false;
+
+  async function readFolders(sink: Pick<SyncSink, "setFolders" | "signal">) {
+    const labels = readLabels(await api<unknown>("/labels", { signal: sink.signal, preparationSignal: sink.signal }));
+    // the cache moves only once the list is stored: a failed write is tried again on the next pass (Codex R4)
+    await sink.setFolders?.(labelFolders(labels));
+    catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
+    unknownLabel = false;
+  }
+
+  /** The labels early, during a long pass; only a pause or a sign-in matters now, any other failure waits for the core's read after it. */
+  async function earlyLabels(sink: SyncPass) {
+    earlyTried = true;
+    try { await readFolders(sink); }
+    catch (error) {
+      if (error instanceof ProviderAuthError || error instanceof ProviderCooldownError || sink.signal.aborted || !(error instanceof ProviderError) || (error instanceof GmailApiError && (error.status === 429 || (error.status === 403 && error.retryable)))) throw error;
+    }
+  }
 
   async function captureAttachments(sink: SyncPass) {
     if (sink.signal.aborted) return;
@@ -1149,11 +1173,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     async folders(sink) {
       // never read, stale (history doesn't report label changes), or a label met that it didn't have
       if (catalog && !unknownLabel && Date.now() - catalog.at < LABELS_EVERY_MS) return;
-      const labels = readLabels(await api<unknown>("/labels"));
-      // the cache moves only once the list is stored: a failed write is tried again on the next pass (Codex R4)
-      await sink.setFolders?.(labelFolders(labels));
-      catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
-      unknownLabel = false;
+      await readFolders(sink);
     },
 
     async execute(op: ProviderOp) {

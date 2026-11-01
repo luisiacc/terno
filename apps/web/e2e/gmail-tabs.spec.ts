@@ -71,7 +71,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", { tag: "@design" }, () 
     expect((await new AxeBuilder({ page }).include("#app-sidebar").analyze()).violations).toEqual([]);
   });
 
-  test("a lone Gmail account without labels still opens to its tabs; turned off, they go and focus goes to its row", async ({ app: page, server }) => {
+  test("a lone Gmail account opens to its standard folders and tabs; turned off, the tabs go and focus goes to its Inbox", async ({ app: page, server }) => {
     const personal = accountOf(server, "Personal");
     for (const a of await server.backend.store.accounts.list()) if (a.id !== personal) await server.backend.server.invoke("accounts.remove", { id: a.id }, { clientId: "setup", origin: "dev" as const });
     await server.backend.store.folders.replace(personal, []);
@@ -87,8 +87,9 @@ test.describe("Gmail's Promotions and Social (plan 86)", { tag: "@design" }, () 
     await promotions.focus();
     await server.backend.server.invoke("accounts.update", { id: personal, separateTabs: false }, { clientId: "setup", origin: "dev" as const });
     await expect(promotions).toHaveCount(0);
-    await expect(only).toBeFocused();
-    await expect(only).not.toHaveAttribute("aria-expanded");
+    // its standard folders stay listed: the account's Inbox takes the focus, as with several accounts
+    await expect(page.getByTestId(`nav-folder-${personal}-inbox`)).toBeFocused();
+    await expect(only).toHaveAttribute("aria-expanded", "true");
     await expect.poll(() => listFor(page)).toEqual(["inbox", personal, null, null, null, ""]);
   });
 

@@ -490,3 +490,11 @@ The full suites caught two of ours, both fixed:
 Failing on main at cc8008c0 as well (each run side by side on both): `idb.persistence` (2), `ops-scale` under load, `scan.test` and `selection-write-source` (both from `forward-raw-obligation-test-utils.tsx`), `gmail-response.perf` (2), `attachment-admission.perf` (2), `ingest.perf` (0.88–0.91 on both), `incoming-inline.perf` (same CPU on both, load-bound), `load.perf`'s slow-disk gate, and e2e `compose:109` and `composer:651`. E2e `designs:161` and `settings-pass:81` failed once under load and passed 27 of 27 alone. UI perf: 62 of 62 on the second run (a 2 MB draft frame at 52.5 against 50 the first time, under load 12).
 
 Still open: round 54's finding 1 (orphan removal for one long conversation refolds the thread per batch), a follow-up for a deferred, store-level refold.
+
+## A large first sync waited hours for its labels (2026-11-01)
+
+Reported: a Gmail account showed only Promotions and Social; its labels (Banco, Envios, polizas y cosas, [Superhuman]…) and its own Inbox, Sent, Junk… were missing.
+
+- **Labels:** the core reads an account's folders after a pass that worked (this plan's contract, kept). A Gmail first sync is one pass, and under the new per-user quota (plan 62: about 100 messages a minute) a large mailbox's pass takes hours, so no label showed until it ended. Now the Gmail provider reads `/labels` once early, before downloading a first-sync page with more than 100 new messages (`EARLY_LABELS_AFTER`), under the pass's signal; it is tried once per provider (a failure waits for the read after the pass), and a pause or a sign-in stops the pass as before. Small first syncs keep their requests exactly.
+- **Standard folders:** plan 67 (rule 10) hid a lone account's Inbox, Sent, Archive, Spam and Trash as duplicates of the top ones. The user wants them inside the account, as Mail lists them: every account now opens to them, then its Gmail tabs, then its own folders. A lone account's row is a disclosure like any other and scopes to its Inbox.
+- Codex review: the early read didn't follow cancellation, a failed one was retried on every long page, and the 50k perf gate's request count needed the one extra read. Fixed, each with a test that fails without it; no sidebar regression found.

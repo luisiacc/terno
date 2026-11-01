@@ -206,7 +206,7 @@ test("Codex R10: a focused folder renamed to sort past the 250 shown keeps the f
   await expect(page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`)).toHaveCount(251);
 });
 
-test("Codex R23: with one account, its last own folder taken away while focused hands focus to the account's row", async ({ app: page, server }) => {
+test("Codex R23: with one account, its last own folder taken away while focused hands focus to the account's row; its standard folders stay", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
   // plan 86: its Gmail tabs would keep the group: kept in the Inbox, its own folders are all it lists
@@ -219,11 +219,11 @@ test("Codex R23: with one account, its last own folder taken away while focused 
   await server.backend.store.folders.replace(acme, []);
   server.backend.server.emit("folders", await server.backend.store.folders.list());
   await expect(rows).toHaveCount(0);
-  await expect(page.locator(`#account-folders-${acme}`)).toHaveCount(0);
+  await expect(page.getByTestId(`nav-folder-${acme}-sent`)).toBeVisible();
   await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
 });
 
-test("with one account, its row opens onto its own folders alone (its standard ones are the top ones)", async ({ app: page, server }) => {
+test("with one account, its row opens onto its standard folders, then its own (as Mail lists them)", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
   const row = page.getByTestId(`nav-account-${acme}`);
@@ -231,9 +231,9 @@ test("with one account, its row opens onto its own folders alone (its standard o
   await expect(row).toHaveAttribute("aria-expanded", "false");
   await row.click();
   await expect(row).toHaveAttribute("aria-expanded", "true");
-  // where you are stays: the top Inbox
-  await expect.poll(() => listFor(page)).toEqual(["inbox", null, null, null, null, ""]);
-  await expect(page.locator(`[data-testid^="nav-folder-${acme}-"]`)).toHaveCount(0);
+  // the account's Inbox, as with several accounts
+  await expect.poll(() => listFor(page)).toEqual(["inbox", acme, null, null, null, ""]);
+  await expect(page.locator(`[data-testid^="nav-folder-${acme}-"]`)).toHaveCount(5);
   await expect(own(page, acme, "Label_21")).toBeVisible();
   await own(page, acme, "Label_22").click();
   await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_22", ""]);

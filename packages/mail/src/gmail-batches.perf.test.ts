@@ -9,7 +9,7 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   const count = 50_000;
   const raw = toBase64url(new TextEncoder().encode("From: sender@example.test\r\nSubject: Synthetic\r\nContent-Type: text/plain\r\n\r\nOrdinary small mail"));
   const checkpoint = { historyId: "9007199254740995" };
-  let requests = 0, historyReads = 0, ingested = 0, transactions = 0, cursorWrites = 0, maxCursorBytes = 0, saved: unknown;
+  let requests = 0, historyReads = 0, labelReads = 0, ingested = 0, transactions = 0, cursorWrites = 0, maxCursorBytes = 0, saved: unknown;
   const ids = new Set<string>();
   new Response();
   const ctx = {
@@ -22,6 +22,8 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json(checkpoint);
       if (url.pathname.endsWith("/history")) { historyReads++; return Response.json(checkpoint); }
+      // a long first sync reads the labels once before its downloads (2026-11)
+      if (url.pathname.endsWith("/labels")) { labelReads++; return Response.json({ labels: [] }); }
       if (url.pathname.endsWith("/messages")) {
         const start = Number(url.searchParams.get("pageToken") ?? 0);
         const end = Math.min(count, start + 500);
@@ -49,7 +51,8 @@ it("keeps 50k small-message processing within its qualified CPU and transaction 
   const elapsedCpu = threadCpuMs() - cpu;
   expect(elapsedCpu, `50k provider/synthetic-sink CPU: ${elapsedCpu.toFixed(2)} ms`).toBeLessThanOrEqual(2500 * BUDGET_MULTIPLIER);
   expect(historyReads).toBe(1);
-  expect(requests).toBe(count + Math.ceil(count / 500) + 1 + historyReads);
+  expect(labelReads).toBe(1);
+  expect(requests).toBe(count + Math.ceil(count / 500) + 1 + historyReads + labelReads);
   expect(ingested).toBe(count);
   expect(ids.size).toBe(count);
   expect(transactions).toBe(1000);

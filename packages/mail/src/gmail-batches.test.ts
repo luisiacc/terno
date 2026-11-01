@@ -7,7 +7,7 @@ import { createGmailApiProvider, toBase64url } from "./gmail-api";
 import type { ProviderContext, SyncSink } from "./types";
 import type { QuotaPacer } from "./gmail-quota";
 
-function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>, o: { unitsPerSecond?: number; quota?: QuotaPacer; unauthorizedOnce?: string } = {}) {
+function setup(count: number, text: string, consume?: (batch: IncomingMessage[]) => Promise<void>, o: { unitsPerSecond?: number; quota?: QuotaPacer; unauthorizedOnce?: string; pageSize?: number; labels?: () => Response | Promise<Response> } = {}) {
   const processor = createNodeIncomingProcessor();
   const incoming = new IncomingPipeline(processor);
   const ids = Array.from({ length: count }, (_, i) => `m${i}`);
@@ -17,6 +17,8 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
   const abort = new AbortController();
   let downloads = 0, firstIngestAt = 0, activeSink = 0, maxSink = 0;
   const started: number[] = [];
+  const order: string[] = [];
+  const folders: unknown[][] = [];
   let gate: Promise<void> | undefined;
   const ctx = {
     incoming, incomingProcessor: processor,
@@ -27,7 +29,15 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
       const url = new URL(String(input));
       if (url.pathname.endsWith("/profile")) return Response.json({ historyId: "10" });
       if (url.pathname.endsWith("/history")) return Response.json({ historyId: "10" });
-      if (url.pathname.endsWith("/messages")) return Response.json({ messages: ids.map((id) => ({ id })) });
+      if (url.pathname.endsWith("/messages")) {
+        if (!o.pageSize) return Response.json({ messages: ids.map((id) => ({ id })) });
+        const from = Number(url.searchParams.get("pageToken") ?? 0);
+        const next = from + o.pageSize < ids.length ? String(from + o.pageSize) : undefined;
+        return Response.json({ messages: ids.slice(from, from + o.pageSize).map((id) => ({ id })), ...(next && { nextPageToken: next }) });
+      }
+      if (url.pathname.endsWith("/labels") && o.labels) { order.push("labels"); return o.labels(); }
+      if (url.pathname.endsWith("/labels")) { order.push("labels"); return Response.json({ labels: [{ id: "Label_1", name: "Banco", type: "user" }, { id: "INBOX", name: "INBOX", type: "system" }] }); }
+      if (order.at(-1) !== "download") order.push("download");
       downloads++;
       started.push(performance.now());
       await gate;
@@ -45,9 +55,10 @@ function setup(count: number, text: string, consume?: (batch: IncomingMessage[])
       finally { activeSink--; }
     },
     async updateFlags() {}, async removeMessages() {}, async setBody() {}, async setSyncState() {}, async pendingMessageIds() { return new Set(); },
+    async setFolders(list) { folders.push([...list]); },
   };
   const p = createGmailApiProvider(ctx, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array(), unitsPerSecond: o.unitsPerSecond, quota: o.quota });
-  return { p, started, async close() { await p.close(); await processor.close(); incoming.close(); }, sync: () => p.sync(sink), abort: () => abort.abort(), batches, checkpoints, get downloads() { return downloads; }, get firstIngestAt() { return firstIngestAt; }, get maxSink() { return maxSink; }, setGate(value: Promise<void>) { gate = value; } };
+  return { p, started, order, folders, async close() { await p.close(); await processor.close(); incoming.close(); }, sync: () => p.sync(sink), abort: () => abort.abort(), batches, checkpoints, get downloads() { return downloads; }, get firstIngestAt() { return firstIngestAt; }, get maxSink() { return maxSink; }, setGate(value: Promise<void>) { gate = value; } };
 }
 
 it("flushes completed message bytes before retaining the whole count batch", async () => {
@@ -177,5 +188,44 @@ it("a download refused with 401 and retried spends its quota again (Codex review
     expect(t.batches.flat()).toHaveLength(1);
     // the list (5), then the raw read paid before its slot (60) and again for its retry (60)
     expect(spent.filter((units) => units === 60)).toHaveLength(2);
+  } finally { await t.close(); }
+});
+
+it("a long first sync reads the account's labels before its downloads, so its folders show now (2026-11)", async () => {
+  // 150 new messages: minutes of downloads under Gmail's quota
+  const t = setup(150, "ordinary small mail");
+  try {
+    await t.sync();
+    expect(t.order.slice(0, 2)).toEqual(["labels", "download"]);
+    expect(t.folders).toEqual([[{ key: "Label_1", path: ["Banco"], selectable: true }]]);
+  } finally { await t.close(); }
+});
+
+it("a short first sync leaves the labels to the read after the pass (no extra request)", async () => {
+  const t = setup(20, "ordinary small mail");
+  try {
+    await t.sync();
+    expect(t.order).toEqual(["download"]);
+  } finally { await t.close(); }
+});
+
+it("a failed early label read isn't tried again on the next long page: the read after the pass has it (Codex review)", async () => {
+  const t = setup(300, "ordinary small mail", undefined, { pageSize: 150, labels: () => new Response("synthetic", { status: 500 }) });
+  try {
+    await t.sync();
+    expect(t.order.filter((x) => x === "labels")).toHaveLength(1);
+    expect(t.batches.flat()).toHaveLength(300);
+  } finally { await t.close(); }
+});
+
+it("cancelling the sync aborts a stalled early label read at once (Codex review)", async () => {
+  const t = setup(150, "ordinary small mail", undefined, { labels: () => new Promise<Response>(() => {}) });
+  try {
+    const running = t.sync().then(() => null, (error: unknown) => error);
+    await expect.poll(() => t.order).toContain("labels");
+    const before = performance.now();
+    t.abort();
+    expect(await running).toBeTruthy();
+    expect(performance.now() - before).toBeLessThan(1000);
   } finally { await t.close(); }
 });
