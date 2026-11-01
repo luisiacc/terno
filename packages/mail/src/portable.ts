@@ -11,3 +11,4 @@ export * from "./incoming";
 export type { IncomingProcessor, IncomingProcessorOptions, IncomingProcessingInput, IncomingProcessingResult, IncomingProcessingLimits, IncomingProcessingFailureCode, IncomingGmailMetadata } from "./incoming-processing";
 export * from "./provider-http";
 export * from "./gmail-quota";
+export * from "./mbox";
