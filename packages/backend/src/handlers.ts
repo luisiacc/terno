@@ -12,6 +12,7 @@ import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, Undo
 import { SimilarFilters } from "./similar";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
+import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { googleClientFor } from "./google-client";
@@ -63,6 +64,7 @@ function toDraft(r: DraftRow): Draft {
 export function createHandlers(b: Backend): Handlers {
   const store = b.store;
   const storage = new StorageMaintenance(b);
+  const folderExports = new FolderExports(b);
   let attachmentCalls = 0;
   let settingsUpdates = Promise.resolve();
   const attachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
@@ -999,9 +1001,9 @@ export function createHandlers(b: Backend): Handlers {
     "folders.delete": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
     "folders.count": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
     "folders.favorite": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.exportStart": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.exportNext": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.exportCancel": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.exportStart": (p, ctx) => folderExports.start(p.folder !== null ? { accountId: p.accountId, folder: p.folder } : { accountId: p.accountId, view: p.view! }, ctx.clientId),
+    "folders.exportNext": (p, ctx) => folderExports.next(p.exportId, ctx.clientId),
+    "folders.exportCancel": (p, ctx) => folderExports.cancel(p.exportId, ctx.clientId),
 
     "storage.report": () => storage.report(),
     "storage.remove": async ({ buckets, olderThanDays, jobId }) => {
