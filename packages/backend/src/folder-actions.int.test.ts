@@ -331,13 +331,17 @@ it("a delete interrupted before its cleanup pass finishes it after a restart", a
   expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash"]);
 });
 
-it("a DELETE the server carried out but whose answer was lost still takes the mail that was only there (Codex code review round 2 #2)", async () => {
+it("a DELETE the server carried out but whose answer was lost still takes the mail that was only there (Codex code review round 2 #2), and its favorite (round 12 #3)", async () => {
   const t = await setup(["Work", "Keep"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
   t.server.control.addMessage("Keep", { raw: rawIdleMail("Only in keep") });
   await t.backend.syncAccount(t.account.id);
   const [a] = await t.threadsIn("Work");
   const [k] = await t.threadsIn("Keep");
+  const favorites = async () => (await t.client.call("app.bootstrap", {})).settings.favoriteFolders;
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Keep", view: null, on: true });
+  const keep = { accountId: t.account.id, folder: "Keep", view: null };
   const original = ImapFlow.prototype.mailboxDelete;
   // Work: deleted, then the connection drops before the answer; Keep: the connection drops before it's sent
   const lost = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
@@ -352,10 +356,34 @@ it("a DELETE the server carried out but whose answer was lost still takes the ma
   }
   expect(t.mailboxes()).toEqual(["INBOX", "Keep", "Sent", "Trash"]);
   const reopened = await t.reopen();
+  const heard: unknown[] = [];
+  reopened.client.on("favoriteFolders", (f) => heard.push(f.favorites));
   await reopened.backend.syncAccount(t.account.id);
   expect((await reopened.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
   // still on the server: its mail and its place stay
   expect(await t.threadsIn("Keep")).toEqual([k]);
+  // the pass that shows Work gone takes its favorite, and every window hears it; Keep's stays
+  expect(await favorites()).toEqual([keep]);
+  expect(heard).toEqual([[keep]]);
+  // a Work made again is another folder: it isn't a favorite, after its pass either
+  await reopened.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await reopened.backend.syncAccount(t.account.id);
+  expect(await favorites()).toEqual([keep]);
+  expect(heard).toEqual([[keep]]);
+});
+
+it("a DELETE whose answer came took its favorite already: a Work made again here and favorited keeps it through the cleanup pass (Codex code review round 12 #3)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([]);
+  // made again and favorited before the pass that cleans up the deleted one's mail
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  await t.backend.syncAccount(t.account.id);
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Work", view: null }]);
 });
 
 it("a DELETE the server refuses leaves no record behind, and its mail stays", async () => {

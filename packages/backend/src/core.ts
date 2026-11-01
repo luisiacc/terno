@@ -1629,7 +1629,7 @@ export class BackendCore {
         pendingMessageIds: () => this.accountRead(life, () => this.store.sync.pendingMessageIds(accountId)),
         setSyncState: (patch) => setState(patch),
         // plan 68: the account's own folders; an unchanged list writes and says nothing
-        setFolders: async (folders, renamed = []) => {
+        setFolders: async (folders, renamed = [], deleted = []) => {
           checkCurrent();
           // plan 107: a rename this list shows done that the store hasn't followed (its answer was lost, Codex code
           // review round 5 #1) is announced as a change's is, and favorites follow it
@@ -1640,11 +1640,14 @@ export class BackendCore {
           // the list and the favorites that follow it, never between a favorite's check and its write (round 10 #4)
           await this.withFolderList(accountId, async () => {
             const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, moves.map((m) => m.to)));
-            if (!r.changed && !moves.length) return;
-            this.server.emit("folders", await this.store.folders.list());
-            this.notifyChanged(r.touched);
-            void this.rebuildFolders();
-            if (moves.length) await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves })));
+            if (r.changed || moves.length) {
+              this.server.emit("folders", await this.store.folders.list());
+              this.notifyChanged(r.touched);
+              void this.rebuildFolders();
+            }
+            // a DELETE whose answer was lost, shown done by this list, takes its favorites as a change's does (Codex code
+            // review round 12 #3: they stayed, and a folder made again under the name came back a favorite)
+            if (moves.length || deleted.length) await this.accountWrite(life, () => this.writeFavorites(() => followFavoriteFolders(this.store, accountId, { renamed: moves, deleted })));
           });
         },
       };

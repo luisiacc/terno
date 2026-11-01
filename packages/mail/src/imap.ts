@@ -59,8 +59,12 @@ interface Cursor {
    * against the LIST and STATUS again where it's applied. It never applies to another generation of its path, and
    * while it's pending the path's listing leaves its generation out (`except`), so no membership, count or export of
    * a path made again shows it.
+   *
+   * `answered`: the backend followed it (its favorites went): the change heard every DELETE's answer, or a pass
+   * announced it (Codex code review round 12 #3). One whose answer was lost is announced by the pass whose LIST shows
+   * it done, once.
    */
-  deleted?: Record<string, number | { from: string; uidvalidity: number }>;
+  deleted?: Record<string, number | { from: string; uidvalidity: number; answered?: true }>;
   /**
    * plan 107: mailboxes the user renamed here, by their new path: the old one and its UIDVALIDITY. Read under the same
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
@@ -68,6 +72,10 @@ interface Cursor {
    */
   renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true }>;
 }
+
+/** plan 107: a deletion record the backend followed (Codex code review round 12 #3); a bare UIDVALIDITY names its own path */
+const answeredDeletion = (path: string, r: NonNullable<Cursor["deleted"]>[string]): NonNullable<Cursor["deleted"]>[string] =>
+  typeof r === "number" ? { from: path, uidvalidity: r, answered: true } : { ...r, answered: true };
 
 /**
  * Plan 68 (Codex R52): how many more reset ids this folder may keep: the limit is the cursor's, every folder's together
@@ -1676,8 +1684,22 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           if (waiting.has(to)) return [];
           return from !== to && own.has(to) && (!own.has(from) || (now != null && now !== m.uidvalidity)) ? [{ from, to, ...(m.stale && { stale: true as const }) }] : [];
         });
+        // plan 107: deletions made here that this LIST shows done (the path gone, or another mailbox there now) and that
+        // nothing announced (their answer was lost): their favorites go with the list, once (Codex code review round 12 #3)
+        const shownGone = Object.entries(cursor.deleted ?? {}).flatMap(([path, r]) => {
+          if (typeof r !== "number" && r.answered) return [];
+          const was = typeof r === "number" ? r : r.uidvalidity;
+          const there = list.find((m) => m.path === path && !classifyMailbox(m).unusable);
+          if (!there) return [path];
+          const now = generations.get(path);
+          return was && selectableMailbox(there) && now != null && now !== was ? [path] : [];
+        });
         // listed before they sync: a location in a listed folder is membership as it's written
-        await sink.setFolders?.(folders, moved);
+        await sink.setFolders?.(folders, moved, shownGone);
+        if (shownGone.length && sink.setFolders) {
+          for (const path of shownGone) cursor.deleted![path] = answeredDeletion(path, cursor.deleted![path]!);
+          await ctx.saveCursor(cursor);
+        }
         // plan 107 (Codex R1): mailboxes deleted here. A record is written before its DELETE is sent (Codex code review
         // round 2 #2): one the LIST still has under the same UIDVALIDITY wasn't carried out (its answer was lost), so
         // only the record goes; under another, it was made again since: the record stays, for the deleted one's mail
@@ -2036,6 +2058,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             break;
           }
           deleted.push(path);
+        }
+        // every DELETE that went was answered: the backend follows them (their favorites go), so no pass announces them
+        // again (Codex code review round 12 #3)
+        const now = deleted.length ? await ctx.loadCursor<Cursor>() : null;
+        if (now?.deleted && deleted.some((p) => Object.hasOwn(now.deleted!, p))) {
+          for (const p of deleted) if (Object.hasOwn(now.deleted, p)) now.deleted[p] = answeredDeletion(p, now.deleted[p]!);
+          await ctx.saveCursor(now);
         }
         const after = await folderCatalog(c);
         return { folders: after.folders, deleted, ...(partial && { partial }) };

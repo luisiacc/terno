@@ -168,9 +168,10 @@ export interface SyncSink {
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;
   /**
    * plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink
-   * has it; a bare test sink may not. plan 107: `renamed`, renames made here that this list shows done
+   * has it; a bare test sink may not. plan 107: `renamed`, renames made here that this list shows done; `deleted`,
+   * paths deleted here that this list shows done and that nothing announced yet (their answer was lost)
    */
-  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly FolderMove[]): Promise<void>;
+  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly FolderMove[], deleted?: readonly string[]): Promise<void>;
   signal: AbortSignal;
 }
 
