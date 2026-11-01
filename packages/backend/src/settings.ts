@@ -354,10 +354,12 @@ export async function followFavoriteFolders(store: SettingsStore, accountId: num
       if (f.accountId !== accountId) { next.push(f); continue; }
       if (gone === null || (f.folder !== null && gone.has(f.folder))) { touched = true; continue; }
       const to = f.folder !== null ? moved.get(f.folder) : undefined;
-      if (to === undefined || to === f.folder) { next.push(f); continue; }
-      touched = true;
-      const renamed = { ...f, folder: to };
-      if (!next.some((n) => sameFavorite(n, renamed))) next.push(renamed);
+      const kept = to === undefined || to === f.folder ? f : { ...f, folder: to };
+      if (kept !== f) touched = true;
+      // once each, whichever way it got there: a stale favorite left under the new key (its folder went in another app
+      // before the list was read again) is the moved one's twin (Codex code review round 16 #2: kept beside it)
+      if (next.some((n) => sameFavorite(n, kept))) { touched = true; continue; }
+      next.push(kept);
     }
     return touched ? { value: { ...s, favoriteFolders: next }, result: next } : { value: s, result: null };
   });

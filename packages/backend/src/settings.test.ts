@@ -7,6 +7,7 @@ import { getSetting, setSetting, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { followFavoriteFolders } from "./settings";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -220,5 +221,19 @@ describe("language", () => {
     await client.call("settings.update", { language: "es" });
     await client.call("settings.update", { language: "system" });
     expect(seen).toEqual(["es", "system"]);
+  });
+});
+
+describe("favorite folders (plan 107)", () => {
+  it("a rename onto a stale favorite keeps one: every resulting favorite once (Codex code review round 16 #2)", async () => {
+    const { backend } = setup();
+    // Work and Job favorited; Job deleted in another app before Terno read the list again; then Work → Job here
+    setSetting(sqlDb(backend.store), "app", { favoriteFolders: [{ accountId: 7, folder: "Work", view: null }, { accountId: 7, folder: "Job", view: null }, { accountId: 8, folder: "Job", view: null }] });
+    const next = await followFavoriteFolders(backend.store, 7, { renamed: [{ from: "Work", to: "Job" }] });
+    expect(next).toEqual([{ accountId: 7, folder: "Job", view: null }, { accountId: 8, folder: "Job", view: null }]);
+    expect(getSetting<{ favoriteFolders?: unknown }>(sqlDb(backend.store), "app", {}).favoriteFolders).toEqual(next);
+    // the stale one first: the same
+    setSetting(sqlDb(backend.store), "app", { favoriteFolders: [{ accountId: 7, folder: "Job", view: null }, { accountId: 7, folder: "Work", view: null }] });
+    expect(await followFavoriteFolders(backend.store, 7, { renamed: [{ from: "Work", to: "Job" }] })).toEqual([{ accountId: 7, folder: "Job", view: null }]);
   });
 });
