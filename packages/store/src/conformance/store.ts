@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
 import type { Revision, SearchMessageDoc } from "../search";
 import type { Cursor } from "../types";
+import { DEFERRED_RETRY_MS } from "../types";
 import { StaleCursorError } from "../search";
 import { backfillFacts, ingest, msg, seedThroughCommands, threadOf, withAccounts } from "./fixtures";
 import { byRecency, VIEW_TEST, type SearchCorpus } from "./oracle";
@@ -543,6 +544,26 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         }
         expect(delays.slice(0, 4)).toEqual([1000, 2000, 4000, 8000]);
         expect(Math.max(...delays)).toBeLessThanOrEqual(300_000);
+      });
+
+      it("an op the server keeps deferring (SMTP 4xx, IMAP throttling) is retried for a day, 5 min apart at most, then fails", async () => {
+        const { store, threads, act } = await mailbox();
+        const id = (await act(threads[0]!, "archive"))!;
+        const created = (await store.ops.get(id))!.created_at;
+        let now = created, tries = 0;
+        for (;;) {
+          expect((await store.ops.claimReady(now, 20)).map((o) => o.id)).toEqual([id]);
+          tries++;
+          const state = await store.ops.fail(id, "421 4.7.0 Try again later", true, now, { deferred: true });
+          if (state === "failed") break;
+          expect(state).toBe("queued");
+          const next = (await store.ops.get(id))!.next_attempt_at;
+          expect(next - now).toBeLessThanOrEqual(300_000);
+          now = next;
+        }
+        // far more than eight tries, and the last one only once a day had passed
+        expect(tries).toBeGreaterThan(200);
+        expect(now - created).toBeGreaterThanOrEqual(DEFERRED_RETRY_MS);
       });
 
       it("an op waiting for the user to sign in again keeps its attempts, schedules nothing, and resumes at once for its account", async () => {

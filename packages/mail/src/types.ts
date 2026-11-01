@@ -95,6 +95,15 @@ export class ProviderError extends Error {
     return new ProviderError(message, true, false, true);
   }
 
+  /** set by deferred(): the server answered "later" (SMTP 4xx, a throttled IMAP command) */
+  declare readonly deferred?: true;
+  /** The server answered "not now": retried far longer than a fault (servers defer for minutes to hours). */
+  static deferred(message: string | Localized): ProviderError {
+    const error = new ProviderError(message, true);
+    Object.defineProperty(error, "deferred", { value: true });
+    return error;
+  }
+
   /** transient (offline, 5xx, 429) or unknowable: the provider classified it, not our bug */
   get expected(): boolean {
     return this.retryable || this.ambiguous;

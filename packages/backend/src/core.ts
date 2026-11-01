@@ -1221,6 +1221,7 @@ export class BackendCore {
         resumeResolved: () => write(() => locations.resumeResolved()),
         dispatch: (ids, expected, start, fenceIds) => write(() => locations.dispatch(ids, expected, start, fenceIds)),
         mappedMove: (...args) => write(() => locations.mappedMove(...args)),
+        refused: (...args) => write(() => locations.refused(...args)),
         upsert: (...args) => write(() => locations.upsert(...args)),
         remove: (...args) => write(() => locations.remove(...args)),
         removeMany: (...args) => write(() => locations.removeMany(...args)),
@@ -2050,7 +2051,8 @@ export class BackendCore {
         else if (error instanceof ProviderError && error.network) state = await this.store.ops.fail(op.id, message, true, this.now(), { network: true, keepAttempt: this.connectivity.inOutage(op.account_id) });
         else {
           const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
-          state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryAt === undefined ? undefined : { retryAt });
+          // the server said "later" (SMTP 4xx, IMAP throttling): a day of retries, not eight in two minutes
+          state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryAt !== undefined ? { retryAt } : pe?.deferred ? { deferred: true } : undefined);
         }
         if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && (pe.i18n?.key === "errors.gmail.serviceDisabled" || pe.i18n?.key === "errors.gmail.permissionRequired" || pe.i18n?.key === "errors.gmail.adminPolicy")) {
           this.connectivity.succeeded(op.account_id);

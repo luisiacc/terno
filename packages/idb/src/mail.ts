@@ -69,7 +69,7 @@ import {
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags } from "./flag-intents";
-import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, DEFERRED_RETRY_MS, keepInPage, operationFlagFields, type LocalFlagField, type OpPark, type DraftInput, type DraftRow, type IncomingMessage, type ListParams, type ModelDelta, type OpRow, type OwnerClaim, type MessageState, type Page, type ScopeParams, type SearchMessageDoc, type SearchThreadDoc } from "@terno/store";
 import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
@@ -1824,10 +1824,11 @@ export function failOp(c: Ctx, id: string, error: string, retryable: boolean, no
   const op = ops.get(id);
   if (!op) return "failed";
   if (op.state !== "running") return op.state;
-  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
+  const deferring = !!park && "deferred" in park && now - op.created_at < DEFERRED_RETRY_MS;
+  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS || deferring) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
-  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay, updated_at: now });
+  ops.update(op, { state, attempts, last_error: error, next_attempt_at: park && state === "queued" && !("deferred" in park) ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay, updated_at: now });
   if (state === "failed") { settleFlagEffects(idbFlags(c), idbFlags(c).op(id)!, "removed"); dropTargets(c, id); }
   else if (!(park && "identity" in park) && !yieldToNewerOps(c, id)) return "succeeded";
   return state;

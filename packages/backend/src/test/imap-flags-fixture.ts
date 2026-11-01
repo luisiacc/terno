@@ -1,9 +1,9 @@
 import imapkit from "imapkit";
 import { bounded } from "./imap-idle-fixture";
 
-export async function flagsFixture(condstore: boolean, idle = false) {
+export async function flagsFixture(condstore: boolean, idle = false, extra: string[] = []) {
   const server = imapkit({
-    plugins: [...(idle ? ["IDLE"] : []), "SPECIAL-USE", "UIDPLUS", "ENABLE", ...(condstore ? ["CONDSTORE"] : [])],
+    plugins: [...(idle ? ["IDLE"] : []), "SPECIAL-USE", "UIDPLUS", "ENABLE", ...(condstore ? ["CONDSTORE"] : []), ...extra],
     storage: { INBOX: {}, "": { separator: "/", folders: { Projects: {} } } },
   });
   const commands: { command: string; data: string; mailbox: string | null }[] = [];

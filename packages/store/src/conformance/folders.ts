@@ -88,6 +88,23 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       await expect(store.providerStore(account!).locations.dispatch(ids, before, async () => "usable")).resolves.toBe("usable");
     });
 
+    it("IMAP identity: a command the server refused releases only its own admission's holds (2026-11 audit)", async () => {
+      let store = await fresh();
+      const [, account] = await withAccounts(store);
+      const { inserted: ids } = await ingest(store, Array.from({ length: 3 }, (_, i) => msg({ accountId: account!, locations: [loc("A", i + 1)] })));
+      const locations = store.providerStore(account!).locations;
+      const before = await locations.of(ids);
+      const owner = await locations.dispatch(ids, before, async (token) => token!, ids);
+      expect(await locations.unresolved(ids)).toEqual(ids);
+      // another admission's refusal releases nothing of this one
+      await locations.refused(ids, "someone-else");
+      expect(await locations.unresolved(ids)).toEqual(ids);
+      await locations.refused(ids, owner);
+      store = await harness.reopen(store); open.push(store);
+      expect(await store.providerStore(account!).locations.unresolved(ids)).toEqual([]);
+      await expect(store.providerStore(account!).locations.dispatch(ids, before, async () => "usable")).resolves.toBe("usable");
+    });
+
     it("IMAP identity: holds reject stale adoption, hydration, flags and automatic asset deletion", async () => {
       let store = await fresh();
       const [, account] = await withAccounts(store);

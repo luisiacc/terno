@@ -258,6 +258,14 @@ class IdbImapLocations implements ImapLocationStore {
     }
   }
 
+  async refused(messageIds: readonly number[], holdOwner: string) {
+    if (!holdOwner) return;
+    for (let i = 0; i < messageIds.length; i += 128) await this.command(() => {
+      const holds = T(this.c, "imap_identity_holds");
+      for (const id of messageIds.slice(i, i + 128)) { const hold = holds.get(id); if (hold?.owner === holdOwner && hold.account_id === this.accountId) holds.delete(id); }
+    });
+  }
+
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string) {
     if (!holdOwner) throw new ImapIdentityError();
     const expectedById = new Map<number, ImapLocation[]>();

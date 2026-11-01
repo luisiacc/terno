@@ -181,6 +181,25 @@ describe("W06 A29: installed IMAP transport foreground/IDLE ownership", () => {
     budget(w, start, 1);
   });
 
+  it("a listener stopped by a refused login comes back once the command session logs in with the same password (2026-11 audit)", async () => {
+    const w = await wire();
+    const t = await account(w);
+    const owner = await listener(w);
+    const previous = w.idles.length;
+    // the listener's next LOGIN is refused as a credentials failure (not a temporary one)
+    const refuse = w.server.script.add({ on: "command", command: "LOGIN", times: 1, send: "$TAG NO [AUTHENTICATIONFAILED] Invalid credentials\r\n" });
+    expect(w.server.control.disconnect(owner, { text: "server restart" })).toBe(1);
+    await w.wait(() => refuse.hits === 1 ? true : undefined, "refused listener LOGIN");
+    // a refused login isn't retried on a timer (servers lock accounts out for that)
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(w.idles.length).toBe(previous);
+    // the command session logs in again (its socket was dropped too): the password works, push comes back
+    for (const session of w.server.control.sessions()) if (session.session !== owner) w.server.control.disconnect(session.session, { text: "drop" });
+    await bounded(t.backend.syncAccount(t.account.id), "sync logs in again");
+    const next = await listener(w, previous);
+    expect(next).not.toBe(owner);
+  });
+
   it("reconnects only the BYE'd listener and restores a second push before the scheduled tick", async () => {
     const w = await wire();
     const t = await account(w);

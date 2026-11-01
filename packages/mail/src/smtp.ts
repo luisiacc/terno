@@ -38,7 +38,7 @@ export function classifySmtpError(error: unknown, dataStarted = false): Provider
   // An explicit reply code is a definitive answer: 5xx permanent, 4xx temporary (retry),
   // whether it came for a recipient (450/550) or after the body (451/554).
   if (e.responseCode && e.responseCode >= 500) return new ProviderError(e.code === "EENVELOPE" ? L("errors.smtp.recipientRejected", { detail: message }) : message, false);
-  if (e.responseCode && e.responseCode >= 400) return new ProviderError(message, true);
+  if (e.responseCode && e.responseCode >= 400) return ProviderError.deferred(message);
   if (e.code === "EENVELOPE") return new ProviderError(L("errors.smtp.recipientRejected", { detail: message }), false);
   // No answer after the server said "354": it may have accepted the message.
   if (dataStarted) return new ProviderError(L("errors.smtp.connectionLost", { detail: message }), false, true);

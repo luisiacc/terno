@@ -28,8 +28,8 @@ function raw(subject: string, date = START - DAY) {
     "Content-Type: text/plain; charset=utf-8", "", `Exact ${subject} body`, ""].join("\r\n");
 }
 
-async function setup(condstore = true, path = "Projects", initial: string[] = []) {
-  const w = await flagsFixture(condstore);
+async function setup(condstore = true, path = "Projects", initial: string[] = [], plugins: string[] = []) {
+  const w = await flagsFixture(condstore, false, plugins);
   cleanups.push(() => w.stop());
   const ctl = w.server.control;
   const targetRaw = raw("cached");
@@ -82,7 +82,7 @@ async function setup(condstore = true, path = "Projects", initial: string[] = []
   expect(w.responses.some((s) => /HIGHESTMODSEQ/.test(s))).toBe(condstore);
   return { ...t, w, ctl, path, account, message, thread: d.thread, target, targetRaw, other, otherRaw, never, neverRaw,
     open, providerId: sqlDb(t.backend.store).get<{ provider_msg_id: string }>("SELECT provider_msg_id FROM messages WHERE id = ?", message.id)!.provider_msg_id,
-    advance() { now += 60 * DAY; }, now: () => now };
+    advance() { now += 60 * DAY; }, tick(ms: number) { now += ms; }, now: () => now };
 }
 
 type Session = { backend: Backend; client: RpcClient };
@@ -579,3 +579,60 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
   });
 
 });
+
+describe("a server that says 'later' (2026-11 audit)", () => {
+  const opRow = (t: { backend: Backend }) => sqlDb(t.backend.store).get<{ state: string; last_error: string | null }>("SELECT state, last_error FROM ops ORDER BY created_at DESC LIMIT 1");
+
+  it("a throttled STORE is retried later and lands; the change is never undone", async () => {
+    const t = await setup(false, "INBOX");
+    t.w.server.script.add({ on: "command", command: "UID STORE", times: 1, send: "$TAG NO [LIMIT] Too many commands, try again later\r\n" });
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "markRead" });
+    await t.backend.runWorker();
+    // before: a permanent failure that put the message back to unread
+    expect(opRow(t)).toMatchObject({ state: "queued" });
+    expect((await detail(t)).messages[0]).toMatchObject({ isRead: true });
+    t.tick(5 * 60_000);
+    await t.backend.runWorker();
+    expect(opRow(t)).toMatchObject({ state: "succeeded" });
+    expect(t.ctl.getMessage("INBOX", t.target.uid).flags).toContain("\\Seen");
+  });
+
+  it("a MOVE the server refused as busy is retried, never left 'unknown' or held", async () => {
+    const t = await setup(false, "INBOX", [], ["MOVE"]);
+    t.w.server.script.add({ on: "command", command: "UID MOVE", times: 1, send: "$TAG NO [INUSE] Mailbox in use, try again later\r\n" });
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "archive" });
+    await t.backend.runWorker();
+    // before: "unknown" (an ACK may be lost) with the message held for good; a tagged NO moved nothing
+    expect(opRow(t)).toMatchObject({ state: "queued" });
+    expect(sqlDb(t.backend.store).all("SELECT 1 FROM imap_identity_holds")).toEqual([]);
+    t.tick(5 * 60_000);
+    await t.backend.runWorker();
+    expect(opRow(t)).toMatchObject({ state: "succeeded" });
+    expect(t.ctl.listMessages("Archive")).toHaveLength(1);
+    expect(t.ctl.listMessages("INBOX").map((m) => m.uid)).not.toContain(t.target.uid);
+  });
+
+  it("a refused first COPY of the no-MOVE fallback changed nothing: released, retried, done (Codex review)", async () => {
+    const t = await setup(false, "INBOX");
+    t.w.server.script.add({ on: "command", command: "UID COPY", times: 1, send: "$TAG NO [INUSE] Mailbox in use, try again later\r\n" });
+    await t.client.call("threads.act", { threadIds: [t.thread.id], action: "archive" });
+    await t.backend.runWorker();
+    expect(opRow(t)).toMatchObject({ state: "queued" });
+    expect(sqlDb(t.backend.store).all("SELECT 1 FROM imap_identity_holds")).toEqual([]);
+    t.tick(5 * 60_000);
+    await t.backend.runWorker();
+    expect(opRow(t)).toMatchObject({ state: "succeeded" });
+    expect(t.ctl.listMessages("Archive")).toHaveLength(1);
+  });
+
+  it("a refused MOVE of several messages stays held: RFC 6851 lets it move part of the set (Codex review)", async () => {
+    const t = await setup(false, "INBOX", [], ["MOVE"]);
+    const unrelated = (await t.client.call("threads.list", { view: "all" })).items.find((item) => item.subject === "unrelated");
+    expect(unrelated).toBeDefined();
+    t.w.server.script.add({ on: "command", command: "UID MOVE", times: 1, send: "$TAG NO [LIMIT] Too many messages\r\n" });
+    await t.client.call("threads.act", { threadIds: [t.thread.id, unrelated!.id], action: "archive" });
+    await t.backend.runWorker();
+    expect(sqlDb(t.backend.store).all("SELECT 1 FROM imap_identity_holds")).toHaveLength(2);
+  });
+});
+

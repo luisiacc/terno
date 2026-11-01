@@ -164,6 +164,16 @@ class SqlImapLocations implements ImapLocationStore {
     return start(owner);
   }
 
+  async refused(messageIds: readonly number[], holdOwner: string) {
+    if (!holdOwner) return;
+    for (let i = 0; i < messageIds.length; i += 128) {
+      this.db.tx(() => {
+        for (const id of messageIds.slice(i, i + 128)) this.db.run("DELETE FROM imap_identity_holds WHERE message_id=? AND owner=? AND account_id=?", id, holdOwner, this.accountId);
+      });
+      if (i + 128 < messageIds.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
   async mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string) {
     if (!holdOwner) throw new ImapIdentityError();
     const expectedById = new Map<number, ImapLocation[]>();

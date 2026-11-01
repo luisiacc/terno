@@ -239,7 +239,10 @@ export const AWAITING_AUTH = 8_640_000_000_000_000;
 export const AWAITING_NETWORK = AWAITING_AUTH - 1;
 
 /** ops.fail's network case: wait for the network; an outage gives the claim's attempt back */
-export type OpPark = { retryAt: number; keepAttempt?: false } | { network: true; keepAttempt: boolean } | { identity: true; keepAttempt: true };
+export type OpPark = { retryAt: number; keepAttempt?: false } | { network: true; keepAttempt: boolean } | { identity: true; keepAttempt: true } | { deferred: true; keepAttempt?: false };
+
+/** How long an op the server keeps deferring (SMTP 4xx, IMAP throttling) is retried, from its creation. */
+export const DEFERRED_RETRY_MS = 24 * 60 * 60_000;
 
 /** Identity holds resume only after trusted locator evidence, never a network/auth event or timer. */
 export const AWAITING_IDENTITY = AWAITING_NETWORK - 1;

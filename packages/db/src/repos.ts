@@ -24,7 +24,7 @@ import {
   type UserActionKind,
 } from "@terno/core";
 import { addToCategory, removeFromCategory, type AddedBy } from "./categorize";
-import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
+import { AWAITING_AUTH, AWAITING_NETWORK, AWAITING_IDENTITY, DEFERRED_RETRY_MS, type DraftInput, type DraftRow, type OpPark, type OpRow } from "@terno/store";
 import { placeholders, type Db, type Param } from "./sqlite";
 
 export type { DraftRow, OpRow } from "@terno/store";
@@ -538,18 +538,20 @@ export function nextOpAttemptAt(db: Db, admission?: OpAdmission): number | null 
  * during an outage the claim's attempt is given back (an outage never uses up a send).
  */
 export function failOp(db: Db, id: string, error: string, retryable: boolean, now = Date.now(), park?: OpPark): OpState {
-  const op = db.get<{ attempts: number; state: OpState }>("SELECT attempts, state FROM ops WHERE id = ?", id);
+  const op = db.get<{ attempts: number; state: OpState; created_at: number }>("SELECT attempts, state, created_at FROM ops WHERE id = ?", id);
   if (!op) return "failed";
   if (op.state !== "running") return op.state;
   const attempts = park?.keepAttempt ? Math.max(op.attempts - 1, 0) : op.attempts;
-  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS) ? "queued" : "failed";
+  // a server that said "later" gets a day of retries (5 min apart once the backoff caps), not eight in two minutes
+  const deferring = !!park && "deferred" in park && now - op.created_at < DEFERRED_RETRY_MS;
+  const state: OpState = retryable && (park?.keepAttempt || op.attempts < MAX_OP_ATTEMPTS || deferring) ? "queued" : "failed";
   const delay = Math.min(1000 * 2 ** (op.attempts - 1), 300_000);
   db.run(
     "UPDATE ops SET state = ?, attempts = ?, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE id = ?",
     state,
     attempts,
     error,
-    park && state === "queued" ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay,
+    park && state === "queued" && !("deferred" in park) ? ("retryAt" in park ? Math.max(now + delay, park.retryAt) : "identity" in park ? AWAITING_IDENTITY : AWAITING_NETWORK) : now + delay,
     now,
     id,
   );

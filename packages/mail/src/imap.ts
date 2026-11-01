@@ -549,17 +549,78 @@ const NAME_HINTS: Record<Exclude<Role, "inbox" | "all">, RegExp> = {
   drafts: /^(inbox[./])?(drafts|borradores|entwürfe)$/i,
 };
 
+// RFC 5530 codes for a refusal that passes: the server is busy, the mailbox in use, a limit hit, its own bug
+const TEMPORARY_CODES = new Set(["UNAVAILABLE", "INUSE", "LIMIT", "SERVERBUG", "THROTTLED"]);
+// what servers say without a code (Gmail: "[ALERT] Too many simultaneous connections", "Account exceeded
+// command or bandwidth limits"; Microsoft: "Request is throttled"). Never a credentials message.
+const TEMPORARY_TEXT = /too many (?:simultaneous |concurrent )?connections|bandwidth limit|exceeded command|request is throttled|try (?:again )?later|temporar(?:il)?y (?:unavailable|failure)|server (?:is )?busy/i;
+
+// RFC 5530 codes that are about the credentials or the account: never "later", whatever the text says
+const CREDENTIAL_CODES = new Set(["AUTHENTICATIONFAILED", "AUTHORIZATIONFAILED", "EXPIRED", "PRIVACYREQUIRED", "CONTACTADMIN", "NOPERM"]);
+
+/** A refusal the server means to pass (throttling, limits, busy): try again later, never "sign in again" or "failed". */
+export function temporaryRefusal(error: unknown): boolean {
+  const e = error as { code?: unknown; serverResponseCode?: unknown; response?: unknown; responseText?: unknown; message?: unknown } | null;
+  if (!e || typeof e !== "object") return false;
+  if (e.code === "ETHROTTLE") return true;
+  const code = typeof e.serverResponseCode === "string" ? e.serverResponseCode.toUpperCase() : "";
+  // an explicit credentials code wins over a "try again later" in its text (retrying a wrong password locks accounts)
+  if (CREDENTIAL_CODES.has(code)) return false;
+  if (TEMPORARY_CODES.has(code)) return true;
+  const text = [e.message, e.response, e.responseText].filter((part): part is string => typeof part === "string").join(" ");
+  return TEMPORARY_TEXT.test(text);
+}
+
 export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
   if (error instanceof ImapIdentityError) return new ProviderIdentityError(L("errors.imap.identityUnavailable"));
   const e = error as { authenticationFailed?: boolean; serverResponseCode?: string; code?: string; responseStatus?: string; message?: string };
   const message = e?.message ?? String(error);
-  // the server refused the login: a sign-in to redo (plan 25), unless it says the refusal is temporary (RFC 5530)
-  if (e.authenticationFailed) return e.serverResponseCode === "UNAVAILABLE" ? new ProviderError(L("errors.imap.loginFailed", { detail: message }), true) : new ProviderAuthError(L("errors.imap.loginFailed", { detail: message }));
+  // the server refused the login: a sign-in to redo (plan 25), unless it says the refusal is temporary
+  // (RFC 5530, or "too many connections": the user's other mail apps hold the server's slots)
+  if (e.authenticationFailed) return temporaryRefusal(error) ? ProviderError.deferred(L("errors.imap.loginFailed", { detail: message })) : new ProviderAuthError(L("errors.imap.loginFailed", { detail: message }));
+  // throttled or busy: the same command later works
+  if (temporaryRefusal(error)) return ProviderError.deferred(`IMAP: ${message}`);
   if (e.responseStatus === "NO" || e.responseStatus === "BAD") return new ProviderError(`IMAP: ${message}`, false);
   // the server couldn't be reached or the connection died (plan 20): waits for the network
   if (isNetworkError(error)) return ProviderError.network(`IMAP: ${message}`);
   return new ProviderError(`IMAP: ${message}`, true);
+}
+
+/** imapflow resolves false when a STORE, MOVE, COPY or DELETE fails; its logger keeps why (makeClient) */
+const commandErrors = new WeakMap<ImapFlow, { err?: unknown }>();
+/** forget an earlier command's error before the one whose result is read */
+function clearRefusal(c: ImapFlow): void { const box = commandErrors.get(c); if (box) box.err = undefined; }
+/**
+ * Why a command imapflow resolved false failed: the server refused it for now (retry), refused it
+ * (it didn't happen), or nothing says (no tagged reply: an ACK may be lost, the change is unknown).
+ */
+function refusal(c: ImapFlow): "temporary" | "refused" | "unknown" {
+  return refusalOf(c).why;
+}
+/** The refusal and the command it answered (imapflow's executedCommand: "<tag> UID COPY …" → "COPY"). */
+function refusalOf(c: ImapFlow): { why: "temporary" | "refused" | "unknown"; command?: string } {
+  const box = commandErrors.get(c);
+  const err = box?.err as { responseStatus?: unknown; executedCommand?: unknown } | undefined;
+  if (box) box.err = undefined;
+  if (!err) return { why: "unknown" };
+  const command = typeof err.executedCommand === "string" ? /^\S+\s+(?:UID\s+)?([A-Za-z]+)/.exec(err.executedCommand)?.[1]?.toUpperCase() : undefined;
+  if (temporaryRefusal(err)) return { why: "temporary", command };
+  return { why: err.responseStatus === "NO" || err.responseStatus === "BAD" ? "refused" : "unknown", command };
+}
+
+/** The server answered a change with a tagged refusal: it didn't happen, so it is never "unknown" (withConnection). */
+class RefusedChangeError extends ProviderError {}
+
+/**
+ * Throws for a change imapflow resolved false: a temporary refusal is retried, a refusal fails, and
+ * with no reply at all `unknown` decides (a MOVE may have happened if only its ACK was lost).
+ */
+function refusedChange(c: ImapFlow, detail: string | Localized, unknown: "ambiguous" | "refused" = "ambiguous", why = refusal(c)): never {
+  if (why === "temporary") throw Object.defineProperty(new RefusedChangeError(detail, true), "deferred", { value: true });
+  if (why === "refused") throw new RefusedChangeError(detail, false);
+  // no tagged reply: withConnection decides (a dead session after the change makes it unknown)
+  throw new ProviderError(detail, unknown === "ambiguous");
 }
 
 const messageKey = (id: string | undefined | null) => (id ? id.replace(/[<>]/g, "").trim().toLowerCase() : null);
@@ -589,19 +650,22 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   let roles: Partial<Record<Role, string>> | null = null;
   const timeouts: ImapTimeouts = { ...IMAP_TIMEOUTS, ...options.timeouts };
   /** IDLE loops of this account (normally one): reset() restarts them, a sync pings them */
-  const watchers = new Set<{ restart(): void; ping(): void }>();
+  const watchers = new Set<{ restart(): void; ping(): void; signedIn(): void }>();
 
   const makeClient = async (forIdle = false) => {
     const password = await ctx.getSecret("password");
     if (!password) throw new ProviderAuthError(L("errors.imap.noPassword"));
-    return new ImapFlow({
+    const refused: { err?: unknown } = {};
+    const made = new ImapFlow({
       host: config.imap.host,
       port: config.imap.port,
       secure: config.imap.secure,
       // never fall back to plaintext on a non-TLS port: a stripped STARTTLS would leak the password
       doSTARTTLS: options.allowInsecure ? false : config.imap.secure ? undefined : true,
       auth: { user: config.imap.user, pass: password },
-      logger: false,
+      // nothing is logged; the one warning kept is a command's error imapflow resolves false on (see refusal())
+      // (no debug/info methods, so imapflow never reaches them, as with logger: false)
+      logger: { warn: (entry: unknown) => { if (entry && typeof entry === "object" && "err" in entry) refused.err = entry.err; }, error() {}, fatal() {} } as unknown as NonNullable<ConstructorParameters<typeof ImapFlow>[0]>["logger"],
       maxLiteralSize: MAX_INCOMING_MIME_BYTES + 1,
       maxResponseSize: MAX_INCOMING_MIME_BYTES + 65536,
       disableAutoIdle: !forIdle,
@@ -612,6 +676,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // fails in a minute instead of five. IDLE keeps imapflow's 5 minutes; the heartbeat checks it sooner.
       ...(forIdle ? {} : { socketTimeout: timeouts.socketMs }),
     });
+    commandErrors.set(made, refused);
+    return made;
   };
 
   /** bumped by reset(): a session that was connecting across a network change is never kept */
@@ -644,6 +710,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         throw ProviderError.network(L("errors.network.changed"));
       }
       client = c;
+      // the password works: an IDLE loop a refused login stopped comes back
+      for (const w of watchers) w.signedIn();
       return c;
     })().finally(() => {
       if (connecting === attempt) connecting = null;
@@ -663,6 +731,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         });
       } catch (error) {
         const e = toProviderError(error);
+        // a tagged refusal is an answer: the change didn't happen (retried later if the server only was busy)
+        if (e instanceof RefusedChangeError) throw e;
         // ImapFlow can return false after losing an ACK. Keep the boundary across sources and
         // local writes too: even a later SELECT failure must not repeat an earlier COPY.
         if (mutated && (e.retryable || e instanceof ProviderIdentityError || !session.usable)) {
@@ -679,7 +749,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       return await run(c);
     } catch (error) {
       const e = toProviderError(error);
-      if (!e.retryable) throw e;
+      // the server said "not now" on a working session: the op's own backoff waits, not an instant reconnect
+      if (!e.retryable || e.deferred) throw e;
       // only the session that failed goes (another caller may already hold a fresh one); never LOGOUT on
       // it: on a dead socket that waits for the timeout
       if (c) {
@@ -1099,12 +1170,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (mode === "move" && c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
         const uids = items.map((i) => i.uid);
         let holdOwner: string | undefined;
+        clearRefusal(c);
         const res = await locations.dispatch(admission.ids, admission.expected, async (owner) => {
           holdOwner = owner;
           beforeMutation();
           return mode === "move" ? c.messageMove(uids, target, { uid: true }) : c.messageCopy(uids, target, { uid: true });
         }, items.map((l) => l.message_id));
-        if (!res) throw new ProviderError(`Could not ${mode} messages to ${target}`, true);
+        if (!res) {
+          const { why, command } = refusalOf(c);
+          // What a refusal proves changed nothing: a COPY (atomic, RFC 3501: also the fallback's first step),
+          // or a MOVE of one message (RFC 6851 lets a refused MOVE move part of a larger set). Those holds
+          // go and the op runs again; anything else (a failed EXPUNGE after the fallback's COPY) stays held.
+          const unchanged = command === "COPY" || (command === "MOVE" && items.length === 1);
+          if (why !== "unknown" && unchanged && holdOwner) await locations.refused(items.map((l) => l.message_id), holdOwner);
+          refusedChange(c, `Could not ${mode} messages to ${target}`, "ambiguous", why);
+        }
         const epoch = Number(res.uidValidity);
         const mapping = items.map((item) => ({ messageId: item.message_id, uid: res.uidMap?.get(item.uid) ?? 0 }));
         const targetStatus = await c.status(target, { uidValidity: true });
@@ -1440,9 +1520,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             try {
               await assertValidity(c, mailbox, items);
               const uids = items.map((i) => i.uid);
+              clearRefusal(c);
               const ok = await locations.dispatch(ids, locs, () => add ? c.messageFlagsAdd(uids, [flag], { uid: true }) : c.messageFlagsRemove(uids, [flag], { uid: true }));
-              // imapflow resolves false when the server rejects the STORE
-              if (ok === false) throw new ProviderError(`Server refused to update ${flag} in ${mailbox}`, false);
+              // imapflow resolves false when the server rejects the STORE (a throttled one is retried)
+              if (ok === false) throw refusal(c) === "temporary" ? ProviderError.deferred(`Server is busy: ${flag} in ${mailbox} is updated later`) : new ProviderError(`Server refused to update ${flag} in ${mailbox}`, false);
               for (const i of items) {
                 const row = await locations.get(i.message_id, mailbox);
                 if (!row) continue;
@@ -1476,8 +1557,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
               await assertValidity(c, r.inbox!, inbox);
               if (c.mailbox && c.mailbox.readOnly) throw new ProviderError(L("errors.imap.readOnly"), false);
               beforeMutation();
+              clearRefusal(c);
               const deleted = await locations.dispatch(ids, locs, () => c.messageDelete(inbox.map((l) => l.uid), { uid: true }));
-              if (!deleted) throw new ProviderError(L("errors.imap.changeRefused"), false);
+              if (!deleted) refusedChange(c, L("errors.imap.changeRefused"), "refused");
               await locations.removeMany(inbox.map((l) => l.message_id), r.inbox!);
             } finally {
               lock.release();
@@ -1516,6 +1598,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       /** when IDLE last heard the server (an event, a connect, an answered heartbeat) */
       let heardAt = 0;
       let pinging = false;
+      /** stopped by a refused login (not retried on a timer: servers lock accounts out for that) */
+      let refusedLogin = false;
       /** push stopped working at (null: it works) */
       let lostAt: number | null = null;
 
@@ -1572,6 +1656,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           idle = c;
           heardAt = Date.now();
           delay = timeouts.reconnectMs;
+          refusedLogin = false;
           connecting = false;
           // enter IDLE now so the server pushes EXISTS/EXPUNGE; imapflow re-enters it after each event
           void c.idle().catch(() => {});
@@ -1591,11 +1676,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           markLost();
           // plan 25: a refused sign-in isn't knocked on every minute (servers lock accounts out for that); a
           // network change tries once more, and signing in again starts a new provider
-          if (toProviderError(error) instanceof ProviderAuthError) return;
+          if (toProviderError(error) instanceof ProviderAuthError) { refusedLogin = true; return; }
           schedule();
         }
       };
       const watcher = {
+        /** another session just logged in with the same password: a refused login was a fluke, connect again */
+        signedIn() {
+          if (!refusedLogin || stopped || connecting || timer || idle) return;
+          refusedLogin = false;
+          delay = timeouts.reconnectMs;
+          void connect();
+        },
         /** the network changed: the session is presumed dead, reconnect now */
         restart() {
           if (stopped) return;

@@ -236,6 +236,8 @@ export interface ImapLocationStore {
   /** Validate every target and locator, then start without an async gap. Undispatched failure releases only its owned holds. */
   dispatch<T>(messageIds: readonly number[], expected: readonly ImapLocation[], start: (holdOwner?: string) => Promise<T>, fenceIds?: readonly number[]): Promise<T>;
   mappedMove(source: readonly ImapLocation[], mailbox: string, uidvalidity: number, mapping: readonly { messageId: number; uid: number }[], copy: boolean, expected: readonly ImapLocation[], holdOwner: string): Promise<void>;
+  /** The server refused the one command a dispatch started (a tagged NO/BAD): nothing moved, so this admission's holds go. */
+  refused(messageIds: readonly number[], holdOwner: string): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
   /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */

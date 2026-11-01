@@ -88,3 +88,31 @@ describe("plan 25: a refused sign-in is the user's to redo (and only a refusal i
     expect(classifySmtpError(err({ code: "ECONNECTION" }), true)).toMatchObject({ ambiguous: true });
   });
 });
+
+describe("a server that says 'later' is never 'sign in again' or 'failed' (2026-11 audit)", () => {
+  it("IMAP: a login refused for too many connections or a limit is retried, never a sign-in", () => {
+    const login = (o: object) => toProviderError(err({ authenticationFailed: true, responseStatus: "NO", ...o }));
+    for (const refusal of [{ serverResponseCode: "LIMIT" }, { serverResponseCode: "INUSE" }, { serverResponseCode: "UNAVAILABLE" }, { response: "[ALERT] Too many simultaneous connections. (Failure)" }, { message: "Account exceeded command or bandwidth limits" }]) {
+      const e = login(refusal);
+      expect(e).not.toBeInstanceOf(ProviderAuthError);
+      expect(e).toMatchObject({ retryable: true, deferred: true });
+    }
+    // a refused password still asks to sign in (and "web login required" isn't a temporary refusal)
+    expect(login({ response: "Invalid credentials (Failure)" })).toBeInstanceOf(ProviderAuthError);
+    expect(login({ response: "[ALERT] Web login required" })).toBeInstanceOf(ProviderAuthError);
+    // an explicit credentials code wins over "try again later" in its text (Codex review: retrying locks accounts)
+    expect(login({ serverResponseCode: "AUTHENTICATIONFAILED", responseText: "Invalid password. Please try again later." })).toBeInstanceOf(ProviderAuthError);
+  });
+
+  it("IMAP: Microsoft's throttling and RFC 5530 busy codes are deferred; other NO/BAD stay permanent", () => {
+    expect(toProviderError(err({ code: "ETHROTTLE", responseStatus: "BAD", throttleReset: 92415 }))).toMatchObject({ retryable: true, deferred: true });
+    expect(toProviderError(err({ responseStatus: "NO", serverResponseCode: "SERVERBUG" }))).toMatchObject({ retryable: true, deferred: true });
+    expect(toProviderError(err({ responseStatus: "NO", serverResponseCode: "TRYCREATE" }))).toMatchObject({ retryable: false });
+  });
+
+  it("SMTP: a 4xx is deferred (a day of retries), a 5xx permanent", () => {
+    expect(classifySmtpError(err({ responseCode: 421, message: "4.7.0 Try again later" }))).toMatchObject({ retryable: true, deferred: true });
+    expect(classifySmtpError(err({ code: "EAUTH", responseCode: 454 }))).toMatchObject({ retryable: true, deferred: true });
+    expect(classifySmtpError(err({ responseCode: 550 }))).toMatchObject({ retryable: false });
+  });
+});
