@@ -3,10 +3,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { open } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+/** a rename that waits for the test (null: Node's own) */
+const renaming = vi.hoisted(() => ({ hold: null as null | Promise<void>, started: false }));
+vi.mock("node:fs/promises", async (actual) => {
+  const fs = await actual<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    rename: async (from: string, to: string) => {
+      renaming.started = true;
+      if (renaming.hold) await renaming.hold;
+      return fs.rename(from, to);
+    },
+  };
+});
+
 import { MBOX_WRITE_MAX, MboxFiles, mboxFileName } from "./mbox-files";
 
 const dirs: string[] = [];
 afterEach(() => {
+  renaming.hold = null;
+  renaming.started = false;
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 const dir = () => {
@@ -28,7 +45,7 @@ describe("mbox export file (plan 107)", () => {
     expect(await files.write(1, id, "ñ\n")).toBe(true);
     // the old file stays whole until the end
     expect(readFileSync(target, "utf8")).toBe("old");
-    expect(await files.end(1, id)).toBe("Clients.mbox");
+    expect(await files.end(1, id)).toEqual({ status: "saved", name: "Clients.mbox" });
     expect(readFileSync(target, "utf8")).toBe("From - a\nñ\n");
     expect(readdirSync(d)).toEqual(["Clients.mbox"]);
     expect(files.size).toBe(0);
@@ -39,7 +56,7 @@ describe("mbox export file (plan 107)", () => {
     const files = new MboxFiles();
     const id = await files.begin(1, join(d, "a.mbox"));
     expect(await files.write(2, id, "x")).toBe(false);
-    expect(await files.end(2, id)).toBeNull();
+    expect(await files.end(2, id)).toEqual({ status: "failed" });
     expect(await files.write(1, id, "y".repeat(MBOX_WRITE_MAX + 1))).toBe(false);
     await files.abort(1, id);
     expect(readdirSync(d)).toEqual([]);
@@ -50,7 +67,7 @@ describe("mbox export file (plan 107)", () => {
     expect(readdirSync(d)).toHaveLength(1);
     await files.abortAll(1);
     expect(readdirSync(d)).toEqual([]);
-    expect(await files.end(1, second)).toBeNull();
+    expect(await files.end(1, second)).toEqual({ status: "failed" });
   });
 
   it("a cancel while the file syncs keeps it out of place, and the old file whole (Codex code review round 2 #8)", async () => {
@@ -76,13 +93,34 @@ describe("mbox export file (plan 107)", () => {
       const ending = files.end(1, id);
       await vi.waitFor(() => expect(spy).toHaveBeenCalled());
       expect(await files.write(1, id, "late")).toBe(false);
-      await files.abort(1, id);
+      expect(await files.abort(1, id)).toBe(true);
       release();
-      expect(await ending).toBeNull();
+      expect(await ending).toEqual({ status: "cancelled" });
     } finally {
       spy.mockRestore();
     }
     expect(readFileSync(target, "utf8")).toBe("old");
+    expect(readdirSync(d)).toEqual(["Clients.mbox"]);
+    expect(files.size).toBe(0);
+  });
+
+  it("a cancel once the rename began changes nothing, and the end says it was saved (Codex code review round 20 #1)", async () => {
+    const d = dir();
+    const target = join(d, "Clients.mbox");
+    writeFileSync(target, "old");
+    const files = new MboxFiles();
+    const id = await files.begin(1, target);
+    expect(await files.write(1, id, "From - a\n")).toBe(true);
+    let release!: () => void;
+    renaming.hold = new Promise<void>((r) => (release = r));
+    const ending = files.end(1, id);
+    await vi.waitFor(() => expect(renaming.started).toBe(true));
+    // too late: the file is going into place
+    expect(await files.abort(1, id)).toBe(false);
+    await files.abortAll(1);
+    release();
+    expect(await ending).toEqual({ status: "saved", name: "Clients.mbox" });
+    expect(readFileSync(target, "utf8")).toBe("From - a\n");
     expect(readdirSync(d)).toEqual(["Clients.mbox"]);
     expect(files.size).toBe(0);
   });

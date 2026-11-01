@@ -26,7 +26,8 @@ interface Sink {
   /** "blob": capped at BLOB_MAX */
   kind: "desktop" | "picker" | "blob";
   write(text: string): Promise<void>;
-  close(): Promise<void>;
+  /** true: saved; false: a cancel came before it was (once the file is being put in place, it's saved either way) */
+  close(): Promise<boolean>;
   abort(): Promise<void>;
 }
 
@@ -53,8 +54,13 @@ async function openSink(label: string): Promise<Sink | null> {
       write: async (text) => {
         if (!(await desktop.write(id, text))) throw new ExportError(t("folder.export.writeFailed"));
       },
+      // main says what happened: a cancel that came while it was renamed into place still ends saved (Codex code
+      // review round 20 #1); an older shell says only saved or failed
       close: async () => {
-        if ((await desktop.end(id)).status !== "saved") throw new ExportError(t("folder.export.writeFailed"));
+        const r = await desktop.end(id);
+        if (r.status === "saved") return true;
+        if (r.status === "failed") throw new ExportError(t("folder.export.writeFailed"));
+        return false;
       },
       abort: async () => void (await desktop.abort(id)),
     };
@@ -72,7 +78,7 @@ async function openSink(label: string): Promise<Sink | null> {
     return {
       kind: "picker",
       write: (text) => writable.write(text),
-      close: () => writable.close(),
+      close: () => writable.close().then(() => true),
       // the browser drops what it had written aside
       abort: () => writable.abort().catch(() => {}),
     };
@@ -95,6 +101,7 @@ async function openSink(label: string): Promise<Sink | null> {
       a.download = fileName(label);
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
     },
     abort: async () => {
       parts = [];
@@ -154,9 +161,9 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
       if (r.text) await sink.write(r.text);
       if (cancelled) return;
       if (r.finished) {
-        await sink.close();
-        // cancelled while it was being saved: the cancel said so, never a success after it (Codex code review round 2 #8)
-        if (cancelled) return;
+        // a cancel while it was being saved: cancelled if it came in time, else the file is there and the snack says so
+        // (Codex code review round 20 #1: it said cancelled while the file replaced the one picked; round 2 #8 before)
+        if (!(await sink.close())) return;
         const missing = [
           r.missingAttachments ? t("folder.export.missingAttachments", { count: r.missingAttachments }) : "",
           r.partialBodies ? t("folder.export.partialBodies", { count: r.partialBodies }) : "",

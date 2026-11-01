@@ -154,19 +154,33 @@ describe("exportFolder (plan 107)", () => {
     expect(fake.calls.filter((c) => c.method === "folders.exportStart")).toHaveLength(1);
   });
 
-  it("a cancel while the file is being saved never ends in a success (Codex code review round 2 #8)", async () => {
+  it("a cancel while the file is being saved says cancelled when main kept it out of place (Codex code review round 2 #8)", async () => {
     const file = desktop();
     backend(1);
     const bridge = (g.ternoDesktop as { mboxExport: { end: () => Promise<unknown> } }).mboxExport;
     bridge.end = async () => {
-      // the user clicks Cancel while main syncs the file
+      // the user clicks Cancel while main syncs the file: it's never renamed into place
+      runAction("action");
+      return { status: "cancelled" };
+    };
+    await exportFolder(target, "Clients");
+    expect(file.aborted).toBe(true);
+    expect(current()).toMatchObject({ message: "Export cancelled" });
+  });
+
+  it("a cancel that comes once main is putting the file in place says it was saved (Codex code review round 20 #1)", async () => {
+    const file = desktop();
+    backend(2);
+    const bridge = (g.ternoDesktop as { mboxExport: { end: () => Promise<unknown> } }).mboxExport;
+    bridge.end = async () => {
+      // the user clicks Cancel while main renames it over the file they picked: too late, it's saved
       runAction("action");
       file.ended = true;
       return { status: "saved", name: "Clients.mbox" };
     };
     await exportFolder(target, "Clients");
     expect(file.aborted).toBe(true);
-    expect(current()).toMatchObject({ message: "Export cancelled" });
+    expect(current()).toMatchObject({ tone: "success", message: "Exported 2 messages" });
   });
 
   it("a cancelled save panel starts nothing", async () => {

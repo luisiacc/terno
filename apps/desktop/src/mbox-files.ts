@@ -26,7 +26,15 @@ interface Pending {
   ending: boolean;
   /** cancelled or gone: never renamed into place */
   aborted: boolean;
+  /**
+   * being renamed into place: a cancel no longer applies, and the end says it was saved (Codex code review round 20
+   * #1: a cancel during the rename said cancelled while the file replaced the destination)
+   */
+  committing: boolean;
 }
+
+/** how an export's end went: saved under `name`, cancelled before it was renamed into place, or failed */
+export type MboxEndResult = { status: "saved"; name: string } | { status: "cancelled" | "failed" };
 
 /** `<name>.mbox`, or the fallback's when nothing of the name is left */
 export function mboxFileName(name: string, fallback: string): string {
@@ -98,7 +106,7 @@ export class MboxFiles {
       throw new Error("the page that asked for this export is gone");
     }
     const id = randomUUID();
-    this.pending.set(id, { id, owner, path, tmp, file, queue: Promise.resolve(), failed: false, ending: false, aborted: false });
+    this.pending.set(id, { id, owner, path, tmp, file, queue: Promise.resolve(), failed: false, ending: false, aborted: false, committing: false });
     return id;
   }
 
@@ -119,10 +127,10 @@ export class MboxFiles {
     }
   }
 
-  /** synced and renamed into place: its file name; null: it isn't open, or it couldn't be */
-  async end(owner: number, id: string): Promise<string | null> {
+  /** synced and renamed into place; cancelled: aborted before the rename began; failed: it isn't open, or couldn't be */
+  async end(owner: number, id: string): Promise<MboxEndResult> {
     const p = this.own(owner, id);
-    if (!p || p.ending) return null;
+    if (!p || p.ending) return { status: "failed" };
     // still pending while it syncs, so a cancel then is heard (Codex code review round 2 #8: it found nothing to abort
     // and the file went into place anyway)
     p.ending = true;
@@ -130,21 +138,24 @@ export class MboxFiles {
       await p.queue;
       await p.file.sync();
       await p.file.close();
-      if (p.aborted) return null;
+      if (p.aborted) return { status: "cancelled" };
+      // from here the rename decides: a cancel during it changes nothing, so the answer is what happened
+      p.committing = true;
       await rename(p.tmp, p.path);
-      return basename(p.path);
+      return { status: "saved", name: basename(p.path) };
     } catch {
       await p.file.close().catch(() => {});
-      return null;
+      return { status: p.aborted && !p.committing ? "cancelled" : "failed" };
     } finally {
       this.pending.delete(id);
       await rm(p.tmp, { force: true });
     }
   }
 
-  async abort(owner: number, id: string): Promise<void> {
+  /** false: it was already being renamed into place (its end says saved or failed), or it isn't open */
+  async abort(owner: number, id: string): Promise<boolean> {
     const p = this.own(owner, id);
-    if (p) await this.drop(p);
+    return p ? this.drop(p) : false;
   }
 
   /** the window went (or began another) */
@@ -157,13 +168,15 @@ export class MboxFiles {
     return p && p.owner === owner ? p : undefined;
   }
 
-  private async drop(p: Pending): Promise<void> {
+  private async drop(p: Pending): Promise<boolean> {
+    if (p.committing) return false;
     p.aborted = true;
     // one ending closes and deletes its own file, checking `aborted` before the rename
-    if (p.ending) return;
+    if (p.ending) return true;
     this.pending.delete(p.id);
     await p.queue.catch(() => {});
     await p.file.close().catch(() => {});
     await rm(p.tmp, { force: true });
+    return true;
   }
 }

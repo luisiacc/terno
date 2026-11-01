@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { t } from "@terno/i18n";
-import { abortWithPage, MboxFiles, mboxFileName } from "./mbox-files";
+import { abortWithPage, MboxFiles, mboxFileName, type MboxEndResult } from "./mbox-files";
 
 export interface MboxExportDeps {
   /** the main window's top frame, on the app's own URL */
@@ -51,12 +51,9 @@ export function registerMboxExport(deps: MboxExportDeps): void {
     }
   });
   ipcMain.handle("terno:export-write", (event, id: unknown, chunk: unknown) => (deps.trusted(event) && typeof id === "string" && typeof chunk === "string" ? files.write(event.sender.id, id, chunk) : false));
-  ipcMain.handle("terno:export-end", async (event, id: unknown) => {
-    const name = deps.trusted(event) && typeof id === "string" ? await files.end(event.sender.id, id) : null;
-    return name === null ? { status: "failed" } : { status: "saved", name };
-  });
-  ipcMain.handle("terno:export-abort", async (event, id: unknown) => {
-    if (deps.trusted(event) && typeof id === "string") await files.abort(event.sender.id, id);
-    return true;
-  });
+  // what happened, never what was asked: a cancel that came once the rename began still ends saved (Codex code review
+  // round 20 #1)
+  ipcMain.handle("terno:export-end", (event, id: unknown): Promise<MboxEndResult> | MboxEndResult => (deps.trusted(event) && typeof id === "string" ? files.end(event.sender.id, id) : { status: "failed" }));
+  // false: too late, the file is being renamed into place
+  ipcMain.handle("terno:export-abort", async (event, id: unknown) => deps.trusted(event) && typeof id === "string" && (await files.abort(event.sender.id, id)));
 }

@@ -15,10 +15,26 @@ vi.mock("electron", () => ({
   ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => electron.handlers.set(channel, fn) },
 }));
 
+/** a rename that waits for the test (null: Node's own) */
+const renaming = vi.hoisted(() => ({ hold: null as null | Promise<void>, started: false }));
+vi.mock("node:fs/promises", async (actual) => {
+  const fs = await actual<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    rename: async (from: string, to: string) => {
+      renaming.started = true;
+      if (renaming.hold) await renaming.hold;
+      return fs.rename(from, to);
+    },
+  };
+});
+
 const { registerMboxExport } = await import("./mbox-export");
 
 const dirs: string[] = [];
 afterEach(() => {
+  renaming.hold = null;
+  renaming.started = false;
   electron.handlers.clear();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
@@ -116,5 +132,23 @@ describe("mbox export in main (plan 107)", () => {
     expect(await call("terno:export-write", ready.id, "From - b\n")).toBe(true);
     expect(await call("terno:export-end", ready.id)).toEqual({ status: "saved", name: "B.mbox" });
     expect(readdirSync(dir)).toEqual(["B.mbox"]);
+  });
+
+  it("the end says what happened: a cancel before the rename is cancelled, one during it too late (Codex code review round 20 #1)", async () => {
+    // cancelled while the last piece is written: never put in place, and the end says cancelled
+    const a = await begun();
+    const ending = a.call("terno:export-end", a.id);
+    expect(await a.call("terno:export-abort", a.id)).toBe(true);
+    expect(await ending).toEqual({ status: "cancelled" });
+    expect(a.temps()).toEqual([]);
+    // cancelled while it's renamed into place: the abort says too late, and the end saved
+    const b = await begun();
+    let release!: () => void;
+    renaming.hold = new Promise<void>((r) => (release = r));
+    const saving = b.call("terno:export-end", b.id);
+    await vi.waitFor(() => expect(renaming.started).toBe(true));
+    expect(await b.call("terno:export-abort", b.id)).toBe(false);
+    release();
+    expect(await saving).toEqual({ status: "saved", name: "Clients.mbox" });
   });
 });
