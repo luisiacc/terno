@@ -4,7 +4,7 @@ import type { FolderCountCursor, FolderExportCursor, Platform } from "@terno/sto
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { confirmRebuilt, countFolderMessages, rebuildFolders } from "./folders";
-import { pendingAfter, stretch } from "./folder-export";
+import { exportIds, pendingAfter, stretch } from "./folder-export";
 import type { Ctx } from "./mail";
 import { IdbMailStore } from "./store";
 
@@ -241,6 +241,37 @@ it("plan 107: while 300,000-member folders' orders are still being built, an exp
       rows.forEach((r) => c.db.table("thread_folders").deleteRow(r));
       threads.forEach((t) => c.db.table("threads").deleteRow(t));
     });
+  }
+}, 900_000);
+
+it("plan 107: a standard view's export for an account beside another's 1,000,000 threads walks them a bounded stretch a call (Codex code review round 9 #3)", async () => {
+  const c = (store as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void } } } }).c;
+  const N = 1_000_000;
+  const other = (await store.accounts.list())[0]!.id;
+  const threads = Array.from({ length: N }, (_, i) => ({ id: 60_000_000 + i, account_id: other, last_date: 0, message_count: 0, unread_count: 0 }));
+  c.db.tx(() => threads.forEach((t) => c.db.table("threads").put(t)));
+  try {
+    // the store's ascending thread ids are kept for every list's "select all": built once, not this export's
+    c.scopes.threads(c);
+    const samples: Sample[] = [];
+    // an account with nothing here (its id past every other's): none of the threads walked is its
+    let after: FolderExportCursor | null = null;
+    let calls = 0;
+    for (;;) {
+      let r!: ReturnType<typeof exportIds>;
+      samples.push(sampleSync(() => (r = exportIds(c, { accountId: 69_999_999, view: "inbox" }, after, 1000))));
+      calls++;
+      expect(r.messages).toEqual([]);
+      if (!r.next) break;
+      after = r.next;
+    }
+    const ms = settle(samples).ms.sort((a, b) => a - b);
+    console.log(`an empty account's Inbox export beside ${N} threads: ${calls} calls, max ${ms.at(-1)!.toFixed(2)} ms`);
+    // before: one call walked every thread (~50 ms)
+    expect(calls).toBeGreaterThan(1);
+    expect(ms.at(-1)!).toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    c.db.tx(() => threads.forEach((t) => c.db.table("threads").deleteRow(t)));
   }
 }, 900_000);
 
