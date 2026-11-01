@@ -24,6 +24,18 @@ function healthySync(r: Request): Response | undefined {
   if (path === "/gmail/labels") return Response.json({ labels: [] });
 }
 
+function heldJson(status: number, value: unknown) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>, entered = false, released = false;
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(c) { controller = c; }, pull() { entered = true; },
+  }, { highWaterMark: 0 }), { status, headers: { "content-type": "application/json" } });
+  return { response, get entered() { return entered; }, release() {
+    if (released) return;
+    released = true;
+    controller.enqueue(new TextEncoder().encode(JSON.stringify(value))); controller.close();
+  } };
+}
+
 async function setup(autoSync = false, kind: "SQL" | "IDB" = "SQL") {
   const requests: Request[] = [], unexpected: string[] = [];
   let answer: ((request: Request) => Response | undefined) | undefined;
@@ -418,6 +430,102 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
       expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
     } finally { first.release(); later.release(); await syncing; }
+  });
+
+  it.each(["copy", "recovery"] as const)("redesign retains sign-in after raw400, Send invalid_grant and late raw403: %s", async (witness) => {
+    const h = await setup(false, kind);
+    const provider = (await h.backend.provider(h.account.id))!;
+    await provider.verify();
+    let retained: unknown;
+    const sync = provider.sync.bind(provider);
+    vi.spyOn(provider, "sync").mockImplementation(async (sink) => {
+      try { await sync(sink); } catch (error) { retained = error; throw error; }
+    });
+    const first = heldJson(400, { error: { message: privateMarker } });
+    const later = heldJson(403, { error: { errors: [{ reason: "SERVICE_DISABLED" }] } });
+    const auth = heldJson(400, { error: "invalid_grant" });
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages") return Response.json({ messages: [{ id: "first", threadId: "first" }, { id: "later", threadId: "later" }] });
+      if (path === "/gmail/messages/first") return first.response;
+      if (path === "/gmail/messages/later") return later.response;
+      if (path === "/gmail/messages/send") return Response.json({ error: { code: 401 } }, { status: 401 });
+      if (path === "/token") return auth.response;
+      return healthySync(request);
+    });
+    const original = await h.send();
+    const syncing = h.backend.syncAccount(h.account.id);
+    let sending: Promise<number> | undefined;
+    try {
+      await vi.waitFor(() => { expect(first.entered).toBe(true); expect(later.entered).toBe(true); });
+      sending = h.backend.runWorker();
+      await vi.waitFor(() => expect(auth.entered).toBe(true));
+      first.release();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      auth.release();
+      await sending;
+      const revoked = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+      expect(revoked).toMatchObject({ status: "error", authRequired: true, authScope: null, lastErrorI18n: { key: "errors.gmail.revoked" } });
+      expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "queued", attempts: 0 });
+      later.release();
+      await syncing;
+      expect(retained).toMatchObject({ status: 400, i18n: { key: "errors.gmail.requestFailed", params: { status: 400 } } });
+      const finalState = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+      expect(JSON.stringify(finalState)).not.toContain(privateMarker);
+      if (witness === "copy") {
+        expect(finalState).toMatchObject({ status: "error", authRequired: true, authScope: null, lastErrorI18n: { key: "errors.gmail.revoked" } });
+        expect(finalState.lastError).toEqual(revoked.lastError);
+      } else {
+        const sibling = await h.send();
+        const queued = await h.backend.store.ops.get(sibling.opId);
+        const before = await h.backend.store.ops.get(original.opId);
+        const calls = h.paths().slice();
+        const ledger = await h.backend.store.providerCooldown.read();
+        h.answer((request) => new URL(request.url).pathname === "/token" ? Response.json({ error: "invalid_grant" }, { status: 400 }) : healthySync(request));
+        await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+        await h.backend.syncAccount(h.account.id);
+        await h.backend.runWorker();
+        expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: before!.payload_json, target_json: before!.target_json });
+        expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: queued!.payload_json, target_json: queued!.target_json });
+        expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+        expect(h.paths()).toEqual(calls);
+      }
+    } finally {
+      first.release(); auth.release(); later.release();
+      await Promise.allSettled([syncing, ...(sending ? [sending] : [])]);
+    }
+  });
+
+  it("redesign preserves policy when an already-admitted idle status write completes late", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    let entered = false, release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const write = h.backend.store.accounts.setSyncState.bind(h.backend.store.accounts);
+    vi.spyOn(h.backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => {
+      if (id === h.account.id && patch.status === "idle" && !entered) { entered = true; await held; }
+      return write(id, patch);
+    });
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(403, "SERVICE_DISABLED") : healthySync(request));
+    const original = await h.send();
+    const syncing = h.backend.syncAccount(h.account.id);
+    let sending: Promise<number> | undefined;
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      sending = h.backend.runWorker();
+      await vi.waitFor(async () => expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" } }));
+      release();
+      await Promise.all([syncing, sending]);
+      expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "failed", attempts: 1 });
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" }, connection: null });
+      const sibling = await h.send();
+      const queued = await h.backend.store.ops.get(sibling.opId);
+      const calls = h.paths().slice();
+      await h.backend.syncAccount(h.account.id);
+      expect(await h.backend.runWorker()).toBe(0);
+      expect(h.paths()).toEqual(calls);
+      expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+    } finally { release(); await Promise.allSettled([syncing, ...(sending ? [sending] : [])]); }
   });
 
   it.each([["send", "policy first"], ["send", "auth first"], ["sync", "policy first"], ["sync", "auth first"]] as const)("surfaces invalid_grant despite concurrent policy refusal from %s: %s", async (policySource, order) => {
