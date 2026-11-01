@@ -34,9 +34,11 @@ function savedStep(): Step {
 /**
  * What's typed for the account while the setup is away: the Google detour to
  * Settings (no client ID yet) unmounts it, and it comes back with this. Memory
- * only (a password may be in it), dropped when the setup ends.
+ * only (a password may be in it), dropped when the setup ends. `discovered`:
+ * the local-model discovery ran in this session (coming back from the detour
+ * never runs it again over an AI chosen in Settings meanwhile).
  */
-const kept = { draft: EMPTY_ACCOUNT_DRAFT };
+const kept = { draft: EMPTY_ACCOUNT_DRAFT, discovered: false };
 
 /** A local server we found on this Mac, offered as the AI in local mode. */
 type Found = { provider: AiProviderId; label: string; model: string };
@@ -117,6 +119,8 @@ export function FirstRun() {
   // a model already running on this Mac becomes the AI (no key, nothing leaves the machine), only while no AI is
   // chosen yet when discovery answers: a provider picked meanwhile is the user's (plan 97, Codex review)
   useEffect(() => {
+    if (kept.discovered) return;
+    kept.discovered = true;
     void findLocalModel().then(async (found) => {
       if (!found || (getApp().settings?.ai.provider ?? "none") !== "none") return;
       try {

@@ -14,7 +14,7 @@ test.describe("the mark @design", () => {
   test("first run greets with the mark; the dialog is still named by its title", async ({ app: page, server }) => {
     await isolateLocalDiscovery(server);
     await page.reload();
-    const dialog = page.getByRole("dialog", { name: "Welcome to Terno" });
+    const dialog = page.getByRole("dialog", { name: "How do you like to read?" });
     await expect(dialog).toBeVisible();
     const mark = dialog.getByTestId("first-run-mark");
     await expect(mark).toBeVisible();

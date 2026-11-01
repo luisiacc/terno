@@ -5,6 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { expect, isolateLocalDiscovery, test } from "./fixtures";
+import { startOllamaStub } from "./ollama-stub";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -160,6 +161,30 @@ test.describe("first-run setup", () => {
     await page.keyboard.press("Escape");
     await expect(step(page)).toHaveAttribute("data-step", "account");
     await expect(page.getByTestId("imap-email")).toHaveValue("ana@icloud.com");
+  });
+
+  // Codex code review round 2: coming back from the detour doesn't run the local-model discovery again over a choice made meanwhile
+  test("the detour back from Settings keeps an AI chosen there", async ({ app: page, server }) => {
+    const ollama = await startOllamaStub();
+    try {
+      await server.backend.server.invoke("settings.update", { gmailClientId: "" }, ctx);
+      await isolateLocalDiscovery(server, ollama.url);
+      await page.reload();
+      await expect(step(page)).toBeVisible();
+      await expect.poll(async () => ((await settings(server)).ai as { provider: string }).provider).toBe("ollama");
+      await page.getByTestId("first-run-continue").click();
+      await page.getByTestId("first-run-continue").click();
+      await page.getByTestId("connect-gmail").click();
+      await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+      await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, ctx);
+      await page.keyboard.press("Escape");
+      await expect(step(page)).toHaveAttribute("data-step", "account");
+      // what a second discovery would have written by now (the stub answers at once)
+      await page.waitForTimeout(500);
+      expect(((await settings(server)).ai as { provider: string }).provider).toBe("none");
+    } finally {
+      await ollama.close();
+    }
   });
 
   // Codex code review #2: a short window still reaches every palette and the footer
