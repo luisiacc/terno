@@ -96,74 +96,146 @@ function base64Text(text: string): string {
   return btoa(binary);
 }
 
-/** RFC 2047 encoded words (each ≤ 75 characters, never splitting a character) when the value isn't plain ASCII. */
-export function encodeWords(value: string): string[] {
-  const v = oneLine(value);
-  if (ASCII.test(v)) return v ? [v] : [];
-  const words: string[] = [];
+/** UTF-8 bytes of a code point (a lone surrogate is written as U+FFFD, three) */
+const utf8Length = (cp: number) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
+
+/**
+ * RFC 2047 encoded words (each ≤ 75 characters, never splitting a character), made one at a time as they're asked
+ * for: a long value is never encoded whole before its first line goes out (Codex code review round 21 #5: a
+ * 100,000-character subject was one 336,000-character piece, 28 ms in one call).
+ */
+function* encodedWords(v: string): Generator<string, void> {
   let chunk = "";
   let size = 0;
   for (const ch of v) {
-    const n = utf8.encode(ch).length;
+    const n = utf8Length(ch.codePointAt(0)!);
     if (size + n > WORD_BYTES && chunk) {
-      words.push(`=?UTF-8?B?${base64Text(chunk)}?=`);
+      yield `=?UTF-8?B?${base64Text(chunk)}?=`;
       chunk = "";
       size = 0;
     }
     chunk += ch;
     size += n;
   }
-  if (chunk) words.push(`=?UTF-8?B?${base64Text(chunk)}?=`);
-  return words;
+  if (chunk) yield `=?UTF-8?B?${base64Text(chunk)}?=`;
 }
 
-/** `Name: a b c`, folded at the spaces between words so lines stay within 78 where they can. */
-function header(name: string, words: readonly string[], sep = " "): string {
-  let line = `${name}:`;
-  let out = "";
-  for (const [i, w] of words.entries()) {
-    const joint = i === 0 ? " " : sep;
-    if (i > 0 && line.length + joint.length + w.length > 78) {
-      out += `${line}${joint.trimEnd()}\n`;
-      line = ` ${w}`;
-    } else line += `${joint}${w}`;
-  }
-  return `${out}${line}\n`;
-}
+/** A word longer than this can't stay on one line (RFC 5322's 998): it goes as encoded words, which fold. */
+const LONG = 900;
 
-const textHeader = (name: string, value: string) => {
+/** A text value's words: ASCII as it is, the rest (and an over-long word) as encoded words. */
+function* textWords(value: string): Generator<string, void> {
   const v = oneLine(value).trim();
-  return header(name, ASCII.test(v) ? v.split(/ +/).filter(Boolean) : encodeWords(v));
-};
+  if (!ASCII.test(v)) return yield* encodedWords(v);
+  let encoded = false;
+  for (const [w] of v.matchAll(/[^ ]+/g)) {
+    // the space between two encoded words is dropped by a reader: one after another carries it inside
+    if (w.length > LONG) yield* encodedWords(encoded ? ` ${w}` : w);
+    else yield w;
+    encoded = w.length > LONG;
+  }
+}
+
+/** `Name: a b c` as lines, folded at the spaces between words so lines stay within 78 where they can. */
+function* header(name: string, words: Iterable<string>): Generator<string, void> {
+  let line = `${name}:`;
+  let first = true;
+  for (const w of words) {
+    if (!first && line.length + 1 + w.length > 78) {
+      yield `${line}\n`;
+      line = ` ${w}`;
+    } else line += ` ${w}`;
+    first = false;
+  }
+  yield `${line}\n`;
+}
 
 const angle = (id: string) => `<${oneLine(id).replace(/[<>\s]/g, "")}>`;
 
-function address(a: Address): string {
-  const email = asciiEmail(oneLine(a.email).replace(/[<>\s]/g, ""));
-  const name = oneLine(a.name).trim();
-  if (!name) return email;
-  if (!ASCII.test(name)) return `${encodeWords(name).join(" ")} <${email}>`;
-  return `${/[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name} <${email}>`;
+/** Each address's words (its name's, then `<email>`), a comma after all but the last. */
+function* addressWords(list: readonly Address[]): Generator<string, void> {
+  const items = list.filter((a) => a.email.trim());
+  for (const [i, a] of items.entries()) {
+    const email = asciiEmail(oneLine(a.email).replace(/[<>\s]/g, ""));
+    const comma = i < items.length - 1 ? "," : "";
+    const name = oneLine(a.name).trim();
+    if (!name) {
+      yield `${email}${comma}`;
+      continue;
+    }
+    if (!ASCII.test(name) || name.length > LONG) yield* encodedWords(name);
+    else yield /[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name;
+    yield `<${email}>${comma}`;
+  }
 }
 
-const addresses = (name: string, list: readonly Address[]) => {
-  const items = list.filter((a) => a.email.trim()).map(address);
-  return items.length ? header(name, items, ", ") : "";
-};
+function* addresses(name: string, list: readonly Address[]): Generator<string, void> {
+  if (list.some((a) => a.email.trim())) yield* header(name, addressWords(list));
+}
 
 /** A MIME type as a token pair, else octet-stream. */
 const mimeType = (mime: string) => (/^[\w.+-]+\/[\w.+-]+$/.test(mime) ? mime.toLowerCase() : "application/octet-stream");
 
-function fileParams(filename: string): { name: string; disposition: string } {
-  const v = oneLine(filename).trim() || "attachment";
-  if (ASCII.test(v)) {
-    const q = `"${v.replace(/["\\]/g, "\\$&")}"`;
-    return { name: `name=${q}`, disposition: `filename=${q}` };
+/** `words`, each followed by `between` but the last (one word of look-ahead, so a long list is never held whole) */
+function* joined(words: Iterable<string>, between: string, first = "", last = ""): Generator<string, void> {
+  let held: string | null = null;
+  for (const w of words) {
+    if (held !== null) yield `${held}${between}`;
+    held = held === null ? `${first}${w}` : w;
   }
-  // RFC 2231 for readers that follow it, an encoded word for the ones that don't
-  const ext = `UTF-8''${encodeURIComponent(v).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
-  const word = `"${encodeWords(v).join(" ")}"`;
-  return { name: `name=${word}`, disposition: `filename=${word};\n filename*=${ext}` };
+  if (held !== null) yield `${held}${last}`;
+}
+
+/** A file name as RFC 2231 extended pieces of at most 60 characters, never splitting an escape. */
+function* extendedName(v: string): Generator<string, void> {
+  let piece = "";
+  for (const ch of v) {
+    let e: string;
+    try {
+      e = encodeURIComponent(ch).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    } catch {
+      e = "%EF%BF%BD";
+    }
+    if (piece.length + e.length > 60 && piece) {
+      yield piece;
+      piece = "";
+    }
+    piece += e;
+  }
+  if (piece) yield piece;
+}
+
+/** An attachment's Content-Type and Content-Disposition lines, a long or non-ASCII name folded (round 21 #5). */
+function* partHeaders(a: MboxAttachment): Generator<string, void> {
+  const v = oneLine(a.filename).trim() || "attachment";
+  const type = mimeType(a.mime);
+  const disposition = a.contentId ? "inline" : "attachment";
+  if (ASCII.test(v) && v.length <= LONG) {
+    const q = `"${v.replace(/["\\]/g, "\\$&")}"`;
+    yield `Content-Type: ${type}; name=${q}\n`;
+    yield `Content-Disposition: ${disposition}; filename=${q}\n`;
+    return;
+  }
+  // encoded words for the readers that don't follow RFC 2231, folded inside their quotes; RFC 2231 (in continuations
+  // when long) for those that do
+  yield* header("Content-Type", (function* () {
+    yield `${type};`;
+    yield* joined(encodedWords(v), "", 'name="', '"');
+  })());
+  yield* header("Content-Disposition", (function* () {
+    yield `${disposition};`;
+    yield* joined(encodedWords(v), "", 'filename="', '";');
+    const pieces = extendedName(v)[Symbol.iterator]();
+    const one = pieces.next();
+    const two = pieces.next();
+    if (one.done) return;
+    if (two.done) return yield `filename*=UTF-8''${one.value}`;
+    yield* joined((function* () {
+      yield `filename*0*=UTF-8''${one.value}`;
+      let i = 1;
+      for (let r: IteratorResult<string, void> = two; !r.done; r = pieces.next()) yield `filename*${i++}*=${r.value}`;
+    })(), ";");
+  })());
 }
 
 const HEX = "0123456789ABCDEF";
@@ -256,6 +328,19 @@ class Pieces {
 function* put(out: Pieces, lines: string): Generator<string, void> {
   if (out.full(lines.length)) yield out.take();
   out.add(lines);
+}
+
+/** lines made as they're asked for, into the pieces a batch at a time */
+function* putLines(out: Pieces, lines: Iterable<string>): Generator<string, void> {
+  let batch = "";
+  for (const l of lines) {
+    batch += l;
+    if (batch.length >= 16 * 1024) {
+      yield* put(out, batch);
+      batch = "";
+    }
+  }
+  if (batch) yield* put(out, batch);
 }
 
 /** a body held whole, read as a store's is: UTF-16 units, never half a surrogate pair */
@@ -370,22 +455,23 @@ export async function* mboxMessage(m: MboxMessage, read: MboxChunkReader): Async
   let missing = m.attachments.length - stored.length;
   const text = m.bodyText ?? (m.bodyHtml === null ? "" : null);
   const alternative = text !== null && m.bodyHtml !== null;
-  let head = "";
-  if (m.rfcMessageId) head += header("Message-ID", [angle(m.rfcMessageId)]);
-  if (m.inReplyTo) head += header("In-Reply-To", [angle(m.inReplyTo)]);
-  if (m.references.length) head += header("References", m.references.map(angle));
-  head += addresses("From", [m.from]);
-  head += addresses("To", m.to);
-  head += addresses("Cc", m.cc);
-  head += addresses("Reply-To", m.replyTo);
-  head += header("Date", [rfc5322Date(m.date)]);
-  head += textHeader("Subject", m.subject);
-  if (m.listId) head += header("List-Id", [angle(m.listId)]);
-  for (const { filename } of m.attachments.filter((a) => !a.stored)) head += textHeader("X-Terno-Missing-Attachment", filename || "attachment");
-  if (m.partial) head += "X-Terno-Partial-Body: true\n";
-  head += "MIME-Version: 1.0\n";
-  if (stored.length) head += `Content-Type: multipart/mixed; boundary="${MIXED}"\n\n--${MIXED}\n`;
-  yield* put(out, head);
+  // line by line into the pieces: a header of any length is never one string (Codex code review round 21 #5)
+  yield* putLines(out, (function* () {
+    if (m.rfcMessageId) yield* header("Message-ID", [angle(m.rfcMessageId)]);
+    if (m.inReplyTo) yield* header("In-Reply-To", [angle(m.inReplyTo)]);
+    if (m.references.length) yield* header("References", (function* () { for (const r of m.references) yield angle(r); })());
+    yield* addresses("From", [m.from]);
+    yield* addresses("To", m.to);
+    yield* addresses("Cc", m.cc);
+    yield* addresses("Reply-To", m.replyTo);
+    yield* header("Date", [rfc5322Date(m.date)]);
+    yield* header("Subject", textWords(m.subject));
+    if (m.listId) yield* header("List-Id", [angle(m.listId)]);
+    for (const a of m.attachments) if (!a.stored) yield* header("X-Terno-Missing-Attachment", textWords(a.filename || "attachment"));
+    if (m.partial) yield "X-Terno-Partial-Body: true\n";
+    yield "MIME-Version: 1.0\n";
+    if (stored.length) yield `Content-Type: multipart/mixed; boundary="${MIXED}"\n\n--${MIXED}\n`;
+  })());
   const state: Gone = { gone: false };
   if (alternative) {
     yield* put(out, `Content-Type: multipart/alternative; boundary="${ALT}"\n\n--${ALT}\n`);
@@ -395,9 +481,12 @@ export async function* mboxMessage(m: MboxMessage, read: MboxChunkReader): Async
     yield* put(out, `--${ALT}--\n`);
   } else yield* textPart(out, text === null ? "html" : "plain", text ?? m.bodyHtml!, state);
   for (const { a, i } of stored) {
-    const params = fileParams(a.filename);
-    const inline = a.contentId ? `Content-ID: ${angle(a.contentId)}\n` : "";
-    yield* put(out, `--${MIXED}\nContent-Type: ${mimeType(a.mime)}; ${params.name}\nContent-Disposition: ${a.contentId ? "inline" : "attachment"}; ${params.disposition}\n${inline}Content-Transfer-Encoding: base64\n\n`);
+    yield* putLines(out, (function* () {
+      yield `--${MIXED}\n`;
+      yield* partHeaders(a);
+      if (a.contentId) yield `Content-ID: ${angle(a.contentId)}\n`;
+      yield "Content-Transfer-Encoding: base64\n\n";
+    })());
     if (!(yield* base64Part(out, a, i, read))) missing++;
   }
   if (stored.length) yield* put(out, `--${MIXED}--\n`);

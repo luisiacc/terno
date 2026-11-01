@@ -202,6 +202,52 @@ describe("mbox (plan 107)", () => {
     expect(email.attachments[0]?.filename).toBe("año ñandú.txt");
   });
 
+  it("100,000-character headers are encoded a word at a time and written in bounded pieces of folded lines, and round-trip (Codex code review round 21 #5)", async () => {
+    // a Unicode subject, a long name, a word longer than a line, and a stored attachment's long name
+    const subject = "Reunión 😀 ñandú ".repeat(6250).trim();
+    const name = "José María ".repeat(9000).trim();
+    const word = `${"x".repeat(50_000)} ${"y".repeat(50_000)} end`;
+    const file = `${"año ñandú ".repeat(10_000)}.txt`;
+    const read: MboxChunkReader = async () => bytesBase64(new Uint8Array([1, 2, 3]));
+    const m: MboxMessage = {
+      ...base,
+      subject,
+      to: [{ name, email: "jose@example.com" }, { name: "Ana", email: "ana@example.com" }],
+      attachments: [{ filename: word, mime: "text/plain", size: 9, contentId: null, stored: false }, { filename: file, mime: "text/plain", size: 3, contentId: null, stored: true }],
+    };
+    // the encoding each next() does: before, the whole subject was encoded in the first one
+    const btoa = vi.spyOn(globalThis, "btoa");
+    const pieces: string[] = [];
+    const work: number[] = [];
+    try {
+      const it = mboxMessage(m, read);
+      for (;;) {
+        const before = btoa.mock.calls.length;
+        const r = await it.next();
+        work.push(btoa.mock.calls.slice(before).reduce((n, [s]) => n + String(s).length, 0));
+        if (r.done) break;
+        pieces.push(r.value);
+      }
+    } finally {
+      btoa.mockRestore();
+    }
+    expect(pieces.length).toBeGreaterThan(4);
+    expect(Math.max(...pieces.map((p) => p.length))).toBeLessThanOrEqual(MBOX_PIECE);
+    expect(Math.max(...work)).toBeLessThanOrEqual(MBOX_PIECE);
+    const text = pieces.join("");
+    const [head] = text.split("\n\n");
+    // folded: a header's first line holds its name and one word at least
+    for (const line of head!.split("\n")) expect(line.length).toBeLessThanOrEqual(line.startsWith(" ") ? 78 : 110);
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.subject).toBe(subject);
+    expect(email.to).toEqual([expect.objectContaining({ name, address: "jose@example.com" }), expect.objectContaining({ name: "Ana", address: "ana@example.com" })]);
+    // unfolded, the space between two encoded words dropped (RFC 2047), never the one before a plain word
+    const decoded = (v: string) => v.replace(/\r?\n(?=[ \t])/g, "").replace(/(\?=)\s+(?==\?)/g, "$1").replace(/=\?UTF-8\?B\?([^?]*)\?=/g, (_, b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0))));
+    expect(email.headers.filter((h) => h.key === "x-terno-missing-attachment").map((h) => decoded(h.value))).toEqual([word]);
+    expect(email.attachments.map((a) => a.filename)).toEqual([file]);
+    expect(new Uint8Array(email.attachments[0]!.content as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
   it("a chunk that's gone mid-way ends the part and counts it missing", async () => {
     const chunk = bytesBase64(new Uint8Array(ATTACHMENT_CHUNK).fill(7));
     const read: MboxChunkReader = async (_, index) => (index === 0 ? chunk : null);
