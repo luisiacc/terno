@@ -302,9 +302,40 @@ function FavoriteRows() {
     const Icon = VIEWS.find((v) => v.view === f.view)!.icon;
     return [{ f, account, name: viewLabel(f.view!), icon: <Icon className="size-4" />, count: f.view === "inbox" ? counts.inboxUnreadByAccount[f.accountId] : undefined }];
   });
+  // a focused favorite that goes from under the keyboard (removed or renamed in another window, round 25 #4): the
+  // one now in its place takes the focus (a rename keeps its place), else the last, else its account's row
+  const groupRef = useRef<HTMLDivElement>(null);
+  const focused = useRef<{ id: string; index: number; accountId: number } | null>(null);
+  const ids = rows.map(({ f }) => `nav-fav-${f.accountId}-${f.folder ?? f.view}`);
+  useLayoutEffect(() => {
+    const was = focused.current;
+    if (!was || ids.includes(was.id)) return;
+    focused.current = null;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const at = ids[Math.min(was.index, ids.length - 1)];
+    const target = at ? groupRef.current?.querySelector<HTMLElement>(`[data-testid="${CSS.escape(at)}"]`) : document.querySelector<HTMLElement>(`[data-testid="nav-account-${was.accountId}"]`);
+    target?.focus({ preventScroll: true });
+  });
   if (rows.length === 0) return null;
   return (
-    <div role="group" aria-label={t("sidebar.favorites")} data-testid="nav-favorites">
+    <div
+      ref={groupRef}
+      role="group"
+      aria-label={t("sidebar.favorites")}
+      data-testid="nav-favorites"
+      onFocus={(e) => {
+        const id = (e.target as HTMLElement).dataset.testid ?? "";
+        const index = ids.indexOf(id);
+        focused.current = index < 0 ? null : { id, index, accountId: rows[index]!.f.accountId };
+      }}
+      onBlur={(e) => {
+        // left on purpose (Tab away, a click elsewhere) unless the row itself went: told apart a frame later
+        const left = e.target as HTMLElement;
+        requestAnimationFrame(() => {
+          if (left.isConnected && !groupRef.current?.contains(document.activeElement)) focused.current = null;
+        });
+      }}
+    >
       {rows.map(({ f, account, name, icon, count }) => {
         const target = (f.folder !== null ? { accountId: f.accountId, folder: f.folder, view: null } : { accountId: f.accountId, folder: null, view: f.view! }) as FolderTarget;
         const active = here !== null && here.accountId === f.accountId && (f.folder !== null ? here.folder === f.folder : here.folder === null && here.view === f.view);

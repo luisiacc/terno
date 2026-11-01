@@ -122,6 +122,12 @@ export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   const s = getApp();
   // every rename, the folder shown or not: Back and Forward entries over its lists follow it (round 20 #4)
   for (const r of renamed) refolderPage(r.accountId, r.from, r.to);
+  // the catalog follows at once too (its new listing comes right after): a favorite of it never lacks its row in
+  // between (round 25 #4: the keyboard's place would go to the next one)
+  const keyed = renamed.filter((r) => r.from !== r.to);
+  if (keyed.length && s.folders.some((f) => keyed.some((r) => r.accountId === f.accountId && r.from === f.key))) {
+    setApp({ folders: s.folders.map((f) => ({ ...f, key: keyed.find((r) => r.accountId === f.accountId && r.from === f.key)?.to ?? f.key })) });
+  }
   const here = renamed.find((r) => r.accountId === s.accountId && r.from === s.folder && r.from !== r.to);
   if (here) {
     // the same mailbox under a new key: not a navigation (Codex code review #7), its quick filter moves with it

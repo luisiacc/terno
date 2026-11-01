@@ -579,6 +579,24 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(own(page, acme, "Label_7999")).toBeFocused();
   });
 
+  test("a focused favorite renamed or removed in another window: the keyboard keeps its place (Codex code review round 25 #4)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    const other = { clientId: "other-window", origin: "dev" as const };
+    const a = (await server.backend.server.invoke("folders.create", { accountId: freelance, parent: null, name: "Uno" }, other)) as { key: string };
+    const b = (await server.backend.server.invoke("folders.create", { accountId: freelance, parent: null, name: "Dos" }, other)) as { key: string };
+    for (const key of [a.key, b.key]) await server.backend.server.invoke("folders.favorite", { accountId: freelance, folder: key, view: null, on: true }, other);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    // renamed elsewhere: the same favorite under its new key keeps the focus
+    await page.getByTestId(`nav-fav-${freelance}-${a.key}`).focus();
+    const { renamed } = (await server.backend.server.invoke("folders.rename", { accountId: freelance, key: a.key, name: "Uno nuevo" }, other)) as { renamed: { to: string }[] };
+    const to = renamed[0]!.to;
+    await expect(page.getByTestId(`nav-fav-${freelance}-${to}`)).toBeFocused();
+    // removed elsewhere: the next one takes it
+    await server.backend.server.invoke("folders.favorite", { accountId: freelance, folder: to, view: null, on: false }, other);
+    await expect(page.getByTestId(`nav-fav-${freelance}-${b.key}`)).toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
