@@ -1,4 +1,4 @@
-# Final quote-conversion repair: preparation only
+# Final quote-conversion repair
 
 ## Request (verbatim task constraints)
 
@@ -56,3 +56,38 @@ Unique evidence directory: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/ter
 - `packages/richtext/src/richtext.test.ts` SHA-256 `1354e8bb6127ffc8c6f47b50f3199ec65bf3b2f6d527669e85d5ff16b1c06701` (unchanged).
 
 Known artifact existence/mtime metadata matches preparation snapshot; restoration unnecessary. Final scoped check: git diff whitespace only, no test/build invocation. Disk observed629MiB free during preparation; no cleanup attempted. Root must release the next phase before any RED/test or production edit.
+
+
+## Released implementation phase (2026-11-01)
+
+Root released source/test-first work after mail timing joined. Safely rebased the sole preparation commit onto current committed main `9086a71f665a9e0e7105ec44977855e272f48e36`; rebased preparation head `a672b3123b01c0f4314e3524f816d007e13a52a1`. Earlier seven critique points retained; no new plan critique. Exact ownership remained encodeSpaces, direct quote tests and this plan. No editor/list/ProseMirror or other production source imported or changed.
+
+Actual deterministic RED: first new six-test run failed callback work (12 >1) and a mistaken new multi-space chunk oracle. Corrected only that oracle to respect existing budget8 split, then reran before production edit: 1 failed/5 passed, solely12 callback invocations versus ceiling1; literal ordinary chunks/joined HTML passed. Both logs retained. This proves redundant ordinary-space callback work, not historical71.109ms causality.
+
+Minimal source change: select a space-run expression matching multiple spaces plus only edges requiring encoding. Existing callback, alternation, tab replacement, escape ordering, scanner, cut/budget/flush/depth and public signatures remain unchanged. Regression now passes with <=1 callback, required final encoding retained. Literal edge-state/tab/entity/link controls, chunk arrays and original frozen2,352-case compatibility hash retained. No allocation or historical timing attribution claimed.
+
+Checks in order, all child processes captured with PID/birth/argv/finite deadline and joined, all inheriting NODE_OPTIONS plus network guard:
+
+- Corrected source functional: exact `quote.test.ts`, 6/6 PASS.
+- `tsc -p packages/richtext/tsconfig.json`: PASS, no config changes.
+- `oxlint --deny-warnings packages/richtext/src/quote.ts packages/richtext/src/quote.test.ts`: PASS.
+- After timing-readiness notification and joining own CPU checks: original `richtext.test.ts -t "a hostile quote"`, exactly once, 1/1 PASS (29 filtered); complete unchanged test reached its later CR/LF and link-boundary assertions. No timing values exposed by original passing test, and no instrumentation/extra timing rerun added. Historical71.109ms cause remains unproven.
+
+Focused Vitest config is external evidence only: node environment, original20,000ms test timeout, exact two richtext filenames, cache:false. It omits unrelated backend worker globalSetup; no worker build is required for pure richtext tests. No original source, fixtures, clocks, per-next25ms assertion or initialization boundaries changed. Direct resolved tool entrypoints used after first pnpm exec unexpectedly auto-linked9 locally reused packages (zero downloads), despite shared dependency symlinks; this setup event is retained, no install retry/generator run. Scoped types use the real richtext config, including normal compiler discovery. Shared dependency source is not imported from user WIP.
+
+Known output existence/symlink snapshot preceded dependency linkage and test/report generation. Worktree root and richtext node_modules symlinks were absent initially and created by this actor to existing local dependency trees; remove only these exact owned links at handoff. No old artifacts/evidence/user data deleted. No full gates, build, e2e, profile, broader package sweep or release-green claim.
+
+Implementation evidence: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-quote-final-fix-n3fumak4` (`before.json`, `base.txt`, external config and run.py, RED/confirmed RED/functional/types/lint/original-once logs with per-command process and exit records).
+
+## Combined code review
+
+R1 completed exit0; implementation code-review rounds used1 of maximum2. Both Standards and Spec PASS, no actionable findings. No regression repairs or R2 needed; no source changes after review. The seven-point preparation critique is separate and unchanged. The shared review shell script is absent, so use equivalent actual native read-only Sol/high Standards+Spec prompt with explicit checkout/base and exact scope. No reviewer test runs.
+
+
+## Final handoff
+
+Actual native R1 header confirms gpt-6.1-sol/OpenAI/high/read-only; full transcript `review-r1.log`, prompt and finite process metadata retained in the implementation evidence directory. No findings to repair or park. R2 unused. Preparation critique count remains1 with seven accepted points.
+
+Final scope:6-line encodeSpaces diff, two new direct tests and plan. Original richtext.test.ts remains byte-identical to committed base (SHA-2561354e8bb6127ffc8c6f47b50f3199ec65bf3b2f6d527669e85d5ff16b1c06701). All monitored commands exited and joined; no timeout fired or signals sent. Only two exact actor-created dependency symlinks removed to restore their original absence; shared dependency trees, user data and old evidence untouched. Known output existence/symlink state matches the recorded pre-execution snapshot after restoration; recursive shared dependency contents were not snapshotted/restored, and pnpm's automatic9-package local linkage remains disclosed above. Whitespace check passes. No broad gates or release clearance claimed. Root owns integration from base9086a71f; historical71.109ms cause remains unproven.
+
+Root main advanced during review with mail repair/documentation commits. Final safe rebase preserved both own commits onto `75181a797644b535876c12d4488b30d41b804cdc`; main introduced no richtext or owned-plan changes. Exact owned source/tests compare byte-identically against tested/reviewed pre-rebase headf172d953. No timing rerun or new review round; the recorded functional/timing/review evidence was executed on base9086a71f, not misrepresented as fresh post-rebase execution. Final integration base75181a79, Root owns landing.

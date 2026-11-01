@@ -16,8 +16,12 @@ export function escapeHtml(s: string): string {
 /** Spaces that HTML would collapse (leading, trailing, runs) as alternating &nbsp;, tabs kept with white-space:pre. */
 export function encodeSpaces(escaped: string, lineStart: boolean, lineEnd: boolean, afterSpace = false): string {
   const last = escaped.length;
+  const leading = lineStart || afterSpace;
+  const spaces = leading
+    ? lineEnd ? / {2,}|^ | $/g : / {2,}|^ /g
+    : lineEnd ? / {2,}| $/g : / {2,}/g;
   return escaped
-    .replace(/ +/g, (run, offset: number) => {
+    .replace(spaces, (run, offset: number) => {
       let out = "";
       let prevRegular = offset === 0 ? afterSpace : false;
       for (let i = 0; i < run.length; i++) {

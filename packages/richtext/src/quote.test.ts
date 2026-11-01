@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { lineHtml, MAX_QUOTE_DEPTH, QUOTE_STYLE, textToHtml, textToHtmlChunks } from "./quote";
+import { describe, expect, it, vi } from "vitest";
+import { encodeSpaces, lineHtml, MAX_QUOTE_DEPTH, QUOTE_STYLE, textToHtml, textToHtmlChunks } from "./quote";
 
 function* boundaryCases(): Generator<[number, string]> {
   for (const budget of [7, 8, 31, 128, 255, 256]) {
@@ -15,6 +15,52 @@ function* boundaryCases(): Generator<[number, string]> {
 }
 
 describe("quote conversion work", () => {
+  it("does not invoke replacement callbacks for ordinary isolated spaces", () => {
+    const nativeReplace = String.prototype.replace;
+    let callbacks = 0;
+    let pieces: string[];
+    const spy = vi.spyOn(String.prototype, "replace").mockImplementation(function (this: string, pattern, replacement) {
+      if (typeof replacement !== "function") return nativeReplace.call(this, pattern, replacement);
+      return nativeReplace.call(this, pattern, (...args) => {
+        callbacks++;
+        return replacement(...args);
+      });
+    });
+    try {
+      pieces = [...textToHtmlChunks("x x x x x x x x x x x x ", 8)];
+    } finally {
+      spy.mockRestore();
+    }
+    expect(pieces).toEqual(["<div>x x x x ", "x x x x ", "x x x x&nbsp;</div>", ""]);
+    expect(pieces.join("")).toBe("<div>x x x x x x x x x x x x&nbsp;</div>");
+    expect(callbacks).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps literal edge-space state, alternation and tabs", () => {
+    const cases: [string, boolean, boolean, boolean, string][] = [
+      ["", true, true, true, ""],
+      [" ", false, false, false, " "],
+      [" ", false, false, true, "&nbsp;"],
+      [" ", true, true, true, "&nbsp;"],
+      [" x ", false, false, false, " x "],
+      [" x ", true, true, false, "&nbsp;x&nbsp;"],
+      [" x ", false, false, true, "&nbsp;x "],
+      ["x y", true, true, true, "x y"],
+      ["  ", false, false, false, " &nbsp;"],
+      ["  ", true, true, true, "&nbsp;&nbsp;"],
+      ["   ", true, false, true, "&nbsp; &nbsp;"],
+      ["   ", false, true, true, "&nbsp; &nbsp;"],
+      ["x  y   z", true, true, true, "x &nbsp;y &nbsp; z"],
+      ["&amp; &lt; &gt; &quot;", true, true, false, "&amp; &lt; &gt; &quot;"],
+      [" \t ", true, true, false, '&nbsp;<span style="white-space:pre">\t</span>&nbsp;'],
+    ];
+    for (const [input, start, end, after, html] of cases) expect(encodeSpaces(input, start, end, after), JSON.stringify([input, start, end, after])).toBe(html);
+    expect(lineHtml(' a & <b> "c" https://e.com/x  fin ')).toBe(
+      '&nbsp;a &amp; &lt;b&gt; &quot;c&quot; <a href="https://e.com/x">https://e.com/x</a> &nbsp;fin&nbsp;',
+    );
+    expect([...textToHtmlChunks("x  y   z ", 8)]).toEqual(["<div>x &nbsp;y &nbsp; z", "&nbsp;</div>"]);
+  });
+
   it("bounds character reads before every yield, including scanning a newline-free line", () => {
     const budget = 256;
     for (const text of ["x ".repeat(4096), `${"> ".repeat(MAX_QUOTE_DEPTH)}\n`.repeat(128)]) {
