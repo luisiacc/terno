@@ -1411,9 +1411,9 @@ it("favorites of folders another app deleted go when the pass stores the account
  * nothing deleted is held or kept, nothing surviving is lost, and no record is left.
  */
 const RENAME_TABLE = (["keeps", "changes"] as const).flatMap((uv) => ([1, 2] as const).flatMap((renames) =>
-  (["nothing", "delete", "recreate"] as const).map((then) => ({ uv, renames, then }))));
+  (["nothing", "delete", "recreate"] as const).map((after) => ({ uv, renames, after }))));
 
-it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renames rename(s), then $then (Codex code review round 25 #1)", async ({ uv, renames, then }) => {
+it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renames rename(s), then $after (Codex code review round 25 #1)", async ({ uv, renames, after }) => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
   t.server.control.addMessage("INBOX", { raw: rawIdleMail("In the inbox") });
@@ -1437,14 +1437,14 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
   } finally {
     renumbered?.mockRestore();
   }
-  if (then === "delete") await t.client.call("folders.delete", { accountId: t.account.id, key: last });
-  if (then === "recreate") {
+  if (after === "delete") await t.client.call("folders.delete", { accountId: t.account.id, key: last });
+  if (after === "recreate") {
     t.server.control.createMailbox("Work");
     t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
   }
   // before the pass, the last name shows and counts the moved mail (round 25 #1: renamed twice on a server that gave
   // Job a new UIDVALIDITY, Other showed none)
-  if (then !== "delete") {
+  if (after !== "delete") {
     expect(await t.threadsIn(last)).toEqual([a]);
     expect((await t.client.call("folders.count", { accountId: t.account.id, key: last })).messages).toBe(1);
   }
@@ -1452,7 +1452,7 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
     await t.backend.rebuildFolders();
     // the inbox is never touched
     expect(await inboxNow()).toEqual(inbox);
-    if (then === "delete") {
+    if (after === "delete") {
       expect(await t.locations([ma.id])).toEqual([]);
       expect(await t.held([ma.id])).toEqual([]);
       expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
@@ -1476,8 +1476,8 @@ it.each(RENAME_TABLE)("renames before a pass: the server $uv UIDVALIDITY, $renam
       // the server kept its UIDs' meaning: the message keeps its identity
       expect(m.id).toBe(ma.id);
     }
-    for (const name of names.slice(0, -1)) if (name !== "Work" || then !== "recreate") expect(await t.threadsIn(name)).toEqual([]);
-    if (then === "recreate") {
+    for (const name of names.slice(0, -1)) if (name !== "Work" || after !== "recreate") expect(await t.threadsIn(name)).toEqual([]);
+    if (after === "recreate") {
       const fresh = await t.threadsIn("Work");
       expect(fresh).toHaveLength(1);
       expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
