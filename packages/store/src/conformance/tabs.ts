@@ -65,7 +65,7 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       expect(counts.inboxUnreadByAccount[gmail]).toBe(2);
       expect(counts.inboxUnreadByAccount[imap]).toBe(1);
       expect(counts.tabUnread).toEqual({ [`${gmail}:promotions`]: 1, [`${gmail}:social`]: 1 });
-      // plan 102: an account's Mark all as read is its Inbox's unread scope: exactly what its count counts
+      // plan 106: an account's Mark all as read is its Inbox's unread scope: exactly what its count counts
       expect(await store.threads.scopeIds({ view: "inbox", accountId: gmail, filter: "unread", limit: 10 })).toEqual([person, mixed].sort((x, y) => x - y));
       expect(await store.threads.scopeIds({ view: "inbox", accountId: imap, filter: "unread", limit: 10 })).toEqual([bulk]);
       await store.threads.act({ threadIds: [social], action: "markRead", signal: null, now: NOW });
@@ -100,7 +100,7 @@ export function defineTabsConformance(fresh: () => Promise<MailStore>, reopen: (
       expect((await s.accounts.get(gmail))!.separateTabs).toBe(false);
       expect(await ids(s, { view: "inbox", limit: 10 })).toEqual([bulk, mixed, person, social, promo]);
       expect((await s.threads.counts(NOW)).inboxUnread).toBe(5);
-      // plan 102: with its tabs in the Inbox, its Mark all as read takes them too, as its count does
+      // plan 106: with its tabs in the Inbox, its Mark all as read takes them too, as its count does
       expect(await s.threads.scopeIds({ view: "inbox", accountId: gmail, filter: "unread", limit: 10 })).toEqual([promo, social, person, mixed].sort((x, y) => x - y));
       expect((await s.threads.counts(NOW)).inboxUnreadByAccount[gmail]).toBe(4);
       const store = await reopen(s);

@@ -29,7 +29,7 @@ const AccountRemoveDialog = lazy(() => import("./account-remove-dialog").then((m
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * An account's right-click menu in the sidebar (plan 102): what you do to one mailbox without opening Settings.
+ * An account's right-click menu in the sidebar (plan 106): what you do to one mailbox without opening Settings.
  * Its trigger is marked `data-context-menu`, so ⇧F10 and the menu key on the focused row open it too.
  */
 export function AccountMenu({ account, unread, onRename, children }: { account: Account; unread: number; onRename: () => void; children: ReactElement }) {

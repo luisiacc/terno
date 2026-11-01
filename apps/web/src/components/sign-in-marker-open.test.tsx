@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Plan 102 (Codex code review round 3 #2): Sign in again… from the account menu opens the key's panel once its
+ * Plan 106 (Codex code review round 3 #2): Sign in again… from the account menu opens the key's panel once its
  * chunk is in, but not over what the user moved on to while it loaded.
  */
 import type { Account } from "@terno/core";

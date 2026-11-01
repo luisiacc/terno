@@ -1,5 +1,5 @@
 /**
- * Plan 102: an account's right-click menu in the sidebar: rename in place, color, a new message from it, check
+ * Plan 106: an account's right-click menu in the sidebar: rename in place, color, a new message from it, check
  * for new mail, mark its Inbox read, sign in again, its settings, and remove it. Shift+F10 opens it from the row.
  */
 import AxeBuilder from "@axe-core/playwright";

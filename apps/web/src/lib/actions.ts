@@ -326,7 +326,7 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
 }
 
 /**
- * Plan 102: an account's Mark All as Read: every unread thread in its Inbox as its sidebar count counts them
+ * Plan 106: an account's Mark All as Read: every unread thread in its Inbox as its sidebar count counts them
  * (not the categories hidden from the Inbox, not the Gmail tabs it keeps apart), applied by the backend in
  * slices with one Undo. Not an action on the selection: what's checked stays checked. The rows shown change at
  * once only where the list is an Inbox that holds them (Codex R1: elsewhere a loaded row's membership is

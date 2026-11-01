@@ -112,7 +112,7 @@ export function menuAnchor(selectedId: number | null, checked: ReadonlySet<numbe
 }
 
 /**
- * Plan 102: ⇧F10 / the ContextMenu key on a row with a menu of its own (a sidebar account or category, marked
+ * Plan 106: ⇧F10 / the ContextMenu key on a row with a menu of its own (a sidebar account or category, marked
  * `data-context-menu`) opens that one, as a right-click at the row's start would. False: none has focus.
  */
 export function openFocusedMenu(): boolean {

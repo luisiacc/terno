@@ -134,7 +134,7 @@ function Notice({ accounts }: { accounts: Account[] }) {
 const markers = new Map<number, () => void>();
 
 /**
- * Plan 102: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a hover or
+ * Plan 106: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a hover or
  * focus on the key would (the panel's chunk, so its first focus lands in it; Google's script on the web).
  */
 export async function openSignInMarker(account: Account): Promise<void> {
@@ -161,7 +161,7 @@ const opening = { seq: 0 };
  */
 export function SignInMarker({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
-  // plan 102: the account menu's Sign In Again… opens this one; only while it's here (nothing waits for a later one)
+  // plan 106: the account menu's Sign In Again… opens this one; only while it's here (nothing waits for a later one)
   useEffect(() => {
     const show = () => setOpen(true);
     markers.set(account.id, show);
@@ -210,7 +210,7 @@ export function SignInMarker({ account }: { account: Account }) {
         className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto"
         data-testid="sign-in-popover"
         data-sign-in-ui
-        // portaled, but React's events still pass the account row's menu trigger (plan 102, Codex code review
+        // portaled, but React's events still pass the account row's menu trigger (plan 106, Codex code review
         // round 6): a right-click in the password field is the field's own (paste), not the account menu
         onContextMenu={(e) => e.stopPropagation()}
       >

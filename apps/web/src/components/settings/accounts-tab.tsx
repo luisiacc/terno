@@ -211,7 +211,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
 }
 
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
-  // plan 102: Settings opened on this account (the sidebar's Account Settings…) opens it; later events leave it be
+  // plan 106: Settings opened on this account (the sidebar's Account Settings…) opens it; later events leave it be
   const [open, setOpen] = useState(() => getApp().settingsAccount === account.id);
   const panel = useId();
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink

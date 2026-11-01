@@ -124,7 +124,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "list.extendNext": () => extendSelection(1),
   "list.extendPrev": () => extendSelection(-1),
   "list.menu": () => {
-    // plan 102: a focused sidebar row with a menu of its own opens that one
+    // plan 106: a focused sidebar row with a menu of its own opens that one
     if (!openFocusedMenu()) openMenuForSelection();
   },
   "list.toggleUnread": toggleUnreadFilter,

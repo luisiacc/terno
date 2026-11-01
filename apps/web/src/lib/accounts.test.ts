@@ -1,5 +1,5 @@
 /**
- * Plan 102: an account edit is shown at once; overlapping edits of a field never let an older answer or rollback
+ * Plan 106: an account edit is shown at once; overlapping edits of a field never let an older answer or rollback
  * overwrite a newer one, and an `accounts` event mid-save keeps what's still on its way (Codex R7).
  */
 import type { Account } from "@terno/core";

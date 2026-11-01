@@ -88,7 +88,7 @@ export async function boot(): Promise<void> {
     });
     installQueryRecovery({ covered: listCovered, readerShown });
     client.on("accounts", (accounts) => {
-      // plan 102: a rename or color still on its way stays shown
+      // plan 106: a rename or color still on its way stays shown
       setAccounts(withPendingEdits(accounts));
       reconcileAccounts(accounts);
       // plan 25: an account that works again ends what was said about its sign-in

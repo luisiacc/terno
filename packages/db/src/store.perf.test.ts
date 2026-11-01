@@ -270,7 +270,7 @@ describe("a category hidden from the Inbox (plan 83)", () => {
   });
 });
 
-describe("an account's Mark all as read (plan 102)", () => {
+describe("an account's Mark all as read (plan 106)", () => {
   it("its Inbox's unread scope walks within budget when another account's unread fills the mailbox and it has none or ten", async () => {
     const sparse = accountIds[0]!;
     const saved = store.db.all<{ id: number; unread_count: number }>("SELECT id, unread_count FROM threads");

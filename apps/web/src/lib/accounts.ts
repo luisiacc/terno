@@ -2,8 +2,11 @@ import type { Account, AccountPatch } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { getApp, setAccounts } from "~/state/app";
 
-/** What the sidebar and Settings edit in place (plan 102); Gmail tabs regroup lists and go through `setSeparateTabs`. */
-export type AccountEdit = Omit<AccountPatch, "separateTabs">;
+/**
+ * What the sidebar and Settings edit in place (plan 106): the account's own fields. Gmail tabs regroup lists and
+ * go through `setSeparateTabs`; a backfill is a request, not a field shown.
+ */
+export type AccountEdit = Pick<AccountPatch, "displayName" | "color" | "senderName" | "signature" | "syncWindowDays">;
 type Field = keyof AccountEdit;
 
 /**

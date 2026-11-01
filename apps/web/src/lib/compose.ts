@@ -439,7 +439,7 @@ setForwardOpenProbe(() => openingNow > 0);
 
 /**
  * `prefill` (plan 93, a new message from a snippet): the fields the new
- * message starts with, in the same step that creates it. `from` (plan 102,
+ * message starts with, in the same step that creates it. `from` (plan 106,
  * an account's menu): the account a new message is from.
  */
 export async function openCompose(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number): Promise<void> {
@@ -489,7 +489,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   const active = typeof document === "undefined" ? null : document.activeElement;
   const focusUnchanged = () => typeof document === "undefined" || document.activeElement === active || Boolean(lease?.earlyInput?.owns(document.activeElement)) || Boolean(lease?.valid && active && !active.isConnected && document.activeElement === document.body);
   const s = getApp();
-  // plan 102: a new message from an account's menu is from that account
+  // plan 106: a new message from an account's menu is from that account
   const asked = mode === "new" && s.accounts.some((a) => a.id === from) ? from : undefined;
   const defaultAccount = asked ?? s.accountId ?? s.accounts[0]?.id;
   if (!defaultAccount) {

@@ -377,7 +377,7 @@ it("the unread filter's counts and select-all walks read the unread threads only
   await store.debug.verify();
 }, 900_000);
 
-it("plan 102: an account's Mark all as read walks its Inbox's unread within a frame when every other thread is unread and it has none or ten", async () => {
+it("plan 106: an account's Mark all as read walks its Inbox's unread within a frame when every other thread is unread and it has none or ten", async () => {
   const all = (await store.debug.snapshot()).threads;
   const sparse = all[0]!.accountId;
   // Codex R4: the scope walks the unread ids testing account and place: the worst case is every other thread unread

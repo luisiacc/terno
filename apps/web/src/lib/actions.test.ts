@@ -164,7 +164,7 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
   });
 });
 
-describe("an account's Mark all as read (plan 102)", () => {
+describe("an account's Mark all as read (plan 106)", () => {
   const unread = (id: number, accountId: number, tab = 0) => ({ ...row(id), unread: true, accountId, tab, inInbox: true }) as ThreadSummary;
   const gmail = { id: 1, kind: "gmail", email: "a@gmail.com", displayName: "A", color: "indigo", syncState: { status: "idle" } };
   const imap = { id: 2, kind: "imap", email: "b@example.com", displayName: "B", color: "rose", syncState: { status: "idle" } };

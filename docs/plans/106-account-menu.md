@@ -1,4 +1,4 @@
-# Plan 102: the account's right-click menu
+# Plan 106: the account's right-click menu
 
 - **Status:** done (see "Implementation notes" and "Codex code review").
 - **Builds on:** `9d988d3b` (main). Follows plan 83's category menu, plan 67's account rows, plan 25's sign-in marker.

@@ -8,7 +8,7 @@ import { ConfirmDialog } from "./settings/parts";
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * Remove Account…'s confirmation, the same from the sidebar's menu (plan 102) and Settings → Accounts. Lazy:
+ * Remove Account…'s confirmation, the same from the sidebar's menu (plan 106) and Settings → Accounts. Lazy:
  * out of the entry chunk. From the sidebar, the removed row's focus goes to the row now in its place (or Add
  * account), but only when nothing else took it meanwhile (Codex R9).
  */

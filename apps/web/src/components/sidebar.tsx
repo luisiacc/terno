@@ -669,7 +669,7 @@ function useFolderUnreadByAccount(all: Record<string, number> | undefined): Read
 }
 
 /**
- * Plan 102: an account's name being renamed, in place: the row's shape and the name's place, the field where the
+ * Plan 106: an account's name being renamed, in place: the row's shape and the name's place, the field where the
  * name was (not inside the row's button, Codex R5). Enter saves, Esc cancels (both give the row back its focus),
  * leaving saves; empty or unchanged saves nothing. Each edit settles once (Codex R6: the blur after Enter is not a
  * second save), and a composition's Enter is the input method's.
@@ -782,11 +782,11 @@ const AccountEntry = memo(function AccountEntry({
   const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
   const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
   const viewUnread = useMemo(() => ({ archive: archiveUnread, spam: spamUnread }), [archiveUnread, spamUnread]);
-  // plan 102: Rename puts a field where the name is
+  // plan 106: Rename puts a field where the name is
   const [renaming, setRenaming] = useState(false);
   return (
     <div data-account-id={a.id}>
-      {/* the row and its sign-in key together (plan 25), apart from the folders below; its menu (plan 102) */}
+      {/* the row and its sign-in key together (plan 25), apart from the folders below; its menu (plan 106) */}
       <AccountMenu account={a} unread={unread ?? 0} onRename={() => setRenaming(true)}>
         <div className="relative">
           {renaming ? (

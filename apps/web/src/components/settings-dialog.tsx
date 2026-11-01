@@ -24,7 +24,7 @@ import { PaneBoundary } from "./diag/error-boundary";
 import { ReportPreview } from "./diag/report-preview";
 import { useNativeReload } from "~/lib/native-reload";
 
-/** plan 102: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
+/** plan 106: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
 function initialFocus(): boolean | HTMLElement {
   const id = getApp().settingsAccount;
   if (id === null) return switchFocus();
