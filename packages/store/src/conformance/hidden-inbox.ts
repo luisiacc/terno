@@ -77,6 +77,9 @@ export function defineHiddenInboxConformance(fresh: () => Promise<MailStore>, re
       expect(counts.inboxUnread).toBe(1);
       expect(counts.inboxUnreadByAccount[a] ?? 0).toBe(1);
       expect(counts.inboxUnreadByAccount[b] ?? 0).toBe(0);
+      // plan 102: an account's Mark all as read is its Inbox's unread scope: exactly what its count counts
+      expect(await store.threads.scopeIds({ view: "inbox", accountId: a, filter: "unread", limit: 10 })).toEqual([w]);
+      expect(await store.threads.scopeIds({ view: "inbox", accountId: b, filter: "unread", limit: 10 })).toEqual([]);
 
       // where the mail lives now: its category's list and count, its tab of an account's Inbox, other views
       expect(await ids(store, { view: "all", categoryId: linkedin, limit: 10 })).toEqual([both, li]);

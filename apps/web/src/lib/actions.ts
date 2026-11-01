@@ -8,7 +8,7 @@ import { dismissSnack, registerUndo, snack, withdrawSnack, type Undo } from "~/l
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, inPlainInbox, inSeparateTab, setApp, type AppState, type ScopeSelection } from "~/state/app";
-import { patchRows, reloadList, useList } from "~/state/list";
+import { onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { placeActions } from "~/lib/places";
@@ -314,6 +314,45 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
     invalidateThreads(loaded);
     const offer = r.undoId !== null && undo.state === "ready";
     snack.success(said(action, r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, t(UNDO_NAME[action])) : undefined });
+  } catch (error) {
+    undoId.resolve({ id: null, n: 0 });
+    if (connection !== client.connectionVersion) return;
+    snack.error(failed(error), { id: progress.snackId });
+  } finally {
+    progress.stop();
+    if (connection === client.connectionVersion) void reloadList({ keepSelection: true });
+    else withdrawSnack(progress.snackId);
+  }
+}
+
+/**
+ * Plan 102: an account's Mark All as Read: every unread thread in its Inbox as its sidebar count counts them
+ * (not the categories hidden from the Inbox, not the Gmail tabs it keeps apart), applied by the backend in
+ * slices with one Undo. Not an action on the selection: what's checked stays checked. The rows shown change at
+ * once only where the list is an Inbox that holds them (Codex R1: elsewhere a loaded row's membership is
+ * unknown); every list reloads after.
+ */
+export async function markAccountRead(accountId: number, count: number): Promise<void> {
+  const connection = client.connectionVersion;
+  const s = getApp();
+  const listed = inPlainInbox(s) && !s.reminders && (s.accountId === null || s.accountId === accountId);
+  const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t)).map((t) => t.id) : [];
+  // under the list's Unread filter they go (the open one is read in place, as the filter keeps it); else read in place
+  const leaving = activeFilter(s) === "unread";
+  const stays = s.selectedId !== null && loaded.includes(s.selectedId) ? s.selectedId : null;
+  if (leaving) reflowRemoval(loaded.filter((id) => id !== stays));
+  patchRows(loaded, (t) => (leaving && t.id !== stays ? null : patched(t, "markRead")));
+  breadcrumb("action", "action.thread", { action: "markRead", count });
+  const progress = trackJob(t(DOING.markRead, { count }));
+  const undoId = deferred<{ id: number | null; n: number }>();
+  const undo = registerUndo(() => undoId.promise.then((u) => (u.id === null ? undefined : undoActions([u.id], u.n))));
+  try {
+    const r = await client.call("threads.actScope", { scope: { kind: "view", view: "inbox", accountId, filter: "unread" }, action: "markRead", jobId: progress.jobId });
+    undoId.resolve({ id: r.undoId, n: r.affected });
+    if (connection !== client.connectionVersion) return;
+    invalidateThreads(loaded);
+    const offer = r.undoId !== null && undo.state === "ready";
+    snack.success(said("markRead", r.affected), { id: progress.snackId, duration: 8000, action: offer ? undoAction(undo, t(UNDO_NAME.markRead)) : undefined });
   } catch (error) {
     undoId.resolve({ id: null, n: 0 });
     if (connection !== client.connectionVersion) return;

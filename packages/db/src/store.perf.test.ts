@@ -269,3 +269,35 @@ describe("a category hidden from the Inbox (plan 83)", () => {
     }
   });
 });
+
+describe("an account's Mark all as read (plan 102)", () => {
+  it("its Inbox's unread scope walks within budget when another account's unread fills the mailbox and it has none or ten", async () => {
+    const sparse = accountIds[0]!;
+    const saved = store.db.all<{ id: number; unread_count: number }>("SELECT id, unread_count FROM threads");
+    // Codex R4: the scope walks the global unread index testing account and place: the worst case is every other thread unread
+    store.db.run("UPDATE threads SET unread_count = max(unread_count, 1) WHERE account_id != ?", sparse);
+    store.db.run("UPDATE threads SET unread_count = 0 WHERE account_id = ?", sparse);
+    meta.markAllRead = `${store.db.get<{ c: number }>("SELECT count(*) AS c FROM threads WHERE unread_count > 0")!.c} unread elsewhere`;
+    const scope = { view: "inbox" as const, accountId: sparse, filter: "unread" as const, now: NOW };
+    const walk = async () => {
+      const ids: number[] = [];
+      for (let after = 0; ; ) {
+        const page = await store.threads.scopeIds({ ...scope, after, limit: 500 });
+        ids.push(...page);
+        if (page.length < 500) return ids;
+        after = page[page.length - 1]!;
+      }
+    };
+    try {
+      expect(await walk()).toEqual([]);
+      await gate("mark all read, account with none unread: the whole id walk", 16, walk, 20);
+      await gate("mark all read, account with none unread: count", 16, () => store.threads.scopeCount({ ...scope, limit: 100_001 }), 20);
+      const ten = store.db.all<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND in_inbox = 1 AND tab = 0 ORDER BY id LIMIT 10", sparse).map((r) => r.id);
+      for (const id of ten) store.db.run("UPDATE threads SET unread_count = 1 WHERE id = ?", id);
+      expect((await walk()).length).toBeLessThanOrEqual(10);
+      await gate("mark all read, account with ten unread: the whole id walk", 16, walk, 20);
+    } finally {
+      for (const r of saved) store.db.run("UPDATE threads SET unread_count = ? WHERE id = ?", r.unread_count, r.id);
+    }
+  });
+});

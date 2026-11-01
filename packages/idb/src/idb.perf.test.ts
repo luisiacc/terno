@@ -377,6 +377,46 @@ it("the unread filter's counts and select-all walks read the unread threads only
   await store.debug.verify();
 }, 900_000);
 
+it("plan 102: an account's Mark all as read walks its Inbox's unread within a frame when every other thread is unread and it has none or ten", async () => {
+  const all = (await store.debug.snapshot()).threads;
+  const sparse = all[0]!.accountId;
+  // Codex R4: the scope walks the unread ids testing account and place: the worst case is every other thread unread
+  const wereRead = all.filter((t) => t.accountId !== sparse && t.unreadCount === 0).map((t) => t.id);
+  const wereUnread = all.filter((t) => t.accountId === sparse && t.unreadCount > 0).map((t) => t.id);
+  for (let i = 0; i < wereRead.length; i += 5000) await store.threads.act({ threadIds: wereRead.slice(i, i + 5000), action: "markUnread", signal: null, now: NOW });
+  for (let i = 0; i < wereUnread.length; i += 5000) await store.threads.act({ threadIds: wereUnread.slice(i, i + 5000), action: "markRead", signal: null, now: NOW });
+  const scope = { view: "inbox" as const, accountId: sparse, filter: "unread" as const };
+  const walk = async () => {
+    const ids: number[] = [];
+    for (let after = 0; ; ) {
+      const page = await store.threads.scopeIds({ ...scope, after, limit: 500 });
+      ids.push(...page);
+      if (page.length < 500) return ids;
+      after = page[page.length - 1]!;
+    }
+  };
+  const ten = all.filter((t) => t.accountId === sparse && t.inInbox).slice(0, 10).map((t) => t.id);
+  try {
+    const none = await warm(walk);
+    const count = await warm(() => store.threads.scopeCount({ ...scope, limit: 100_001 }));
+    expect(none.result).toEqual([]);
+    expect(count.result).toBe(0);
+    await store.threads.act({ threadIds: ten, action: "markUnread", signal: null, now: NOW });
+    const some = await warm(walk);
+    expect(some.result.length).toBeGreaterThan(0);
+    expect(some.result.length).toBeLessThanOrEqual(10);
+    console.log(`mark all read of a sparse account (${all.length - wereUnread.length} unread elsewhere): none ${none.ms.toFixed(2)} ms, count ${count.ms.toFixed(2)} ms, ten ${some.ms.toFixed(2)} ms`);
+    expect(none.ms, "none unread: whole walk").toBeLessThanOrEqual(FRAME * MULT);
+    expect(count.ms, "none unread: count").toBeLessThanOrEqual(FRAME * MULT);
+    expect(some.ms, "ten unread: whole walk").toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    await store.threads.act({ threadIds: ten, action: "markRead", signal: null, now: NOW });
+    for (let i = 0; i < wereRead.length; i += 5000) await store.threads.act({ threadIds: wereRead.slice(i, i + 5000), action: "markRead", signal: null, now: NOW });
+    for (let i = 0; i < wereUnread.length; i += 5000) await store.threads.act({ threadIds: wereUnread.slice(i, i + 5000), action: "markUnread", signal: null, now: NOW });
+  }
+  await store.debug.verify();
+}, 900_000);
+
 it("the quick filters (plan 15) page from their own orders: with attachments and starred, cold, every page, counts and walks within a frame; 5,000 stars at once", async () => {
   const all = (await store.debug.snapshot()).threads;
   for (const filter of ["attachments", "starred"] as const) {
