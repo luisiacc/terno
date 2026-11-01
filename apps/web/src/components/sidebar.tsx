@@ -474,7 +474,8 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
       <FolderNameRow
         // each edit its own field: an older answer never settles a newer one (Codex code review round 9 #2)
         key={renaming}
-        initial={name}
+        // its own name: past eight levels the row shows the rest of its path joined (round 10 #5)
+        initial={self?.path.at(-1) ?? name}
         label={t("folder.rename.label", { name })}
         inset={INSET[depth] ?? INSET.at(-1)!}
         testId={`nav-own-rename-${accountId}-${folderKey}`}

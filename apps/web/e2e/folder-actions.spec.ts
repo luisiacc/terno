@@ -515,6 +515,22 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_23")?.path).toEqual(["Segundo"]);
   });
 
+  test("renaming a folder deeper than the sidebar nests starts from its own name, not the path shown (Codex code review round 10 #5)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    const path = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+    await server.backend.store.folders.replace(acme, [...mine, ...path.map((_, i) => ({ key: `Label_9${i}`, path: path.slice(0, i + 1), selectable: true }))]);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await openAccount(page, acme);
+    await own(page, acme, "Label_99").click({ button: "right" });
+    await page.getByTestId("folder-menu-rename").click();
+    const field = page.getByTestId(`nav-own-rename-${acme}-Label_99`);
+    await expect(field).toHaveValue("J");
+    await field.fill("Jota");
+    await field.press("Enter");
+    await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_99")?.path.at(-1)).toBe("Jota");
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
