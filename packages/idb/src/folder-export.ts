@@ -73,7 +73,8 @@ export function stretch(c: Ctx, target: { accountId: number; folder: string }, a
     for (let i = 0; i < heads.length; i++) if (heads[i]! < read.runs[i]!.length && (best < 0 || read.runs[i]![heads[i]!]! < read.runs[best]![heads[best]!]!)) best = i;
     if (best < 0) break;
     const id = read.runs[best]![heads[best]!++]!;
-    // a thread read in two runs (let go and added again meanwhile) comes once
+    // a thread read in two runs (let go and added again meanwhile, or its row updated: an update moves its key to the
+    // end of the live index) comes once
     if (out.at(-1) !== id) out.push(id);
   }
   return out;
@@ -131,16 +132,23 @@ export function threadStretch(c: Ctx, thread: number, from: number | null, n: nu
     if (run.length) order.runs.push(Float64Array.from(run).sort());
     if (!order.done) return { rows: [], more: true, pending: true };
   }
-  // the runs merged from their seeks: `n` steps over a few dozen heads
+  // the runs merged from their seeks: `n` steps over a few dozen heads. A message updated after its run was read is
+  // met again by the live walk (an update moves its key to the end of the index), so it's in two runs: it comes once
+  // (Codex code review round 12 #1)
   const runs = order.runs;
   const heads = runs.map((r) => (from === null ? 0 : seekAfter(r, from)));
   const rows: R[] = [];
+  let last = from ?? -Infinity;
   for (;;) {
     let best = -1;
     for (let i = 0; i < heads.length; i++) if (heads[i]! < runs[i]!.length && (best < 0 || runs[i]![heads[i]!]! < runs[best]![heads[best]!]!)) best = i;
     if (best < 0) return { rows, more: false };
+    const id = runs[best]![heads[best]!]!;
+    if (id === last) { heads[best]!++; continue; }
     if (rows.length >= n) return { rows, more: true };
-    rows.push(messages.get(runs[best]![heads[best]!++]!)!);
+    heads[best]!++;
+    last = id;
+    rows.push(messages.get(id)!);
   }
 }
 
