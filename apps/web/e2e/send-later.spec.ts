@@ -111,4 +111,70 @@ test.describe("send later", { tag: "@design" }, () => {
     await expect(page.getByTestId("composer")).toBeVisible();
     await expect(page.getByTestId("compose-subject")).toHaveValue("Budget");
   });
+
+  test("Send and the clock are one filled shape: no seam, a hairline that hides on hover or open, a ring Tab can see", async ({ app: page }) => {
+    await newMessage(page, "Seam");
+    const group = page.getByTestId("compose-send-group");
+    const send = page.getByTestId("compose-send");
+    const clock = page.getByTestId("compose-send-later");
+    const style = (l: typeof send, pseudo?: string) =>
+      l.evaluate((el, p) => {
+        const s = getComputedStyle(el, p);
+        return { bg: s.backgroundColor, border: `${s.borderLeftWidth} ${s.borderRightWidth}`, opacity: s.opacity, content: s.content, width: s.width, height: s.height, shadow: s.boxShadow };
+      }, pseudo);
+    const token = (name: string) =>
+      page.evaluate((n) => {
+        const probe = document.body.appendChild(document.createElement("span"));
+        probe.style.color = `var(--${n})`;
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      }, name);
+    const divider = async () => (await style(clock, "::before")).opacity;
+
+    // the group paints the fill; the halves are clear and borderless, so nothing shows through where they meet
+    expect((await style(group)).bg).not.toBe("rgba(0, 0, 0, 0)");
+    for (const half of [send, clock]) expect(await style(half)).toMatchObject({ bg: "rgba(0, 0, 0, 0)", border: "0px 0px" });
+    const [s, c] = [await send.boundingBox(), await clock.boundingBox()];
+    expect(Math.abs(s!.x + s!.width - c!.x)).toBeLessThan(0.5);
+    // at rest the divider paints: a short line in a real color
+    const line = await style(clock, "::before");
+    expect(line).toMatchObject({ content: '""', opacity: "1" });
+    expect(line.bg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(parseFloat(line.width)).toBeGreaterThan(0);
+    expect(parseFloat(line.height)).toBeGreaterThan(0);
+    expect(parseFloat(line.height)).toBeLessThan(c!.height);
+    await expect(group).toHaveScreenshot("send-group-rest.png");
+
+    // hovering either half takes the line away and fills that half
+    await send.hover();
+    await expect.poll(divider).toBe("0");
+    await expect.poll(async () => (await style(send)).bg).toBe(await token("primary-hover"));
+    await clock.hover();
+    await expect.poll(divider).toBe("0");
+    await expect.poll(async () => (await style(clock)).bg).toBe(await token("primary-hover"));
+    await expect(group).toHaveScreenshot("send-group-clock-hover.png");
+    // and the open picker keeps it away with the pointer gone
+    await clock.click();
+    await expect(page.getByTestId("send-later-popover")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect.poll(divider).toBe("0");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("send-later-popover")).toHaveCount(0);
+    await expect.poll(divider).toBe("1");
+
+    // the group clips, so Tab's ring is drawn inside each half, in the text's color
+    const ink = await token("primary-foreground");
+    await send.focus();
+    await page.keyboard.press("Tab");
+    await expect(clock).toBeFocused();
+    await expect(page.locator("html")).toHaveAttribute("data-focus-ring", "");
+    for (const half of [clock, send]) {
+      if (half === send) await page.keyboard.press("Shift+Tab");
+      await expect(half).toBeFocused();
+      const ring = (await style(half)).shadow;
+      expect(ring).toContain("inset");
+      expect(ring).toContain(ink);
+    }
+  });
 });

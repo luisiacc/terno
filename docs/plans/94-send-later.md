@@ -57,7 +57,7 @@ The schedule is local, like reminders: Terno sends it from this device. If Terno
 
 ### 4. The composer: Send and its clock
 
-The Send button gets a joined right part: a clock and a caret (`compose-send-later`), the same primary fill, split by a hairline in `primary-foreground/20`. Its tooltip is "Send later" with `⌘⇧↩`. It opens a popover above it, `SendLaterPicker`:
+The Send button gets a joined right part: a clock and a caret (`compose-send-later`), one primary-filled shape (the group owns the fill, radius and shadow) split by a short inset hairline in `primary-foreground/25` that stops 6 px from the top and bottom and hides while either half is hovered or the picker is open. Its tooltip is "Send later" with `⌘⇧↩`. It opens a popover above it, `SendLaterPicker`:
 
 - **Send now**, with `⌘↩` on the right.
 - **Tomorrow at 8:00 AM**, with its day on the right ("Sat, Nov 1").
@@ -125,3 +125,15 @@ One read-only review of the series (`git diff cadc8f0f HEAD`) reported six findi
 6. **A reply whose original is gone retried forever.** `errors.replySourceGone`, `attachments.tooLarge` and `attachments.unavailable` give the send back like a stale draft. Backend test.
 
 Verification: typecheck and lint clean; store conformance (both stores), backend, core and web unit suites pass; `send-later.spec.ts` passes in all three designs, with `compose`, `composer`, `composer-send` and `reminders` specs. Known failures not from this series (they fail on cadc8f0f too): four IndexedDB version-pinned upgrade tests and `i18n` scan's `w02-action-fixture.ts:69`. Full `test:e2e`, `test:web`, `test:ui-perf` and `test:perf` were not run (relevant specs only).
+
+## Follow-up: the seam between Send and the clock
+
+The two halves were separate filled buttons. Their transparent 1 px borders (`bg-clip-padding`) let the page through where they met, and the clock's `border-l` drew a light bar on top, so the pair read as two buttons stuck together with a ~2 px gap. Of three mocked options (one shape with an inset hairline, a detached outlined clock, a tonal step), the first was chosen: the group owns the fill, radius and single shadow and clips; the halves are clear and borderless; the clock draws a 1 px `::before` line that stops 6 px from the top and bottom and hides while either half is hovered or the picker is open.
+
+Codex reviewed the change and reported three findings; all are fixed with tests that fail without them:
+
+1. **Tab's ring was invisible.** The ring token is derived from `primary`, so an inset ring on the fill was 1:1, and the group clips any outer outline. Each half now draws its ring inside, 2 px in, in `primary-foreground`. The e2e asserts an inset shadow in that color on both halves under Tab.
+2. **A lighter hover failed contrast** (Apple Light 4.51 → 3.52). New derived token `primary-hover`: a step toward the text while the text still reads at 4.5:1, otherwise 0.06 L away from it. It's in `CONTRAST_PAIRS` (`primary-foreground / primary-hover`), and a registry test keeps it a visible step from `primary` in every theme.
+3. **The test passed with an invisible divider.** It now asserts the line's content, size and color at rest, a resting screenshot, the line hiding on Send's hover and with the picker open, and the hover fill being `primary-hover`.
+
+Verification: typecheck and lint clean; `send-later`, `focus-ring`, `themes` and `composer-send` pass in all three designs; theme and design unit tests pass. Known failures not from this change (they fail on `e3ebe34a` too): `sidebar-panels` "a long sidebar" (4 per design); the `i18n` scan and network architecture test (both flag `apps/site`); `settings-edits` import (`snippets` count); the version-pinned IndexedDB upgrade tests.
