@@ -104,6 +104,31 @@ describe("patchAccount", () => {
     expect(withPendingEdits([base(1)])[0]!.displayName).toBe("A1");
   });
 
+  it("a newer rename accepted while an older one is on its way stays shown, and after it (Codex code review round 2 #2)", async () => {
+    const one = patchAccount(1, { displayName: "One" });
+    const two = patchAccount(1, { displayName: "Two" });
+    calls[1]!.settle();
+    await two;
+    expect(name()).toBe("Two");
+    calls[0]!.settle();
+    await one;
+    expect(name()).toBe("Two");
+  });
+
+  it("not optimistic: the account changes only once the backend has it, and a failure changes nothing (Codex code review round 2 #1)", async () => {
+    const done = patchAccount(1, { signature: "Hi" }, { optimistic: false });
+    expect(getApp().accounts[0]!.signature).toBe("");
+    // an event meanwhile doesn't show it either
+    expect(withPendingEdits([base(1)])[0]!.signature).toBe("");
+    calls[0]!.settle();
+    await done;
+    expect(getApp().accounts[0]!.signature).toBe("Hi");
+    const failed = patchAccount(1, { signature: "Bye" }, { optimistic: false });
+    calls[1]!.settle(new Error("no"));
+    await expect(failed).rejects.toThrow();
+    expect(getApp().accounts[0]!.signature).toBe("Hi");
+  });
+
   it("two renames that both fail show the backend's name, not the first unsaved one (Codex code review #1)", async () => {
     const one = patchAccount(1, { displayName: "One" });
     const two = patchAccount(1, { displayName: "Two" });

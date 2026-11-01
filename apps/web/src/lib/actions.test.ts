@@ -181,9 +181,12 @@ describe("an account's Mark all as read (plan 102)", () => {
     setApp({ listFilters: new Map() });
   });
   const shown = () => useList.getState().items.map((t) => [t.id, t.unread]);
+  /** the rows on screen are the current list's */
+  const loaded = async () => useList.setState({ itemsKey: (await import("~/state/list")).listKey() });
 
   it("under the Unread filter, the account's rows go but the checked one stays checked and is read in place (Codex code review #2)", async () => {
     setApp({ view: "inbox", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map([["inbox||", "unread"]]), checked: new Set([10, 20]), selectedId: null });
+    await loaded();
     const { markAccountRead } = await import("./actions");
     void markAccountRead(1, 2);
     expect(shown()).toEqual([[10, false], [12, true], [20, true]]);
@@ -192,9 +195,19 @@ describe("an account's Mark all as read (plan 102)", () => {
 
   it("a row in a Gmail tab the account keeps apart is left as it is (Codex code review #4)", async () => {
     setApp({ view: "inbox", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map(), checked: new Set(), selectedId: null });
+    await loaded();
     const { markAccountRead } = await import("./actions");
     void markAccountRead(1, 2);
     expect(shown()).toEqual([[10, false], [11, false], [12, true], [20, true]]);
+  });
+
+  it("the Inbox still loading over the previous view's rows: those rows aren't touched (Codex code review round 2 #3)", async () => {
+    setApp({ view: "archive", accountId: null, categoryId: null, folder: null, gmailTab: null, reminders: false, listFilters: new Map(), checked: new Set(), selectedId: null });
+    await loaded();
+    setApp({ view: "inbox" });
+    const { markAccountRead } = await import("./actions");
+    void markAccountRead(1, 2);
+    expect(shown()).toEqual([[10, true], [11, true], [12, true], [20, true]]);
   });
 
   it("outside an Inbox listing, nothing shown changes until the reload", async () => {

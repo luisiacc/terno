@@ -22,6 +22,9 @@ export function AccountRemoveDialog({ account, open, onOpenChange, from }: { acc
       title={t("account.remove.title", { email: account.email })}
       description={isOwner ? t("account.remove.descriptionOwner") : t("account.remove.description")}
       confirm={t("account.remove.confirm")}
+      // from the sidebar's menu, its row (Codex code review round 2 #4: the menu handed focus to the dialog, so
+      // Cancel or a failure would leave it on whatever had it before); removed, the hand-off below moves it on
+      finalFocus={from === "sidebar" ? () => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`) ?? true : undefined}
       onConfirm={async () => {
         const ids = getApp().accounts.map((a) => a.id);
         const at = ids.indexOf(account.id);

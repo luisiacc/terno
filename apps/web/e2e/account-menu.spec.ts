@@ -203,19 +203,30 @@ test.describe("the account menu", () => {
 
   test("Remove account…: Cancel keeps it; Remove removes it and the next row takes the focus", async ({ app: page, server }) => {
     const [a, b] = await accountIds(page);
-    await row(page, a!).focus();
-    await page.keyboard.press("Shift+F10");
-    await expect(menu(page, a!)).toBeVisible();
+    // a thread has the focus; the menu is opened with the pointer (Codex code review round 2 #4)
+    await rows(page).first().click();
+    await openMenu(page, a!);
     await page.getByTestId("account-menu-remove").click();
     const dialog = page.getByTestId("account-remove-dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(row(page, a!)).toBeVisible();
+    await expect(row(page, a!)).toBeFocused();
 
-    // a slow removal: the focus waits for the row to go
+    // a failure keeps it and its row has the focus back
     const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
     const remove = handlers["accounts.remove"]!;
+    handlers["accounts.remove"] = async () => {
+      throw new Error("busy");
+    };
+    await rows(page).first().click();
+    await openMenu(page, a!);
+    await page.getByTestId("account-menu-remove").click();
+    await page.getByTestId("account-remove-dialog-confirm").click();
+    await expect(page.getByTestId("snack").filter({ hasText: "busy" })).toBeVisible();
+    await expect(row(page, a!)).toBeFocused();
+
+    // a slow removal: the focus waits for the row to go
     handlers["accounts.remove"] = async (...args) => (await new Promise((r) => setTimeout(r, 300)), remove(...args));
     await row(page, a!).focus();
     await page.keyboard.press("Shift+F10");

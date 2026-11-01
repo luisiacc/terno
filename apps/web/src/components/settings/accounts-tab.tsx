@@ -157,7 +157,8 @@ function Reconnect({ account }: { account: Account }) {
 
 function AccountEditor({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
   const [removing, setRemoving] = useState(false);
-  const save = (patch: AccountEdit) => patchAccount(account.id, patch);
+  // the text fields keep what was typed and say a failure under it: the account changes once the backend has it
+  const save = (patch: AccountEdit) => patchAccount(account.id, patch, { optimistic: "color" in patch });
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
       <SettingsRow labelFor label={t("account.name")} hint={t("account.name.hint")}>

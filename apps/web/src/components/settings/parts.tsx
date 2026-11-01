@@ -247,6 +247,7 @@ export function ConfirmDialog({
   confirm,
   onConfirm,
   testId,
+  finalFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -255,10 +256,12 @@ export function ConfirmDialog({
   confirm: string;
   onConfirm: () => void | Promise<void>;
   testId?: string;
+  /** where focus goes as it closes (opened from a menu, there's no trigger to go back to) */
+  finalFocus?: () => HTMLElement | boolean | null;
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent data-testid={testId}>
+      <AlertDialogContent data-testid={testId} finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

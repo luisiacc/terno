@@ -8,7 +8,7 @@ import { dismissSnack, registerUndo, snack, withdrawSnack, type Undo } from "~/l
 import { activeFilter } from "~/lib/unread-filter";
 import type { ListFilter } from "@terno/core";
 import { getApp, inPlainInbox, inSeparateTab, setApp, type AppState, type ScopeSelection } from "~/state/app";
-import { onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
+import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { placeActions } from "~/lib/places";
@@ -335,7 +335,8 @@ async function actScope(action: ThreadAction, sel: ScopeSelection): Promise<void
 export async function markAccountRead(accountId: number, count: number): Promise<void> {
   const connection = client.connectionVersion;
   const s = getApp();
-  const listed = inPlainInbox(s) && !s.reminders && (s.accountId === null || s.accountId === accountId);
+  // the rows shown are the Inbox's, not a previous view's still showing while it loads (Codex code review round 2 #3)
+  const listed = inPlainInbox(s) && !s.reminders && (s.accountId === null || s.accountId === accountId) && useList.getState().itemsKey === listKey();
   // a row there only for its reminder, or in a Gmail tab the account keeps apart, isn't in its Inbox (Codex code review #4)
   const loaded = listed ? useList.getState().items.filter((t) => t.accountId === accountId && t.unread && !onlyOnTop(t) && !inSeparateTab(t, s.accounts)).map((t) => t.id) : [];
   // under the list's Unread filter they go; the open and the checked ones are read in place, as the filter keeps
