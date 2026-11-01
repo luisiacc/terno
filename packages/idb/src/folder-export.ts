@@ -106,17 +106,60 @@ const memberRuns = new WeakMap<Ctx, Map<string, { walk: Iterator<Key>; runs: Flo
 
 /**
  * A thread's messages after `from` (by id), at most `n` looked at: all of a short one as the index holds them; a long
- * one's ids sorted natively (one numeric sort, a few milliseconds at 50,000) to seek into, so a conversation of any
- * length is read a stretch a call (Codex code review round 2 #6: one of 50,000 was read whole in one call).
+ * one's from its ids ascending, kept between calls and seeked into, so a conversation of any length is read a stretch
+ * a call (Codex code review round 2 #6: one of 50,000 was read whole in one call). The order is built a run a call
+ * (`pending` until it's whole, the caller asking again from the same place) and let go when the thread's messages
+ * change (Codex code review round 10 #3: every call read and sorted all of a million-message conversation, ~55 ms).
  */
-export function threadStretch(c: Ctx, thread: number, from: number | null, n: number): { rows: R[]; more: boolean } {
+export function threadStretch(c: Ctx, thread: number, from: number | null, n: number): { rows: R[]; more: boolean; pending?: true } {
   const messages = T(c, "messages");
   if (from === null && messages.count("fk_thread_id", thread) <= n) return { rows: messages.by("fk_thread_id", thread), more: false };
-  const ids = Float64Array.from(messages.keysBy("fk_thread_id", thread) as IterableIterator<number>).sort();
-  let at = from === null ? 0 : seekAfter(ids, from);
+  const orders = threadOrdersOf(c);
+  let order = orders.get(thread);
+  if (!order) {
+    // a few kept (the export's and a count's)
+    if (orders.size >= 4) orders.delete(orders.keys().next().value!);
+    orders.set(thread, (order = { walk: messages.keysBy("fk_thread_id", thread), runs: [], done: false }));
+  }
+  if (!order.done) {
+    const run: number[] = [];
+    while (run.length < MEMBER_RUN) {
+      const k = order.walk.next();
+      if (k.done) { order.done = true; break; }
+      run.push(k.value as number);
+    }
+    if (run.length) order.runs.push(Float64Array.from(run).sort());
+    if (!order.done) return { rows: [], more: true, pending: true };
+  }
+  // the runs merged from their seeks: `n` steps over a few dozen heads
+  const runs = order.runs;
+  const heads = runs.map((r) => (from === null ? 0 : seekAfter(r, from)));
   const rows: R[] = [];
-  for (const end = Math.min(ids.length, at + n); at < end; at++) rows.push(messages.get(ids[at]!)!);
-  return { rows, more: at < ids.length };
+  for (;;) {
+    let best = -1;
+    for (let i = 0; i < heads.length; i++) if (heads[i]! < runs[i]!.length && (best < 0 || runs[i]![heads[i]!]! < runs[best]![heads[best]!]!)) best = i;
+    if (best < 0) return { rows, more: false };
+    if (rows.length >= n) return { rows, more: true };
+    rows.push(messages.get(runs[best]![heads[best]!++]!)!);
+  }
+}
+
+/** a long thread's message ids read so far, sorted a run at a time, per store, by thread (a few kept) */
+type ThreadIds = { walk: Iterator<Key>; runs: Float64Array[]; done: boolean };
+const threadOrders = new WeakMap<Ctx["db"], Map<number, ThreadIds>>();
+
+function threadOrdersOf(c: Ctx): Map<number, ThreadIds> {
+  let orders = threadOrders.get(c.db);
+  if (orders) return orders;
+  const kept = (orders = new Map());
+  threadOrders.set(c.db, kept);
+  // a message in, out or moved to another thread (undo included): that thread's order is read again
+  c.db.onRow((table, row, prev) => {
+    if (table !== "messages" || !kept.size || (row && prev && row.thread_id === prev.thread_id)) return;
+    if (row) kept.delete(row.thread_id as number);
+    if (prev) kept.delete(prev.thread_id as number);
+  });
+  return kept;
 }
 
 export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
@@ -133,7 +176,9 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
   let budget = limit;
   /** a thread from `from`: where it stopped, or null when it's read to its end */
   const read = (thread: number, from: number | null): { id: number; date: number } | null => {
-    const { rows, more } = threadStretch(c, thread, from, budget);
+    const { rows, more, pending } = threadStretch(c, thread, from, budget);
+    // its order still being read: the next call asks again from here
+    if (pending) return { id: from ?? 0, date: 0 };
     for (const m of rows) if (m.account_id === target.accountId && !m.is_draft && test(m)) out.push({ id: m.id as number, date: m.date as number });
     budget -= Math.max(1, rows.length);
     const last = rows.at(-1);

@@ -876,3 +876,59 @@ it("plan 107: a standard view's export for an account beside another's 1,000,000
     await own.close();
   }
 }, 900_000);
+
+it("plan 107: an export and a count of a 1,000,000-message conversation read it a bounded stretch a call, its order kept across them and read again when it changes (Codex code review round 10 #3)", async () => {
+  // a store of its own: a million rows written and let go would leave the shared one's writes behind for the others
+  const own = await IdbMailStore.open({ name: `${name}-long-thread`, factory: indexedDB, platform, instantSearch: false });
+  try {
+    const c = (own as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown } } } }).c;
+    const { account } = await own.accounts.create({ kind: "gmail", email: "long@example.com", displayName: "Long", color: "indigo", now: 0 });
+    const N = 1_000_000;
+    const thread = 70_000_000;
+    // written in reverse: the index holds them newest first, so nothing's in order by luck
+    const message = (id: number) => ({ id, account_id: account.id, thread_id: thread, provider_msg_id: `long-${id}`, date: id, is_draft: 0, is_trash: 0, is_spam: 0, gmail_labels: '["Label_long"]' });
+    c.db.tx(() => {
+      c.db.table("threads").put({ id: thread, account_id: account.id, last_date: 0, message_count: N, unread_count: 0 });
+      c.db.table("thread_folders").put({ thread_id: thread, account_id: account.id, folder: "Label_long", last_date: 0, unread: 0 });
+      for (let i = N; i >= 1; i--) c.db.table("messages").put(message(80_000_000 + i));
+    });
+    const limit = 2000;
+    // the export, with a message added to the conversation halfway: its order is read again, and the new one comes
+    const samples: Sample[] = [];
+    const seen: number[] = [];
+    let added = false;
+    for (let after: FolderExportCursor | null = null; ; ) {
+      let r!: ReturnType<typeof exportIds>;
+      const from = after;
+      samples.push(sampleSync(() => (r = exportIds(c, { accountId: account.id, folder: "Label_long" }, from, limit))));
+      for (const m of r.messages) seen.push(m.id);
+      if (!r.next) break;
+      after = r.next;
+      if (!added && seen.length >= N / 2) { added = true; c.db.tx(() => c.db.table("messages").put(message(80_000_000 + N + 1))); }
+    }
+    expect(seen.length).toBe(N + 1);
+    for (let i = 1; i < seen.length; i++) if (seen[i]! <= seen[i - 1]!) throw new Error(`out of order at ${i}`);
+    // the count
+    const counts: Sample[] = [];
+    let counted = 0;
+    for (let at: FolderCountCursor | null = null; ; ) {
+      let r!: ReturnType<typeof countFolderMessages>;
+      const from = at;
+      counts.push(sampleSync(() => (r = countFolderMessages(c, account.id, ["Label_long"], from, limit))));
+      counted += r.messages;
+      if (!r.next) break;
+      at = r.next;
+    }
+    expect(counted).toBe(N + 1);
+    for (const [run, s] of [["export", samples], ["count", counts]] as const) {
+      const ms = settle(s).ms.sort((a, b) => a - b);
+      const total = ms.reduce((a, b) => a + b, 0);
+      console.log(`${run} of a ${N}-message conversation: ${s.length} calls, ${total.toFixed(1)} ms in all, max ${ms.at(-1)!.toFixed(2)} ms`);
+      // before: every call read and sorted all of it (~55 ms a call)
+      expect(ms.at(-1)!, `${run}: one call`).toBeLessThanOrEqual(FRAME * MULT);
+      expect(s.length, `${run}: calls`).toBeLessThanOrEqual(Math.ceil((N + 1) / limit) + 2 * Math.ceil((N + 1) / 16_384) + 4);
+    }
+  } finally {
+    await own.close();
+  }
+}, 900_000);

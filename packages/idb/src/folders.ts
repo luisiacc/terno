@@ -126,7 +126,9 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
   let budget = Math.max(1, limit);
   /** a thread's messages past `from` (null: its start), up to the budget: the last one looked at, or null when read to its end */
   const countThread = (thread: number, from: number | null): number | null => {
-    const { rows, more } = threadStretch(c, thread, from, Math.max(1, budget));
+    const { rows, more, pending } = threadStretch(c, thread, from, Math.max(1, budget));
+    // its order still being read (Codex code review round 10 #3): this slice ends, the next asks again from here
+    if (pending) { budget = 0; return from ?? 0; }
     for (const m of rows) if (m.account_id === accountId && !m.is_trash && !m.is_spam && userLabels(m).some((l) => index.has(l)) && firstPlace(m.id as number) === Infinity) messages++;
     budget -= rows.length;
     return more && rows.length ? (rows.at(-1)!.id as number) : null;
