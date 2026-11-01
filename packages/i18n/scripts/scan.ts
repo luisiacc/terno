@@ -205,7 +205,48 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** Scans one file's source. `file` is only used to label findings and pick the parser's JSX mode. */
+/** Plan 97's typed site catalogs are data, not UI declarations. Fail closed on executable values. */
+function isCopyData(node: unknown): node is Node {
+  if (!isNode(node)) return false;
+  if (node.type === "StringLiteral") return true;
+  if (node.type === "ArrayExpression") return (node.elements as unknown[]).every(isCopyData);
+  if (node.type !== "ObjectExpression") return false;
+  return (node.properties as Node[]).every((p) => p.type === "ObjectProperty" && !p.shorthand && keyName(p) !== null && isCopyData(p.value));
+}
+
+function siteCatalog(program: Node, file: string): Node | null {
+  const locale = file === "apps/site/src/copy/en.ts" ? "en" : file === "apps/site/src/copy/es.ts" ? "es" : null;
+  if (!locale) return null;
+  const body = program.body as Node[];
+  const named = (node: unknown, name: string): boolean => isNode(node) && node.type === "Identifier" && node.name === name;
+  const declarations = body.filter((s) => s.type === "ExportNamedDeclaration").map((s) => s.declaration).filter(isNode);
+  if (locale === "en") {
+    if (!declarations.some((d) => d.type === "TSTypeAliasDeclaration" && named(d.id, "SiteCopy") &&
+      isNode(d.typeAnnotation) && d.typeAnnotation.type === "TSTypeQuery" && named(d.typeAnnotation.exprName, "en"))) return null;
+  } else {
+    if (!body.some((s) => s.type === "ImportDeclaration" && s.importKind === "type" && isNode(s.source) && s.source.value === "./en" &&
+      (s.specifiers as Node[]).some((spec) => spec.type === "ImportSpecifier" && named(spec.imported, "SiteCopy") && named(spec.local, "SiteCopy")))) return null;
+  }
+  for (const declaration of declarations) {
+    if (declaration.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+    for (const binding of declaration.declarations as Node[]) {
+      if (!named(binding.id, locale)) continue;
+      if (locale === "es") {
+        const annotation = (binding.id as Node).typeAnnotation;
+        if (!isNode(annotation) || !isNode(annotation.typeAnnotation)) continue;
+        const type = annotation.typeAnnotation;
+        if (type.type !== "TSTypeReference" || !named(type.typeName, "SiteCopy") || type.typeParameters) continue;
+      }
+      const value = binding.init;
+      if (!isCopyData(value) || value.type !== "ObjectExpression") continue;
+      const langs = (value.properties as Node[]).filter((p) => keyName(p) === "lang");
+      if (langs.length === 1 && isNode(langs[0]!.value) && langs[0]!.value.type === "StringLiteral" && langs[0]!.value.value === locale) return value;
+    }
+  }
+  return null;
+}
+
+/** Scans source, recognizing only the typed data initializer in the site's two catalog paths. */
 export function scanSource(code: string, file: string): Finding[] {
   let ast: Node;
   try {
@@ -218,6 +259,7 @@ export function scanSource(code: string, file: string): Finding[] {
     return [{ file, line: (e as { loc?: { line: number } }).loc?.line ?? 0, kind: "parse-error", text: (e as Error).message }];
   }
 
+  const catalog = (ast.errors as unknown[]).length === 0 ? siteCatalog(ast.program as Node, file) : null;
   const raw: Finding[] = [];
   const report = (node: Node, kind: FindingKind, text: string, line = node.loc?.start.line ?? 0) => raw.push({ file, line, kind, text: oneLine(text) });
 
@@ -246,6 +288,7 @@ export function scanSource(code: string, file: string): Finding[] {
 
   /** `deferred`: inside a function (or an instance field), so not run at module load */
   const walk = (node: Node, deferred: boolean, parent: Node | null): void => {
+    if (node === catalog) return;
     const t = node.type;
     if (t.startsWith("TS") && t !== "TSAsExpression" && t !== "TSSatisfiesExpression" && t !== "TSNonNullExpression") {
       // types carry no runtime text; enums' and namespaces' values aren't shown either

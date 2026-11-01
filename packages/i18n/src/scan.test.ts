@@ -194,3 +194,68 @@ it("excludes test-directory helpers while retaining production label violations"
     expect(scanRepo(root).map((f) => [f.file, f.kind, f.text])).toEqual([["apps/web/src/lib/production.tsx", "attr", "Body"]]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+describe("site copy catalog boundary", () => {
+  const en = 'export const en = { lang: "en", meta: { title: "English title" }, keys: [{ label: "Next message" }] };\nexport type SiteCopy = typeof en;';
+  const es = 'import type { SiteCopy } from "./en";\nexport const es: SiteCopy = { lang: "es", meta: { title: "Título español" }, keys: [{ label: "Mensaje siguiente" }] };';
+  const path = "apps/site/src/copy/en.ts";
+
+  it("recognizes only the typed exported catalog data, retaining file discovery", () => {
+    expect(scan(en, path)).toEqual([]);
+    expect(scan(es, "apps/site/src/copy/es.ts")).toEqual([]);
+    const root = mkdtempSync(join(tmpdir(), "terno-i18n-catalog-"));
+    try {
+      const files = {
+        [path]: en,
+        "apps/site/src/copy/es.ts": es,
+        "apps/site/src/copy/other.ts": 'export const other = { title: "Other copy" };',
+        "apps/site/src/parts/view.tsx": 'const View = () => <button title="Open message">Read message</button>;',
+        "apps/web/src/view.tsx": 'const View = () => <p>Read message</p>;',
+      };
+      for (const [file, code] of Object.entries(files)) {
+        mkdirSync(dirname(join(root, file)), { recursive: true });
+        writeFileSync(join(root, file), code);
+      }
+      expect(scannedFiles(root).sort()).toEqual(Object.keys(files).sort());
+      expect(scanRepo(root).map((f) => `${f.file} ${f.kind} ${f.text}`)).toEqual([
+        "apps/site/src/copy/other.ts prop Other copy",
+        "apps/site/src/parts/view.tsx attr Open message",
+        "apps/site/src/parts/view.tsx jsx-text Read message",
+        "apps/web/src/view.tsx jsx-text Read message",
+      ]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("still scans executable code beside and inside catalog declarations", () => {
+    expect(scan(`${en}\nconst extra = { title: "Untranslated title" };\nt("common.cancel");\nL("common.cancel");\nrich("common.cancel");`, path)).toEqual([
+      "prop Untranslated title", 'module-load t("common.cancel")', 'module-load L("common.cancel")', 'module-load rich("common.cancel")',
+    ]);
+    for (const value of ['t("common.cancel")', 'L("common.cancel")', '(() => { snack("Saved message"); return "x"; })()', '{ get title() { return "Hidden title"; } }', '{ ...extra, title: "Spread title" }', '{ [key]: "x", title: "Computed title" }', 'other', 'other.value', '`Hello ${name}`', '{ title }', '"x" as string']) {
+      const code = en.replace('keys: [{ label: "Next message" }]', `keys: [{ label: "Next message" }], extra: ${value}`);
+      expect(scan(code, path), value).toContain("prop English title");
+    }
+  });
+
+  it("retains same-export siblings and reasonless ignores in catalog data", () => {
+    expect(scan(en.replace('};', '}, extra = { title: "Extra title" };'), path)).toEqual(["prop Extra title"]);
+    expect(scan(en.replace('meta:', '// i18n-ignore\nmeta:'), path)).toEqual(["ignore-without-reason i18n-ignore"]);
+  });
+
+  it("rejects wrong paths, exports, types, locale markers and non-data lookalikes", () => {
+    for (const file of ["apps/web/src/copy/en.ts", "apps/site/src/parts/en.ts", "apps/site/src/copy/en.tsx", "apps/site/src/copy/nested/en.ts"]) {
+      expect(scan(en, file), file).toContain("prop English title");
+    }
+    for (const code of [
+      en.replace("export const", "const"), en.replace("const en", "let en"),
+      en.replace("typeof en", "typeof other"), en.replace("export type", "type"),
+      en.replace('lang: "en"', 'lang: "es"'), en.replace('lang: "en", ', ""),
+      en.replace('lang: "en"', '[lang]: "en"'), en.replace('lang: "en"', 'lang: "en", lang: "es"'),
+      en.replace('meta: {', 'meta: { ...extra,'),
+    ]) expect(scan(code, path), code).toContain("prop English title");
+    for (const code of [
+      es.replace('"./en"', '"./other"'), es.replace("import type", "import"),
+      es.replace("es: SiteCopy", "es: OtherCopy"), es.replace(": SiteCopy", ""),
+      es.replace('lang: "es"', 'lang: "en"'),
+    ]) expect(scan(code, "apps/site/src/copy/es.ts"), code).toContain("prop Título español");
+  });
+});
