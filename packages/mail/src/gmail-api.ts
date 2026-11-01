@@ -707,12 +707,19 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         deadline.done();
         tokens.invalidate(token);
         if (proofToken) {
-          if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
+          if (retried) {
+            const error = new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
+            await ctx.tokenResult?.(generation ?? 0, error);
+            throw error;
+          }
           throw new ProofTokenExpired();
         }
         // a fresh token refused as well: the grant is gone, the user signs in again (ops wait for it)
-        if (retried) throw new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
-        // a prepayment covered the first attempt only: the retry is another request Google counts
+        if (retried) {
+            const error = new ProviderAuthError(L("errors.gmail.revoked"), httpResponse);
+            await ctx.tokenResult?.(generation ?? 0, error);
+            throw error;
+          }
         return await api<T>(path, { ...init, prepaid: false }, true);
       }
       if (!res.ok) {

@@ -196,6 +196,8 @@ export interface ProviderContext {
   yield?(): Promise<void>;
   /** Installed by BackendCore for every saved Gmail account; standalone transports own their policy. */
   google?: GoogleRequests;
+  /** One result from the shared refresh, qualified to its issuing credentials. */
+  tokenResult?(generation: number, error?: ProviderAuthError): void | Promise<void>;
   /** The backend owns durable flag observations and committed snapshot paging. */
   flagObservation?: true;
   /** Shared by this backend; standalone provider callers may retain their own read limit. */

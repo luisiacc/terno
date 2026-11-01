@@ -400,6 +400,8 @@ describe("plan 20: the IMAP provider's own connections", () => {
         return "testpass";
       },
       store,
+      loadCursor: async () => null,
+      saveCursor: async () => {},
     } as unknown as ProviderContext;
     const p = createImapProvider(ctx, { allowInsecure: true, timeouts: { ...FAST, ...o.timeouts } });
     if (fixture) {

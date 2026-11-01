@@ -30,6 +30,7 @@ export const CHANGE_WINDOW_MS = 60_000;
 type Timer = ReturnType<typeof setTimeout>;
 
 export interface ConnectivityHooks {
+  signInRequired?(accountId: number): boolean;
   /** one sync pass of the account (coalesced by the caller) */
   sync(accountId: number): void;
   /** online, or the network changed: sockets are presumed dead, push reconnects, parked ops resume */
@@ -117,8 +118,8 @@ export class Connectivity {
   waitForSignIn(accountId: number, waiting: boolean): void {
     const a = this.accounts.get(accountId);
     if (!a) return;
-    a.signIn = waiting;
-    if (waiting && a.timer) {
+    if (!this.hooks.signInRequired) a.signIn = waiting;
+    if (this.signInRequired(accountId) && a.timer) {
       this.clearTimer(a.timer);
       a.timer = null;
       a.at = null;
@@ -130,7 +131,7 @@ export class Connectivity {
   }
 
   signInRequired(accountId: number): boolean {
-    return this.accounts.get(accountId)?.signIn === true;
+    return this.hooks.signInRequired?.(accountId) ?? this.accounts.get(accountId)?.signIn === true;
   }
 
   /** consecutive retryable failures (0: healthy) */
@@ -146,7 +147,7 @@ export class Connectivity {
   /** Local reconciliation follows the account's existing sign-in and retry admission. */
   canSync(accountId: number): boolean {
     const account = this.accounts.get(accountId);
-    return Boolean(this.online && account && !account.signIn && !account.timer);
+    return Boolean(this.online && account && !this.signInRequired(accountId) && !account.timer);
   }
 
   retryAt(accountId: number): number | null {
@@ -167,7 +168,7 @@ export class Connectivity {
    */
   failed(accountId: number, epoch: number): { failures: number; at: number } | null {
     const a = this.accounts.get(accountId);
-    if (!a || this.stopped || epoch !== this.epoch) return null;
+    if (!a || this.stopped || this.signInRequired(accountId) || epoch !== this.epoch) return null;
     a.failures++;
     const base = this.online ? this.delays[Math.min(a.failures - 1, this.delays.length - 1)]! : this.offlineRetryMs;
     this.schedule(accountId, a, this.jitter(base));
@@ -190,7 +191,7 @@ export class Connectivity {
    */
   probeLater(accountId: number): number | null {
     const a = this.accounts.get(accountId);
-    if (!a || this.stopped || a.signIn) return null;
+    if (!a || this.stopped || this.signInRequired(accountId)) return null;
     this.schedule(accountId, a, this.offlineRetryMs);
     return a.at;
   }
@@ -215,7 +216,7 @@ export class Connectivity {
       this.online = false;
       this.lastChangeAt = this.now();
       // one probe per account at the cap, however soon its retry was (the OS can be wrong about offline)
-      for (const [id, a] of this.accounts) if (!a.signIn) this.schedule(id, a, this.offlineRetryMs);
+      for (const [id, a] of this.accounts) if (!this.signInRequired(id)) this.schedule(id, a, this.offlineRetryMs);
       this.hooks.offline();
       return;
     }
@@ -240,7 +241,7 @@ export class Connectivity {
       return failing;
     }
     // a refused sign-in isn't the network's: signing in again is its retry
-    const ids = (accountId === null ? [...this.accounts.keys()] : this.accounts.has(accountId) ? [accountId] : []).filter((id) => !this.accounts.get(id)!.signIn);
+    const ids = (accountId === null ? [...this.accounts.keys()] : this.accounts.has(accountId) ? [accountId] : []).filter((id) => !this.signInRequired(id));
     for (const id of ids) this.restart(id);
     return ids;
   }

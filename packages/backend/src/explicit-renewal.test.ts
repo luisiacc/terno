@@ -57,7 +57,13 @@ async function setup(kind: "SQL" | "IndexedDB") {
     },
     answer(value: Partial<GmailConnectResult>) { answer = { ...who, refreshToken: null, ...value }; }, rotate(value: string) { proofToken = value; },
     gate() { const g = gate(); gates.push(g); return g; },
-    async mark() { await new Promise<void>((r) => setImmediate(r)); await backend.syncAccount(account.id); await backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true, lastError: "preserved failure", authScope: null }); },
+    async mark() {
+      await new Promise<void>((r) => setImmediate(r));
+      await backend.syncAccount(account.id);
+      const provider = (await backend.provider(account.id))!;
+      vi.spyOn(provider, "sync").mockRejectedValueOnce(new ProviderAuthError("preserved failure"));
+      await backend.syncAccount(account.id);
+    },
   };
 }
 

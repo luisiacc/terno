@@ -1,3 +1,4 @@
+import { AccountStatus, type StatusAuthority } from "./account-status";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
@@ -133,11 +134,6 @@ const COUNTS_EVERY_MS = 200;
 const accountKindOf = (kind: string | undefined): FieldValueOf<"accountKind"> => (kind === "imap" || kind === "gmail" ? kind : "other");
 const OP_KINDS = new Set<string>(["archive", "trash", "spam", "notSpam", "moveToInbox", "markRead", "markUnread", "star", "unstar", "send", "move", "toPrimary", "toPromotions", "toSocial", "toUpdates", "toForums", "toNoCategory"]);
 const opKindOf = (kind: string): FieldValueOf<"opKind"> => (OP_KINDS.has(kind) ? (kind as FieldValueOf<"opKind">) : "other");
-/** plan 25: the account's sign-in was refused as a whole (not only its sending) */
-const needsWholeSignIn = (s: AccountSyncState): boolean => Boolean(s.authRequired) && s.authScope !== "send";
-/** plan 25: an op this refusal holds back (a refused send holds only sends) */
-const heldBySignIn = (s: AccountSyncState, kind: string): boolean => Boolean(s.authRequired) && (s.authScope !== "send" || kind === "send");
-const gmailPolicyError = (key: string | undefined): boolean => key === "errors.gmail.serviceDisabled" || key === "errors.gmail.permissionRequired" || key === "errors.gmail.adminPolicy";
 
 const OP_SUMMARY = {
   archive: "backend.op.archive",
@@ -191,6 +187,10 @@ export class BackendCore {
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
+  private readonly statuses = new Map<number, AccountStatus>();
+  private readonly statusLoads = new Map<number, Promise<AccountStatus>>();
+  private statusNotification: Promise<void> | null = null;
+  private statusDirty = false;
   private readonly syncing = new Map<number, Promise<void>>();
   /** plan 107 (Codex R2): an account's folder change in flight (it opens when done; one queued behind it replaces it) */
   private readonly folderChanges = new Map<number, Promise<void>>();
@@ -333,6 +333,7 @@ export class BackendCore {
     });
     this.connectivity = new Connectivity(
       {
+        signInRequired: (id) => this.statuses.get(id)?.signInRequired ?? false,
         sync: (accountId) => void this.syncAccount(accountId),
         reconnect: (reason) => void this.reconnect(reason),
         offline: () => void this.wentOffline(),
@@ -487,7 +488,7 @@ export class BackendCore {
     const version = this.cooldownVersion;
     return this.admissionSnapshot = (async () => {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
-      const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([, google]) => google.paused).map(([id]) => id)];
+      const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([id, google]) => google.paused && !this.statuses.get(id)?.signInRequired).map(([id]) => id)];
       const all = snapshot.blockAllGoogle || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
       return copyOpAdmission({ ...snapshot, blockGoogleSends: !this.net.googleAvailable("send"), blockGoogleBackground: !this.net.googleAvailable("background"), blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion,
         // plan 107: an account changing its folders is passed by until it's done (the worker is kicked then)
@@ -570,7 +571,7 @@ export class BackendCore {
       void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
       // plan 25: one that needs a sign-in isn't asked every two minutes (a refused login, again and again, locks
       // accounts out); a start, a network change and signing in again still try it
-      if (!this.connectivity.pending(account.id) && !needsWholeSignIn(account.syncState)) void this.syncAccount(account.id);
+      if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) void this.syncAccount(account.id);
     }
   }
 
@@ -593,6 +594,7 @@ export class BackendCore {
   /** "Retry now" (the user: every account or one) or a window regaining focus (offline accounts, rate-limited). */
   async retryNow(accountId: number | null, reason: "user" | "focus"): Promise<void> {
     if (this.stopped) return;
+    for (const account of await this.store.accounts.list()) if (accountId === null || account.id === accountId) await this.accountStatus(account.id);
     if (reason === "user") {
       for (const [id, google] of this.google) if (accountId === null || accountId === id) google.recoverPolicy();
       this.cooldownChanged();
@@ -620,7 +622,18 @@ export class BackendCore {
       const life = this.lifetimes.get(id)!;
       void p.then((provider) => { if (this.current(life)) provider?.reset?.(); }, () => {});
     }
-    for (const account of await this.store.accounts.list()) if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
+    for (const account of await this.store.accounts.list()) {
+      const status = await this.accountStatus(account.id);
+      const life = this.lifetimes.get(account.id);
+      if (account.kind === "imap" && status.signInRequired && life && this.current(life)) {
+        const recover = status.recoveryProof(this.statusAuthority(life));
+        try {
+          const provider = await this.provider(account.id);
+          if (provider) { await provider.verify(); await recover(); await this.resumeAuth(account.id); }
+        } catch { /* A failed probe never discharges the sign-in hold. */ }
+      }
+      if (!this.unwatch.has(account.id)) this.watchAccount(account.id);
+    }
     await this.store.ops.resumeNetwork(null, this.now());
     // the worker paused while offline: whatever is due goes now
     this.kickWorker();
@@ -637,16 +650,17 @@ export class BackendCore {
     this.workerTimer = null;
     const offline = L("errors.network.offline");
     const lifetimes = new Map(this.lifetimes);
+    const networkEpoch = this.connectivity.epoch;
     for (const account of await this.store.accounts.list()) {
       // a sign-in to redo stays what it is
       const life = lifetimes.get(account.id);
       if (!life || account.syncState.status === "error" || !this.store.isOpen || !this.current(life)) continue;
-      await this.accountWrite(life, () => this.store.accounts.setSyncState(account.id, {
+      await (await this.accountStatus(account.id)).network({ live: () => this.current(life) && !this.connectivity.online && this.connectivity.epoch === networkEpoch }, {
         status: "offline",
         lastError: offline.message,
         lastErrorI18n: textRef(offline) ?? null,
         connection: { state: "offline", retryAt: this.connectivity.retryAt(account.id) },
-      }));
+      });
     }
     if (this.store.isOpen) await this.emitAccounts();
   }
@@ -949,8 +963,58 @@ export class BackendCore {
     }
   }
 
+  private async accountStatus(accountId: number): Promise<AccountStatus> {
+    const existing = this.statuses.get(accountId);
+    if (existing) return existing;
+    let loading = this.statusLoads.get(accountId);
+    if (!loading) {
+      const life = this.lifetime(accountId);
+      loading = (async () => {
+        const account = await this.store.accounts.get(accountId);
+        if (!account || life.removing || this.lifetimes.get(accountId) !== life) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        const status = new AccountStatus({
+          initial: account.syncState,
+          generation: () => this.credentialsOf(accountId),
+          write: (state) => {
+            const owner = this.lifetimes.get(accountId) ?? life;
+            const pending = this.store.accounts.setSyncState(accountId, state);
+            owner.pending.add(pending);
+            void pending.then(() => owner.pending.delete(pending), () => owner.pending.delete(pending));
+            return pending;
+          },
+          changed: () => this.statusChanged(),
+          admissionChanged: () => {
+            this.connectivity.waitForSignIn(accountId, this.statuses.get(accountId)?.signInRequired ?? false);
+            this.cooldownChanged();
+          },
+        });
+        this.statuses.set(accountId, status);
+        return status;
+      })();
+      this.statusLoads.set(accountId, loading);
+      void loading.then(() => this.statusLoads.delete(accountId), () => this.statusLoads.delete(accountId));
+    }
+    return loading;
+  }
+
+  private statusAuthority(life: AccountLifetime): StatusAuthority {
+    return { generation: this.credentialsOf(life.id), live: () => this.current(life) };
+  }
+
+  private statusChanged(): void {
+    this.statusDirty = true;
+    this.statusNotification ??= Promise.resolve().then(async () => {
+      while (this.statusDirty && !this.stopped) { this.statusDirty = false; await this.emitAccounts(); }
+    }).catch(() => this.log("warn", "Account status could not be published")).finally(() => { this.statusNotification = null; });
+  }
+
+  async accountViews(accounts: Account[]): Promise<Account[]> {
+    await Promise.all(accounts.map(async (account) => { await this.accountStatus(account.id); }));
+    return accounts.map((account) => ({ ...account, syncState: this.statuses.get(account.id)!.project() }));
+  }
+
   async emitAccounts(): Promise<void> {
-    const accounts = await this.store.accounts.list();
+    const accounts = await this.accountViews(await this.store.accounts.list());
     this.server.emit("accounts", accounts);
     if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
     // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
@@ -1333,7 +1397,10 @@ export class BackendCore {
       if (!this.current(life) || !stamp) return null;
       this.cooldownAccounts.set(accountId, { ...stamp, kind: account.kind });
       this.cooldownChanged();
+      const status = await this.accountStatus(accountId);
+      const authority = this.statusAuthority(life);
       const google = account.kind === "gmail" && !cfg.config.demo ? await savedGoogleRequests({
+        status,
         gate: this.cooldown!, net: this.net, store: this.store.providerCooldown, stamp,
         live: () => this.current(life), credentials: () => this.credentialsOf(accountId),
         write: (work) => this.accountWrite(life, work), changed: () => this.cooldownChanged(),
@@ -1343,6 +1410,9 @@ export class BackendCore {
       const provider = this.options.providers.create({
         yield: () => this.platform.yield(),
         google,
+        tokenResult: (generation, error) => {
+          if (error instanceof ProviderAuthError) return status.refuse({ ...authority, generation }, error);
+        },
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
         incoming: {
@@ -1418,7 +1488,7 @@ export class BackendCore {
     const life = this.lifetime(account.id);
     if (!this.current(life)) return;
     this.connectivity.track(account.id);
-    if (needsWholeSignIn(account.syncState)) this.connectivity.waitForSignIn(account.id, true);
+
     void this.provider(account.id).then((provider) => {
       if (!provider || !this.current(life)) return;
       this.watchAccount(account.id, provider);
@@ -1464,6 +1534,7 @@ export class BackendCore {
       void life.provider.close().catch(() => {});
       life.provider = undefined;
     }
+    await this.statuses.get(accountId)?.flush();
     const outcomes = await Promise.allSettled(life.pending);
     const failed = outcomes.find((r) => r.status === "rejected" && r.reason !== life.abort.signal.reason);
     if (failed?.status === "rejected") throw failed.reason;
@@ -1490,6 +1561,7 @@ export class BackendCore {
     if (!life?.abort.signal.aborted) return;
     this.lifetimes.delete(accountId);
     this.credentials.delete(accountId);
+    this.statuses.delete(accountId);
     this.capacitySync.delete(accountId);
     this.cooldownAccounts.delete(accountId);
     this.cooldownChanged();
@@ -1523,7 +1595,7 @@ export class BackendCore {
     };
     check();
     const account = await this.accountRead(life, () => this.store.accounts.get(message.accountId));
-    if (!account || needsWholeSignIn(account.syncState)) return { changed: false };
+    if (!account || (await this.accountStatus(message.accountId)).signInRequired) return { changed: false };
     const ids = await this.providerStore(life).providerIds([messageId]);
     const providerMsgId = ids.get(messageId);
     if (!providerMsgId || providerMsgId.startsWith("local:")) return { changed: false };
@@ -1565,25 +1637,17 @@ export class BackendCore {
       this.syncAgain.add(accountId);
       return running.then(() => this.syncing.get(accountId));
     }
-    const setState = async (patch: Partial<AccountSyncState>) => {
-      await this.accountWrite(life, async () => {
-        const policyFailure = gmailPolicyError(patch.lastErrorI18n?.key);
-        if (policyFailure && this.connectivity.signInRequired(accountId)) return;
-        // A parallel download may latch policy after the failure sync retained, before any instruction was published.
-        const google = this.google.get(accountId);
-        if (google?.policyPaused && patch.authRequired !== true && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !policyFailure) {
-          const policy = google.policyError;
-          if (!policy || this.connectivity.signInRequired(accountId)) return;
-          patch = { ...patch, status: "error", lastError: policy.message, lastErrorI18n: policy.i18n, connection: null };
-        }
-        await this.store.accounts.setSyncState(accountId, patch);
-        await this.emitAccounts();
-      });
-    };
+    let status: AccountStatus | undefined;
+    let statusRun: ReturnType<AccountStatus["begin"]> | undefined;
+    const setState = (patch: Partial<AccountSyncState>) => statusRun?.update(patch) ?? Promise.resolve();
     const work = async () => {
       captureRetry?.check();
       // before the provider: a provider made from older credentials never passes for the new ones (Codex code review #1)
       const credentials = this.credentialsOf(accountId);
+      status = await this.accountStatus(accountId);
+      if (status.signInRequired || !this.current(life)) return;
+      const authority = this.statusAuthority(life);
+      statusRun = status.begin(authority);
       const provider = await this.provider(accountId);
       if (!provider || !this.current(life)) return;
       // an account that syncs is one whose failures are counted (dropAccount untracks it)
@@ -1751,18 +1815,17 @@ export class BackendCore {
           return;
         }
         // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
-        const sendOnly = (await this.accountRead(life, () => this.store.accounts.get(accountId)))?.syncState.authScope === "send";
-        if (before?.kind === "gmail" && (credentials !== this.credentialsOf(accountId) || this.google.get(accountId)?.paused)) return;
+        if (credentials !== this.credentialsOf(accountId)) return;
         // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
         const firstChunk = more && before?.syncState.lastSyncAt === null;
         // plan 103: a chunk leaves its latest progress; a sync that's done leaves none
         const kept = more || (backfill && !backfillFinished) ? (progress ?? before?.syncState.progress ?? null) : null;
-        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        await statusRun.end({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept });
         // the card hears the end too (a sync done: nothing left to show)
         // (only an account that showed some: a regular poll sends nothing)
         if (progress !== null || before?.syncState.progress) this.server.emit("syncProgress", { accountId, progress: kept });
         if (!this.current(life)) return;
-        this.connectivity.waitForSignIn(accountId, false);
+
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
         if (startedOffline && !this.connectivity.online) this.networkChanged(true, "other");
         // the account works: whatever waited for its sign-in, or for the network, goes now
@@ -1793,11 +1856,12 @@ export class BackendCore {
         if (!this.store.isOpen) return;
         if (error instanceof ProviderCooldownError || (accountKind === "gmail" && error instanceof ProviderError && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) {
           this.connectivity.succeeded(accountId);
-          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null });
+          await status.constrain(authority, { message, i18n: lastErrorI18n }, () => !this.googleReady(accountId));
+          await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null });
           return;
         }
         if (error instanceof FlagConnectionError) {
-          await setState({ status: "error", lastError: message, lastErrorI18n });
+          await statusRun.end({ status: "error", lastError: message, lastErrorI18n });
           return;
         }
         if (!retryable) {
@@ -1808,10 +1872,10 @@ export class BackendCore {
           // run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits). A refused sign-in
           // (plan 25) waits for the user: no probe, no poll (a start and a network change still try it).
           this.connectivity.succeeded(accountId);
-          this.connectivity.waitForSignIn(accountId, auth);
+          if (auth) await status.refuse(authority, error as ProviderAuthError);
           if (!this.connectivity.online && !auth) this.connectivity.probeLater(accountId);
           // anything else proves nothing about the sign-in: a request for one stays
-          await setState({ status: "error", lastError: message, lastErrorI18n, connection: null, ...(auth && { authRequired: true, authScope: null }) });
+          await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null, ...(auth && { authRequired: true, authScope: null }) });
           return;
         }
         const retry = this.connectivity.failed(accountId, epoch);
@@ -1820,7 +1884,7 @@ export class BackendCore {
         breadcrumb("sync", "sync.retry", { accountKind, attempt: retry.failures, delayMs: retry.at - this.now() });
         // a blip is retried quietly (2 s later); the second failure in a row, or the host offline, is honest about it
         const down = wasDown || retry.failures >= 2 || !this.connectivity.online;
-        await setState({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
+        await statusRun.end({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
       }
     };
     // plan 107: a pass never overlaps a folder change of its account
@@ -1833,7 +1897,7 @@ export class BackendCore {
       const explicit = this.syncAgain.delete(accountId);
       const flags = this.flagSyncAgain.delete(accountId);
       const capacity = this.options.autoSync !== false && this.capacitySync.has(accountId) && this.connectivity.canSync(accountId);
-      if (this.current(life) && this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
+      if (this.current(life) && !this.statuses.get(accountId)?.signInRequired && this.googleReady(accountId) && (explicit || ((flags || capacity) && this.connectivity.canSync(accountId)))) {
         this.capacitySync.delete(accountId);
         void this.syncAccount(accountId);
       }
@@ -1951,6 +2015,7 @@ export class BackendCore {
 
   /** The account's authorization works again (sync succeeded, reconnected): its ops waiting for it run now. */
   async resumeAuth(accountId: number): Promise<void> {
+    if ((await this.accountStatus(accountId)).signInRequired) return;
     if ((await this.store.ops.resumeAuth(accountId, this.now())).length) this.kickWorker();
   }
 
@@ -1996,9 +2061,9 @@ export class BackendCore {
     this.lifetimes.delete(accountId);
     this.lifetime(accountId);
     this.connectivity.track(accountId);
-    this.connectivity.waitForSignIn(accountId, needsWholeSignIn(account.syncState));
+    await this.accountStatus(accountId);
     // Pending rotation recovery belongs to the next explicit demand, never a refresh of the spent old grant.
-    if (!needsWholeSignIn(account.syncState) && !this.gmailRenewals.has(accountId)) this.startAccount(account);
+    if (!(await this.accountStatus(account.id)).signInRequired && !this.gmailRenewals.has(accountId)) this.startAccount(account);
   }
 
   /** Durable writes retire refusals independently of permission to publish RPC success. */
@@ -2057,14 +2122,14 @@ export class BackendCore {
     if (previous.abort.signal.aborted) this.lifetimes.delete(accountId);
     const life = this.lifetime(accountId);
     if (flow) this.assertSignIn(accountId, flow);
+    const status = await this.accountStatus(accountId);
     this.credentials.set(accountId, this.credentialsOf(accountId) + 1);
     this.capacitySync.delete(accountId);
     this.cooldownChanged();
-    this.connectivity.waitForSignIn(accountId, false);
     await this.accountWrite(life, async () => {
       if (flow) this.assertSignIn(accountId, flow);
       installCredentials?.();
-      await this.store.accounts.setSyncState(accountId, { status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null });
+      await status.verified(this.statusAuthority(life));
       if (flow) this.assertSignIn(accountId, flow);
       await this.emitAccounts();
       if (flow) this.assertSignIn(accountId, flow);
@@ -2184,7 +2249,7 @@ export class BackendCore {
     if (!this.current(life)) return this.parkClosedOp(op);
     if (op.kind === "send") this.undispatched.delete(op.id);
     // plan 25: the account waits for a sign-in: so does the op, without knocking with the refused credentials
-    if (account && heldBySignIn(account.syncState, op.kind)) {
+    if (account && (await this.accountStatus(op.account_id)).holds(op.kind)) {
       await this.store.ops.awaitAuth(op.id, encodeText(L("errors.waitingForSignIn")), this.now());
       await this.parkedAcrossSignIn(op.account_id, credentials);
       const after = await this.store.ops.get(op.id);
@@ -2331,14 +2396,6 @@ export class BackendCore {
           const retryAt = pe?.retryable && pe.httpResponse?.status === 403 ? this.google.get(op.account_id)?.retryAt() : undefined;
           state = await this.store.ops.fail(op.id, message, pe ? pe.retryable : true, this.now(), retryPark(pe, retryAt, this.connectivity.inOutage(op.account_id)));
         }
-        if (pe?.httpResponse?.status === 403 && !pe.retryable && this.google.get(op.account_id)?.paused && credentials === this.credentialsOf(op.account_id) && this.current(life) && gmailPolicyError(pe.i18n?.key)) {
-          this.connectivity.succeeded(op.account_id);
-          await this.accountWrite(life, async () => {
-            if (credentials !== this.credentialsOf(op.account_id) || this.connectivity.signInRequired(op.account_id)) return;
-            await this.store.accounts.setSyncState(op.account_id, { status: "error", lastError: pe.message, lastErrorI18n: pe.i18n, connection: null });
-            await this.emitAccounts();
-          });
-        }
         // A permanently failed send answered nobody: recomputed lists and counts follow.
         if (state === "failed" && sending) this.notifyChanged([]);
       };
@@ -2359,13 +2416,8 @@ export class BackendCore {
     if (!account || !this.store.isOpen || !this.current(life) || credentials !== this.credentialsOf(accountId)) return;
     // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
     const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
-    // already asking (as a whole, or for this): nothing new to say
-    if (account.syncState.authRequired && (account.syncState.authScope !== "send" || scope === "send")) return;
-    const lastErrorI18n = textRef((error as { i18n?: unknown }).i18n) ?? null;
-    if (scope === null) this.connectivity.waitForSignIn(accountId, true);
-    // a refused send leaves the account's sync as it was (it works)
-    await this.accountWrite(life, () => this.store.accounts.setSyncState(accountId, { ...(scope === null && { status: "error" as const, connection: null }), lastError: error.message, lastErrorI18n, authRequired: true, authScope: scope }));
-    await this.emitAccounts();
+    const status = await this.accountStatus(accountId);
+    await status.refuse({ generation: credentials, live: () => this.current(life) }, error, scope);
   }
 
   /**
@@ -2373,7 +2425,7 @@ export class BackendCore {
    * park): it goes again now instead of waiting for a sign-in already done. True when that happened.
    */
   private async parkedAcrossSignIn(accountId: number, credentials: number): Promise<boolean> {
-    if (credentials === this.credentialsOf(accountId)) return false;
+    if (credentials === this.credentialsOf(accountId) || (await this.accountStatus(accountId)).signInRequired) return false;
     await this.resumeAuth(accountId);
     return true;
   }

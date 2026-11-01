@@ -1,4 +1,5 @@
-import { ProviderCooldownError, type ProviderError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
+import type { AccountStatus } from "./account-status";
+import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
 import { mailboxDigest, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
@@ -8,13 +9,13 @@ const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
 export interface SavedGoogleRequests extends GoogleRequests {
   readonly paused: boolean;
   readonly policyPaused: boolean;
-  readonly policyError: ProviderError | undefined;
   recoverPolicy(): void;
   retryAt(): number | undefined;
   close(): void;
 }
 
 export async function savedGoogleRequests(input: {
+  status: AccountStatus;
   gate: ProviderCooldown;
   net: NetworkPolicy;
   store: ProviderCooldownStore;
@@ -31,15 +32,12 @@ export async function savedGoogleRequests(input: {
   const installation = gate.requestsFor("installation", input.live);
   const policies = new Set([scope, installation]);
   let paused = false, closed = false;
-  let policyEpoch: number | undefined;
-  let policyError: ProviderError | undefined;
-  let recoveryRevision = 0;
-  const policyPaused = () => policyEpoch !== undefined && policyEpoch === input.credentials();
+  const policyPaused = () => input.status.policyPaused;
   let proving: Promise<void> | undefined;
   const alive = () => !closed && input.live();
   const refuse = () => new ProviderCooldownError("gmail-api", "0", "binding");
   const check = (request: HttpRequestContext, admission: MailAdmission = "background") => {
-    if (!alive() || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
+    if (!alive() || input.status.signInRequired || paused || (request.endpoint === "gmail-api" && policyPaused())) throw refuse();
     installation.check({ request });
     scope.check({ request });
     if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
@@ -49,8 +47,7 @@ export async function savedGoogleRequests(input: {
     generation: input.credentials,
     get paused() { return paused || policyPaused(); },
     get policyPaused() { return policyPaused(); },
-    get policyError() { return alive() && policyPaused() ? policyError : undefined; },
-    recoverPolicy() { recoveryRevision++; if (policyEpoch !== undefined) { policyEpoch = undefined; policyError = undefined; input.changed(); } },
+    recoverPolicy() { if (input.status.recoverPolicy()) input.changed(); },
     retryAt() {
       const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
       const dates = states.flatMap((state) => state.kind === "at" ? [state.atMs] : []);
@@ -62,7 +59,7 @@ export async function savedGoogleRequests(input: {
     accessAvailable: () => scope.accessAvailable(),
     request(descriptor, resource, init) {
       const epoch = descriptor.generation ?? input.credentials();
-      const revision = recoveryRevision;
+      const revision = input.status.policyRevision;
       const active = () => alive() && input.credentials() === epoch;
       const assert = () => { if (!active()) throw new ProviderCooldownError(descriptor.request.endpoint, "0", "closed"); check(descriptor.request, descriptor.admission); };
       const policy: ProviderRequests = {
@@ -76,8 +73,9 @@ export async function savedGoogleRequests(input: {
       };
       return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind, error) => {
         const current = active() && !init?.signal?.aborted;
-        if (current && revision === recoveryRevision && kind === "policy" && descriptor.request.endpoint === "gmail-api") { policyEpoch = epoch; policyError = error; input.changed(); }
-        await settle(current ? kind : "none");
+        try {
+          if (current && kind === "policy" && error && descriptor.request.endpoint === "gmail-api") await input.status.forbid({ generation: epoch, live: active }, revision, error);
+        } finally { await settle(current ? kind : "none"); }
       }) : undefined })(resource, init);
     },
     prove(read, admission) {

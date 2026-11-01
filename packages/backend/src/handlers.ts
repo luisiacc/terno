@@ -228,20 +228,23 @@ export function createHandlers(b: Backend): Handlers {
   const nextAccountColor = async () => ACCOUNT_COLORS[(await store.accounts.list()).length % ACCOUNT_COLORS.length]!;
 
   return {
-    "app.bootstrap": async (_p, ctx) => ({
-      host: { ...b.host, storage: store.capabilities.engine },
-      accounts: await store.accounts.list(),
-      categories: await store.categories.list(),
-      folders: await store.folders.list(),
-      counts: await store.threads.counts(b.now()),
-      // plan 17 (Codex R12): the quick filters this backend knows; a renderer offers only these
-      filters: [...LIST_FILTERS],
-      settings: await readSettings(store),
-      // agents get the mailboxes, not the person's identity
-      owner: ctx.origin === "mcp" ? null : await store.owner.get(),
-      demo: b.demo,
-      version: b.options.version,
-    }),
+    "app.bootstrap": async (_p, ctx) => {
+      const snapshot = {
+        host: { ...b.host, storage: store.capabilities.engine },
+        accounts: await store.accounts.list(),
+        categories: await store.categories.list(),
+        folders: await store.folders.list(),
+        counts: await store.threads.counts(b.now()),
+        // plan 17 (Codex R12): the quick filters this backend knows; a renderer offers only these
+        filters: [...LIST_FILTERS],
+        settings: await readSettings(store),
+        // agents get the mailboxes, not the person's identity
+        owner: ctx.origin === "mcp" ? null : await store.owner.get(),
+        demo: b.demo,
+        version: b.options.version,
+      };
+      return { ...snapshot, accounts: await b.accountViews(snapshot.accounts) };
+    },
 
     "app.export": () => exportMailbox(b),
 

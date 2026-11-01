@@ -202,10 +202,10 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
   function refresh(run?: RequestRun, admission?: MailAdmission): Promise<string> {
     if (run) { refreshRuns.add(run); if (refreshIssued) run.markDispatched(); }
     refreshing ??= Promise.resolve().then(async () => {
+      const generation = ctx.google?.generation() ?? 0;
       try {
         assertOpen();
         if (!candidate) {
-          const generation = ctx.google?.generation();
           ctx.google?.tokenUnavailable();
           ctx.google?.check({ endpoint: "oauth-token", purpose: "refresh" }, admission);
           const refreshToken = await ctx.getSecret("refreshToken");
@@ -224,9 +224,11 @@ export function createGmailProvider(ctx: ProviderContext, options: { endpoints?:
         if (pending.exchange.expiresAt <= Date.now()) throw new ProviderError(L("errors.gmail.refreshFailed", { status: 200 }), true);
         access = pending.exchange;
         ctx.google?.accessAvailable();
+        await ctx.tokenResult?.(generation);
         return access.accessToken;
       } catch (error) {
         assertOpen();
+        if (error instanceof ProviderAuthError) await ctx.tokenResult?.(generation, error);
         if (error instanceof ProviderError || error instanceof RequestNotDispatchedError) throw error;
         if (error instanceof Error && error.name === "AbortError") {
           candidate = null;
