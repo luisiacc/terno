@@ -218,6 +218,13 @@ export interface ProviderContext {
   event?(code: "push.lost" | "push.restored", fields?: { durationMs?: number }): void;
 }
 
+/** Plan 107: an account's own folders after a change, as its server lists them now. */
+export interface FolderChange {
+  folders: ProviderFolder[];
+  /** part of it didn't happen (a refusal midway): what to tell; `folders` and the keys say what did */
+  partial?: ProviderError;
+}
+
 export interface MailProvider {
   /** This provider can supply fresh authoritative evidence for all user-controlled flags. */
   flagSnapshots?: true;
@@ -246,6 +253,16 @@ export interface MailProvider {
   reset?(): void;
   /** plan 20: the sync tick asks push whether it still hears the server (a dead session reconnects) */
   heartbeat?(): void;
+  /**
+   * Plan 107: the account's own folders changed on its server (IMAP mailboxes, Gmail labels), checked against its
+   * catalog first. `folders`: the account's list as stored, for a provider with no catalog of its own (the demo).
+   * Each answers with the list as the server has it now; the host holds the account's sync and ops meanwhile.
+   */
+  createFolder?(input: { parent: string | null; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { key: string }>;
+  /** Plan 107: its subfolders follow; `renamed`: where each went (Gmail: the same keys) */
+  renameFolder?(input: { key: string; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { renamed: { from: string; to: string }[] }>;
+  /** Plan 107: with its subfolders (IMAP: and their mail, which the next sync forgets here); `deleted`: the keys that went */
+  deleteFolder?(input: { key: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { deleted: string[] }>;
   /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
   photos?(want: import("./google-photos").PhotoWant, signal?: AbortSignal): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;

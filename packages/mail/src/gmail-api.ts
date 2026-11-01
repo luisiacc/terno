@@ -11,6 +11,7 @@ import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
+import { nameTaken, planLabelCreate, planLabelDelete, planLabelRename, refusedBy } from "./folder-changes";
 import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
@@ -349,6 +350,24 @@ class GmailApiError extends ProviderError {
   constructor(readonly resource: string, readonly status: number, retryable: boolean, ambiguous: boolean, readonly reason?: GmailFailureReason, httpResponse?: HttpResponseEvidence) {
     super(reason === "DOMAIN_POLICY" ? L("errors.gmail.adminPolicy") : reason === "SERVICE_DISABLED" ? L("errors.gmail.serviceDisabled") : reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" ? L("errors.gmail.permissionRequired") : L("errors.gmail.requestFailed", { status }), retryable, ambiguous, false, httpResponse);
   }
+}
+
+/**
+ * Plan 107: why Gmail refused a label change, for the person: a name taken (409), or Google's reason as it gave it
+ * (a token, never body text); anything else (offline, a sign-in, a policy) stays as it was.
+ */
+function labelRefusal(error: unknown, name?: string): ProviderError {
+  if (error instanceof GmailApiError && !error.retryable && error.status !== 401 && !error.reason) {
+    if (error.status === 409 && name !== undefined) return nameTaken(name);
+    if (error.status >= 400 && error.status < 500) return refusedBy("Gmail", error.googleReason ?? `HTTP ${error.status}`);
+  }
+  return error instanceof ProviderError ? error : new ProviderError(L("errors.gmail.requestOffline"), true);
+}
+
+/** Plan 107: what a step that failed midway says after "couldn't be:" (Google's reason token, or the failure's own message). */
+function labelReason(error: unknown): string {
+  if (error instanceof GmailApiError) return error.googleReason ?? `HTTP ${error.status}`;
+  return error instanceof Error ? error.message : String(error);
 }
 
 function googleFailureReason(text: string): GmailFailureReason | undefined {
@@ -1300,6 +1319,33 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     unknownLabel = false;
   }
 
+  /**
+   * Plan 107: a label change on the raw catalog: every user label's exact name (hidden ones too), checked before the
+   * first request. Each request in turn; one that fails midway stops the rest, and /labels is read again so what's
+   * stored is what's true, with what didn't happen said.
+   */
+  async function labelChange<T extends { id: string }>(name: string | undefined, plan: (labels: GmailLabel[]) => T[], run: (step: T) => Promise<void>, partial: (done: number, total: number, failed: T, reason: string) => ProviderError): Promise<{ folders: ProviderFolder[]; done: T[]; partial?: ProviderError }> {
+    // whatever happens, the next pass reads /labels unless this change reads them last
+    catalog = null;
+    const steps = plan(readLabels(await api<unknown>("/labels")));
+    const done: T[] = [];
+    let failure: ProviderError | undefined;
+    for (const step of steps) {
+      try {
+        await run(step);
+      } catch (error) {
+        if (!done.length) throw labelRefusal(error, name);
+        // what's true is read below (if that fails too, the next pass reads it)
+        failure = partial(done.length, steps.length, step, labelReason(error));
+        break;
+      }
+      done.push(step);
+    }
+    const labels = readLabels(await api<unknown>("/labels"));
+    catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
+    return { folders: labelFolders(labels), done, ...(failure && { partial: failure }) };
+  }
+
   /** The labels early, during a long pass; only a pause or a sign-in matters now, any other failure waits for the core's read after it. */
   async function earlyLabels(sink: SyncPass) {
     earlyTried = true;
@@ -1417,6 +1463,34 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       if (malformed) throw malformed;
       // plan 101: older mail, after everything new
       await backfill(sink);
+    },
+
+    async createFolder({ parent, name }) {
+      let id: string | undefined;
+      const r = await labelChange(name, (labels) => [{ id: "", name: planLabelCreate(labels, parent, name) }], async (step) => {
+        const created = await api<unknown>("/labels", { method: "POST", body: JSON.stringify({ name: step.name, labelListVisibility: "labelShow", messageListVisibility: "show" }) });
+        if (!isRecord(created) || !nonempty(created.id) || created.id.length > 1000) throw invalidResponse();
+        id = created.id;
+      }, () => invalidResponse());
+      return { folders: r.folders, key: id! };
+    },
+
+    async renameFolder({ key, name }) {
+      const r = await labelChange(name, (labels) => planLabelRename(labels, key, name), async (step) => {
+        await api(`/labels/${encodeURIComponent(step.id)}`, { method: "PATCH", body: JSON.stringify({ name: step.to }) });
+      }, (done, total, failed, reason) => new ProviderError(L("errors.folder.partialRename", { done, total, name: failed.from.split("/").at(-1)!, reason }), false));
+      // keys don't change on Gmail: a favorite or the view stays where it is, with the new name
+      return { folders: r.folders, renamed: r.done.map((s) => ({ from: s.id, to: s.id })), ...(r.partial && { partial: r.partial }) };
+    },
+
+    async deleteFolder({ key }) {
+      const r = await labelChange(undefined, (labels) => planLabelDelete(labels, key), async (step) => {
+        await api(`/labels/${encodeURIComponent(step.id)}`, { method: "DELETE", responseMode: "void" }).catch((error: unknown) => {
+          // gone already (deleted elsewhere): that's what was asked
+          if (!(error instanceof GmailApiError && error.status === 404)) throw error;
+        });
+      }, (done, total, failed, reason) => new ProviderError(L("errors.folder.partialDelete", { done, total, name: failed.name.split("/").at(-1)!, reason }), false));
+      return { folders: r.folders, deleted: r.done.map((s) => s.id), ...(r.partial && { partial: r.partial }) };
     },
 
     async folders(sink) {
