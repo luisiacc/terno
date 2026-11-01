@@ -8,10 +8,12 @@ import { join } from "node:path";
 import { createServer } from "vite";
 
 const root = join(import.meta.dirname, "..");
-const port = Number(process.env.SITE_DEV_PORT ?? 5190);
-const vite = await createServer({ root, server: { middlewareMode: true }, appType: "custom" });
+const first = Number(process.env.SITE_DEV_PORT ?? 5190);
+// HMR rides on the page server, so there is no second port (24678) to collide with another Vite.
+const server = http();
+const vite = await createServer({ root, server: { middlewareMode: true, ws: { server } }, appType: "custom" });
 
-http((req, res) => {
+server.on("request", (req, res) => {
   vite.middlewares(req, res, async () => {
     try {
       const path = new URL(req.url ?? "/", "http://x").pathname;
@@ -30,4 +32,13 @@ http((req, res) => {
       res.end(String((e as Error).stack));
     }
   });
-}).listen(port, "127.0.0.1", () => console.log(`terno.app dev: http://127.0.0.1:${port}/  (designs: /designs/<id>/)`));
+});
+
+// A taken port (another checkout, another dev server) moves us to the next one rather than failing.
+let port = first;
+server.on("error", (e: NodeJS.ErrnoException) => {
+  if (e.code !== "EADDRINUSE" || port - first >= 20) throw e;
+  server.listen(++port, "127.0.0.1");
+});
+server.on("listening", () => console.log(`terno.app dev: http://127.0.0.1:${port}/  (designs: /designs/<id>/)`));
+server.listen(port, "127.0.0.1");

@@ -115,7 +115,7 @@ Codex (read-only) raised 12 points against the plan; all are accepted. Each repl
 
 - `apps/site` (`@terno/site`): five home designs at `/designs/<id>/` (Lumen, Atelier, Midnight, Bento, Letter), `/` and `/es/` render `SITE_DESIGN` (`src/site.ts`). The page ships 0.5 KB of script (the waitlist's in-place submit) and 15 KB of CSS, gzipped; no React runs in the browser.
 - Screenshots: 25 captures of the real app on the showcase mailbox (`shots/showcase.ts`, a fictional Sam Rivera), `pnpm --filter @terno/site shots`.
-- Commands: `pnpm dev:site` (live SSR on :5190), `pnpm --filter @terno/site preview` (the built site under `wrangler dev`), `pnpm test:site`, `pnpm deploy:site`, `pnpm deploy:site:preview`.
+- Commands: `pnpm dev:site` (live SSR on :5190, or the next free port; HMR shares it), `pnpm --filter @terno/site preview` (the built site under `wrangler dev`), `pnpm test:site`, `pnpm deploy:site`, `pnpm deploy:site:preview`.
 - The license is BSL 1.1 ("not an Open Source license"), so the copy says "source available" and that each version becomes AGPL after three years, never "open source".
 - Four icons joined the app's catalog for the site: Apple, Command, Github, Zap.
 
