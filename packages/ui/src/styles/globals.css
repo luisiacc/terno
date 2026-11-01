@@ -384,6 +384,18 @@
 @utility no-drag {
   -webkit-app-region: no-drag;
 }
+/* a floating layer over a title-bar strip takes its own clicks: Electron otherwise hands them to the window drag */
+[data-slot="context-menu-content"],
+[data-slot="context-menu-sub-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="popover-content"],
+[data-slot="select-content"],
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="tooltip-content"] {
+  -webkit-app-region: no-drag;
+}
 /* hairlines: one device pixel on retina, in --hairline (or --border with hairline-strong) */
 @utility hairline {
   border: var(--hairline-w) solid var(--hairline-color, var(--hairline));
