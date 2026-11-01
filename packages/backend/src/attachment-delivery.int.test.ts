@@ -25,18 +25,21 @@ function durable(backend: Backend) {
 }
 
 function storedAttachmentContents(chunks: string[], bytes: Buffer) {
-  expect(chunks.at(-1)).toBe(bytes.subarray(ATTACHMENT_CHUNK).toString("base64"));
+  const expected: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += ATTACHMENT_CHUNK) expected.push(bytes.subarray(offset, offset + ATTACHMENT_CHUNK).toString("base64"));
+  expect(chunks).toEqual(expected);
 }
 async function storedAttachment(client: RpcClient, accountId: number, assetId: string, bytes: Buffer) {
   const chunks: string[] = [];
   for (let index = 0; index < Math.ceil(bytes.length / ATTACHMENT_CHUNK); index++) {
     const part = await client.call("attachments.read", { accountId, assetId, index });
-    expect(part).not.toBeNull();
-    chunks.push(part!.dataBase64);
+    expect(part?.dataBase64).toBeTypeOf("string");
+    chunks.push(part!.dataBase64!);
   }
   storedAttachmentContents(chunks, bytes);
 }
 function gmailAttachmentContents(parsed: Awaited<ReturnType<typeof parseRaw>>, bytes: Buffer) {
+  expect(parsed.cc).toEqual([]); expect(parsed.attachments).toHaveLength(1);
   expect(parsed.subject).toBe("Gmail attachment"); expect(Buffer.from(parsed.attachments[0]!.bytes!).equals(bytes)).toBe(true);
 }
 

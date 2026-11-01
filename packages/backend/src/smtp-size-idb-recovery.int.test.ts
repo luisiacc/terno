@@ -10,7 +10,7 @@ import { nodePlatform, sqlDb } from "@terno/db";
 import { databaseName, IdbMailStore } from "@terno/idb";
 import { createRegistry, parseRaw } from "@terno/mail";
 import { SMTPServer } from "smtp-server";
-import { afterEach, chai, expect, it, vi } from "vitest";
+import { afterAll, afterEach, chai, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanup: (() => Promise<void> | void)[] = [];
@@ -19,14 +19,14 @@ const to = [{ name: "Recipient", email: "recipient@example.test" }];
 const tables = ["attachment_assets", "attachment_chunks", "attachment_bytes", "attachments", "attachment_links"] as const;
 type Rows = Record<(typeof tables)[number], Record<string, unknown>[]>;
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-const sort = (rows: Record<string, unknown>[]) => rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+const sort = (rows: Record<string, unknown>[]) => rows.sort((a, b) => String(a.id ?? a.chunk_id).localeCompare(String(b.id ?? b.chunk_id)));
 
-async function setup(adapter: "sql" | "idb", smtp?: number) {
+async function setup(adapter: "sql" | "idb", smtp?: number, owned = cleanup) {
   const dir = mkdtempSync(join(tmpdir(), "terno-size-reopen-"));
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const sends: string[] = [], unexpected: string[] = [];
   let loseResponse = true;
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+  const intercept: typeof fetch = async (input, init) => {
     const req = input instanceof Request ? input : new Request(input, init);
     const route = `${req.method} ${req.url}`;
     if (smtp) { unexpected.push(route); throw new Error(`Unexpected SMTP fixture fetch ${route}`); }
@@ -38,15 +38,16 @@ async function setup(adapter: "sql" | "idb", smtp?: number) {
       return Response.json({ id: "accepted-id", threadId: "accepted-thread" });
     }
     unexpected.push(route); throw new Error(`Unexpected route ${route}`);
-  });
+  };
   let backend!: Backend, client!: RpcClient;
   const open = async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(intercept);
     const store = adapter === "idb" ? await IdbMailStore.open({ name, factory, platform: nodePlatform, instantSearch: false }) : undefined;
     backend = new Backend({ store, dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), autoSync: false, instantSearch: false, iconTransport: null, unsubscribeTransport: null, now: () => 1000 });
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "size-reopen", origin: "renderer" }); client = new RpcClient(a);
     await backend.ready;
   };
-  cleanup.push(async () => { client?.close(); if (backend) await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
+  owned.push(async () => { client?.close(); if (backend) await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   await open();
   const accountId = (await backend.store.accounts.create({ kind: smtp ? "imap" : "gmail", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1000, providerConfig: smtp ? { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: smtp, secure: false, user: "synthetic" }, appendToSent: false } : {} })).account.id;
   await backend.store.settings.set("app", { gmailClientId: "synthetic-client" });
@@ -68,7 +69,9 @@ async function setup(adapter: "sql" | "idb", smtp?: number) {
 }
 type Fixture = Awaited<ReturnType<typeof setup>>;
 function binary(size: number, salt: number) {
-  return Buffer.from(Array.from({ length: size }, (_, i) => (i * 17 + (i >>> 8) + salt) % 256));
+  const bytes = Buffer.alloc(size);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 17 + (i >>> 8) + salt) % 256;
+  return bytes;
 }
 async function stage(t: Fixture, bytes: Buffer, index: number) {
   const ref = await t.client.call("attachments.create", { accountId: t.accountId, filename: `witness-${index}.bin`, mime: "application/octet-stream", size: bytes.length });
@@ -85,6 +88,7 @@ async function bytesIntact(t: Fixture, refs: AttachmentRef[], bytes: Buffer[]) {
 function unchanged(actual: unknown, expected: unknown) { expect(actual).toEqual(expected); }
 function firstQueueAssets(staged: Rows, queued: Rows) {
   expect(staged.attachment_assets).toHaveLength(2); expect(queued.attachments).toHaveLength(2);
+  for (const table of ["attachment_assets", "attachment_chunks", "attachment_bytes"] as const) unchanged(queued[table], staged[table]);
 }
 async function save(t: Fixture, refs: AttachmentRef[], bodyText = "Exact body") {
   return (await t.client.call("drafts.save", { accountId: t.accountId, to, subject: "Recovery witness", bodyText, attachments: refs }))!;
@@ -114,7 +118,7 @@ function wireContents(parsed: Awaited<ReturnType<typeof parseRaw>>, bytes: Buffe
   for (const [i, part] of parsed.attachments.entries()) { expect(part.filename).toBe(`witness-${i}.bin`); expect(Buffer.from(part.bytes!).equals(bytes[i]!)).toBe(true); }
 }
 async function wire(raw: Buffer, bytes: Buffer[], messageId: string) { wireContents(await parseRaw(raw), bytes, messageId); }
-async function smtpServer() {
+async function smtpServer(owned = cleanup) {
   const transcript: string[] = [], received: Buffer[] = [], envelopes: string[][] = [];
   let refused = 0;
   const log = (...args: unknown[]) => { transcript.push(format(...args)); };
@@ -128,13 +132,13 @@ async function smtpServer() {
       stream.on("end", () => { received.push(Buffer.concat(chunks)); envelopes.push(session.envelope.rcptTo.map((r) => r.address)); cb(); });
     },
   });
-  cleanup.push(() => new Promise<void>((resolve) => server.close(resolve)));
+  owned.push(() => new Promise<void>((resolve) => server.close(resolve)));
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   return { port: (server.server.address() as { port: number }).port, transcript, received, envelopes, get refused() { return refused; }, accept() { server.options.size = MAX_MIME_BYTES; } };
 }
 
-it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy refusal recover by explicit new composition", async (adapter) => {
-  const smtp = await smtpServer(), t = await setup(adapter, smtp.port);
+async function refuseSmtp(adapter: "sql" | "idb", owned: typeof cleanup) {
+  const smtp = await smtpServer(owned), t = await setup(adapter, smtp.port, owned);
   const bytes = [binary(MAX_ATTACHMENT_BYTES - ATTACHMENT_CHUNK - 7, 3), binary(ATTACHMENT_CHUNK + 7, 91)];
   const refs = await Promise.all(bytes.map((b, i) => stage(t, b, i)));
   const draft = await save(t, refs, "x".repeat(1024 * 1024)), staged = await t.rows();
@@ -158,6 +162,11 @@ it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy ref
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), queuedRows); unchanged(await publication(t, opId), message); await bytesIntact(t, refs, bytes);
   await inventory(t, oldInventory);
   await expect(t.client.call("ops.resolveUnknown", { opId, resolution: "retry" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  return { smtp, t, bytes, refs, draft, opId, queued, message, queuedRows, oldInventory };
+}
+
+async function recoverSmtp(flow: Awaited<ReturnType<typeof refuseSmtp>>) {
+  const { smtp, t, bytes, refs, draft, opId, queued, message, queuedRows, oldInventory } = flow;
   smtp.accept(); await t.reopen(); await t.backend.runWorker(); expect(smtp.received).toEqual([]); expect(smtp.refused).toBe(1);
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), queuedRows); await bytesIntact(t, refs, bytes);
   await inventory(t, oldInventory);
@@ -182,15 +191,43 @@ it.each(["sql", "idb"] as const)("%s: encoded admission and SMTP SIZE policy ref
   acceptedIdentity(await captured(t, next.opId), replacementOp); await inventory(t, bothInventory);
   ownership(await t.rows(), expectedAccepted);
   await t.reopen(); await t.backend.runWorker(); acceptedIdentity(await captured(t, next.opId), replacementOp); await inventory(t, bothInventory); ownership(await t.rows(), expectedAccepted); unchanged(await publication(t, next.opId, JSON.parse(replacementOp.payload).messageId), acceptedMessage); await bytesIntact(t, refs, bytes); expect(smtp.received).toHaveLength(1);
-});
+}
+
+for (const adapter of ["sql", "idb"] as const) {
+  describe(`${adapter}: encoded admission and SMTP SIZE recovery`, { concurrent: false }, () => {
+    const owned: typeof cleanup = [];
+    let refused: Awaited<ReturnType<typeof refuseSmtp>> | undefined;
+    let work: Promise<void> | undefined;
+    afterAll(async () => {
+      await work?.catch(() => {});
+      const errors: unknown[] = [];
+      for (const close of owned.splice(0).reverse()) {
+        try { await close(); } catch (error) { errors.push(error); }
+      }
+      vi.restoreAllMocks();
+      refused = undefined; work = undefined;
+      if (errors.length) throw new AggregateError(errors, "SMTP phase cleanup failed");
+    });
+    it("preserves staged assets through local refusal and permanent SMTP SIZE refusal", async () => {
+      work = refuseSmtp(adapter, owned).then((value) => { refused = value; });
+      await work;
+    });
+    it("recovers by explicit new composition using the same staged bytes", async () => {
+      expect(refused, "the preceding actual refusal phase must complete").toBeDefined();
+      work = recoverSmtp(refused!);
+      await work;
+    });
+  });
+}
 
 it.each(["sql", "idb"] as const)("%s: managed Gmail unknown survives reopen and only public explicit retry publishes", async (adapter) => {
   const t = await setup(adapter), bytes = [binary(ATTACHMENT_CHUNK + 7, 17), binary(ATTACHMENT_CHUNK * 2 + 13, 43)];
   const refs = await Promise.all(bytes.map((b, i) => stage(t, b, i))), draft = await save(t, refs);
+  const staged = await t.rows();
   const { opId } = await send(t, draft), queued = await captured(t, opId), message = await publication(t, opId), rows = await t.rows();
   const expectedInventory = [{ opId, messageId: message.id }]; await inventory(t, expectedInventory);
   expect(JSON.parse(queued.payload).attachments).toEqual(refs); expect(message.attachments).toMatchObject(refs);
-  expect(rows.attachment_assets).toHaveLength(2); expect(rows.attachments).toHaveLength(2);
+  firstQueueAssets(staged, rows);
   await t.backend.runWorker(); expect((await t.backend.store.ops.get(opId))?.state).toBe("unknown"); expect(t.sends).toHaveLength(1);
   unchanged(await captured(t, opId), queued); unchanged(await t.rows(), rows); unchanged(await publication(t, opId), message); await bytesIntact(t, refs, bytes);
   await inventory(t, expectedInventory);
@@ -282,4 +319,11 @@ it.each([
   const bad = structuredClone(queued);
   bad[table].push({ ...bad[table][0]!, id: "unused-row" });
   assertionFailure(() => firstQueueAssets(staged, bad), /deeply equal/);
+});
+
+it.each(["id", "chunk_id"] as const)("inventory ordering uses %s without serializing attachment payloads", (key) => {
+  let reads = 0;
+  const rows = ["b", "a"].map((id) => Object.defineProperty({ [key]: id }, "data_base64", { enumerable: true, get() { reads++; return "synthetic payload"; } }));
+  expect(sort(rows).map((row) => row[key])).toEqual(["a", "b"]);
+  expect(reads).toBe(0);
 });
