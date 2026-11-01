@@ -9,7 +9,8 @@ import { renderProbe } from "~/lib/render-probe";
 import { useHasDraft } from "~/lib/drafts";
 import { pressRow, releaseRow } from "~/lib/select";
 import { useApp, type AppState } from "~/state/app";
-import { accountLabels } from "~/lib/account-labels";
+import { accountLabels, type AccountLabel } from "~/lib/account-labels";
+import type { ReminderInfo } from "@terno/core/rpc";
 import type { DesignVariants } from "@terno/ui/designs/index";
 import { SenderAvatar } from "./sender-avatar";
 import { CodeChip } from "./code-chip";
@@ -78,6 +79,56 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const reminder = useReminders((s) => s.byThread.get(thread.id));
   /** the Reminders list's date is the reminder's */
   const remindersList = useApp((s) => s.reminders);
+  return (
+    <ThreadRowView
+      thread={thread}
+      top={top}
+      height={height}
+      compact={compact}
+      wide={wide}
+      icons={icons}
+      layout={layout}
+      reminderTop={reminderTop}
+      reminderEnd={reminderEnd}
+      selected={selected}
+      checked={checked}
+      inSelection={inSelection}
+      account={account}
+      categories={categories}
+      hasDraft={hasDraft}
+      code={code}
+      reminder={reminder}
+      remindersList={remindersList}
+      review={review}
+      interactive
+    />
+  );
+});
+
+type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" | "reminderEnd"> & {
+  wide: boolean;
+  review: number | null;
+  reminderTop: boolean;
+  reminderEnd: boolean;
+  selected: boolean;
+  checked: boolean;
+  inSelection: boolean;
+  account: AccountLabel | undefined;
+  categories: AppState["categories"];
+  hasDraft: boolean;
+  code: string | null;
+  reminder: ReminderInfo | undefined;
+  remindersList: boolean;
+  /** the list's rows press and release (selection); a preview's never do */
+  interactive: boolean;
+};
+
+/**
+ * A row's markup from explicit state, nothing read from the stores: the list
+ * renders it through ThreadRow (its selectors), plan 98's first-run preview
+ * with sample mail.
+ */
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, inSelection, account, categories, hasDraft, code, reminder, remindersList, interactive }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -202,8 +253,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       data-checked={checked || undefined}
       data-layout={layout}
       data-wide={(wide && !compact) || undefined}
-      onMouseDown={(e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey })}
-      onClick={(e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(thread.id)}
+      onMouseDown={interactive ? (e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey }) : undefined}
+      onClick={interactive ? (e) => !e.metaKey && !e.ctrlKey && !e.shiftKey && releaseRow(thread.id) : undefined}
       className={cn(
         "group/row absolute left-0 w-full cursor-default px-5 select-none",
         "flex flex-col justify-center",
@@ -301,4 +352,4 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       {reminder && <span className="sr-only">{reminder.due ? t("remind.due") : t("remind.pending")}</span>}
     </div>
   );
-});
+}
