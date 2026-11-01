@@ -516,9 +516,11 @@ export interface MailStore {
     /**
      * plan 107: how many of the account's messages are in these folders (a delete's confirmation): IMAP, a location
      * in one; Gmail, one of them in its labels, outside trash and spam as membership is. Read through the folders' own
-     * rows, never the whole mailbox.
+     * rows, never the whole mailbox. A slice at a time (Codex code review round 4 #3: overlapping sublabels over one
+     * long conversation were seconds in one call): `limit` bounds what's looked at, each thread and message once
+     * however many of the folders hold it; `messages` is this slice's; `next`: where the count goes on, null when done.
      */
-    count(accountId: number, keys: readonly string[]): Promise<number>;
+    count(accountId: number, keys: readonly string[], after: import("./types").FolderCountCursor | null, limit: number): Promise<{ messages: number; next: import("./types").FolderCountCursor | null }>;
     /**
      * Plan 107: a renamed IMAP folder keeps its threads under its new key until the next pass proves where its mail
      * went (membership is derived: that pass, or any refresh of a thread, rewrites it from locations). Up to `limit`

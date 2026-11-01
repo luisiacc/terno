@@ -1,6 +1,7 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
-import type { ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
+import type { FolderCountCursor, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
 import { keepInPage } from "@terno/store";
+import { stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
 
@@ -84,20 +85,75 @@ export function threadsOfMessages(c: Ctx, messageIds: readonly number[]): number
   return [...new Set(messageIds.map((id) => messages.get(id)?.thread_id as number | undefined).filter((t): t is number => t !== undefined))];
 }
 
-/** Plan 107: the account's messages in these folders (the SQL adapter's countFolderMessages), through the folders' own rows. */
-export function countFolderMessages(c: Ctx, accountId: number, keys: readonly string[]): number {
-  const want = new Set(keys);
-  const ids = new Set<number>();
+/**
+ * Plan 107: the account's messages in these folders (the SQL adapter's countFolderMessages), a slice at a time.
+ * Folder by folder: its places by message id (a message counted in the first folder that places it), then its
+ * rows' threads by id (one an earlier folder holds was read there), each thread's messages by id (counted by label
+ * when no folder places them). What's looked at is bounded by `limit` (Codex code review round 4 #3: every sublabel
+ * read the same long conversation again, five million visits in one call).
+ */
+export function countFolderMessages(c: Ctx, accountId: number, keys: readonly string[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  const index = new Map<string, number>();
+  keys.forEach((k, i) => { if (!index.has(k)) index.set(k, i); });
   const locations = T(c, "message_locations");
   const memberships = T(c, "thread_folders");
-  const messages = T(c, "messages");
-  for (const key of want) {
-    for (const l of locations.by("mailbox", accountId, key)) ids.add(l.message_id as number);
-    for (const r of memberships.by("folder", accountId, key)) {
-      for (const m of messages.by("fk_thread_id", r.thread_id)) if (!m.is_trash && !m.is_spam && userLabels(m).some((l) => want.has(l))) ids.add(m.id as number);
+  /** where a message is first placed among the folders (Infinity: none) */
+  const firstPlace = (id: number) => {
+    let first = Infinity;
+    for (const l of locations.by("fk_message_id", id)) first = Math.min(first, index.get(l.mailbox as string) ?? Infinity);
+    return first;
+  };
+  let messages = 0;
+  let budget = Math.max(1, limit);
+  /** a thread's messages past `from` (null: its start), up to the budget: the last one looked at, or null when read to its end */
+  const countThread = (thread: number, from: number | null): number | null => {
+    const { rows, more } = threadStretch(c, thread, from, Math.max(1, budget));
+    for (const m of rows) if (m.account_id === accountId && !m.is_trash && !m.is_spam && userLabels(m).some((l) => index.has(l)) && firstPlace(m.id as number) === Infinity) messages++;
+    budget -= rows.length;
+    return more && rows.length ? (rows.at(-1)!.id as number) : null;
+  };
+  let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
+  while (at.key < keys.length) {
+    if (budget <= 0) return { messages, next: at };
+    const key = keys[at.key]!;
+    if (index.get(key) !== at.key) { at = { key: at.key + 1, places: true, after: [] }; continue; }
+    if (at.places) {
+      // the folder's places past the last message counted, by id (one walk of its index and a native sort)
+      const from = at.after[0] ?? 0;
+      const found: number[] = [];
+      for (const k of locations.keysBy("mailbox", accountId, key)) {
+        const id = locations.rows.get(k)!.message_id as number;
+        if (id > from) found.push(id);
+      }
+      const asked = budget;
+      const ids = Float64Array.from(found).sort().subarray(0, asked);
+      for (const id of ids) if (firstPlace(id) === at.key) messages++;
+      budget -= Math.max(1, ids.length);
+      at = ids.length >= asked && found.length > asked ? { key: at.key, places: true, after: [ids[ids.length - 1]!] } : { key: at.key, places: false, after: [] };
+      continue;
     }
+    // inside a thread: the rest of it
+    const [thread = 0, message] = at.after;
+    if (message !== undefined) {
+      const cut = countThread(thread, message);
+      // read to its end: the threads after it, from the top (where the budget is looked at)
+      at = { key: at.key, places: false, after: cut !== null ? [thread, cut] : [thread] };
+      continue;
+    }
+    const asked = budget;
+    const top = stretch(c, { accountId, folder: key }, thread, asked);
+    let stopped: FolderCountCursor | null = null;
+    for (const id of top) {
+      budget--;
+      // read under the first folder that holds it
+      const held = memberships.by("fk_thread_id", id).some((r) => (index.get(r.folder as string) ?? Infinity) < at.key);
+      const cut = held ? null : countThread(id, null);
+      if (cut !== null) { stopped = { key: at.key, places: false, after: [id, cut] }; break; }
+      if (budget <= 0) { stopped = { key: at.key, places: false, after: [id] }; break; }
+    }
+    at = stopped ?? (top.length >= asked ? { key: at.key, places: false, after: [top.at(-1)!] } : { key: at.key + 1, places: true, after: [] });
   }
-  return ids.size;
+  return { messages, next: null };
 }
 
 export function isFolder(c: Ctx, accountId: number, key: string): boolean {

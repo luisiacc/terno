@@ -2,7 +2,8 @@ import type { FavoriteFolder, Folder, FolderRename } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import { ProviderError, type FolderChange, type MailProvider } from "@terno/mail/portable";
-import type { ProviderFolder } from "@terno/store";
+import type { FolderCountCursor, ProviderFolder } from "@terno/store";
+import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore as Backend } from "./core";
 import { followFavoriteFolders, setFavoriteFolder, SettingsError } from "./settings";
 
@@ -21,6 +22,9 @@ function folderError(b: Backend, error: unknown): unknown {
 
 /** threads carried a slice at a time (an IndexedDB write is ~20 µs a row: 500 stay well within a frame) */
 const CARRY_SLICE = 500;
+
+/** a count's rows looked at a slice, sized by time */
+const COUNT_SLICE = { ...BULK_SLICE, initial: 500, floor: 50, ceiling: 20_000 };
 
 const under = (path: readonly string[], prefix: readonly string[]) => path.length >= prefix.length && prefix.every((p, i) => path[i] === p);
 
@@ -97,7 +101,19 @@ export async function countFolder(b: Backend, accountId: number, key: string): P
   const target = folders.find((f) => f.key === key);
   if (!target) throw new RpcError("NOT_FOUND", L("errors.folder.notFound"));
   const keys = folders.filter((f) => under(f.path, target.path)).map((f) => f.key);
-  return { messages: await b.store.folders.count(accountId, keys), folders: keys.length };
+  // a slice at a time, sized by time, with a turn between (Codex code review round 4 #3: one call could be seconds)
+  const sizer = new SliceSizer(COUNT_SLICE);
+  let messages = 0;
+  for (let after: FolderCountCursor | null = null; ; ) {
+    const started = performance.now();
+    const r = await b.store.folders.count(accountId, keys, after, sizer.size);
+    sizer.record(sizer.size, performance.now() - started);
+    messages += r.messages;
+    if (!r.next) break;
+    after = r.next;
+    await b.yieldTurn();
+  }
+  return { messages, folders: keys.length };
 }
 
 /** Plan 107: a folder (or standard row) below Starred, or not: the account must exist, an own folder must be listed. */

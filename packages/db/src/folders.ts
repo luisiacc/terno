@@ -1,5 +1,5 @@
 import type { Folder } from "@terno/core";
-import type { ProviderFolder } from "@terno/store";
+import type { FolderCountCursor, ProviderFolder } from "@terno/store";
 import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
@@ -98,19 +98,79 @@ export function threadsOfMessages(db: Db, messageIds: readonly number[]): number
   return [...out];
 }
 
-/** Plan 107: the account's messages in these folders (MailStore.folders.count): a location in one, or a label (through its threads' rows). */
-export function countFolderMessages(db: Db, accountId: number, keys: readonly string[]): number {
-  if (!keys.length) return 0;
-  return db.get<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM (
-       SELECT l.message_id FROM message_locations l WHERE l.account_id = ?1 AND l.mailbox IN (SELECT value FROM json_each(?2))
-       UNION
-       SELECT m.id FROM thread_folders f JOIN messages m ON m.thread_id = f.thread_id
-        WHERE f.account_id = ?1 AND f.folder IN (SELECT value FROM json_each(?2)) AND m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'Label_') > 0
-          AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?2))))`,
-    accountId,
-    JSON.stringify(keys),
-  )!.n;
+/** a message counted in its thread: one of these labels (outside trash and spam), and no place in these folders (counted by it) */
+const LABELLED = `m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'Label_') > 0
+  AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?2)))
+  AND NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.mailbox IN (SELECT value FROM json_each(?2)))`;
+
+/**
+ * Plan 107: the account's messages in these folders (MailStore.folders.count; the IndexedDB adapter's
+ * countFolderMessages), a slice at a time. Folder by folder: its places (a message counted in the first folder that
+ * places it), then its rows' threads (one an earlier folder holds was read there), each thread's messages by the
+ * thread index (counted by label when no folder places them). What's looked at is bounded by `limit`, never by how
+ * many match (Codex code review round 4 #3: every sublabel read the same long conversation again, in one call).
+ */
+export function countFolderMessages(db: Db, accountId: number, keys: readonly string[], after: FolderCountCursor | null, limit: number): { messages: number; next: FolderCountCursor | null } {
+  const all = JSON.stringify(keys);
+  let messages = 0;
+  let budget = Math.max(1, limit);
+  let at: FolderCountCursor = after ?? { key: 0, places: true, after: [] };
+  while (at.key < keys.length) {
+    if (budget <= 0) return { messages, next: at };
+    const key = keys[at.key]!;
+    const earlier = JSON.stringify(keys.slice(0, at.key));
+    if (at.places) {
+      // by the place index, two seeks (the rest of a UIDVALIDITY, then the later ones: a row value compared whole
+      // seeks by the first column alone)
+      const [v = -1, u = -1] = at.after;
+      const select = `SELECT l.uidvalidity AS v, l.uid AS u, NOT EXISTS (SELECT 1 FROM message_locations e WHERE e.message_id = l.message_id AND e.mailbox IN (SELECT value FROM json_each(?3))) AS ok
+        FROM message_locations l INDEXED BY message_locations_uid WHERE l.account_id = ?1 AND l.mailbox = ?2`;
+      const asked = budget;
+      const same = v < 0 ? [] : db.all<{ v: number; u: number; ok: number }>(`${select} AND l.uidvalidity = ?4 AND l.uid > ?5 ORDER BY l.uidvalidity, l.uid LIMIT ?6`, accountId, key, earlier, v, u, asked);
+      const rows = same.length >= asked ? same : [...same, ...db.all<{ v: number; u: number; ok: number }>(`${select} AND l.uidvalidity > ?4 ORDER BY l.uidvalidity, l.uid LIMIT ?5`, accountId, key, earlier, v, asked - same.length)];
+      for (const r of rows) messages += r.ok ? 1 : 0;
+      budget -= Math.max(1, rows.length);
+      at = rows.length >= asked ? { key: at.key, places: true, after: [rows.at(-1)!.v, rows.at(-1)!.u] } : { key: at.key, places: false, after: [] };
+      continue;
+    }
+    // inside a thread: the rest of it, past (date, id)
+    const [thread = 0, date, id] = at.after;
+    if (date !== undefined && id !== undefined) {
+      const cut = countThread(thread, { date, id });
+      // read to its end: the threads after it, from the top (where the budget is looked at)
+      at = { key: at.key, places: false, after: cut ? [thread, cut.date, cut.id] : [thread] };
+      continue;
+    }
+    const asked = budget;
+    const threads = db.all<{ id: number; dup: number }>(
+      `SELECT f.thread_id AS id, EXISTS (SELECT 1 FROM thread_folders e WHERE e.thread_id = f.thread_id AND e.folder IN (SELECT value FROM json_each(?4))) AS dup
+       FROM thread_folders f INDEXED BY thread_folders_id WHERE f.account_id = ?1 AND f.folder = ?2 AND f.thread_id > ?3 ORDER BY f.thread_id LIMIT ?5`,
+      accountId, key, thread, earlier, asked,
+    );
+    let stopped: FolderCountCursor | null = null;
+    for (const t of threads) {
+      budget--;
+      const cut = t.dup ? null : countThread(t.id, null);
+      if (cut) { stopped = { key: at.key, places: false, after: [t.id, cut.date, cut.id] }; break; }
+      if (budget <= 0) { stopped = { key: at.key, places: false, after: [t.id] }; break; }
+    }
+    if (stopped) at = stopped;
+    else at = threads.length >= asked ? { key: at.key, places: false, after: [threads.at(-1)!.id] } : { key: at.key + 1, places: true, after: [] };
+  }
+  return { messages, next: null };
+
+  /** a thread's messages from `from` (null: its start), up to the budget: where it stopped, or null when read to its end */
+  function countThread(thread: number, from: { date: number; id: number } | null): { date: number; id: number } | null {
+    const select = `SELECT m.id, m.date, (${LABELLED}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?1`;
+    // one more than the budget: whether the thread goes on past it
+    const n = Math.max(1, budget) + 1;
+    const same = from ? db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?5`, thread, all, from.date, from.id, n) : [];
+    const rows = same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date ${from ? ">" : ">="} ?3 ORDER BY m.date, m.id LIMIT ?4`, thread, all, from?.date ?? Number.MIN_SAFE_INTEGER, n - same.length)];
+    const taken = rows.length > n - 1 ? rows.slice(0, n - 1) : rows;
+    for (const r of taken) messages += r.ok ? 1 : 0;
+    budget -= taken.length;
+    return rows.length > taken.length ? { date: taken.at(-1)!.date, id: taken.at(-1)!.id } : null;
+  }
 }
 
 /** Whether a mailbox is one of the account's listed folders (a role mailbox's locations decide no membership). */

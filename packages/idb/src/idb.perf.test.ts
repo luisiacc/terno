@@ -711,3 +711,41 @@ it("plan 107: a renamed folder's threads carried to its new key a slice at a tim
   // one pass over the folder in all, linear in its threads (a full scan and sort per slice grew with the folder)
   expect(total / size, "per thread").toBeLessThanOrEqual(0.03 * MULT);
 }, 900_000);
+
+it("plan 107: a delete's count over 100 overlapping sublabels on one 50,000-message conversation: each slice within a frame, each message looked at once (Codex code review round 4 #3)", async () => {
+  type Table = { all(): Iterable<Record<string, unknown>>; get(id: unknown): Record<string, unknown> | undefined; allocateId(): number; put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void };
+  const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): Table } } }).c;
+  const [messagesT, threadsT, membershipsT] = [c.db.table("messages"), c.db.table("threads"), c.db.table("thread_folders")];
+  const keys = Array.from({ length: 100 }, (_, i) => `Label_p107_${i}`);
+  const seed = [...messagesT.all()].find((m) => !m.is_trash && !m.is_spam)!;
+  // a copy of its thread, then 50,000 copies of the message in it, every one in all 100 (ingesting a 50,000-message
+  // reply chain is minutes)
+  const n = 50_000;
+  const thread = { ...threadsT.get(seed.thread_id)!, id: threadsT.allocateId(), provider_thread_id: "p107-count" };
+  const copies = Array.from({ length: n }, (_, i) => ({ ...seed, id: messagesT.allocateId(), thread_id: thread.id, provider_msg_id: `p107-count-${i}`, rfc_message_id: null, gmail_labels: JSON.stringify(keys) }));
+  const rows = keys.map((folder) => ({ thread_id: thread.id, account_id: seed.account_id, folder, last_date: 0, unread: 0 }));
+  c.db.tx(() => { threadsT.put(thread); copies.forEach((m) => messagesT.put(m)); rows.forEach((r) => membershipsT.put(r)); });
+  try {
+    const limit = 1000;
+    type Counted = Awaited<ReturnType<typeof store.folders.count>>;
+    const slices: (Sample & { result: Counted })[] = [];
+    let counted = 0;
+    for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
+      const from = after;
+      const s: Sample & { result: Counted } = await sampleAsync(() => store.folders.count(seed.account_id as number, keys, from, limit));
+      slices.push(s);
+      counted += s.result.messages;
+      if (!s.result.next) break;
+      after = s.result.next;
+    }
+    const ms = settle(slices).ms;
+    const total = ms.reduce((a, b) => a + b, 0);
+    console.log(`count over 100 sublabels of ${n}: ${slices.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`);
+    expect(Math.max(...ms), `one slice (${slices.length} slices, ${total.toFixed(1)} ms in all)`).toBeLessThanOrEqual(FRAME * MULT);
+    expect(counted).toBe(n);
+    // the conversation once (100 reads of it were five million visits), a slice of rows at a time
+    expect(slices.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
+  } finally {
+    c.db.tx(() => { rows.forEach((r) => membershipsT.deleteRow(r)); copies.forEach((m) => messagesT.deleteRow(m)); threadsT.deleteRow(thread); });
+  }
+}, 900_000);

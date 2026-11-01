@@ -31,7 +31,7 @@ const hasLabel = (m: R, key: string): boolean => {
  * splice was quadratic): a folder's kept members, the store's thread ids for an account (walked from `after` on, so
  * the stretches together walk them once).
  */
-function stretch(c: Ctx, target: FolderExportTarget, after: number, limit: number): number[] {
+export function stretch(c: Ctx, target: FolderExportTarget, after: number, limit: number): number[] {
   if (target.folder !== undefined) {
     const ids = c.scopes.folder(c, target.accountId, target.folder);
     if (ids) {
@@ -59,7 +59,7 @@ function stretch(c: Ctx, target: FolderExportTarget, after: number, limit: numbe
  * one's ids sorted natively (one numeric sort, a few milliseconds at 50,000) to seek into, so a conversation of any
  * length is read a stretch a call (Codex code review round 2 #6: one of 50,000 was read whole in one call).
  */
-function threadStretch(c: Ctx, thread: number, from: number | null, n: number): { rows: R[]; more: boolean } {
+export function threadStretch(c: Ctx, thread: number, from: number | null, n: number): { rows: R[]; more: boolean } {
   const messages = T(c, "messages");
   if (from === null && messages.count("fk_thread_id", thread) <= n) return { rows: messages.by("fk_thread_id", thread), more: false };
   const ids = Float64Array.from(messages.keysBy("fk_thread_id", thread) as IterableIterator<number>).sort();

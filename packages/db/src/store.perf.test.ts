@@ -301,3 +301,46 @@ describe("an account's Mark all as read (plan 106)", () => {
     }
   });
 });
+
+describe("a delete's count (plan 107)", () => {
+  it("100 overlapping sublabels on one 50,000-message conversation: each slice within a frame, each message looked at once (Codex code review round 4 #3)", async () => {
+    const keys = Array.from({ length: 100 }, (_, i) => `Label_p107_${i}`);
+    const seed = store.db.get<{ id: number; thread_id: number; account_id: number }>("SELECT id, thread_id, account_id FROM messages WHERE is_trash = 0 AND is_spam = 0 LIMIT 1")!;
+    const columns = (table: string) => store.db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name).filter((c) => c !== "id");
+    // a copy of a thread, then 50,000 copies of one message in it, every one in all 100 (written here: ingesting a
+    // 50,000-message reply chain is minutes)
+    const tc = columns("threads");
+    const thread = store.db.get<{ id: number }>(`INSERT INTO threads (${tc.join(", ")}) SELECT ${tc.map((c) => (c === "provider_thread_id" ? "'p107-count'" : c)).join(", ")} FROM threads WHERE id = ? RETURNING id`, seed.thread_id)!.id;
+    const mc = columns("messages");
+    const n = 50_000;
+    store.db.run(
+      `WITH RECURSIVE k(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM k WHERE i < ?)
+       INSERT INTO messages (${mc.join(", ")}) SELECT ${mc.map((c) => (c === "thread_id" ? "?" : c === "provider_msg_id" ? "'p107-count-' || k.i" : c === "gmail_labels" ? "?" : c === "rfc_message_id" ? "NULL" : c)).join(", ")} FROM messages, k WHERE messages.id = ?`,
+      n, thread, JSON.stringify(keys), seed.id,
+    );
+    for (const key of keys) store.db.run("INSERT INTO thread_folders (thread_id, account_id, folder, last_date, unread) VALUES (?, ?, ?, 0, 0)", thread, seed.account_id, key);
+    try {
+      const limit = 1000;
+      const ms: number[] = [];
+      let messages = 0;
+      for (let after: Parameters<typeof store.folders.count>[2] = null; ; ) {
+        const started = performance.now();
+        const r = await store.folders.count(seed.account_id, keys, after, limit);
+        ms.push(performance.now() - started);
+        messages += r.messages;
+        if (!r.next) break;
+        after = r.next;
+      }
+      const total = ms.reduce((a, b) => a + b, 0);
+      meta.folderCount = `${ms.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`;
+      console.log(`count over 100 sublabels of ${n}: ${meta.folderCount}`);
+      expect(Math.max(...ms), `one slice (${meta.folderCount})`).toBeLessThanOrEqual(16 * BUDGET_MULTIPLIER);
+      expect(messages).toBe(n);
+      // the conversation once (100 reads of it were five million visits), a slice of rows at a time
+      expect(ms.length).toBeLessThanOrEqual(Math.ceil((n + 2 * keys.length) / limit) + keys.length + 2);
+    } finally {
+      store.db.run("DELETE FROM messages WHERE thread_id = ?", thread);
+      store.db.run("DELETE FROM threads WHERE id = ?", thread);
+    }
+  });
+});

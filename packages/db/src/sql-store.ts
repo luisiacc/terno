@@ -900,7 +900,7 @@ export class SqlMailStore implements MailStore {
     list: async () => listFolders(this.db),
     replace: async (accountId, folders) => replaceFolders(this.db, accountId, folders),
     rebuild: async (limit) => rebuildFolders(this.db, limit),
-    count: async (accountId, keys) => countFolderMessages(this.db, accountId, keys),
+    count: async (accountId, keys, after, limit) => countFolderMessages(this.db, accountId, keys, after, limit),
     carry: async (accountId, from, to, after, limit) => carryFolder(this.db, accountId, from, to, after, limit),
   };
 

@@ -27,6 +27,25 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
   const ids = async (store: MailStore, accountId: number, folder: string, o: { filter?: "unread"; keepIds?: number[]; limit?: number } = {}) =>
     (await store.threads.list({ view: "all", accountId, folder, limit: o.limit ?? 50, filter: o.filter, keepIds: o.keepIds, now: NOW })).items.map((t) => t.id);
   const unread = async (store: MailStore) => (await store.threads.counts(NOW)).folderUnread ?? {};
+  /** a folder count to its end, `limit` rows a slice (what the backend does with yields between); `calls`: how many it took */
+  const counted = async (store: MailStore, accountId: number, keys: readonly string[], limit: number) => {
+    let messages = 0;
+    let calls = 0;
+    for (let after: Parameters<MailStore["folders"]["count"]>[2] = null; ; ) {
+      const r = await store.folders.count(accountId, keys, after, limit);
+      calls++;
+      messages += r.messages;
+      if (!r.next) return { messages, calls };
+      after = r.next;
+    }
+  };
+  const count = async (store: MailStore, accountId: number, keys: readonly string[]) => {
+    const whole = (await counted(store, accountId, keys, 10_000)).messages;
+    // the same however it's sliced
+    expect((await counted(store, accountId, keys, 1)).messages).toBe(whole);
+    expect((await counted(store, accountId, keys, 2)).messages).toBe(whole);
+    return whole;
+  };
   /** runs pending rebuilds to the end, two rows a slice (what the backend does with yields between) */
   const drain = async (store: MailStore) => {
     const touched = new Set<number>();
@@ -537,20 +556,44 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
         msg({ accountId: g!, providerMsgId: "g4", inReplyTo: "g1@test", references: ["g1@test"], subject: "Re: x", gmailLabels: ["INBOX"] }),
         msg({ accountId: g!, providerMsgId: "g5", gmailLabels: ["Label_3"] }),
       ]);
-      expect(await store.folders.count(g!, ["Label_1", "Label_2"])).toBe(2);
-      expect(await store.folders.count(g!, ["Label_2"])).toBe(1);
-      expect(await store.folders.count(g!, ["Label_3"])).toBe(1);
-      expect(await store.folders.count(g!, [])).toBe(0);
+      expect(await count(store, g!, ["Label_1", "Label_2"])).toBe(2);
+      expect(await count(store, g!, ["Label_2"])).toBe(1);
+      expect(await count(store, g!, ["Label_3"])).toBe(1);
+      expect(await count(store, g!, [])).toBe(0);
       await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }, { key: "Work/Sub", path: ["Work", "Sub"], selectable: true }]);
       await ingest(store, [
         msg({ accountId: m!, providerMsgId: "i1", inInbox: false, locations: [loc("Work", 1)] }),
         msg({ accountId: m!, providerMsgId: "i2", inInbox: false, locations: [loc("Work", 2), loc("Work/Sub", 1)] }),
         msg({ accountId: m!, providerMsgId: "i3", locations: [loc("INBOX", 1)] }),
       ]);
-      expect(await store.folders.count(m!, ["Work", "Work/Sub"])).toBe(2);
-      expect(await store.folders.count(m!, ["Work/Sub"])).toBe(1);
+      expect(await count(store, m!, ["Work", "Work/Sub"])).toBe(2);
+      expect(await count(store, m!, ["Work/Sub"])).toBe(1);
       // another account's folder of the same key isn't this one's
-      expect(await store.folders.count(g!, ["Work"])).toBe(0);
+      expect(await count(store, g!, ["Work"])).toBe(0);
+    });
+
+    it("plan 107: a count over overlapping sublabels of one long conversation looks at each thread and message once, a slice at a time (Codex code review round 4 #3)", async () => {
+      const store = await fresh();
+      const [g, m] = await withAccounts(store);
+      const keys = Array.from({ length: 6 }, (_, i) => `Label_${i + 1}`);
+      await store.folders.replace(g!, keys.map((key, i) => ({ key, path: ["A", ...(i ? [`S${i}`] : [])], selectable: true })));
+      const n = 40;
+      await ingest(store, [
+        msg({ accountId: g!, providerMsgId: "c0", rfcMessageId: "c0@test", subject: "long", gmailLabels: keys }),
+        ...Array.from({ length: n - 1 }, (_, i) => msg({ accountId: g!, providerMsgId: `c${i + 1}`, inReplyTo: "c0@test", references: ["c0@test"], subject: "Re: long", gmailLabels: i % 2 ? keys : [keys[i % keys.length]!] })),
+        msg({ accountId: g!, providerMsgId: "other", gmailLabels: [keys[3]!] }),
+      ]);
+      const limit = 5;
+      const r = await counted(store, g!, keys, limit);
+      expect(r.messages).toBe(n + 1);
+      // the conversation's messages and the threads' rows once each: no folder after the first reads it again
+      // (six reads of the conversation would be over 48 calls)
+      expect(r.calls).toBeLessThanOrEqual(Math.ceil((n + 2 + keys.length) / limit) + keys.length * 2);
+      // IMAP: a message placed in two of them, once, sliced
+      await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }, { key: "Work/Sub", path: ["Work", "Sub"], selectable: true }]);
+      await ingest(store, Array.from({ length: 7 }, (_, i) => msg({ accountId: m!, providerMsgId: `i${i}`, inInbox: false, locations: i % 2 ? [loc("Work", i + 1), loc("Work/Sub", i + 1)] : [loc("Work/Sub", i + 1)] })));
+      expect(await count(store, m!, ["Work", "Work/Sub"])).toBe(7);
+      expect(await count(store, m!, ["Work"])).toBe(3);
     });
 
     it("plan 107: a renamed IMAP folder's threads are carried to its new key in slices, once each, with their unread count", async () => {

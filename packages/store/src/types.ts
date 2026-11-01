@@ -377,6 +377,16 @@ export interface FolderExportCursor {
   message?: { id: number; date: number };
 }
 
+/**
+ * Plan 107: where a folder count goes on: in the `key`-th folder, past one of its places (`places`: its locations, in
+ * the store's own order) or past a thread of its rows (and inside it, past a message). Given back as the store returned it.
+ */
+export interface FolderCountCursor {
+  key: number;
+  places: boolean;
+  after: number[];
+}
+
 /** Plan 107: a message as the .mbox export writes it, from this computer's copy */
 export interface ExportMessage {
   id: number;
