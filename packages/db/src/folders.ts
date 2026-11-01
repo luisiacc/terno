@@ -498,6 +498,9 @@ export function rebuildFolders(db: Db, limit: number): { more: boolean; touched:
 /** Plan 107: a slice of the rows left under a key a rename is about to carry threads to (Store.folders.clear). */
 export function clearFolder(db: Db, accountId: number, key: string, limit: number): { more: boolean } {
   return db.tx(() => {
+    // a rebuild of what the name held is retired with its rows: walked on, it restored the old folder's mail beside
+    // the carried one's (Codex code review round 24 #2); the listing gives the new key its own job when it needs one
+    db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key = ?", accountId, key);
     const gone = db.all<{ thread_id: number }>(
       "DELETE FROM thread_folders WHERE folder = ? AND thread_id IN (SELECT thread_id FROM thread_folders INDEXED BY thread_folders_id WHERE account_id = ? AND folder = ? LIMIT ?) RETURNING thread_id",
       key, accountId, key, limit,

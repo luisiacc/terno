@@ -831,6 +831,46 @@ it("a folder renamed while its membership is being rebuilt keeps all its mail: t
   expect((await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).messages).toBe(3);
 });
 
+it("a folder renamed onto a name whose folder another app deleted shows none of that one's mail, though its rebuild was under way (Codex code review round 24 #2)", async () => {
+  const t = await setup(["Work", "Job"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Job", { raw: rawIdleMail("In the old job") });
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  const [a] = await t.threadsIn("Work");
+  const [b] = await t.threadsIn("Job");
+  // Job unlisted and listed again: a rebuild job, its rows cleared, its places not walked yet
+  const store = t.backend.store;
+  const listed = (await store.folders.list()).filter((f) => f.accountId === t.account.id).map(({ accountId: _a, ...f }) => f);
+  await store.folders.replace(t.account.id, listed.filter((f) => f.key !== "Job"));
+  await store.folders.replace(t.account.id, listed);
+  await store.folders.rebuild(1000);
+  // another app deletes Job; Work is renamed onto its name before a pass
+  t.server.control.deleteMailbox("Job");
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  const only = async () => {
+    expect(await t.threadsIn("Job")).toEqual([a]);
+    expect((await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).messages).toBe(1);
+    const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder: "Job", view: null });
+    await t.client.call("folders.exportCancel", { exportId: started.exportId });
+    expect(started.total).toBe(1);
+  };
+  await only();
+  await t.backend.rebuildFolders();
+  await only();
+  // the old Job's thread refreshed before a pass derives no row there either
+  await t.client.call("threads.act", { threadIds: [b!], action: "markRead" });
+  await only();
+  // the pass: Job has Work's mail, placed there with no hold (a read of Job as a reset of the old one's state held it
+  // for good), the old one's none
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  const ma = await t.messageOf(a!);
+  expect(await t.held([ma.id])).toEqual([]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+});
+
 it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

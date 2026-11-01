@@ -1093,10 +1093,14 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   function withExcept(folders: ProviderFolder[], cursor: Cursor | null | undefined, generations: ReadonlyMap<string, number | null>): ProviderFolder[] {
     const except = new Map<string, number[]>();
     const away = (path: string, uidvalidity: number) => {
-      if (!uidvalidity || !generations.has(path) || generations.get(path) === uidvalidity) return;
+      if (!uidvalidity || !generations.has(path) || generations.get(path) === uidvalidity || except.get(path)?.includes(uidvalidity)) return;
       except.set(path, [...(except.get(path) ?? []), uidvalidity]);
     };
     for (const r of Object.values(cursor?.renamed ?? {})) away(r.from, r.uidvalidity);
+    // and a rename's new path's own cached generation that isn't the server's now: a folder of that name another app
+    // deleted before the rename, whose places no pass has dropped yet (Codex code review round 24 #2: its mail was
+    // counted, exported and rebuilt into the renamed folder)
+    for (const to of Object.keys(cursor?.renamed ?? {})) away(to, cursor?.mailboxes[to]?.uidvalidity ?? 0);
     for (const { d } of allDeletions(cursor)) away(d.from, cachedGeneration(d));
     // and each new path with the generation a pending rename here moved to it, still cached under its old path: its
     // places are the new path's membership until the pass reads it and the record goes (Codex code review round 16 #1:
@@ -1199,7 +1203,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           const env = m.envelope;
           let atLocation = await locations.at(path, uidvalidity, m.uid);
           // plan 107: a mailbox renamed here kept its UIDVALIDITY: the message at this UID under its old path is this one
-          if (atLocation === null && opts.formerly?.uidvalidity === uidvalidity) atLocation = await locations.at(opts.formerly.from, uidvalidity, m.uid);
+          // (read afresh: no state, or another generation's reset, Codex code review round 24 #2)
+          if (atLocation === null && !live && opts.formerly?.uidvalidity === uidvalidity) atLocation = await locations.at(opts.formerly.from, uidvalidity, m.uid);
           if (atLocation !== null) {
             if (!(await locations.unresolved([atLocation])).length) {
               await upsertLocation(atLocation, path, uidvalidity, m.uid, flags);
@@ -1934,7 +1939,10 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, { introduced, seen, ...(cursor.mailboxes[path] === undefined ? { reidentify: true, formerly: renamedFrom(path) } : { checkpoint: swept.get(path) ?? null }) });
+            // a rename's new path whose cached state is another generation's (a folder of the name deleted elsewhere
+            // first) is read afresh by its reset: the rename's proof goes with it, else its mail was held for good
+            // (Codex code review round 24 #2)
+            await syncMailbox(c, path, cursor, sink, touched, { introduced, seen, ...(cursor.mailboxes[path] === undefined ? { reidentify: true, formerly: renamedFrom(path) } : { checkpoint: swept.get(path) ?? null, formerly: renamedFrom(path) }) });
           } catch (error) {
             tolerate(error);
           }

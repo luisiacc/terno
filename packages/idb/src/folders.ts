@@ -565,6 +565,9 @@ export function folderUnreadCounts(c: Ctx): Record<string, number> {
 /** Plan 107: a slice of the rows left under a key a rename is about to carry threads to (the SQL adapter's clearFolder). */
 export function clearFolder(c: Ctx, accountId: number, key: string, limit: number): { more: boolean } {
   const memberships = T(c, "thread_folders");
+  // a rebuild of what the name held is retired with its rows (Codex code review round 24 #2: walked on, it restored
+  // the old folder's mail beside the carried one's); the listing gives the new key its own job when it needs one
+  if (T(c, "folder_rebuilds").delete(accountId, key)) rebuildOrders.get(c)?.delete(`${accountId}\u0000${key}`);
   // read from the index and no further, then deleted (a live walk would meet what it deletes)
   const gone: R[] = [];
   for (const k of memberships.keysBy("folder", accountId, key)) {

@@ -737,6 +737,26 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await store.folders.carry(m!, "Job", "Next", 0, 10)).toEqual({ next: null });
     });
 
+    it("plan 107: clearing a rename's destination retires its rebuild, which never restores the old folder's mail (Codex code review round 24 #2)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const work = { key: "Work", path: ["Work"], selectable: true };
+      await store.folders.replace(m!, [work]);
+      await ingest(store, [msg({ accountId: m!, providerMsgId: "a", subject: "a", inInbox: false, locations: [loc("Work", 1)] })]);
+      const members = async (key: string) => (await store.threads.list({ view: "all", accountId: m!, folder: key, limit: 50 })).items.map((t) => t.id).sort((a, b) => a - b);
+      const a = await members("Work");
+      // Job listed after its mail came: a rebuild job, its old rows cleared and none of its places walked yet
+      await ingest(store, [1, 2].map((i) => msg({ accountId: m!, providerMsgId: `b${i}`, subject: `b${i}`, inInbox: false, locations: [loc("Job", i)] })));
+      await store.folders.replace(m!, [work, { key: "Job", path: ["Job"], selectable: true }]);
+      await store.folders.rebuild(100);
+      // Job deleted elsewhere, Work renamed onto its name: cleared, Work's rows carried, listed with Work's alias
+      await store.folders.clear(m!, "Job", 10);
+      await store.folders.carry(m!, "Work", "Job", 0, 10);
+      await store.folders.replace(m!, [{ key: "Job", path: ["Job"], selectable: true, aliases: [{ mailbox: "Work", uidvalidity: 1 }] }], ["Job"]);
+      expect(await drain(store)).toEqual([]);
+      expect(await members("Job")).toEqual(a);
+    });
+
     it("plan 107: a rename into a key another rename just vacated clears what it left there first, in slices (Codex code review round 14 #2)", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);
