@@ -6,7 +6,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { folderRef } from "@terno/core";
 import { demoRegistry } from "@terno/mail";
+import { ingest, msg } from "@terno/store/conformance";
 import { afterEach, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -55,4 +57,47 @@ it("IMAP-like: keys are paths, so a rename moves them (and a favorite with them)
   await t.client.call("folders.delete", { accountId: t.imap, key: "Facturas/2026" });
   expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([]);
   expect(await t.keys(t.imap)).toEqual(["Facturas=Facturas", "Facturas/2027=Facturas/2027"]);
+});
+
+it("IMAP-like: a renamed folder keeps its mail: counted, exported and through a thread's refresh (Codex code review round 19 #3)", async () => {
+  const t = await setup();
+  await t.backend.store.folders.replace(t.imap, [{ key: "Work", path: ["Work"], selectable: true }, { key: "Work/Sub", path: ["Work", "Sub"], selectable: true }]);
+  const at = (mailbox: string, uid: number) => ({ mailbox, uidvalidity: 1, uid, flags: [] as string[] });
+  await ingest(t.backend.store, [
+    msg({ accountId: t.imap, providerMsgId: "w1", rfcMessageId: "w1@test", subject: "First", inInbox: false, isRead: false, locations: [at("Work", 1)] }),
+    msg({ accountId: t.imap, providerMsgId: "w2", rfcMessageId: "w2@test", subject: "Second", inInbox: false, isRead: false, locations: [at("Work", 2)] }),
+    msg({ accountId: t.imap, providerMsgId: "s1", rfcMessageId: "s1@test", subject: "Below", inInbox: false, locations: [at("Work/Sub", 1)] }),
+  ]);
+  await t.backend.rebuildFolders();
+  const threadsIn = async (folder: string) => new Set((await t.client.call("threads.list", { view: "all", accountId: t.imap, folder })).items.map((x) => x.id));
+  const work = await threadsIn("Work");
+  expect(work.size).toBe(2);
+  const unread = async () => (await t.client.call("counts.get", {})).folderUnread?.[folderRef(t.imap, "Job")];
+  const total = async (folder: string) => {
+    const started = await t.client.call("folders.exportStart", { accountId: t.imap, folder, view: null });
+    await t.client.call("folders.exportCancel", { exportId: started.exportId });
+    return started.total;
+  };
+  await t.client.call("folders.rename", { accountId: t.imap, key: "Work", name: "Job" });
+  expect(await t.keys(t.imap)).toEqual(["Job=Job", "Job/Sub=Job/Sub"]);
+  expect(await t.client.call("folders.count", { accountId: t.imap, key: "Job" })).toEqual({ messages: 3, folders: 2 });
+  expect(await total("Job")).toBe(2);
+  expect(await total("Job/Sub")).toBe(1);
+  // a thread marked read is derived again from its places: still Job's
+  await t.client.call("threads.act", { threadIds: [[...work][0]!], action: "markRead" });
+  await t.backend.rebuildFolders();
+  expect(await threadsIn("Job")).toEqual(work);
+  expect(await unread()).toBe(1);
+  expect(await t.client.call("folders.count", { accountId: t.imap, key: "Job" })).toEqual({ messages: 3, folders: 2 });
+  // a folder made under the old name has none of it
+  await t.client.call("folders.create", { accountId: t.imap, parent: null, name: "Work" });
+  await t.backend.rebuildFolders();
+  expect(await threadsIn("Work")).toEqual(new Set());
+  expect(await t.client.call("folders.count", { accountId: t.imap, key: "Work" })).toEqual({ messages: 0, folders: 1 });
+  // deleted and made again: the new one has none of the old one's mail
+  await t.client.call("folders.delete", { accountId: t.imap, key: "Job/Sub" });
+  await t.client.call("folders.create", { accountId: t.imap, parent: "Job", name: "Sub" });
+  await t.backend.rebuildFolders();
+  expect(await threadsIn("Job/Sub")).toEqual(new Set());
+  expect(await t.client.call("folders.count", { accountId: t.imap, key: "Job/Sub" })).toEqual({ messages: 0, folders: 1 });
 });
