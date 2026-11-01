@@ -1,9 +1,11 @@
 import "fake-indexeddb/auto";
 import { generateDataset } from "@terno/mock-data";
-import type { FolderExportCursor, Platform } from "@terno/store";
+import type { FolderCountCursor, FolderExportCursor, Platform } from "@terno/store";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { machineBusy, sampleAsync, sampleSync, settle, watchLoop, type Sample } from "../../db/src/test/timing";
 import { confirmRebuilt, countFolderMessages, rebuildFolders } from "./folders";
+import { pendingAfter, stretch } from "./folder-export";
+import type { Ctx } from "./mail";
 import { IdbMailStore } from "./store";
 
 /**
@@ -165,17 +167,20 @@ it("plan 107: an .mbox export's id stretches seek, never rescan: an account and 
     ] as const) {
       for (const limit of [200, 5000]) {
         const samples: Sample[] = [];
+        let reading = 0;
         for (let after: FolderExportCursor | null = null; ; ) {
           const s = await sampleAsync(() => store.folderExport.ids(target, after, limit));
           samples.push(s);
           if (s.result.next === null) break;
+          if (s.result.next.thread < 0) reading++;
           after = s.result.next;
         }
         const pages = settle(samples).ms;
         const sorted = [...pages].sort((a, b) => a - b);
         const total = pages.reduce((a, b) => a + b, 0);
         console.log(`export ${label}, stretches of ${limit}: ${pages.length} stretches, ${total.toFixed(1)} ms in all, max ${sorted.at(-1)!.toFixed(2)} ms`);
-        expect(pages.length).toBe(Math.floor(expected / limit) + 1);
+        // a call that only read on in members whose order was still being built moves no stretch (Codex code review round 8 #5)
+        expect(pages.length - reading).toBe(Math.floor(expected / limit) + 1);
         // rescanning every member per stretch cost ~12.5 million visits in stretches of 200 at 50,000
         expect(total, `${label} / ${limit}: all stretches`).toBeLessThanOrEqual(60 * MULT);
         expect(sorted.at(-1)!, `${label} / ${limit}: one stretch`).toBeLessThanOrEqual(FRAME * MULT);
@@ -183,6 +188,59 @@ it("plan 107: an .mbox export's id stretches seek, never rescan: an account and 
     }
   } finally {
     c.db.tx(() => rows.forEach((r) => c.db.table("thread_folders").deleteRow(r)));
+  }
+}, 900_000);
+
+it("plan 107: while 300,000-member folders' orders are still being built, an export and a count read their members a bounded run a call, each once and in order (Codex code review round 8 #5)", () => {
+  const c = (store as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown; deleteRow(row: Record<string, unknown>): void } } } }).c;
+  const account = 1;
+  const N = 300_000;
+  // empty threads (nothing to read in them): what's timed is the walk of the members, written in reverse
+  const threads = Array.from({ length: N }, (_, i) => ({ id: 50_000_000 + N - i, account_id: account, last_date: 0, message_count: 0, unread_count: 0 }));
+  // a folder each, so neither finds the other's order built
+  const rows = ["Big", "Big2"].flatMap((folder) => threads.map((t) => ({ thread_id: t.id, account_id: account, folder, last_date: 0, unread: 0 })));
+  c.db.tx(() => {
+    threads.forEach((t) => c.db.table("threads").put(t));
+    rows.forEach((r) => c.db.table("thread_folders").put(r));
+  });
+  try {
+    for (const run of ["export", "count"] as const) {
+      const samples: Sample[] = [];
+      const seen: number[] = [];
+      let pending = 0;
+      if (run === "export") {
+        // the stretches back to back, no turn between: the order's build gets no background time
+        for (let after = 0; ; ) {
+          let top: number[] | null = null;
+          samples.push(sampleSync(() => (top = stretch(c, { accountId: account, folder: "Big" }, after, 200))));
+          if (top === null) { pending++; after = pendingAfter(after); continue; }
+          const got: number[] = top;
+          seen.push(...got);
+          if (got.length < 200) break;
+          after = got.at(-1)!;
+        }
+        expect(seen.length).toBe(N);
+        for (let i = 1; i < seen.length; i++) if (seen[i]! <= seen[i - 1]!) throw new Error(`out of order at ${i}`);
+      } else {
+        for (let at: FolderCountCursor | null = null; ; ) {
+          let r!: { messages: number; next: FolderCountCursor | null };
+          samples.push(sampleSync(() => (r = countFolderMessages(c, account, ["Big2"], at, 2000))));
+          if (r.next && r.next.after[0]! < 0) pending++;
+          if (!r.next) break;
+          at = r.next;
+        }
+      }
+      const ms = settle(samples).ms.sort((a, b) => a - b);
+      console.log(`${run} while the order builds: ${samples.length} calls (${pending} reading members), max ${ms.at(-1)!.toFixed(2)} ms`);
+      // before: the first call walked and sorted every member at once
+      expect(ms.at(-1)!, `${run}: one call`).toBeLessThanOrEqual(FRAME * MULT);
+      expect(pending, `${run}: read while the order was being built`).toBeGreaterThan(0);
+    }
+  } finally {
+    c.db.tx(() => {
+      rows.forEach((r) => c.db.table("thread_folders").deleteRow(r));
+      threads.forEach((t) => c.db.table("threads").deleteRow(t));
+    });
   }
 }, 900_000);
 

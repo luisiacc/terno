@@ -1,7 +1,7 @@
 import { folderRef, listFilterOf, waitingCutoff, type Folder, type ThreadSummary } from "@terno/core";
 import type { FolderCountCursor, FolderPlace, ListParams, Page, ProviderFolder, ScopeParams } from "@terno/store";
 import { keepInPage } from "@terno/store";
-import { stretch, threadStretch } from "./folder-export";
+import { pendingAfter, stretch, threadStretch } from "./folder-export";
 import { FILTER_TEST, seekAfter, T, toSummary, VIEW_TEST, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
 
@@ -183,6 +183,8 @@ export function countFolderMessages(c: Ctx, accountId: number, keys: readonly Fo
     }
     const asked = budget;
     const top = stretch(c, { accountId, folder: key }, thread, asked);
+    // a big folder's members still being read: the next slice goes on (Codex code review round 8 #5)
+    if (top === null) return { messages, next: { key: at.key, places: false, after: [pendingAfter(thread)] } };
     let stopped: FolderCountCursor | null = null;
     for (const id of top) {
       budget--;
