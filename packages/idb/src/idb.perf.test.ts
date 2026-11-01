@@ -768,6 +768,17 @@ it("plan 107: a renamed folder's threads carried to its new key a slice at a tim
   expect(Math.max(...ms), "one slice").toBeLessThanOrEqual(FRAME * MULT);
   // one pass over the folder in all, linear in its threads (a full scan and sort per slice grew with the folder)
   expect(total / size, "per thread").toBeLessThanOrEqual(0.03 * MULT);
+  // what it left under the carried key cleared before another rename's carry, a slice at a time (Codex code review round 14 #2)
+  const cleared: Sample[] = [];
+  for (let more = true; more; ) {
+    const s = await sampleAsync(() => store.folders.clear(account, "Label_carried", 500));
+    cleared.push(s);
+    more = s.result.more;
+  }
+  const clearMs = settle(cleared).ms;
+  console.log(`clear of ${size} rows: ${cleared.length} slices, max ${Math.max(...clearMs).toFixed(2)} ms`);
+  expect(cleared.length).toBe(Math.floor(size / 500) + 1);
+  expect(Math.max(...clearMs), "one clear slice").toBeLessThanOrEqual(FRAME * MULT);
 }, 900_000);
 
 it("plan 107: a delete's count over 100 overlapping sublabels on one 50,000-message conversation: each slice within a frame, each message looked at once (Codex code review round 4 #3)", async () => {
