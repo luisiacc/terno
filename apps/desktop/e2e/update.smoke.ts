@@ -56,6 +56,7 @@ let feedUrl: string;
 const requests: string[] = [];
 // every header name the feed received (no identifier or credential may ride along)
 const headerNames = new Set<string>();
+const agents = new Set<string>();
 let app: ElectronApplication | null = null;
 let page: Page;
 
@@ -77,7 +78,7 @@ function buildTwo() {
 }
 
 /** A fresh 0.1.0 in a temp "Applications", a fresh profile, and the 0.1.1 feed (its zip tampered with when asked). */
-function stage(o: { tamper: boolean }) {
+function stage(o: { tamper: boolean; minimum?: string }) {
   rmSync(root(), { recursive: true, force: true });
   rmSync(join(work, "Applications"), { recursive: true, force: true });
   rmSync(join(work, "feed"), { recursive: true, force: true });
@@ -94,6 +95,11 @@ function stage(o: { tamper: boolean }) {
     const at = Math.floor(buf.length / 2);
     buf[at] = buf[at]! ^ 0xff;
     writeFileSync(file, buf);
+  }
+  // plan 95: the release requires a version (what package.mjs writes from TERNO_MINIMUM_VERSION)
+  if (o.minimum) {
+    const yml = join(work, "feed", "latest-mac.yml");
+    writeFileSync(yml, `${readFileSync(yml, "utf8").trimEnd()}\nminimumVersion: '${o.minimum}'\n`);
   }
   cleanSquirrel();
   requests.length = 0;
@@ -132,7 +138,14 @@ test.beforeAll(async () => {
   test.skip(process.platform !== "darwin" || process.arch !== "arm64", "macOS on Apple silicon only");
   work = mkdtempSync(join("/tmp", "terno-update-e2e-"));
   server = createServer((req, res) => {
+    // the environment this runs in may probe any new listening port (GET / from Node's fetch, seen with no Terno
+    // running at all): that isn't Terno, whose updater never asks for "/" and doesn't send Node's user agent
+    if (req.url === "/" && req.headers["user-agent"] === "node") {
+      res.writeHead(404).end();
+      return;
+    }
     requests.push(req.url ?? "");
+    agents.add(String(req.headers["user-agent"]));
     for (const name of Object.keys(req.headers)) headerNames.add(name.toLowerCase());
     const file = join(work, "feed", decodeURIComponent((req.url ?? "/").split("?")[0]!).replace(/^\/+/, ""));
     if (!file.startsWith(join(work, "feed")) || !existsSync(file) || statSync(file).isDirectory()) {
@@ -181,6 +194,8 @@ test("a corrupted download is refused (sha512): an integrity error, and the app 
   expect(requests.some((r) => r.includes("Terno-0.1.1-arm64-mac.zip"))).toBe(true);
   // no staged-rollout id, cookie or credential went out, and no id file was made in the profile
   for (const name of ["x-user-staging-id", "cookie", "authorization"]) expect(headerNames).not.toContain(name);
+  // the probe filtered above can't hide the updater: it never sends Node's user agent
+  expect([...agents].filter((a) => a === "node")).toEqual([]);
   expect(existsSync(join(profile(), ".updaterId"))).toBe(false);
 });
 
@@ -330,4 +345,29 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   } finally {
     db.close();
   }
+});
+
+test("a required update (plan 95): the feed's minimum covers the window, and one click on Update Terno installs it and relaunches", async () => {
+  stage({ tamper: false, minimum: "0.1.1" });
+  await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US" });
+  // local mode: nothing was asked on its own; the user's check reads the requirement
+  expect(requests).toEqual([]);
+  await updates("check");
+  const required = page.getByTestId("required-update");
+  await expect(required).toBeVisible({ timeout: 20_000 });
+  await expect(required).toContainText("This version (0.1.0) is no longer supported. Terno 0.1.1 is ready to install.");
+  await expect(required).toContainText("Terno checks GitHub for the new version, downloads it and restarts.");
+  // quitting doesn't escape it: the requirement is kept for the next launch
+  expect(JSON.parse(readFileSync(join(profile(), "updates/prefs.json"), "utf8"))).toMatchObject({ requiredMinimum: "0.1.1" });
+  const closed = new Promise<void>((r) => app!.once("close", () => r()));
+  await page.getByTestId("update-now").click();
+  await closed;
+  app = null;
+  await expect.poll(() => logLines().some((l) => l.code === "update.applied" && l.version === "0.1.1"), { timeout: 180_000, intervals: [1000] }).toBe(true);
+  expect(bundleVersion()).toBe("0.1.1");
+  const pids = pidsOfBundle();
+  process.kill(Math.min(...pids), "SIGTERM");
+  await expect.poll(() => pidsOfBundle().length, { timeout: 60_000 }).toBe(0);
+  // met: the new version forgets the requirement
+  expect(JSON.parse(readFileSync(join(profile(), "updates/prefs.json"), "utf8")).requiredMinimum).toBeNull();
 });
