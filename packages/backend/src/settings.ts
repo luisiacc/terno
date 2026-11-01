@@ -345,6 +345,11 @@ export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFo
  * Nothing is written when none is touched (null).
  */
 export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all"; listed?: ReadonlySet<string> }): Promise<FavoriteFolder[] | null> {
+  // a pass with nothing to follow reads and writes nothing more (it runs on every one that stores a list)
+  if (!change.renamed?.length && !change.deleted?.length) {
+    const listed = change.listed;
+    if (!listed || (await readFavoriteFolders(store)).every((f) => f.accountId !== accountId || f.folder === null || listed.has(f.folder))) return null;
+  }
   return store.settings.update<StoredSettings, FavoriteFolder[] | null>("app", {}, (raw) => {
     const s = migrate(raw);
     const list = s.favoriteFolders ?? [];
