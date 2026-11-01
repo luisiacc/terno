@@ -967,8 +967,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    */
   async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
     // plan 107: the old UIDVALIDITY is a mailbox renamed away and deleted here, the path a new one: its places are the
-    // deletion's to forget once every folder is read, never held as a reset's (Codex code review round 6 #1)
-    if (Object.values(cursor.deleted ?? {}).some((r) => typeof r !== "number" && r.from === path && r.uidvalidity === olduidvalidity)) return new Set();
+    // deletion's to forget once every folder is read, never held as a reset's (Codex code review round 6 #1); one
+    // deleted here and made again likewise (Codex code review round 7 #2)
+    if (Object.entries(cursor.deleted ?? {}).some(([p, r]) => typeof r === "number" ? p === path && r === olduidvalidity : r.from === path && r.uidvalidity === olduidvalidity)) return new Set();
+    // one renamed away and made again: its places are the rename's proof, for the new path to claim (Codex code review
+    // round 7 #1); the path's state goes now, so a folder read before it this pass knows it's another mailbox
+    if (Object.values(cursor.renamed ?? {}).some((r) => r.from === path && r.uidvalidity === olduidvalidity)) {
+      delete cursor.mailboxes[path];
+      await ctx.saveCursor(cursor);
+      return new Set();
+    }
     // every id gathered a few thousand at a time, the loop given turns (Codex R42: 500,000 merged at once, 80 ms)
     const ids = new Set<number>();
     await addAll(ids, cursor.resetPending?.[path] ?? []);
@@ -1549,10 +1557,20 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // listed before they sync: a location in a listed folder is membership as it's written
         await sink.setFolders?.(folders, moved);
         // plan 107 (Codex R1): mailboxes deleted here. A record is written before its DELETE is sent (Codex code review
-        // round 2 #2): one the LIST still has wasn't carried out (its answer was lost), so only the record goes
+        // round 2 #2): one the LIST still has under the same UIDVALIDITY wasn't carried out (its answer was lost), so
+        // only the record goes; under another, it was made again since: the record stays, for the deleted one's mail
+        // (Codex code review round 7 #2). One STATUS can't answer waits for a pass that can.
         const stillListed = cursor.deleted ? new Set(list.filter((m) => !classifyMailbox(m).unusable).map((m) => m.path)) : null;
-        for (const path of Object.keys(cursor.deleted ?? {})) {
+        const unsettled = new Set<string>();
+        for (const [path, r] of Object.entries(cursor.deleted ?? {})) {
           if (!stillListed!.has(path)) continue;
+          const was = typeof r === "number" ? r : r.uidvalidity;
+          // a \Noselect one holds no mail: no generation to tell
+          if (was && list.some((m) => m.path === path && selectableMailbox(m))) {
+            const now = await c.status(path, { uidValidity: true }).then((s) => (s && Number(s.uidValidity)) || null, () => null);
+            if (now === null) unsettled.add(path);
+            if (now !== was) continue;
+          }
           delete cursor.deleted![path];
           if (!Object.keys(cursor.deleted!).length) delete cursor.deleted;
           await ctx.saveCursor(cursor);
@@ -1560,7 +1578,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // the rest are forgotten once every folder here has been read (Codex code review round 4 #1): mail another app
         // moved out first is met there, so only what no folder has is proven gone. Each by where its mail is cached:
         // its own path, or the one it had before a rename no pass read (round 4 #2)
-        const deletions = Object.entries(cursor.deleted ?? {}).map(([path, r]) => ({ path, from: typeof r === "number" ? path : r.from, uidvalidity: typeof r === "number" ? r : r.uidvalidity }));
+        const deletions = Object.entries(cursor.deleted ?? {}).filter(([path]) => !unsettled.has(path)).map(([path, r]) => ({ path, from: typeof r === "number" ? path : r.from, uidvalidity: typeof r === "number" ? r : r.uidvalidity }));
         const deletedFrom = new Set(deletions.map((d) => d.from));
         const seen = new Set<number>();
         // Gmail-style servers keep archived mail only in "All Mail"
@@ -1636,10 +1654,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // a candidate is one with no place left: one the journal names that's placed in a folder still here (a pass
         // that stopped had placed it) isn't, whatever folder is read first (Codex R38); a vanished folder's are
         const vanishedPaths = new Set(vanished);
-        // plan 107: the old path of a mailbox renamed here, while it's gone from the LIST (proof its UIDs moved with it)
+        // plan 107: the old path of a mailbox renamed here, while it's gone from the LIST or another mailbox now (proof
+        // its UIDs moved with it; Codex code review round 7 #1: made again, its reset drops the state)
+        const replaced = (r: { from: string; uidvalidity: number }) => vanishedPaths.has(r.from) || cursor.mailboxes[r.from]?.uidvalidity !== r.uidvalidity;
         const renamedFrom = (path: string) => {
           const r = cursor.renamed?.[path];
-          return r && vanishedPaths.has(r.from) ? r : undefined;
+          return r && replaced(r) ? r : undefined;
         };
         const ask = [...pending];
         const breathe = breather();
@@ -1688,12 +1708,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         // plan 107: a mailbox renamed here whose new path read under the same UIDVALIDITY has its mail placed there now;
         // the old path is forgotten with no hold (a UID that didn't turn up is held, as a vanished folder's). Another
-        // UIDVALIDITY, or a new path that's gone, leaves it to the vanished-folder path; one not read yet waits.
+        // UIDVALIDITY, or a new path that's gone, leaves it to the vanished-folder path; one not read yet waits. An old
+        // path made again has only the record's UIDVALIDITY's places forgotten, whatever the new path read as (its reset
+        // left them to the record: Codex code review round 7 #1).
         const renamedAway = new Set<string>();
         for (const [to, r] of incomplete ? [] : Object.entries(cursor.renamed ?? {})) {
           const state = cursor.mailboxes[to];
-          if (state?.uidvalidity === r.uidvalidity && vanishedPaths.has(r.from)) {
-            await forgetMailbox(cursor, r.from, r.uidvalidity, "hold", sink, c, check);
+          // a generation deleted here since is the deletion's to forget (Codex code review round 6 #1)
+          const live = listed.has(r.from);
+          if (replaced(r) && !deletions.some((d) => d.from === r.from && d.uidvalidity === r.uidvalidity) && (live || state?.uidvalidity === r.uidvalidity)) {
+            await forgetMailbox(cursor, r.from, r.uidvalidity, "hold", sink, c, check, undefined, live);
             renamedAway.add(r.from);
           }
           delete cursor.renamed![to];
