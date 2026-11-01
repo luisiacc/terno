@@ -132,6 +132,9 @@ export class ProviderAuthError extends ProviderError {
 }
 
 /** Where providers deliver synced data. The backend implements it (chunking, filters, events). */
+/** plan 101: a pass's share of older mail; then another pass (new mail and its notices are never more than this behind) */
+export const BACKFILL_CHUNK_MS = 30_000;
+
 export interface SyncSink {
   captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number };
   blockCapture?(locator: import("@terno/core").CaptureLocator, reason: import("@terno/core").CaptureReason, revision: number): Promise<void>;
@@ -149,6 +152,13 @@ export interface SyncSink {
   windowStart: number;
   /** Effective configured window; stable across retries even as windowStart advances with the clock. */
   windowDays?: number;
+  /**
+   * Plan 101: older mail a widened window asks for (ms), downloaded after the pass's own work, a bounded chunk a
+   * pass: `backfillMore()` asks for another pass soon, `backfillDone(request)` says the span is all here.
+   */
+  backfill?: import("@terno/core").BackfillRequest;
+  backfillMore?(): void;
+  backfillDone?(request: import("@terno/core").BackfillRequest): Promise<void>;
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;
   setSyncState(patch: Partial<AccountSyncState>): Promise<void>;

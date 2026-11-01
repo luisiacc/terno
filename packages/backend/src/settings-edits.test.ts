@@ -105,11 +105,12 @@ describe("accounts.update", () => {
     await client.call("sync.now", { accountId: a.id });
     await until(() => windows.length === 2);
     expect(windows[1]!.windowStart).toBe(NOW - 14 * DAY);
+    // plan 101: a widening (14 days → General's 180, then General to 365) starts a pass of its own to download
+    // the older mail; the latest pass uses the widest window
     await client.call("accounts.update", { id: a.id, syncWindowDays: null });
     await client.call("settings.update", { syncWindowDays: 365 });
-    await client.call("sync.now", { accountId: a.id });
-    await until(() => windows.length === 3);
-    expect(windows[2]!.windowStart).toBe(NOW - 365 * DAY);
+    await until(() => windows.at(-1)?.windowStart === NOW - 365 * DAY);
+    expect(windows.length).toBeGreaterThan(2);
   });
 });
 

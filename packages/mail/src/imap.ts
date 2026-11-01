@@ -9,7 +9,7 @@ import { headerFields, messageAddresses, parseListId, parseRaw, splitIds } from 
 import { isNetworkError } from "./net-errors";
 import { ImapIdentityError } from "@terno/store";
 import { sendViaSmtp } from "./smtp";
-import { ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderIdentityError, ProviderError, type FlagUpdate, type ImapAccountConfig, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 type Role = "inbox" | "sent" | "archive" | "all" | "junk" | "trash" | "drafts";
 
@@ -23,6 +23,11 @@ interface MailboxState {
 
 interface Cursor {
   mailboxes: Record<string, MailboxState>;
+  /**
+   * plan 101: older mail a widened window asks for, for that request's span (ms): the mailboxes finished, by
+   * `path:uidvalidity`, and per mailbox the UID the next chunk reads below (newest first)
+   */
+  backfill?: { since: number; until: number; done: string[]; below: Record<string, number>; failed?: Record<string, number>; held?: Record<string, number[]> };
   roles?: Partial<Record<Role, string>>;
   /** plan 68: sync passes so far; without CONDSTORE an unchanged-looking folder is still checked every CHECK_EVERY */
   pass?: number;
@@ -631,6 +636,9 @@ function hasAttachmentPart(node: MessageStructureObject | undefined): boolean {
   return (node.childNodes ?? []).some(hasAttachmentPart);
 }
 
+/** plan 101: a folder that refuses its backfill read is tried by this many passes before it's left out */
+const BACKFILL_FOLDER_TRIES = 3;
+
 /** The address fields fetched raw beside the envelope (plan 34: parsed by us, the envelope's when one is missing). */
 const ADDRESS_HEADERS = ["from", "to", "cc", "bcc", "reply-to"];
 
@@ -889,7 +897,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number }): Promise<number | undefined> {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[] }): Promise<number | undefined> {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -902,16 +910,18 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       // the validity this folder's stored places were read under: its state's, else a preview's (plan 79)
       const before = state?.uidvalidity ?? cursor.previewed?.[path];
       const reset = before !== undefined && before !== uidvalidity;
+      // plan 101: older UIDs of a folder read before, as it was: a reset is the regular pass's (it reads the wider window)
+      if (opts.uids && (!hadState || reset)) return;
       if (reset) {
         await resetLocations(cursor, path, before, touched);
         state = undefined;
       }
       const live = state !== undefined;
       const reidentify = reset || opts.reidentify === true;
-      const searched = await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
+      const searched = opts.uids ?? await c.search(state ? { uid: `${state.uidnext}:*` } : reidentify ? { all: true } : { since: new Date(sink.windowStart) }, { uid: true });
       if (!searched) throw new ProviderError(L("errors.imap.listRefused"), false);
       // a preview: the most recently arrived (highest UIDs) of the window
-      const found = state ? searched.filter((uid) => uid >= state!.uidnext) : opts.preview !== undefined ? searched.sort((a, b) => a - b).slice(-opts.preview) : searched;
+      const found = opts.uids ? opts.uids : state ? searched.filter((uid) => uid >= state!.uidnext) : opts.preview !== undefined ? searched.sort((a, b) => a - b).slice(-opts.preview) : searched;
       const fresh: IncomingMessage[] = [];
       const claimed = new Map<string, number>();
       let held = Infinity;
@@ -951,11 +961,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           if (uncertain) {
             held = Math.min(held, m.uid);
+            opts.heldUids?.push(m.uid);
             continue;
           }
           if (existing || (claimed.has(key) && claimed.get(key) !== m.uid)) key = `${key}#${path}:${uidvalidity}:${m.uid}`;
           // A stable per-locator key that lost its locator also needs proof, never an ingest overwrite.
-          if (await store.messageByProviderId(key)) { held = Math.min(held, m.uid); continue; }
+          if (await store.messageByProviderId(key)) { held = Math.min(held, m.uid); opts.heldUids?.push(m.uid); continue; }
           claimed.set(key, m.uid);
           const old = reidentify && new Date(env.date ?? m.internalDate ?? Date.now()).getTime() < sink.windowStart;
           if (old) continue;
@@ -998,13 +1009,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         }
         if (expected.size) throw new ProviderError(L("errors.imap.listRefused"), false);
       }
-      if (fresh.length) await sink.ingest(fresh, { live });
+      // old mail (plan 101) is never live: it notifies nothing, as a first sync's doesn't
+      if (fresh.length) await sink.ingest(fresh, { live: live && !opts.uids });
       const inserted = await storedIds(fresh.map((m) => m.providerMsgId!), (key) => store.messageByProviderId(key));
       await addAll(touched, inserted);
       await addAll(opts.introduced, inserted);
       // a preview acknowledges nothing: the read after it takes the whole folder, finding these where they are
       // (its UIDVALIDITY, for the caller to keep)
       if (opts.preview !== undefined) return uidvalidity;
+      // a backfill chunk acknowledges nothing either: the folder's own state (uidnext, its snapshot) is the regular pass's
+      if (opts.uids) return uidvalidity;
 
       // a first read or a reset read everything now; a mailbox we had is acknowledged as its sweep saw it
       const seen: Snapshot | null = reset || !hadState ? snapshotOf(mb) : (opts.checkpoint ?? null);
@@ -1022,6 +1036,95 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
     }
   }
 
+
+  /**
+   * Plan 101: older mail a widened window asks for, after the pass's own work. Every folder read before is searched
+   * for the span (`SINCE`/`BEFORE`, below its `uidnext`), its UIDs taken newest first 250 at a time through the
+   * same identification as a first read, never live; progress saved a chunk at a time, at most BACKFILL_CHUNK_MS a
+   * pass. A message held back for identity stays with the regular passes; it never blocks completion.
+   */
+  async function backfillMailboxes(c: ImapFlow, cursor: Cursor, sink: SyncSink, check: () => void) {
+    const request = sink.backfill;
+    if (!request) return;
+    // saved progress for this request only, field by field; paths are keys, so a null prototype (a folder may be "__proto__")
+    const saved = cursor.backfill;
+    const counts = (v: unknown) => v && typeof v === "object" && Object.values(v).every((n) => Number.isSafeInteger(n) && (n as number) > 0);
+    const valid = saved && saved.since === request.since && saved.until === request.until && Array.isArray(saved.done) && saved.done.every((k) => typeof k === "string")
+      && counts(saved.below) && (saved.failed === undefined || counts(saved.failed))
+      && (saved.held === undefined || (typeof saved.held === "object" && Object.values(saved.held).every((l) => Array.isArray(l) && l.every((uid) => Number.isSafeInteger(uid) && uid > 0))));
+    const map = <T,>(from: Record<string, T> | undefined) => Object.assign(Object.create(null) as Record<string, T>, valid ? from : {});
+    const state: NonNullable<Cursor["backfill"]> = cursor.backfill = {
+      since: request.since, until: request.until, done: valid ? [...saved.done] : [],
+      below: map(saved?.below), failed: map(saved?.failed), held: map(saved?.held),
+    };
+    const started = Date.now();
+    const over = () => Date.now() - started > BACKFILL_CHUNK_MS;
+    // one set for the whole run (Codex review): a twin read from INBOX earlier in it isn't held back in Projects
+    const introduced = new Set<number>();
+    const touched = new Set<number>();
+    const pause = async () => { await settle(); await ctx.saveCursor(cursor); sink.backfillMore?.(); };
+    // what the run read is reconciled like any pass's (Codex review: a location's flags changed meanwhile aren't lost)
+    const settle = async () => { if (touched.size) { await reconcile(touched, sink, true, c, false, check); touched.clear(); } };
+    let waiting = false;
+    const keys = Object.keys(cursor.mailboxes).flatMap((path) => { const known = cursor.mailboxes[path]; return known ? [{ path, known, key: `${path}:${known.uidvalidity}` }] : []; });
+    for (const { path, known, key } of keys) {
+      if (state.done.includes(key)) continue;
+      if (sink.signal.aborted) return;
+      if (over()) return pause();
+      try {
+        let uids: number[];
+        const lock = await c.getMailboxLock(path);
+        try {
+          // gone or reset since: the regular pass reads it again with the wider window
+          if (!c.mailbox || Number(c.mailbox.uidValidity) !== known.uidvalidity) uids = [];
+          else {
+            const found = await c.search({ since: new Date(request.since), before: new Date(request.until) }, { uid: true });
+            if (!found) throw new ProviderError(L("errors.imap.listRefused"), false);
+            const below = Math.min(known.uidnext, state.below[key] ?? Infinity);
+            uids = found.filter((uid) => uid < below).sort((a, b) => b - a);
+          }
+        } finally { lock.release(); }
+        for (let i = 0; i < uids.length; i += 250) {
+          if (sink.signal.aborted) return;
+          if (over()) return pause();
+          const chunk = uids.slice(i, i + 250);
+          const held: number[] = [];
+          await syncMailbox(c, path, cursor, sink, touched, { introduced, uids: chunk, heldUids: held });
+          // held back for identity: tried once more at the end of the run, with everything it read introduced
+          if (held.length) state.held![key] = [...(state.held![key] ?? []), ...held].slice(0, 5000);
+          state.below[key] = chunk[chunk.length - 1]!;
+          await ctx.saveCursor(cursor);
+        }
+      } catch (error) {
+        // a folder that won't be read now: the regular passes try it again (a few times), never one marked done
+        const e = toProviderError(error);
+        if (sink.signal.aborted || e.retryable || e instanceof ProviderAuthError) throw e;
+        state.failed![key] = (state.failed![key] ?? 0) + 1;
+        if (state.failed![key]! < BACKFILL_FOLDER_TRIES) { waiting = true; continue; }
+      }
+      state.done.push(key);
+      delete state.below[key];
+      await ctx.saveCursor(cursor);
+    }
+    await settle();
+    // a folder still to retry: the next regular pass (not a chunk a second later: the server refused it)
+    if (waiting) { await ctx.saveCursor(cursor); return; }
+    // what identity held back, once more now that the run's messages are all introduced; what stays held is the
+    // regular passes' (its message is already here from another folder)
+    for (const { path, key } of keys) {
+      const held = state.held?.[key];
+      if (!held?.length || !cursor.mailboxes[path]) continue;
+      try { await syncMailbox(c, path, cursor, sink, touched, { introduced, uids: held }); }
+      catch (error) {
+        const e = toProviderError(error);
+        if (sink.signal.aborted || e.retryable || e instanceof ProviderAuthError) throw e;
+      }
+    }
+    await settle();
+    delete cursor.backfill;
+    await ctx.saveCursor(cursor);
+    await sink.backfillDone?.(request);
+  }
 
   /**
    * Plan 68 (Codex R5): what the server expunged, and flags it changed, for mail we already have: run for every
@@ -1495,6 +1598,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         await ctx.saveCursor(cursor);
         await sink.setSyncState({ syncedSince: sink.windowStart });
         await syncBodies(c, sink);
+        // plan 101: older mail, after everything new and its bodies
+        await backfillMailboxes(c, cursor, sink, check);
         if (authoritative) await locations.resumeResolved();
       });
     },

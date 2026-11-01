@@ -5,7 +5,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, decodeText, encodeText, messageOf, textRef, type Account, type AccountPrefs, type AccountSyncState, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -652,6 +652,8 @@ export class BackendCore {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    for (const timer of this.backfillTimers.values()) clearTimeout(timer);
+    this.backfillTimers.clear();
     this.gmailRenewals.clear();
     for (const flow of this.signIns.values()) flow.abort();
     this.signIns.clear();
@@ -880,6 +882,25 @@ export class BackendCore {
       check();
       await this.syncAccount(accountId, repair ? { locator: repair.locator, revision: repair.revision, check } : undefined);
     } finally { life.captureRequests--; }
+  }
+
+  /**
+   * Plan 101: an account's effective window grew from `oldDays` to `newDays`: the span between is recorded as a
+   * request (merged with a pending one: their union), and a pass starts now (not awaited) to begin downloading it.
+   */
+  async widenWindow(accountId: number, oldDays: number, newDays: number): Promise<void> {
+    if (!(newDays > oldDays)) return;
+    const now = this.now();
+    // merged in the store's own transaction (Codex review: two widenings at once never lose one another's span)
+    if (!(await this.store.accounts.update(accountId, { backfill: { merge: { since: now - newDays * 86_400_000, until: now - oldDays * 86_400_000 } } }))) return;
+    void this.syncAccount(accountId).catch(() => {});
+  }
+
+  /** Plan 101: storage removal wins: what the user removes isn't fetched back by a pending backfill. */
+  async cancelBackfills(): Promise<void> {
+    for (const account of await this.store.accounts.list()) {
+      if (account.backfillSince != null) await this.store.accounts.update(account.id, { backfill: null });
+    }
   }
 
   async emitAccounts(): Promise<void> {
@@ -1394,7 +1415,22 @@ export class BackendCore {
   }
 
   /** Called only after successful durable row deletion; failed deletion keeps its fence. */
+  /** plan 101: the timers of the next backfill chunks (one an account; stop and removal clear them) */
+  private readonly backfillTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private continueBackfill(accountId: number): void {
+    if (this.stopped || this.backfillTimers.has(accountId)) return;
+    const timer = setTimeout(() => {
+      this.backfillTimers.delete(accountId);
+      if (!this.stopped && this.connectivity.online) void this.syncAccount(accountId).catch(() => {});
+    }, 1000);
+    (timer as { unref?: () => void }).unref?.();
+    this.backfillTimers.set(accountId, timer);
+  }
+
   accountRemoved(accountId: number): void {
+    const backfill = this.backfillTimers.get(accountId);
+    if (backfill) clearTimeout(backfill);
+    this.backfillTimers.delete(accountId);
     const life = this.lifetimes.get(accountId);
     if (!life?.abort.signal.aborted) return;
     this.lifetimes.delete(accountId);
@@ -1501,6 +1537,9 @@ export class BackendCore {
         if (credentials !== this.credentialsOf(accountId)) throw new RequestNotDispatchedError(L("errors.gmail.requestOffline"));
       };
       const windowDays = before?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
+      // plan 101: older mail a widened window asks for, a chunk after this pass's own work
+      const backfill = before?.backfillSince != null ? (await this.store.accounts.config<AccountPrefs>(accountId))?.config.backfill : undefined;
+      let backfillMore = false;
       const sink: SyncSink = {
         ...(captureRetry && { captureRetry: { locator: captureRetry.locator, revision: captureRetry.revision } }),
         signal: life.abort.signal,
@@ -1520,6 +1559,16 @@ export class BackendCore {
         // the account's own window, else the general one
         windowDays,
         windowStart: this.now() - windowDays * 86_400_000,
+        ...(backfill && {
+          backfill: { since: backfill.since, until: backfill.until },
+          backfillMore: () => { backfillMore = true; },
+          backfillDone: async (done) => {
+            checkCurrent();
+            // only that request, compared and cleared in one store transaction: a wider one recorded meanwhile stays
+            await this.accountWrite(life, () => this.store.accounts.update(accountId, { backfill: { clearIf: done } }));
+            await this.emitAccounts();
+          },
+        }),
         updateFlags: async (updates, o) => {
           const touched = new Set<number>();
           await this.runSliced(updates, 200, async (chunk) => {
@@ -1609,6 +1658,8 @@ export class BackendCore {
           captureError(error, { code: "import.restore_failed" });
           this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
         });
+        // plan 101: more older mail to download: the next chunk in a second (new mail stays a chunk away at most)
+        if (backfillMore && this.current(life)) this.continueBackfill(accountId);
       } catch (caught) {
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;

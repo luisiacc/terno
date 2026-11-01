@@ -11,7 +11,7 @@ import { captureHttpResponseEvidence } from "./http-response-evidence";
 import { IncomingProcessingError, INCOMING_GMAIL_WIRE_BYTES } from "./incoming-processing";
 import { failedBeforeRequest, isFetchNetworkFailure, ProviderCooldownError, RequestNotDispatchedError } from "./net-errors";
 import { createQuotaPacer, gmailUnits, type QuotaPacer } from "./gmail-quota";
-import { ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
+import { BACKFILL_CHUNK_MS, ProviderAuthError, ProviderError, type FlagUpdate, type HttpRequestContext, type HttpResponseEvidence, type RequestRun, type MailAdmission, type MailProvider, type ProviderContext, type ProviderOp, type SendPayload, type SyncSink } from "./types";
 
 export interface GmailEndpoints {
   auth: string;
@@ -106,6 +106,17 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
 export const LABELS_EVERY_MS = 15 * 60_000;
 /** a first-sync page with more new messages than this (minutes of downloads under the quota) reads the labels first */
 export const EARLY_LABELS_AFTER = 100;
+
+/** Plan 101: how far a backfill's listing got, for one request (its bounds, ms). */
+interface BackfillProgress { since: number; until: number; pages: number; next?: string }
+
+/** A saved backfill progress, field by field, only for this request; anything else starts the listing over. */
+function readBackfill(value: unknown, request: { since: number; until: number }): BackfillProgress | undefined {
+  if (!isRecord(value) || value.since !== request.since || value.until !== request.until) return;
+  if (!Number.isSafeInteger(value.pages) || (value.pages as number) < 0 || (value.pages as number) > LIST_PAGES_MAX) return;
+  if (value.next !== undefined && (typeof value.next !== "string" || value.next === "" || value.next.length > LIST_TOKEN_MAX)) return;
+  return { since: request.since, until: request.until, pages: value.pages as number, ...(value.next !== undefined && { next: value.next as string }) };
+}
 /**
  * /labels read bounded: Gmail's 10,000 labels (and a few system ones) of at most 225 characters, each up to six
  * bytes as JSON (a \uXXXX escape; UTF-8 is at most three a character), with room for its id and the rest
@@ -880,10 +891,80 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return value;
   }
 
+  /** plan 101: this pass's backfill progress: every cursor saved carries it (a history or reconciliation save never drops it) */
+  let backfillProgress: BackfillProgress | undefined;
+
   async function saveProgress(sink: SyncPass, value: Cursor | ReconcileCursor) {
     sink.check();
-    await ctx.saveCursor(value, sink.check);
+    await ctx.saveCursor(backfillProgress ? { ...value, backfill: backfillProgress } : value, sink.check);
     sink.check();
+  }
+
+  /**
+   * Plan 101: older mail a widened window asks for, after the pass's own work: the request's span listed newest
+   * first (`after:`/`before:`), what isn't stored downloaded (paced like any read, no notices), progress saved a page
+   * at a time, at most BACKFILL_CHUNK_MS a pass. During a first sync it waits: that sync already reads the new window.
+   */
+  async function backfill(sink: SyncPass) {
+    const request = sink.backfill;
+    if (!request) return;
+    const saved = await ctx.loadCursor<unknown>();
+    sink.check();
+    if (!isRecord(saved) || !historyId(saved.historyId) || Object.hasOwn(saved, "reconciliation")) return;
+    const base: Cursor = { historyId: saved.historyId };
+    const started = Date.now();
+    let progress: BackfillProgress = backfillProgress ?? { since: request.since, until: request.until, pages: 0 };
+    const tokens = new Set<string>();
+    if (progress.next) tokens.add(progress.next);
+    const query = `after:${Math.floor(request.since / 1000)} before:${Math.ceil(request.until / 1000)}`;
+    for (;;) {
+      sink.check();
+      // a listing this long starts over rather than claim the span is done (Codex review); what's stored is skipped
+      if (progress.pages >= LIST_PAGES_MAX) {
+        backfillProgress = { since: request.since, until: request.until, pages: 0 };
+        await saveProgress(sink, base);
+        sink.backfillMore?.();
+        return;
+      }
+      const q = new URLSearchParams({ q: query, maxResults: "500", includeSpamTrash: "true" });
+      if (progress.next) q.set("pageToken", progress.next);
+      let page: MessagePage;
+      try {
+        page = readList(await syncRead(`/messages?${q}`, sink));
+      } catch (error) {
+        // a continuation Google no longer takes: the listing starts over (what's stored is skipped)
+        if (progress.next && error instanceof GmailApiError && error.resource === `/messages?${q}` && (error.status === 400 || error.status === 404)) {
+          backfillProgress = { since: request.since, until: request.until, pages: 0 };
+          await saveProgress(sink, base);
+          sink.backfillMore?.();
+          return;
+        }
+        throw error;
+      }
+      if (page.nextPageToken !== undefined && (typeof page.nextPageToken !== "string" || page.nextPageToken.length > LIST_TOKEN_MAX)) throw invalidResponse();
+      const next = continuation(page.nextPageToken, tokens);
+      const ids: string[] = [];
+      for (const m of page.messages ?? []) {
+        sink.check();
+        if (!(await store.messageByProviderId(m.id))) ids.push(m.id);
+      }
+      for (let i = 0; i < ids.length; i += 50) {
+        // out of this pass's time: this page again next pass (its stored messages skipped then)
+        if (Date.now() - started > BACKFILL_CHUNK_MS) { sink.backfillMore?.(); return; }
+        sink.check();
+        await fetchFull(ids.slice(i, i + 50), sink);
+      }
+      progress = { since: request.since, until: request.until, pages: progress.pages + 1, ...(next !== undefined && { next }) };
+      if (next === undefined) break;
+      backfillProgress = progress;
+      await saveProgress(sink, base);
+      if (Date.now() - started > BACKFILL_CHUNK_MS) { sink.backfillMore?.(); return; }
+      if (!ids.length) await yieldPage();
+    }
+    // all here: the cursor forgets it, and the request is cleared (unless a wider one came meanwhile)
+    backfillProgress = undefined;
+    await saveProgress(sink, base);
+    await sink.backfillDone?.(request);
   }
 
   async function restart(sink: SyncPass, completed?: string) {
@@ -1144,6 +1225,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       sink.check();
       const cursor = await ctx.loadCursor<unknown>();
       sink.check();
+      backfillProgress = sink.backfill && isRecord(cursor) ? readBackfill(cursor.backfill, sink.backfill) : undefined;
       const completed = isRecord(cursor) && historyId(cursor.historyId) ? cursor.historyId : undefined;
       const pending = isRecord(cursor) && Object.hasOwn(cursor, "reconciliation");
       const resume = pending ? readReconciliation(cursor.reconciliation, sink, ctx.account.email, completed) : undefined;
@@ -1170,6 +1252,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       await captureAttachments(sink);
       sink.check();
       if (malformed) throw malformed;
+      // plan 101: older mail, after everything new
+      await backfill(sink);
     },
 
     async folders(sink) {

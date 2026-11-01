@@ -6,6 +6,7 @@ import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
 import { forgetSignInVersion, signInVersion, admitBrowserGoogle, beginSignIn, endSignIn, googleAdmission, changeOwnerTo, gmailClaim, googleFlowActive, imapClaim, loginFailed, reconnectAccount, validateGoogleConnection } from "./identity";
+import { accountLabel } from "./account-label";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
@@ -817,16 +818,19 @@ export function createHandlers(b: Backend): Handlers {
       const claim = p.verify && b.canClaimOwner();
       // encrypt first, so the account, its password and the ownership commit together
       const blob = await b.options.cipher.encrypt(p.password);
+      const label = accountLabel(p.displayName || p.email, p.email, await store.accounts.list());
       const { account, claimed } = await store.accounts.create({
         kind: "imap",
         email: p.email,
-        displayName: p.displayName || p.email,
+        displayName: label.displayName,
         color: await nextAccountColor(),
         providerConfig: config,
         secret: { key: "password", blob },
         ownerClaim: claim ? imapClaim({ email: p.email }, config, p.displayName || p.email) : undefined,
         now: b.now(),
       });
+      // the account it now shares a name with shows its address too
+      for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
       // what an import kept for this mailbox goes in now
@@ -859,17 +863,20 @@ export function createHandlers(b: Backend): Handlers {
       const config: GmailAccountConfig & AccountPrefs = { senderName: result.name || result.email, googleSubject: result.sub!, googleClientId: oauth.clientId, ...(syncWindowDays !== undefined && { syncWindowDays }) };
       const blob = await b.options.cipher.encrypt(result.refreshToken);
       const color = await nextAccountColor();
+      const label = accountLabel(result.email.split("@")[0]!, result.email, await store.accounts.list());
       googleFlowActive(b);
       const { account, claimed } = await store.accounts.create({
         kind: "gmail",
         email: result.email,
-        displayName: result.email.split("@")[0]!,
+        displayName: label.displayName,
         color,
         providerConfig: config,
         secret: { key: "refreshToken", blob },
         ownerClaim: b.canClaimOwner() ? gmailClaim({ ...result, name: result.name || result.email }) : undefined,
         now: b.now(),
       });
+      // the account it now shares a name with shows its address too
+      for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
       await b.emitAccounts();
       if (claimed) await b.emitOwner();
       // what an import kept for this mailbox goes in now
@@ -926,17 +933,19 @@ export function createHandlers(b: Backend): Handlers {
         // a new mailbox only: one already here (reconnected above) keeps its window
         const config: GmailAccountConfig & AccountPrefs = { senderName: who.name || who.email, googleSubject: who.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
         const color = await nextAccountColor();
+        const label = accountLabel(who.email.split("@")[0]!, who.email, await store.accounts.list());
         googleFlowActive(b);
         if (expiresAt <= b.now()) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
         const { account, claimed } = await store.accounts.create({
           kind: "gmail",
           email: who.email,
-          displayName: who.email.split("@")[0]!,
+          displayName: label.displayName,
           color,
           providerConfig: config,
           ownerClaim: b.canClaimOwner() ? gmailClaim({ ...who, name: who.name || who.email }) : undefined,
           now: b.now(),
         });
+        for (const r of label.renames) await store.accounts.update(r.id, { displayName: r.displayName });
         tokens.set(account.id, accessToken, expiresAt);
         await b.emitAccounts();
         if (claimed) await b.emitOwner();
@@ -950,12 +959,21 @@ export function createHandlers(b: Backend): Handlers {
     "accounts.reconnect": ({ id, password }) => reconnectAccount(b, id, password),
 
     "accounts.update": async ({ id, ...patch }) => {
+      const before = patch.syncWindowDays !== undefined ? await store.accounts.get(id) : null;
       const account = await store.accounts.update(id, patch);
       if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      // plan 101: a wider effective window downloads the older mail (an override, or one removed for a wider General)
+      let result = account;
+      if (before) {
+        const general = (await readSettings(store)).syncWindowDays;
+        await b.widenWindow(id, before.syncWindowDays ?? general, account.syncWindowDays ?? general);
+        // the account as it is now, its request included (Codex review: the reply mustn't hide the pill)
+        result = (await store.accounts.get(id)) ?? account;
+      }
       await b.emitAccounts();
       // plan 86: what the Inbox shows changed (lists reload, the counts and the Dock follow)
       if (patch.separateTabs !== undefined) b.notifyChanged([]);
-      return account;
+      return result;
     },
 
     "accounts.remove": async ({ id }) => {
@@ -977,7 +995,12 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "storage.report": () => storage.report(),
-    "storage.remove": ({ buckets, olderThanDays, jobId }) => storage.remove({ buckets, olderThanDays, jobId }),
+    "storage.remove": async ({ buckets, olderThanDays, jobId }) => {
+      // plan 101: what the user removes isn't fetched back by a backfill still pending
+      await b.cancelBackfills();
+      await b.emitAccounts();
+      return storage.remove({ buckets, olderThanDays, jobId });
+    },
 
     "settings.update": (patch) => {
       // Keep committed settings and their notifications in the same order.
@@ -992,6 +1015,11 @@ export function createHandlers(b: Backend): Handlers {
           if (next.senderIcons !== was.senderIcons) b.icons.invalidate();
           // plan 41: the badge follows at once; notifications turned off drop what was pending
           if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
+          // plan 101: a wider General window: the accounts that follow it download their older mail
+          if (next.syncWindowDays > was.syncWindowDays) {
+            for (const account of await store.accounts.list()) if (account.syncWindowDays === null) await b.widenWindow(account.id, was.syncWindowDays, next.syncWindowDays);
+            await b.emitAccounts();
+          }
           return next;
         } catch (error) {
           if (error instanceof SettingsError) throw new RpcError("BAD_REQUEST", messageOf(error));

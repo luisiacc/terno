@@ -1502,7 +1502,7 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
   const accounts = T(c, "accounts");
   const r = accounts.get(id);
   if (!r) return null;
-  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined;
+  const prefs = patch.senderName !== undefined || patch.signature !== undefined || patch.syncWindowDays !== undefined || patch.separateTabs !== undefined || patch.backfill !== undefined;
   accounts.update(r, {
     ...(patch.displayName !== undefined ? { display_name: patch.displayName } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),

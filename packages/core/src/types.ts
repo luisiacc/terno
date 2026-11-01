@@ -21,6 +21,8 @@ export interface Account {
   signature: string;
   /** days of mail its first sync downloads; null: the general setting */
   syncWindowDays: number | null;
+  /** plan 101: older mail is downloading back to this (ms); null: nothing pending */
+  backfillSince?: number | null;
   /** plan 86 (Gmail): Promotions and Social live under the account, out of the Inbox; on unless turned off (absent: on) */
   separateTabs?: boolean;
   syncState: AccountSyncState;
@@ -34,6 +36,18 @@ export interface AccountPatch {
   signature?: string;
   syncWindowDays?: number | null;
   separateTabs?: boolean;
+  /**
+   * plan 101: backend only (never in the RPC schema), applied inside the store's update transaction so concurrent
+   * changes never lose one another: `merge` a widening into the pending span (their union), `clearIf` it's done
+   * (only that exact request: a wider one recorded meanwhile stays), null cancels.
+   */
+  backfill?: { merge: BackfillRequest } | { clearIf: BackfillRequest } | null;
+}
+
+/** Plan 101: the span of older mail to download (ms), recorded when an account's window widens. */
+export interface BackfillRequest {
+  since: number;
+  until: number;
 }
 
 /** The account preferences kept in its provider config, beside what the provider stores there. */
@@ -43,11 +57,13 @@ export interface AccountPrefs {
   syncWindowDays?: number | null;
   /** plan 86: absent: on */
   separateTabs?: boolean;
+  /** plan 101: older mail still to download */
+  backfill?: BackfillRequest;
 }
 
 /** An account's preferences as the renderer sees them, from its stored config. */
-export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs"> {
-  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false };
+export function accountPrefs(config: AccountPrefs, displayName: string): Pick<Account, "senderName" | "signature" | "syncWindowDays" | "separateTabs" | "backfillSince"> {
+  return { senderName: config.senderName || displayName, signature: config.signature ?? "", syncWindowDays: config.syncWindowDays ?? null, separateTabs: config.separateTabs !== false, backfillSince: config.backfill?.since ?? null };
 }
 
 /** The config with a patch's preferences applied (the rest of the patch lives in columns). */
@@ -62,6 +78,13 @@ export function withAccountPrefs<T extends AccountPrefs>(config: T, patch: Accou
   if (patch.separateTabs !== undefined) {
     if (patch.separateTabs) delete next.separateTabs;
     else next.separateTabs = false;
+  }
+  if (patch.backfill === null) delete next.backfill;
+  else if (patch.backfill && "merge" in patch.backfill) {
+    const add = patch.backfill.merge, was = next.backfill;
+    next.backfill = was ? { since: Math.min(was.since, add.since), until: Math.max(was.until, add.until) } : { since: add.since, until: add.until };
+  } else if (patch.backfill && "clearIf" in patch.backfill) {
+    if (next.backfill?.since === patch.backfill.clearIf.since && next.backfill.until === patch.backfill.clearIf.until) delete next.backfill;
   }
   return next;
 }
