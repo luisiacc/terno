@@ -197,6 +197,18 @@ describe("page history (plan 24)", () => {
     expect(t.opened).toEqual([7, 7]);
   });
 
+  it("a folder renamed while you're elsewhere: Forward over its list still reopens (Codex code review round 20 #4)", () => {
+    const t = harness();
+    const work = JSON.stringify(["all", 2, null, null, "unread", "Work", ""]);
+    const job = JSON.stringify(["all", 2, null, null, "unread", "Job", ""]);
+    t.h.sync(thread(7, work));
+    t.browser(-1, work);
+    // the user went to the Inbox meanwhile; the folder is renamed there
+    t.h.refolder(2, "Work", "Job");
+    t.browser(1, job);
+    expect(t.opened).toEqual([7]);
+  });
+
   it("j → Back → Forward within 300 ms: the replace still waiting is dropped (never written over the list), Forward reopens the entry as written", () => {
     const t = harness();
     t.h.sync(thread(1));

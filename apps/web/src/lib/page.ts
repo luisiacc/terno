@@ -119,6 +119,11 @@ export function relistPage(from: string, to: string): void {
   history?.relist(from, to);
 }
 
+/** plan 107: a folder renamed, shown or not: history entries over its lists follow it */
+export function refolderPage(accountId: number, from: string, to: string): void {
+  history?.refolder(accountId, from, to);
+}
+
 /** The mailbox this document opens: its path and query (?mailbox=, a demo's flags): entries of another never apply here. */
 const mailboxOf = () => `${location.pathname}${location.search}`;
 

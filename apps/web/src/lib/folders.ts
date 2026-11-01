@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { followedRename, listKey } from "~/state/list";
-import { relistPage } from "./page";
+import { refolderPage, relistPage } from "./page";
 import { mailboxKey, saveListFilters } from "./unread-filter";
 import { setOpenAccount } from "./account-folders";
 
@@ -120,6 +120,8 @@ export async function setFavorite(target: FolderTarget, on: boolean): Promise<vo
  */
 export function applyFolderRenames(renamed: readonly FolderRename[]): void {
   const s = getApp();
+  // every rename, the folder shown or not: Back and Forward entries over its lists follow it (round 20 #4)
+  for (const r of renamed) refolderPage(r.accountId, r.from, r.to);
   const here = renamed.find((r) => r.accountId === s.accountId && r.from === s.folder && r.from !== r.to);
   if (here) {
     // the same mailbox under a new key: not a navigation (Codex code review #7), its quick filter moves with it

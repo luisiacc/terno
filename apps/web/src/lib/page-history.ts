@@ -80,6 +80,8 @@ export interface PageHistory {
   boot(currentList: string): number | null;
   /** plan 107: the list it's on was renamed (a folder's new key): the page stays, its entry moves to the new list */
   relist(from: string, to: string): void;
+  /** plan 107: a folder renamed, shown or not: entries over its lists (any filter or query) follow it (round 20 #4) */
+  refolder(accountId: number, from: string, to: string): void;
   /** for tests: what the machine believes is on screen, and whether a traversal is in flight */
   inspect(): { shown: Shown; traversing: boolean; pendingReplace: number | null };
 }
@@ -88,7 +90,22 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   const { history, mailbox } = deps;
   // plan 107: lists renamed while this document lives (a folder's new key): each old key to the list it is now
   const renamedLists = new Map<string, string>();
-  const listNow = (list: string) => renamedLists.get(list) ?? list;
+  // folders renamed: [accountId, from] → to, applied to a list key's folder slot ([view, account, category, review,
+  // filter, folder, …, query]: listKey's shape), each key straight to its folder now
+  const renamedFolders = new Map<string, string>();
+  const listNow = (list: string) => {
+    const direct = renamedLists.get(list);
+    if (direct) return direct;
+    if (renamedFolders.size === 0) return list;
+    try {
+      const k = JSON.parse(list) as unknown[];
+      if (!Array.isArray(k) || k.length < 7 || typeof k[5] !== "string") return list;
+      const to = renamedFolders.get(JSON.stringify([k[1], k[5]]));
+      return to === undefined ? list : JSON.stringify([...k.slice(0, 5), to, ...k.slice(6)]);
+    } catch {
+      return list;
+    }
+  };
   let shown: Shown = { page: "list", id: null, list: "" };
   /** a back() on its way: the generation it belongs to, and its fallback */
   let traversal: { gen: number; timer: unknown } | null = null;
@@ -162,6 +179,12 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
 
   return {
     sync: apply,
+    refolder(accountId, from, to) {
+      if (from === to) return;
+      for (const [k, v] of renamedFolders) if (v === from && JSON.parse(k)[0] === accountId) renamedFolders.set(k, to);
+      renamedFolders.delete(JSON.stringify([accountId, to]));
+      renamedFolders.set(JSON.stringify([accountId, from]), to);
+    },
     relist(from, to) {
       // entries other than this one (Forward's, Back's) can't be rewritten: their list is translated as they come
       // back (Codex code review round 16 #3)
