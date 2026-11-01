@@ -173,7 +173,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(fav).toContainText("Rediseño web");
     await expect(fav).toContainText("Acme Studio");
     // right below Starred
-    const order = await page.locator("#app-sidebar nav [data-testid^=nav-]").evaluateAll((els) => els.slice(0, 4).map((el) => el.getAttribute("data-testid")));
+    const order = await page.locator("#app-sidebar nav button[data-testid^=nav-]").evaluateAll((els) => els.slice(0, 4).map((el) => el.getAttribute("data-testid")));
     expect(order.slice(0, 3)).toEqual(["nav-inbox", "nav-starred", `nav-fav-${acme}-Label_22`]);
     // the account's Sent row, from its menu
     await page.getByTestId(`nav-folder-${acme}-sent`).click({ button: "right" });
