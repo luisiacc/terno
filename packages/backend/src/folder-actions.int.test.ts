@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
+import { FAVORITES_MAX } from "@terno/core";
 import { createRegistry, type MailProvider } from "@terno/mail";
 import imapkit from "imapkit";
 import { afterEach, expect, it } from "vitest";
@@ -257,4 +258,16 @@ it("favorites: on once each, an own folder must be listed, the account must exis
   expect(await on("Work", null, false)).toEqual([{ accountId: t.account.id, folder: null, view: "inbox" }]);
   await t.client.call("accounts.remove", { id: t.account.id });
   expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([]);
+});
+
+it("favorites whose folders went in another app don't count toward the limit (Codex code review #8)", async () => {
+  const names = Array.from({ length: FAVORITES_MAX }, (_, i) => `F${i}`);
+  const t = await setup(names);
+  await t.backend.syncAccount(t.account.id);
+  for (const name of names) await t.client.call("folders.favorite", { accountId: t.account.id, folder: name, view: null, on: true });
+  // deleted on the server by another client: the next pass lists them gone
+  for (const name of names) t.server.control.deleteMailbox(name);
+  t.server.control.createMailbox("Kept");
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Kept", view: null, on: true })).toEqual([{ accountId: t.account.id, folder: "Kept", view: null }]);
 });

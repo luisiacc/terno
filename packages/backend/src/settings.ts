@@ -321,11 +321,15 @@ export async function readFavoriteFolders(store: SettingsStore): Promise<Favorit
 
 const sameFavorite = (a: FavoriteFolder, b: FavoriteFolder) => a.accountId === b.accountId && a.folder === b.folder && a.view === b.view;
 
-/** Plan 107: one folder (or standard row) below Starred, or not: never twice, at most FAVORITES_MAX, in the order added. */
-export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+/**
+ * Plan 107: one folder (or standard row) below Starred, or not: never twice, at most FAVORITES_MAX, in the order added.
+ * Ones `live` says are gone (deleted or renamed in another app) go first (Codex code review #8: 50 of them, invisible,
+ * filled the limit for good).
+ */
+export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFolder, on: boolean, live: (f: FavoriteFolder) => boolean = () => true): Promise<FavoriteFolder[]> {
   return store.settings.update<StoredSettings, FavoriteFolder[]>("app", {}, (raw) => {
     const s = migrate(raw);
-    const list = s.favoriteFolders ?? [];
+    const list = (s.favoriteFolders ?? []).filter(live);
     const rest = list.filter((f) => !sameFavorite(f, target));
     if (on && rest.length === list.length && list.length >= FAVORITES_MAX) throw new SettingsError(L("errors.folder.favoritesMax", { max: FAVORITES_MAX }));
     const next = on ? (rest.length === list.length ? [...list, target] : list) : rest;
