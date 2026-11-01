@@ -104,7 +104,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
             <h1 className="mx-auto mt-7 max-w-4xl text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-7xl">
               <span className="mn-title">{copy.hero.title}</span>
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-(--mn-muted)">{copy.hero.subtitle}</p>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance text-(--mn-muted)">{copy.hero.subtitle}</p>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <DownloadMac copy={copy} className="mn-btn mn-btn-primary h-12 gap-2.5 px-5 text-[0.95rem]" subClassName="text-[0.7rem] font-normal text-white" />
               <WaitlistLink copy={copy} className="mn-btn mn-btn-ghost h-12 px-5 text-[0.9rem]" />

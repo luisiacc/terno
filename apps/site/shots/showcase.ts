@@ -16,7 +16,7 @@ export const ACCOUNTS: MockAccount[] = [
   { kind: "gmail", email: "sam.rivera@gmail.com", displayName: "Personal", color: "indigo", ownerName: ME, weight: 0.35 },
   { kind: "gmail", email: "sam@northwind.studio", displayName: "Northwind", color: "emerald", ownerName: ME, weight: 0.35 },
   { kind: "imap", email: "hello@samrivera.design", displayName: "Studio", color: "amber", ownerName: ME, weight: 0.2 },
-  { kind: "imap", email: "sam.rivera@icloud.com", displayName: "iCloud", color: "cyan", ownerName: ME, weight: 0.1 },
+  { kind: "imap", email: "sam.rivera@outlook.com", displayName: "Outlook", color: "cyan", ownerName: ME, weight: 0.1 },
 ];
 
 export const CATEGORIES: MockCategory[] = [

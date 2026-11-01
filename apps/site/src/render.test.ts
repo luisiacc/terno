@@ -38,8 +38,8 @@ describe("prerendered pages", () => {
 
   it("the Spanish home page is in Spanish", () => {
     const es = routes().find((r) => r.path === "/es/")!;
-    expect(render(es).body).toContain("Tu correo, a la medida.");
-    expect(render(es).body).not.toContain("Your mail, made to measure.");
+    expect(render(es).body).toContain("El último cliente de correo que probarás.");
+    expect(render(es).body).not.toContain("The last email client you’ll try.");
   });
 });
 

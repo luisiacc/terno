@@ -3,16 +3,16 @@ import type { SiteCopy } from "./en";
 export const es: SiteCopy = {
   lang: "es",
   meta: {
-    title: "Terno: correo rápido y privado para Mac",
+    title: "Terno: correo instantáneo y privado para Mac",
     description:
-      "Terno es un cliente de correo minimalista para Mac, pensado para el teclado. Todas tus cuentas en una bandeja, búsqueda instantánea y ordenar con una tecla. Tu correo se queda en tu Mac: sin cuenta de Terno, sin nube.",
+      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta.",
   },
   skip: "Ir al contenido",
   nav: { features: "Funciones", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", home: "Inicio de Terno" },
   hero: {
-    title: "Tu correo, a la medida.",
-    subtitle: "Un cliente de correo tranquilo y muy rápido. Todas tus cuentas en una bandeja, una búsqueda que responde antes de que termines de escribir, y tu correo nunca sale de tu Mac.",
-    note: "Gratis · Sin cuenta · macOS en Apple silicon",
+    title: "El último cliente de correo que probarás.",
+    subtitle: "Todas tus cuentas en una bandeja. Búsqueda instantánea. Archiva un correo y todos los parecidos se archivan también. Totalmente local, sin cuenta.",
+    note: "Gratis · macOS en Apple silicon",
   },
   download: {
     mac: "Descargar para Mac",
@@ -23,57 +23,57 @@ export const es: SiteCopy = {
   features: {
     unified: {
       title: "Todas las cuentas. Una bandeja.",
-      body: "Gmail, iCloud, Outlook y cualquier otra cuenta de correo juntas, en una sola lista. Cada fila dice a qué cuenta llegó, para que nunca respondas desde la equivocada.",
-      points: ["Gmail, iCloud, Fastmail, tu propio dominio", "Cuentas ilimitadas", "Categorías que las abarcan todas"],
+      body: "Gmail, Outlook y cualquier cuenta IMAP/SMTP: una sola lista. Cada fila muestra de qué cuenta es, para que nunca respondas desde la equivocada.",
+      points: ["Gmail, Outlook, cualquier IMAP/SMTP", "Cuentas ilimitadas", "Categorías que las abarcan todas"],
     },
     local: {
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
-      body: "Terno habla con tus servidores de correo y con nada más. No hay cuenta de Terno que crear ni servidor de por medio: tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
-      points: ["Privado desde el primer momento", "Las imágenes de internet se cargan solo cuando las pides", "Sin ningún tipo de rastreo"],
+      body: "Terno habla con tus servidores de correo y con nada más. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
+      points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
     },
     search: {
-      title: "Lo encuentras antes de terminar de escribir.",
-      body: "La búsqueda corre en tu Mac sobre cada mensaje, en cada cuenta, también en el archivo. Los resultados llegan al instante.",
-      points: ["Todas las carpetas, todas las cuentas", "Busca por persona, asunto o adjunto", "Funciona sin conexión"],
+      title: "Búsqueda instantánea.",
+      body: "Cada mensaje, cada cuenta, cada carpeta, también el archivo. Resultados mientras escribes.",
+      points: ["Por persona, asunto o adjunto", "Décadas de correo, sin esperas", "Funciona sin conexión"],
     },
     speed: {
-      title: "Búsqueda instantánea.",
-      body: "La búsqueda responde en cuanto escribes, incluso con décadas de correo. Todo lo demás es igual de rápido: cada acción ocurre en el instante en que pulsas la tecla, y el servidor se pone al día por detrás.",
-      points: ["Abre en menos de un segundo", "Ligero con la memoria y la batería", "Tranquilo cuando no lo usas"],
+      title: "Nada espera.",
+      body: "Cada acción ocurre en cuanto pulsas la tecla. El servidor se pone al día por detrás.",
+      points: ["Abre en menos de un segundo", "Ligero con la memoria y la batería", "En silencio cuando no lo usas"],
     },
     triage: {
       title: "Archiva uno. Despeja todos.",
-      body: "Arrastra un boletín a una categoría o archiva una promoción, y Terno te ofrece hacer lo mismo con todo lo parecido, y con lo que llegue después. Una tecla, y ese remitente no vuelve a tu bandeja hasta que lo busques.",
-      points: ["Todo de este remitente, dominio o lista", "Un filtro para el futuro en el mismo paso", "Un solo deshacer para todo"],
+      body: "Archiva una promoción y Terno te ofrece despejar todas las parecidas, y lo que llegue después. Una tecla. Un deshacer.",
+      points: ["Por remitente, dominio o lista", "Un filtro para el futuro, en el mismo paso", "Un solo deshacer para todo"],
     },
     codes: {
-      title: "El código, a un clic.",
-      body: "Cuando llega un código de inicio de sesión, aparece en el propio mensaje. Clic para copiar, pegar y listo. Sin abrir nada, sin buscar seis dígitos.",
+      title: "Códigos de acceso, a un clic.",
+      body: "El código aparece en el propio mensaje. Clic, pegar, listo.",
       points: [],
     },
     themes: {
       title: "Tres diseños. Dieciocho paletas.",
-      body: "Elige un diseño para la forma de la app (Lumen cálido, Atelier editorial o macOS al estilo de Apple Mail) y cualquier tema de color encima, de Solarized a Dracula. O trae el tuyo.",
+      body: "Lumen cálido, Atelier editorial o macOS al estilo de Apple Mail, con cualquier tema de color, de Solarized a Dracula. O trae el tuyo.",
       points: ["Claro y oscuro en todos", "Todos revisados en contraste", "Animaciones que puedes reducir o quitar"],
     },
     snippets: {
       title: "Escríbelo una vez.",
-      body: "Guarda las respuestas que envías cada semana. Pulsa ⌘; en cualquier borrador, escribe unas letras y la plantilla entra con el nombre del destinatario ya puesto.",
+      body: "Guarda las respuestas que envías cada semana. ⌘; inserta una, con el nombre ya puesto.",
       points: [],
     },
     palette: {
       title: "⌘K lo hace todo.",
-      body: "Cada acción, carpeta, ajuste y plantilla está a unas letras. Aprende lo que más usas y lo pone primero.",
+      body: "Cada acción, carpeta, ajuste y plantilla, a unas letras. Lo que más usas sale primero.",
       points: [],
     },
     keyboard: {
-      title: "Tu bandeja a la velocidad de tus manos.",
-      body: "Muévete, archiva, clasifica, responde y deshaz sin tocar el ratón. Pulsa ? cuando quieras para ver todos los atajos.",
+      title: "Olvídate del ratón.",
+      body: "Muévete, archiva, clasifica, responde y deshaz desde el teclado. Pulsa ? para ver todos los atajos.",
       points: [],
     },
     open: {
       title: "No te fíes de nuestra palabra.",
-      body: "Cada línea de Terno es pública. Lee exactamente cómo se guarda tu correo, qué viaja por la red y qué nunca lo hace. Y tres años después de cada publicación, esa versión pasa a ser totalmente de código abierto.",
+      body: "Cada línea de Terno es pública. Mira exactamente qué se guarda y qué viaja por la red. Tres años después de cada versión, es totalmente de código abierto.",
       points: [],
       cta: "Leer el código en GitHub",
     },
@@ -95,7 +95,7 @@ export const es: SiteCopy = {
   ],
   closing: {
     title: "Recupera tu bandeja de entrada.",
-    body: "Descarga gratuita. Sin cuenta, sin registro, nada que configurar salvo tu correo.",
+    body: "Gratis. Sin cuenta. Sin registro. Solo tu correo.",
   },
   waitlist: {
     title: "Windows y Linux están en camino.",
@@ -114,7 +114,7 @@ export const es: SiteCopy = {
     note: "Guardamos tu correo y tu plataforma solo para avisarte del lanzamiento, y luego los borramos.",
   },
   footer: {
-    tagline: "Tu correo, a la medida.",
+    tagline: "El último cliente de correo que probarás.",
     privacy: "Privacidad",
     source: "Código",
     license: "Licencia",

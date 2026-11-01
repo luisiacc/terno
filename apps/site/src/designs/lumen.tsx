@@ -121,7 +121,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
             <h1 id="hero-title" className="mt-7 max-w-4xl text-[2.9rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-[5.25rem]">
               {copy.hero.title}
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-muted) text-pretty sm:text-xl">{copy.hero.subtitle}</p>
+            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-(--l-muted) text-balance sm:text-xl">{copy.hero.subtitle}</p>
             <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
               <DownloadMac copy={copy} className="lumen-btn h-14 gap-3 rounded-2xl pr-6 pl-5 text-[1.05rem]" subClassName="text-[0.78rem] font-normal" />
               <WaitlistLink copy={copy} className="lumen-quietlink text-[0.98rem]" />

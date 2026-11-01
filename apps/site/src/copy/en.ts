@@ -2,16 +2,16 @@
 export const en = {
   lang: "en",
   meta: {
-    title: "Terno: fast, private email for Mac",
+    title: "Terno: instant, private email for Mac",
     description:
-      "Terno is a minimalist, keyboard-first email client for Mac. Every account in one inbox, instant search, one-key triage. Your mail stays on your Mac: no Terno account, no cloud.",
+      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed.",
   },
   skip: "Skip to content",
   nav: { features: "Features", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", home: "Terno home" },
   hero: {
-    title: "Your mail, made to measure.",
-    subtitle: "A calm, very fast email client. Every account in one inbox, search that answers before you finish typing, and your mail never leaves your Mac.",
-    note: "Free · No account needed · macOS on Apple silicon",
+    title: "The last email client you’ll try.",
+    subtitle: "Every account in one inbox. Instant search. Archive one email, and every similar one is archived too. Fully local, no account needed.",
+    note: "Free · macOS on Apple silicon",
   },
   download: {
     mac: "Download for Mac",
@@ -22,57 +22,57 @@ export const en = {
   features: {
     unified: {
       title: "Every account. One inbox.",
-      body: "Gmail, iCloud, Outlook and any other email account side by side, in one list. Each row says which account it came to, so you never answer from the wrong one.",
-      points: ["Gmail, iCloud, Fastmail, your own domain", "Unlimited accounts", "Categories that span them all"],
+      body: "Gmail, Outlook and any IMAP/SMTP account: one list. Every row shows which account it’s for, so you never reply from the wrong one.",
+      points: ["Gmail, Outlook, any IMAP/SMTP", "Unlimited accounts", "Categories across all of them"],
     },
     local: {
       title: "No account. No cloud. Just your Mac.",
-      body: "Terno talks to your mail servers and nothing else. There is no Terno account to create and no server in between: your mail, contacts and search index live on your Mac.",
-      points: ["Private from the very first launch", "Pictures from the web load only when you ask", "No tracking of any kind"],
+      body: "Terno talks to your mail servers and nothing else. Your mail, contacts and search index live on your Mac.",
+      points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
     },
     search: {
-      title: "Found before you finish typing.",
-      body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive instantly.",
-      points: ["Every folder, every account", "Search by person, subject or attachment", "Works offline"],
+      title: "Instant search.",
+      body: "Every message, every account, every folder, archive included. Results as you type.",
+      points: ["By person, subject or attachment", "Decades of mail, no wait", "Works offline"],
     },
     speed: {
-      title: "Instant search.",
-      body: "Search answers the moment you type, even with decades’ worth of email. Everything else is just as quick: every action happens the instant you press the key, and the server catches up in the background.",
-      points: ["Opens in under a second", "Light on memory and battery", "Quiet when you’re not using it"],
+      title: "Nothing waits.",
+      body: "Every action lands the moment you press the key. The server catches up in the background.",
+      points: ["Opens in under a second", "Light on memory and battery", "Silent when idle"],
     },
     triage: {
       title: "File one. Clear them all.",
-      body: "Drag a newsletter to a category or archive a promotion, and Terno offers to do the same with everything like it, and with what arrives next. One key, and that sender stays out of your inbox until you go looking.",
-      points: ["Everything from this sender, domain or list", "A filter for the future in the same step", "One undo for all of it"],
+      body: "Archive one promotion and Terno offers to clear every one like it, plus whatever comes next. One key. One undo.",
+      points: ["By sender, domain or list", "A filter for the future, same step", "One undo for all of it"],
     },
     codes: {
-      title: "The code, one click away.",
-      body: "When a sign-in code arrives, it shows on the message itself. Click to copy, paste, done. No opening, no hunting for six digits.",
+      title: "Sign-in codes, one click.",
+      body: "The code shows right on the message. Click, paste, done.",
       points: [],
     },
     themes: {
       title: "Three designs. Eighteen palettes.",
-      body: "Pick a design for the shape of the app (warm Lumen, editorial Atelier or Apple-Mail-like macOS) and any color theme on top, from Solarized to Dracula. Or bring your own.",
+      body: "Warm Lumen, editorial Atelier or Apple-Mail-like macOS, in any color theme from Solarized to Dracula. Or bring your own.",
       points: ["Light and dark in every one", "All checked for contrast", "Motion you can turn down or off"],
     },
     snippets: {
       title: "Write it once.",
-      body: "Save the replies you send every week. Press ⌘; in any draft, type a few letters, and the snippet drops in with the recipient’s name already filled.",
+      body: "Save the replies you send every week. ⌘; drops one in, name already filled.",
       points: [],
     },
     palette: {
       title: "⌘K does everything.",
-      body: "Every action, folder, setting and snippet is a few letters away. It learns what you use most and puts it first.",
+      body: "Every action, folder, setting and snippet, a few letters away. What you use most comes first.",
       points: [],
     },
     keyboard: {
-      title: "Your inbox at the speed of your hands.",
-      body: "Move, archive, file, reply and undo without touching the mouse. Press ? any time to see every shortcut.",
+      title: "Never touch the mouse.",
+      body: "Move, archive, file, reply and undo from the keyboard. Press ? for every shortcut.",
       points: [],
     },
     open: {
       title: "Don’t take our word for it.",
-      body: "Every line of Terno is public. Read exactly how your mail is stored, what goes over the network and what never does. And three years after each release, that version becomes fully open source.",
+      body: "Every line of Terno is public. See exactly what’s stored and what crosses the network. Three years after each release, it’s fully open source.",
       points: [],
       cta: "Read the source on GitHub",
     },
@@ -94,7 +94,7 @@ export const en = {
   ],
   closing: {
     title: "Take back your inbox.",
-    body: "Free to download. No account, no sign-up, nothing to configure but your mail.",
+    body: "Free. No account. No sign-up. Just your mail.",
   },
   waitlist: {
     title: "Windows and Linux are coming.",
@@ -113,7 +113,7 @@ export const en = {
     note: "We keep your email and platform only to tell you about the release, then delete them.",
   },
   footer: {
-    tagline: "Your mail, made to measure.",
+    tagline: "The last email client you’ll try.",
     privacy: "Privacy",
     source: "Source",
     license: "License",

@@ -779,6 +779,19 @@ describe("accounts", () => {
     // never exposed through bootstrap
     expect(JSON.stringify(await client.call("app.bootstrap", {}))).not.toContain("correct");
   });
+
+  it("two IMAP accounts given the same name show their full addresses", async () => {
+    const { client } = setup();
+    const add = (email: string, displayName: string) => client.call("accounts.addImap", {
+      email, displayName, password: "correct",
+      imap: { host: "imap.example.test", port: 993, secure: true, user: email },
+      smtp: { host: "smtp.example.test", port: 465, secure: true, user: email },
+    });
+    await add("luis@a.example", "Luis");
+    await add("ana@a.example", "Ana");
+    await add("luis@b.example", "luis");
+    expect((await client.call("app.bootstrap", {})).accounts.map((a) => a.displayName)).toEqual(["Me", "luis@a.example", "Ana", "luis@b.example"]);
+  });
 });
 
 describe("agent socket", () => {

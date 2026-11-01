@@ -70,6 +70,45 @@ describe("Google connection RPC validation", () => {
     expect((await plain.client.call("app.bootstrap", {})).settings.syncWindowDays).toBe(180);
   });
 
+  it("two mailboxes with the same name before the @ show their full addresses, on desktop and the web", async () => {
+    const names = async (t: Awaited<ReturnType<typeof setup>>) => (await t.client.call("app.bootstrap", {})).accounts.map((a) => a.displayName);
+    const desktop = await setup(false);
+    desktop.answer({ ...identity, email: "luis@a.example", sub: "s1", refreshToken: "r" });
+    await desktop.client.call("accounts.connectGmail", {});
+    expect(await names(desktop)).toEqual(["luis"]);
+    desktop.answer({ ...identity, email: "luis@b.example", sub: "s2", refreshToken: "r" });
+    await desktop.client.call("accounts.connectGmail", {});
+    expect(await names(desktop)).toEqual(["luis@a.example", "luis@b.example"]);
+    // a third luis@ joins the addresses; another name stays short
+    desktop.answer({ ...identity, email: "luis@c.example", sub: "s3", refreshToken: "r" });
+    await desktop.client.call("accounts.connectGmail", {});
+    desktop.answer({ ...identity, email: "ana@a.example", sub: "s4", refreshToken: "r" });
+    await desktop.client.call("accounts.connectGmail", {});
+    expect(await names(desktop)).toEqual(["luis@a.example", "luis@b.example", "luis@c.example", "ana"]);
+
+    const web = await setup();
+    web.answer({ ...identity, email: "luis@a.example", sub: "s1" });
+    await web.client.call("accounts.connectGmailToken", { accessToken: "a1", expiresIn: 3600 });
+    web.answer({ ...identity, email: "luis@b.example", sub: "s2" });
+    await web.client.call("accounts.connectGmailToken", { accessToken: "a2", expiresIn: 3600 });
+    expect(await names(web)).toEqual(["luis@a.example", "luis@b.example"]);
+  });
+
+  it("a name the user gave keeps; the new luis@ still shows its address", async () => {
+    const t = await setup(false);
+    t.answer({ ...identity, email: "luis@a.example", sub: "s1", refreshToken: "r" });
+    const first = await t.client.call("accounts.connectGmail", {});
+    await t.client.call("accounts.update", { id: first.id, displayName: "Work" });
+    t.answer({ ...identity, email: "luis@b.example", sub: "s2", refreshToken: "r" });
+    await t.client.call("accounts.connectGmail", {});
+    // "Work" and "luis" don't read alike
+    expect((await t.client.call("app.bootstrap", {})).accounts.map((a) => a.displayName)).toEqual(["Work", "luis"]);
+    await t.client.call("accounts.update", { id: first.id, displayName: "luis" });
+    t.answer({ ...identity, email: "luis@c.example", sub: "s3", refreshToken: "r" });
+    await t.client.call("accounts.connectGmail", {});
+    expect((await t.client.call("app.bootstrap", {})).accounts.map((a) => a.displayName)).toEqual(["luis@a.example", "luis@b.example", "luis@c.example"]);
+  });
+
   it("plan 22: a sign-in where the contacts boxes were unticked leaves photos off", async () => {
     const t = await setup(false);
     const account = await t.client.call("accounts.connectGmail", {});

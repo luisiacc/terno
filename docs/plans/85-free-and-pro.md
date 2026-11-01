@@ -205,6 +205,7 @@ Teams (comments, shared drafts, assignments, admin, seat management, SSO); prepa
 5. **Trial allowance:** $0.50 of provider cost.
 6. **Free AI tasks:** managed AI never runs filters or categorization, even for Pro users without a provider.
 7. **Organization limit (Docker-style).** The BSL 1.1 grant allows free production use for individuals and Small Organizations (fewer than 100 employees and contractors **and** less than US$5M annual revenue), 30-day evaluation at any size, and any use by someone holding an active paid subscription. Larger organizations need a paid seat per person who uses Terno for work: **Pro** (AI included) or **Business** ($49/user/year proposed, no features). Pro's terms state it covers business use. Enforcement is the license alone, never the app.
+8. **Pro categorization beyond filters uses `jev` (2026-11-01).** The request: "for the ai pro plan, for categorization that doesn't fall into filters, we can use 'jev'". Threads that no filter (manual, AI or learned) places are categorized with `jev` in Pro. What `jev` is (a model, a provider or a technique) is not yet written down here; record it before the categorization part of Pro gets its own plan. Decision 6 still holds for Free: filters and the existing categorization never run on managed AI.
 
 ## Revisions after the Codex review
 
