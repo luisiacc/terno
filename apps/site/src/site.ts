@@ -7,7 +7,7 @@ export const DESIGNS = ["lumen", "midnight", "letter"] as const;
 export type SiteDesign = (typeof DESIGNS)[number];
 export const DESIGN_NAMES: Record<SiteDesign, string> = { lumen: "Lumen", midnight: "Midnight", letter: "Letter" };
 /** the design `/` and `/es/` render; the others are previews at /designs/<id>/ until one is chosen */
-export const SITE_DESIGN: SiteDesign = "lumen";
+export const SITE_DESIGN: SiteDesign = "midnight";
 
 export type Lang = "en" | "es";
 export type PageKind = "home" | "privacy" | "download" | "waitlist" | "404";

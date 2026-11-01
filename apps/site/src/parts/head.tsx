@@ -31,7 +31,7 @@ export function Head({ route, copy, title, description }: { route: Route; copy: 
         </>
       )}
       <meta name="color-scheme" content="light dark" />
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+      <meta name="theme-color" media="(prefers-color-scheme: light)" content={route.page === "home" && route.design === "midnight" ? "#08090b" : "#ffffff"} />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111214" />
       <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />

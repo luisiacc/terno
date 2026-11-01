@@ -22,7 +22,7 @@ const wrap = "mx-auto w-full max-w-6xl px-5 sm:px-8";
 const mono = "font-mono text-[0.72rem] uppercase tracking-[0.14em]";
 const link = "rounded-md text-(--mn-muted) transition-colors duration-100 hover:text-(--mn-fg)";
 
-/** A key as a keycap; `big` is the hero's. */
+/** A key as a keycap; `big` is the closing section's. */
 function Cap({ k, big }: { k: string; big?: boolean }) {
   return <Kbd className={big ? "mn-cap mn-cap-big" : "mn-cap"}>{k}</Kbd>;
 }
@@ -63,7 +63,6 @@ export const Midnight: HomeDesign = ({ copy }) => {
   const privacy = copy.lang === "es" ? "/es/privacy/" : "/privacy/";
   const home = copy.lang === "es" ? "/es/" : "/";
   // the hero's keys: ⌘K, E, L, /
-  const heroKeys = [5, 1, 2, 4].map((i) => copy.keys[i]!);
   const crop = "(min-width: 1024px) 1800px, 360vw";
 
   return (
@@ -112,21 +111,9 @@ export const Midnight: HomeDesign = ({ copy }) => {
             </div>
             <p className={`${mono} mt-5 text-(--mn-dim) normal-case tracking-[0.04em]`}>{copy.hero.note}</p>
 
-            <ul className="mt-16 flex flex-wrap items-start justify-center gap-x-8 gap-y-8 sm:mt-20 sm:gap-x-12">
-              {heroKeys.map((k) => (
-                <li key={k.label} className="flex flex-col items-center gap-4">
-                  <span className="flex gap-2.5">
-                    {k.keys.map((key) => (
-                      <Cap key={key} k={key} big />
-                    ))}
-                  </span>
-                  <span className={`${mono} text-[0.68rem] text-(--mn-muted)`}>{k.label}</span>
-                </li>
-              ))}
-            </ul>
           </div>
 
-          <div className={`${wrap} relative mt-16 pb-16 sm:mt-20`}>
+          <div className={`${wrap} relative mt-14 pb-16 sm:mt-16`}>
             <div className="mn-glow" aria-hidden="true" />
             <Window className="mn-window relative rounded-xl">
               <Shot name="inbox" copy={copy} eager sizes="(min-width: 1200px) 1088px, 94vw" />

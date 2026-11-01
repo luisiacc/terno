@@ -232,7 +232,7 @@ async function main() {
   encode();
 }
 
-/** WebP at 2× (the capture) and 1×; the Open Graph image from the light inbox. */
+/** WebP at 2× (the capture) and 1×; the Open Graph image from the dark inbox (Midnight, the site's design, is dark). */
 function encode() {
   const manifest: Record<string, { width: number; height: number }> = {};
   for (const png of execFileSync("ls", [raw], { encoding: "utf8" }).trim().split("\n").filter((f) => f.endsWith(".png"))) {
@@ -244,7 +244,7 @@ function encode() {
     manifest[base] = { width: Math.round(w / 2), height: Math.round(h / 2) };
   }
   if (!only || only.includes("inbox")) {
-    execFileSync("magick", [join(raw, "inbox-light.png"), "-resize", "1200x", "-gravity", "north", "-crop", "1200x630+0+0", "+repage", "-quality", "86", join(site, "public", "og.jpg")]);
+    execFileSync("magick", [join(raw, "inbox-dark.png"), "-resize", "1200x", "-gravity", "north", "-crop", "1200x630+0+0", "+repage", "-quality", "86", join(site, "public", "og.jpg")]);
   }
   const path = join(site, "src", "shots.json");
   let previous: Record<string, unknown> = {};

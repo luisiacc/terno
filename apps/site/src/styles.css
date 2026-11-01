@@ -58,11 +58,13 @@ html {
 .site-outcome-error { background: #fee2e2; color: #7f1d1d; }
 
 /* a macOS window around a screenshot */
-.site-window { position: relative; overflow: hidden; background: #fff; }
+.site-window { position: relative; overflow: hidden; background: #fff; container-type: inline-size; }
 .site-window-dark { background: #1c1c1e; }
 @media (prefers-color-scheme: dark) { .site-window { background: #1c1c1e; } }
-.site-window-bar { position: absolute; top: 0.9%; left: 1.1%; display: flex; gap: 0.55%; width: 6%; z-index: 1; pointer-events: none; }
-.site-window-bar span { display: block; aspect-ratio: 1; width: 22%; border-radius: 999px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15); }
+/* the traffic lights at a real window's scale: 12 px lights 8 px apart, 13 px in, on a 1440 px window (the shots'
+   width), so they shrink with the frame like the rest of the picture (cqw: the frame's width) */
+.site-window-bar { position: absolute; top: 0.9cqw; left: 0.9cqw; display: flex; gap: 0.56cqw; z-index: 1; pointer-events: none; }
+.site-window-bar span { display: block; width: max(4px, 0.84cqw); aspect-ratio: 1; border-radius: 999px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.18); }
 :where(.site-window) img { display: block; width: 100%; height: auto; }
 
 /* secondary pages: one quiet column */

@@ -59,3 +59,14 @@ describe("screenshots", () => {
     expect(doc.querySelector("dialog[data-lightbox]")).not.toBeNull();
   });
 });
+
+describe("the main design", () => {
+  it("/ and /es/ render Midnight, without the hero keycaps", () => {
+    for (const path of ["/", "/es/"]) {
+      const route = routes().find((r) => r.path === path)!;
+      const out = render(route);
+      expect(out.design).toBe("midnight");
+      expect(out.body).not.toContain("mn-cap-big\">⌘</kbd><kbd class=\"mn-cap mn-cap-big\">K");
+    }
+  });
+});
