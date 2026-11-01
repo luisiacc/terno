@@ -18,6 +18,7 @@ import { defineScheduledConformance } from "./scheduled";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
 import { defineTabsConformance } from "./tabs";
+import { defineViewUnreadConformance } from "./view-unread";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 import { defineFolderConformance } from "./folders";
@@ -90,6 +91,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       open.push(next);
       return next;
     });
+    defineViewUnreadConformance(fresh);
     defineScheduledConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);

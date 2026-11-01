@@ -83,6 +83,31 @@ test.describe("accounts open into their folders", { tag: "@design" }, () => {
     await expect(selected(page)).toHaveCount(1);
   });
 
+  test("Archive and Spam show their unread, the account's under it and all accounts' at the top; Sent and Trash none", async ({ app: page, server }) => {
+    const [a] = await accountIds(page);
+    const db = sqlDb(server.backend.store);
+    const unread = (where: string, account?: number) =>
+      db.get<{ c: number }>(`SELECT count(*) AS c FROM threads WHERE unread_count > 0 AND ${where}${account === undefined ? "" : ` AND account_id = ${account}`}`)!.c;
+    const shown = async (l: Locator, n: number) => (n ? await expect(count(l)).toHaveText(new Intl.NumberFormat("en-US").format(n)) : await expect(count(l)).toHaveCount(0));
+    const ARCHIVE = "in_inbox = 0 AND in_trash = 0 AND in_spam = 0";
+    const SPAM = "in_spam = 1 AND in_trash = 0";
+    expect(unread(ARCHIVE, a)).toBeGreaterThan(0);
+    await row(page, a!).click();
+    await shown(child(page, a!, "archive"), unread(ARCHIVE, a));
+    await shown(child(page, a!, "spam"), unread(SPAM, a));
+    await expect(count(child(page, a!, "sent"))).toHaveCount(0);
+    await expect(count(child(page, a!, "trash"))).toHaveCount(0);
+    await shown(page.getByTestId("nav-archive"), unread(ARCHIVE));
+    await shown(page.getByTestId("nav-spam"), unread(SPAM));
+
+    // an unread thread in the Archive that's read leaves the count
+    const before = unread(ARCHIVE, a);
+    const id = db.get<{ id: number }>(`SELECT id FROM threads WHERE account_id = ? AND unread_count > 0 AND ${ARCHIVE} LIMIT 1`, a!)!.id;
+    await server.backend.server.invoke("threads.act", { threadIds: [id], action: "markRead" }, ctx);
+    await shown(child(page, a!, "archive"), before - 1);
+    await shown(page.getByTestId("nav-archive"), unread(ARCHIVE));
+  });
+
   test("a category made with the sidebar's + opens for all accounts, even from inside one (Codex R2)", async ({ app: page }) => {
     const [a] = await accountIds(page);
     await row(page, a!).click();

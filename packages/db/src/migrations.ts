@@ -875,6 +875,17 @@ CREATE INDEX attachment_links_message ON attachment_links(message_id);
 CREATE INDEX attachment_links_op ON attachment_links(op_id);
 `;
 
+/** v41: where an unread thread is counted besides the Inbox: Archive (1), Spam (2), else NULL (a trashed message is never unread) */
+export const unreadSlot = (r: string) => `(CASE WHEN ${r}.unread_count > 0 AND ${r}.in_trash = 0 THEN CASE WHEN ${r}.in_spam = 1 THEN 2 WHEN ${r}.in_inbox = 0 THEN 1 END END)`;
+/** a thread the tally holds: all of them, but during the upgrade's backfill only those it has passed (each counted once) */
+const tallied = (r: string) => `(${r}.id <= coalesce((SELECT after_id FROM view_unread_backfill), ${r}.id))`;
+/** a slot's tally up or down by one (none for a NULL slot); a tally at zero goes, as folder_unread's does */
+const slotUp = (r: string) =>
+  `INSERT INTO view_unread (account_id, view, n) SELECT ${r}.account_id, ${unreadSlot(r)}, 1 WHERE ${unreadSlot(r)} IS NOT NULL AND ${tallied(r)} ON CONFLICT (account_id, view) DO UPDATE SET n = n + 1;`;
+const slotDown = (r: string) =>
+  `UPDATE view_unread SET n = n - 1 WHERE account_id = ${r}.account_id AND view = ${unreadSlot(r)} AND ${tallied(r)};
+  DELETE FROM view_unread WHERE account_id = ${r}.account_id AND view = ${unreadSlot(r)} AND n <= 0;`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial schema", sql: SCHEMA_V1 },
   { version: 2, name: "op target index", sql: OP_TARGETS_V2 },
@@ -1097,6 +1108,31 @@ DROP TRIGGER category_immutable_id;
 CREATE TRIGGER category_immutable_id BEFORE UPDATE ON categories WHEN new.id != old.id BEGIN
  SELECT RAISE(ABORT, 'Category identity cannot change');
 END;
+` },
+  // each account's unread threads in Archive (1) and Spam (2), kept by the threads' own writes: the sidebar's counts
+  // read one row a folder, never the unread threads (50k unread archived ones would be ~12 ms on every refresh).
+  // The mail already there is tallied after the open, a slice of threads at a time (folders.ts rebuildFolders;
+  // Codex: one pass over 500k unread threads in the migration held the open for half a second)
+  { version: 41, name: "unread in Archive and Spam", sql: `
+CREATE TABLE view_unread (
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  view INTEGER NOT NULL,
+  n INTEGER NOT NULL,
+  PRIMARY KEY (account_id, view)
+) WITHOUT ROWID;
+CREATE TRIGGER threads_view_unread_ai AFTER INSERT ON threads WHEN ${unreadSlot("NEW")} IS NOT NULL BEGIN
+  ${slotUp("NEW")}
+END;
+CREATE TRIGGER threads_view_unread_ad AFTER DELETE ON threads WHEN ${unreadSlot("OLD")} IS NOT NULL BEGIN
+  ${slotDown("OLD")}
+END;
+CREATE TRIGGER threads_view_unread_au AFTER UPDATE OF account_id, unread_count, in_inbox, in_trash, in_spam ON threads
+WHEN OLD.account_id IS NOT NEW.account_id OR ${unreadSlot("OLD")} IS NOT ${unreadSlot("NEW")} BEGIN
+  ${slotDown("OLD")}
+  ${slotUp("NEW")}
+END;
+CREATE TABLE view_unread_backfill (after_id INTEGER NOT NULL);
+INSERT INTO view_unread_backfill (after_id) SELECT 0 WHERE EXISTS (SELECT 1 FROM threads WHERE unread_count > 0);
 ` },
 ];
 

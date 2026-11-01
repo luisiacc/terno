@@ -1,4 +1,4 @@
-import { cleanFromName, folderRef, listFilterOf, storedAddresses, TAB_CODE, tabOfCode, tabRef, waitingCutoff } from "@terno/core";
+import { cleanFromName, COUNTED_VIEWS, folderRef, listFilterOf, storedAddresses, TAB_CODE, tabOfCode, tabRef, viewRef, waitingCutoff } from "@terno/core";
 import type {
   AttachmentInfo,
   Counts,
@@ -423,7 +423,21 @@ export function getCounts(db: Db, now: number): Counts {
     categoryTotal[r.category_id] = r.total;
     categoryUnread[r.category_id] = r.unread;
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now, hiding), folderUnread: folderUnreadCounts(db), tabUnread };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(db), ...waitingCounts(db, now, hiding), folderUnread: folderUnreadCounts(db), tabUnread, viewUnread: viewUnreadCounts(db) };
+}
+
+/**
+ * Unread threads in each account's Archive and Spam: the tallies the threads keep (migration v41), one row a folder.
+ * None while the upgrade still tallies the mail from before (a partial number would be wrong; no number is quiet).
+ */
+export function viewUnreadCounts(db: Db): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (db.get("SELECT 1 FROM view_unread_backfill") !== undefined) return out;
+  for (const r of db.all<{ account_id: number; view: number; n: number }>("SELECT account_id, view, n FROM view_unread WHERE n > 0")) {
+    const view = COUNTED_VIEWS[r.view - 1];
+    if (view) out[viewRef(r.account_id, view)] = r.n;
+  }
+  return out;
 }
 
 /** The Inbox counts' extra tests (plans 83, 86): none while nothing is hidden. */

@@ -38,12 +38,15 @@ it("v23 backfill attempts each distinct membership once per slice and rolls prog
     db.close();
     db = openDatabase(path);
     expect(db.get("SELECT after_message_id FROM folder_backfill")).toEqual(progress);
-    expect(rebuildFolders(db, 250)).toEqual({ more: false, touched: [1] });
+    // the labels' backfill is done; v41's tally of Archive and Spam unread goes next
+    expect(rebuildFolders(db, 250)).toEqual({ more: true, touched: [1] });
     expect(db.get("SELECT n FROM attempts")).toEqual({ n: 41 });
     expect(db.get("SELECT count(*) AS n FROM thread_folders")).toEqual({ n: 21 });
     expect(db.all("SELECT folder FROM thread_folders ORDER BY folder")).toEqual([...labels, "Label_late"].sort().map((folder) => ({ folder })));
     expect(db.all("SELECT id, provider_msg_id FROM messages ORDER BY id")).toEqual(identities);
     expect(db.all("SELECT * FROM folder_backfill")).toEqual([]);
+    expect(rebuildFolders(db, 250).more).toBe(false);
+    expect(db.get("SELECT n FROM attempts")).toEqual({ n: 41 });
     expect(db.all("SELECT account_id, folder, count(*) AS n FROM thread_folders WHERE unread = 1 GROUP BY account_id, folder ORDER BY folder")).toEqual(db.all("SELECT account_id, folder, n FROM folder_unread ORDER BY folder"));
   } finally { if (db.isOpen) db.close(); rmSync(dir, { recursive: true, force: true }); }
 });

@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { folderRef, separatesTabs, tabRef, TABS, type Account, type CategoryColor, type Folder, type Tab, type View } from "@terno/core";
+import { COUNTED_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
@@ -440,6 +440,7 @@ function AccountFolders({
   tabs,
   activeTab,
   tabUnread,
+  viewUnread,
 }: {
   account: Account;
   open: boolean;
@@ -454,6 +455,8 @@ function AccountFolders({
   tabs: boolean;
   activeTab: Tab | null;
   tabUnread: Readonly<Record<Tab, number>>;
+  /** unread threads in its Archive and Spam */
+  viewUnread: Readonly<Record<CountedView, number>>;
 }) {
   const groupRef = useRef<HTMLDivElement>(null);
   const [batches, setBatches] = useState(1);
@@ -556,7 +559,7 @@ function AccountFolders({
                 onClick={() => navigate({ accountId: account.id, view: v })}
                 icon={<Icon className="size-4" />}
                 label={viewLabel(v)}
-                count={v === "inbox" ? unread || undefined : undefined}
+                count={(v === "inbox" ? unread : isCounted(v) ? viewUnread[v] : 0) || undefined}
                 countTone={v === "inbox" ? countTone : "muted"}
               />
             );
@@ -644,6 +647,20 @@ function folderUnreadByAccount(all: Record<string, number> | undefined): Readonl
   unreadSlices.last = next;
   return next;
 }
+const isCounted = (v: View): v is CountedView => (COUNTED_VIEWS as readonly View[]).includes(v);
+
+/** Every account's Archive and Spam unread together, for the folders above the accounts. */
+function useViewUnreadTotals(all: Record<string, number> | undefined): Record<CountedView, number> {
+  return useMemo(() => {
+    const out: Record<CountedView, number> = { archive: 0, spam: 0 };
+    for (const [ref, n] of Object.entries(all ?? {})) {
+      const v = ref.slice(ref.lastIndexOf(":") + 1);
+      if (isCounted(v as View)) out[v as CountedView] += n;
+    }
+    return out;
+  }, [all]);
+}
+
 function useFolderUnreadByAccount(all: Record<string, number> | undefined): ReadonlyMap<number, Record<string, number>> {
   return useMemo(() => folderUnreadByAccount(all), [all]);
 }
@@ -666,6 +683,8 @@ const AccountEntry = memo(function AccountEntry({
   gmailTab,
   promotionsUnread,
   socialUnread,
+  archiveUnread,
+  spamUnread,
 }: {
   account: Account;
   open: boolean;
@@ -681,6 +700,8 @@ const AccountEntry = memo(function AccountEntry({
   gmailTab: Tab | null;
   promotionsUnread: number;
   socialUnread: number;
+  archiveUnread: number;
+  spamUnread: number;
 }) {
   // every account opens to its standard folders, a lone one too (its Inbox, Sent, Spam… inside it, as Mail
   // shows them), then its own folders and Gmail tabs
@@ -694,6 +715,7 @@ const AccountEntry = memo(function AccountEntry({
   const child = here && open && ownFolder === null && gmailTab === null && view !== null ? (inCategory ? "inbox" : view) : null;
   const childActive = ownActive || tabActive || (child !== null && listedByAccount(child));
   const tabUnread = useMemo(() => ({ promotions: promotionsUnread, social: socialUnread }), [promotionsUnread, socialUnread]);
+  const viewUnread = useMemo(() => ({ archive: archiveUnread, spam: spamUnread }), [archiveUnread, spamUnread]);
   return (
     <div data-account-id={a.id}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below */}
@@ -726,6 +748,7 @@ const AccountEntry = memo(function AccountEntry({
         tabs={tabs}
         activeTab={tabActive ? gmailTab : null}
         tabUnread={tabUnread}
+        viewUnread={viewUnread}
       />
     </div>
   );
@@ -749,6 +772,7 @@ export function Sidebar() {
 
   const openAccount = useOpenAccount((s) => s.id);
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
+  const viewTotals = useViewUnreadTotals(counts.viewUnread);
   // a focused account that's removed hands focus to the row now in its place (or Add account), not to the document
   const accountsRef = useRef<HTMLDivElement>(null);
   const focusedAccount = useRef<number | null>(null);
@@ -798,7 +822,7 @@ export function Sidebar() {
       onClick={() => navigate({ view: v, accountId: null })}
       icon={<Icon className="size-4" />}
       label={viewLabel(v)}
-      count={v === "inbox" ? counts.inboxUnread : undefined}
+      count={(v === "inbox" ? counts.inboxUnread : isCounted(v) ? viewTotals[v] : 0) || undefined}
       countTone={v === "inbox" ? design.surfaces.inboxCount : "muted"}
       shortcut={keys}
     />
@@ -921,6 +945,8 @@ export function Sidebar() {
                 gmailTab={accountId === a.id ? gmailTab : null}
                 promotionsUnread={counts.tabUnread?.[tabRef(a.id, "promotions")] ?? 0}
                 socialUnread={counts.tabUnread?.[tabRef(a.id, "social")] ?? 0}
+                archiveUnread={counts.viewUnread?.[viewRef(a.id, "archive")] ?? 0}
+                spamUnread={counts.viewUnread?.[viewRef(a.id, "spam")] ?? 0}
               />
             ))}
           </div>

@@ -1,5 +1,6 @@
 import type { Folder } from "@terno/core";
 import type { ProviderFolder } from "@terno/store";
+import { unreadSlot } from "./migrations";
 import { placeholders, type Db } from "./sqlite";
 
 /**
@@ -195,10 +196,36 @@ function backfill(db: Db, limit: number, left: () => boolean): { more: boolean; 
   return { more: left(), touched };
 }
 
+/**
+ * The upgrade's tally of Archive and Spam unread (schema 41), `limit` threads at a time by id: the triggers count only
+ * threads at or below the cursor, so each is counted once. Its last slice names a thread, so the counts refresh.
+ */
+function tallyViewUnread(db: Db, limit: number, left: () => boolean): { more: boolean; touched: number[] } {
+  const fill = db.get<{ after_id: number }>("SELECT after_id FROM view_unread_backfill LIMIT 1");
+  if (!fill) return { more: false, touched: [] };
+  const range = db.get<{ last: number | null; c: number }>("SELECT max(id) AS last, count(*) AS c FROM (SELECT id FROM threads WHERE id > ? ORDER BY id LIMIT ?)", fill.after_id, limit)!;
+  if (range.last !== null)
+    db.run(
+      `INSERT INTO view_unread (account_id, view, n)
+       SELECT account_id, slot, count(*) FROM (SELECT account_id, ${unreadSlot("threads")} AS slot FROM threads INDEXED BY threads_unread_id WHERE unread_count > 0 AND id > ? AND id <= ?)
+       WHERE slot IS NOT NULL GROUP BY account_id, slot ORDER BY account_id, slot
+       ON CONFLICT (account_id, view) DO UPDATE SET n = n + excluded.n`,
+      fill.after_id,
+      range.last,
+    );
+  if (range.c < limit) {
+    db.run("DELETE FROM view_unread_backfill");
+    return { more: left(), touched: range.last === null ? [] : [range.last] };
+  }
+  db.run("UPDATE view_unread_backfill SET after_id = ?", range.last);
+  return { more: true, touched: [] };
+}
+
 export function rebuildFolders(db: Db, limit: number): { more: boolean; touched: number[] } {
   return db.tx(() => {
     const job = db.get<{ account_id: number; key: string; phase: number; after_uidvalidity: number; after_uid: number }>("SELECT account_id, key, phase, after_uidvalidity, after_uid FROM folder_rebuilds LIMIT 1");
-    const left = () => db.get("SELECT 1 FROM folder_rebuilds UNION ALL SELECT 1 FROM folder_backfill LIMIT 1") !== undefined;
+    const left = () => db.get("SELECT 1 FROM folder_rebuilds UNION ALL SELECT 1 FROM folder_backfill UNION ALL SELECT 1 FROM view_unread_backfill LIMIT 1") !== undefined;
+    if (!job && db.get("SELECT 1 FROM folder_backfill") === undefined) return tallyViewUnread(db, limit, left);
     if (!job) return backfill(db, limit, left);
     const done = () => db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key = ?", job.account_id, job.key);
     if (!isFolder(db, job.account_id, job.key)) {

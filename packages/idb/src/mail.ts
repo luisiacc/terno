@@ -63,6 +63,8 @@ import {
   tabOfCode,
   tabRef,
   threadTab,
+  COUNTED_VIEWS,
+  viewRef,
   type MessageCategory,
   type TabMessage,
 } from "@terno/core";
@@ -1414,11 +1416,15 @@ export function getCounts(c: Ctx, now: number): Counts {
   const hidden = inboxHiddenTest(c);
   // plan 86: unread threads per Gmail tab, from the tab's unread index (its buckets' sizes)
   const tabUnread: Record<string, number> = {};
+  // unread threads in each account's Archive and Spam
+  const viewUnread: Record<string, number> = {};
   for (const t of threads.all()) {
-    if (t.in_inbox === 1 && t.unread_count > 0 && !hidden?.(t.id)) {
+    if (!(t.unread_count > 0)) continue;
+    if (t.in_inbox === 1 && !hidden?.(t.id)) {
       byAccount[t.account_id] = (byAccount[t.account_id] ?? 0) + 1;
       inboxUnread++;
     }
+    for (const v of COUNTED_VIEWS) if (VIEW_TEST[v](t)) viewUnread[viewRef(t.account_id, v)] = (viewUnread[viewRef(t.account_id, v)] ?? 0) + 1;
   }
   for (const a of T(c, "accounts").all()) {
     if (a.kind !== "gmail") continue;
@@ -1435,7 +1441,7 @@ export function getCounts(c: Ctx, now: number): Counts {
     categoryTotal[tc.category_id] = (categoryTotal[tc.category_id] ?? 0) + 1;
     categoryUnread[tc.category_id] = (categoryUnread[tc.category_id] ?? 0) + (t.unread_count > 0 ? 1 : 0);
   }
-  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now), folderUnread: folderUnreadCounts(c), tabUnread };
+  return { inboxUnread, inboxUnreadByAccount: byAccount, categoryUnread, categoryTotal, categorySuggestions: pendingSuggestionCounts(c), ...waitingCounts(c, now), folderUnread: folderUnreadCounts(c), tabUnread, viewUnread };
 }
 
 /** Inbox threads waiting for your reply (plan 17): the waiting order from the top to the cutoff; unknown while facts are pending. */
