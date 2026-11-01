@@ -902,7 +902,7 @@ export function createHandlers(b: Backend): Handlers {
       // what an import kept for this mailbox goes in now
       await restorePending(b);
       b.startAccount(account);
-      return account;
+      return (await b.accountViews([account]))[0]!;
     },
 
     "accounts.connectGmail": async ({ syncWindowDays }) => {
@@ -953,7 +953,7 @@ export function createHandlers(b: Backend): Handlers {
         await setGooglePhotoState(store, account.id, photos);
         void b.icons.syncPeople(account.id, photos).catch(() => {});
       }
-      return account;
+      return (await b.accountViews([account]))[0]!;
     },
 
     "accounts.connectGmailToken": async ({ accessToken, expiresIn, accountId, syncWindowDays }) => {
@@ -994,7 +994,7 @@ export function createHandlers(b: Backend): Handlers {
           if (admission.expectedSubject !== (snapshot.config.googleSubject ?? null)) throw new RpcError("BAD_REQUEST", L("errors.google.invalidResponse"));
           await admitBrowserGoogle(b, existing, who, accessToken, expiresAt, flow, { ...admission, stamp: snapshot.stamp });
           void b.syncAccount(existing.id);
-          return existing;
+          return (await b.accountViews([existing]))[0]!;
         }
         // a new mailbox only: one already here (reconnected above) keeps its window
         const config: GmailAccountConfig & AccountPrefs = { senderName: who.name || who.email, googleSubject: who.sub!, ...(syncWindowDays !== undefined && { syncWindowDays }) };
@@ -1018,11 +1018,11 @@ export function createHandlers(b: Backend): Handlers {
         // what an import kept for this mailbox goes in now
         await restorePending(b);
         b.startAccount(account);
-        return account;
+        return (await b.accountViews([account]))[0]!;
       } finally { if (flow && flowId !== undefined) await endSignIn(b, flowId, flow); }
     },
 
-    "accounts.reconnect": ({ id, password }) => reconnectAccount(b, id, password),
+    "accounts.reconnect": async ({ id, password }) => (await b.accountViews([await reconnectAccount(b, id, password)]))[0]!,
 
     "accounts.update": async ({ id, ...patch }) => {
       const before = patch.syncWindowDays !== undefined ? await store.accounts.get(id) : null;
@@ -1039,7 +1039,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.emitAccounts();
       // plan 86: what the Inbox shows changed (lists reload, the counts and the Dock follow)
       if (patch.separateTabs !== undefined) b.notifyChanged([]);
-      return result;
+      return (await b.accountViews([result]))[0]!;
     },
 
     "accounts.remove": async ({ id }) => {

@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { connectGmail, inspectGmailToken } from "@terno/mail";
+import { connectGmail, inspectGmailToken, ProviderAuthError } from "@terno/mail";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -408,4 +408,18 @@ describe("finite native identity requests through public admission", () => {
     expect(await t.backend.store.accounts.config(account.id)).toEqual(config);
     expect(await t.backend.store.secrets.get(`account:${account.id}:refreshToken`)).toEqual(secret);
   });
+});
+
+it("a browser reconnect reply projects verified recovery rather than its captured old auth state", async () => {
+  const t = await setup();
+  const account = await t.client.call("accounts.connectGmailToken", { accessToken: "synthetic-initial", expiresIn: 3600 });
+  await t.backend.syncAccount(account.id);
+  const provider = (await t.backend.provider(account.id))!;
+  const sync = provider.sync.bind(provider);
+  provider.sync = async () => { throw new ProviderAuthError("Synthetic refusal"); };
+  await t.backend.syncAccount(account.id);
+  expect((await t.client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: true });
+  provider.sync = sync;
+  const reconnected = await t.client.call("accounts.connectGmailToken", { accountId: account.id, accessToken: "synthetic-reconnected", expiresIn: 3600 });
+  expect(reconnected.syncState).toMatchObject({ authRequired: false });
 });

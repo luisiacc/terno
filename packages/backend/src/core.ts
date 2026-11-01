@@ -120,6 +120,10 @@ export interface BackendCoreOptions {
   attention?: AttentionHost;
 }
 
+class StatusHeld extends RequestNotDispatchedError {
+  constructor() { super(L("errors.waitingForSignIn")); }
+}
+
 interface AccountLifetime {
   id: number;
   abort: AbortController;
@@ -626,7 +630,7 @@ export class BackendCore {
       const status = await this.accountStatus(account.id);
       const life = this.lifetimes.get(account.id);
       if (account.kind === "imap" && status.signInRequired && life && this.current(life)) {
-        const recover = status.recoveryProof(this.statusAuthority(life));
+        const recover = status.recoveryProof(this.statusAuthority(life), "incoming");
         try {
           const provider = await this.provider(account.id);
           if (provider) { await provider.verify(); await recover(); await this.resumeAuth(account.id); }
@@ -983,6 +987,7 @@ export class BackendCore {
             return pending;
           },
           changed: () => this.statusChanged(),
+          failed: () => this.log("warn", "Account status could not be saved"),
           admissionChanged: () => {
             this.connectivity.waitForSignIn(accountId, this.statuses.get(accountId)?.signInRequired ?? false);
             this.cooldownChanged();
@@ -1411,7 +1416,7 @@ export class BackendCore {
         yield: () => this.platform.yield(),
         google,
         tokenResult: (generation, error) => {
-          if (error instanceof ProviderAuthError) return status.refuse({ ...authority, generation }, error);
+          if (error instanceof ProviderAuthError) void status.refuse({ ...authority, generation }, error);
         },
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
@@ -1872,7 +1877,7 @@ export class BackendCore {
           // run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits). A refused sign-in
           // (plan 25) waits for the user: no probe, no poll (a start and a network change still try it).
           this.connectivity.succeeded(accountId);
-          if (auth) await status.refuse(authority, error as ProviderAuthError);
+          if (auth) await status.refuse(authority, error as ProviderAuthError, null, before?.kind === "imap" ? "incoming" : "account");
           if (!this.connectivity.online && !auth) this.connectivity.probeLater(accountId);
           // anything else proves nothing about the sign-in: a request for one stays
           await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null, ...(auth && { authRequired: true, authScope: null }) });
@@ -2318,6 +2323,7 @@ export class BackendCore {
       if (receipt?.submission === "accepted" || currentSend?.accepted) throw new ProviderError(L("errors.send.alreadyAccepted"), false, true);
       if (sending && (!currentSend || currentSend.state !== "running")) return;
       if (!this.current(life) || hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) { await this.store.ops.release(op.id, this.now()); return; }
+      if (this.statuses.get(op.account_id)?.holds(op.kind)) throw new StatusHeld();
       const execution = await provider.execute({ id: op.id, kind: op.kind, target, payload,
         requestRun: { markDispatched: () => { remoteDispatched = true; }, markSubmissionDispatched: () => { submissionDispatched = true; } },
         submissionAccepted: () => { accepted = true; sendAccepted ??= { warning: null }; },
@@ -2337,6 +2343,7 @@ export class BackendCore {
           if (copy?.submission === "accepted" || current?.accepted) throw new ProviderError(L("errors.send.alreadyAccepted"), false, true);
           if (!current || current.state !== "running") throw new ProviderError(L("errors.sentCopy.unavailable"), false);
           this.assertCurrent(life);
+          if (this.statuses.get(op.account_id)?.holds(op.kind)) throw new StatusHeld();
           if (hold() || credentials !== this.credentialsOf(op.account_id) || this.providers.get(op.account_id) !== opening) throw new ProviderError(L("errors.sentCopy.unavailable"), true);
         } }),
         ...(receipt && { sentCopyRequested: receipt.copyRequested, sentCopy: {
@@ -2381,6 +2388,10 @@ export class BackendCore {
           await this.store.ops.release(op.id, this.now());
           this.cooldownChanged();
         }
+        else if (error instanceof StatusHeld) {
+          await this.store.ops.awaitAuth(op.id, message, this.now());
+          if (!this.statuses.get(op.account_id)?.holds(op.kind)) await this.resumeAuth(op.account_id);
+        }
         else if (error instanceof RequestNotDispatchedError && !this.current(life)) await this.parkClosedOp(op);
         else if (error instanceof ProviderAuthError && credentials !== this.credentialsOf(op.account_id)) {
           await this.store.ops.release(op.id, this.now());
@@ -2417,7 +2428,7 @@ export class BackendCore {
     // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
     const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
     const status = await this.accountStatus(accountId);
-    await status.refuse({ generation: credentials, live: () => this.current(life) }, error, scope);
+    await status.refuse({ generation: credentials, live: () => this.current(life) }, error, scope, account.kind === "imap" && scope === null ? "incoming" : "account");
   }
 
   /**

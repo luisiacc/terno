@@ -1,10 +1,11 @@
+import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RPC_VERSION, RpcClient, type RpcMessage } from "@terno/core/rpc";
 import { openDatabase, SqlMailStore } from "@terno/db";
 import { IdbMailStore } from "@terno/idb";
-import { createRegistry, parseRaw } from "@terno/mail";
+import { createRegistry, parseRaw, ProviderAuthError } from "@terno/mail";
 import type { MailStore } from "@terno/store";
 import { IDBFactory } from "fake-indexeddb";
 import { SMTPServer } from "smtp-server";
@@ -110,4 +111,48 @@ for (const adapter of ["SQL", "IDB"] as const) it.each([false, true])(`${adapter
   expect(received.at(-1)).toMatchObject({ recipients: ["neighbor@example.test"] });
   expect(received.at(-1)!.raw).toContain("Neighbor body");
   expect(await second.client.call("drafts.list", {})).toEqual([]);
+});
+
+for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: R1 an auth hold arriving during attachment preparation prevents native SMTP dispatch`, async () => {
+  let connections = 0;
+  const smtp = new SMTPServer({ disabledCommands: ["STARTTLS"], authOptional: true,
+    onConnect(_session, done) { connections++; done(); },
+    onAuth(_auth, _session, done) { done(null, { user: "synthetic" }); },
+    onData(stream, _session, done) { stream.resume(); stream.on("end", done); },
+  });
+  await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve));
+  cleanup.push(() => new Promise<void>((resolve) => smtp.close(resolve)));
+  const dir = mkdtempSync(join(tmpdir(), "terno-status-smtp-"));
+  cleanup.push(async () => { rmSync(dir, { recursive: true, force: true }); });
+  const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "test.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: new IDBFactory(), platform, instantSearch: false });
+  const registry = createRegistry({ imap: { allowInsecure: true } });
+  const backend = new Backend({ store, platform, cipher: plaintextCipher, providers: registry, autoSync: false, iconTransport: null, version: "test" });
+  const [local, remote] = createMemoryTransportPair(); backend.connect(remote, { clientId: "status", origin: "renderer" });
+  const client = new RpcClient(local);
+  cleanup.push(async () => { client.close(); await backend.stop(); });
+  await backend.ready;
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
+    imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false,
+  } });
+  const provider = (await backend.provider(account.id))!;
+  vi.spyOn(provider, "sync").mockRejectedValue(new ProviderAuthError("Synthetic IMAP refusal"));
+  const attachment = await client.call("attachments.create", { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: 1 });
+  await client.call("attachments.append", { accountId: account.id, assetId: attachment.assetId, index: 0, dataBase64: "eA==" });
+  await client.call("attachments.seal", { accountId: account.id, assetId: attachment.assetId });
+  const sent = await client.call("compose.send", { accountId: account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body", attachments: [attachment] });
+  const original = await store.ops.get(sent.opId);
+  let entered = false, release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const read = store.attachments.read.bind(store.attachments);
+  vi.spyOn(store.attachments, "read").mockImplementation(async (...args) => { entered = true; await gate; return read(...args); });
+  const sending = backend.runWorker();
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    await backend.syncAccount(account.id);
+    expect((await client.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: true });
+    release(); await sending;
+    expect(connections).toBe(0);
+    expect(await store.ops.get(sent.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: original!.payload_json, target_json: original!.target_json });
+    expect((await client.call("ops.list", {})).find((op) => op.id === sent.opId)).toMatchObject({ awaitingAuth: true });
+  } finally { release(); await sending; }
 });

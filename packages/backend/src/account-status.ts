@@ -12,7 +12,9 @@ export interface StatusFailure {
 /** One account-stamp authority survives provider replacement and orders every status write. */
 export class AccountStatus {
   private state: AccountSyncState;
-  private auth: { failure: StatusFailure; scope: "send" | null } | undefined;
+  private whole: { failure: StatusFailure; scope: null; source: "account" | "incoming" } | undefined;
+  private send: { failure: StatusFailure; scope: "send" } | undefined;
+  private get auth() { return this.whole ?? this.send; }
   private policy: { failure: StatusFailure; generation: number } | undefined;
   private run: symbol | undefined;
   private constraint: { failure: StatusFailure; active(): boolean } | undefined;
@@ -22,6 +24,7 @@ export class AccountStatus {
   private writing: Promise<void> | undefined;
   private recovery = 0;
   private refusal = 0;
+  private failure: unknown;
 
   constructor(private readonly options: {
     initial: AccountSyncState;
@@ -29,9 +32,14 @@ export class AccountStatus {
     write(state: AccountSyncState): Promise<void>;
     changed(): void;
     admissionChanged?(): void;
+    failed?(): void;
   }) {
     this.state = { ...options.initial };
-    if (this.state.authRequired) this.auth = { scope: this.state.authScope ?? null, failure: { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n } };
+    if (this.state.authRequired) {
+      const failure = { message: this.state.lastError ?? "", i18n: this.state.lastErrorI18n };
+      if (this.state.authScope === "send") this.send = { scope: "send", failure };
+      else this.whole = { scope: null, source: "account", failure };
+    }
     this.persisted = JSON.stringify(this.project());
     this.visible = this.persisted;
   }
@@ -65,7 +73,7 @@ export class AccountStatus {
     if (!this.current(authority) || this.run !== run) return Promise.resolve();
     // Run outcomes never prove that a refused credential or a policy hold recovered.
     const { authRequired: _required, authScope: _scope, ...outcome } = patch;
-    if ((this.auth || this.policyPaused) && outcome.lastSyncAt !== undefined) outcome.lastSyncAt = this.state.lastSyncAt;
+    if ((this.signInRequired || this.policyPaused || this.constraint?.active()) && outcome.lastSyncAt !== undefined) outcome.lastSyncAt = this.state.lastSyncAt;
     this.state = { ...this.state, ...outcome };
     if (end) {
       this.run = undefined;
@@ -74,9 +82,11 @@ export class AccountStatus {
     return this.publish();
   }
 
-  refuse(authority: StatusAuthority, failure: StatusFailure, scope: "send" | null = null): Promise<void> {
+  refuse(authority: StatusAuthority, failure: StatusFailure, scope: "send" | null = null, source: "account" | "incoming" = "account"): Promise<void> {
     if (!this.current(authority)) return Promise.resolve();
-    if (!this.signInRequired || scope === null) { this.auth = { failure, scope }; this.refusal++; }
+    if (scope === "send") this.send = { failure, scope };
+    else this.whole = { failure, scope, source };
+    this.refusal++;
     return this.publish(true);
   }
 
@@ -100,16 +110,23 @@ export class AccountStatus {
     return true;
   }
 
-  recoveryProof(authority: StatusAuthority): () => Promise<void> {
+  recoveryProof(authority: StatusAuthority, scope: "account" | "incoming" = "account"): () => Promise<void> {
     const refusal = this.refusal;
-    return () => refusal === this.refusal ? this.verified(authority) : Promise.resolve();
+    return () => refusal === this.refusal ? this.verified(authority, scope) : Promise.resolve();
   }
 
-  verified(authority: StatusAuthority): Promise<void> {
+  verified(authority: StatusAuthority, scope: "account" | "incoming" = "account"): Promise<void> {
     if (!this.current(authority)) return Promise.resolve();
-    this.auth = undefined;
-    this.policy = undefined;
-    this.recovery++;
+    if (scope === "incoming") {
+      // A durable whole-account refusal has unknown protocol coverage: IMAP alone cannot prove SMTP.
+      if (this.whole?.source !== "incoming") return Promise.resolve();
+      this.whole = undefined;
+    } else {
+      this.whole = undefined;
+      this.send = undefined;
+      this.policy = undefined;
+      this.recovery++;
+    }
     this.run = undefined;
     this.state = { ...this.state, status: "idle", lastError: null, lastErrorI18n: null, authRequired: false, authScope: null, connection: null };
     return this.publish(true);
@@ -128,19 +145,30 @@ export class AccountStatus {
     this.revision++;
     if (encoded !== this.visible) { this.visible = encoded; this.options.changed(); }
     if (!this.writing) {
-      // Start after assigning writing, so a synchronous publisher cannot start a second writer.
-      const writing = Promise.resolve().then(async () => {
-        for (;;) {
-          const revision = this.revision, state = this.project(), encoded = JSON.stringify(state);
-          if (encoded !== this.persisted) { await this.options.write(state); this.persisted = encoded; }
-          if (revision === this.revision) return;
+      let resolve!: () => void, reject!: (error: unknown) => void;
+      const writing = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+      this.writing = writing;
+      // Background facts keep transport classification independent of status persistence failure.
+      void writing.catch(() => {});
+      void Promise.resolve().then(async () => {
+        try {
+          for (;;) {
+            const revision = this.revision, state = this.project(), encoded = JSON.stringify(state);
+            if (encoded !== this.persisted) { await this.options.write(state); this.persisted = encoded; this.failure = undefined; }
+            if (revision === this.revision) break;
+          }
+          this.writing = undefined;
+          resolve();
+        } catch (error) {
+          this.failure = error;
+          this.writing = undefined;
+          this.options.failed?.();
+          reject(error);
         }
       });
-      this.writing = writing;
-      void writing.then(() => { if (this.writing === writing) this.writing = undefined; }, () => { if (this.writing === writing) this.writing = undefined; });
     }
     return this.writing;
   }
 
-  flush(): Promise<void> { return this.writing ?? Promise.resolve(); }
+  flush(): Promise<void> { return this.writing ?? (this.failure === undefined ? Promise.resolve() : Promise.reject(this.failure)); }
 }

@@ -74,3 +74,40 @@ it("completed runs cannot publish delayed progress and lower constraints survive
   await run.update({ status: "syncing", bodiesPending: 100 });
   expect(status.project()).toMatchObject({ status: "idle", bodiesPending: 0 });
 });
+
+it.each(["send first", "incoming first"])("R1 incoming recovery retains the unverified SMTP refusal: %s", async (order) => {
+  const status = new AccountStatus({ initial, generation: () => 1, changed() {}, write: async () => {} });
+  const authority = { generation: 1, live: () => true };
+  if (order === "send first") await status.refuse(authority, { message: "SMTP refused" }, "send");
+  await status.refuse(authority, { message: "IMAP refused" }, null, "incoming");
+  if (order === "incoming first") await status.refuse(authority, { message: "SMTP refused" }, "send");
+  await status.recoveryProof(authority, "incoming")();
+  expect(status.project()).toMatchObject({ authRequired: true, authScope: "send", lastError: "SMTP refused" });
+  expect(status.signInRequired).toBe(false);
+  expect(status.holds("send")).toBe(true);
+  expect(status.holds("archive")).toBe(false);
+  await status.verified(authority);
+  expect(status.holds("send")).toBe(false);
+});
+
+it("R1 successful incoming sync advances its timestamp while SMTP remains held", async () => {
+  const status = new AccountStatus({ initial, generation: () => 1, changed() {}, write: async () => {} });
+  const authority = { generation: 1, live: () => true };
+  await status.refuse(authority, { message: "SMTP refused" }, "send");
+  await status.begin(authority).end({ status: "idle", lastSyncAt: 1234 });
+  expect(status.project()).toMatchObject({ lastSyncAt: 1234, authRequired: true, authScope: "send" });
+});
+
+it("a fact arriving as the persistence promise completes is also durably drained", async () => {
+  const writes: string[] = [];
+  const authority = { generation: 1, live: () => true };
+  const status = new AccountStatus({ initial, generation: () => 1, changed() {}, write: async (state) => {
+    writes.push(state.status);
+    if (writes.length === 1) queueMicrotask(() => queueMicrotask(() => { void status.refuse(authority, { message: "Sign in" }); }));
+  } });
+  await status.begin(authority).update({ status: "syncing" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await status.flush();
+  expect(status.project()).toMatchObject({ status: "error" });
+  expect(writes).toEqual(["syncing", "error"]);
+});

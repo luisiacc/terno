@@ -432,6 +432,43 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { first.release(); later.release(); await syncing; }
   });
 
+  it.each([429, 403])("R1 Send-first quota%i projects the existing admission hold without a sync", async (status) => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(status, "userRateLimitExceeded") : healthySync(request));
+    const original = await h.send();
+    await h.backend.runWorker();
+    expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "queued", attempts: 1 });
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.paused" }, connection: null });
+    const sibling = await h.send(), queued = await h.backend.store.ops.get(sibling.opId);
+    const calls = h.paths().slice(), ledger = await h.backend.store.providerCooldown.read();
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(h.paths()).toEqual(calls);
+    expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+    expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+  });
+
+  it("owner status persistence cannot turn a definitive native policy rejection into retryable Send", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    let failed = false;
+    const write = h.backend.store.accounts.setSyncState.bind(h.backend.store.accounts);
+    vi.spyOn(h.backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => {
+      if (!failed && patch.lastErrorI18n?.key === "errors.gmail.serviceDisabled") { failed = true; throw new Error("Synthetic status persistence failure"); }
+      return write(id, patch);
+    });
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(403, "SERVICE_DISABLED") : healthySync(request));
+    const sent = await h.send();
+    await h.backend.runWorker();
+    expect(failed).toBe(true);
+    expect(await h.backend.store.ops.get(sent.opId)).toMatchObject({ state: "failed", attempts: 1 });
+    h.answer(healthySync);
+    await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+    await h.backend.syncAccount(h.account.id);
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
+  });
+
   it.each(["copy", "recovery"] as const)("redesign retains sign-in after raw400, Send invalid_grant and late raw403: %s", async (witness) => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;
@@ -514,6 +551,8 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       await vi.waitFor(() => expect(entered).toBe(true));
       sending = h.backend.runWorker();
       await vi.waitFor(async () => expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" } }));
+      const updated = await h.rpc.call("accounts.update", { id: h.account.id, displayName: "Updated synthetic" });
+      expect(updated.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" } });
       release();
       await Promise.all([syncing, sending]);
       expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "failed", attempts: 1 });

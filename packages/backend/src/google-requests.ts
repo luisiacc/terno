@@ -43,6 +43,12 @@ export async function savedGoogleRequests(input: {
     if (!net.googleAvailable(admission)) throw new ProviderCooldownError(request.endpoint, "0", "capacity");
   };
   const pause = () => { paused = true; input.changed(); };
+  const constraint = (epoch: number, active: () => boolean) => input.status.constrain(
+    { generation: epoch, live: active }, new ProviderCooldownError("gmail-api", "0", "quota"), () => {
+      try { installation.check({ request: mail }); scope.check({ request: mail }); return false; }
+      catch { return true; }
+    },
+  );
   return {
     generation: input.credentials,
     get paused() { return paused || policyPaused(); },
@@ -73,10 +79,13 @@ export async function savedGoogleRequests(input: {
       };
       return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind, error) => {
         const current = active() && !init?.signal?.aborted;
-        try {
-          if (current && kind === "policy" && error && descriptor.request.endpoint === "gmail-api") await input.status.forbid({ generation: epoch, live: active }, revision, error);
-        } finally { await settle(current ? kind : "none"); }
-      }) : undefined })(resource, init);
+        if (current && kind === "policy" && error && descriptor.request.endpoint === "gmail-api") void input.status.forbid({ generation: epoch, live: active }, revision, error);
+        await settle(current ? kind : "none");
+        if (current && kind === "quota") void constraint(epoch, active);
+      }) : undefined })(resource, init).then((response) => {
+        if (response.status === 429 && active()) void constraint(epoch, active);
+        return response;
+      });
     },
     prove(read, admission) {
       if (!alive() || paused) throw refuse();
