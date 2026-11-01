@@ -155,3 +155,9 @@ Round 2 (2 findings; round 1's fixes confirmed):
 - **The desktop window** opens at 92% of the primary display's work area, at most 1920×1200 and never below 980×600 (`apps/desktop/src/window-size.ts`, unit-tested), instead of a fixed 1400×880: 1590×993 on a 16-inch MacBook Pro, and it now fits a 13-inch Air, which 1400×880 overflowed. Sizes aren't remembered across launches (out of scope).
 - **The setup** is up to 1360×860 (380 px of choices). The preview's canvas keeps a 1180 px width and takes its height from the panel's shape (680 to 980 px), so it fills the panel at about twice the old scale.
 - Codex review of both: no findings. Checked: the first-run, identity, brand and visual specs (baselines regenerated and looked at, light and dark), `pnpm dist:mac` and the packaged smoke (75 passed).
+
+## Follow-up: System, Light and Dark
+
+> here we need s 'system' which chooses whatever the system has
+
+The colors' switch is now the appearance setting itself (Settings' Mode): **System** (the default) follows the Mac and offers both modes' palettes, light then dark, the preview showing the mode last picked in (the system's until then); **Light** and **Dark** switch the app and offer that mode's palettes only. New strings (`firstRun.look.mode` is now "Appearance"; `firstRun.look.modeHint.light`/`.dark`) in `en` and `es`. Codex review: no findings. E2E covers both groups under System, a dark pick previewing dark in a light window, and Light/Dark switching the app.
