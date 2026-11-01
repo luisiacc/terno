@@ -216,3 +216,27 @@ Actual public-boundary count evidence: temporary exact diagnostic `work-counts.t
 After all ordinary/type/lint/count checks were joined, `original-folders-perf-once.log` ran **all 15 original `packages/mail/src/folders.perf.test.ts` cases once**, with original project timeout, workload, warm-ups/samples and budgets. **15/15 PASS**, exit 0, start21:42:54, total runner duration4.24s. Original R46 10k/depth20 <16ms gate passes; successful assertion's precise individual milliseconds are not emitted by the reporter, so none is invented. The original file is byte-unchanged versus the actual base. No perf rerun, additional warm-up, narrowed payload, gate/deadline relaxation or environment waiver. Earlier 25.540792ms/16ms failure remains retained; the measured work reduction plus this unchanged gate's result qualify this candidate, not complete elapsed-time attribution or release-wide performance.
 
 Exactly one combined native Sol/high R4 will now review the entire coherent base-to-candidate diff (including all earlier S15 changes). The code-review skill's two axes are combined per the user's explicit authorization; no parallel agents or new critique. Any new/remaining P1/P2 parks only S15, with no post-review source or regression loop. R1/R2/R3 history remains untouched.
+
+
+## Single R4 outcome and final handoff
+
+One native `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high"` reviewed the entire `9b8d84c23c082264b32a695f3ffcde7f1e1a758c..fd7f9d1554eccdcffa985ba5a444968cb25a0aea` candidate. Exit0. Prompt, full transcript, final report, process identity and exit are retained in `/tmp/terno-s15-r4-fix/review-r4.prompt`, `review-r4.log`, `review-r4.txt`, `review-r4.process.json`, `review-r4.exit`. **R4 CONSUMED, CLEAN: Standards0 / Spec0 / P3=0.** No extra review, fallback, R5, source/regression loop or post-review production/test edit.
+
+Final R4 report (verbatim):
+
+> Reviewed the entire `9b8d84c2…fd7f9d15` candidate as the single combined S15 R4.
+>
+> **Standards — no findings.** The changes stay within the authorized source/test/spec scope. Catalog classification is call-scoped, reuses metadata and rereads mutable flag sets on subsequent calls. No concrete maintainability issue warrants a finding.
+>
+> **Spec — no findings.** Foreground discovery loads persisted preference and returns current published roles after its awaits, avoiding reinterpretation through an obsolete LIST. Case-insensitive eligibility is consistent across discovery, catalog and sync. Existing declared/inferred roles, name hints, CREATE refusal and UID ownership behavior remain intact.
+>
+> **Evidence limits:** I ran no tests, builds, compiler checks or performance retries. Inspected retained summaries report 191/191 direct passes and 15/15 original folder-performance passes; count artifacts show 10,002 iterator entries for both flag variants. Successful individual timings are unavailable. The earlier 25.540792ms/16ms failure remains historical evidence. This does not establish release-wide performance, browser IMAP, Outlook, renderer selection, NIL-wire coverage, IDB parity or ambiguous UID recovery.
+>
+> **Verdict: CLEAN. Standards: 0 findings. Spec: 0 findings. No P1/P2 or P3 findings.**
+
+
+The historical R3 stale-LIST and work holds now have executed RED→GREEN evidence and the unchanged original perf file passes15/15 in the single authorized run. Original reports, especially25.540792ms/16ms, remain intact; no performance attribution, margin waiver, unsupported product boundary or full-release clearance is inferred. This finite candidate is ready for **Root's serial retest and disposition**, not landed by this worker. Root alone decides S15/T03 rows, counts and any ff-only landing.
+
+Clean commit chain from actual base9b8d84c2: `70a92a2a` original tests, `812c9ed9` original held role fix, `f80ef6a5` R3 park history, `b31a8c73` executed R4 preparation, `fd7f9d15` coherent causal fix. This final commit records only the R4 verdict/audit; source and test bytes remain exactly as reviewed. Entire candidate owns only `packages/mail/src/imap.ts`, `packages/backend/src/imap-folder-role-selection.int.test.ts` and this scoped draft. Source hunks are shared classification/customFolders around423–493, foreground discovery around697–723, and the original shared selectable predicates in snapshot enumeration/vanished eligibility/authoritative coverage. No store/core/schema/RPC/peer/user/WIP/main/worklist or other plan edit.
+
+All finite supervisors joined/reaped their commands; `final-process-audit.json` reports **zero matching captured owned processes alive**, with exit files retained for each. No signals were needed. All tests append inherited NODE_OPTIONS with the network guard, use only synthetic temp/loopback data, and make no external request. Selected worker default path was absent at entry and is restored to absent after tests; named worker/builder/MIME inputs are unchanged on the new base. Configs/diagnostic JSON/reports remain isolated in the new evidence directory; earlier reports and existing configuration/artifacts are untouched. No app/package/Vite build, global setup, broad repo gate, performance sweep, fetch/push/main change or landing occurred.
