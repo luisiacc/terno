@@ -5,14 +5,16 @@
 //   pnpm dev:desktop --seeded   → a profile pre-seeded with 8 accounts / ~20k messages
 //                                 (reused on later runs; add --reseed to start over;
 //                                  TERNO_SEED_ACCOUNTS / TERNO_SEED_THREADS to tune)
+//   add --cleandb to any of these → that profile (database, settings, first-run progress)
+//                                 goes to the Trash first, so the app starts as a fresh install
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
-import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, resolveProfile } from "../src/legacy-profile.ts";
+import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, profileInUse, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
 for (const legacy of Object.keys(process.env).filter((k) => k.startsWith("UNICA_"))) {
@@ -29,6 +31,7 @@ const root = join(here, "..");
 const repo = join(root, "..", "..");
 const demo = process.argv.includes("--demo");
 const seeded = process.argv.includes("--seeded");
+const cleandb = process.argv.includes("--cleandb");
 
 /**
  * The dev profile (TERNO_USER_DATA wins, as is), with its legacy files renamed
@@ -49,6 +52,28 @@ function devProfile(name) {
   }
   return profile;
 }
+
+/**
+ * --cleandb: the profile this run uses goes to the Trash (recoverable, unlike rm),
+ * never while an app has it open.
+ */
+function cleanProfile(profile) {
+  if (!existsSync(profile)) return console.log(`[dev] --cleandb: ${profile} is already empty`);
+  if (profileInUse(profile)) {
+    console.error(`[dev] --cleandb: ${profile} is open in a running Terno. Quit it and try again.`);
+    process.exit(1);
+  }
+  const trashed = spawnSync("/usr/bin/trash", [profile], { stdio: "inherit" });
+  if (trashed.status !== 0) {
+    // older macOS has no trash command: set it aside next to itself instead
+    const aside = `${profile}.before-cleandb-${Date.now()}`;
+    renameSync(profile, aside);
+    return console.log(`[dev] --cleandb: moved ${profile} → ${aside}`);
+  }
+  console.log(`[dev] --cleandb: moved ${profile} to the Trash`);
+}
+
+if (cleandb) cleanProfile(seeded ? devProfile("Terno-dev-seeded") : demo ? devProfile("Terno-dev-demo") : devProfile("Terno"));
 
 if (seeded) {
   const profile = (process.env.TERNO_USER_DATA = devProfile("Terno-dev-seeded"));

@@ -182,12 +182,12 @@ test("plan 37: in local mode the browser loads a newsletter's images on “Load 
   await expect.poll(() => pixel.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
 });
 
-test("first run in the browser offers the Mac app once, then the usual steps", async ({ page }) => {
+test("first run in the browser offers the Mac app once, then the welcome", async ({ page }) => {
   await page.goto("/?demo=0&mailbox=fresh");
   await expect(page.getByTestId("first-run")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding")).toBeVisible();
   await expect(page.getByTestId("mac-onboarding").getByTestId("mac-download")).toHaveAttribute("href", /^https:/);
-  await expect(page.getByTestId("first-run-local")).toContainText("Terno only connects to Google");
+  await expect(page.getByTestId("first-run-add-account")).toBeVisible();
 });
 
 test("Español chosen in Settings → General switches live, and after a reload the very first frame is Spanish (cached setting, lazy chunk through the service worker)", async ({ page }) => {

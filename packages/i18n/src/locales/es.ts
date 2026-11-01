@@ -721,16 +721,7 @@ const es = {
   "ai.test.connected": "Conectado",
   "ai.test.last": "Última prueba: {output}",
   "firstRun.welcome": "Bienvenido a Terno",
-  "firstRun.step1": "Paso 1 de 2 · ¿Cómo quieres usarla? Puedes cambiarlo cuando quieras en Ajustes.",
-  "firstRun.mode": "Modo",
-  "firstRun.local": "Local (recomendado)",
-  "firstRun.local.desktop": "Nada sale de este Mac salvo el correo con tus servidores y las imágenes remotas que cargues. La IA usa modelos de este Mac.",
-  "firstRun.local.web": "Terno solo se conecta con Google (tu correo) y con IA de este equipo, además de las imágenes remotas que cargues.",
-  "firstRun.found": "Encontramos {app} con {model}",
-  "firstRun.connected": "Conectado",
-  "firstRun.connected.body": "Además podrás usar IA en la nube (Claude, OpenAI…) con tu propia API key.",
-  "firstRun.addAccount": "Añade tu primera cuenta",
-  "firstRun.step2": "Paso 2 de 2",
+  "firstRun.addAccount": "Añade tu primera cuenta para empezar.",
   "firstRun.notNow": "Ahora no",
 
   // ── list, reader, sidebar, menus, categories

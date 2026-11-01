@@ -79,17 +79,14 @@ test.describe("owner identity", () => {
 test.describe("first run", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
-  test("fresh install: choose Local (with the Ollama model we found), then add the first account", async ({ app: page, server }) => {
+  test("fresh install: no mode step (local by default, the Ollama model we found becomes the AI), straight to adding the first account", async ({ app: page, server }) => {
     const ollama = await startOllamaStub();
     try {
       await isolateLocalDiscovery(server, ollama.url);
       await page.reload();
       const dialog = page.getByTestId("first-run");
-      await expect(dialog).toContainText("Step 1 of 2");
-      await expect(page.getByTestId("first-run-local")).toHaveAttribute("aria-checked", "true");
-      await expect(page.getByTestId("first-run-found")).toHaveText("Found Ollama with qwen3:8b");
-      await page.getByTestId("first-run-next").click();
-      await expect(dialog).toContainText("Step 2 of 2");
+      await expect(dialog).toContainText("Add your first account to get started.");
+      await expect(dialog).not.toContainText("Local (recommended)");
       await expect(dialog).toContainText("The first email address you connect becomes your Terno account");
       await page.getByTestId("first-run-add-account").click();
       await expect(page.getByTestId("owner-first-copy")).toBeVisible();

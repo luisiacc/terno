@@ -728,16 +728,7 @@ const en = {
   "ai.test.connected": "Connected",
   "ai.test.last": "Last test: {output}",
   "firstRun.welcome": "Welcome to Terno",
-  "firstRun.step1": "Step 1 of 2 · How do you want to use it? You can change this anytime in Settings.",
-  "firstRun.mode": "Mode",
-  "firstRun.local": "Local (recommended)",
-  "firstRun.local.desktop": "Nothing leaves this Mac except mail with your servers and the remote images you load. AI uses models on this Mac.",
-  "firstRun.local.web": "Terno only connects to Google (your mail) and to AI on this computer, plus the remote images you load.",
-  "firstRun.found": "Found {app} with {model}",
-  "firstRun.connected": "Connected",
-  "firstRun.connected.body": "You can also use cloud AI (Claude, OpenAI…) with your own API key.",
-  "firstRun.addAccount": "Add your first account",
-  "firstRun.step2": "Step 2 of 2",
+  "firstRun.addAccount": "Add your first account to get started.",
   "firstRun.notNow": "Not now",
 
   // ── list, reader, sidebar, menus, categories

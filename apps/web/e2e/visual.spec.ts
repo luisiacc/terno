@@ -195,12 +195,11 @@ test.describe("owner identity", () => {
 test.describe("first run", () => {
   test.use({ backendOptions: { empty: true, ownerClaims: true } });
 
-  test("step 1: local or connected", async ({ app: page, server }) => {
+  test("welcome: add the first account", async ({ app: page, server }) => {
     // no real Ollama / LM Studio on the test machine may change what this screen shows
     await isolateLocalDiscovery(server);
     await page.reload();
-    await expect(page.getByTestId("first-run")).toContainText("Step 1 of 2");
-    await expect(page.getByTestId("first-run-found")).toHaveCount(0);
+    await expect(page.getByTestId("first-run")).toContainText("Add your first account to get started.");
     await page.evaluate(() => document.fonts.ready);
     await stabilize(page);
     await expect(page).toHaveScreenshot("first-run.png");
