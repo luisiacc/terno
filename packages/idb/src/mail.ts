@@ -1725,8 +1725,9 @@ function locationBlockers(c: Ctx): (o: R) => boolean {
 
 function admittedOps(c: Ctx, input?: OpAdmission): (o: R) => boolean {
   const a = copyOpAdmission(input);
-  const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds);
+  const blocked = new Set(a.blockedAccountIds), verified = new Set(a.verifiedAccountIds), paused = new Set(a.pausedAccountIds);
   return (o) => {
+    if (paused.has(o.account_id as number)) return false;
     if (T(c, "accounts").get(o.account_id)?.kind !== "gmail") return true;
     return !a.blockAllGoogle && !(o.kind === "send" ? a.blockGoogleSends : a.blockGoogleBackground) && !blocked.has(o.account_id as number) && (!a.blockUnverifiedGoogle || verified.has(o.account_id as number));
   };

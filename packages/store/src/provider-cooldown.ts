@@ -39,6 +39,8 @@ export interface ProviderCooldownStore {
 }
 export interface OpAdmission {
   blockedAccountIds: readonly number[];
+  /** plan 107: accounts whose ops wait whatever their kind (a folder change holds its account's provider) */
+  pausedAccountIds?: readonly number[];
   verifiedAccountIds: readonly number[];
   blockUnverifiedGoogle: boolean;
   blockAllGoogle: boolean;
@@ -162,5 +164,5 @@ export function copyOpAdmission(input?: OpAdmission): OpAdmission {
   if (!input) return Object.freeze({ blockedAccountIds: Object.freeze([]), verifiedAccountIds: Object.freeze([]), blockUnverifiedGoogle: false, blockAllGoogle: false });
   if (typeof input.blockAllGoogle !== "boolean" || typeof input.blockUnverifiedGoogle !== "boolean") throw new Error("Invalid private admission");
   if ((input.blockGoogleSends !== undefined && typeof input.blockGoogleSends !== "boolean") || (input.blockGoogleBackground !== undefined && typeof input.blockGoogleBackground !== "boolean")) throw new Error("Invalid private lane admission");
-  return Object.freeze({ blockGoogleSends: input.blockGoogleSends, blockGoogleBackground: input.blockGoogleBackground, blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), blockUnverifiedGoogle: input.blockUnverifiedGoogle, blockAllGoogle: input.blockAllGoogle });
+  return Object.freeze({ blockGoogleSends: input.blockGoogleSends, blockGoogleBackground: input.blockGoogleBackground, ...(input.pausedAccountIds?.length && { pausedAccountIds: list(input.pausedAccountIds) }), blockedAccountIds: list(input.blockedAccountIds), verifiedAccountIds: list(input.verifiedAccountIds), blockUnverifiedGoogle: input.blockUnverifiedGoogle, blockAllGoogle: input.blockAllGoogle });
 }

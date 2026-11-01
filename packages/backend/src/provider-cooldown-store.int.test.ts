@@ -384,6 +384,16 @@ for (const mode of ["SQL", "IDB off", "IDB on"] as const) {
       expect((await f.store.ops.get(x))?.attempts).toBe(0);
       expect(await f.store.ops.nextAttemptAt(admission)).toBe(null);
     });
+    it("plan 107: a paused account's ops wait whatever its kind (a folder change), others go", async () => {
+      const f = await storeFixture(mode), a = await account(f.store, 1, "imap"), b = await account(f.store, 2), c = await account(f.store, 3, "imap");
+      const x = await sendOp(f.store, a.id), y = await sendOp(f.store, b.id), z = await sendOp(f.store, c.id);
+      const admission = { ...emptyAdmission, pausedAccountIds: [a.id, b.id] };
+      expect((await f.store.ops.claimReady(1000, 3, admission)).map((o) => o.id)).toEqual([z]);
+      expect((await f.store.ops.get(x))?.attempts).toBe(0);
+      expect((await f.store.ops.get(y))?.state).toBe("queued");
+      expect(await f.store.ops.nextAttemptAt(admission)).toBe(null);
+      expect((await f.store.ops.claimReady(1000, 3, emptyAdmission)).map((o) => o.id)).toEqual([x, y]);
+    });
     it("09 unverified pause preserves IMAP", async () => {
       const f = await storeFixture(mode), a = await account(f.store, 1), b = await account(f.store, 2), c = await account(f.store, 3, "imap");
       await sendOp(f.store, a.id); const y = await sendOp(f.store, b.id), z = await sendOp(f.store, c.id);
