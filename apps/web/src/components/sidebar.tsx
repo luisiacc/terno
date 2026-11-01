@@ -483,9 +483,10 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
         siblings={siblingsAt(getApp().folders, accountId, self?.path.slice(0, -1) ?? [], folderKey)}
         account={account}
         cancel={(how) => {
-          stopEditing(renaming);
-          // only Esc gives the row the focus back; a blur went somewhere on purpose (Codex code review #6)
-          if (how === "escape") focusRow(accountId, folderKey);
+          // only Esc gives the row the focus back (a blur went somewhere on purpose, Codex code review #6), through
+          // the same pin a finished edit uses, so a row past the first batch is still there for it (round 24 #4)
+          if (how === "escape") stopEditing(renaming, { accountId, key: folderKey });
+          else stopEditing(renaming);
         }}
         submit={async (next) => {
           const r = await renameFolder(accountId, folderKey, next);
@@ -539,11 +540,11 @@ function NewFolderRow({ account, parent, depth, id }: { account: Account; parent
       siblings={siblingsOf(getApp().folders, account.id, parent)}
       account={account}
       cancel={(how) => {
+        // only Esc gives the focus back; a blur went somewhere on purpose (Codex code review #6). A parent gets it
+        // through the finished-edit pin (round 24 #4: it may sit past the first batch)
+        if (how === "escape" && parent !== null) return stopEditing(id, { accountId: account.id, key: parent });
         stopEditing(id);
-        // only Esc gives the focus back; a blur went somewhere on purpose (Codex code review #6)
-        if (how !== "escape") return;
-        if (parent !== null) focusRow(account.id, parent);
-        else requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus());
+        if (how === "escape") requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="nav-account-${account.id}"]`)?.focus());
       }}
       submit={async (name) => {
         const r = await createFolder(account.id, parent, name);

@@ -559,6 +559,26 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(page.getByTestId(`nav-fav-${freelance}-${again.key}`)).toBeVisible();
   });
 
+  test("Esc on a rename of a folder past the first 250 gives it the focus back (Codex code review round 24 #4)", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    const many = Array.from({ length: 300 }, (_, i) => ({ key: `Label_8${String(i).padStart(3, "0")}`, path: [`Carpeta ${String(i).padStart(3, "0")}`], selectable: true }));
+    await server.backend.store.folders.replace(acme, [...mine, ...many, { key: "Label_7999", path: ["Zeta"], selectable: true }]);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await openAccount(page, acme);
+    // favorited, renamed from the favorite while the folder sits past the first batch
+    await server.backend.server.invoke("folders.favorite", { accountId: acme, folder: "Label_7999", view: null, on: true }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openAccount(page, acme);
+    await page.getByTestId(`nav-fav-${acme}-Label_7999`).click({ button: "right" });
+    await page.getByTestId(`folder-menu-${acme}-Label_7999`).getByTestId("folder-menu-rename").click();
+    const field = page.getByTestId(`nav-own-rename-${acme}-Label_7999`);
+    await expect(field).toBeFocused();
+    await field.press("Escape");
+    await expect(own(page, acme, "Label_7999")).toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
