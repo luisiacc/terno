@@ -775,8 +775,8 @@ export class BackendCore {
    * (the draft deleted with it), then announced. Once queued, nothing after
    * it can fail the send: the announcing is logged instead.
    */
-  async queueComposeSend(p: ComposeSendParams, o: { renderer: boolean; scheduledAt?: number }): Promise<{ opId: string; threadId: number }> {
-    const { opId, threadId, deltas } = await this.store.compose.queueSend({
+  async queueComposeSend(p: ComposeSendParams, o: { renderer: boolean; scheduledAt?: number }): Promise<{ opId: string; threadId: number; messageId: number }> {
+    const { opId, threadId, messageId, deltas } = await this.store.compose.queueSend({
       accountId: p.accountId,
       to: p.to,
       cc: p.cc,
@@ -802,7 +802,7 @@ export class BackendCore {
       captureError(error, { code: "send.failed", expected: false });
       this.log("warn", "a queued send couldn't be announced", error instanceof Error ? error.message : error);
     }
-    return { opId, threadId };
+    return { opId, threadId, messageId };
   }
 
   /** Coalesces change notifications within one turn of the event loop. */
@@ -1539,7 +1539,8 @@ export class BackendCore {
       const windowDays = before?.syncWindowDays ?? (await readSettings(this.store)).syncWindowDays;
       // plan 101: older mail a widened window asks for, a chunk after this pass's own work
       const backfill = before?.backfillSince != null ? (await this.store.accounts.config<AccountPrefs>(accountId))?.config.backfill : undefined;
-      let backfillMore = false;
+      // plan 101/102: more of this account's sync remains (older mail, or a first sync's next chunk)
+      let more = false;
       const sink: SyncSink = {
         ...(captureRetry && { captureRetry: { locator: captureRetry.locator, revision: captureRetry.revision } }),
         signal: life.abort.signal,
@@ -1559,9 +1560,10 @@ export class BackendCore {
         // the account's own window, else the general one
         windowDays,
         windowStart: this.now() - windowDays * 86_400_000,
+        again: () => { more = true; },
         ...(backfill && {
           backfill: { since: backfill.since, until: backfill.until },
-          backfillMore: () => { backfillMore = true; },
+          backfillMore: () => { more = true; },
           backfillDone: async (done) => {
             checkCurrent();
             // only that request, compared and cleared in one store transaction: a wider one recorded meanwhile stays
@@ -1639,13 +1641,16 @@ export class BackendCore {
         if (!this.connectivity.online && !startedOffline) {
           // the host went offline while this pass ran: what it fetched is in, the account says offline,
           // and it keeps its probe (succeeded() just cleared it; nothing else would try it again)
-          await setState({ status: "offline", lastSyncAt: this.now(), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
+          // plan 102 (Codex review): a first sync paused between chunks stays one here too (no "synced at" yet)
+          await setState({ status: "offline", ...(!(more && before?.syncState.lastSyncAt === null) && { lastSyncAt: this.now() }), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
           return;
         }
         // plan 25: a refused send (SMTP) isn't proven by a sync (IMAP): it keeps asking, and its sends keep waiting
         const sendOnly = (await this.accountRead(life, () => this.store.accounts.get(accountId)))?.syncState.authScope === "send";
         if (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId)) return;
-        await setState({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: this.now(), connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
+        // plan 102: a first sync that paused between chunks is still one (the pill stays; no "synced at" yet)
+        const firstChunk = more && before?.syncState.lastSyncAt === null;
+        await setState({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, ...(!sendOnly && { authRequired: false, authScope: null }) });
         if (!this.current(life)) return;
         this.connectivity.waitForSignIn(accountId, false);
         // a probe the host thought pointless worked: it was wrong about offline (reachability can be, with some VPNs)
@@ -1658,14 +1663,18 @@ export class BackendCore {
           captureError(error, { code: "import.restore_failed" });
           this.log("warn", "restoring imported items failed", error instanceof Error ? error.message : error);
         });
-        // plan 101: more older mail to download: the next chunk in a second (new mail stays a chunk away at most)
-        if (backfillMore && this.current(life)) this.continueBackfill(accountId);
+        // plan 101/102: more to do (older mail, a first sync's next chunk): another pass in a second, which reads
+        // new mail first (it stays a chunk away at most)
+        if (more && this.current(life)) this.continueBackfill(accountId);
       } catch (caught) {
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         const error = caught instanceof FlagObservationError ? new FlagConnectionError() : caught;
         const message = error instanceof Error ? error.message : String(error);
         const lastErrorI18n = textRef((error as { i18n?: unknown } | null)?.i18n) ?? null;
         const retryable = error instanceof ProviderError && error.retryable;
+        // plan 102 (Codex review): what a pass brought in before failing is in; what the next one finds is new (a
+        // first chunk that failed mustn't leave the retry's new mail unannounced)
+        if (retryable) this.attention.prime(accountId);
         if (error instanceof ProviderCooldownError && error.cooldown.kind === "capacity") this.capacitySync.add(accountId);
         // offline or a sign-in to redo is the provider's verdict (expected); anything else is ours
         captureError(error, { code: "sync.failed", fields: { accountKind, retryable } });

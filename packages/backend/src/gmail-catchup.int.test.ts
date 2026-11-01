@@ -764,7 +764,8 @@ describe.each(["SQL", "IndexedDB"] as const)("%s Gmail durable enumeration", (ki
     await t.reopen(); t.listStatus(200); t.requests.length = 0;
     if (boundary === "cycle") t.repeatToken();
     await t.backend.syncAccount(t.account.id);
-    expect(t.requests.filter((u) => u.pathname === "/history")).toHaveLength(0);
+    // no catch-up (plan 102: a look at new mail, added/deleted only, may come first)
+    expect(t.requests.filter((u) => u.pathname === "/history" && u.searchParams.getAll("historyTypes").includes("labelAdded"))).toHaveLength(0);
     expect(await t.cursor()).toEqual({ reconciliation: { version: 1, stage: "restart" } });
     expect((await t.backend.store.accounts.get(t.account.id))?.syncState.status).not.toBe("idle");
   });

@@ -66,6 +66,10 @@ interface Reconciliation {
   next?: string;
   pages: number;
   refreshAfter?: string;
+  /** plan 102: how far new mail was read during this sync (history from `baseline`, then from here) */
+  peek?: string;
+  /** plan 102: when this sync began (ms): what the listing finds received after it is new mail, and notifies */
+  startedAt?: number;
 }
 interface ReconcileCursor {
   historyId?: string;
@@ -96,11 +100,17 @@ function readReconciliation(value: unknown, sink: SyncSink, email: string, compl
     || (value.refreshAfter !== undefined && (value.stage === "enumerate" || !nonempty(value.refreshAfter) || value.refreshAfter.length > LIST_TOKEN_MAX))
     || (value.next !== undefined && (!nonempty(value.next) || value.next.length > LIST_TOKEN_MAX))
     || (value.stage !== "enumerate" && (value.next !== undefined || value.pages === 0))
-    || (value.stage === "enumerate" && ((value.pages === 0) !== (value.next === undefined)))) return;
+    || (value.stage === "enumerate" && ((value.pages === 0) !== (value.next === undefined)))
+    || (value.peek !== undefined && (!historyId(value.peek) || earlierHistory(value.peek, value.baseline)))
+    || (value.startedAt !== undefined && (!Number.isSafeInteger(value.startedAt) || (value.startedAt as number) < 0))) return;
   // Pick only bounded known fields; a malformed/foreign cursor is never rewritten wholesale.
   return { version: 1, email, intent: value.intent as string, after: value.after as number, baseline: value.baseline,
-    stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.refreshAfter !== undefined && { refreshAfter: value.refreshAfter as string }), ...(value.next !== undefined && { next: value.next as string }) };
+    stage: value.stage as Reconciliation["stage"], pages: value.pages as number, ...(value.refreshAfter !== undefined && { refreshAfter: value.refreshAfter as string }), ...(value.next !== undefined && { next: value.next as string }),
+    ...(value.peek !== undefined && { peek: value.peek as string }), ...(value.startedAt !== undefined && { startedAt: value.startedAt as number }) };
 }
+
+/** plan 102: a pass's share of a first sync; then another pass, which reads new mail first */
+export const FIRST_SYNC_CHUNK_MS = 60_000;
 
 /** Plan 68: /labels again at most this often when nothing new shows up (history doesn't report label changes). */
 export const LABELS_EVERY_MS = 15 * 60_000;
@@ -689,6 +699,9 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     }
   }
 
+  /** plan 102: Gmail's own receive time of what fetchFull reads, while a first sync's listing asks (never a fallback date) */
+  let received: Map<string, number> | null = null;
+
   async function fetchFull(ids: string[], sink: SyncPass): Promise<Set<string>> {
     ctx.google?.check({ endpoint: "gmail-api", purpose: "mail" });
     const gone = new Set<string>();
@@ -774,6 +787,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
           check();
           const labels = m.labelIds ?? [];
           const st = labelState(labels);
+          // plan 102: Gmail's receive time, only when it says one (never the fallback above)
+          if (received && m.internalDate !== undefined && Number.isSafeInteger(Number(m.internalDate))) received.set(m.id, Number(m.internalDate));
           const admitted = enqueue({
             ...(repair && { repair: { key: repair.key, revision: repair.revision } }),
             accountId,
@@ -971,17 +986,72 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: { version: 1, stage: "restart" } });
   }
 
-  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation, allMail = false): Promise<Cursor> {
+  /**
+   * Plan 102: new mail while a first sync (or any reconciliation) runs, before its next chunk: what history added
+   * since it began (or since the last look) and isn't stored yet, downloaded as live mail (it notifies). Its flags,
+   * deletions and the rest stay the catch-up's at the end, which skips what this stored. History gone (a sync
+   * older than Gmail keeps it): nothing to do here, the catch-up reconciles.
+   */
+  async function peekArrivals(sink: SyncPass, state: Reconciliation, save: (value: Reconciliation) => Promise<void>) {
+    const from = state.peek ?? state.baseline;
+    const added = new Set<string>();
+    const deleted = new Set<string>();
+    const pages = new Set<string>();
+    let pageToken: string | undefined, latest = from, count = 0;
+    do {
+      if (++count > HISTORY_PAGES) return;
+      const q = new URLSearchParams({ startHistoryId: from, maxResults: "500" });
+      for (const t of ["messageAdded", "messageDeleted"]) q.append("historyTypes", t);
+      if (pageToken) q.set("pageToken", pageToken);
+      let page: HistoryPage;
+      try { page = readHistory(await syncRead(`/history?${q}`, sink)); }
+      catch (error) {
+        // history gone (or too much of it): new mail is read from now on; the gap is the catch-up's (Codex review:
+        // never the same dead cursor every chunk)
+        if ((error instanceof GmailApiError && error.resource === `/history?${q}` && error.status === 404) || error instanceof HistoryOverflow) {
+          const now = readBaseline(await syncRead("/profile", sink));
+          if (!earlierHistory(now, from)) await save({ ...state, peek: now });
+          return;
+        }
+        throw error;
+      }
+      if (page.nextPageToken !== undefined && (!nonempty(page.nextPageToken) || page.nextPageToken.length > LIST_TOKEN_MAX || pages.has(page.nextPageToken))) return;
+      pageToken = continuation(page.nextPageToken, pages);
+      if (earlierHistory(page.historyId, latest)) throw invalidResponse();
+      for (const h of page.history ?? []) {
+        for (const a of h.messagesAdded ?? []) added.add(a.message.id);
+        for (const d of h.messagesDeleted ?? []) deleted.add(d.message.id);
+      }
+      latest = page.historyId;
+    } while (pageToken);
+    const fresh: string[] = [];
+    for (const id of added) {
+      sink.check();
+      if (!deleted.has(id) && !(await store.messageByProviderId(id))) fresh.push(id);
+    }
+    const live: SyncPass = { ...sink, ingest: (messages) => sink.ingest(messages, { live: true }) };
+    for (let i = 0; i < fresh.length; i += 50) await fetchFull(fresh.slice(i, i + 50), live);
+    if (latest !== from) await save({ ...state, peek: latest });
+  }
+
+  /** A first sync (or another reconciliation) a chunk at a time; undefined: more remains (another pass soon). */
+  async function fullSync(sink: SyncPass, completed?: string, resume?: Reconciliation, allMail = false): Promise<Cursor | undefined> {
     let state: Reconciliation;
     const save = async (value: Reconciliation) => {
       await saveProgress(sink, { ...(completed !== undefined && { historyId: completed }), reconciliation: value });
       state = value;
     };
-    if (resume) state = resume;
-    else {
+    const started = Date.now();
+    // out of this pass's time: the next pass (a second later) reads new mail, then goes on from here
+    const pause = () => { sink.again?.(); return undefined; };
+    if (resume) {
+      state = resume;
+      // plan 102: new mail first, then the next chunk
+      await peekArrivals(sink, state, save);
+    } else {
       const baseline = readBaseline(await syncRead("/profile", sink));
       if (completed && earlierHistory(baseline, completed)) throw invalidResponse();
-      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: allMail ? 0 : Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0 };
+      state = { version: 1, email: ctx.account.email, intent: windowIntent(sink), after: allMail ? 0 : Math.floor(sink.windowStart / 1000), baseline, stage: "enumerate", pages: 0, startedAt: Date.now() };
       await save(state);
     }
     const pages = new Set<string>();
@@ -1015,12 +1085,27 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       // a long download ahead (a first sync of a large mailbox takes hours under Gmail's quota): the labels first,
       // so the account's folders show now rather than after the pass (the core reads them after it as usual)
       if (catalog === null && !earlyTried && ids.length > EARLY_LABELS_AFTER) await earlyLabels(sink);
+      // plan 102 (Codex review): a message the listing finds that was received after this sync began is new mail (it
+      // notifies), as the look at history would have said had it come a moment earlier
+      const since = state.startedAt;
+      const isNew = (m: IncomingMessage) => since !== undefined && (received?.get(m.providerMsgId!) ?? -1) >= since;
+      const listing: SyncPass = since === undefined ? sink : { ...sink, ingest: async (messages, o) => {
+        const fresh = messages.filter(isNew), old = messages.filter((m) => !isNew(m));
+        for (const m of messages) received?.delete(m.providerMsgId!);
+        if (old.length) await sink.ingest(old, o);
+        if (fresh.length) await sink.ingest(fresh, { live: true });
+      } };
       for (let i = 0; i < ids.length; i += 50) {
         sink.check();
-        await fetchFull(ids.slice(i, i + 50), sink);
+        received = since === undefined ? null : new Map();
+        try { await fetchFull(ids.slice(i, i + 50), listing); } finally { received = null; }
+        // out of this pass's time (Codex review: a page is minutes under the quota): this page again next pass,
+        // its stored messages skipped then
+        if (i + 50 < ids.length && Date.now() - started > FIRST_SYNC_CHUNK_MS) return pause();
       }
       // All effects precede this independent durable command. A rejected write is resolved by reopening.
       await save({ ...current, stage: next ? "enumerate" : "refresh", next, pages: current.pages + 1 });
+      if (Date.now() - started > FIRST_SYNC_CHUNK_MS) return pause();
       if (!ids.length) await yieldPage();
     }
     if (state.stage === "refresh") {
@@ -1048,6 +1133,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         sink.check();
         if (gone.length) await sink.removeMessages(gone);
         await save({ ...state, refreshAfter: page.next });
+        if (Date.now() - started > FIRST_SYNC_CHUNK_MS) return pause();
         if (!updates.length) await yieldPage();
       }
       await save({ ...state, stage: "catchup" });

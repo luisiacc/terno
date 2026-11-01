@@ -156,7 +156,8 @@ it.each(["missing", "foreign", 404, 503, "sink"] as const)("resumes the same enu
   const boundary = box.requests.length;
   broken = false; box.refuseIngest = false;
   await box.sync();
-  expect(box.requests[boundary]!.searchParams.get("pageToken")).toBe("second");
+  // plan 102: a resumed first sync looks at new mail (history) first, then lists from where it was
+  expect(box.requests.slice(boundary).find((u) => u.pathname.endsWith("/messages"))!.searchParams.get("pageToken")).toBe("second");
   expect(box.requests.filter((u) => u.pathname.endsWith("/messages/first") && u.searchParams.get("format") === "raw")).toHaveLength(1);
   expect([...box.rows.keys()]).toEqual(["first", "later"]);
   expect(completedGmailCursors(box.checkpoints)).toEqual([{ historyId: "11" }]);

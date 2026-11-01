@@ -34,6 +34,8 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
       if (url.searchParams.size !== (token === null ? 3 : 4) || (token !== null && (!emptyContinuation || token !== "opaque/+?=empty"))) return refuse();
       return Response.json(emptyContinuation && token === null ? { messages: [], nextPageToken: "opaque/+?=empty" } : { messages: [{ id: "sibling" }] });
     }
+    // plan 102: a resumed first sync's look at new mail (added/deleted only): none here
+    if (path === "/history" && url.searchParams.size === 4 && url.searchParams.getAll("historyTypes").sort().join(",") === "messageAdded,messageDeleted") return Response.json({ historyId: url.searchParams.get("startHistoryId") });
     if (path === "/history" && url.searchParams.size === 6 && url.searchParams.get("maxResults") === "500" && url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted" && [baseline, historyId].includes(url.searchParams.get("startHistoryId") ?? "")) return Response.json({ historyId, history: url.searchParams.get("startHistoryId") === baseline ? history : [] });
     const id = path.slice("/messages/".length);
     if (path === "/messages/sibling" && url.searchParams.size === 1 && url.searchParams.get("format") === "raw") return Response.json({ id, threadId: id, labelIds: [], internalDate: "1", raw: Buffer.from(["From: sender@example.test", "To: me@example.test", "Subject: Sibling", "Message-ID: <sibling@example.test>", "Content-Type: text/plain", "", "Exact unaffected sibling"].join("\r\n")).toString("base64url") });

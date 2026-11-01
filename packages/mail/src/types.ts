@@ -158,6 +158,8 @@ export interface SyncSink {
    */
   backfill?: import("@terno/core").BackfillRequest;
   backfillMore?(): void;
+  /** plan 102: more of this account's sync remains (a first sync's next chunk): another pass soon */
+  again?(): void;
   backfillDone?(request: import("@terno/core").BackfillRequest): Promise<void>;
   /** Message ids with queued/running local operations; field protection is applied by updateFlags. */
   pendingMessageIds(): Promise<Set<number>>;

@@ -78,3 +78,54 @@ it("accounts.update answers with the account as it is now, its request included 
   const reply = await t.client.call("accounts.update", { id, syncWindowDays: 365 });
   expect(reply.backfillSince).toBe(NOW - 365 * DAY);
 });
+
+it("plan 102: a first sync paused between chunks stays a first sync, and its next chunk starts on its own", async () => {
+  let passes = 0;
+  const registry: ProviderRegistry = {
+    create: () => ({ async verify() {}, async sync(sink) { passes++; if (passes === 1) sink.again?.(); }, async execute() {}, async close() {} }) as MailProvider,
+    async verifyImap() {}, async connectGmail() { throw new Error("unused"); },
+  };
+  const dir = mkdtempSync(join(tmpdir(), "terno-first-chunks-"));
+  const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: registry, autoSync: false });
+  cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
+  await backend.ready;
+  const id = createAccount(sqlDb(backend.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "indigo", providerConfig: {} }).id;
+  await backend.syncAccount(id);
+  // between chunks: still "Downloading your mail" (syncing, never synced)
+  expect((await backend.store.accounts.get(id))?.syncState).toMatchObject({ status: "syncing", lastSyncAt: null });
+  // the next chunk starts a second later by itself, and finishes the first sync
+  await expect.poll(async () => (await backend.store.accounts.get(id))?.syncState.lastSyncAt, { timeout: 5000 }).not.toBeNull();
+  expect(passes).toBe(2);
+  expect((await backend.store.accounts.get(id))?.syncState.status).toBe("idle");
+});
+
+async function chunked(sync: (sink: import("@terno/mail").SyncSink, pass: number, backend: Backend) => Promise<void>) {
+  let passes = 0;
+  let self!: Backend;
+  const registry: ProviderRegistry = {
+    create: () => ({ async verify() {}, async sync(sink) { passes++; await sync(sink, passes, self); }, async execute() {}, async close() {} }) as MailProvider,
+    async verifyImap() {}, async connectGmail() { throw new Error("unused"); },
+  };
+  const dir = mkdtempSync(join(tmpdir(), "terno-first-chunks-"));
+  // autoSync on (never started: no poll runs) so the host's network word counts
+  self = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: registry, autoSync: true, syncIntervalMs: 3_600_000 });
+  cleanups.push(async () => { await self.stop(); rmSync(dir, { recursive: true, force: true }); });
+  await self.ready;
+  const id = createAccount(sqlDb(self.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "indigo", providerConfig: {} }).id;
+  return { backend: self, id, passes: () => passes };
+}
+
+it("plan 102 (Codex review): a chunk that ends as the host goes offline keeps the first sync a first sync", async () => {
+  const t = await chunked(async (sink, pass, backend) => { if (pass === 1) { sink.again?.(); backend.networkChanged(false, "offline"); } });
+  await t.backend.syncAccount(t.id);
+  await expect.poll(async () => (await t.backend.store.accounts.get(t.id))?.syncState.status).toBe("offline");
+  expect((await t.backend.store.accounts.get(t.id))?.syncState.lastSyncAt).toBeNull();
+});
+
+it("plan 102 (Codex review): after a failed first chunk, the retry's new mail is announced (the account is primed)", async () => {
+  const { ProviderError } = await import("@terno/mail");
+  const t = await chunked(async (_sink, pass) => { if (pass === 1) throw new ProviderError("synthetic: the connection dropped", true); });
+  await t.backend.syncAccount(t.id).catch(() => {});
+  const attention = (t.backend as unknown as { attention: { primedAccounts: Set<number> } }).attention;
+  expect(attention.primedAccounts.has(t.id)).toBe(true);
+});
