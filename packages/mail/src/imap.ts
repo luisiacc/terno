@@ -50,8 +50,11 @@ interface Cursor {
    * message with no location (a window of ids at a time), so none is left behind with neither a place nor a record
    */
   overflow?: boolean;
-  /** plan 107 (Codex R1): mailboxes the user deleted here, with their UIDVALIDITY: the next pass forgets what was only there */
-  deleted?: Record<string, number>;
+  /**
+   * plan 107 (Codex R1): mailboxes the user deleted here, with their UIDVALIDITY: the next pass forgets what was only
+   * there. One renamed here that no pass had read yet names the path its mail is cached under (Codex code review round 4 #2).
+   */
+  deleted?: Record<string, number | { from: string; uidvalidity: number }>;
   /**
    * plan 107: mailboxes the user renamed here, by their new path: the old one and its UIDVALIDITY. Read under the same
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
@@ -887,28 +890,29 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * again as a vanished folder's mail is (`"hold"`: a renamed one's UID that didn't turn up under the new path). One
    * under an identity hold is left to it. Each step can run again: a pass stopped midway repeats it.
    */
-  async function forgetMailbox(cursor: Cursor, path: string, uidvalidity: number | undefined, gone: "remove" | "hold", sink: SyncSink, c: ImapFlow, check: () => void) {
+  async function forgetMailbox(cursor: Cursor, path: string, uidvalidity: number | undefined, gone: "remove" | "hold", sink: SyncSink, c: ImapFlow, check: () => void, seen?: ReadonlySet<number>) {
     const ids = uidvalidity ? (await readMailbox(locations, path, uidvalidity)).map((l) => l.message_id) : [];
     const only: number[] = [];
+    const kept: number[] = [];
     const breathe = breather();
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
       const held = new Set(await locations.unresolved(chunk));
       const elsewhere = new Set((await locations.of(chunk)).filter((l) => l.mailbox !== path).map((l) => l.message_id));
       const identities = await store.providerIds(chunk);
-      for (const id of chunk) if (!held.has(id) && !elsewhere.has(id) && !identities.get(id)?.startsWith("local:")) only.push(id);
+      // one a folder read this pass met again (`seen`: moved there by another app) isn't proven gone: it's held
+      for (const id of chunk) if (!held.has(id) && !elsewhere.has(id) && !identities.get(id)?.startsWith("local:")) (gone === "hold" || seen?.has(id) ? kept : only).push(id);
       check();
       await breathe();
     }
-    if (gone === "remove") {
-      for (let i = 0; i < only.length; i += 100) {
-        await sink.removeMessages(only.slice(i, i + 100));
-        await breathe();
-      }
-    } else if (only.length) {
+    for (let i = 0; i < only.length; i += 100) {
+      await sink.removeMessages(only.slice(i, i + 100));
+      await breathe();
+    }
+    if (kept.length) {
       // written down before they go (Codex R9), as a vanished folder's are
-      await journal(cursor, only);
-      await locations.removeMany(only, path);
+      await journal(cursor, kept);
+      await locations.removeMany(kept, path);
     }
     // the places left go with no hold (the mail in them is placed elsewhere, or went with the mailbox); their flags follow
     const rest = await locations.resetMailbox(path, { deleted: true });
@@ -970,7 +974,7 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
   }
 
   /** Unknown locators never establish logical identity from an envelope or arrival order. */
-  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number } }): Promise<number | undefined> {
+  async function syncMailbox(c: ImapFlow, path: string, cursor: Cursor, sink: SyncSink, touched: Set<number>, opts: { reidentify?: boolean; checkpoint?: Snapshot | null; introduced: Set<number>; preview?: number; uids?: number[]; heldUids?: number[]; formerly?: { from: string; uidvalidity: number }; seen?: Set<number> }): Promise<number | undefined> {
     const lock = await c.getMailboxLock(path);
     try {
       const mb = c.mailbox;
@@ -1034,6 +1038,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
             // Never assign an older logical target to a new place from its envelope.
             if ((await locations.unresolved([id])).length || (!opts.introduced.has(id) && (!here || here.uidvalidity !== uidvalidity))) { uncertain = true; break; }
           }
+          // plan 107 (Codex code review round 4 #1): a deleted folder's message met here may be this one: not proven gone
+          if (uncertain) for (const id of candidates) opts.seen?.add(id);
           if (uncertain) {
             held = Math.min(held, m.uid);
             opts.heldUids?.push(m.uid);
@@ -1525,18 +1531,21 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const folders = customFolders(list, r);
         // listed before they sync: a location in a listed folder is membership as it's written
         await sink.setFolders?.(folders);
-        // plan 107 (Codex R1): mailboxes deleted here: what was only there goes now, before anything reads the LIST's
-        // changes as vanished folders (a restart in between finds them here again)
-        // A record is written before its DELETE is sent (Codex code review round 2 #2): one the LIST still has wasn't
-        // carried out (its answer was lost), so only the record goes
+        // plan 107 (Codex R1): mailboxes deleted here. A record is written before its DELETE is sent (Codex code review
+        // round 2 #2): one the LIST still has wasn't carried out (its answer was lost), so only the record goes
         const stillListed = cursor.deleted ? new Set(list.filter((m) => !classifyMailbox(m).unusable).map((m) => m.path)) : null;
-        for (const [path, uidvalidity] of Object.entries(cursor.deleted ?? {})) {
-          check();
-          if (!stillListed!.has(path)) await forgetMailbox(cursor, path, cursor.mailboxes[path]?.uidvalidity ?? (uidvalidity || undefined), "remove", sink, c, check);
+        for (const path of Object.keys(cursor.deleted ?? {})) {
+          if (!stillListed!.has(path)) continue;
           delete cursor.deleted![path];
           if (!Object.keys(cursor.deleted!).length) delete cursor.deleted;
           await ctx.saveCursor(cursor);
         }
+        // the rest are forgotten once every folder here has been read (Codex code review round 4 #1): mail another app
+        // moved out first is met there, so only what no folder has is proven gone. Each by where its mail is cached:
+        // its own path, or the one it had before a rename no pass read (round 4 #2)
+        const deletions = Object.entries(cursor.deleted ?? {}).map(([path, r]) => ({ path, from: typeof r === "number" ? path : r.from, uidvalidity: typeof r === "number" ? r : r.uidvalidity }));
+        const deletedFrom = new Set(deletions.map((d) => d.from));
+        const seen = new Set<number>();
         // Gmail-style servers keep archived mail only in "All Mail"
         const boxes = new Set([r.inbox, r.sent, r.archive ?? r.all, r.junk, r.trash].filter((p): p is string => Boolean(p)));
         // a folder that couldn't sync this pass may be a vanished one's new name: their locations wait (Codex R2)
@@ -1648,13 +1657,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         if (firstRead) sink.progress?.({ done: 0, total: boxes.size + custom.length, unit: "folders" });
         for (const path of boxes) {
           if (sink.signal.aborted) return;
-          await syncMailbox(c, path, cursor, sink, touched, { introduced, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
+          await syncMailbox(c, path, cursor, sink, touched, { introduced, seen, checkpoint: swept.get(path) ?? null, reidentify: cursor.mailboxes[path] === undefined && (pending.size > 0 || vanishedIds.size > 0) });
           folderRead();
         }
         for (const path of custom) {
           if (sink.signal.aborted) return;
           try {
-            await syncMailbox(c, path, cursor, sink, touched, { introduced, ...(cursor.mailboxes[path] === undefined ? { reidentify: true, formerly: renamedFrom(path) } : { checkpoint: swept.get(path) ?? null }) });
+            await syncMailbox(c, path, cursor, sink, touched, { introduced, seen, ...(cursor.mailboxes[path] === undefined ? { reidentify: true, formerly: renamedFrom(path) } : { checkpoint: swept.get(path) ?? null }) });
           } catch (error) {
             tolerate(error);
           }
@@ -1673,8 +1682,17 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           delete cursor.renamed![to];
         }
         if (cursor.renamed && !Object.keys(cursor.renamed).length) delete cursor.renamed;
+        // plan 107: deleted here, and every folder read (a restart in between finds them here again): what was only
+        // there goes, what a folder met this pass is held as a vanished folder's is
+        for (const d of incomplete ? [] : deletions) {
+          check();
+          await forgetMailbox(cursor, d.from, cursor.mailboxes[d.from]?.uidvalidity ?? (d.uidvalidity || undefined), "remove", sink, c, check, seen);
+          delete cursor.deleted![d.path];
+          if (!Object.keys(cursor.deleted!).length) delete cursor.deleted;
+          await ctx.saveCursor(cursor);
+        }
         // Forget vanished paths, retaining their cached identities behind durable holds.
-        for (const path of incomplete ? [] : vanished.filter((p) => !renamedAway.has(p))) {
+        for (const path of incomplete ? [] : vanished.filter((p) => !renamedAway.has(p) && !deletedFrom.has(p))) {
           // written down before they go (Codex R9): a crash right after still reconciles them
           await journal(cursor, (await readMailbox(locations, path, cursor.mailboxes[path]!.uidvalidity)).map((l) => l.message_id));
           await addAll(touched, await locations.resetMailbox(path));
@@ -1797,7 +1815,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           // but whose answer was lost, or a stop before the save, left the mail kept as a vanished folder's): the next
           // pass forgets what was only there, even after a restart, and drops a record its LIST shows wasn't carried out
           const cursor = await ctx.loadCursor<Cursor>();
-          if (cursor) await ctx.saveCursor({ ...cursor, deleted: Object.assign(Object.create(null) as Record<string, number>, cursor.deleted, { [path]: cursor.mailboxes[path]?.uidvalidity ?? 0 }) });
+          // a path renamed here that no pass has read keeps its mail under the old one: the record names it (Codex code
+          // review round 4 #2: Work → Job, then Job deleted, left Work's mail behind holds)
+          const state = cursor?.mailboxes[path];
+          const record = state ? state.uidvalidity : (cursor?.renamed?.[path] ?? 0);
+          if (cursor) await ctx.saveCursor({ ...cursor, deleted: Object.assign(Object.create(null) as NonNullable<Cursor["deleted"]>, cursor.deleted, { [path]: record }) });
           try {
             await c.mailboxDelete(path);
           } catch (error) {

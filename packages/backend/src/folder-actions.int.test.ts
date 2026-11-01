@@ -295,6 +295,50 @@ it("a DELETE the server refuses leaves no record behind, and its mail stays", as
   expect(await t.threadsIn("Work")).toEqual([a]);
 });
 
+it("mail another app moved out of a folder before it was deleted here keeps its identity (Codex code review round 4 #1)", async () => {
+  const t = await setup(["Work"]);
+  const moved = t.server.control.addMessage("Work", { raw: rawIdleMail("Moved to inbox") });
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const [m, o] = await Promise.all((await t.threadsIn("Work")).map((id) => t.messageOf(id)));
+  const [mm, mo] = m!.subject === "Moved to inbox" ? [m!, o!] : [o!, m!];
+  t.server.control.moveMessages("Work", [moved.uid], "INBOX");
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.backend.syncAccount(t.account.id);
+  // not proven gone (the Inbox has it): kept, with its id and what's stored for it, never imported again as new
+  expect((await t.messageOf(mm.threadId)).id).toBe(mm.id);
+  expect((await t.messageOf(mm.threadId)).bodyText).toBe(mm.bodyText);
+  const inbox = (await t.client.call("threads.list", { view: "inbox", accountId: t.account.id })).items;
+  expect(inbox.filter((x) => x.id !== mm.threadId)).toEqual([]);
+  // the one only there is gone
+  expect((await t.client.call("threads.get", { threadId: mo.threadId }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+});
+
+it("a folder deleted before the pass after its rename takes the mail that was only under its old name (Codex code review round 4 #2)", async () => {
+  const t = await setup(["Work", "Work/Sub"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  t.server.control.addMessage("Work/Sub", { raw: rawIdleMail("Only in sub") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const [c] = await t.threadsIn("Work/Sub");
+  const [ma, mc] = [await t.messageOf(a!), await t.messageOf(c!)];
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Job" });
+  expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash"]);
+  // carried durably: a restart before the pass still knows Job was Work
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  expect(await t.locations([ma.id, mc.id])).toEqual([]);
+  expect(await t.held([ma.id, mc.id])).toEqual([]);
+  expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+  expect((await t.client.call("threads.get", { threadId: c! }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; renamed?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+  expect(config?.config.cursor?.renamed).toBeUndefined();
+});
+
 it("a change waits for the running sync pass; a pass asked for during a change waits for it", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);
