@@ -254,3 +254,42 @@ Codex (plan critique, 12 points) checked the plan against the code. Changes:
 - #1 **A folder renamed here keeps its mail when its old name is made again before the next pass.** Work → Job, then Work created again: the new Work's UIDVALIDITY reset held the old Work's places, the rename's proof was withheld because Work was listed, Job skipped its mail and the record was dropped, so the mail had no place left. A reset of a path to a new generation now leaves the rename record's generation in place (and drops the path's state, so a folder read earlier in the pass knows it's another mailbox). The proof holds while the old path is gone *or* listed under another UIDVALIDITY, and the record's generation alone is forgotten once every folder is read (a UID Job didn't have is held). Test: `folder-actions.int.test.ts`, Job keeps the message with its id, place and body, nothing held, the new Work has its own, across two passes. It failed before: the message had no location.
 - #2 **A folder deleted here and made again before the cleanup pass loses its old mail.** The deletion record went because the path was listed, without checking UIDVALIDITY. A listed path's record now goes only if STATUS shows the recorded UIDVALIDITY (the DELETE wasn't carried out). Under another one, the record stays: the reset leaves its generation to it, and the cleanup forgets only that generation, never the new mailbox's mail. A STATUS that fails leaves the record for a later pass, and a `\Noselect` path drops it as before. Test: `folder-actions.int.test.ts`, the old message goes with no hold, the new Work keeps its mail and identity across two passes. It failed before: the old message was held.
 - #3 (a list paging finding) is fixed separately.
+
+## Codex code review, round 8
+
+Rounds 1–7 patched the IMAP rename and delete records case by case. Round 8 found three more cases of the same kind, so this round writes down the invariant, then checks every path against it.
+
+**The invariant.** Every record, alias, membership carry, location cleanup and recovery is keyed by the mailbox *generation* (path + UIDVALIDITY).
+- **When it's written:** a record's generation is the server's (STATUS), never the one cached for the path.
+- **When it's applied:** it's checked against the LIST and STATUS again.
+- **Never another generation:** a record never applies to another generation of the same path.
+- **While a rename or delete is pending:** the path's listing leaves its generation out (`Folder.except`). Neither store derives membership from those places, whether by a thread's refresh, a location write or removal, or a rebuild. A count or export of the path leaves them out too, and a carry never moves another generation's threads.
+
+What changed:
+
+- #1 **A renamed folder's old name made again shows none of its mail.**
+  - The provider lists each path with the generations a pending rename or delete took from it (`except`, read by STATUS for the paths those records name, a handful). The stores keep them: SQLite in `folders.except_json` (migration 41), IndexedDB on the folder row.
+  - Every derivation leaves those places out: `refreshFolders` / `writeFolders`, `located` on upsert, move and remove, `removeMany`'s check for what's still there, and the rebuild's location walk. A location moving between generations moves the membership.
+  - A listed folder whose `except` changes is rebuilt.
+  - A rename's threads are carried before the list that shows it is stored, and its new key keeps them (`replace(…, carried)`), so a rebuild of the old path never runs before the carry has read its rows.
+  - Tests: `folder-actions.int.test.ts` (Work, Job and its unread count before the pass, after a refresh of the thread, and after the pass), and conformance in both stores and on db-wasm (derivation, upsert across generations, `removeMany`, an `except` change, a reopen).
+- #2 **A rename records the generation that moved.**
+  - `renameFolder` reads each moving mailbox's UIDVALIDITY with STATUS. Its mail counts as cached only when the cursor's state for the path, or a pending rename's record, has that generation. A chained rename passes the proof on only on a match.
+  - Otherwise the record names the generation with nothing cached (`stale`): it's announced, but the threads the store showed under the path aren't carried.
+  - Test: Work → Job, Work made again and renamed to Other. Other counts and exports 0, Job counts 1, and after the pass Job keeps its message with no hold.
+- #3 **A lost RENAME's recovery is announced even when the old name is made again.** The pass announces a move when the new path is listed and the old one is gone *or* its STATUS shows another generation than the record's. Test: the answer is lost, another app makes Work again with mail, a restart and a pass. `foldersRenamed` comes first, the favorite follows to Job, Job keeps the message, and Work has only its own.
+- #4 **A stale save panel never aborts its replacement.** Each window numbers its export requests before the panel opens (`MboxFiles.ask`). A superseded `begin` aborts nothing, and is rejected again after its temp file opens (the file is deleted). Tests: `mbox-export.test.ts` and `mbox-files.test.ts`.
+- #5 **IndexedDB's export and count read a big folder's members a run per call while its order builds.**
+  - Each call reads 16,384 members into a sorted run, and the walk is kept between calls. While the members are still being read, a call answers with a pending cursor.
+  - Perf: 300,000 members, at most 6 ms a call (38.9 ms before).
+
+What the audit found and fixed:
+
+- **A delete records the generation it deletes.** `deleteFolder` reads each path's UIDVALIDITY with STATUS before the first DELETE; before, it used the cursor's (Work → Job, then Work made again and deleted recorded Job's generation). Test: round 8 audit in `folder-actions.int.test.ts`.
+- **The carry is generation-checked.** A folder another app renamed and made again, then renamed here, carried the other generation's threads. A `stale` move isn't carried. Test: the "another app renamed" case.
+- **A record's cleanup touches only its own generation.**
+  - `forgetMailbox` resets the whole path no longer. It forgets only its generation's places, and the path's state only when the state is that generation's.
+  - Another generation still cached for a gone path goes through the vanished-folder pass (held, looked for again).
+- **Counts and exports leave out a pending delete's generation too:** `renameAliases` reads `except` from the folder's listing, which the provider checked with STATUS.
+
+Still as before (documented in plan 68): until the next pass, a refresh of a carried thread derives its folders from its places, which are still under the old path. The new key can drop it until that pass, which runs at once; the old path never shows it.
