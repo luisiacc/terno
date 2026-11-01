@@ -1,3 +1,4 @@
+import { BodyEpochChanged } from "@terno/store";
 import { installBodyOwnership } from "./body-ownership";
 import { installCaptureAccounting } from "./capture-repair";
 import { categoryReferenceCeiling } from "./category-identities";
@@ -23,10 +24,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Logical 39 (plan 96) adds `messages.unsubscribe`: absent on older records reads as none, so no version change.
  * Version 24 adds forwards (SQL v44, plan 116); `categories.forward_json` and `filters.forward_json` read as none when absent.
  * Version 25 adds exact incoming body parts (SQL v45).
+ * Version 26 adds shared body transaction authority (SQL v46).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 45;
+export const LOGICAL_SCHEMA = 46;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -39,6 +41,7 @@ const fk = (column: string) => ({ [`fk_${column}`]: [column] as const });
  * and every command and read that needs it waits for it.
  */
 export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boolean })[] = [
+  { name: "body_protocol", early: true, key: ["id"] },
   { name: "body_heads", key: ["message_id"], indexes: { capture: ["capture_id"], ...fk("message_id") } },
   { name: "body_captures", key: ["id"], indexes: fk("account_id") },
   { name: "body_parts", key: ["capture_id", "field", "ordinal"], lazy: true },
@@ -291,7 +294,11 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       try { tx.abort(); } catch { /* The open result still must be refused. */ }
     };
     const upgrade = (track: TrackRequest, scan: TrackCursor) => {
-      if (event.oldVersion < 24) {
+      if (event.oldVersion < 26) {
+        if (event.oldVersion !== 0) db.createObjectStore("body_protocol");
+        track(tx.objectStore("body_protocol").put({ id: 1, epoch: "0" }, 1));
+      }
+      if (event.oldVersion < 25) {
         if (event.oldVersion !== 0) for (const name of ["body_captures", "body_parts", "body_heads"]) db.createObjectStore(name);
         tx.objectStore("body_heads").createIndex("capture", "capture_id", { unique: true });
         track(tx.objectStore("meta").put({ pending: event.oldVersion !== 0, after: 0 }, "bodyPartsUpgrade"));
@@ -552,15 +559,17 @@ export async function writeMeta(idb: IDBDatabase, values: Record<string, unknown
 }
 
 /** One readwrite transaction with every row a store command touched. Resolves once IndexedDB committed it. */
-export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed", host?: { yield(): Promise<void> }, check?: () => void): Promise<void> {
+export async function persist(idb: IDBDatabase, commit: Committed, durability: "strict" | "relaxed", host?: { yield(): Promise<void> }, check?: () => void, bodyEpoch?: string): Promise<void> {
   const stores = [...commit.writes.keys()].filter((t) => !TABLES.find((s) => s.name === t.spec.name)?.memoryOnly);
   if (!stores.length) return;
   const plans = await prepareOpWrites(commit, host);
   const hasOps = stores.some((t) => t.spec.name === "ops");
-  const names = [...new Set([...stores.map((t) => t.spec.name), "meta", ...(hasOps ? OP_PART_STORES : [])])];
+  const names = [...new Set([...stores.map((t) => t.spec.name), "meta", ...(bodyEpoch === undefined ? [] : ["body_protocol"]), ...(hasOps ? OP_PART_STORES : [])])];
   check?.();
   const tx = idb.transaction(names, "readwrite", { durability });
   await writeTransaction(tx, (track) => {
+    const write = () => {
+      check?.();
     for (const table of stores) {
       if (table.spec.name === "ops") continue;
       for (const [key, row] of commit.writes.get(table)!) {
@@ -589,6 +598,12 @@ export async function persist(idb: IDBDatabase, commit: Committed, durability: "
       });
     };
     next();
+    };
+    if (bodyEpoch === undefined) write();
+    else track(tx.objectStore("body_protocol").get(1), (row) => {
+      if ((row?.epoch ?? "0") !== bodyEpoch) throw new BodyEpochChanged(true);
+      write();
+    });
   });
 }
 

@@ -18,6 +18,7 @@ export class BodyOwnership {
     });
   }
   isOrphan(id: string): boolean { return this.orphans.has(id); }
+  count(): number { return this.orphans.size; }
   candidates(): IterableIterator<string> { return this.orphans.values(); }
 }
 const ownership = new WeakMap<MemDb, BodyOwnership>();

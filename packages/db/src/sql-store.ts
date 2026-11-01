@@ -1,3 +1,4 @@
+import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
@@ -520,8 +521,10 @@ export class SqlMailStore implements MailStore {
         const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
         staged.push(await stageBody(this.db, m.captureUnavailable || m.attachments === undefined ? m : { ...m, attachments: await stageAttachments(this, m.accountId, m.attachments, now, this.yieldTo, existing ? await this.attachments.current(m.accountId, { id: existing.id }) : []) }, this.yieldTo, check));
       }
-      const tests = listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
-      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, staged.flatMap((m) => m.bodyCapture ? [m.bodyCapture.id] : []), false);
+      const cache = new Map<string, Map<string, boolean>>();
+      return await publishBody(async () => {
+      const tests = applyFilters ? listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : [])) : [];
+      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, staged.flatMap((m) => m.bodyCapture ? [m.bodyCapture.id] : []), false, cache, check);
       return withBodyMatches(this.db, matches, () => this.db.tx(() => {
         check?.();
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -539,7 +542,8 @@ export class SqlMailStore implements MailStore {
         const c = this.classify(classifier, result.inserted, result.bodyCompleted, now);
         for (const t of c.touched) touched.add(t);
         return { inserted: result.inserted, touched: [...touched], deltas: [...result.deltas, ...c.deltas], auto: c.auto, backfill: c.backfill, uncertain: c.uncertain, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
-      })); } finally {
+      }));
+      }, check); } finally {
         for (const m of staged) if (m.bodyCapture) await finishBodyStage(this.db, m.bodyCapture.id, this.yieldTo);
       }
     }),
@@ -549,9 +553,11 @@ export class SqlMailStore implements MailStore {
       const accountId = this.db.get<{ account_id: number }>("SELECT account_id FROM messages WHERE id = ?", messageId)?.account_id;
       const staged = !captureUnavailable && attachments !== undefined && accountId !== undefined ? await stageAttachments(this, accountId, attachments, now, this.yieldTo, await this.attachments.current(accountId, { id: messageId })) : undefined;
       const body = !captureUnavailable && accountId !== undefined ? await stageBody(this.db, { accountId, bodyText: text, bodyHtml: html, bodyParts, snippet: "", preparedBodyTokens }, this.yieldTo, check) : { bodyText: text, bodyHtml: html, bodyCapture: undefined };
-      const tests = listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
+      const cache = new Map<string, Map<string, boolean>>();
       try {
-      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, body.bodyCapture ? [body.bodyCapture.id] : [], false); return withBodyMatches(this.db, matches, () => this.db.tx(() => {
+      return await publishBody(async () => {
+      const tests = listFilters(this.db).filter((f) => f.enabled).flatMap((f) => f.rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []));
+      const matches = await prepareBodyMatches(this.db, tests, this.yieldTo, body.bodyCapture ? [body.bodyCapture.id] : [], false, cache, check); return withBodyMatches(this.db, matches, () => this.db.tx(() => {
         check?.();
         const current = expected ? this.db.get<{ account_id: number; thread_id: number; provider_msg_id: string; body_state: string }>("SELECT account_id,thread_id,provider_msg_id,body_state FROM messages WHERE id=?", messageId) : undefined;
         if (expected && (!current || current.body_state === "full" || current.account_id !== expected.accountId || current.thread_id !== expected.threadId || current.provider_msg_id !== expected.providerMsgId)) return { touched: [], deltas: [], auto: new Map(), opIds: [] };
@@ -571,7 +577,8 @@ export class SqlMailStore implements MailStore {
         for (const t of c.touched) touched.add(t);
         if (owner) touched.add(owner.thread_id);
         return { touched: [...touched], deltas: c.deltas, auto: c.auto, opIds, ...flagReconciliation(sqlFlags(this.db), flagBefore) };
-      })); } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
+      }));
+      }, check); } finally { if (body.bodyCapture) await finishBodyStage(this.db, body.bodyCapture.id, this.yieldTo); }
     }),
     updateFlags: async (accountId, updates, observation, check) =>
       this.db.tx(() => {

@@ -1541,7 +1541,7 @@ export class BackendCore {
       check();
       const classifier = await this.classifier();
       const result = await this.evictions.write(() => this.accountWrite(life, () => this.store.sync.setBody(messageId, body.parsed.text, body.parsed.html, {
-        now: this.now(), classifier, attachments: body.parsed.captureUnavailable ? undefined : body.parsed.attachments, captureUnavailable: body.parsed.captureUnavailable,
+        now: this.now(), classifier, bodyParts: body.parsed.bodyParts, preparedBodyTokens: body.parsed.preparedBodyTokens, attachments: body.parsed.captureUnavailable ? undefined : body.parsed.attachments, captureUnavailable: body.parsed.captureUnavailable,
         expected: { accountId: message.accountId, threadId, providerMsgId }, check,
       })));
       this.categorizer.apply(result.deltas);

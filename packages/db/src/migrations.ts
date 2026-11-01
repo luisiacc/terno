@@ -1211,6 +1211,29 @@ INSERT INTO settings(key,value_json) VALUES('body_parts_upgrade',CASE WHEN EXIST
 PRAGMA application_id=1413631824;
 ` },
 
+  { version: 46, name: "body transaction authority", sql: `
+CREATE TABLE body_protocol(id INTEGER PRIMARY KEY CHECK(id=1),epoch TEXT NOT NULL);
+INSERT INTO body_protocol VALUES(1,'0');
+CREATE TRIGGER body_fact_body_heads_insert AFTER INSERT ON body_heads BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_body_heads_update AFTER UPDATE ON body_heads BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_body_heads_delete AFTER DELETE ON body_heads BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_filters_insert AFTER INSERT ON filters BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_filters_update AFTER UPDATE ON filters BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_filters_delete AFTER DELETE ON filters BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_accounts_insert AFTER INSERT ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_accounts_update AFTER UPDATE ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_accounts_delete AFTER DELETE ON accounts BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_secrets_insert AFTER INSERT ON secrets BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_secrets_update AFTER UPDATE ON secrets BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_secrets_delete AFTER DELETE ON secrets BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_message_locations_insert AFTER INSERT ON message_locations BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_message_locations_update AFTER UPDATE ON message_locations BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_message_locations_delete AFTER DELETE ON message_locations BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_imap_identity_holds_insert AFTER INSERT ON imap_identity_holds BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_imap_identity_holds_update AFTER UPDATE ON imap_identity_holds BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+CREATE TRIGGER body_fact_imap_identity_holds_delete AFTER DELETE ON imap_identity_holds BEGIN UPDATE body_protocol SET epoch=lower(hex(randomblob(16))) WHERE id=1; END;
+` },
+
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
