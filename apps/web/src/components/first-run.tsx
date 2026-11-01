@@ -252,7 +252,7 @@ export function FirstRun() {
         initialFocus={heading}
         data-testid="first-run"
         data-step={step}
-        className="h-[min(680px,90vh)] w-[min(1040px,94vw)] max-w-none grid-cols-[360px_minmax(0,1fr)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-none max-[760px]:grid-cols-1"
+        className="h-[min(860px,92vh)] w-[min(1360px,96vw)] max-w-none grid-cols-[380px_minmax(0,1fr)] grid-rows-1 gap-0 overflow-hidden p-0 sm:max-w-none max-[760px]:grid-cols-1"
       >
         <div className="flex min-h-0 flex-col">
           <div className="flex shrink-0 items-center justify-between px-6 pt-6">
@@ -293,7 +293,7 @@ export function FirstRun() {
             )}
           </div>
         </div>
-        <div className="relative min-h-0 bg-tint p-8 max-[760px]:hidden">
+        <div className="relative min-h-0 bg-tint p-6 max-[760px]:hidden">
           {/* each choice comes in the same way the steps do: one --motion-base fade (colors swap in one frame underneath) */}
           <div key={`${settings.layout} ${design.id} ${theme.id} ${previewMode}`} className="size-full animate-in fade-in-0 duration-base ease-motion">
             <FirstRunPreview design={design} theme={theme} base={baseId(theme, settings)} mode={previewMode} layout={settings.layout} density={settings.density} sample={sample} />

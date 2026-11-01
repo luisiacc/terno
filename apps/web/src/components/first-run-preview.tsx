@@ -15,8 +15,13 @@ import { tabClass } from "./list-tabs";
 import { SenderAvatar } from "./sender-avatar";
 import type { SampleMailbox } from "./first-run-sample";
 
-/** The app the preview draws: a laptop window's size, scaled down to fit (sizes, type and spacing stay the real ones). */
-const CANVAS = { w: 1180, h: 720 };
+/**
+ * The app the preview draws: a laptop window's width, its height following the
+ * panel's shape (within a window's range) so the picture fills the panel;
+ * scaled down to fit (sizes, type and spacing stay the real ones).
+ */
+const CANVAS_W = 1180;
+const CANVAS_H = { min: 680, max: 980 };
 
 interface Props {
   design: DesignDefinition;
@@ -40,13 +45,16 @@ interface Props {
  */
 export function FirstRunPreview({ design, theme, base, mode, layout, density, sample }: Props) {
   const frame = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0);
+  const [fit, setFit] = useState({ scale: 0, h: CANVAS_H.min });
   useLayoutEffect(() => {
     const el = frame.current;
     if (!el) return;
-    const fit = () => setScale(Math.min(el.clientWidth / CANVAS.w, el.clientHeight / CANVAS.h));
-    fit();
-    const observer = new ResizeObserver(fit);
+    const measure = () => {
+      const h = Math.min(CANVAS_H.max, Math.max(CANVAS_H.min, Math.round((CANVAS_W * el.clientHeight) / Math.max(1, el.clientWidth))));
+      setFit({ scale: Math.min(el.clientWidth / CANVAS_W, el.clientHeight / h), h });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -62,7 +70,7 @@ export function FirstRunPreview({ design, theme, base, mode, layout, density, sa
         data-layout={layout}
         data-mode={mode}
         className={cn("absolute top-1/2 left-1/2 overflow-hidden rounded-2xl bg-background font-sans text-foreground shadow-modal", mode === "dark" && "dark")}
-        style={{ ...custom, colorScheme: mode, width: CANVAS.w, height: CANVAS.h, transform: `translate(-50%, -50%) scale(${scale})`, visibility: scale ? undefined : "hidden" } as React.CSSProperties}
+        style={{ ...custom, colorScheme: mode, width: CANVAS_W, height: fit.h, transform: `translate(-50%, -50%) scale(${fit.scale})`, visibility: fit.scale ? undefined : "hidden" } as React.CSSProperties}
       >
         <div className="grid h-full" style={{ gridTemplateColumns: split ? "var(--sidebar-w) max(var(--list-min), var(--list-max)) minmax(0, 1fr)" : "var(--sidebar-w) minmax(0, 1fr)" }}>
           <Sidebar design={design} sample={sample} />
