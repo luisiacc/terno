@@ -1,4 +1,4 @@
-/** terno.app's fixed facts (plan 96). */
+/** terno.app's fixed facts (plan 97). */
 export const ORIGIN = "https://terno.app";
 export const GITHUB = "https://github.com/luisiacc/terno";
 export const LICENSE_URL = `${GITHUB}/blob/main/LICENSE`;

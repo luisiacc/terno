@@ -1,5 +1,5 @@
 /**
- * POST /api/waitlist (plan 96): `{ email, platform, lang, website }` as JSON (the page's script) or a form post
+ * POST /api/waitlist (plan 97): `{ email, platform, lang, website }` as JSON (the page's script) or a form post
  * (no JS). Bounded: a 2 KB body read as a stream, an approximate per-IP rate limit, at most MAX_ROWS rows.
  * Nothing about the request is logged.
  */

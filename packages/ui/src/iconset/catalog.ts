@@ -5,7 +5,7 @@
  */
 export const ICONS = {
   ALargeSmall: "TextFontIcon",
-  // terno.app (plan 96): the Mac download button
+  // terno.app (plan 97): the Mac download button
   Apple: "AppleIcon",
   Archive: "ArchiveIcon",
   ArrowDown: "ArrowDown02Icon",
@@ -45,7 +45,7 @@ export const ICONS = {
   Folder: "Folder01Icon",
   FolderInput: "FolderInputIcon",
   Forward: "Redo01Icon",
-  // terno.app (plan 96): the source link
+  // terno.app (plan 97): the source link
   Github: "GithubIcon",
   HardDrive: "HardDriveIcon",
   ImageOff: "ImageNotFound01Icon",
@@ -73,7 +73,7 @@ export const ICONS = {
   MailMinus: "MailMinus01Icon",
   MailOpen: "MailOpen01Icon",
   Mails: "MailsIcon",
-  // terno.app (plan 96): enlarge a screenshot
+  // terno.app (plan 97): enlarge a screenshot
   Maximize: "ArrowExpandDiagonal01Icon",
   MessageSquareReply: "MessageSquareReplyIcon",
   MessageSquareText: "Message01Icon",

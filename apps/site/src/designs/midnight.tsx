@@ -11,7 +11,7 @@ import { GITHUB, LICENSE_URL } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
- * Midnight (plan 96, design 3): dark first, keyboard first. Keycaps are the visual language; Geist for text, Geist
+ * Midnight (plan 97, design 3): dark first, keyboard first. Keycaps are the visual language; Geist for text, Geist
  * Mono for numbers and keys. A crisp white/zinc variant follows the system when it is light.
  */
 

@@ -1,5 +1,5 @@
 /**
- * terno.app's Worker (plan 96). It runs first for every request (Codex 1) so the www redirect and the headers
+ * terno.app's Worker (plan 97). It runs first for every request (Codex 1) so the www redirect and the headers
  * cover everything; static paths go straight to the assets.
  */
 import { handleDownload } from "./download";

@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @terno/site shots` (plan 96): pictures of the real app for terno.app. The real backend on a
+ * `pnpm --filter @terno/site shots` (plan 97): pictures of the real app for terno.app. The real backend on a
  * temp profile seeded with the showcase mailbox, a production build of the renderer, Playwright at 2×, light and
  * dark. Nothing leaves the machine: every request that isn't to these two local servers is aborted. Writes WebP
  * (1× and 2×) into public/shots/ plus the Open Graph image; the outputs are committed, so run it only when the app
@@ -187,7 +187,7 @@ async function main() {
         try {
           execFileSync("cp", ["-R", `${template}/.`, dir]);
           server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
-          // the feature shots are Lumen with the GitHub palettes, light and dark (plan 96)
+          // the feature shots are Lumen with the GitHub palettes, light and dark (plan 97)
           const palette = shot.palette ?? (shot.design ? {} : { light: "github-light", dark: "github-dark" });
           const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
           await server.backend.server.invoke("settings.update", settings as never, ctx);

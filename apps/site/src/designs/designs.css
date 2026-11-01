@@ -1,4 +1,4 @@
-/* each design's own CSS (plan 96), scoped under html[data-design=<id>]; most styling is Tailwind in the .tsx */
+/* each design's own CSS (plan 97), scoped under html[data-design=<id>]; most styling is Tailwind in the .tsx */
 @import "./lumen.css";
 @import "./midnight.css";
 @import "./letter.css";

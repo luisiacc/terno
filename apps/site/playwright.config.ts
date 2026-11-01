@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// plan 96: the built site under `wrangler dev` (the real Worker, local D1 with the migrations applied).
+// plan 97: the built site under `wrangler dev` (the real Worker, local D1 with the migrations applied).
 // SITE_PORT lets two checkouts run side by side.
 const PORT = Number(process.env.SITE_PORT ?? 8797);
 

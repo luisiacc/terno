@@ -1,5 +1,5 @@
 /**
- * The mailbox the site's screenshots show (plan 96): a fictional person, fictional companies, English throughout.
+ * The mailbox the site's screenshots show (plan 97): a fictional person, fictional companies, English throughout.
  * The demo mailbox (`@terno/mock-data`) carries the maintainer's name and Spanish mail, which a public page
  * shouldn't. A curated top of the inbox (what the shots frame) sits on a few thousand older threads, so search
  * and the "everything similar" counts have real numbers behind them. Deterministic: same input, same pictures.

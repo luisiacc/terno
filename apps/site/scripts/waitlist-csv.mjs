@@ -1,4 +1,4 @@
-// `pnpm waitlist:csv [--platform=linux|windows|mac|mac-intel] [--out=file.csv] [--preview | --local]` (plan 96):
+// `pnpm waitlist:csv [--platform=linux|windows|mac|mac-intel] [--out=file.csv] [--preview | --local]` (plan 97):
 // the waitlist from D1 to a CSV. Production by default; --preview reads the preview Worker's database, --local the
 // one `pnpm --filter @terno/site preview` uses. The file holds people's emails: it is git-ignored, keep it private
 // and delete it once the launch email is out.

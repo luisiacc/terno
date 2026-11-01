@@ -13,7 +13,7 @@ export interface WaitlistClasses {
 const STATUSES = ["thanks", "invalid", "busy", "full", "error"] as const;
 
 /**
- * The Windows/Linux waitlist (plan 96). A real form: without JS it posts and the Worker answers 303 to
+ * The Windows/Linux waitlist (plan 97). A real form: without JS it posts and the Worker answers 303 to
  * /waitlist/#<status>, where `:target` shows the message (site.css). With JS (client.ts) it posts in place and
  * shows the same message in the live region. `platform` preselects (the /download/ page asks for Mac).
  */

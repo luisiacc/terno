@@ -1,4 +1,4 @@
-// terno.app (plan 96). `pnpm deploy:site` deploys production; `pnpm deploy:site:preview` the preview Worker
+// terno.app (plan 97). `pnpm deploy:site` deploys production; `pnpm deploy:site:preview` the preview Worker
 // (its own database, a workers.dev URL, noindex). The D1 databases are created on the first deploy.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",

@@ -4,7 +4,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
-  "description": "terno.app: the public site (plan 96)",
+  "description": "terno.app: the public site (plan 97)",
   "scripts": {
     "dev": "tsx scripts/dev.ts",
     "build": "vite build && vite build --ssr src/entry-server.tsx --outDir .ssr && node scripts/prerender.mjs",

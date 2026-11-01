@@ -1,7 +1,7 @@
 import type { SiteCopy } from "../copy";
 import { GITHUB, ORIGIN, type Route } from "../site";
 
-/** Everything search engines and link previews read (plan 96 §SEO). Rendered into <head> by the prerender step. */
+/** Everything search engines and link previews read (plan 97 §SEO). Rendered into <head> by the prerender step. */
 export function Head({ route, copy, title, description }: { route: Route; copy: SiteCopy; title: string; description: string }) {
   const url = `${ORIGIN}${route.path === "/404.html" ? "/" : route.path}`;
   const app = {

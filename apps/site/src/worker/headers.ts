@@ -1,5 +1,5 @@
 /**
- * Every response's headers (plan 96, Codex 2): assets and the Worker's own alike, so nothing goes out without
+ * Every response's headers (plan 97, Codex 2): assets and the Worker's own alike, so nothing goes out without
  * them. The site runs one same-origin script and no inline script; JSON-LD is data, which CSP doesn't execute.
  */
 const CSP = [

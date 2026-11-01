@@ -1,5 +1,5 @@
 /**
- * The only script terno.app runs (plan 96): the page is complete HTML without it. It sends the waitlist in place
+ * The only script terno.app runs (plan 97): the page is complete HTML without it. It sends the waitlist in place
  * instead of navigating, and says how it went in the form's live region.
  */
 import "./styles.css";

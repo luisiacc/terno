@@ -1,4 +1,4 @@
-# 96: terno.app, the public site
+# 97: terno.app, the public site
 
 - **Status:** building. Five designs are up for choice; the chosen one becomes `/` and the rest are deleted.
 - **Builds on:** plan 50 (Cloudflare for everything Terno hosts). This is a new first step that plan 50 didn't list: the marketing site on the apex domain, separate from `mail.terno.app` (the web app, still plan 50 §3.2).

@@ -30,5 +30,5 @@ apps/web/.maps/
 # other agents' git worktrees: never part of the repo
 .claude/worktrees/
 
-# the waitlist exported by `pnpm waitlist:csv` (plan 96): people's emails, never committed
+# the waitlist exported by `pnpm waitlist:csv` (plan 97): people's emails, never committed
 waitlist-*.csv

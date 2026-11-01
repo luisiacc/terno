@@ -1,5 +1,5 @@
 // `pnpm deploy:site` (production: terno.app) and `pnpm deploy:site:preview` (terno-site-preview on workers.dev,
-// its own database, noindex). Plan 96. The steps and their order are src/deploy-steps.mjs: tests, build, the D1
+// its own database, noindex). Plan 97. The steps and their order are src/deploy-steps.mjs: tests, build, the D1
 // database (created on the first deploy), its migrations, then the Worker; a failing step stops the rest.
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";

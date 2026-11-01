@@ -6,7 +6,7 @@ export type ShotName = keyof SiteCopy["alt"];
 const size = (name: string) => (manifest as Record<string, { width: number; height: number }>)[name];
 
 /**
- * A screenshot of the app (plan 96, `pnpm --filter @terno/site shots`), taken in light and dark. Both are in the
+ * A screenshot of the app (plan 97, `pnpm --filter @terno/site shots`), taken in light and dark. Both are in the
  * page; CSS shows the one matching the visitor's system (Midnight: dark), and the switch at the bottom right
  * (client.ts) shows the other. Hidden <img>s aren't fetched, so the switch costs nothing until used. A click on the
  * picture or the enlarge button opens it full size. WebP at 1× and 2×, sized so nothing shifts as it loads.

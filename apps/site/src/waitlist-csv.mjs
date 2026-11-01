@@ -1,4 +1,4 @@
-// plan 96: the waitlist as CSV (`pnpm waitlist:csv`). Pure, so a test checks the query and the escaping.
+// plan 97: the waitlist as CSV (`pnpm waitlist:csv`). Pure, so a test checks the query and the escaping.
 
 export const PLATFORMS = ["windows", "linux", "mac", "mac-intel"];
 

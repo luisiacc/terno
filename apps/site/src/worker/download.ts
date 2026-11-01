@@ -1,5 +1,5 @@
 /**
- * GET /download/mac (plan 96): the newest published, stable release's Apple-silicon DMG on GitHub. With none
+ * GET /download/mac (plan 97): the newest published, stable release's Apple-silicon DMG on GitHub. With none
  * (drafts and nightlies don't count), or GitHub unreachable, the /download/ page, which says the first build is
  * on its way. The lookup is cached for 10 minutes so a launch-day rush doesn't hit GitHub's rate limit.
  */

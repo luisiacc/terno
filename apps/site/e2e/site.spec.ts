@@ -1,4 +1,4 @@
-/** Plan 96: terno.app as deployed (the built pages behind the Worker). */
+/** Plan 97: terno.app as deployed (the built pages behind the Worker). */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { DESIGNS } from "../src/site";

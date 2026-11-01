@@ -1,4 +1,4 @@
-// plan 96: what `pnpm deploy:site` runs, in order (Codex review 1: the database exists and is migrated before a
+// plan 97: what `pnpm deploy:site` runs, in order (Codex review 1: the database exists and is migrated before a
 // Worker that needs it goes live; any failing step stops everything after it). Pure, so a test checks the order.
 
 /** @param {{ preview: boolean }} o */

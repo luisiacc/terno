@@ -11,7 +11,7 @@ import { GITHUB, LICENSE_URL } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
- * Lumen (plan 96, design 1): the app's own default design as a website. Warm paper, Figtree, the brand blue used
+ * Lumen (plan 97, design 1): the app's own default design as a website. Warm paper, Figtree, the brand blue used
  * sparingly, one large product shot under a centered headline, then features alternating text and shots.
  */
 

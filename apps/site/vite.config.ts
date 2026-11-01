@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// plan 96: the client build (CSS and the one small script) into dist/; the SSR build of src/entry-server.tsx goes
+// plan 97: the client build (CSS and the one small script) into dist/; the SSR build of src/entry-server.tsx goes
 // to .ssr/ (never deployed) and scripts/prerender.mjs writes every page into dist/
 export default defineConfig({
   plugins: [react(), tailwindcss()],

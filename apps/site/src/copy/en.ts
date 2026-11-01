@@ -1,4 +1,4 @@
-/** The site's copy (plan 96), English (the source language). `es.ts` must match this shape: the type check says so. */
+/** The site's copy (plan 97), English (the source language). `es.ts` must match this shape: the type check says so. */
 export const en = {
   lang: "en",
   meta: {

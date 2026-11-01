@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @terno/site dev` (plan 96): every page rendered on request through Vite (SSR + HMR'd CSS), so an
+ * `pnpm --filter @terno/site dev` (plan 97): every page rendered on request through Vite (SSR + HMR'd CSS), so an
  * edit shows on reload. The deployed site is the prerendered build (`pnpm build`); this is only for working on it.
  */
 import { readFileSync } from "node:fs";

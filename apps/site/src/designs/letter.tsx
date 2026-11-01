@@ -11,7 +11,7 @@ import { GITHUB, LICENSE_URL } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
- * Letter (plan 96, design 5): one narrow reading column, written like a letter about mail that stays yours.
+ * Letter (plan 97, design 5): one narrow reading column, written like a letter about mail that stays yours.
  * Shots are figures that break out of the column (`.letter-wide`); crops stay in it. Layout and colors: letter.css.
  */
 

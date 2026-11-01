@@ -1,4 +1,4 @@
-// plan 96: every route to static HTML in dist/ (the client build's index.html is the template), then the sitemap
+// plan 97: every route to static HTML in dist/ (the client build's index.html is the template), then the sitemap
 // and robots.txt. Run by `pnpm build` after both Vite builds.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
