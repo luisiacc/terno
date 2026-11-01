@@ -10,7 +10,7 @@ import type { Folder } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderRegistry, type SyncSink } from "@terno/mail/portable";
 import type { ProviderFolder } from "@terno/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
 const cleanup: (() => Promise<void>)[] = [];
@@ -104,6 +104,25 @@ describe("an account's own folders (plan 68): the backend", () => {
     };
     await t.backend.syncAccount(t.account.id).catch(() => {});
     expect((await t.backend.store.accounts.get(t.account.id))!.syncState.authRequired).toBe(true);
+  });
+
+  it("a change the server made whose list fails to be stored asks for a pass, which stores what's true (Codex code review round 23 #3)", async () => {
+    const t = await setup();
+    await t.backend.syncAccount(t.account.id);
+    const travel = { key: "Travel", path: ["Travel"], selectable: true };
+    t.script.createFolder = async () => ({ key: "Travel", folders: [travel] });
+    // the recovery pass is asked for only when the host syncs on its own
+    (t.backend.options as { autoSync?: boolean }).autoSync = true;
+    const passes = vi.spyOn(t.backend, "syncAccount").mockResolvedValue(undefined as never);
+    vi.spyOn(t.backend.store.folders, "replace").mockRejectedValueOnce(new Error("synthetic disk full"));
+    await expect(t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Travel" })).rejects.toBeTruthy();
+    expect(passes).toHaveBeenCalledWith(t.account.id);
+    // that pass lists what the server has, and the store keeps it now
+    passes.mockRestore();
+    (t.backend.options as { autoSync?: boolean }).autoSync = false;
+    t.script.list = [travel];
+    await t.backend.syncAccount(t.account.id);
+    expect((await t.client.call("app.bootstrap", {})).folders.map((f) => f.key)).toEqual(["Travel"]);
   });
 
   it("an account removed while a folder change waits on the server is removed: the interrupted request isn't the removal's error (Codex code review round 21 #2)", async () => {

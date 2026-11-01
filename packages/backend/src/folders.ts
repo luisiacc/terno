@@ -134,21 +134,28 @@ async function change<R extends FolderChange>(
     }
     account.check();
     const { renamed = [], deleted = [] } = follows(result);
-    const partial = await carryRenamed(b, accountId, renamed, result.folders, account.write);
-    // the list and the favorites that follow it, never between a favorite's check and its write (Codex code review round 10 #4)
-    await b.withFolderList(accountId, async () => {
-      const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to), partial));
-      if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
-      b.notifyChanged(stored.touched);
-      void b.rebuildFolders();
-      if (renamed.length || deleted.length) await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted }));
-    });
-    // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
-    // a LIST failing after the DELETE left the favorite for good)
-    if (deleted.length) await provider.deletionsFollowed?.(deleted);
-    // and these moves (Codex code review round 14 #1: acknowledged before the LIST after the RENAME, a failing one
-    // left the move unannounced for good)
-    if (renamed.length) await provider.renamesFollowed?.(renamed);
+    try {
+      const partial = await carryRenamed(b, accountId, renamed, result.folders, account.write);
+      // the list and the favorites that follow it, never between a favorite's check and its write (Codex code review round 10 #4)
+      await b.withFolderList(accountId, async () => {
+        const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to), partial));
+        if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
+        b.notifyChanged(stored.touched);
+        void b.rebuildFolders();
+        if (renamed.length || deleted.length) await b.writeFavorites(() => followFavoriteFolders(b.store, accountId, { renamed, deleted }));
+      });
+      // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
+      // a LIST failing after the DELETE left the favorite for good)
+      if (deleted.length) await provider.deletionsFollowed?.(deleted);
+      // and these moves (Codex code review round 14 #1: acknowledged before the LIST after the RENAME, a failing one
+      // left the move unannounced for good)
+      if (renamed.length) await provider.renamesFollowed?.(renamed);
+    } catch (error) {
+      // the server changed and this computer's copy didn't follow: the next pass reads what's true (Codex code review
+      // round 23 #3: a failed write asked for none)
+      resync();
+      throw folderError(b, error);
+    }
     resync();
     if (result.partial) throw folderError(b, result.partial);
     return result;

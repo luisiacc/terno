@@ -8,7 +8,7 @@ import { FOLDER_NAME_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { demoFolderChange, planImapCreate, planImapDelete, planImapRename, planLabelCreate, planLabelDelete, planLabelRename, type LabelName, type ListedPath } from "./folder-changes";
 import { createGmailApiProvider } from "./gmail-api";
-import type { ProviderContext } from "./types";
+import type { ProviderContext, SyncSink } from "./types";
 
 const box = (path: string, o: { delimiter?: string | null; flags?: string[] } = {}): ListedPath => ({ path, delimiter: o.delimiter === undefined ? "/" : o.delimiter, flags: new Set(o.flags ?? []) });
 const keyOf = (e: unknown) => (e as { i18n?: { key: string } }).i18n?.key;
@@ -260,6 +260,21 @@ describe("Gmail label changes on the wire", () => {
     const g = gmail(catalog, { refuse: (method) => (method === "DELETE" ? 400 : null) });
     await expect(g.provider.deleteFolder!({ key: "Label_1", folders: [] })).rejects.toMatchObject({ i18n: { key: "errors.folder.refused", params: { server: "Gmail", reason: "FAILED_PRECONDITION" } } });
     expect(g.labels.size).toBe(4);
+  });
+
+  it("a change's own read of /labels isn't taken for the stored list: the next pass reads them, and only a stored read is fresh (Codex code review round 23 #3)", async () => {
+    const g = gmail(catalog);
+    const stored: string[][] = [];
+    const sink = { signal: new AbortController().signal, setFolders: async (f: { path: string[] }[]) => { stored.push(f.map((x) => x.path.join("/"))); } } as unknown as SyncSink;
+    await g.provider.renameFolder!({ key: "Label_1", name: "Job", folders: [] });
+    // the backend's write of that list failed: the pass after reads what's true
+    await g.provider.folders!(sink);
+    expect(g.requests.at(-1)).toBe("GET /labels");
+    expect(stored).toEqual([["Job", "Job/Clients", "Job/Clients/Acme"]]);
+    // stored: fresh until it may have changed
+    const before = g.requests.length;
+    await g.provider.folders!(sink);
+    expect(g.requests).toHaveLength(before);
   });
 
   it("deletes a label and its sublabels, deepest first; a system label is refused before any request", async () => {

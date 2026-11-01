@@ -1325,7 +1325,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
    * stored is what's true, with what didn't happen said.
    */
   async function labelChange<T extends { id: string }>(name: string | undefined, plan: (labels: GmailLabel[]) => T[], run: (step: T) => Promise<void>, partial: (done: number, total: number, failed: T, reason: string) => ProviderError): Promise<{ folders: ProviderFolder[]; done: T[]; partial?: ProviderError }> {
-    // whatever happens, the next pass reads /labels unless this change reads them last
+    // whatever happens, the next pass reads /labels: what this change reads last isn't stored yet, and a failed
+    // write of it must not leave the stored list taken for fresh (Codex code review round 23 #3)
     catalog = null;
     const steps = plan(readLabels(await api<unknown>("/labels")));
     const done: T[] = [];
@@ -1342,7 +1343,6 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       done.push(step);
     }
     const labels = readLabels(await api<unknown>("/labels"));
-    catalog = { at: Date.now(), known: new Set(labels.map((l) => l.id)) };
     return { folders: labelFolders(labels), done, ...(failure && { partial: failure }) };
   }
 
