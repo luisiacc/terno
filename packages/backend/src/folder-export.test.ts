@@ -170,6 +170,45 @@ describe("folders.export (plan 107)", () => {
     expect(await exports.next((await second!).exportId, "c")).toMatchObject({ finished: true, total: 1 });
   });
 
+  it("a start cancelled by its request id stops reading ids, and stops sorting at the next slice (Codex code review round 14 #3)", async () => {
+    const { backend, client, gmail } = await setup();
+    await ingest(backend.store, Array.from({ length: 300 }, (_, i) => msg({ accountId: gmail, providerMsgId: `m${i}`, providerThreadId: `m${i}` })));
+    const reads = vi.spyOn(backend.store.folderExport, "ids");
+    // cancelled at its first turn while it reads ids (the renderer has no exportId yet)
+    let turns = 0;
+    let exports: FolderExports = new FolderExports(Object.assign(Object.create(backend) as typeof backend, {
+      yieldTurn: async () => { if (++turns === 1) exports.cancel("r1", "c"); },
+    }));
+    await expect(exports.start({ accountId: gmail, view: "inbox" }, "c", "r1")).rejects.toMatchObject({ code: "CANCELLED" });
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(turns).toBe(1);
+    expect(exports.size).toBe(0);
+    // cancelled at the sort's first turn: no slice after it
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (clock += 20));
+    reads.mockClear();
+    let sorting = false;
+    turns = 0;
+    const store = backend.store;
+    exports = new FolderExports(Object.assign(Object.create(backend) as typeof backend, {
+      store: Object.assign(Object.create(store) as typeof store, { folderExport: Object.assign(Object.create(store.folderExport) as typeof store.folderExport, {
+        ids: async (...a: Parameters<typeof store.folderExport.ids>) => { const r = await store.folderExport.ids(...a); if (r.next === null) sorting = true; return r; },
+      }) }),
+      yieldTurn: async () => { if (!sorting) return; if (++turns === 1) exports.cancel("r2", "c"); },
+    }));
+    await expect(exports.start({ accountId: gmail, view: "inbox" }, "c", "r2")).rejects.toMatchObject({ code: "CANCELLED" });
+    vi.mocked(performance.now).mockRestore();
+    expect(turns).toBe(1);
+    expect(exports.size).toBe(0);
+    // a cancel that arrives before its start: the start reads nothing
+    reads.mockClear();
+    expect(await client.call("folders.exportCancel", { exportId: "r3" })).toEqual({ ok: true });
+    await expect(client.call("folders.exportStart", { accountId: gmail, folder: null, view: "inbox", requestId: "r3" })).rejects.toMatchObject({ code: "CANCELLED" });
+    expect(reads).not.toHaveBeenCalled();
+    // and another start goes on as ever
+    expect((await client.call("folders.exportStart", { accountId: gmail, folder: null, view: "inbox", requestId: "r4" })).total).toBe(300);
+  });
+
   it("a session idle for a minute ends by itself", async () => {
     const { backend, gmail } = await setup();
     await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "one" })]);

@@ -1007,7 +1007,7 @@ export function createHandlers(b: Backend): Handlers {
     "folders.delete": ({ accountId, key }) => deleteFolder(b, accountId, key),
     "folders.count": ({ accountId, key }) => countFolder(b, accountId, key),
     "folders.favorite": ({ accountId, folder, view, on }) => favoriteFolder(b, { accountId, folder, view }, on),
-    "folders.exportStart": (p, ctx) => folderExports.start(p.folder !== null ? { accountId: p.accountId, folder: p.folder } : { accountId: p.accountId, view: p.view! }, ctx.clientId),
+    "folders.exportStart": (p, ctx) => folderExports.start(p.folder !== null ? { accountId: p.accountId, folder: p.folder } : { accountId: p.accountId, view: p.view! }, ctx.clientId, p.requestId),
     "folders.exportNext": (p, ctx) => folderExports.next(p.exportId, ctx.clientId),
     "folders.exportCancel": (p, ctx) => folderExports.cancel(p.exportId, ctx.clientId),
 

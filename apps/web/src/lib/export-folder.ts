@@ -112,11 +112,15 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
   const snackId = `folder-export-${++seq}`;
   let cancelled = false;
   let exportId: string | null = null;
+  // the start's own id, made here: a cancel before the backend answers stops its reading and sorting too (Codex code
+  // review round 14 #3: it found no session, and a big mailbox went on being read)
+  let requestId: string | null = null;
   let sink: Sink | null = null;
   const cancel = () => {
     if (cancelled) return;
     cancelled = true;
-    if (exportId) void client.call("folders.exportCancel", { exportId }).catch(() => {});
+    const id = exportId ?? requestId;
+    if (id) void client.call("folders.exportCancel", { exportId: id }).catch(() => {});
     void sink?.abort();
     snack(t("folder.export.cancelled"), { id: snackId });
   };
@@ -130,7 +134,8 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
     if (cancelled) return void sink.abort().catch(() => {});
     const action = { label: t("common.cancel"), name: t("folder.export.cancelName"), onClick: cancel };
     snack.loading(t("folder.export.starting", { name: label }), { id: snackId, action });
-    const start = await client.call("folders.exportStart", { accountId: target.accountId, folder: target.folder, view: target.view });
+    requestId = `${snackId}-${Math.random().toString(36).slice(2, 10)}`;
+    const start = await client.call("folders.exportStart", { accountId: target.accountId, folder: target.folder, view: target.view, requestId });
     exportId = start.exportId;
     // cancelled while it started: the session it opened ends too
     if (cancelled) return void client.call("folders.exportCancel", { exportId }).catch(() => {});
@@ -164,7 +169,8 @@ export async function exportFolder(target: FolderExportTarget, label: string): P
   } catch (error) {
     if (cancelled) return;
     cancelled = true;
-    if (exportId) void client.call("folders.exportCancel", { exportId }).catch(() => {});
+    const id = exportId ?? requestId;
+    if (id) void client.call("folders.exportCancel", { exportId: id }).catch(() => {});
     await sink?.abort().catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
     snack.error(error instanceof ExportError ? message : t("folder.export.failed", { name: label, error: message }), { id: snackId });

@@ -22,6 +22,8 @@ const IDS_SLICE = { ...BULK_SLICE, initial: 200, floor: 20, ceiling: 5000 };
 /** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ MBOX_PIECE). */
 export const EXPORT_TEXT_MAX = 1024 * 1024;
 export const EXPORT_IDLE_MS = 60_000;
+/** request ids cancelled before their start arrived, kept at most */
+const CANCELLED_STARTS_MAX = 16;
 
 interface Session {
   id: string;
@@ -42,8 +44,10 @@ interface Session {
 
 export class FolderExports {
   private readonly sessions = new Map<string, Session>();
-  /** a client's start in progress (a newer one supersedes it) */
-  private readonly starting = new Map<string, number>();
+  /** a client's start in progress (a newer one supersedes it, and a cancel by its request id stops it) */
+  private readonly starting = new Map<string, { ticket: number; requestId?: string }>();
+  /** request ids cancelled before their start arrived (a few, the oldest let go), by client */
+  private readonly cancelledStarts = new Set<string>();
   private seq = 0;
 
   constructor(private readonly b: BackendCore) {}
@@ -53,12 +57,16 @@ export class FolderExports {
     return this.sessions.size;
   }
 
-  async start(target: FolderExportTarget, clientId: string): Promise<{ exportId: string; total: number; name: string }> {
+  async start(target: FolderExportTarget, clientId: string, requestId?: string): Promise<{ exportId: string; total: number; name: string }> {
     // one per client: the last one ends now, and a start still resolving ids gives way
     for (const s of this.sessions.values()) if (s.clientId === clientId) this.end(s);
     const ticket = ++this.seq;
-    this.starting.set(clientId, ticket);
-    const superseded = () => this.starting.get(clientId) !== ticket || this.b.isStopped;
+    this.starting.set(clientId, { ticket, ...(requestId && { requestId }) });
+    // cancelled by its request id, even before it got here (Codex code review round 14 #3: a cancel while it started
+    // found no session, and the ids were still read and sorted)
+    if (requestId && this.cancelledStarts.delete(`${clientId}\u0000${requestId}`)) this.starting.delete(clientId);
+    const superseded = () => this.starting.get(clientId)?.ticket !== ticket || this.b.isStopped;
+    const cancelled = () => new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
     try {
       const name = await this.nameOf(target);
       // a folder renamed here that no pass has read keeps its mail under its old path meanwhile (Codex code review round 5 #2)
@@ -67,17 +75,22 @@ export class FolderExports {
         const { aliases, except } = await renameAliases(this.b, target.accountId, [target.folder]);
         place = { ...target, aliases, except: except.get(target.folder) ?? [] };
       }
+      if (superseded()) throw cancelled();
       const { ids, dates } = await this.resolve(place, superseded);
-      if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
-      const sorted = await sortByDate(ids, dates, () => this.b.yieldTurn());
-      // the sort takes turns: a newer start meanwhile wins (Codex code review round 4 #5: both were kept)
-      if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
+      if (superseded()) throw cancelled();
+      // the sort takes turns: a newer start or a cancel meanwhile stops it at the next (Codex code review round 4 #5:
+      // both were kept; round 14 #3: a cancelled one sorted to the end)
+      const sorted = await sortByDate(ids, dates, async () => {
+        await this.b.yieldTurn();
+        if (superseded()) throw cancelled();
+      });
+      if (superseded()) throw cancelled();
       const session: Session = { id: `export-${ticket}-${Math.random().toString(36).slice(2, 10)}`, clientId, ids: sorted, at: 0, current: null, done: 0, missingAttachments: 0, partialBodies: 0, busy: false, ended: false, timer: null };
       this.sessions.set(session.id, session);
       this.touch(session);
       return { exportId: session.id, total: session.ids.length, name };
     } finally {
-      if (this.starting.get(clientId) === ticket) this.starting.delete(clientId);
+      if (this.starting.get(clientId)?.ticket === ticket) this.starting.delete(clientId);
     }
   }
 
@@ -122,9 +135,18 @@ export class FolderExports {
     }
   }
 
+  /** a session by its exportId, or a start by its requestId (one not here yet is remembered for when it comes) */
   cancel(exportId: string, clientId: string): { ok: true } {
     const s = this.sessions.get(exportId);
-    if (s && s.clientId === clientId) this.end(s);
+    if (s) {
+      if (s.clientId === clientId) this.end(s);
+      return { ok: true };
+    }
+    if (this.starting.get(clientId)?.requestId === exportId) this.starting.delete(clientId);
+    else {
+      this.cancelledStarts.add(`${clientId}\u0000${exportId}`);
+      if (this.cancelledStarts.size > CANCELLED_STARTS_MAX) this.cancelledStarts.delete(this.cancelledStarts.values().next().value!);
+    }
     return { ok: true };
   }
 

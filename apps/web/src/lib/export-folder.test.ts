@@ -79,7 +79,7 @@ describe("exportFolder (plan 107)", () => {
     expect(progress).toContain("Exporting Clients… 0 / 3");
     expect(progress).toContain("Exporting Clients… 2 / 3");
     expect(current()).toMatchObject({ tone: "success", message: "Exported 3 messages", description: "2 attachments weren’t on this computer. 1 message’s full text wasn’t on this computer." });
-    expect(fake.calls.find((c) => c.method === "folders.exportStart")?.params).toEqual(target);
+    expect(fake.calls.find((c) => c.method === "folders.exportStart")?.params).toEqual({ ...target, requestId: expect.any(String) });
   });
 
   it("speaks the active language", async () => {
@@ -106,6 +106,26 @@ describe("exportFolder (plan 107)", () => {
     expect(file.ended).toBe(false);
     expect(file.chunks).toHaveLength(1);
     expect(current()).toMatchObject({ message: "Export cancelled" });
+  });
+
+  it("a Cancel while it starts stops the backend's start by its own request id (Codex code review round 14 #3)", async () => {
+    const file = desktop();
+    backend(3);
+    let answer!: (r: unknown) => void;
+    fake.handlers["folders.exportStart"] = () => new Promise((resolve) => (answer = resolve));
+    const done = exportFolder(target, "Clients");
+    await vi.waitFor(() => expect(fake.calls.some((c) => c.method === "folders.exportStart")).toBe(true));
+    const { requestId } = fake.calls.find((c) => c.method === "folders.exportStart")!.params as { requestId?: string };
+    expect(requestId).toEqual(expect.any(String));
+    runAction("action");
+    expect(fake.calls.filter((c) => c.method === "folders.exportCancel")).toEqual([{ method: "folders.exportCancel", params: { exportId: requestId } }]);
+    expect(current()).toMatchObject({ message: "Export cancelled" });
+    // the backend answers anyway (its start was past the last check): that session ends too
+    answer({ exportId: "e1", total: 3, name: "Clients" });
+    await done;
+    expect(fake.calls.filter((c) => c.method === "folders.exportCancel").map((c) => c.params)).toEqual([{ exportId: requestId }, { exportId: "e1" }]);
+    expect(fake.calls.some((c) => c.method === "folders.exportNext")).toBe(false);
+    expect(file.aborted).toBe(true);
   });
 
   it("a file opened after its export was superseded is aborted, never left open (Codex code review round 2 #9)", async () => {

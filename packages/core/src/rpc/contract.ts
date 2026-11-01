@@ -980,8 +980,10 @@ export const contract = {
    * (by date, then id) and says how many; each `next` gives the following text (bounded by size and time), until
    * `done`; `cancel` ends it early. A session idle for a minute ends by itself.
    */
-  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.refine(oneTarget, { message: "folder or view" })),
+  // `requestId`: the renderer's own, so a cancel while it starts (no exportId yet) stops it (Codex code review round 14 #3)
+  "folders.exportStart": m<{ exportId: string; total: number; name: string }>()(folderTarget.extend({ requestId: z.string().min(1).max(100).optional() }).refine(oneTarget, { message: "folder or view" })),
   "folders.exportNext": m<{ text: string; done: number; total: number; finished: boolean; missingAttachments: number; partialBodies: number }>()(z.object({ exportId: z.string().min(1).max(100) }), { timeoutMs: 60_000 }),
+  // a session's exportId, or a start's requestId while it starts
   "folders.exportCancel": m<{ ok: true }>()(z.object({ exportId: z.string().min(1).max(100) })),
 
   /** Plan 69: what the mailbox takes on this device, by view, and what each age would remove (read in slices; nothing kept). */
