@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { createGmailProvider, type ProviderRegistry } from "@terno/mail";
+import { createGmailProvider, type ProviderRegistry, type ProviderContext } from "@terno/mail";
 import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -28,7 +28,10 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   const sender = refresh ? 12 : 3;
   const capacity = refresh ? 62 : 6;
   const paths: string[] = [], unexpected: string[] = [];
+  const requests: { url: string; method: string }[] = [];
   const admissions: { path: string; lane: string }[] = [];
+  const google = new Map<number, NonNullable<ProviderContext["google"]>>();
+  const syncRuns = new Map<number, number>();
   const bodies: { finish(): void }[] = [];
   let first!: () => void;
   const firstNativeBody = new Promise<void>((resolve) => { first = resolve; });
@@ -40,7 +43,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     if (!(input instanceof Request)) throw new Error("Expected managed native Request");
     const url = new URL(input.url), path = url.pathname;
-    paths.push(path);
+    paths.push(path); requests.push({ url: input.url, method: input.method });
     const replaced = await override?.(input);
     if (replaced) return replaced;
     if (url.origin === "https://foreground.invalid" && /^\/\d+\/token$/.test(path)) return Response.json({ access_token: "synthetic-access", token_type: "Bearer", expires_in: 3600 });
@@ -80,6 +83,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   });
   const providers: ProviderRegistry = {
     create(ctx) {
+      if (ctx.google) google.set(ctx.account.id, ctx.google);
       const incoming = ctx.incoming!;
       const processor = ctx.incomingProcessor!;
       const provider = createGmailProvider({ ...ctx,
@@ -92,7 +96,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
         incomingProcessor: { run: async (input, signal) => { const result = await processor.run(input, signal); processed.push(ctx.account.id); return result; } },
       }, { endpoints: { api: `https://foreground.invalid/${ctx.account.id}/gmail`, token: `https://foreground.invalid/${ctx.account.id}/token` } });
       const sync = provider.sync.bind(provider);
-      provider.sync = async (sink) => { try { await sync(sink); } catch (error) { await syncFailure?.(ctx.account.id, error); throw error; } };
+      provider.sync = async (sink) => { syncRuns.set(ctx.account.id, (syncRuns.get(ctx.account.id) ?? 0) + 1); try { await sync(sink); } catch (error) { await syncFailure?.(ctx.account.id, error); throw error; } };
       return provider;
     },
     async verifyImap() {}, async connectGmail() { throw new Error("Unexpected OAuth"); },
@@ -136,7 +140,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
     syncs.push(backend.syncAccount(id));
     if (!refresh && id === 1) { await firstNativeBody; if (large) await initialPromotion; }
   }
-  return { backend, rpc, hydrate, paths, onSyncFailure(fn: typeof syncFailure) { syncFailure = fn; }, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
+  return { backend, rpc, hydrate, paths, requests, google, syncRuns, envelope, onSyncFailure(fn: typeof syncFailure) { syncFailure = fn; }, admissions, sync(id: number) { const work = backend.syncAccount(id); syncs.push(work); return work; }, sixNativeBodies, bodies, sender, promoted, processed, readerPromotion, override(fn: typeof override) { override = fn; }, sourceClosed: () => sourceClosed, async finishBackfill() { holding = false; for (const body of bodies) body.finish(); await Promise.all(syncs); } };
 }
 
 it("public Send completes through the shared physical pool while six multi-account backfill bodies remain held", async () => {
@@ -584,4 +588,89 @@ for (const guard of ["retired", "auth", "quota", "policy"] as const) it(`capacit
   expect(calls.mock.calls.filter(([id]) => id === 12)).toHaveLength(1);
   expect(t.paths.filter((path) => path === "/12/gmail/messages")).toHaveLength(0);
   expect(t.backend.net.googlePending()).toBe(61);
+});
+
+
+for (const mode of ["available", "refilled", "retired", "credentials", "automatic-off"] as const) it(`capacity state-write handoff retains native progress (${mode})`, async () => {
+  const t = await setup(true, "SQL", false, mode !== "automatic-off", true);
+  await t.sixNativeBodies;
+  const sibling = (await t.rpc.call("threads.list", { view: "inbox", accountId: 2 })).items[0]!;
+  const siblingBefore = await t.rpc.call("threads.get", { threadId: sibling.id });
+  const ops = await t.rpc.call("ops.list", {});
+  expect(ops).toEqual([]);
+  let entered!: () => void, unblock!: () => void, edge!: () => void, renewed!: () => void;
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  const gate = new Promise<void>((resolve) => { unblock = resolve; });
+  const eof = new Promise<void>((resolve) => { edge = resolve; });
+  const newCredentials = new Promise<void>((resolve) => { renewed = resolve; });
+  heldTerminals.push(unblock);
+  const setState = t.backend.store.accounts.setSyncState.bind(t.backend.store.accounts);
+  let gated = false;
+  vi.spyOn(t.backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => {
+    if (id === 12 && patch.status === "error" && !gated) { gated = true; entered(); await gate; }
+    return setState(id, patch);
+  });
+  t.override((request) => {
+    const url = new URL(request.url);
+    if (url.origin === "https://foreground.invalid" && url.pathname === "/12/gmail/messages") return Response.json(url.searchParams.has("pageToken") ? {} : { messages: [{ id: "header" }] });
+  });
+  const core = t.backend as unknown as { cooldownChanged(): void };
+  const changed = core.cooldownChanged.bind(core);
+  let epoch: number | undefined;
+  vi.spyOn(core, "cooldownChanged").mockImplementation(() => {
+    changed();
+    if (t.backend.net.googlePending() === 61) edge();
+    if (epoch !== undefined && t.google.get(12)!.generation() !== epoch) renewed();
+  });
+  const calls = vi.spyOn(t.backend, "syncAccount");
+  const first = t.sync(12); await writing;
+  epoch = t.google.get(12)!.generation();
+  expect(t.syncRuns.get(12)).toBe(1);
+  expect(t.paths.filter((path) => path.startsWith("/12/"))).toEqual([]);
+  expect(t.backend.net.googlePending()).toBe(62);
+  t.bodies[0]!.finish(); await eof;
+  expect(t.sourceClosed()).toBe(1);
+  expect(t.backend.net.googlePending()).toBe(61);
+  let refill: Promise<ArrayBuffer> | undefined;
+  if (mode !== "available") {
+    const response = await t.google.get(1)!.request({ request: { endpoint: "gmail-api", purpose: "mail" }, admission: "background" }, new Request("https://foreground.invalid/1/gmail/messages/m0?format=minimal", { headers: { Authorization: "Bearer synthetic-access" } }));
+    refill = response.arrayBuffer();
+    expect(t.bodies).toHaveLength(63);
+    expect(t.backend.net.googlePending()).toBe(62);
+    expect(t.paths.filter((path) => path === "/1/gmail/messages/m0")).toHaveLength(2);
+  }
+  let cancelled: Promise<void> | undefined;
+  if (mode === "retired") cancelled = t.backend.dropAccount(12);
+  if (mode === "credentials") { cancelled = t.backend.signedIn(12); await newCredentials; }
+  unblock(); await first; await cancelled;
+  if (mode !== "available") {
+    expect(t.paths.filter((path) => path.startsWith("/12/"))).toEqual([]);
+    expect(t.backend.net.googlePending()).toBe(62);
+  }
+  if (refill) t.bodies.at(-1)!.finish();
+  if (refill) expect(new Uint8Array(await refill)).toEqual(new TextEncoder().encode(t.envelope("m0")));
+  await Promise.all(calls.mock.results.filter((_, i) => calls.mock.calls[i]![0] === 12).map((result) => result.value));
+  expect(t.backend.net.googlePending()).toBe(61);
+  expect(t.sourceClosed()).toBe(mode === "available" ? 1 : 2);
+  // Bootstrap is an RPC/serial-store barrier, never a manual sync or a polling retry.
+  await t.rpc.call("app.bootstrap", {});
+  const eligible = mode === "available" || mode === "refilled";
+  const list = await t.rpc.call("threads.list", { view: "inbox", accountId: 12 });
+  const detail = list.items[0] ? await t.rpc.call("threads.get", { threadId: list.items[0].id }) : null;
+  expect.soft({ runs: t.syncRuns.get(12), reads: t.requests.filter((request) => new URL(request.url).pathname === "/12/gmail/messages/header").map((request) => ({ method: request.method, format: new URL(request.url).searchParams.get("format") })),
+    cursor: (await t.backend.store.accounts.config<{ cursor?: unknown }>(12))?.config.cursor ?? null,
+    bodies: detail?.messages.map((message) => ({ body: message.bodyText, assets: message.attachments })) ?? [] }).toEqual({
+    runs: eligible ? 2 : 1, reads: eligible ? [{ method: "GET", format: "raw" }, { method: "GET", format: "minimal" }] : [], cursor: eligible ? { historyId: "10" } : null,
+    bodies: eligible ? [{ body: "Exact downloaded body\n", assets: [] }] : [],
+  });
+  await t.finishBackfill();
+  await Promise.all(calls.mock.results.filter((_, i) => calls.mock.calls[i]![0] === 12).map((result) => result.value));
+  expect.soft(t.syncRuns.get(12)).toBe(eligible ? 2 : 1);
+  expect(await t.rpc.call("threads.get", { threadId: sibling.id })).toEqual({ ...siblingBefore,
+    thread: { ...siblingBefore.thread, unread: false },
+    messages: siblingBefore.messages.map((message) => ({ ...message, isRead: true, bodyText: "Exact downloaded body\n", attachmentState: "complete" })),
+  });
+  expect(await t.rpc.call("ops.list", {})).toEqual(ops);
+  expect(t.backend.net.googlePending()).toBe(0);
+  expect(t.sourceClosed()).toBe(mode === "available" ? 62 : 63);
 });
