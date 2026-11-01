@@ -9,6 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, builtinMode, canonicalThemeId, COMPATIBLE_PRESETS, CUSTOM_PREFIX, DEFAULT_DESIGN, DESIGN_PALETTE, isDesignId, textRef, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
+import { FAVORITES_MAX, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -311,6 +312,50 @@ export async function setGooglePhotosPending(store: SettingsStore, accountId: nu
 /** Plan 74: whether an account's next sign-in with Google should ask for the contacts scopes too. */
 export async function googlePhotosPending(store: SettingsStore, accountId: number): Promise<boolean> {
   return ((await stored(store)).googlePhotosPending ?? []).includes(accountId);
+}
+
+/** Plan 107: the folders below Starred, in the order added. */
+export async function readFavoriteFolders(store: SettingsStore): Promise<FavoriteFolder[]> {
+  return (await stored(store)).favoriteFolders ?? [];
+}
+
+const sameFavorite = (a: FavoriteFolder, b: FavoriteFolder) => a.accountId === b.accountId && a.folder === b.folder && a.view === b.view;
+
+/** Plan 107: one folder (or standard row) below Starred, or not: never twice, at most FAVORITES_MAX, in the order added. */
+export async function setFavoriteFolder(store: SettingsStore, target: FavoriteFolder, on: boolean): Promise<FavoriteFolder[]> {
+  return store.settings.update<StoredSettings, FavoriteFolder[]>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const list = s.favoriteFolders ?? [];
+    const rest = list.filter((f) => !sameFavorite(f, target));
+    if (on && rest.length === list.length && list.length >= FAVORITES_MAX) throw new SettingsError(L("errors.folder.favoritesMax", { max: FAVORITES_MAX }));
+    const next = on ? (rest.length === list.length ? [...list, target] : list) : rest;
+    return { value: { ...s, favoriteFolders: next }, result: next };
+  });
+}
+
+/**
+ * Plan 107: favorites follow an account's folders: `renamed` keys move (an IMAP rename gives a folder a new key), and
+ * the `deleted` ones go, or all of a removed account's (`deleted: "all"`). Nothing is written when none is touched.
+ */
+export async function followFavoriteFolders(store: SettingsStore, accountId: number, change: { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] | "all" }): Promise<FavoriteFolder[]> {
+  return store.settings.update<StoredSettings, FavoriteFolder[]>("app", {}, (raw) => {
+    const s = migrate(raw);
+    const list = s.favoriteFolders ?? [];
+    const moved = new Map(change.renamed?.map((m) => [m.from, m.to]));
+    const gone = change.deleted === "all" ? null : new Set(change.deleted);
+    let touched = false;
+    const next: FavoriteFolder[] = [];
+    for (const f of list) {
+      if (f.accountId !== accountId) { next.push(f); continue; }
+      if (gone === null || (f.folder !== null && gone.has(f.folder))) { touched = true; continue; }
+      const to = f.folder !== null ? moved.get(f.folder) : undefined;
+      if (to === undefined || to === f.folder) { next.push(f); continue; }
+      touched = true;
+      const renamed = { ...f, folder: to };
+      if (!next.some((n) => sameFavorite(n, renamed))) next.push(renamed);
+    }
+    return touched ? { value: { ...s, favoriteFolders: next }, result: next } : { value: s, result: list };
+  });
 }
 
 /** What the host enforces outside the backend: the network fence and whether error reports may go. */

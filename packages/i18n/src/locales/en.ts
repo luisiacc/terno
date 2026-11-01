@@ -1843,6 +1843,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.folder.tooMany": "This account has as many folders as Terno can show. Delete one first.",
   "errors.folder.partialRename": "{done} of {total} folders renamed. “{name}” couldn’t be: {reason}",
   "errors.folder.partialDelete": "{done} of {total} folders deleted. “{name}” couldn’t be: {reason}",
+  "errors.folder.favoritesMax": "Up to {max} favorites. Remove one first.",
   "errors.folder.favoriteUnknown": "That folder isn’t in this account any more.",
   "errors.tab.needsAccount": "Promotions and Social belong to an account; say which one",
   "errors.tab.alone": "Promotions and Social can’t be combined with a folder or a category",

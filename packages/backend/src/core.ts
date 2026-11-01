@@ -189,6 +189,10 @@ export class BackendCore {
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly syncing = new Map<number, Promise<void>>();
+  /** plan 107 (Codex R2): an account's folder change in flight (it opens when done; one queued behind it replaces it) */
+  private readonly folderChanges = new Map<number, Promise<void>>();
+  /** plan 107: what talks to an account's provider now (sync passes, ops, body reads, copy repairs): a folder change waits for it */
+  private readonly providerWork = new Map<number, Set<Promise<unknown>>>();
   private readonly capacitySync = new Set<number>();
   private readonly bodyJobs = new Map<number, { threadId: number; promise: Promise<ResultOf<"reader.hydrate">> }>();
   private bodyWaiters = 0;
@@ -460,7 +464,9 @@ export class BackendCore {
       const snapshot = await this.cooldown!.admission((id) => this.cooldownAccounts.get(id));
       const blocked = [...snapshot.blockedAccountIds, ...[...this.google].filter(([, google]) => google.paused).map(([id]) => id)];
       const all = snapshot.blockAllGoogle || this.cooldown!.state("installation", "gmail-api").kind !== "ready";
-      return copyOpAdmission({ ...snapshot, blockGoogleSends: !this.net.googleAvailable("send"), blockGoogleBackground: !this.net.googleAvailable("background"), blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion });
+      return copyOpAdmission({ ...snapshot, blockGoogleSends: !this.net.googleAvailable("send"), blockGoogleBackground: !this.net.googleAvailable("background"), blockedAccountIds: blocked, blockAllGoogle: all || version !== this.cooldownVersion,
+        // plan 107: an account changing its folders is passed by until it's done (the worker is kicked then)
+        pausedAccountIds: [...this.folderChanges.keys()] });
     })();
   }
 
@@ -1478,7 +1484,7 @@ export class BackendCore {
     const provider = await this.provider(message.accountId);
     check();
     if (!provider?.readBody) return { changed: false };
-    const body = await provider.readBody({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal])).catch(async (error: unknown) => {
+    const body = await this.afterFolderChange(message.accountId, () => provider.readBody!({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal]))).catch(async (error: unknown) => {
       if (error instanceof ProviderAuthError) {
         check();
         await this.needsSignIn(message.accountId, "read", error, credentials, life);
@@ -1736,7 +1742,9 @@ export class BackendCore {
         await setState({ status: down ? "offline" : "syncing", lastError: message, lastErrorI18n, connection: down ? { state: "offline", retryAt: retry.at } : null });
       }
     };
-    const run = (running ? running.then(work) : work()).catch((error: unknown) => {
+    // plan 107: a pass never overlaps a folder change of its account
+    const gated = () => this.afterFolderChange(accountId, work);
+    const run = (running ? running.then(gated) : gated()).catch((error: unknown) => {
       if (error !== life.abort.signal.reason) throw error;
     }).finally(() => {
       if (this.syncing.get(accountId) !== run) return;
@@ -1751,6 +1759,66 @@ export class BackendCore {
     });
     this.syncing.set(accountId, run);
     return run;
+  }
+
+  // ───────────────────────────── folder changes (plan 107) ─────────────────────────────
+
+  /** `work` is talking to the account's provider until it settles: a folder change waits for it. */
+  private providerWorking<T>(accountId: number, work: Promise<T>): Promise<T> {
+    let running = this.providerWork.get(accountId);
+    if (!running) this.providerWork.set(accountId, (running = new Set()));
+    running.add(work);
+    const done = () => {
+      running.delete(work);
+      if (!running.size && this.providerWork.get(accountId) === running) this.providerWork.delete(accountId);
+    };
+    void work.then(done, done);
+    return work;
+  }
+
+  /**
+   * Runs `run` once no folder change holds the account, counted as provider work from its first step: the check and
+   * the start are one synchronous step, so a change that begins after it waits for it, and one before it is waited for.
+   */
+  private async afterFolderChange<T>(accountId: number, run: () => Promise<T>): Promise<T> {
+    for (let gate = this.folderChanges.get(accountId); gate; gate = this.folderChanges.get(accountId)) await gate;
+    return this.providerWorking(accountId, run());
+  }
+
+  private admissionChanged(): void {
+    this.cooldownVersion++;
+    this.admissionSnapshot = undefined;
+  }
+
+  /**
+   * Plan 107 (Codex R2): a change to an account's own folders, alone with its provider. It waits for the account's
+   * running sync pass and op (and an earlier change); while it runs, a sync waits, the ops worker passes the account
+   * by, and body reads and copy repairs wait. When it's done the worker is kicked.
+   */
+  async changeFolders<T>(accountId: number, change: (provider: MailProvider, account: { write<W>(work: () => Promise<W>): Promise<W>; check(): void }) => Promise<T>): Promise<T> {
+    await this.ready;
+    const previous = this.folderChanges.get(accountId);
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    this.folderChanges.set(accountId, gate);
+    this.admissionChanged();
+    try {
+      await previous;
+      await Promise.allSettled(this.providerWork.get(accountId) ?? []);
+      const life = this.lifetime(accountId);
+      this.assertCurrent(life);
+      const provider = await this.provider(accountId);
+      this.assertCurrent(life);
+      if (!provider) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      return await this.accountWrite(life, () => change(provider, { write: (work) => this.accountWrite(life, work), check: () => this.assertCurrent(life) }));
+    } finally {
+      if (this.folderChanges.get(accountId) === gate) {
+        this.folderChanges.delete(accountId);
+        this.admissionChanged();
+      }
+      open();
+      this.kickWorker();
+    }
   }
 
   // ───────────────────────────── ops worker ─────────────────────────────
@@ -1914,7 +1982,8 @@ export class BackendCore {
                   for (const op of ops) {
                     const recovery: { record?: () => Promise<void> } = {};
                     try {
-                      await this.executeOp(op, recovery, reconciliations);
+                      // plan 107: a folder change waits for it (one claimed meanwhile goes back to the queue: hold())
+                      await this.providerWorking(op.account_id, this.executeOp(op, recovery, reconciliations));
                     } catch (error) {
                       // never strand the rest of the batch in "running"
                       captureError(error, { code: "ops.crashed", fields: { opKind: opKindOf(op.kind) } });
@@ -1977,7 +2046,7 @@ export class BackendCore {
     if (!stored || stored.state !== "running") return void this.undispatched.delete(claimed.id);
     let op = stored;
     // quitting (or offline, plan 20): an op that hasn't reached its server waits, as it was (the attempt given back)
-    const hold = () => this.draining || this.stopped || !this.connectivity.online;
+    const hold = () => this.draining || this.stopped || !this.connectivity.online || this.folderChanges.has(op.account_id);
     if (hold()) return void (this.undispatched.delete(op.id), await this.store.ops.release(op.id, this.now()));
     // before the provider and the account: a sign-in after this point makes whatever they say stale (Codex code review #1)
     const credentials = this.credentialsOf(op.account_id);
@@ -2208,11 +2277,11 @@ export class BackendCore {
           const { messageId } = JSON.parse(op.payload_json) as SendPayload;
           const raw = await readCopyWire(this.store, id, () => this.platform.yield(), () => this.assertCurrent(life));
           this.assertCurrent(life);
-          await provider.repairSentCopy({ raw, messageId, mailbox: row.mailbox }, {
+          await this.afterFolderChange(row.accountId, () => provider.repairSentCopy!({ raw, messageId, mailbox: row.mailbox }, {
             prepare: async () => raw,
             accepted: async () => { throw new Error("Copy repair cannot submit SMTP"); },
             record: (copy, identity) => { this.assertCurrent(life); return this.store.sendCopies.record(id, copy, identity); },
-          });
+          }));
           this.assertCurrent(life);
           const after = await this.store.sendCopies.get(id);
           if (after?.copy === "saved") {

@@ -14,7 +14,8 @@ import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
-import { readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { followFavoriteFolders, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
 import { authorizeGooglePhotos, PHOTO_SCOPES, photoStateFrom, setGooglePhotos } from "./icons/google";
 
@@ -984,6 +985,8 @@ export function createHandlers(b: Backend): Handlers {
       // plan 22: its photo lists and photos go with it
       await setGooglePhotoState(store, id, null);
       await b.icons.dropPhotos(id);
+      // plan 107: and its favorite folders
+      await followFavoriteFolders(store, id, { deleted: "all" });
       // the owner row survives: its account_id is cleared (ON DELETE SET NULL)
       await store.accounts.remove(id);
       b.accountRemoved(id);
@@ -996,11 +999,11 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     // plan 107: folder changes, favorites and the .mbox export (filled in by their commits)
-    "folders.create": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.rename": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.delete": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.count": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
-    "folders.favorite": () => Promise.reject(new RpcError("BAD_REQUEST", "not yet")),
+    "folders.create": ({ accountId, parent, name }) => createFolder(b, accountId, parent, name),
+    "folders.rename": ({ accountId, key, name }) => renameFolder(b, accountId, key, name),
+    "folders.delete": ({ accountId, key }) => deleteFolder(b, accountId, key),
+    "folders.count": ({ accountId, key }) => countFolder(b, accountId, key),
+    "folders.favorite": ({ accountId, folder, view, on }) => favoriteFolder(b, { accountId, folder, view }, on),
     "folders.exportStart": (p, ctx) => folderExports.start(p.folder !== null ? { accountId: p.accountId, folder: p.folder } : { accountId: p.accountId, view: p.view! }, ctx.clientId),
     "folders.exportNext": (p, ctx) => folderExports.next(p.exportId, ctx.clientId),
     "folders.exportCancel": (p, ctx) => folderExports.cancel(p.exportId, ctx.clientId),

@@ -1831,6 +1831,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.folder.tooMany": "Esta cuenta tiene tantas carpetas como Terno puede mostrar. Elimina una primero.",
   "errors.folder.partialRename": "Se renombraron {done} de {total} carpetas. «{name}» no se pudo: {reason}",
   "errors.folder.partialDelete": "Se eliminaron {done} de {total} carpetas. «{name}» no se pudo: {reason}",
+  "errors.folder.favoritesMax": "Hasta {max} favoritas. Quita una primero.",
   "errors.folder.favoriteUnknown": "Esa carpeta ya no está en esta cuenta.",
   "errors.tab.needsAccount": "Promociones y Social son de una cuenta; indica cuál",
   "errors.tab.alone": "Promociones y Social no se pueden combinar con una carpeta o una categoría",
