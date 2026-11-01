@@ -1,7 +1,7 @@
 import { ATTACHMENT_CHUNK, bytesBase64 } from "@terno/core";
 import PostalMime from "postal-mime";
 import { describe, expect, it, vi } from "vitest";
-import { asctime, MBOX_PIECE, mboxMessage, qpLine, type MboxChunkReader, type MboxMessage } from "./mbox";
+import { asctime, BODY_READ, MBOX_PIECE, mboxMessage, qpLine, stringBody, type MboxBody, type MboxChunkReader, type MboxMessage } from "./mbox";
 
 const base: MboxMessage = {
   rfcMessageId: "m1@terno",
@@ -112,6 +112,42 @@ describe("mbox (plan 107)", () => {
     } finally {
       split.mockRestore();
     }
+  });
+
+  it("a 20 MB stored body is read a stretch at a time as it's written, exact across the stretches' edges (Codex code review round 6 #4)", async () => {
+    // a CRLF, a surrogate pair and a long "From " line, each across a stretch's edge; short lines and an empty one
+    const edge = BODY_READ;
+    const head = `${"x".repeat(edge - 1)}\r\nFrom ${"a😀".repeat(edge)} \n\n`;
+    const body = head + Array.from({ length: (20 * 1024 * 1024 - head.length) / 16 }, (_, i) => `line ${String(i).padStart(9, "0")}`).join("\n");
+    const store = stringBody(body);
+    const asked: number[] = [];
+    let before = 0;
+    const read: MboxBody = (at, size) => {
+      asked.push(size);
+      return store(at, size);
+    };
+    const it = mboxMessage({ ...base, bodyText: read }, none);
+    const pieces: string[] = [];
+    for (let r = await it.next(); !r.done; r = await it.next()) {
+      // the first piece comes after a stretch or two, never the whole body
+      if (!pieces.length) before = asked.length;
+      pieces.push(r.value);
+    }
+    expect(before).toBeLessThanOrEqual(2);
+    expect(Math.max(...asked)).toBeLessThanOrEqual(BODY_READ);
+    expect(asked.length).toBeGreaterThanOrEqual(Math.ceil(body.length / BODY_READ));
+    expect(Math.max(...pieces.map((p) => p.length))).toBeLessThanOrEqual(MBOX_PIECE);
+    const text = pieces.join("");
+    expect(text).toContain("\n=46rom a");
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.text?.replace(/\r\n/g, "\n").replace(/\n$/, "")).toBe(body.replace("\r\n", "\n"));
+  });
+
+  it("a body gone while it's read ends there and counts as partial", async () => {
+    const gone: MboxBody = async (at) => (at === 0 ? { text: "first\nsecond", next: 12 } : null);
+    const { text, stats } = await serialize({ ...base, bodyText: gone });
+    expect(stats.partialBody).toBe(true);
+    expect((await PostalMime.parse(readMbox(text)[0]!)).text?.trim()).toBe("first\nsecond");
   });
 
   it("several messages read back one by one", async () => {

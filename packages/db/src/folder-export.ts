@@ -88,8 +88,8 @@ interface Row {
   date: number;
   list_id: string | null;
   body_state: "none" | "partial" | "full";
-  body_text: string | null;
-  body_html: string | null;
+  has_text: number;
+  has_html: number;
 }
 
 export function exportMessages(db: Db, ids: readonly number[]): ExportMessage[] {
@@ -97,7 +97,7 @@ export function exportMessages(db: Db, ids: readonly number[]): ExportMessage[] 
   const json = JSON.stringify(ids);
   const rows = new Map(db.all<Row>(
     `SELECT m.id, m.account_id, m.rfc_message_id, m.in_reply_to, m.references_json, m.from_name, m.from_email, m.to_json, m.cc_json, m.reply_to_json,
-            m.subject, m.date, m.list_id, m.body_state, b.body_text, b.body_html
+            m.subject, m.date, m.list_id, m.body_state, typeof(b.body_text) != 'null' AS has_text, typeof(b.body_html) != 'null' AS has_html
      FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.id IN (SELECT value FROM json_each(?))`,
     json,
   ).map((r) => [r.id, r]));
@@ -126,13 +126,37 @@ export function exportMessages(db: Db, ids: readonly number[]): ExportMessage[] 
       date: m.date,
       subject: m.subject,
       listId: m.list_id,
-      bodyText: m.body_text,
-      bodyHtml: m.body_html,
+      hasText: m.has_text === 1,
+      hasHtml: m.has_html === 1,
       bodyState: m.body_state,
       attachments: attachments.get(id) ?? [],
     });
   }
   return out;
+}
+
+const decoder = new TextDecoder();
+
+/**
+ * A stretch of a stored body part by its UTF-8 bytes (Codex code review round 6 #4: the bodies were read whole). A
+ * byte range costs the same wherever it starts (SQLite loads the value and copies the range: ~5 ms for a 20 MB body),
+ * where a character range walks the text from its start (~23 ms at 19 MB). Cut back to a whole character.
+ */
+export function exportBody(db: Db, id: number, part: "text" | "html", at: number, size: number): { text: string; next: number | null } | null {
+  const column = part === "text" ? "body_text" : "body_html";
+  const r = db.get<{ t: string; b: Uint8Array | null }>(`SELECT typeof(${column}) AS t, substr(CAST(${column} AS BLOB), ?, ?) AS b FROM message_bodies WHERE message_id = ?`, at + 1, size, id);
+  if (!r || r.t === "null") return null;
+  const bytes = r.b ?? new Uint8Array(0);
+  let end = bytes.length;
+  if (end === size) {
+    // a character's bytes cut off at the end wait for the next stretch
+    let lead = end - 1;
+    while (lead > 0 && end - lead < 4 && (bytes[lead]! & 0xc0) === 0x80) lead--;
+    const b = bytes[lead]!;
+    const need = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 1;
+    if (lead > 0 && end - lead < need) end = lead;
+  }
+  return { text: decoder.decode(bytes.subarray(0, end)), next: bytes.length < size ? null : at + end };
 }
 
 export function parseRefs(json: string): string[] {

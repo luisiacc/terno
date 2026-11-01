@@ -105,7 +105,7 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
   return { messages: out, next: null };
 }
 
-/** these messages, their bodies read ahead by the caller */
+/** these messages, their bodies read ahead by the caller (which parts there are) */
 export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] {
   const messages = T(c, "messages");
   const attachments = T(c, "attachments");
@@ -125,8 +125,8 @@ export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] 
       date: m.date,
       subject: m.subject,
       listId: m.list_id ?? null,
-      bodyText: body?.body_text ?? null,
-      bodyHtml: body?.body_html ?? null,
+      hasText: typeof body?.body_text === "string",
+      hasHtml: typeof body?.body_html === "string",
       bodyState: m.body_state,
       attachments: attachments
         .by("fk_message_id", id)
@@ -136,6 +136,20 @@ export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] 
     });
   }
   return out;
+}
+
+/**
+ * A stretch of a body part, its body read ahead by the caller. IndexedDB keeps a message's body as one record, read
+ * whole (into the body cache) by any read of it: what's bounded here is what a call visits and hands on, a stretch of
+ * UTF-16 units, never half a surrogate pair (Codex code review round 6 #4).
+ */
+export function exportBody(c: Ctx, id: number, part: "text" | "html", at: number, size: number): { text: string; next: number | null } | null {
+  const body = c.body(id);
+  const s = part === "text" ? body?.body_text : body?.body_html;
+  if (typeof s !== "string") return null;
+  let end = Math.min(s.length, at + size);
+  if (end < s.length && end > at + 1 && (s.charCodeAt(end - 1) & 0xfc00) === 0xd800) end--;
+  return { text: s.slice(at, end), next: end < s.length ? end : null };
 }
 
 function parseRefs(json: unknown): string[] {

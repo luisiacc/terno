@@ -9,7 +9,7 @@ import { detachedReply } from "@terno/store";
 import { sqlSendCopies } from "./send-copies";
 import { reserveSendCopy, startCopyWire, appendCopyWire, sealCopyWire, acceptCopySubmission, recordCopy, forgetCopySlice, pruneSavedCopySlice, resetCopyWireSlice, copyWarningText, clearRecipientWarning, sendWarningFlags, submissionAccepted } from "@terno/store";
 import { carryFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
-import { exportIds, exportMessages } from "./folder-export";
+import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
 import { attachmentMessageBudgetAsync } from "@terno/core";
 import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
@@ -907,6 +907,7 @@ export class SqlMailStore implements MailStore {
   readonly folderExport: MailStore["folderExport"] = {
     ids: async (target, after, limit) => exportIds(this.db, target, after, limit),
     messages: async (ids) => exportMessages(this.db, ids),
+    body: async (id, part, at, size) => exportBody(this.db, id, part, at, size),
   };
 
   readonly categories: MailStore["categories"] = {

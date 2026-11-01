@@ -546,8 +546,15 @@ export interface MailStore {
      * null: none left.
      */
     ids(target: import("./types").FolderExportTarget, after: import("./types").FolderExportCursor | null, limit: number): Promise<{ messages: { id: number; date: number }[]; next: import("./types").FolderExportCursor | null }>;
-    /** these messages (a batch), in this order; gone ones are left out */
+    /** these messages (a batch), in this order, without their bodies; gone ones are left out */
     messages(ids: readonly number[]): Promise<import("./types").ExportMessage[]>;
+    /**
+     * A stretch of a message's stored body part, about `size` of the store's own units from `at` (0: the start), never
+     * half a character; `next`: where the rest starts, null at its end; null: the message or the part is gone. A big
+     * body is never read whole into one call (Codex code review round 6 #4): SQLite reads that byte range of the
+     * stored value; IndexedDB keeps a body as one record, read whole into its body cache once, then sliced.
+     */
+    body(id: number, part: "text" | "html", at: number, size: number): Promise<{ text: string; next: number | null } | null>;
   };
 
   categories: {

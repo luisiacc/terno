@@ -1,7 +1,7 @@
 import { RpcError } from "@terno/core/rpc";
 import type { FolderView } from "@terno/core";
 import { L } from "@terno/i18n";
-import { mboxMessage, type MboxStats } from "@terno/mail/portable";
+import { mboxMessage, type MboxBody, type MboxStats } from "@terno/mail/portable";
 import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore } from "./core";
@@ -19,7 +19,7 @@ import { renameAliases } from "./folders";
 const NEXT_MS = BULK_SLICE.targetMs;
 /** Id reads: a stretch of threads and messages looked at a slice, sized by time. */
 const IDS_SLICE = { ...BULK_SLICE, initial: 200, floor: 20, ceiling: 5000 };
-/** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ 256 KB). */
+/** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ MBOX_PIECE). */
 export const EXPORT_TEXT_MAX = 1024 * 1024;
 export const EXPORT_IDLE_MS = 60_000;
 
@@ -94,7 +94,7 @@ export class FolderExports {
         if (!s.current) {
           const m = await this.nextMessage(s, started);
           if (!m) break;
-          s.current = mboxMessage(toMbox(m), (attachment, index) => this.chunk(m, attachment, index));
+          s.current = mboxMessage(this.toMbox(m), (attachment, index) => this.chunk(m, attachment, index));
         }
         const r = await s.current.next();
         if (r.done) {
@@ -192,16 +192,18 @@ export class FolderExports {
     return null;
   }
 
+  /** its bodies read a stretch at a time as they're written, never whole (Codex code review round 6 #4) */
+  private toMbox(m: ExportMessage) {
+    const body = (part: "text" | "html"): MboxBody => (at, size) => this.b.store.folderExport.body(m.id, part, at, size);
+    return { ...m, bodyText: m.hasText ? body("text") : null, bodyHtml: m.hasHtml ? body("html") : null, partial: m.bodyState !== "full", attachments: m.attachments.map((a) => ({ ...a, stored: a.assetId !== null })) };
+  }
+
   private async chunk(m: ExportMessage, attachment: number, index: number): Promise<string | null> {
     const assetId = m.attachments[attachment]?.assetId;
     if (!assetId) return null;
     // removed meanwhile (the message went, its asset collected): it's missing, not a failure
     return this.b.store.attachments.read(m.accountId, assetId, index).catch(() => null);
   }
-}
-
-function toMbox(m: ExportMessage) {
-  return { ...m, partial: m.bodyState !== "full", attachments: m.attachments.map((a) => ({ ...a, stored: a.assetId !== null })) };
 }
 
 /**

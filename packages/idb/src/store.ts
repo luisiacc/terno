@@ -1,5 +1,5 @@
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
-import { exportIds, exportMessages } from "./folder-export";
+import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
 class CredentialAdmissionExpired extends Error {}
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
@@ -1532,6 +1532,13 @@ export class IdbMailStore implements MailStore {
       return this.exclusive(async () => {
         await this.readBodies(ids);
         return exportMessages(this.c, ids);
+      });
+    },
+    body: async (id, part, at, size) => {
+      await this.settled();
+      return this.exclusive(async () => {
+        await this.readBodies([id]);
+        return exportBody(this.c, id, part, at, size);
       });
     },
   };

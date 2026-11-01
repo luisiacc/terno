@@ -212,10 +212,11 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
         replyTo: [{ name: "Lista", email: "list@x.com" }],
         subject: "Reunión",
         listId: "team.x.com",
-        bodyText: "hola",
-        bodyHtml: "<p>hola</p>",
+        hasText: true,
+        hasHtml: true,
         bodyState: "full",
       });
+      expect(await store.folderExport.body(full!, "html", 0, 1000)).toEqual({ text: "<p>hola</p>", next: null });
       expect(m!.attachments).toEqual([
         { filename: "data.bin", mime: "application/octet-stream", size: bytes.length, contentId: null, assetId: expect.any(String) },
         { filename: "later.pdf", mime: "application/pdf", size: 900, contentId: null, assetId: null },
@@ -223,7 +224,32 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       // the bytes, a stored chunk at a time
       const chunks = await Promise.all([0, 1].map((i) => store.attachments.read(a!, m!.attachments[0]!.assetId!, i)));
       expect(chunks.map((c) => Uint8Array.from(atob(c!), (x) => x.charCodeAt(0)).length)).toEqual([ATTACHMENT_CHUNK, 3]);
-      expect(p).toMatchObject({ bodyText: "beginning", bodyState: "partial", attachments: [] });
+      expect(p).toMatchObject({ hasText: true, hasHtml: false, bodyState: "partial", attachments: [] });
+      expect(await store.folderExport.body(partial!, "html", 0, 1000)).toBeNull();
+    });
+
+    it("reads a body a stretch at a time, exact, never half a character (Codex code review round 6 #4)", async () => {
+      const store = await fresh();
+      const [a] = await withAccounts(store, 1);
+      const body = "ñ😀a\r\nFrom é".repeat(400);
+      await ingest(store, [msg({ accountId: a!, providerMsgId: "big", bodyText: body, bodyHtml: null })]);
+      const [id] = await idsOf(store, ["big"]);
+      for (const size of [4, 5, 7, 1000, 100_000]) {
+        let text = "";
+        let reads = 0;
+        for (let at: number | null = 0; at !== null; reads++) {
+          const r = await store.folderExport.body(id!, "text", at, size);
+          // never more than asked (the store's units are UTF-16 units or UTF-8 bytes: a unit is at least a byte)
+          expect(r!.text.length).toBeLessThanOrEqual(size);
+          expect(/^[\udc00-\udfff]|[\ud800-\udbff]$/.test(r!.text)).toBe(false);
+          text += r!.text;
+          at = r!.next;
+        }
+        expect(text).toBe(body);
+        if (size < body.length) expect(reads).toBeGreaterThan(1);
+      }
+      expect(await store.folderExport.body(id!, "html", 0, 100)).toBeNull();
+      expect(await store.folderExport.body(id! + 1000, "text", 0, 100)).toBeNull();
     });
   });
 }

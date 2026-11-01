@@ -420,8 +420,9 @@ export interface ExportMessage {
   date: number;
   subject: string;
   listId: string | null;
-  bodyText: string | null;
-  bodyHtml: string | null;
+  /** which body parts are stored: read a stretch at a time by `folderExport.body` (Codex code review round 6 #4) */
+  hasText: boolean;
+  hasHtml: boolean;
   bodyState: "none" | "partial" | "full";
   /** `assetId`: its bytes are here (a complete stored asset); null: they aren't */
   attachments: { filename: string; mime: string; size: number; contentId: string | null; assetId: string | null }[];
