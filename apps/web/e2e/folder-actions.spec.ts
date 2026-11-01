@@ -25,7 +25,7 @@ async function openAccount(page: Page, id: number) {
 test.describe("folder actions", { tag: "@design" }, () => {
   test("the \"+\" shows on hover of an open account and of a folder, and the count steps aside", async ({ app: page, server }) => {
     const acme = accountOf(server, "Acme Studio");
-    const add = page.getByTestId(`nav-account-add-${acme}`);
+    const add = page.getByTestId(`account-add-folder-${acme}`);
     // closed: no "+"
     await expect(add).toHaveCount(0);
     await openAccount(page, acme);
@@ -39,7 +39,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const count = folder.locator("[data-slot=nav-count]");
     await expect(count).toBeVisible();
     await folder.hover();
-    await expect(page.getByTestId(`nav-own-add-${acme}-Label_21`)).toHaveCSS("opacity", "1");
+    await expect(page.getByTestId(`folder-add-${acme}-Label_21`)).toHaveCSS("opacity", "1");
     await expect(count).toBeHidden();
   });
 
@@ -47,15 +47,15 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const acme = accountOf(server, "Acme Studio");
     await openAccount(page, acme);
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
-    const field = page.getByTestId(`nav-own-new-${acme}`);
+    await page.getByTestId(`account-add-folder-${acme}`).click();
+    const field = page.getByTestId(`folder-new-${acme}`);
     await expect(field).toBeFocused();
     await field.press("Escape");
     await expect(field).toHaveCount(0);
     await expect(page.getByTestId(`nav-account-${acme}`)).toBeFocused();
 
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
+    await page.getByTestId(`account-add-folder-${acme}`).click();
     await field.fill("Facturas 2026");
     await field.press("Enter");
     await expect(field).toHaveCount(0);
@@ -69,8 +69,8 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const acme = accountOf(server, "Acme Studio");
     await openAccount(page, acme);
     await own(page, acme, "Label_21").hover();
-    await page.getByTestId(`nav-own-add-${acme}-Label_21`).click();
-    const field = page.getByTestId(`nav-own-new-${acme}`);
+    await page.getByTestId(`folder-add-${acme}-Label_21`).click();
+    const field = page.getByTestId(`folder-new-${acme}`);
     await expect(field).toBeFocused();
     // one step further in than its parent
     const indent = async (l: ReturnType<Page["getByTestId"]>) => l.evaluate((el) => el.getBoundingClientRect().left);
@@ -78,7 +78,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     // "Rediseño web" is already there (case aside)
     await field.fill("rediseño WEB");
     await field.press("Enter");
-    await expect(page.getByTestId(`nav-own-new-${acme}-error`)).toHaveText("There’s already a folder called “rediseño WEB” here.");
+    await expect(page.getByTestId(`folder-new-${acme}-error`)).toHaveText("There’s already a folder called “rediseño WEB” here.");
     await expect(field).toHaveValue("rediseño WEB");
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await field.fill("Presupuestos");
@@ -100,10 +100,10 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const acme = accountOf(server, "Acme Studio");
     await openAccount(page, acme);
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
-    await expect(page.getByTestId(`nav-own-new-${acme}`)).toBeFocused();
+    await page.getByTestId(`account-add-folder-${acme}`).click();
+    await expect(page.getByTestId(`folder-new-${acme}`)).toBeFocused();
     await page.getByTestId("nav-starred").click();
-    await expect(page.getByTestId(`nav-own-new-${acme}`)).toHaveCount(0);
+    await expect(page.getByTestId(`folder-new-${acme}`)).toHaveCount(0);
     await page.waitForTimeout(100);
     await expect(page.getByTestId("nav-starred")).toBeFocused();
   });
@@ -117,10 +117,10 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await openAccount(page, acme);
     await expect(page.getByTestId(`nav-own-more-${acme}`)).toBeVisible();
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
+    await page.getByTestId(`account-add-folder-${acme}`).click();
     // sorts after every "Carpeta …": past the first batch
-    await page.getByTestId(`nav-own-new-${acme}`).fill("Zeta");
-    await page.getByTestId(`nav-own-new-${acme}`).press("Enter");
+    await page.getByTestId(`folder-new-${acme}`).fill("Zeta");
+    await page.getByTestId(`folder-new-${acme}`).press("Enter");
     await expect.poll(() => keyOf(server, acme, "Zeta")).toBeTruthy();
     const key = (await keyOf(server, acme, "Zeta"))!;
     await expect(own(page, acme, key)).toBeFocused();
@@ -136,11 +136,11 @@ test.describe("folder actions", { tag: "@design" }, () => {
     };
     await openAccount(page, acme);
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
-    const field = page.getByTestId(`nav-own-new-${acme}`);
+    await page.getByTestId(`account-add-folder-${acme}`).click();
+    const field = page.getByTestId(`folder-new-${acme}`);
     await field.fill("Viajes");
     await field.press("Enter");
-    await expect(page.getByTestId(`nav-own-new-${acme}-error`)).toContainText("You're offline");
+    await expect(page.getByTestId(`folder-new-${acme}-error`)).toContainText("You're offline");
     await expect(field).toHaveValue("Viajes");
     await expect(field).toBeFocused();
   });
@@ -153,7 +153,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const labelBox = (await label.boundingBox())!;
     await row.click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${acme}-Label_23`);
+    const field = page.getByTestId(`folder-rename-${acme}-Label_23`);
     await expect(field).toBeFocused();
     await expect(field).toHaveValue("Equipo");
     const textLeft = await field.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
@@ -184,8 +184,8 @@ test.describe("folder actions", { tag: "@design" }, () => {
 
     await own(page, freelance, from.key).click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    await page.getByTestId(`nav-own-rename-${freelance}-${from.key}`).fill("Renombrada");
-    await page.getByTestId(`nav-own-rename-${freelance}-${from.key}`).press("Enter");
+    await page.getByTestId(`folder-rename-${freelance}-${from.key}`).fill("Renombrada");
+    await page.getByTestId(`folder-rename-${freelance}-${from.key}`).press("Enter");
     await expect.poll(() => keyOf(server, freelance, "Renombrada")).toBeTruthy();
     const to = (await keyOf(server, freelance, "Renombrada"))!;
     expect(to).not.toBe(from.key);
@@ -297,10 +297,10 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await openAccount(page, acme);
     await own(page, acme, "Label_801").click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${acme}-Label_801`);
+    const field = page.getByTestId(`folder-rename-${acme}-Label_801`);
     await field.fill("Archivo");
     await field.press("Enter");
-    await expect(page.getByTestId(`nav-own-rename-${acme}-Label_801-error`)).toHaveCount(0);
+    await expect(page.getByTestId(`folder-rename-${acme}-Label_801-error`)).toHaveCount(0);
     await expect.poll(async () => (await server.backend.store.folders.list()).find((f) => f.accountId === acme && f.key === "Label_801")?.path).toEqual(["Grupo", "Archivo"]);
   });
 
@@ -308,9 +308,9 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const freelance = accountOf(server, "Freelance");
     await openAccount(page, freelance);
     await page.getByTestId(`nav-account-${freelance}`).hover();
-    await page.getByTestId(`nav-account-add-${freelance}`).click();
-    await page.getByTestId(`nav-own-new-${freelance}`).fill("Temporal");
-    await page.getByTestId(`nav-own-new-${freelance}`).press("Enter");
+    await page.getByTestId(`account-add-folder-${freelance}`).click();
+    await page.getByTestId(`folder-new-${freelance}`).fill("Temporal");
+    await page.getByTestId(`folder-new-${freelance}`).press("Enter");
     await expect.poll(() => keyOf(server, freelance, "Temporal")).toBeTruthy();
     const key = (await keyOf(server, freelance, "Temporal"))!;
     await own(page, freelance, key).click({ button: "right" });
@@ -322,9 +322,9 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(own(page, freelance, key)).toHaveCount(0);
     // the same path again (an IMAP key is its path)
     await page.getByTestId(`nav-account-${freelance}`).hover();
-    await page.getByTestId(`nav-account-add-${freelance}`).click();
-    await page.getByTestId(`nav-own-new-${freelance}`).fill("Temporal");
-    await page.getByTestId(`nav-own-new-${freelance}`).press("Enter");
+    await page.getByTestId(`account-add-folder-${freelance}`).click();
+    await page.getByTestId(`folder-new-${freelance}`).fill("Temporal");
+    await page.getByTestId(`folder-new-${freelance}`).press("Enter");
     await expect(own(page, freelance, key)).toBeVisible();
     await expect(page.getByTestId(`nav-fav-${freelance}-${key}`)).toHaveCount(0);
   });
@@ -338,15 +338,15 @@ test.describe("folder actions", { tag: "@design" }, () => {
     };
     await openAccount(page, acme);
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
-    await page.getByTestId(`nav-own-new-${acme}`).fill("Pendiente");
+    await page.getByTestId(`account-add-folder-${acme}`).click();
+    await page.getByTestId(`folder-new-${acme}`).fill("Pendiente");
     // another account: the blur submits, this one closes
     const other = (await server.backend.store.accounts.list()).find((a) => a.id !== acme)!.id;
     await page.getByTestId(`nav-account-${other}`).click();
     await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t save the folder “Pendiente”: the server said no" })).toBeVisible();
     await openAccount(page, acme);
-    await expect(page.getByTestId(`nav-own-new-${acme}`)).toHaveValue("Pendiente");
-    await expect(page.getByTestId(`nav-own-new-${acme}-error`)).toContainText("the server said no");
+    await expect(page.getByTestId(`folder-new-${acme}`)).toHaveValue("Pendiente");
+    await expect(page.getByTestId(`folder-new-${acme}-error`)).toContainText("the server said no");
   });
 
   test("an IMAP rename of the folder you're reading in: the conversation stays open and the rows stay (Codex code review round 2 #4, #5)", async ({ app: page, server }) => {
@@ -395,8 +395,8 @@ test.describe("folder actions", { tag: "@design" }, () => {
     handlers["folders.create"] = async (...a) => (calls++, await new Promise((r) => setTimeout(r, 1500)), create(...a));
     await openAccount(page, acme);
     await page.getByTestId(`nav-account-${acme}`).hover();
-    await page.getByTestId(`nav-account-add-${acme}`).click();
-    const field = page.getByTestId(`nav-own-new-${acme}`);
+    await page.getByTestId(`account-add-folder-${acme}`).click();
+    const field = page.getByTestId(`folder-new-${acme}`);
     await field.fill("Lenta");
     await field.press("Enter");
     // close the account (its rows go after the slide) and open it again before the answer
@@ -480,7 +480,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     const from = (await server.backend.store.folders.list()).find((f) => f.accountId === freelance && f.selectable && f.path.length === 1)!;
     await own(page, freelance, from.key).click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${freelance}-${from.key}`);
+    const field = page.getByTestId(`folder-rename-${freelance}-${from.key}`);
     await field.fill("Despacio");
     await field.press("Enter");
     await page.getByTestId("search-input").or(page.getByTestId("nav-starred")).first().click();
@@ -502,7 +502,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(page.locator("[role=menu]")).toHaveCount(0);
     await own(page, acme, "Label_23").click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${acme}-Label_23`);
+    const field = page.getByTestId(`folder-rename-${acme}-Label_23`);
     await field.fill("Primero");
     await field.press("Enter");
     // from the favorite, before the answer
@@ -524,7 +524,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await openAccount(page, acme);
     await own(page, acme, "Label_99").click({ button: "right" });
     await page.getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${acme}-Label_99`);
+    const field = page.getByTestId(`folder-rename-${acme}-Label_99`);
     await expect(field).toHaveValue("J");
     await field.fill("Jota");
     await field.press("Enter");
@@ -573,7 +573,7 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await openAccount(page, acme);
     await page.getByTestId(`nav-fav-${acme}-Label_7999`).click({ button: "right" });
     await page.getByTestId(`folder-menu-${acme}-Label_7999`).getByTestId("folder-menu-rename").click();
-    const field = page.getByTestId(`nav-own-rename-${acme}-Label_7999`);
+    const field = page.getByTestId(`folder-rename-${acme}-Label_7999`);
     await expect(field).toBeFocused();
     await field.press("Escape");
     await expect(own(page, acme, "Label_7999")).toBeFocused();
@@ -615,10 +615,10 @@ test.describe("folder actions", { tag: "@design" }, () => {
       expect(fmt(await new AxeBuilder({ page }).include(`[data-testid=folder-menu-${acme}-Label_21]`).withTags(tags).analyze())).toEqual([]);
       await page.keyboard.press("Escape");
       await own(page, acme, "Label_21").hover();
-      await page.getByTestId(`nav-own-add-${acme}-Label_21`).click();
-      await page.getByTestId(`nav-own-new-${acme}`).fill("Rediseño web");
-      await page.getByTestId(`nav-own-new-${acme}`).press("Enter");
-      await expect(page.getByTestId(`nav-own-new-${acme}-error`)).toBeVisible();
+      await page.getByTestId(`folder-add-${acme}-Label_21`).click();
+      await page.getByTestId(`folder-new-${acme}`).fill("Rediseño web");
+      await page.getByTestId(`folder-new-${acme}`).press("Enter");
+      await expect(page.getByTestId(`folder-new-${acme}-error`)).toBeVisible();
       if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/field-${mode}.png` });
       expect(fmt(await new AxeBuilder({ page }).include("#app-sidebar").withTags(tags).analyze())).toEqual([]);
     });

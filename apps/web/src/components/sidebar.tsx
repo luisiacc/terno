@@ -509,7 +509,7 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
         initial={self?.path.at(-1) ?? name}
         label={t("folder.rename.label", { name })}
         inset={INSET[depth] ?? INSET.at(-1)!}
-        testId={`nav-own-rename-${accountId}-${folderKey}`}
+        testId={`folder-rename-${accountId}-${folderKey}`}
         editId={renaming}
         siblings={siblingsAt(getApp().folders, accountId, self?.path.slice(0, -1) ?? [], folderKey)}
         account={account}
@@ -542,7 +542,7 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
           count={count || undefined}
           hoverAction
         />
-        <AddFolderButton accountId={accountId} parent={folderKey} label={t("folder.add.in", { name })} testId={`nav-own-add-${accountId}-${folderKey}`} />
+        <AddFolderButton accountId={accountId} parent={folderKey} label={t("folder.add.in", { name })} testId={`folder-add-${accountId}-${folderKey}`} />
       </div>
     </FolderMenu>
   );
@@ -552,7 +552,7 @@ const OwnFolderRow = memo(function OwnFolderRow({ accountId, accountKind, folder
 function focusRow(accountId: number, key: string, then?: () => void): void {
   requestAnimationFrame(() => {
     const active = document.activeElement;
-    if (!(active && active !== document.body && active.isConnected && !active.closest("[data-testid^=nav-own-rename-], [data-testid^=nav-own-new-]"))) {
+    if (!(active && active !== document.body && active.isConnected && !active.closest("[data-testid^=folder-rename-], [data-testid^=folder-new-]"))) {
       document.querySelector<HTMLElement>(`[data-testid="nav-own-${accountId}-${CSS.escape(key)}"]`)?.focus({ preventScroll: false });
     }
     then?.();
@@ -566,7 +566,7 @@ function NewFolderRow({ account, parent, depth, id }: { account: Account; parent
       initial=""
       label={parent === null ? t("folder.add.inAccount", { account: account.displayName }) : t("folder.new.label")}
       inset={INSET[depth] ?? INSET.at(-1)!}
-      testId={`nav-own-new-${account.id}`}
+      testId={`folder-new-${account.id}`}
       editId={id}
       siblings={siblingsOf(getApp().folders, account.id, parent)}
       account={account}
@@ -880,7 +880,7 @@ function RenameRow({ account, active, count, reserveEnd, onDone }: { account: Ac
   };
   return (
     <div
-      data-testid={`nav-account-rename-${account.id}`}
+      data-testid={`account-rename-${account.id}`}
       data-active={active || undefined}
       className={cn(
         "type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-sidebar-foreground",
@@ -895,7 +895,7 @@ function RenameRow({ account, active, count, reserveEnd, onDone }: { account: Ac
       {/* the text starts where the name did: the field's padding sits outside the label's line */}
       <input
         autoFocus
-        data-testid={`nav-account-rename-input-${account.id}`}
+        data-testid={`account-rename-input-${account.id}`}
         aria-label={t("account.rename.label")}
         defaultValue={account.displayName}
         maxLength={200}
@@ -1001,7 +1001,7 @@ const AccountEntry = memo(function AccountEntry({
             />
           )}
           {a.syncState.authRequired && <SignInMarker account={a} />}
-          {open && !renaming && !a.syncState.authRequired && <AddFolderButton accountId={a.id} parent={null} label={t("folder.add.inAccount", { account: a.displayName })} testId={`nav-account-add-${a.id}`} />}
+          {open && !renaming && !a.syncState.authRequired && <AddFolderButton accountId={a.id} parent={null} label={t("folder.add.inAccount", { account: a.displayName })} testId={`account-add-folder-${a.id}`} />}
         </div>
       </AccountMenu>
       <AccountFolders

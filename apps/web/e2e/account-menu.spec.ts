@@ -63,7 +63,7 @@ test.describe("the account menu", { tag: "@design" }, () => {
 
     await openMenu(page, a!);
     await page.getByTestId("account-menu-rename").click();
-    const input = page.getByTestId(`nav-account-rename-input-${a}`);
+    const input = page.getByTestId(`account-rename-input-${a}`);
     await expect(input).toBeFocused();
     await expect(input).toHaveValue(before);
     // the whole name is selected, ready to type over
@@ -71,7 +71,7 @@ test.describe("the account menu", { tag: "@design" }, () => {
     // the text starts where the name did, and the row keeps its height
     const textLeft = await input.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
     expect(Math.abs(textLeft - labelBox.x)).toBeLessThanOrEqual(1);
-    expect((await page.getByTestId(`nav-account-rename-${a}`).boundingBox())!.height).toBeCloseTo(rowBox.height, 0);
+    expect((await page.getByTestId(`account-rename-${a}`).boundingBox())!.height).toBeCloseTo(rowBox.height, 0);
 
     // Esc: nothing changes, the row has focus again
     await input.fill("Not this");
@@ -122,8 +122,8 @@ test.describe("the account menu", { tag: "@design" }, () => {
     };
     await openMenu(page, a!);
     await page.getByTestId("account-menu-rename").click();
-    await page.getByTestId(`nav-account-rename-input-${a}`).fill("Doomed");
-    await page.getByTestId(`nav-account-rename-input-${a}`).press("Enter");
+    await page.getByTestId(`account-rename-input-${a}`).fill("Doomed");
+    await page.getByTestId(`account-rename-input-${a}`).press("Enter");
     // shown at once, then put back
     await expect(row(page, a!)).toContainText("Doomed");
     await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t rename the account: disk full" })).toBeVisible();
@@ -303,7 +303,7 @@ test.describe("the account menu", { tag: "@design" }, () => {
 
       await openMenu(page, a!);
       await page.getByTestId("account-menu-rename").click();
-      await expect(page.getByTestId(`nav-account-rename-input-${a}`)).toBeFocused();
+      await expect(page.getByTestId(`account-rename-input-${a}`)).toBeFocused();
       if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/rename-${mode}.png` });
       const e = await new AxeBuilder({ page }).include("#app-sidebar").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(e.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
