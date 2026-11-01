@@ -33,12 +33,12 @@ export const es: SiteCopy = {
     },
     search: {
       title: "Lo encuentras antes de terminar de escribir.",
-      body: "La búsqueda corre en tu Mac sobre cada mensaje, en cada cuenta, también en el archivo. Los resultados llegan al instante, incluso con años de correo.",
+      body: "La búsqueda corre en tu Mac sobre cada mensaje, en cada cuenta, también en el archivo. Los resultados llegan al instante.",
       points: ["Todas las carpetas, todas las cuentas", "Busca por persona, asunto o adjunto", "Funciona sin conexión"],
     },
     speed: {
-      title: "Nada que esperar.",
-      body: "Cada acción ocurre en el instante en que pulsas la tecla, y el servidor se pone al día por detrás. Abrir una conversación, archivar, cambiar de bandeja: sin ruedas girando.",
+      title: "Búsqueda instantánea.",
+      body: "La búsqueda responde en cuanto escribes, incluso con décadas de correo. Todo lo demás es igual de rápido: cada acción ocurre en el instante en que pulsas la tecla, y el servidor se pone al día por detrás.",
       points: ["Abre en menos de un segundo", "Ligero con la memoria y la batería", "Tranquilo cuando no lo usas"],
     },
     triage: {

@@ -32,12 +32,12 @@ export const en = {
     },
     search: {
       title: "Found before you finish typing.",
-      body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive instantly, even with years of mail.",
+      body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive instantly.",
       points: ["Every folder, every account", "Search by person, subject or attachment", "Works offline"],
     },
     speed: {
-      title: "Nothing to wait for.",
-      body: "Every action happens the instant you press the key, and the server catches up in the background. Opening a conversation, archiving, switching inboxes: no spinners.",
+      title: "Instant search.",
+      body: "Search answers the moment you type, even with decades’ worth of email. Everything else is just as quick: every action happens the instant you press the key, and the server catches up in the background.",
       points: ["Opens in under a second", "Light on memory and battery", "Quiet when you’re not using it"],
     },
     triage: {
