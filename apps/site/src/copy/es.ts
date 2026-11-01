@@ -10,7 +10,6 @@ export const es: SiteCopy = {
   skip: "Ir al contenido",
   nav: { features: "Funciones", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", home: "Inicio de Terno" },
   hero: {
-    eyebrow: "Correo para Mac",
     title: "Tu correo, a la medida.",
     subtitle: "Un cliente de correo tranquilo y muy rápido. Todas tus cuentas en una bandeja, una búsqueda que responde antes de que termines de escribir, y tu correo nunca sale de tu Mac.",
     note: "Gratis · Sin cuenta · macOS en Apple silicon",
@@ -23,67 +22,56 @@ export const es: SiteCopy = {
   },
   features: {
     unified: {
-      kicker: "Bandeja unificada",
       title: "Todas las cuentas. Una bandeja.",
       body: "Gmail, iCloud, Outlook y cualquier otra cuenta de correo juntas, en una sola lista. Cada fila dice a qué cuenta llegó, para que nunca respondas desde la equivocada.",
       points: ["Gmail, iCloud, Fastmail, tu propio dominio", "Cuentas ilimitadas", "Categorías que las abarcan todas"],
     },
     local: {
-      kicker: "Totalmente local",
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
       body: "Terno habla con tus servidores de correo y con nada más. No hay cuenta de Terno que crear ni servidor de por medio: tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
       points: ["Privado desde el primer momento", "Las imágenes de internet se cargan solo cuando las pides", "Sin ningún tipo de rastreo"],
     },
     search: {
-      kicker: "Búsqueda instantánea",
       title: "Lo encuentras antes de terminar de escribir.",
       body: "La búsqueda corre en tu Mac sobre cada mensaje, en cada cuenta, también en el archivo. Los resultados llegan al instante, incluso con años de correo.",
       points: ["Todas las carpetas, todas las cuentas", "Busca por persona, asunto o adjunto", "Funciona sin conexión"],
     },
     speed: {
-      kicker: "Muy rápido",
       title: "Nada que esperar.",
       body: "Cada acción ocurre en el instante en que pulsas la tecla, y el servidor se pone al día por detrás. Abrir una conversación, archivar, cambiar de bandeja: sin ruedas girando.",
       points: ["Abre en menos de un segundo", "Ligero con la memoria y la batería", "Tranquilo cuando no lo usas"],
     },
     triage: {
-      kicker: "Fuera de tu camino",
       title: "Archiva uno. Despeja todos.",
       body: "Arrastra un boletín a una categoría o archiva una promoción, y Terno te ofrece hacer lo mismo con todo lo parecido, y con lo que llegue después. Una tecla, y ese remitente no vuelve a tu bandeja hasta que lo busques.",
       points: ["Todo de este remitente, dominio o lista", "Un filtro para el futuro en el mismo paso", "Un solo deshacer para todo"],
     },
     codes: {
-      kicker: "Códigos de verificación",
       title: "El código, a un clic.",
       body: "Cuando llega un código de inicio de sesión, aparece en el propio mensaje. Clic para copiar, pegar y listo. Sin abrir nada, sin buscar seis dígitos.",
       points: [],
     },
     themes: {
-      kicker: "Diseños y colores",
       title: "Tres diseños. Dieciocho paletas.",
       body: "Elige un diseño para la forma de la app (Lumen cálido, Atelier editorial o macOS al estilo de Apple Mail) y cualquier tema de color encima, de Solarized a Dracula. O trae el tuyo.",
       points: ["Claro y oscuro en todos", "Todos revisados en contraste", "Animaciones que puedes reducir o quitar"],
     },
     snippets: {
-      kicker: "Plantillas",
       title: "Escríbelo una vez.",
       body: "Guarda las respuestas que envías cada semana. Pulsa ⌘; en cualquier borrador, escribe unas letras y la plantilla entra con el nombre del destinatario ya puesto.",
       points: [],
     },
     palette: {
-      kicker: "Paleta de comandos",
       title: "⌘K lo hace todo.",
       body: "Cada acción, carpeta, ajuste y plantilla está a unas letras. Aprende lo que más usas y lo pone primero.",
       points: [],
     },
     keyboard: {
-      kicker: "Teclado primero",
       title: "Tu bandeja a la velocidad de tus manos.",
       body: "Muévete, archiva, clasifica, responde y deshaz sin tocar el ratón. Pulsa ? cuando quieras para ver todos los atajos.",
       points: [],
     },
     open: {
-      kicker: "Código disponible",
       title: "No te fíes de nuestra palabra.",
       body: "Cada línea de Terno es pública. Lee exactamente cómo se guarda tu correo, qué viaja por la red y qué nunca lo hace. Y tres años después de cada publicación, esa versión pasa a ser totalmente de código abierto.",
       points: [],

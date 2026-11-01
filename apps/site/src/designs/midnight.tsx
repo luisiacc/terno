@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, Command, Github, HardDrive, Keyboard, KeyRound, Mails, NotepadText, Palette, Search, Tag, Zap } from "../parts/icons";
+import { Check, ChevronRight, Github, Mails } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { Shot, type ShotName } from "../parts/shot";
@@ -12,7 +12,7 @@ import type { HomeDesign } from "./types";
 
 /**
  * Midnight (plan 96, design 3): dark first, keyboard first. Keycaps are the visual language; Geist for text, Geist
- * Mono for kickers, numbers and keys. A crisp white/zinc variant follows the system when it is light.
+ * Mono for numbers and keys. A crisp white/zinc variant follows the system when it is light.
  */
 
 type FeatureId = keyof SiteCopy["features"];
@@ -36,15 +36,10 @@ function Crop({ name, copy, crop, sizes }: { name: ShotName; copy: SiteCopy; cro
   );
 }
 
-function Card({ f, n, icon, className = "", children }: { f: Feature; n: number; icon: ReactNode; className?: string; children?: ReactNode }) {
+function Card({ f, className = "", children }: { f: Feature; className?: string; children?: ReactNode }) {
   return (
     <article className={`mn-card flex flex-col gap-8 bg-(--mn-bg) p-6 sm:p-8 ${className}`}>
       <div>
-        <p className={`${mono} flex items-center gap-2.5 text-(--mn-accent)`}>
-          <span className="text-(--mn-dim)">{String(n).padStart(2, "0")}</span>
-          <span className="mn-icon text-[1.15em]">{icon}</span>
-          {f.kicker}
-        </p>
         <h3 className="mt-4 text-xl font-semibold tracking-tight text-balance text-(--mn-fg) sm:text-2xl">{f.title}</h3>
         <p className="mt-3 max-w-prose leading-relaxed text-pretty text-(--mn-muted)">{f.body}</p>
         {f.points.length > 0 && (
@@ -107,10 +102,6 @@ export const Midnight: HomeDesign = ({ copy }) => {
         {/* hero */}
         <section className="mn-hero relative overflow-hidden">
           <div className={`${wrap} relative pt-20 text-center sm:pt-28`}>
-            <p className={`${mono} mn-pill mx-auto inline-flex items-center gap-2 rounded-full border border-(--mn-line) px-3 py-1.5 text-(--mn-muted)`}>
-              <span className="mn-dot" aria-hidden="true" />
-              {copy.hero.eyebrow}
-            </p>
             <h1 className="mx-auto mt-7 max-w-4xl text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-7xl">
               <span className="mn-title">{copy.hero.title}</span>
             </h1>
@@ -162,15 +153,15 @@ export const Midnight: HomeDesign = ({ copy }) => {
 
         {/* features */}
         <section id="features" className={`${wrap} mt-28 scroll-mt-20 sm:mt-36`} aria-labelledby="mn-features">
-          <h2 id="mn-features" className={`${mono} flex items-center gap-3 text-(--mn-muted)`}>
-            <span className="mn-rule" aria-hidden="true" />
+          {/* the section's heading for screen readers (the cards are h3); no visible label above the grid */}
+          <h2 id="mn-features" className="sr-only">
             {copy.nav.features}
           </h2>
-          <div className="mn-grid mt-8 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2 lg:grid-cols-6">
-            <Card f={f.unified} n={1} icon={<Mails size="1em" />} className="md:col-span-2 lg:col-span-4">
+          <div className="mn-grid grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2 lg:grid-cols-6">
+            <Card f={f.unified} className="md:col-span-2 lg:col-span-4">
               <Crop name="inbox" copy={copy} crop="unified" sizes="(min-width: 1024px) 1150px, 160vw" />
             </Card>
-            <Card f={f.local} n={2} icon={<HardDrive size="1em" />} className="md:col-span-2 lg:col-span-2">
+            <Card f={f.local} className="md:col-span-2 lg:col-span-2">
               <div className="mn-local mt-auto flex items-center justify-between gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) px-5 py-6" aria-hidden="true">
                 <span className="mn-node">
                   <Logo size={28} />
@@ -181,30 +172,30 @@ export const Midnight: HomeDesign = ({ copy }) => {
                 </span>
               </div>
             </Card>
-            <Card f={f.search} n={3} icon={<Search size="1em" />} className="lg:col-span-3">
+            <Card f={f.search} className="lg:col-span-3">
               <Crop name="search" copy={copy} crop="search" sizes={crop} />
             </Card>
-            <Card f={f.triage} n={4} icon={<Tag size="1em" />} className="lg:col-span-3">
+            <Card f={f.triage} className="lg:col-span-3">
               <Crop name="file-similar" copy={copy} crop="triage" sizes={crop} />
             </Card>
-            <Card f={f.palette} n={5} icon={<Command size="1em" />} className="lg:col-span-3">
+            <Card f={f.palette} className="lg:col-span-3">
               <Crop name="palette" copy={copy} crop="palette" sizes="(min-width: 1024px) 1150px, 225vw" />
             </Card>
-            <Card f={f.snippets} n={6} icon={<NotepadText size="1em" />} className="lg:col-span-3">
+            <Card f={f.snippets} className="lg:col-span-3">
               <Crop name="snippets" copy={copy} crop="snippets" sizes="(min-width: 1024px) 1150px, 225vw" />
             </Card>
-            <Card f={f.codes} n={7} icon={<KeyRound size="1em" />} className="lg:col-span-2">
+            <Card f={f.codes} className="lg:col-span-2">
               <Crop name="code" copy={copy} crop="code" sizes={crop} />
             </Card>
-            <Card f={f.speed} n={8} icon={<Zap size="1em" />} className="lg:col-span-2" />
-            <Card f={f.open} n={9} icon={<Github size="1em" />} className="md:col-span-2 lg:col-span-2">
+            <Card f={f.speed} className="lg:col-span-2" />
+            <Card f={f.open} className="md:col-span-2 lg:col-span-2">
               <a href={GITHUB} className="mn-btn mn-btn-ghost mt-auto h-10 gap-2 self-start px-4 text-sm">
                 <Github size="1.15em" />
                 {f.open.cta}
                 <ChevronRight size="1.15em" className="text-(--mn-dim)" />
               </a>
             </Card>
-            <Card f={f.themes} n={10} icon={<Palette size="1em" />} className="md:col-span-2 lg:col-span-6">
+            <Card f={f.themes} className="md:col-span-2 lg:col-span-6">
               <div className="grid gap-3 sm:grid-cols-3">
                 {(["inbox", "inbox-macos", "inbox-atelier"] as const).map((s) => (
                   <div key={s} className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
@@ -227,11 +218,6 @@ export const Midnight: HomeDesign = ({ copy }) => {
         <section className={`${wrap} mt-28 sm:mt-36`} aria-labelledby="mn-keyboard">
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <div>
-              <p className={`${mono} flex items-center gap-2.5 text-(--mn-accent)`}>
-                <span className="text-(--mn-dim)">11</span>
-                <Keyboard size="1.15em" />
-                {f.keyboard.kicker}
-              </p>
               <h2 id="mn-keyboard" className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-5xl">
                 {f.keyboard.title}
               </h2>
@@ -278,11 +264,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
         <section id="waitlist" className={`${wrap} mt-6 scroll-mt-20`} aria-labelledby="mn-waitlist">
           <div className="grid gap-10 rounded-3xl border border-(--mn-line) bg-(--mn-raised) px-6 py-10 sm:px-12 sm:py-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <div>
-              <p className={`${mono} flex items-center gap-2.5 text-(--mn-accent)`}>
-                <span className="mn-dot" aria-hidden="true" />
-                {copy.download.other}
-              </p>
-              <h2 id="mn-waitlist" className="mt-4 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+              <h2 id="mn-waitlist" className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
                 {copy.waitlist.title}
               </h2>
               <p className="mt-3 leading-relaxed text-pretty text-(--mn-muted)">{copy.waitlist.body}</p>

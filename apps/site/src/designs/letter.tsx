@@ -30,7 +30,6 @@ function Feature({ copy, id, children }: { copy: SiteCopy; id: FeatureId; childr
   const f = copy.features[id];
   return (
     <section aria-labelledby={`f-${id}`} className="letter-sub mt-28 sm:mt-36">
-      <p className="letter-label">{f.kicker}</p>
       <h2 id={`f-${id}`} className="mt-3 text-[1.75rem] leading-[1.15] font-semibold tracking-[-0.022em] text-balance sm:text-[2.125rem]">
         {withKeys(f.title)}
       </h2>
@@ -99,7 +98,6 @@ export const Letter: HomeDesign = ({ copy }) => {
       </header>
 
       <main id="main" className="letter-flow pt-20 sm:pt-32">
-        <p className="letter-label">{copy.hero.eyebrow}</p>
         <h1 className="mt-5 text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.04em] text-balance sm:text-[4.25rem]">{copy.hero.title}</h1>
         <p className="letter-prose letter-lead mt-8">{copy.hero.subtitle}</p>
         <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4">

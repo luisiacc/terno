@@ -82,11 +82,6 @@ html[data-design="midnight"] .mn-title {
   background: linear-gradient(180deg, var(--mn-fg) 30%, color-mix(in srgb, var(--mn-fg) 62%, var(--mn-bg)));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-html[data-design="midnight"] .mn-pill { background: color-mix(in srgb, var(--mn-raised) 70%, transparent); }
-html[data-design="midnight"] .mn-dot {
-  width: 6px; height: 6px; border-radius: 999px; background: #2f5bff; box-shadow: 0 0 0 3px rgb(47 91 255 / 0.2), 0 0 10px #2f5bff;
-}
-html[data-design="midnight"] .mn-rule { display: block; width: 24px; height: 1px; background: var(--mn-accent); }
 
 /* buttons */
 html[data-design="midnight"] .mn-btn {

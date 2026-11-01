@@ -100,7 +100,6 @@ html[data-design="lumen"] .lumen-band { background: var(--l-band); border-block:
 html[data-design="lumen"] .lumen-tile { background: var(--l-raise); box-shadow: 0 0 0 1px var(--l-ring); }
 html[data-design="lumen"] .lumen-panel { background: var(--l-raise); box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow); }
 html[data-design="lumen"] .lumen-badge { background: var(--l-accent-soft); color: var(--l-accent); }
-html[data-design="lumen"] .lumen-pill { background: var(--l-raise); color: var(--l-fg); box-shadow: 0 0 0 1px var(--l-ring), 0 1px 2px rgb(60 45 20 / 0.06); }
 
 /* keycaps */
 html[data-design="lumen"] .lumen-key {

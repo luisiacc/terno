@@ -9,7 +9,6 @@ export const en = {
   skip: "Skip to content",
   nav: { features: "Features", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", home: "Terno home" },
   hero: {
-    eyebrow: "Email for Mac",
     title: "Your mail, made to measure.",
     subtitle: "A calm, very fast email client. Every account in one inbox, search that answers before you finish typing, and your mail never leaves your Mac.",
     note: "Free · No account needed · macOS on Apple silicon",
@@ -22,67 +21,56 @@ export const en = {
   },
   features: {
     unified: {
-      kicker: "Unified inbox",
       title: "Every account. One inbox.",
       body: "Gmail, iCloud, Outlook and any other email account side by side, in one list. Each row says which account it came to, so you never answer from the wrong one.",
       points: ["Gmail, iCloud, Fastmail, your own domain", "Unlimited accounts", "Categories that span them all"],
     },
     local: {
-      kicker: "Completely local",
       title: "No account. No cloud. Just your Mac.",
       body: "Terno talks to your mail servers and nothing else. There is no Terno account to create and no server in between: your mail, contacts and search index live on your Mac.",
       points: ["Private from the very first launch", "Pictures from the web load only when you ask", "No tracking of any kind"],
     },
     search: {
-      kicker: "Instant search",
       title: "Found before you finish typing.",
       body: "Search runs on your Mac over every message, in every account, including the archive. Results arrive instantly, even with years of mail.",
       points: ["Every folder, every account", "Search by person, subject or attachment", "Works offline"],
     },
     speed: {
-      kicker: "Very fast",
       title: "Nothing to wait for.",
       body: "Every action happens the instant you press the key, and the server catches up in the background. Opening a conversation, archiving, switching inboxes: no spinners.",
       points: ["Opens in under a second", "Light on memory and battery", "Quiet when you’re not using it"],
     },
     triage: {
-      kicker: "Out of your way",
       title: "File one. Clear them all.",
       body: "Drag a newsletter to a category or archive a promotion, and Terno offers to do the same with everything like it, and with what arrives next. One key, and that sender stays out of your inbox until you go looking.",
       points: ["Everything from this sender, domain or list", "A filter for the future in the same step", "One undo for all of it"],
     },
     codes: {
-      kicker: "Verification codes",
       title: "The code, one click away.",
       body: "When a sign-in code arrives, it shows on the message itself. Click to copy, paste, done. No opening, no hunting for six digits.",
       points: [],
     },
     themes: {
-      kicker: "Designs and colors",
       title: "Three designs. Eighteen palettes.",
       body: "Pick a design for the shape of the app (warm Lumen, editorial Atelier or Apple-Mail-like macOS) and any color theme on top, from Solarized to Dracula. Or bring your own.",
       points: ["Light and dark in every one", "All checked for contrast", "Motion you can turn down or off"],
     },
     snippets: {
-      kicker: "Snippets",
       title: "Write it once.",
       body: "Save the replies you send every week. Press ⌘; in any draft, type a few letters, and the snippet drops in with the recipient’s name already filled.",
       points: [],
     },
     palette: {
-      kicker: "Command palette",
       title: "⌘K does everything.",
       body: "Every action, folder, setting and snippet is a few letters away. It learns what you use most and puts it first.",
       points: [],
     },
     keyboard: {
-      kicker: "Keyboard first",
       title: "Your inbox at the speed of your hands.",
       body: "Move, archive, file, reply and undo without touching the mouse. Press ? any time to see every shortcut.",
       points: [],
     },
     open: {
-      kicker: "Source available",
       title: "Don’t take our word for it.",
       body: "Every line of Terno is public. Read exactly how your mail is stored, what goes over the network and what never does. And three years after each release, that version becomes fully open source.",
       points: [],

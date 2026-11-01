@@ -52,13 +52,6 @@ html[data-design="letter"] .letter-bar {
   box-shadow: 0 1px 0 color-mix(in srgb, var(--l-line) 70%, transparent);
 }
 
-html[data-design="letter"] .letter-label {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--l-muted);
-}
 
 html[data-design="letter"] .letter-prose {
   font-size: 1.1875rem;

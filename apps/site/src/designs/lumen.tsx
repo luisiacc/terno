@@ -1,7 +1,7 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Archive, Check, Command, ExternalLink, Github, KeyRound, Keyboard, Mails, NotepadText, Palette, Search, ShieldCheck, Zap } from "../parts/icons";
+import { Check, ExternalLink, Github, ShieldCheck } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { Shot, type ShotName } from "../parts/shot";
@@ -16,7 +16,6 @@ import type { HomeDesign } from "./types";
  */
 
 type Feature = SiteCopy["features"][keyof SiteCopy["features"]];
-type Icon = ComponentType<{ size?: number | string; className?: string }>;
 
 const wrap = "mx-auto w-full max-w-6xl px-6 sm:px-8";
 const h2 = "text-[2rem] leading-[1.1] font-semibold tracking-[-0.025em] text-balance sm:text-[2.6rem]";
@@ -24,15 +23,6 @@ const lead = "text-lg leading-relaxed text-(--l-muted) text-pretty";
 const card = "lumen-card overflow-hidden rounded-2xl";
 /** a soft tinted stage that a detail sits on, like a product photo */
 const stage = "lumen-stage rounded-3xl p-3 sm:p-10";
-
-function Kicker({ icon: I, children }: { icon?: Icon; children: ReactNode }) {
-  return (
-    <p className="flex items-center gap-2 text-[0.95rem] font-medium text-(--l-accent)">
-      {I && <I size="1.15em" />}
-      {children}
-    </p>
-  );
-}
 
 function Points({ points }: { points: readonly string[] }) {
   if (!points.length) return null;
@@ -49,11 +39,10 @@ function Points({ points }: { points: readonly string[] }) {
 }
 
 /** A feature: text on one side, its picture on the other; `flip` puts the picture first on wide screens. */
-function Row({ id, f, icon, flip, children }: { id: string; f: Feature; icon: Icon; flip?: boolean; children: ReactNode }) {
+function Row({ id, f, flip, children }: { id: string; f: Feature; flip?: boolean; children: ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={`${wrap} grid items-center gap-12 py-20 sm:py-28 lg:grid-cols-12 lg:gap-16`}>
       <div className={`lg:col-span-5 ${flip ? "lg:order-2 lg:col-start-8" : ""}`}>
-        <Kicker icon={icon}>{f.kicker}</Kicker>
         <h2 id={`${id}-title`} className={`mt-4 ${h2}`}>
           {f.title}
         </h2>
@@ -129,10 +118,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
         {/* hero */}
         <section className="lumen-hero overflow-hidden pt-10 sm:pt-16" aria-labelledby="hero-title">
           <div className={`${wrap} flex flex-col items-center text-center`}>
-            <p className="lumen-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium">
-              <Logo size={16} />
-              {copy.hero.eyebrow}
-            </p>
             <h1 id="hero-title" className="mt-7 max-w-4xl text-[2.9rem] leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl lg:text-[5.25rem]">
               {copy.hero.title}
             </h1>
@@ -154,7 +139,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
         {/* speed, in numbers */}
         <section aria-labelledby="speed-title" className={`${wrap} pt-28 pb-12 text-center sm:pt-36`}>
           <div className="flex justify-center">
-            <Kicker icon={Zap}>{f.speed.kicker}</Kicker>
           </div>
           <h2 id="speed-title" className={`mx-auto mt-4 max-w-3xl ${h2}`}>
             {f.speed.title}
@@ -179,17 +163,17 @@ export const Lumen: HomeDesign = ({ copy }) => {
         </section>
 
         <div id="features">
-          <Row id="unified" f={f.unified} icon={Mails}>
+          <Row id="unified" f={f.unified}>
             <div className={`${card}`}>
               <Crop name="inbox" copy={copy} crop="unified" />
             </div>
           </Row>
 
-          <Row id="search" f={f.search} icon={Search} flip>
+          <Row id="search" f={f.search} flip>
             <Framed name="search" copy={copy} />
           </Row>
 
-          <Row id="triage" f={f.triage} icon={Archive}>
+          <Row id="triage" f={f.triage}>
             <div className={`${stage} grid gap-5`}>
               <div className={`${card} sm:mr-10`}>
                 <Crop name="file-similar" copy={copy} crop="file" />
@@ -200,7 +184,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
             </div>
           </Row>
 
-          <Row id="codes" f={f.codes} icon={KeyRound} flip>
+          <Row id="codes" f={f.codes} flip>
             <div className={`${card} relative`}>
               <Crop name="code" copy={copy} crop="code" />
               <span className="lumen-ring" aria-hidden="true" />
@@ -215,7 +199,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
               <ShieldCheck size={28} />
             </span>
             <div className="mt-6 flex justify-center">
-              <Kicker>{f.local.kicker}</Kicker>
             </div>
             <h2 id="local-title" className={`mx-auto mt-4 max-w-3xl ${h2}`}>
               {f.local.title}
@@ -237,7 +220,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
           </div>
         </section>
 
-        <Row id="palette" f={f.palette} icon={Command}>
+        <Row id="palette" f={f.palette}>
           <div className={stage}>
             <div className={card}>
               <Crop name="palette" copy={copy} crop="palette" />
@@ -245,7 +228,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
           </div>
         </Row>
 
-        <Row id="snippets" f={f.snippets} icon={NotepadText} flip>
+        <Row id="snippets" f={f.snippets} flip>
           <div className={stage}>
             <div className={card}>
               <Crop name="snippets" copy={copy} crop="overlay" />
@@ -258,7 +241,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
           <div className={wrap}>
             <div className="mx-auto max-w-3xl text-center">
               <div className="flex justify-center">
-                <Kicker icon={Keyboard}>{f.keyboard.kicker}</Kicker>
               </div>
               <h2 id="keyboard-title" className={`mt-4 ${h2}`}>
                 {f.keyboard.title}
@@ -292,7 +274,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
           <div className={wrap}>
             <div className="mx-auto max-w-3xl text-center">
               <div className="flex justify-center">
-                <Kicker icon={Palette}>{f.themes.kicker}</Kicker>
               </div>
               <h2 id="themes-title" className={`mt-4 ${h2}`}>
                 {f.themes.title}
@@ -341,7 +322,6 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <section id="open" aria-labelledby="open-title" className={`${wrap} pb-24 sm:pb-32`}>
           <div className="lumen-panel flex flex-col items-start gap-8 rounded-3xl p-8 sm:p-12 lg:flex-row lg:items-center lg:justify-between lg:gap-16">
             <div className="max-w-2xl">
-              <Kicker icon={Github}>{f.open.kicker}</Kicker>
               <h2 id="open-title" className={`mt-4 ${h2}`}>
                 {f.open.title}
               </h2>
