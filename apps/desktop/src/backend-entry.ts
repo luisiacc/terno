@@ -4,9 +4,9 @@
  * mail data never hops through the main process.
  */
 import { dirname, join } from "node:path";
-import { Backend, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
-import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
+import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
@@ -118,6 +118,7 @@ function portTransport(port: PortMain): Transport {
 }
 
 let backend: Backend | null = null;
+let opening: { abort: AbortController; done: Promise<void> } | null = null;
 
 parentPort.on("message", async (event) => {
   const msg = event.data;
@@ -144,62 +145,79 @@ parentPort.on("message", async (event) => {
     return;
   }
   if (msg.type === "init") {
-    installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
-    // plan 95: the mailbox first (a backup before a migration, a restored copy quarantined); what goes wrong here
-    // is explained by the window, not restarted
-    if (!(await openMailbox(msg))) return;
-    try {
-      const registry = createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {});
-      backend = new Backend({
-        dbPath: msg.dbPath,
-        version: msg.version,
-        cipher,
-        legacySecrets,
-        // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
-        // and plan 41's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
-        // and only for an account whose servers are loopback: imap-seam.ts)
-        providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
-        openExternal: async (url) => send({ type: "open-external", url }),
-        // plan 99: Terno's Google clients, baked in by build.mjs
-        googleClients: parseGoogleClients(process.env.TERNO_GOOGLE_CLIENTS),
-        demoAi: msg.demo || msg.dev,
-        demo: msg.demo,
-        online: msg.online,
-        onPolicy: (policy) => send({ type: "policy", ...policy }),
-        // plan 41: main owns the Dock and the notifications (they work with every window closed)
-        attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },
-        log: storeLog(msg.dev),
-        store: mailbox ?? undefined,
-      });
-      mailbox = null;
-      send({ type: "gate", gate: { kind: "open", restoredFrom } });
-      if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
-        await backend.store.settings.set("app", { ai: { provider: "fake" } });
-      }
-      // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
-      if (msg.demo && msg.dev) await seedDemoCode(backend.store, Date.now());
-      await backend.publishPolicy();
-      await backend.start();
-      await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
-      const b = backend;
-      const countAccounts = async () => {
-        const list = await b.store.accounts.list().catch(() => []);
-        accounts = { imap: list.filter((a) => a.kind === "imap").length, gmail: list.filter((a) => a.kind === "gmail").length };
-      };
-      void countAccounts();
-      // recounted when the accounts change (they're announced then), never on a timer
-      const emitAccounts = b.emitAccounts.bind(b);
-      b.emitAccounts = async () => {
-        await emitAccounts();
-        await countAccounts();
-      };
-      send({ type: "ready" });
-    } catch (error) {
-      // a backend that can't open its mailbox is no backend: main restarts it, then shows that it stopped
-      die(error, "backend.init_failed");
-    }
+    if (opening || backend || closing) return;
+    const abort = new AbortController();
+    const current = { abort, done: initialize(msg, abort.signal) };
+    opening = current;
+    try { await current.done; } finally { if (opening === current) opening = null; }
+
   }
 });
+
+async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal: AbortSignal): Promise<void> {
+  installDiag(diagOptions({ version: msg.version, build: msg.diag.build, channel: msg.diag.channel, session: msg.diag.session }));
+  // plan 95: the mailbox first (a backup before a migration, a restored copy quarantined); what goes wrong here
+  // is explained by the window, not restarted
+  if (!(await openMailbox(msg, signal))) return;
+  if (signal.aborted) { await mailbox?.close(); mailbox = null; return; }
+  try {
+    const registry = createRegistry(msg.demo && msg.testSmtpPort ? { demoSmtpPort: msg.testSmtpPort } : {});
+    backend = new Backend({
+      dbPath: msg.dbPath,
+      version: msg.version,
+      cipher,
+      legacySecrets,
+      // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
+      // and plan 41's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
+      // and only for an account whose servers are loopback: imap-seam.ts)
+      providers: msg.demo && msg.testImapInsecure ? loopbackInsecure(registry, createRegistry({ imap: { allowInsecure: true } })) : registry,
+      openExternal: async (url) => send({ type: "open-external", url }),
+      googleClients: parseGoogleClients(process.env.TERNO_GOOGLE_CLIENTS),
+      demoAi: msg.demo || msg.dev,
+      demo: msg.demo,
+      online: msg.online,
+      onPolicy: (policy) => send({ type: "policy", ...policy }),
+      // plan 41: main owns the Dock and the notifications (they work with every window closed)
+      attention: { badge: (count) => send({ type: "badge", count }), notify: (notice) => send({ type: "notify", notice }) },
+      log: storeLog(msg.dev),
+      store: mailbox ?? undefined,
+    });
+    mailbox = null;
+    if (signal.aborted) return;
+    send({ type: "gate", gate: { kind: "open", restoredFrom } });
+    if (msg.demo && (await seedDemo(backend.store, { threads: 3000, accounts: 4 }))) {
+      if (signal.aborted) return;
+      await backend.store.settings.set("app", { ai: { provider: "fake" } });
+    }
+    if (signal.aborted) return;
+    // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
+    if (msg.demo && msg.dev) await seedDemoCode(backend.store, Date.now());
+    if (signal.aborted) return;
+    await backend.publishPolicy();
+    if (signal.aborted) return;
+    await backend.start();
+    if (signal.aborted) return;
+    await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
+    if (signal.aborted) return;
+    const b = backend;
+    const countAccounts = async () => {
+      const list = await b.store.accounts.list().catch(() => []);
+      accounts = { imap: list.filter((a) => a.kind === "imap").length, gmail: list.filter((a) => a.kind === "gmail").length };
+    };
+    void countAccounts();
+    // recounted when the accounts change (they're announced then), never on a timer
+    const emitAccounts = b.emitAccounts.bind(b);
+    b.emitAccounts = async () => {
+      await emitAccounts();
+      await countAccounts();
+    };
+    send({ type: "ready" });
+  } catch (error) {
+    if (signal.aborted) return;
+    // a backend that can't open its mailbox is no backend: main restarts it, then shows that it stopped
+    die(error, "backend.init_failed");
+  }
+}
 
 // ───────────────────────────── plan 95: opening the mailbox ─────────────────────────────
 
@@ -224,11 +242,12 @@ const summary = (b: BackupInfo | null | undefined): BackupSummary | null => (b ?
  * then opens (and migrates) it. A classified failure becomes the window's
  * gate and ends this process without a restart; anything else is a crash.
  */
-async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promise<boolean> {
+async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>, signal: AbortSignal): Promise<boolean> {
   const backupsDir = join(dirname(msg.dbPath), "backups");
   let plan: UpgradePlan | null = null;
   const startedAt = Date.now();
   try {
+    signal.throwIfAborted();
     plan = await preparation.run(prepareUpgrade(msg.dbPath, {
       backupsDir,
       appVersion: msg.version,
@@ -236,13 +255,14 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
       onBackup: () => send({ type: "gate", gate: { kind: "upgrading", phase: "backup", from: plan?.from ?? 0, to: SCHEMA_VERSION } }),
     }));
     // a shutdown came while the backup ran: the mailbox isn't opened
-    if (preparation.stopped) return false;
+    if (preparation.stopped || signal.aborted) return false;
     if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, method: plan.method ?? "copy", durationMs: Date.now() - startedAt });
     const migrating = plan.from !== null && plan.from < plan.to;
     if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
     if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
-    const db = openDatabase(msg.dbPath, { uuid: () => nodePlatform.uuid() });
+    const db = await openNodeMailbox(msg.dbPath, { uuid: () => nodePlatform.uuid() }, signal);
     try {
+      signal.throwIfAborted();
       // a restored copy: quarantined and on disk before its marker goes (Codex review R3)
       restoredFrom = settleRestored(db, msg.dbPath, () => quarantineRestored(db))?.createdAt ?? null;
       mailbox = nodeStore(db, { log: storeLog(msg.dev) });
@@ -255,7 +275,7 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
     return true;
   } catch (error) {
     // a backup ended by a shutdown isn't a failure to show
-    if (preparation.stopped) return false;
+    if (preparation.stopped || signal.aborted) return false;
     const failure = classifyOpenError(error, () => {
       const size = mailboxBytes(msg.dbPath);
       let free = 0;
@@ -287,8 +307,11 @@ let closing: Promise<void> | null = null;
 /** See MainToBackend "shutdown": a send in flight is never cut short unless main says so. */
 async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Promise<void> {
   const b = backend;
+  const pending = opening;
   if (!b) await preparation.stop(cancelClones);
   if (!b || closing) {
+    pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
+    await pending?.done;
     await closing;
     return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });
   }
@@ -299,6 +322,8 @@ async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Prom
     void b.sendsIdle().then(() => send({ type: "sends-idle" }));
     return;
   }
+  pending?.abort.abort(new DOMException("Mailbox opening stopped", "AbortError"));
+  await pending?.done;
   if (closing) await closing;
   else closing = b.stop().catch((error: unknown) => void captureError(error, { code: "backend.fatal", expected: false }));
   await closing;
