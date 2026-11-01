@@ -13,7 +13,8 @@
     "deploy:preview": "node scripts/deploy.mjs --preview",
     "shots": "tsx shots/shots.ts",
     "test:site": "playwright test",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "waitlist:csv": "node scripts/waitlist-csv.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "catalog:",

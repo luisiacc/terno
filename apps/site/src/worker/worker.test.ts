@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { deploySteps, runSteps } from "../deploy-steps.mjs";
+import { csvCell, rowsFromWrangler, toCsv, waitlistQuery } from "../waitlist-csv.mjs";
 import { handleDownload, pickDmg } from "./download";
 import worker, { type Env } from "./index";
 import { MAX_ROWS, handleWaitlist, parseFields, validEmail } from "./waitlist";
@@ -244,5 +245,37 @@ describe("worker", () => {
   it("caches hashed assets for a year", async () => {
     const res = await worker.fetch(new Request("https://terno.app/assets/index-abc.css"), env());
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+});
+
+describe("waitlist CSV", () => {
+  it("queries one known platform or all, and refuses anything else", () => {
+    expect(waitlistQuery()).toBe("SELECT email, platform, created_at FROM waitlist ORDER BY platform, created_at");
+    expect(waitlistQuery("linux")).toContain("WHERE platform = 'linux'");
+    expect(() => waitlistQuery("linux' OR 1=1 --")).toThrow(/unknown platform/);
+  });
+
+  it("writes a header, ISO dates, quotes what needs it and defuses spreadsheet formulas", () => {
+    const csv = toCsv([
+      { email: "ana@example.com", platform: "linux", created_at: Date.UTC(2026, 10, 1, 9, 30) },
+      { email: '"odd,one"@example.com', platform: "windows", created_at: 0 },
+      { email: "=HYPERLINK(1)@x.co", platform: "mac", created_at: 0 },
+    ]);
+    expect(csv.split("\r\n")).toEqual([
+      "email,platform,joined",
+      "ana@example.com,linux,2026-11-01T09:30:00.000Z",
+      '"""odd,one""@example.com",windows,1970-01-01T00:00:00.000Z',
+      "'=HYPERLINK(1)@x.co,mac,1970-01-01T00:00:00.000Z",
+      "",
+    ]);
+    expect(csvCell("+1")).toBe("'+1");
+    expect(toCsv([])).toBe("email,platform,joined\r\n");
+  });
+
+  it("reads wrangler's JSON, and says so when the query failed", () => {
+    const out = 'some log line\n[{"results":[{"email":"a@b.co","platform":"linux","created_at":1}],"success":true,"meta":{}}]';
+    expect(rowsFromWrangler(out)).toEqual([{ email: "a@b.co", platform: "linux", created_at: 1 }]);
+    expect(() => rowsFromWrangler('[{"success":false}]')).toThrow(/query failed/);
+    expect(() => rowsFromWrangler("✘ no such table")).toThrow(/no results/);
   });
 });

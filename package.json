@@ -34,7 +34,8 @@
     "dev:site": "pnpm --filter @terno/site dev",
     "deploy:site": "pnpm --filter @terno/site run deploy",
     "deploy:site:preview": "pnpm --filter @terno/site run deploy:preview",
-    "test:site": "pnpm --filter @terno/site test:site"
+    "test:site": "pnpm --filter @terno/site test:site",
+    "waitlist:csv": "pnpm --filter @terno/site run waitlist:csv"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "catalog:",
