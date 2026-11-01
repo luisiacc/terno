@@ -309,7 +309,7 @@ function FavoriteRows() {
         const target = (f.folder !== null ? { accountId: f.accountId, folder: f.folder, view: null } : { accountId: f.accountId, folder: null, view: f.view! }) as FolderTarget;
         const active = here !== null && here.accountId === f.accountId && (f.folder !== null ? here.folder === f.folder : here.folder === null && here.view === f.view);
         return (
-          <FolderMenu key={`${f.accountId}:${f.folder ?? `~${f.view}`}`} target={target} name={name} account={account}>
+          <FolderMenu key={`${f.accountId}:${f.folder ?? `~${f.view}`}`} target={target} name={name} account={account} favoriteRow>
             <div>
               <NavItem
                 testId={`nav-fav-${f.accountId}-${f.folder ?? f.view}`}

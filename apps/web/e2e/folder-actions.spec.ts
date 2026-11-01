@@ -431,6 +431,46 @@ test.describe("folder actions", { tag: "@design" }, () => {
     await expect(page.getByTestId(`nav-fav-${acme}-Label_23`)).toBeFocused();
   });
 
+  test("taking a favorite away: a failure keeps the focus on its row; from the account's copy the focus stays there; a quote in a key is fine (Codex code review round 5 #6, #7)", async ({ app: page, server }) => {
+    const freelance = accountOf(server, "Freelance");
+    const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === freelance).map(({ key, path, selectable }) => ({ key, path, selectable }));
+    await server.backend.store.folders.replace(freelance, [...mine, { key: "Uno", path: ["Uno"], selectable: true }, { key: 'A"B', path: ['A"B'], selectable: true }]);
+    server.backend.server.emit("folders", await server.backend.store.folders.list());
+    await openAccount(page, freelance);
+    for (const key of ["Uno", 'A"B']) {
+      await own(page, freelance, key).click({ button: "right" });
+      await page.getByTestId("folder-menu-favorite").click();
+      await expect(page.locator("[role=menu]")).toHaveCount(0);
+    }
+    const fav = (key: string) => page.getByTestId(`nav-fav-${freelance}-${key}`);
+    const handlers = (server.backend.server as unknown as { handlers: Handlers }).handlers;
+    const favorite = handlers["folders.favorite"]!;
+    // a failure: the row stays, and so does the focus
+    handlers["folders.favorite"] = async () => {
+      throw new Error("busy");
+    };
+    await fav("Uno").focus();
+    await page.keyboard.press("Shift+F10");
+    await page.getByTestId(`folder-menu-${freelance}-Uno`).getByTestId("folder-menu-favorite").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("snack").filter({ hasText: "busy" })).toBeVisible();
+    await expect(fav("Uno")).toBeFocused();
+    handlers["folders.favorite"] = favorite;
+    // from its own row, with a quoted key next: the next favorite has the focus
+    await page.keyboard.press("Shift+F10");
+    await page.getByTestId(`folder-menu-${freelance}-Uno`).getByTestId("folder-menu-favorite").focus();
+    await page.keyboard.press("Enter");
+    await expect(fav("Uno")).toHaveCount(0);
+    await expect(fav('A"B')).toBeFocused();
+    // from the account's copy: the focus stays on that row
+    await own(page, freelance, 'A"B').focus();
+    await page.keyboard.press("Shift+F10");
+    await page.getByTestId(`folder-menu-${freelance}-A"B`).getByTestId("folder-menu-favorite").focus();
+    await page.keyboard.press("Enter");
+    await expect(fav('A"B')).toHaveCount(0);
+    await expect(own(page, freelance, 'A"B')).toBeFocused();
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the folder menu, the name field and favorites are axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

@@ -157,18 +157,21 @@ export function FolderNameRow({
 /**
  * A favorite taken away from its own row's menu: that row goes, and the keyboard's place goes to the next favorite,
  * the one before, the folder under its account, or the account (Codex code review round 4 #4), unless it moved on.
+ * A row still there (the request failed) gets it back (round 5 #6). Keys go through CSS.escape (round 5 #7: an IMAP
+ * name may hold a quote).
  */
 function keepFocusAfterUnfavorite(target: FolderTarget, before: readonly FavoriteFolder[]): void {
   const id = (f: Pick<FavoriteFolder, "accountId" | "folder" | "view">) => `nav-fav-${f.accountId}-${f.folder ?? f.view}`;
+  const row = (testId: string) => document.querySelector<HTMLElement>(`[data-testid="${CSS.escape(testId)}"]`);
   const was = id(target);
   requestAnimationFrame(() => {
     const active = document.activeElement;
     // still in the closing menu, on the row that went, or nowhere: not moved on
     if (active && active !== document.body && active.isConnected && active.getAttribute("data-testid") !== was && !active.closest("[role=menu]")) return;
     const at = before.findIndex((f) => id(f) === was);
-    const near = [...before.slice(at + 1), ...before.slice(0, Math.max(at, 0)).reverse()].map((f) => document.querySelector<HTMLElement>(`[data-testid="${id(f)}"]`));
-    const own = target.folder !== null ? `nav-own-${target.accountId}-${CSS.escape(target.folder)}` : `nav-folder-${target.accountId}-${target.view}`;
-    const next = near.find(Boolean) ?? document.querySelector<HTMLElement>(`[data-testid="${own}"]`) ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${target.accountId}"]`);
+    const near = [was, ...[...before.slice(at + 1), ...before.slice(0, Math.max(at, 0)).reverse()].map(id)].map(row);
+    const own = target.folder !== null ? `nav-own-${target.accountId}-${target.folder}` : `nav-folder-${target.accountId}-${target.view}`;
+    const next = near.find(Boolean) ?? row(own) ?? row(`nav-account-${target.accountId}`);
     next?.focus({ preventScroll: false });
   });
 }
@@ -177,7 +180,7 @@ function keepFocusAfterUnfavorite(target: FolderTarget, before: readonly Favorit
  * Plan 107: a folder's right-click menu (and Shift+F10, plan 106): an own folder's New subfolder…, Rename,
  * favorite, Export mailbox… and Delete folder…; a standard row's favorite and export. A favorite's row has the same.
  */
-export function FolderMenu({ target, name, account, children }: { target: FolderTarget; name: string; account: Account; children: ReactElement }) {
+export function FolderMenu({ target, name, account, favoriteRow, children }: { target: FolderTarget; name: string; account: Account; favoriteRow?: boolean; children: ReactElement }) {
   const favorites = useApp((s) => s.settings?.favoriteFolders);
   const favorite = isFavorite(favorites, target);
   // mounted from the first Delete… on, so the dialog can animate out after
@@ -214,13 +217,15 @@ export function FolderMenu({ target, name, account, children }: { target: Folder
           )}
           <ContextMenuItem
             data-testid="folder-menu-favorite"
-            onClick={() =>
-              // taken away, its row (this menu's trigger) may go: the focus is handed on after, not given back to it
-              void (favorite && setHandOff(true),
-              setFavorite(target, !favorite))
-                .then(() => favorite && keepFocusAfterUnfavorite(target, favorites ?? []))
+            onClick={() => {
+              // taken away from its own row (this menu's trigger), that row goes: the focus is handed on once it has
+              // (round 5 #6: from the account's copy, or with the row still there, the menu gives it back as usual)
+              const handsOn = favorite && favoriteRow === true;
+              if (handsOn) setHandOff(true);
+              void setFavorite(target, !favorite)
                 .catch((e: unknown) => snack.error(t("folder.favoriteFailed", { error: e instanceof Error ? e.message : String(e) })))
-            }
+                .finally(() => handsOn && keepFocusAfterUnfavorite(target, favorites ?? []));
+            }}
           >
             <Star />
             <span className="flex-1">{favorite ? t("folder.menu.unfavorite") : t("folder.menu.favorite")}</span>
