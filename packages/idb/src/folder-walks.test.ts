@@ -174,3 +174,59 @@ it("two counts of one mailbox interleaved each walk their own places, every slic
     locations.keysBy = keysBy;
   }
 });
+
+/** exports interleaved a call each, round robin: the messages each took, and how many calls it took them all */
+function interleave(targets: { accountId: number; folder?: string; view?: "inbox" }[], limit: number, max: number): { ids: number[][]; calls: number } {
+  const xs = targets.map(() => ({ after: null as FolderExportCursor | null, ids: [] as number[], done: false }));
+  let calls = 0;
+  for (let turn = 0; xs.some((x) => !x.done) && calls < max; turn++) {
+    const i = turn % xs.length;
+    const x = xs[i]!;
+    if (x.done) continue;
+    const t = targets[i]!;
+    const r = exportIds(c, t.folder !== undefined ? { accountId: t.accountId, folder: t.folder } : { accountId: t.accountId, view: "inbox" }, x.after, limit);
+    calls++;
+    x.ids.push(...r.messages.map((m) => m.id));
+    if (r.next) x.after = r.next;
+    else x.done = true;
+  }
+  return { ids: xs.map((x) => x.ids), calls };
+}
+
+it("five exports of accounts' inboxes longer than a run, interleaved, all finish (Codex code review round 18 #2)", async () => {
+  // more threads than a run (16,384 a call) in each of five accounts: each export's walk of them is its own
+  const N = 16_500;
+  const accounts = [account];
+  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "indigo", now: 0 })).account.id);
+  c.db.tx(() => {
+    let id = 0;
+    for (const a of accounts)
+      for (let i = 0; i < N; i++) {
+        id++;
+        c.db.table("threads").put({ id, account_id: a, last_date: id, message_count: 1, unread_count: 0, in_inbox: 1 });
+        c.db.table("messages").put({ ...message(id, id), account_id: a, in_inbox: 1, gmail_labels: null });
+      }
+  });
+  const { ids, calls } = interleave(accounts.map((accountId) => ({ accountId, view: "inbox" })), 4000, 200);
+  expect(ids.map((x) => x.length)).toEqual(accounts.map(() => N));
+  expect(calls).toBeLessThan(200);
+});
+
+it("five exports of conversations longer than a run, interleaved, all finish (Codex code review round 18 #2)", async () => {
+  // one conversation longer than a run in each of five accounts: each long thread's order is kept while it's read
+  const N = 16_500;
+  const accounts = [account];
+  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "indigo", now: 0 })).account.id);
+  c.db.tx(() => {
+    let id = 0;
+    accounts.forEach((a, t) => {
+      const thread = t + 1;
+      c.db.table("threads").put({ id: thread, account_id: a, last_date: 0, message_count: N, unread_count: 0 });
+      c.db.table("thread_folders").put({ thread_id: thread, account_id: a, folder: "Label_w", last_date: 0, unread: 0 });
+      for (let i = 0; i < N; i++) c.db.table("messages").put({ ...message(++id, thread), account_id: a });
+    });
+  });
+  const { ids, calls } = interleave(accounts.map((accountId) => ({ accountId, folder: "Label_w" })), 4000, 200);
+  expect(ids.map((x) => new Set(x).size)).toEqual(accounts.map(() => N));
+  expect(calls).toBeLessThan(200);
+});

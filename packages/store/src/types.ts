@@ -399,6 +399,8 @@ export interface FolderExportCursor {
    * already passed sends the walk back to read it again (Codex code review round 17 #1)
    */
   merges?: number;
+  /** the export's own walk of the place, where the store keeps one between calls (Codex code review round 18 #2) */
+  walk?: number;
 }
 
 /**

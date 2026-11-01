@@ -34,9 +34,9 @@ const hasLabel = (m: R, key: string): boolean => {
  * built yet), a run at a time; the caller asks again with `pendingAfter(after)` (Codex code review round 8 #5: one
  * call walked and sorted every member, ~22 ms at 500,000). `after` below 0 is such a pending one's.
  */
-export function stretch(c: Ctx, target: { accountId: number; folder: string }, after: number, limit: number): number[] | null {
+export function stretch(c: Ctx, target: { accountId: number; folder: string }, after: number, limit: number, walk?: number): number[] | null {
   const ids = c.scopes.folder(c, target.accountId, target.folder);
-  const at = `f\u0000${target.accountId}\u0000${target.folder}`;
+  const at = walk !== undefined ? `w\u0000${walk}` : `f\u0000${target.accountId}\u0000${target.folder}`;
   if (ids) {
     memberRuns.get(c)?.delete(at);
     const start = seekAfter(ids, after < 0 ? -after - 1 : after);
@@ -54,10 +54,10 @@ export function stretch(c: Ctx, target: { accountId: number; folder: string }, a
  * account beside another's million threads walked them all (Codex code review round 9 #3), and when they weren't kept
  * (after the store opened, or after an arrival) one call collected and sorted every thread (round 13 #2).
  */
-export function viewStretch(c: Ctx, accountId: number, after: number, limit: number): Stretch | null {
+export function viewStretch(c: Ctx, accountId: number, after: number, limit: number, walk?: number): Stretch | null {
   const threads = T(c, "threads");
   // a thread gone since its run was read is skipped (it counts for no stretch, but for what the call looks at)
-  return runStretch(c, `v\u0000${accountId}`, () => threads.keysBy("fk_account_id", accountId), (k) => k as number, after, limit, (id) => threads.has(id));
+  return runStretch(c, walk !== undefined ? `w\u0000${walk}` : `v\u0000${accountId}`, () => threads.keysBy("fk_account_id", accountId), (k) => k as number, after, limit, (id) => threads.has(id));
 }
 
 /**
@@ -71,7 +71,8 @@ const GONE_VISITS = 4096;
 
 /**
  * The smallest `limit` ids above `after` from a live walk read `MEMBER_RUN` keys a call, each run sorted, kept between
- * calls (by `at`); a walk starts again with each export (`after` 0), or when it was let go. null until the walk is
+ * calls (by `at`: an export's own walk, a count's folder); a walk starts again with each export (`after` 0), or when it
+ * was let go (`keep`). null until the walk is
  * read to its end (Codex code review round 8 #5: one call walked and sorted every member, ~22 ms at 500,000). Ids
  * `live` rejects count toward what a call looks at, `GONE_VISITS` at most (Codex code review round 15 #3: an account's
  * million threads deleted between calls were all looked at in the next one, ~120 ms).
@@ -80,12 +81,8 @@ function runStretch(c: Ctx, at: string, walk: () => Iterator<Key>, id: (k: Key) 
   const from = after < 0 ? -after - 1 : after;
   let runs = memberRuns.get(c);
   if (!runs) memberRuns.set(c, (runs = new Map()));
-  let read = after === 0 ? undefined : runs.get(at);
-  if (!read) {
-    runs.delete(at);
-    if (runs.size >= 4) runs.delete(runs.keys().next().value!);
-    runs.set(at, (read = { walk: walk(), runs: [], done: false }));
-  }
+  let read = after === 0 ? undefined : kept(runs, at);
+  if (!read) keep(runs, at, (read = { walk: walk(), runs: [], done: false, used: 0 }));
   if (!read.done) {
     const run: number[] = [];
     while (run.length < MEMBER_RUN) {
@@ -122,8 +119,39 @@ export const pendingAfter = (after: number): number => (after < 0 ? after : -aft
 
 /** members read a call at a time: each run is sorted natively (~1 ms), never the whole folder at once */
 const MEMBER_RUN = 16_384;
-/** a folder's members read so far while its kept order builds, per store, by account and folder (a few kept) */
-const memberRuns = new WeakMap<Ctx, Map<string, { walk: Iterator<Key>; runs: Float64Array[]; done: boolean }>>();
+/** a place's members read so far while its kept order builds, per store, by export walk (or a count's folder) */
+const memberRuns = new WeakMap<Ctx, Map<string, { walk: Iterator<Key>; runs: Float64Array[]; done: boolean; used: number }>>();
+
+/**
+ * Walks kept between calls are let go once idle (an export cancelled, a window closed) or, past `KEPT_MAX`, the least
+ * recently used: never one in use by a few exports at once. Four kept, the least recently used let go, had five
+ * interleaved exports evict each other's walk before it was whole, and none finished (Codex code review round 18 #2).
+ * The backend resolves one export a window at a time.
+ */
+const KEPT_IDLE_MS = 30_000;
+const KEPT_MAX = 64;
+/** the walk kept at `key`, now the most recently used */
+function kept<K, V extends { used: number }>(map: Map<K, V>, key: K): V | undefined {
+  const v = map.get(key);
+  if (!v) return undefined;
+  map.delete(key);
+  v.used = performance.now();
+  map.set(key, v);
+  return v;
+}
+/** keeps a walk at `key`, letting go of the idle ones and the least recently used past `KEPT_MAX` */
+function keep<K, V extends { used: number }>(map: Map<K, V>, key: K, value: V): void {
+  const now = performance.now();
+  map.delete(key);
+  for (const [k, v] of map) {
+    if (map.size < KEPT_MAX && now - v.used < KEPT_IDLE_MS) break;
+    map.delete(k);
+  }
+  value.used = now;
+  map.set(key, value);
+}
+/** the last export walk id given (an object property: a module `let` read then reset miscompiles under the React Compiler) */
+const exportWalkIds = { last: 0 };
 
 /**
  * A thread's messages after `from` (by id), at most `n` looked at: all of a short one as the index holds them; a long
@@ -136,12 +164,9 @@ export function threadStretch(c: Ctx, thread: number, from: number | null, n: nu
   const messages = T(c, "messages");
   if (from === null && messages.count("fk_thread_id", thread) <= n) return { rows: messages.by("fk_thread_id", thread), more: false };
   const orders = threadOrdersOf(c);
-  let order = orders.get(thread);
-  if (!order) {
-    // a few kept (the export's and a count's)
-    if (orders.size >= 4) orders.delete(orders.keys().next().value!);
-    orders.set(thread, (order = { walk: messages.keysBy("fk_thread_id", thread), runs: [], done: false }));
-  }
+  let order = kept(orders, thread);
+  // kept while it's read (the exports' and counts' at once), let go when read to its end
+  if (!order) keep(orders, thread, (order = { walk: messages.keysBy("fk_thread_id", thread), runs: [], done: false, used: 0 }));
   if (!order.done) {
     const run: number[] = [];
     while (run.length < MEMBER_RUN) {
@@ -162,7 +187,10 @@ export function threadStretch(c: Ctx, thread: number, from: number | null, n: nu
   for (;;) {
     let best = -1;
     for (let i = 0; i < heads.length; i++) if (heads[i]! < runs[i]!.length && (best < 0 || runs[i]![heads[i]!]! < runs[best]![heads[best]!]!)) best = i;
-    if (best < 0) return { rows, more: false };
+    if (best < 0) {
+      orders.delete(thread);
+      return { rows, more: false };
+    }
     const id = runs[best]![heads[best]!]!;
     if (id === last) { heads[best]!++; continue; }
     if (rows.length >= n) return { rows, more: true };
@@ -172,8 +200,8 @@ export function threadStretch(c: Ctx, thread: number, from: number | null, n: nu
   }
 }
 
-/** a long thread's message ids read so far, sorted a run at a time, per store, by thread (a few kept) */
-type ThreadIds = { walk: Iterator<Key>; runs: Float64Array[]; done: boolean };
+/** a long thread's message ids read so far, sorted a run at a time, per store, by thread (kept while read: `keep`) */
+type ThreadIds = { walk: Iterator<Key>; runs: Float64Array[]; done: boolean; used: number };
 const threadOrders = new WeakMap<Ctx["db"], Map<number, ThreadIds>>();
 
 function threadOrdersOf(c: Ctx): Map<number, ThreadIds> {
@@ -195,12 +223,18 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
   // threads read afresh (the merge may have made one a member) (Codex code review round 17 #1: thread 2 merged into
   // thread 1 after the walk passed 1 left thread 2's messages out)
   const merges = threadMerges(c);
+  // the export's own walk of the place's members, kept between its calls (Codex code review round 18 #2)
+  const walk = after?.walk ?? ++exportWalkIds.last;
   const back = after?.merges === undefined ? null : merges.rewind(after.merges, after.thread < 0 ? -after.thread - 1 : after.thread);
   if (back !== null) {
-    memberRuns.get(c)?.delete(target.folder !== undefined ? `f\u0000${target.accountId}\u0000${target.folder}` : `v\u0000${target.accountId}`);
+    memberRuns.get(c)?.delete(`w\u0000${walk}`);
     after = { thread: back - 1 };
   }
-  const answer = (messages: { id: number; date: number }[], next: FolderExportCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(back !== null && { rewound: true as const }) });
+  const answer = (messages: { id: number; date: number }[], next: FolderExportCursor | null) => {
+    // read to its end: its walk is let go
+    if (!next) memberRuns.get(c)?.delete(`w\u0000${walk}`);
+    return { messages, next: next && { ...next, merges: merges.current, walk }, ...(back !== null && { rewound: true as const }) };
+  };
   const locations = T(c, "message_locations");
   const folder = target.folder;
   // a pending rename's old paths are the folder's too (Codex code review round 5 #2), each under the UIDVALIDITY it
@@ -228,7 +262,7 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
     if (budget <= 0) return answer(out, { thread: after.thread });
   }
   const asked = budget;
-  const top = folder !== undefined ? stretch(c, { accountId: target.accountId, folder }, after?.thread ?? 0, asked) : viewStretch(c, target.accountId, after?.thread ?? 0, asked);
+  const top = folder !== undefined ? stretch(c, { accountId: target.accountId, folder }, after?.thread ?? 0, asked, walk) : viewStretch(c, target.accountId, after?.thread ?? 0, asked, walk);
   // still reading a big folder's members or an account's threads: the next call goes on (Codex code review round 8 #5, round 13 #2)
   if (top === null) return answer(out, { thread: pendingAfter(after?.thread ?? 0) });
   const { ids, through } = Array.isArray(top) ? { ids: top, through: null } : top;
