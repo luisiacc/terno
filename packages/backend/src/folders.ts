@@ -39,7 +39,14 @@ async function accountFolders(b: Backend, accountId: number): Promise<Folder[]> 
  * shows it is stored: an old path listed again with the moved generation left out is derived again from its own
  * places (a rebuild that clears its rows), never before its rows were carried (Codex code review round 8 #1).
  */
-export async function carryRenamed(b: Backend, accountId: number, renamed: readonly FolderMove[], write: <W>(work: () => Promise<W>) => Promise<W>, announced: readonly FolderMove[] = renamed): Promise<void> {
+export async function carryRenamed(
+  b: Backend,
+  accountId: number,
+  renamed: readonly FolderMove[],
+  listing: readonly ProviderFolder[],
+  write: <W>(work: () => Promise<W>) => Promise<W>,
+  announced: readonly FolderMove[] = renamed,
+): Promise<void> {
   // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
   // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time; never another
   // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
@@ -49,6 +56,7 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
     // (Codex code review round 14 #2: Work → Job, then Other → Work, showed Job's threads in Work), a slice at a time
     while ((await write(() => b.store.folders.clear(accountId, m.to, CARRY_SLICE))).more) await b.yieldTurn();
     if (m.stale) continue;
+    await aliasAhead(b, accountId, listing.find((f) => f.key === m.to), write);
     for (let after: number | null = 0; after !== null; ) {
       const from: number = after;
       after = (await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
@@ -57,6 +65,22 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
   }
   // a pass's recovery announces every move it hands, carried or not (Codex code review round 15 #2)
   if (announced.length) b.server.emit("foldersRenamed", announced.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
+}
+
+/**
+ * The new key's aliases (`Folder.aliases`), stored before its rows are carried: a thread refreshed during the carry's
+ * turns (another window marking it read) derives the new key from its places under the old path, never drops the row
+ * just carried (Codex code review round 18 #1). The rest of the list stays as stored until the change's own listing.
+ */
+async function aliasAhead(b: Backend, accountId: number, to: ProviderFolder | undefined, write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
+  if (!to?.aliases?.length) return;
+  await b.withFolderList(accountId, () => write(async () => {
+    const stored = (await accountFolders(b, accountId)).map(({ accountId: _a, ...f }): ProviderFolder => f);
+    const known = stored.some((f) => f.key === to.key);
+    const next = known ? stored.map((f) => (f.key === to.key ? { ...f, aliases: to.aliases } : f)) : [...stored, to];
+    // never a rebuild of it: the carry writes its rows
+    await b.store.folders.replace(accountId, next, [to.key]);
+  }));
 }
 
 /**
@@ -104,7 +128,7 @@ async function change<R extends FolderChange>(
     }
     account.check();
     const { renamed = [], deleted = [] } = follows(result);
-    await carryRenamed(b, accountId, renamed, account.write);
+    await carryRenamed(b, accountId, renamed, result.folders, account.write);
     // the list and the favorites that follow it, never between a favorite's check and its write (Codex code review round 10 #4)
     await b.withFolderList(accountId, async () => {
       const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to)));

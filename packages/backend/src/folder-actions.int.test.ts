@@ -731,6 +731,33 @@ it("a folder renamed here keeps its mail and unread count through a thread updat
   expect(await t.held((await Promise.all(before.map((id) => t.messageOf(id)))).map((m) => m.id))).toEqual([]);
 });
 
+it("a thread marked read during a rename's carry stays in the renamed folder with its unread state (Codex code review round 18 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("First") });
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Second") });
+  await t.backend.syncAccount(t.account.id);
+  const before = await t.threadsIn("Work");
+  expect(before).toHaveLength(2);
+  // the carry's turn after its first slice (both rows are in it): another window marks one read then
+  let armed = false;
+  let acted = false;
+  const yieldTurn = t.backend.yieldTurn.bind(t.backend);
+  vi.spyOn(t.backend, "yieldTurn").mockImplementation(async () => {
+    if (armed && t.calls.includes("rename:end")) {
+      armed = false;
+      await t.client.call("threads.act", { threadIds: [before[0]!], action: "markRead" });
+      acted = true;
+    }
+    return yieldTurn();
+  });
+  armed = true;
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  expect(acted).toBe(true);
+  await t.backend.rebuildFolders();
+  expect(new Set(await t.threadsIn("Job"))).toEqual(new Set(before));
+  expect((await t.client.call("counts.get", {})).folderUnread?.[folderRef(t.account.id, "Job")]).toBe(1);
+});
+
 it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
