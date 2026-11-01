@@ -138,10 +138,17 @@ const markers = new Map<number, () => void>();
  * focus on the key would (the panel's chunk, so its first focus lands in it; Google's script on the web).
  */
 export async function openSignInMarker(account: Account): Promise<void> {
+  const mine = ++opening.seq;
   if (WEB && account.kind === "gmail") prepareGoogle();
   await loadPanel().catch(() => {});
+  // the user moved on while the panel loaded (a field, the list, another request): it doesn't open over that
+  // (Codex code review round 3 #2); the menu left focus nowhere, or on the account's row
+  const at = document.activeElement;
+  const row = document.querySelector(`[data-testid="nav-account-${account.id}"]`);
+  if (mine !== opening.seq || (at && at !== document.body && at !== row && at.isConnected)) return;
   markers.get(account.id)?.();
 }
+const opening = { seq: 0 };
 
 /**
  * Plan 25: the key at the end of an account's sidebar row while it needs a sign-in. Quiet (the muted

@@ -129,6 +129,16 @@ describe("patchAccount", () => {
     expect(getApp().accounts[0]!.signature).toBe("Hi");
   });
 
+  it("an account event before a late answer keeps what it said about the rest (Codex code review round 3 #1)", async () => {
+    const done = patchAccount(1, { displayName: "Work" });
+    // the sign-in broke meanwhile: the event says so
+    const broken = { ...base(1), syncState: { ...base(1).syncState, status: "error" as const, authRequired: true } };
+    setApp({ accounts: withPendingEdits([broken, base(2)]) });
+    calls[0]!.settle();
+    await done;
+    expect(getApp().accounts[0]).toMatchObject({ displayName: "Work", syncState: { authRequired: true } });
+  });
+
   it("two renames that both fail show the backend's name, not the first unsaved one (Codex code review #1)", async () => {
     const one = patchAccount(1, { displayName: "One" });
     const two = patchAccount(1, { displayName: "Two" });

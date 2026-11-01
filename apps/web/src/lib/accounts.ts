@@ -62,9 +62,10 @@ export async function patchAccount(id: number, patch: AccountEdit, options: { op
   try {
     const next = await client.call("accounts.update", { id, ...patch });
     drop();
-    // a field a newer accepted edit set keeps that value (an older answer arriving late doesn't take it back)
-    const base: Account = { ...next };
-    for (const f of Object.keys(p.accepted) as Field[]) if (p.accepted[f]! > mine) (base as unknown as Record<string, unknown>)[f] = p.base[f];
+    // the answer speaks for the fields it saved; the rest stay as the latest event said (Codex code review round 3
+    // #1: a sign-in that failed meanwhile isn't taken back), and a newer accepted edit of a field keeps its value
+    const base: Account = { ...p.base };
+    for (const f of Object.keys(patch) as Field[]) if ((p.accepted[f] ?? 0) < mine) (base as unknown as Record<string, unknown>)[f] = next[f];
     p.base = base;
     for (const f of Object.keys(patch) as Field[]) p.accepted[f] = Math.max(p.accepted[f] ?? 0, mine);
     render(id);
