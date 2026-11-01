@@ -21,8 +21,6 @@ const IDS_SLICE = { ...BULK_SLICE, initial: 200, floor: 20, ceiling: 5000 };
 /** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ 256 KB). */
 export const EXPORT_TEXT_MAX = 1024 * 1024;
 export const EXPORT_IDLE_MS = 60_000;
-/** Messages read from the store at a time (their bodies held only until they're written). */
-const BATCH = 25;
 
 interface Session {
   id: string;
@@ -31,8 +29,6 @@ interface Session {
   ids: Float64Array;
   /** the next id to read */
   at: number;
-  /** read ahead, not written yet */
-  batch: ExportMessage[];
   /** the message being written */
   current: AsyncGenerator<string, MboxStats> | null;
   done: number;
@@ -66,7 +62,7 @@ export class FolderExports {
       const name = await this.nameOf(target);
       const { ids, dates } = await this.resolve(target, superseded);
       if (superseded()) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
-      const session: Session = { id: `export-${ticket}-${Math.random().toString(36).slice(2, 10)}`, clientId, ids: await sortByDate(ids, dates, () => this.b.yieldTurn()), at: 0, batch: [], current: null, done: 0, missingAttachments: 0, partialBodies: 0, busy: false, ended: false, timer: null };
+      const session: Session = { id: `export-${ticket}-${Math.random().toString(36).slice(2, 10)}`, clientId, ids: await sortByDate(ids, dates, () => this.b.yieldTurn()), at: 0, current: null, done: 0, missingAttachments: 0, partialBodies: 0, busy: false, ended: false, timer: null };
       this.sessions.set(session.id, session);
       this.touch(session);
       return { exportId: session.id, total: session.ids.length, name };
@@ -86,7 +82,7 @@ export class FolderExports {
       let size = 0;
       while (!s.ended && size < EXPORT_TEXT_MAX && (pieces.length === 0 || performance.now() - started < NEXT_MS)) {
         if (!s.current) {
-          const m = await this.nextMessage(s);
+          const m = await this.nextMessage(s, started);
           if (!m) break;
           s.current = mboxMessage(toMbox(m), (attachment, index) => this.chunk(m, attachment, index));
         }
@@ -102,7 +98,7 @@ export class FolderExports {
         }
       }
       if (s.ended) throw new RpcError("CANCELLED", L("errors.folderExport.cancelled"));
-      const finished = !s.current && s.batch.length === 0 && s.at >= s.ids.length;
+      const finished = !s.current && s.at >= s.ids.length;
       const out = { text: pieces.join(""), done: s.done, total: s.ids.length, finished, missingAttachments: s.missingAttachments, partialBodies: s.partialBodies };
       if (finished) this.end(s);
       return out;
@@ -138,7 +134,6 @@ export class FolderExports {
     s.ended = true;
     if (s.timer) clearTimeout(s.timer);
     s.timer = null;
-    s.batch = [];
     // a message half written lets go of what it holds
     void s.current?.return({ missingAttachments: 0, partialBody: false }).catch(() => {});
     s.current = null;
@@ -173,15 +168,18 @@ export class FolderExports {
     return { ids, dates };
   }
 
-  /** the next message still here (gone ones are skipped) */
-  private async nextMessage(s: Session): Promise<ExportMessage | null> {
-    while (!s.batch.length && s.at < s.ids.length) {
-      const ids = Array.from(s.ids.subarray(s.at, s.at + BATCH));
-      s.at += ids.length;
-      s.batch = await this.b.store.folderExport.messages(ids);
+  /**
+   * the next message still here (gone ones are skipped), read as its writing begins: one read ahead could be deleted
+   * while the one before it was still being written, and was exported anyway (Codex code review round 2 #7). Null:
+   * none left, or the call's time went on gone ones (the next call goes on).
+   */
+  private async nextMessage(s: Session, started: number): Promise<ExportMessage | null> {
+    while (s.at < s.ids.length && performance.now() - started < NEXT_MS) {
+      const [m] = await this.b.store.folderExport.messages([s.ids[s.at++]!]);
       if (s.ended) return null;
+      if (m) return m;
     }
-    return s.batch.shift() ?? null;
+    return null;
   }
 
   private async chunk(m: ExportMessage, attachment: number, index: number): Promise<string | null> {

@@ -121,6 +121,23 @@ describe("folders.export (plan 107)", () => {
     expect(subjects(text).at(-1)).toBe("Big");
   });
 
+  it("a message deleted while the one before it is still being written isn't in it (Codex code review round 2 #7)", async () => {
+    const { client, backend, gmail } = await setup();
+    await ingest(backend.store, [
+      msg({ accountId: gmail, providerMsgId: "long", providerThreadId: "a", subject: "Long", date: NOW - 2000, bodyText: "word ".repeat(800_000) }),
+      msg({ accountId: gmail, providerMsgId: "next", providerThreadId: "b", subject: "Next", date: NOW - 1000 }),
+    ]);
+    const gone = (await backend.store.debug.snapshot()).messages.find((m) => m.providerMsgId === "next")!.id;
+    const { exportId } = await client.call("folders.exportStart", { accountId: gmail, folder: null, view: "inbox" });
+    const { text, calls, last } = await drain(client, exportId, async (i) => {
+      if (i === 0) await backend.store.sync.remove([gone]);
+    });
+    // the first message alone took more than one call, and the deletion came between them
+    expect(calls[0]!.done).toBe(0);
+    expect(subjects(text)).toEqual(["Long"]);
+    expect(last).toMatchObject({ done: 1, total: 2, finished: true });
+  });
+
   it("cancel ends it; a new start from the same client ends the last; another client can't touch it", async () => {
     const { client, connect, backend, gmail } = await setup();
     await ingest(backend.store, Array.from({ length: 30 }, (_, i) => msg({ accountId: gmail, providerMsgId: `c${i}`, providerThreadId: `c${i}`, bodyText: "x".repeat(60_000) })));
