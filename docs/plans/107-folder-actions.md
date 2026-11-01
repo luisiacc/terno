@@ -1,6 +1,6 @@
 # Plan 107: creating folders, and a folder's right-click menu
 
-- **Status:** planned.
+- **Status:** done (see "Implementation notes", the Codex code review rounds and "Known edge cases").
 - **Builds on:** plan 106 (the account menu, `data-context-menu` + Shift+F10 on sidebar rows), plans 67/68 (an account's standard and own folders).
 - **Request (verbatim):** "we also need to , on hover, show a icon on the far right , when the account is expanded,to add a folder, and laso each folder should have the ability to create subfolders so they'll need that hover too. folders right click menu should have: - export mailbox - mark as favorite (moves it sticky on top below the "Starred") - delete - rename maybe not on that order but those should be there"
 - **Decisions asked (2026-11-01):**
@@ -222,6 +222,42 @@ Codex (plan critique, 12 points) checked the plan against the code. Changes:
       - the target isn't a role mailbox or INBOX, and is an own folder in that `LIST`
     - Gmail: the raw catalog, the same way, and a target must be a user label.
     - The UI checks only what it knows: empty, length, "/" on Gmail, and siblings shown. Everything else comes back as an error under the field.
+
+## Implementation notes
+
+- **Built by three tracks, merged by rebase:** the backend and providers (create, rename and delete for IMAP, Gmail and the demo; the per-account gate; favorites), the export (the serializer, the store reads, the backend sessions, the desktop file stream, the web picker) and the UI (the hover "+", the name fields, the menus, favorites).
+- **Rename (revision 3 superseded):** since plan 45's identity rules, the vanished-folder path doesn't re-identify a renamed folder's mail. A rename records a proof (the old path and generation) so the next pass re-places it. A carried copy of its threads (`folders.carry`) and generation-qualified aliases (`Folder.aliases`, SQLite migration 42 `folder_aliases`) keep the renamed folder whole until then.
+- **Generation exclusions:** per-folder exclusions (`Folder.except`, SQLite migration 41) keep a pending record's generation out of a reused path's membership, counts and exports.
+- **Favorites:** written only through `folders.favorite` and the backend's revisioned `favoriteFolders` event. A settings answer never puts back an older list.
+- **Copy:** sentence case, like the other menus. A Spanish "Delete" is "Borrar" here (Settings' "Quitar" is for accounts).
+- **Icons:** `FolderPlus` was added to the icon set.
+
+## Codex code review, rounds 1–3 (UI and early backend)
+
+Every fix below has a test that fails without it.
+
+- **Round 1:**
+  - Backend agent: IMAP delete vs identity holds (not real: the stores skip held messages; a guard test was added), mbox long lines, favorites that fill the limit, IndexedDB export rescans, the desktop temp file on reload.
+  - UI: a slow answer closed a newer field (each edit now has an id); Rename from a closed account (it opens); a new folder past the first batch (kept mounted until focused); a blur stealing the focus; following a rename (the reader, selection and filter stay).
+- **Round 2:**
+  - Backend: special-use mailboxes in a subtree; the delete record written before DELETE; long conversations in export reads; read-ahead after a delete; cancel during the desktop's finalization; a sink opened after cancel.
+  - UI: a field's text, error and pending state outlive its row; List layout keeps the conversation and its history entry; the renamed folder's threads are carried (`folders.carry`); siblings are checked by path; a delete's favorites leave this window.
+- **Round 3:**
+  - Backend: a lost RENAME answer and chained renames keep their proof.
+  - UI: the delete dialog always says what's inside goes; a pending field can't send twice; IndexedDB carry is one live walk; there's one current row for a favorite.
+
+## Codex code review, final round (28)
+
+The user capped the loop after round 27: one more round, with very rare findings recorded rather than fixed.
+
+1. **Fixed (plausible):** the export rewrote an address with a quoted local part (`"a "@example.com` → `"a"@example.com`, another mailbox). Whitespace and angle brackets are now taken out only outside quotes, and a nameless quoted address is written inside angle brackets (the only form that reads back whole). Its test round-trips from the incoming parser to PostalMime and failed before.
+2. **Recorded, not fixed (rare):** see the first known edge case below.
+
+## Known edge cases (left on purpose)
+
+- **A rename followed by a delete-and-recreate elsewhere** (final review #2): after Terno's RENAME, another app deletes and recreates the destination in the window between Terno's STATUS and its catalog read. The direct answer still counts the move as proven, so the old folder's threads show in the unrelated new folder until the next sync succeeds. Recovery already checks this. The fix would apply the same generation check to the direct answer.
+- **On a server that changes UIDVALIDITY on rename:** the renamed folder's mail stays held (kept with its identity and body, shown in no folder) until the server's copy is matched to it again. This is plan 68's existing behaviour for any UIDVALIDITY reset.
+- **Mail moved out of a folder by another app before it's deleted here:** it keeps its identity but stays held, out of the Inbox list, until a pass proves where it is (round 4 #1), as the vanished-folder logic already does.
 
 ## Codex code review, round 4
 

@@ -301,6 +301,15 @@ describe("mbox (plan 107)", () => {
     expect(ok.text).not.toContain("X-Terno-Omitted-Address");
   });
 
+  it("an address with a quoted local part keeps its spaces from the incoming message to the export (final review #1)", async () => {
+    const parsed = await parseRaw(['From: <"a "@example.com>', 'To: Luis <"luis b"@example.com>', "Subject: hi", "", "hola", ""].join("\r\n"));
+    const { text } = await serialize({ ...base, from: parsed.from, to: parsed.to, cc: [], replyTo: [] });
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.from?.address).toBe(parsed.from.email);
+    expect(email.to?.[0]?.address).toBe(parsed.to[0]!.email);
+    expect(parsed.from.email).toContain(" ");
+  });
+
   it("a name that escaping lengthens is measured as written: quotes and backslashes keep every line within 998 (Codex code review round 26 #3)", async () => {
     const read: MboxChunkReader = async () => bytesBase64(new Uint8Array([1, 2, 3]));
     const quotes = '"'.repeat(800);

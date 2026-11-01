@@ -213,8 +213,28 @@ const ADDRESS_MAX = 900;
 /** an addr-spec as written, "" when there's none, null when it's over ADDRESS_MAX (one that long isn't cleaned) */
 function boundedEmail(email: string): string | null {
   if (email.length > 4 * ADDRESS_MAX) return null;
-  const e = asciiEmail(oneLine(email).replace(/[<>\s]/g, ""));
+  const e = asciiEmail(outsideQuotes(oneLine(email)));
   return e.length <= ADDRESS_MAX ? e : null;
+}
+
+/**
+ * Angle brackets and whitespace taken out of an address, but not inside a quoted local part, where they're the
+ * address itself (final review: `"a "@example.com` is another mailbox than `"a"@example.com`).
+ */
+function outsideQuotes(email: string): string {
+  let out = "";
+  let quoted = false;
+  for (let i = 0; i < email.length; i++) {
+    const ch = email[i]!;
+    if (quoted && ch === "\\" && i + 1 < email.length) {
+      out += ch + email[++i];
+      continue;
+    }
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && (ch === "<" || ch === ">" || /\s/.test(ch))) continue;
+    out += ch;
+  }
+  return out;
 }
 
 /** Each address's words (its name's, then `<email>`), a comma after all but the last. */
@@ -224,7 +244,8 @@ function* addressWords(items: readonly { name: string; email: string }[]): Gener
     const comma = i < items.length - 1 ? "," : "";
     const name = oneLine(a.name).trim();
     if (!name) {
-      yield `${email}${comma}`;
+      // a quoted local part only reads back whole inside angle brackets
+      yield email.includes('"') ? `<${email}>${comma}` : `${email}${comma}`;
       continue;
     }
     // measured as written: escaping can double a name (Codex code review round 26 #3: 800 quotes made a 1,606-character To line)
