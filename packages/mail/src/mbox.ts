@@ -125,6 +125,8 @@ function* encodedWords(v: string): Generator<string, void> {
 
 /** A word longer than this can't stay on one line (RFC 5322's 998): it goes as encoded words, which fold. */
 const LONG = 900;
+/** RFC 5322's longest line, its CRLF aside */
+const LINE_MAX = 998;
 
 /**
  * A text value's words: ASCII as it is, the rest (and an over-long word) as encoded words. A word carries the spaces
@@ -225,8 +227,10 @@ function* addressWords(items: readonly { name: string; email: string }[]): Gener
       yield `${email}${comma}`;
       continue;
     }
-    if (!plain(name) || name.length > LONG) yield* encodedWords(name);
-    else yield /[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name;
+    // measured as written: escaping can double a name (Codex code review round 26 #3: 800 quotes made a 1,606-character To line)
+    const word = plain(name) && /[()<>[\]:;@\\,."]/.test(name) ? `"${name.replace(/["\\]/g, "\\$&")}"` : name;
+    if (!plain(name) || word.length > LONG) yield* encodedWords(name);
+    else yield word;
     yield `<${email}>${comma}`;
   }
 }
@@ -281,10 +285,14 @@ function* partHeaders(a: MboxAttachment, cid: string | null): Generator<string, 
   const v = oneLine(a.filename).trim() || "attachment";
   const type = mimeType(a.mime);
   const disposition = cid ? "inline" : "attachment";
-  if (plain(v) && v.length <= LONG) {
-    const q = `"${v.replace(/["\\]/g, "\\$&")}"`;
-    yield `Content-Type: ${type}; name=${q}\n`;
-    yield `Content-Disposition: ${disposition}; filename=${q}\n`;
+  // measured as written, escapes and the header's own text with it (Codex code review round 26 #3: 800 quotes made
+  // a 1,644-character Content-Disposition line)
+  const q = plain(v) && v.length <= LONG ? `"${v.replace(/["\\]/g, "\\$&")}"` : null;
+  const typeLine = q && `Content-Type: ${type}; name=${q}`;
+  const dispositionLine = q && `Content-Disposition: ${disposition}; filename=${q}`;
+  if (typeLine && dispositionLine && typeLine.length <= LINE_MAX && dispositionLine.length <= LINE_MAX) {
+    yield `${typeLine}\n`;
+    yield `${dispositionLine}\n`;
     return;
   }
   // encoded words for the readers that don't follow RFC 2231, folded inside their quotes; RFC 2231 (in continuations

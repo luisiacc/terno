@@ -301,6 +301,27 @@ describe("mbox (plan 107)", () => {
     expect(ok.text).not.toContain("X-Terno-Omitted-Address");
   });
 
+  it("a name that escaping lengthens is measured as written: quotes and backslashes keep every line within 998 (Codex code review round 26 #3)", async () => {
+    const read: MboxChunkReader = async () => bytesBase64(new Uint8Array([1, 2, 3]));
+    const quotes = '"'.repeat(800);
+    const slashes = `${"\\".repeat(450)}x`;
+    const { text } = await serialize({
+      ...base,
+      to: [{ name: quotes, email: "luis@example.com" }, { name: slashes, email: "ana@example.com" }],
+      attachments: [
+        { filename: `${quotes}.txt`, mime: "text/plain", size: 3, contentId: null, stored: true },
+        { filename: `${slashes}.txt`, mime: "text/plain", size: 3, contentId: null, stored: true },
+      ],
+    }, read);
+    for (const line of text.split("\n")) expect(line.length).toBeLessThanOrEqual(998);
+    const email = await PostalMime.parse(readMbox(text)[0]!);
+    expect(email.to).toEqual([expect.objectContaining({ name: quotes, address: "luis@example.com" }), expect.objectContaining({ name: slashes, address: "ana@example.com" })]);
+    expect(email.attachments.map((a) => a.filename)).toEqual([`${quotes}.txt`, `${slashes}.txt`]);
+    // a short one still goes quoted, as it is
+    const short = await serialize({ ...base, to: [{ name: 'Luis "L" C.', email: "luis@example.com" }] });
+    expect(short.text).toContain('To: "Luis \\"L\\" C." <luis@example.com>\n');
+  });
+
   it("folding keeps runs of spaces in a subject and a missing attachment's name (Codex code review round 22 #2)", async () => {
     const long = `Invoice  42 ${"word  ".repeat(30)}end   x`;
     const { text } = await serialize({
