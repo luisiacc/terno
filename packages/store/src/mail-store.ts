@@ -512,6 +512,21 @@ export interface MailStore {
     rebuild(limit: number): Promise<{ more: boolean; touched: number[] }>;
   };
 
+  /**
+   * Plan 107: what an .mbox export of a folder reads, from this computer's copy. A folder holds the messages that
+   * carry its key (a Gmail label, an IMAP location), never in trash or spam; a standard row the account's messages
+   * in that place (inbox, sent, archive: neither trash nor spam; spam; trash), drafts never.
+   */
+  folderExport: {
+    /**
+     * One stretch of the place: up to `limit` of its threads after thread `after` (by id), and the messages there
+     * that are in it (unordered). `next`: the last thread read; null: none left.
+     */
+    ids(target: import("./types").FolderExportTarget, after: number, limit: number): Promise<{ messages: { id: number; date: number }[]; next: number | null }>;
+    /** these messages (a batch), in this order; gone ones are left out */
+    messages(ids: readonly number[]): Promise<import("./types").ExportMessage[]>;
+  };
+
   categories: {
     list(): Promise<Category[]>;
     exists(id: number): Promise<boolean>;

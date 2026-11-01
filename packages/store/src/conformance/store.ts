@@ -22,6 +22,7 @@ import { defineViewUnreadConformance } from "./view-unread";
 import { defineFlagIntentConformance } from "./flag-intents";
 import { defineDurableFlagIntentConformance } from "./durable-flag-intents";
 import { defineFolderConformance } from "./folders";
+import { defineFolderExportConformance } from "./folder-export";
 import { defineStorageConformance } from "./storage";
 
 export interface StoreHarness {
@@ -54,6 +55,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
   defineFlagIntentConformance(name, harness);
   defineDurableFlagIntentConformance(name, harness);
   defineFolderConformance(name, harness);
+  defineFolderExportConformance(name, harness);
   defineStorageConformance(name, harness);
   const open: MailStore[] = [];
   const fresh = async () => {

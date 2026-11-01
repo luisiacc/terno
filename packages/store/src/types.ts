@@ -364,3 +364,27 @@ export interface DraftInput {
   showSourceContext?: boolean;
   uiState?: "open" | "collapsed";
 }
+
+/** Plan 107: what an .mbox export reads: an account's own folder (`folder`: its key) or one of its standard rows */
+export type FolderExportTarget = { accountId: number; folder: string; view?: undefined } | { accountId: number; view: import("@terno/core").FolderView; folder?: undefined };
+
+/** Plan 107: a message as the .mbox export writes it, from this computer's copy */
+export interface ExportMessage {
+  id: number;
+  accountId: number;
+  rfcMessageId: string | null;
+  inReplyTo: string | null;
+  references: string[];
+  from: Address;
+  to: Address[];
+  cc: Address[];
+  replyTo: Address[];
+  date: number;
+  subject: string;
+  listId: string | null;
+  bodyText: string | null;
+  bodyHtml: string | null;
+  bodyState: "none" | "partial" | "full";
+  /** `assetId`: its bytes are here (a complete stored asset); null: they aren't */
+  attachments: { filename: string; mime: string; size: number; contentId: string | null; assetId: string | null }[];
+}

@@ -1,4 +1,5 @@
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
+import { exportIds, exportMessages } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
 class CredentialAdmissionExpired extends Error {}
 import { recipientReceiptParts, reserveRecipientReceipt, publishRecipientReceipt, retireRecipientSlice, finishRecipientRetirement, requireRecoverySource, rejectedRecipientSelection } from "@terno/store";
@@ -1518,6 +1519,18 @@ export class IdbMailStore implements MailStore {
         await writeMeta(this.idb, { foldersPending: false });
       }
       return r;
+    },
+  };
+
+  readonly folderExport: MailStore["folderExport"] = {
+    ids: (target, after, limit) => this.read(() => exportIds(this.c, target, after, limit)),
+    messages: async (ids) => {
+      await this.settled();
+      // exclusive: no command can evict a body between reading it and the message
+      return this.exclusive(async () => {
+        await this.readBodies(ids);
+        return exportMessages(this.c, ids);
+      });
     },
   };
 
