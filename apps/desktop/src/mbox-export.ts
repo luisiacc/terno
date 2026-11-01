@@ -29,6 +29,10 @@ export function registerMboxExport(deps: MboxExportDeps): void {
   ipcMain.handle("terno:export-begin", async (event, name: unknown): Promise<MboxBeginResult> => {
     if (!deps.trusted(event) || typeof name !== "string") return { status: "failed" };
     const file = mboxFileName(name.slice(0, 1000), t("folder.export.filter"));
+    // watched from before the panel, so a page that ends while it's open or the file opens is heard (Codex code
+    // review round 5 #5: cleanup ran before the export was registered, and the file was left open)
+    watch(event.sender);
+    const page = files.page(event.sender.id);
     let path = deps.testDir ? join(deps.testDir, file) : null;
     if (!path) {
       const parent = BrowserWindow.fromWebContents(event.sender);
@@ -36,10 +40,10 @@ export function registerMboxExport(deps: MboxExportDeps): void {
       const choice = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
       if (choice.canceled || !choice.filePath) return { status: "cancelled" };
       path = choice.filePath;
+      if (files.page(event.sender.id) !== page) return { status: "cancelled" };
     }
     try {
-      watch(event.sender);
-      return { status: "ready", id: await files.begin(event.sender.id, path) };
+      return { status: "ready", id: await files.begin(event.sender.id, path, page) };
     } catch {
       return { status: "failed" };
     }

@@ -39,7 +39,7 @@ export function mboxFileName(name: string, fallback: string): string {
  * `contents` is the window's WebContents.
  */
 export function abortWithPage(files: MboxFiles, owner: number, contents: EventEmitter): void {
-  const end = () => void files.abortAll(owner);
+  const end = () => void files.endPage(owner);
   contents.on("did-start-navigation", (_event: unknown, _url: string, inPlace: boolean, main: boolean) => { if (main && !inPlace) end(); });
   contents.on("render-process-gone", end);
   contents.once("destroyed", end);
@@ -47,16 +47,36 @@ export function abortWithPage(files: MboxFiles, owner: number, contents: EventEm
 
 export class MboxFiles {
   private readonly pending = new Map<string, Pending>();
+  /** each window's page generation: one more each time its page ends */
+  private readonly pages = new Map<number, number>();
 
   /** how many are open (tests) */
   get size(): number {
     return this.pending.size;
   }
 
-  async begin(owner: number, path: string): Promise<string> {
+  /** the window's page now: an export begun under it is ended with it */
+  page(owner: number): number {
+    return this.pages.get(owner) ?? 0;
+  }
+
+  /** the window's page went (a reload, a crash, the window gone): its exports end, and any still beginning */
+  async endPage(owner: number): Promise<void> {
+    this.pages.set(owner, this.page(owner) + 1);
+    await this.abortAll(owner);
+  }
+
+  /** `page`: the window's page when the export was asked for (before the save panel) */
+  async begin(owner: number, path: string, page = this.page(owner)): Promise<string> {
     await this.abortAll(owner);
     const tmp = tempSibling(dirname(path), randomBytes(8).toString("hex"));
     const file = await open(tmp, "wx", 0o600);
+    // the page ended while this opened: its cleanup ran before the file was here (Codex code review round 5 #5)
+    if (this.page(owner) !== page) {
+      await file.close().catch(() => {});
+      await rm(tmp, { force: true });
+      throw new Error("the page that asked for this export is gone");
+    }
     const id = randomUUID();
     this.pending.set(id, { id, owner, path, tmp, file, queue: Promise.resolve(), failed: false, ending: false, aborted: false });
     return id;

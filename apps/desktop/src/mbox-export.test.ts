@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
+  showSaveDialog: null as null | ((options: unknown) => Promise<{ canceled: boolean; filePath?: string }>),
 }));
 vi.mock("electron", () => ({
   app: { getPath: () => tmpdir() },
   BrowserWindow: { fromWebContents: () => null },
-  dialog: {},
+  dialog: { showSaveDialog: (options: unknown) => electron.showSaveDialog!(options) },
   ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => electron.handlers.set(channel, fn) },
 }));
 
@@ -66,5 +67,33 @@ describe("mbox export in main (plan 107)", () => {
     t.sender.emit("destroyed");
     await t.settled();
     expect(t.temps()).toEqual([]);
+  });
+
+  it("a page that ends while the file opens leaves no temp file (Codex code review round 5 #5)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-mbox-export-"));
+    dirs.push(dir);
+    registerMboxExport({ trusted: () => true, testDir: dir });
+    const sender = Object.assign(new EventEmitter(), { id: 8 });
+    const begin = electron.handlers.get("terno:export-begin")!({ sender }, "Clients") as Promise<{ status: string }>;
+    // the reload lands while the temp file is being opened
+    sender.emit("did-start-navigation", {}, "app://terno/", false, true);
+    expect((await begin).status).toBe("failed");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it("a page that ends while the save panel is open begins nothing (Codex code review round 5 #5)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-mbox-export-"));
+    dirs.push(dir);
+    let choose!: (r: { canceled: boolean; filePath?: string }) => void;
+    electron.showSaveDialog = () => new Promise((resolve) => (choose = resolve));
+    registerMboxExport({ trusted: () => true, testDir: null });
+    const sender = Object.assign(new EventEmitter(), { id: 9 });
+    const begin = electron.handlers.get("terno:export-begin")!({ sender }, "Clients") as Promise<{ status: string }>;
+    sender.emit("render-process-gone", {}, { reason: "crashed" });
+    choose({ canceled: false, filePath: join(dir, "Clients.mbox") });
+    expect((await begin).status).toBe("cancelled");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(readdirSync(dir)).toEqual([]);
   });
 });
