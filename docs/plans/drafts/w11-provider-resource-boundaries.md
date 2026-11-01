@@ -16,13 +16,13 @@ Current Gmail durable enumeration, cached refresh and history controls are lande
 
 ## Design
 
-New exact mail qualification file uses actual Gmail adapter, native Response boundary with strict synthetic routes, real temporary SQLite persistence and current Backend fixture API from gmail-catchup.int.test.ts. Generate50k unique messages lazily by request, not50k hydrated bodies. Compare full persisted IDs and thread identities to independent expected sets; instrument incoming admissions/completed credits and sink batches. Attempt initial then invalid-history recovery with graceful reopen under unchanged public20second test deadline. Join work on teardown even after timeout. No claim of functional completion if deadline or contract prevents it.
+New exact mail qualification file uses actual Gmail adapter, native Response boundary with strict synthetic routes, real temporary SQLite persistence and current Backend fixture API from gmail-catchup.int.test.ts. Generate50k unique messages lazily by request, not50k hydrated bodies. Compare full persisted IDs and thread identities to independent expected sets; instrument incoming admissions/completed credits and sink batches. Attempt initial then invalid-history recovery with graceful reopen under unchanged 20-second Vitest per-case timeout. Join work on teardown even after timeout. A harness timeout leaves functional qualification incomplete; it establishes no product deadline or throughput defect.
 
 Independent blocked sink witness observes actual acquired readers, normalized retained byte charges and checkpoint state. An oracle mutation removes release through a test-local existing admission seam and must fail the identical ownership predicate; restore the seam in finally. This is oracle sensitivity, not product RED. Any product RED is preserved as an inert patch rather than installed in main's discovered suite.
 
 ## Tests and performance
 
-Every test inherits NODE_OPTIONS plus --require=/tmp/terno-network-guard.cjs. Exact-file Vitest config retains20s public ceiling and avoids global setup; only normal incoming worker preparation if imported. Types include new test normally; exact-file lint. Native read-only Sol/high critique once, at most two Standards+Spec code rounds. No timing qualification, RSS threshold, full gates, perf/UIperf, external API, browser or real profile.
+Every test inherits NODE_OPTIONS plus --require=/tmp/terno-network-guard.cjs. Exact-file Vitest config retains the default20s per-case harness timeout and avoids global setup; only normal incoming worker preparation if imported. Types include new test normally; exact-file lint. Native read-only Sol/high critique once, at most two Standards+Spec code rounds. No timing qualification, RSS threshold, full gates, perf/UIperf, external API, browser or real profile.
 
 ## Out of scope / disposition limits
 
@@ -41,12 +41,12 @@ Evidence directory `/tmp/terno-w11-resource/`. All test commands appended inheri
 - `qualification-attempt.log`: all50k exact persisted message IDs and distinct local threads reached; body oracle failed because PostalMime appends newline. Fixture correction preserves an independent exact body expectation.
 - `qualification-body-correction.log`: initial all50k exact bodies/IDs/threads and terminal10 reached, then reader observer failed at50000. Backend network policy first acquires/releases a native reader for admission, then acquires a physical reader whose EOF releases capacity but whose lock is not explicitly released. Counting cumulative unreleased locks as active readers is invalid; it is not proof of heap leakage.
 - `qualification-terminal-correction.log`: exact initial coverage, expiry404, late last-identity minimal503, saved refreshAfter=m49949, graceful nativeSQLite reopen, exactly final50 refresh reads, full persisted coverage/bodies and terminal10 all reached. Resource observer then failed12<=6 because released admission readers were counted until promise microtasks ran. This is a failed fixture, not aggregate GREEN or productRED.
-- `qualification-final.log`: observer synchronously retires released locks and observes terminal promises; exact message→provider-thread pairing and recovery flags added. Combined actual50k initial/recovery **TIMED OUT at unchanged20000ms**, command exited1 naturally, cleanup joined,20.568s test /21.14s invocation. No reduced data, longer timeout, prewarm or retry after this deadline result. Full combined current-source qualification remains incomplete; the inert patch below preserves the attempt. Earlier reached assertions are finite observations, not a passing final source run. Exact dependency: a reliable complete actual-adapter fixture within existing public20s command contract; no claim that every alternative fixture is impossible.
+- `qualification-final.log`: observer synchronously retires released locks and observes terminal promises; exact message→provider-thread pairing and recovery flags added. Combined actual50k initial/recovery **TIMED OUT at unchanged20000ms**, command exited1 naturally, cleanup joined,20.568s test /21.14s invocation. No reduced data, longer timeout, prewarm or retry followed in that original combined-fixture run. Full combined current-source qualification remains incomplete; the inert patch below preserves the attempt. Earlier reached assertions are finite observations, not a passing final source run. Correction: this is a test-harness timeout, not a public command or product contract. The witness called backend.syncAccount directly, not RpcClient with its300s timeout. Ordered meaningful phases can qualify this functional flow without changing any case, hook, command or product deadline. No product blocker or user timeout-change requirement follows.
 - `ownership-final.log`:3/3 GREEN. Independent actual adapter50-message blocked-ingest control proves credited normalized data survives blocked write, page0 remains unadvanced, all50 credit releases reach0 after durable ingestion. This uses a minimal provider-store seam and counting sink, **not** real persistence or50k coverage.
 - Same-predicate oracle: `oracle-red.log` exits1 with ordinary AssertionError held51060!=0 after real release suppression; terminal history10/written50 already reached. Exact new test source restored in Python finally (SHAf555742ea6f034b46c614edbb17bd746e083de650a68a95d7308968d4ea68e8b at that point). Checked-in negative control catches that exact error and runs suppressed real releases in finally. No production mutation or .fails/skip. One other test was selection-excluded by `-t`, not an authored safety skip.
 - Independent blocked-promotion control drives six actual incoming native streams to a1MiB chunk each while the existing promotion slot is occupied. Six unique delivered backing buffers total6291456bytes while completed charges=0, and one initial checkpoint only. Reset rejects work; all six native sources cancel and test ledger clears. Source retains chunk while awaiting promotion. This is an early ownership-category witness, not valid complete MIME parsing or50k completion; test producer also references those buffers, so ledger clearing does not prove GC/physical reclamation. No incoming cutoff introduced.
 
-Recommend **T09/S52 remain needs-work with finite dependency disposition**, not general resource/performance clearance. T09 has separately parked reader architecture and current IMAP aggregate inventory/raw ownership contracts. S52 has a concrete public-deadline-limited current50k attempt, separately passing credit/blocked-source controls, and these exact missing boundaries. Root alone changes worklist/counts and integrates evidence. Historical CPU/event-loop/UI failures remain unwaived.
+Recommend **T09/S52 remain needs-work with finite dependency disposition**, not general resource/performance clearance. T09 has separately parked reader architecture and current IMAP aggregate inventory/raw ownership contracts. S52 has a concrete combined-fixture-timeout-limited current50k attempt, separately passing credit/blocked-source controls, and these exact missing boundaries. Root alone changes worklist/counts and integrates evidence. Historical CPU/event-loop/UI failures remain unwaived.
 
 ## Existing limits and remaining measurable boundaries
 
@@ -68,11 +68,11 @@ No production budget or contract is added here. Missing measurable boundaries ar
 
 Commands are recorded with argv/PID/birth/exit/join in `*.process.json` beside logs. Test invocations: `pnpm exec vitest run --config /tmp/terno-w11-resource/exact.config.mts` (full attempt) and `pnpm exec vitest run --config /tmp/terno-w11-resource/ownership.config.mts` (controls). Oracle selects `-t 'releases actual adapter credits'`. NativeBackend normal+lifecycle types include the full new50k test before archival; Mail normal types include the new control file. Strict exact-file oxlint applies only owned files. No full gates/perf/UIperf/build/globalsetup; no worker/report output was changed, all fixture DB directories removed and globals restored. Package initialization automatically installed workspace links and ran existing Electron ensure postinstall, lockfile unchanged; no app/package build was requested.
 
-Process deviations: initial critique invocation used exec's joined session but did not independently record OS PID/birth. Check/test runners captured directPID/birth/argv and joined naturally; early runs had public Vitest deadlines but no outer command timeout. Later runner has600s finite supervision; no signals issued. One prohibited broad `rg --files packages` filename enumeration returned backend paths; no forbidden baseline content was read, copied, edited or staged. Standards process compliance therefore cannot be claimed clean. Exact source checks replaced that discovery pattern. No peer/main/user-plan modifications, fetch/push/landing or children.
+Process deviations: initial critique invocation used exec's joined session but did not independently record OS PID/birth. Check/test runners captured directPID/birth/argv and joined naturally; early runs had Vitest case timeouts but no outer command timeout. Later runner has600s finite supervision; no signals issued. One prohibited broad `rg --files packages` filename enumeration returned backend paths; no forbidden baseline content was read, copied, edited or staged. Standards process compliance therefore cannot be claimed clean. Exact source checks replaced that discovery pattern. No peer/main/user-plan modifications, fetch/push/landing or children.
 
-## Inert full50k deadline RED patch
+## Historical inert combined50k harness-timeout patch
 
-Not registered in the suite and not proposed for landing as a failing test. This is the exact final attempt source (typechecked normally before archival), preserved for Root's dependency decision; no performance diagnosis or production bug attribution follows from its timeout.
+Not registered in the suite and not proposed for landing as a failing test. This is the exact final attempt source (typechecked normally before archival), preserved as the original fixture-timeout evidence; no performance diagnosis or production bug attribution follows from its timeout.
 
 ```diff
 --- /dev/null
@@ -240,10 +240,251 @@ Not registered in the suite and not proposed for landing as a failing test. This
 ```
 
 
-## Final native review and handoff
+## Original R1 review and handoff (historical)
 
-Exactly **one plan critique and one code-review round**, both actual native `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C <checkout> -`. R1 process exited0 naturally/joined; `/tmp/terno-w11-resource/review-r1.log` and `review-r1.process.json`. Complete final read: **0 source P1/P2/P3 findings; Standards sourcePASS, processNOT CLEAN; SpecPASS for evidence-only scope**. Review explicitly leaves T09/S52 incomplete and makes no productRED or full50k/performance claim. No second review needed, no parked-series review consumed/reset. Post-review documentation corrects the source-backed preview constant250 and records native worker512MiB old-heap/30s job settings; no test/runtime changes follow review.
+Exactly **one plan critique and one code-review round**, both actual native `codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort=high -C <checkout> -`. R1 process exited0 naturally/joined; `/tmp/terno-w11-resource/review-r1.log` and `review-r1.process.json`. Complete final read: **0 source P1/P2/P3 findings; Standards sourcePASS, processNOT CLEAN; SpecPASS for evidence-only scope**. Review explicitly leaves T09/S52 incomplete and makes no productRED or full50k/performance claim. At that handoff no second review had run; Root subsequently authorized the sole finalR2 below. No parked-series review consumed/reset. Post-review documentation corrects the source-backed preview constant250 and records native worker512MiB old-heap/30s job settings; no test/runtime changes followed that original R1 handoff before Root’s correction.
 
 Final checks: Mail normal types PASS (`mail-types-final.log`), Backend normal+lifecycle types including exact final archived50k source PASS (`final-types.log`), final active-control exact-file lint PASS (`lint-final.log`); archived full witness exact-file lint also passed before archival (`lint.log`). Three active controls PASS (`ownership-final.log`), oracle mutation ordinaryRED (`oracle-red.log`), exact source restoration in finally; no actual runtime production defect demonstrated. `cleanup.json` records every completed captured check PID absent; final review PID checked separately after its joined exit. No worker, report, app/Vite/package build outputs modified; no signals. Full release/perf/UIperf/e2e/Web/package gates deliberately not run, as requested.
 
-Committed evidence is two paths only: this plan (including inert RED patch) and `packages/mail/src/provider-resource-ownership.test.ts`. Root owns rebase, any retest/ff-only landing and worklist updates. Recommend finite primary disposition: preserve passed credit/blocked-source controls, retain final20s full-adapter deadline RED and exact IMAP/decoder/physical/store dependencies; **T09/S52 stay needs-work**. No request to resume or repair any parked item.
+Original committed evidence was two paths only: this plan (including the inert combined-fixture patch) and `packages/mail/src/provider-resource-ownership.test.ts`. Root owns rebase, any retest/ff-only landing and worklist updates. Recommend finite primary disposition: preserve passed credit/blocked-source controls, retain the original combined-fixture20s timeout and exact IMAP/decoder/physical/store dependencies; **T09/S52 stay needs-work**. No request to resume or repair any parked item.
+
+
+## Root correction and ordered phase qualification (same series)
+
+Root objection: the archived test called `backend.syncAccount` directly. Its20s limit was configured Vitest **per-case harness timeout**, not a public command/RPC deadline (RpcClient300s was not exercised). The previous combined timeout is incomplete fixture evidence, not productRED, throughput regression, or a requirement to change a user/product timeout. All such provenance claims above are corrected; original logs/source remain unchanged.
+
+Rebased the two clean evidence commits from f7fa37df onto actual committed main `e3ebe34aaa106ae866d29fe857e783ce8cf46af2` (Plan97 CI Node24 actions); no user WIP, parked source or production edits imported. New backend file is recovered byte-for-byte from the embedded patch before fixture restructuring (`/tmp/terno-w11-resource/r2/recovered-combined.ts`). The original50k raw ingestion, exact ID→thread pairing/body bytes, initial refresh, expiry404, all50k changed flags, last-identity503, saved checkpoint, reopen, final50 replay and terminal/ownership assertions remain. Added pre-effect empty persistence and exact raw/minimal phase coverage. No fake seeding/prewarming.
+
+Two ordered cases in `describe(..., { concurrent: false }, ...)` (installed Vitest5 has no `describe.sequential` type) share only the fixture's real initial database. Setup and actual provider initial ingestion occur inside case1; case2 explicitly fails if case1 did not complete, never skips. Both retain the unchanged default20s per-case timeout; hooks/commands/deadlines are unchanged. Failure/timeout cancels owned work and releases the blocked gate in afterEach; afterAll joins the phase, closes persistence in finally and removes its exact temporary directory/restores globals. No phase retry after an individual timeout is authorized. New file is included in Backend normal types; lifecycle convention remains unchanged because no DOM-only type exclusion is needed.
+
+Exactly one final native Sol/high Standards+Spec R2 remains; no new critique, no review reset or R3. Existing process deviations remain NOT CLEAN regardless of source review verdict.
+
+
+### Ordered phase attempt: harness timeout, execution stopped
+
+One and only one functional phase invocation: `/tmp/terno-w11-resource/r2/phases.log` and `phases.process.json`, command `pnpm exec vitest run --config /tmp/terno-w11-resource/r2/phases.config.mts`. Both case timeouts remain20000ms; no per-case override/hook/command timeout was extended. The exact config lists the new backend fixture and existing mail ownership controls, serial file execution, no global setup. First attempted `describe.sequential` failed type preflight (installed Vitest5 API), corrected to supported `{ concurrent: false }` before any test execution. No production edits.
+
+**Outcome:2 phase failures /3 ownership-control passes.** Initial case timed out at20000ms (reported20025ms). No initial-completion console marker or downstream exact50k initial coverage/terminal assertions were reached; current attempt cannot supply complete message/thread/body coverage or reader maxima. Recovery case executed its dependency assertion and failed in3ms because initialComplete=false; no recovery provider work ran. Nothing was skipped. The earlier combined-fixture assertions remain historical observations only. Total invocation24.83s is not a performance sample or public RPC deadline. No retry followed this individual phase timeout; no input/timeout reduction, fake seed, prewarm, timing attribution or user timeout-change requirement.
+
+Cancellation/failure propagation ran through afterEach; afterAll joined owned phase work and persistence cleanup. Supervisor recorded directPID19732 with birth/argv, all captured descendant identities, natural exit1, no signals, no captured live processes. Its finite600s command supervision was inherited unchanged from the preceding runner ceiling; the Vitest case timeout, not this supervisor, fired. Temporary native DB cleanup/global restoration completed without hook/teardown errors. No worker or report artifacts emitted. Original `/tmp/terno-w11-resource` files, original combined inert patch and f7fa37df object remain intact; only new `r2/` evidence was added.
+
+Backend normal+lifecycle types PASS for the exact phase fixture before archival (`r2/types.log`, exit0); exact two-file lint PASS (`r2/lint-final.log`, exit0). No configuration exclusions/registrations required. Active credit-control file is byte-unchanged across the rebase/correction and all3cases passed in this invocation; original ordinary release-suppression mutantRED/restoration evidence remains applicable, no new productRED. Existing backend typechecks discover normal compiler inputs only; no prohibited baseline content was manually accessed.
+
+The phase source below is inert because it failed harness qualification. It is **not** installed as a failing suite entry or a proposed runtime regression. Recommendation remains finite partial evidence: actual blocked-credit and6MiB-source controls protected; full current50k initial/recovery qualification incomplete under the tested per-case harness arrangement. The harness limitation is20000ms for the initial phase including real provider ingestion and initial cached refresh plus assertions. This establishes no source boundedness defect or product throughput/deadline requirement. Remaining IMAP aggregate inventory, decoder expansion, cold parts/mirrors, physical ownership after transfer, tombstones and separately parked reader design remain unqualified. Root owns any subsequent fixture-scope decision and T09/S52 disposition; no runtime fix, parked source or new resource policy is proposed.
+
+### Inert ordered phase fixture (one-attempt harness timeout)
+
+Exact source SHA256: 09dd407a31ed6cd8683268947e32bd9e87dfd4594a8033bc52df02a6ca617360. The full flow and assertions remain available for review; the actual first phase timeout prevents qualification of its downstream assertions. No fixture edit or rerun follows this result.
+
+```diff
+--- /dev/null
++++ b/packages/backend/src/provider-resource-boundaries.int.test.ts
+@@ -0,0 +1,207 @@
++import { mkdtempSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
++import { createGmailApiProvider, type ProviderRegistry } from "@terno/mail/portable";
++import { Backend, plaintextCipher } from "./backend";
++
++const COUNT = 50_000;
++const idAt = (i: number) => `m${String(i).padStart(5, "0")}`;
++function mailbox() {
++  const dir = mkdtempSync(join(tmpdir(), "terno-resource-"));
++  const abort = new AbortController();
++  let backend: Backend | undefined, work: Promise<void> | undefined;
++  const expected = Array.from({ length: COUNT }, (_, i) => idAt(i));
++  const expectedSet = new Set(expected);
++  const rawIds: string[] = [], minimalIds: string[] = [];
++  let readers = 0, maxReaders = 0, nativeBytes = 0, maxNativeBytes = 0, unreleasedLocks = 0;
++  const backing = new Map<ArrayBufferLike, number>();
++  let held = 0, maxHeld = 0, active = 0, maxActive = 0, queued = 0, maxQueued = 0;
++  let maxBatch = 0, batches = 0, refused = false, recovery = false;
++  let release!: () => void, entered!: () => void;
++  const blocked = new Promise<void>((resolve) => { release = resolve; });
++  const started = new Promise<void>((resolve) => { entered = resolve; });
++  vi.stubGlobal("fetch", async (input: string | URL | Request) => {
++    const url = new URL(input instanceof Request ? input.url : String(input));
++    if (input instanceof Request && input.method !== "GET") throw new Error("Unexpected synthetic method");
++    if (url.origin !== "https://gmail.googleapis.com" || !url.pathname.startsWith("/gmail/v1/users/me/")) throw new Error(`Unexpected synthetic route ${url.origin}${url.pathname}`);
++    const path = url.pathname.slice("/gmail/v1/users/me".length);
++    if (path === "/profile") return Response.json({ historyId: "10", emailAddress: "me@example.test" });
++    if (path === "/labels") return Response.json({ labels: [] });
++    if (path === "/history") return Response.json(url.searchParams.get("startHistoryId") === "1" ? {} : { historyId: "10" }, { status: url.searchParams.get("startHistoryId") === "1" ? 404 : 200 });
++    if (path === "/messages") {
++      const start = Number(url.searchParams.get("pageToken") ?? 0);
++      expect(url.searchParams.get("maxResults")).toBe("500");
++      if (!Number.isInteger(start) || start < 0 || start >= COUNT || start % 500) throw new Error("Unexpected continuation");
++      return Response.json({ messages: Array.from({ length: 500 }, (_, i) => ({ id: idAt(start + i) })), ...(start + 500 < COUNT && { nextPageToken: String(start + 500) }) });
++    }
++    const id = path.slice("/messages/".length);
++    if (!/^m\d{5}$/.test(id) || !expectedSet.has(id)) throw new Error("Unexpected synthetic identity");
++    if (url.searchParams.get("format") === "minimal") {
++      minimalIds.push(id);
++      if (recovery && id === idAt(COUNT - 1) && !refused) { refused = true; return Response.json({}, { status: 503 }); }
++      return Response.json({ id, labelIds: recovery ? ["INBOX", "UNREAD"] : ["INBOX"] });
++    }
++    if (url.searchParams.get("format") !== "raw") throw new Error("Unexpected synthetic format");
++    rawIds.push(id);
++    const bytes = new TextEncoder().encode(JSON.stringify({ id, threadId: id, labelIds: ["INBOX"], raw: Buffer.from(`From: sender@example.test\r\nSubject: ${id}\r\nMessage-ID: <${id}@example.test>\r\nContent-Type: text/plain\r\n\r\nBody ${id}`).toString("base64url") }));
++    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); controller.close(); } });
++    const getReader = body.getReader.bind(body);
++    Object.defineProperty(body, "getReader", { value: () => {
++      const reader = getReader();
++      readers++; unreleasedLocks++;
++      const owners = backing.get(bytes.buffer) ?? 0;
++      backing.set(bytes.buffer, owners + 1);
++      if (!owners) nativeBytes += bytes.buffer.byteLength;
++      let settled = false;
++      const terminal = () => {
++        if (settled) return; settled = true;
++        readers--;
++        const owners = backing.get(bytes.buffer)! - 1;
++        if (owners) backing.set(bytes.buffer, owners);
++        else { backing.delete(bytes.buffer); nativeBytes -= bytes.buffer.byteLength; }
++      };
++      void reader.closed.then(terminal, terminal);
++      maxReaders = Math.max(maxReaders, readers); maxNativeBytes = Math.max(maxNativeBytes, nativeBytes);
++      const unlock = reader.releaseLock.bind(reader);
++      reader.releaseLock = () => { unreleasedLocks--; terminal(); unlock(); };
++      return reader;
++    } });
++    return new Response(body);
++  });
++  const providers: ProviderRegistry = {
++    create(ctx) {
++      const incoming = ctx.incoming!;
++      const provider = createGmailApiProvider({ ...ctx, incoming: {
++        async acquire(...args) {
++          queued++; maxQueued = Math.max(maxQueued, queued);
++          let owned: () => void;
++          try { owned = await incoming.acquire(...args); } finally { queued--; }
++          active++; maxActive = Math.max(maxActive, active);
++          return () => { active--; owned(); };
++        },
++        promote: incoming.promote!.bind(incoming),
++        retainCompleted(bytes) {
++          const owned = incoming.retainCompleted!(bytes);
++          if (!owned) return;
++          held += bytes; maxHeld = Math.max(maxHeld, held);
++          return () => { held -= bytes; owned(); };
++        },
++      } }, { tokens: { get: async () => "synthetic", invalidate() {} }, buildRaw: async () => new Uint8Array() });
++      return { ...provider, sync: (sink) => provider.sync({ ...sink, signal: AbortSignal.any([sink.signal, abort.signal]), ingest: async (messages, options) => {
++        maxBatch = Math.max(maxBatch, messages.length); batches++;
++        if (batches === 1) { entered(); await blocked; }
++        await sink.ingest(messages, options);
++      } }) };
++    }, async verifyImap() {}, async connectGmail() { throw new Error("Unused synthetic consent"); },
++  };
++  const open = async () => {
++    backend = new Backend({ dbPath: join(dir, "mail.db"), providers, cipher: plaintextCipher, autoSync: false, instantSearch: false, iconTransport: null, version: "test" });
++    await backend.ready;
++    return backend;
++  };
++  let accountId: number;
++  const cursor = async () => (await backend!.store.accounts.config<{ cursor?: unknown }>(accountId))!.config.cursor;
++  const assertIdle = () => {
++    expect(held).toBe(0); expect(active).toBe(0); expect(queued).toBe(0);
++    expect(readers).toBe(0); expect(nativeBytes).toBe(0); expect(backing.size).toBe(0);
++  };
++  const assertCoverage = async (read: (id: string) => boolean) => {
++    const snapshot = await backend!.store.debug.snapshot();
++    const rows = snapshot.messages;
++    const threads = new Map(snapshot.threads.map((t) => [t.id, t.providerThreadId]));
++    expect(snapshot.threads).toHaveLength(COUNT);
++    expect(rows.every((m) => threads.get(m.threadId) === m.providerMsgId)).toBe(true);
++    expect(rows.every((m) => m.isRead === read(m.providerMsgId!))).toBe(true);
++    expect(rows.map((m) => m.providerMsgId).sort()).toEqual(expected);
++    expect(new Set(rows.map((m) => m.threadId)).size).toBe(COUNT);
++    expect(rows[0]!.bodyText).toBe(`Body ${rows[0]!.providerMsgId}\n`);
++    expect(rows.every((m) => m.bodyText === `Body ${m.providerMsgId}\n`)).toBe(true);
++  };
++  const metrics = () => ({ count: COUNT, maxBatch, batches, maxActive, maxQueued, maxReaders, maxNativeBytes, unreleasedLocks, maxHeld, raw: rawIds.length });
++  const cancel = () => { release(); abort.abort(); };
++  return {
++    cancel,
++    async close() {
++      cancel();
++      try { await work; }
++      finally {
++        try { await backend?.stop(); }
++        finally { vi.unstubAllGlobals(); rmSync(dir, { recursive: true, force: true }); }
++      }
++    },
++    async initial() {
++      const first = await open();
++      const { account } = await first.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
++      accountId = account.id;
++      await (await first.provider(accountId))!.verify();
++      work = first.syncAccount(accountId);
++      try {
++        await Promise.race([started, work.then(() => { throw new Error("Initial ingest never blocked"); })]);
++        abort.signal.throwIfAborted();
++        expect(held).toBeGreaterThan(0);
++        expect(held).toBeLessThanOrEqual(4 * 1024 * 1024);
++        expect(await cursor()).toMatchObject({ reconciliation: { stage: "enumerate", pages: 0 } });
++        expect((await first.store.debug.snapshot()).messages).toEqual([]);
++      } finally { release(); }
++      await work; abort.signal.throwIfAborted();
++      expect(rawIds.slice().sort()).toEqual(expected);
++      expect(minimalIds.slice().sort()).toEqual(expected);
++      await assertCoverage(() => true);
++      expect(await cursor()).toEqual({ historyId: "10" });
++      assertIdle();
++      console.log("initial", JSON.stringify(metrics()));
++    },
++    async recover() {
++      await backend!.store.accounts.setCursor(accountId, { historyId: "1" });
++      recovery = true; minimalIds.length = 0;
++      work = backend!.syncAccount(accountId); await work; abort.signal.throwIfAborted();
++      expect(refused).toBe(true);
++      expect(minimalIds.slice().sort()).toEqual(expected);
++      expect(await cursor()).toMatchObject({ historyId: "1", reconciliation: { stage: "refresh", refreshAfter: idAt(COUNT - 51) } });
++      await assertCoverage((id) => id > idAt(COUNT - 51));
++      assertIdle();
++      await backend!.stop(); await open();
++      minimalIds.length = 0;
++      work = backend!.syncAccount(accountId); await work; abort.signal.throwIfAborted();
++      expect(minimalIds.slice().sort()).toEqual(expected.slice(-50));
++      expect(rawIds.slice().sort()).toEqual(expected);
++      await assertCoverage(() => false);
++      expect(await cursor()).toEqual({ historyId: "10" });
++      console.log("recovery", JSON.stringify(metrics()));
++      expect(maxBatch).toBeLessThanOrEqual(50); expect(maxActive).toBeLessThanOrEqual(6);
++      expect(maxReaders).toBeLessThanOrEqual(6); expect(maxQueued).toBeLessThanOrEqual(6);
++      expect(maxHeld).toBeLessThanOrEqual(4 * 1024 * 1024);
++      assertIdle();
++    },
++  };
++}
++
++// Recovery uses only the database populated by the preceding real adapter phase.
++describe("native SQLite Gmail 50k ordered resource qualification", { concurrent: false }, () => {
++  let fixture: ReturnType<typeof mailbox> | undefined;
++  let phase: Promise<void> | undefined;
++  let initialComplete = false;
++  afterEach(async ({ task }) => {
++    if (task.result?.state === "fail") {
++      fixture?.cancel();
++      await phase?.catch(() => {});
++    }
++  });
++  afterAll(async () => {
++    fixture?.cancel();
++    try { await phase?.catch(() => {}); }
++    finally { await fixture?.close(); }
++  });
++  it("ingests and verifies all 50000 initial messages, threads and bodies", async () => {
++    fixture = mailbox();
++    phase = fixture.initial();
++    await phase;
++    initialComplete = true;
++  });
++  it("recovers all 50000 flags, preserves a late 503 checkpoint and resumes final 50 after reopen", async () => {
++    expect(initialComplete, "initial adapter phase must complete; dependent recovery is never skipped").toBe(true);
++    phase = fixture!.recover();
++    await phase;
++  });
++});
+```
