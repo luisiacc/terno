@@ -888,9 +888,11 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * Plan 107 (Codex R1): a mailbox the user deleted or renamed here is forgotten. What's elsewhere too stays, with the
    * places it has left; what was only there goes (`gone: "remove"`: the server deleted it), or is held and looked for
    * again as a vanished folder's mail is (`"hold"`: a renamed one's UID that didn't turn up under the new path). One
-   * under an identity hold is left to it. Each step can run again: a pass stopped midway repeats it.
+   * under an identity hold is left to it. Each step can run again: a pass stopped midway repeats it. `live`: the LIST
+   * has a mailbox at the path again (created anew since): only this UIDVALIDITY's places and state go, never its
+   * (Codex code review round 6 #1: Work → Job, Work created again, Job deleted took the new Work's mail).
    */
-  async function forgetMailbox(cursor: Cursor, path: string, uidvalidity: number | undefined, gone: "remove" | "hold", sink: SyncSink, c: ImapFlow, check: () => void, seen?: ReadonlySet<number>) {
+  async function forgetMailbox(cursor: Cursor, path: string, uidvalidity: number | undefined, gone: "remove" | "hold", sink: SyncSink, c: ImapFlow, check: () => void, seen?: ReadonlySet<number>, live = false) {
     const ids = uidvalidity ? (await readMailbox(locations, path, uidvalidity)).map((l) => l.message_id) : [];
     const only: number[] = [];
     const kept: number[] = [];
@@ -915,18 +917,26 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       await locations.removeMany(kept, path);
     }
     // the places left go with no hold (the mail in them is placed elsewhere, or went with the mailbox); their flags follow
-    const rest = await locations.resetMailbox(path, { deleted: true });
+    let rest: number[];
+    if (live) {
+      const going = new Set([...only, ...kept]);
+      rest = ids.filter((id) => !going.has(id));
+      await locations.removeMany(rest, path, { deleted: true });
+    } else rest = await locations.resetMailbox(path, { deleted: true });
     await reconcile(rest, sink, gone === "hold", c, false, check);
-    // its state goes (a folder created again under the path is new)
-    delete cursor.mailboxes[path];
-    if (cursor.resetPending) delete cursor.resetPending[path];
-    if (cursor.previewed) delete cursor.previewed[path];
-    if (cursor.backfill) {
-      delete cursor.backfill.below[path];
-      if (cursor.backfill.failed) delete cursor.backfill.failed[path];
-      if (cursor.backfill.held) delete cursor.backfill.held[path];
-      cursor.backfill.done = cursor.backfill.done.filter((k) => k.slice(0, k.lastIndexOf(":")) !== path);
+    // its state goes (a folder created again under the path is new); a live one's is its own unless it's this one's
+    const mine = !live || (uidvalidity !== undefined && cursor.mailboxes[path]?.uidvalidity === uidvalidity);
+    if (mine) {
+      delete cursor.mailboxes[path];
+      if (cursor.resetPending) delete cursor.resetPending[path];
+      if (cursor.backfill) {
+        delete cursor.backfill.below[path];
+        if (cursor.backfill.failed) delete cursor.backfill.failed[path];
+        if (cursor.backfill.held) delete cursor.backfill.held[path];
+      }
     }
+    if (cursor.previewed && (!live || cursor.previewed[path] === uidvalidity)) delete cursor.previewed[path];
+    if (cursor.backfill) cursor.backfill.done = cursor.backfill.done.filter((k) => k.slice(0, k.lastIndexOf(":")) !== path || (live && k !== `${path}:${uidvalidity}`));
   }
 
   /** Plan 107: a fresh LIST for a folder change: the account's own folders and roles now, and imapflow's namespace prefix. */
@@ -956,6 +966,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
    * identity hold independently of those bounded journals, including after a disconnect.
    */
   async function resetLocations(cursor: Cursor, path: string, olduidvalidity: number, touched: Set<number>): Promise<Set<number>> {
+    // plan 107: the old UIDVALIDITY is a mailbox renamed away and deleted here, the path a new one: its places are the
+    // deletion's to forget once every folder is read, never held as a reset's (Codex code review round 6 #1)
+    if (Object.values(cursor.deleted ?? {}).some((r) => typeof r !== "number" && r.from === path && r.uidvalidity === olduidvalidity)) return new Set();
     // every id gathered a few thousand at a time, the loop given turns (Codex R42: 500,000 merged at once, 80 ms)
     const ids = new Set<number>();
     await addAll(ids, cursor.resetPending?.[path] ?? []);
@@ -1690,7 +1703,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         // there goes, what a folder met this pass is held as a vanished folder's is
         for (const d of incomplete ? [] : deletions) {
           check();
-          await forgetMailbox(cursor, d.from, cursor.mailboxes[d.from]?.uidvalidity ?? (d.uidvalidity || undefined), "remove", sink, c, check, seen);
+          // the record's UIDVALIDITY, never the path's now: a mailbox created there since is another (Codex code review round 6 #1)
+          const live = listed.has(d.from);
+          await forgetMailbox(cursor, d.from, d.uidvalidity || (live ? undefined : cursor.mailboxes[d.from]?.uidvalidity), "remove", sink, c, check, seen, live);
           delete cursor.deleted![d.path];
           if (!Object.keys(cursor.deleted!).length) delete cursor.deleted;
           await ctx.saveCursor(cursor);

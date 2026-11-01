@@ -639,6 +639,23 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect(await locations.unresolved([reset])).toEqual([reset]);
     });
 
+    it("plan 107: a deleted mailbox's places at a path that holds a new one go with no identity hold, the new one's stay (Codex code review round 6 #1)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      await store.folders.replace(m!, [{ key: "Work", path: ["Work"], selectable: true }]);
+      const r = await ingest(store, [
+        msg({ accountId: m!, providerMsgId: "old", inInbox: false, locations: [loc("Work", 1), loc("Keep", 1)] }),
+        msg({ accountId: m!, providerMsgId: "new", inInbox: false, locations: [{ ...loc("Work", 1), uidvalidity: 2 }] }),
+      ]);
+      const [old, fresh2] = r.inserted as [number, number];
+      const locations = store.providerStore(m!).locations;
+      await locations.removeMany([old], "Work", { deleted: true });
+      expect(await locations.unresolved([old])).toEqual([]);
+      expect((await locations.of([old])).map((l) => l.mailbox)).toEqual(["Keep"]);
+      expect((await locations.of([fresh2])).map((l) => [l.mailbox, l.uidvalidity])).toEqual([["Work", 2]]);
+      expect(await ids(store, m!, "Work")).toEqual([await threadOf(store, "new")]);
+    });
+
     it("an account's removal takes its folders; folders survive a reopen", async () => {
       let store = await fresh();
       const [g, m] = await withAccounts(store);

@@ -282,13 +282,13 @@ class SqlImapLocations implements ImapLocationStore {
     });
   }
 
-  async removeMany(messageIds: readonly number[], mailbox: string) {
+  async removeMany(messageIds: readonly number[], mailbox: string, o?: { deleted?: true }) {
     const threads = new Set<number>();
     for (let i = 0; i < messageIds.length; i += RESET_SLICE) {
       const chunk = messageIds.slice(i, i + RESET_SLICE);
       this.db.tx(() => {
         for (const r of this.db.all<{ thread_id: number }>(`SELECT DISTINCT thread_id FROM messages WHERE id IN (${placeholders(chunk.length)})`, ...chunk)) threads.add(r.thread_id);
-        this.db.run(`INSERT INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations WHERE mailbox=? AND message_id IN (${placeholders(chunk.length)}) ON CONFLICT(message_id) DO UPDATE SET owner=NULL`, mailbox, ...chunk);
+        if (!o?.deleted) this.db.run(`INSERT INTO imap_identity_holds(message_id,account_id) SELECT message_id, account_id FROM message_locations WHERE mailbox=? AND message_id IN (${placeholders(chunk.length)}) ON CONFLICT(message_id) DO UPDATE SET owner=NULL`, mailbox, ...chunk);
         this.db.run(`DELETE FROM message_locations WHERE mailbox = ? AND message_id IN (${placeholders(chunk.length)})`, mailbox, ...chunk);
       });
       await this.settle();

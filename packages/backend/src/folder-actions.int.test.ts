@@ -389,6 +389,35 @@ it("a folder deleted before the pass after its rename takes the mail that was on
   expect(config?.config.cursor?.renamed).toBeUndefined();
 });
 
+it("a folder deleted after its rename leaves a mailbox created again under its old name alone (Codex code review round 6 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  // another app creates Work again (a new UIDVALIDITY) and files mail there, then Job goes, all before a pass
+  t.server.control.createMailbox("Work");
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Job" });
+  await t.backend.syncAccount(t.account.id);
+  const fresh = await t.threadsIn("Work");
+  expect(fresh).toHaveLength(1);
+  const mf = await t.messageOf(fresh[0]!);
+  expect(mf.subject).toBe("Fresh in work");
+  expect((await t.locations([mf.id])).map((l) => l.mailbox)).toEqual(["Work"]);
+  // its state stays: the next pass reads it incrementally, the same message with the same identity
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.threadsIn("Work")).toEqual(fresh);
+  expect((await t.messageOf(fresh[0]!)).id).toBe(mf.id);
+  // the deleted folder's own mail isn't found anywhere: it goes
+  expect(await t.locations([ma.id])).toEqual([]);
+  expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown; mailboxes: Record<string, unknown> } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+  expect(config?.config.cursor?.mailboxes.Work).toBeDefined();
+});
+
 it("a change waits for the running sync pass; a pass asked for during a change waits for it", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);

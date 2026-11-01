@@ -240,8 +240,12 @@ export interface ImapLocationStore {
   refused(messageIds: readonly number[], holdOwner: string): Promise<void>;
   upsert(messageId: number, mailbox: string, uidvalidity: number, uid: number, flags: string[]): Promise<void>;
   remove(messageId: number, mailbox: string): Promise<void>;
-  /** plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield between; each thread's membership looked at once */
-  removeMany(messageIds: readonly number[], mailbox: string): Promise<void>;
+  /**
+   * plan 68 (Codex R11): many locations of one mailbox gone (a sweep's expunges), a slice at a time with a yield
+   * between; each thread's membership looked at once. `deleted` (plan 107, Codex code review round 6 #1): the places of
+   * a mailbox the user deleted, whose path holds a new one now: no identity is held, as `resetMailbox`'s.
+   */
+  removeMany(messageIds: readonly number[], mailbox: string, o?: { deleted?: true }): Promise<void>;
   setFlags(messageId: number, mailbox: string, flags: string): Promise<void>;
   of(messageIds: readonly number[]): Promise<ImapLocation[]>;
   at(mailbox: string, uidvalidity: number, uid: number): Promise<number | null>;

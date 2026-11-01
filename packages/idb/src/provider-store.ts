@@ -350,14 +350,14 @@ class IdbImapLocations implements ImapLocationStore {
     });
   }
 
-  async removeMany(messageIds: readonly number[], mailbox: string) {
+  async removeMany(messageIds: readonly number[], mailbox: string, o?: { deleted?: true }) {
     const threads = new Set<number>();
     for (let i = 0; i < messageIds.length; i += 500) {
       const chunk = messageIds.slice(i, i + 500);
       await this.command(() => {
         const messages = T(this.c, "messages");
         for (const id of chunk) {
-          if (this.t.has(id, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId, owner: null });
+          if (!o?.deleted && this.t.has(id, mailbox)) T(this.c, "imap_identity_holds").put({ message_id: id, account_id: this.accountId, owner: null });
           retireLocationCapture(this.c,id,mailbox); this.t.delete(id, mailbox);
           const m = messages.get(id);
           if (m) threads.add(m.thread_id as number);
