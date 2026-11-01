@@ -68,7 +68,8 @@ interface Cursor {
   /**
    * plan 107: mailboxes the user renamed here, by their new path: the old one and its UIDVALIDITY. Read under the same
    * UIDVALIDITY, a UID under the new path is the message that had it under the old one (the server moved the mailbox).
-   * `answered`: the change heard the server's answer and announced the move itself.
+   * `answered`: the backend stored, announced and followed the move the change heard the server's answer to
+   * (`renamesFollowed`, Codex code review round 14 #1).
    */
   renamed?: Record<string, { from: string; uidvalidity: number; key?: string; stale?: true; answered?: true }>;
 }
@@ -1997,15 +1998,9 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           }
           throw refused(error, name);
         }
-        // answered: this change announces it, so a pass whose STATUS fails never holds it back (round 10 #1)
-        if (cursor) {
-          const now = await ctx.loadCursor<Cursor>();
-          const written = plan.moves.filter((m) => intent[m.to] && now?.renamed?.[m.to]);
-          if (now?.renamed && written.length) {
-            for (const m of written) now.renamed[m.to] = { ...now.renamed[m.to]!, answered: true };
-            await ctx.saveCursor(now);
-          }
-        }
+        // marked answered only once the backend has stored, announced and followed the move (renamesFollowed): a LIST
+        // here that fails leaves them for a pass, which holds one whose old path's STATUS fails (Codex code review
+        // round 14 #1: answered here, Job was stored unannounced and the view and favorite stayed on a Work made again)
         const after = await folderCatalog(c);
         return { folders: after.folders, renamed: plan.moves.filter((m) => after.own.has(m.to)).map((m) => (stale.has(m.from) ? { ...m, stale: true as const } : m)) };
       } catch (error) {
@@ -2066,6 +2061,16 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       } catch (error) {
         throw toProviderError(error);
       }
+    },
+
+    async renamesFollowed(renamed) {
+      // the backend announced these moves and followed them (the view, favorites), so a pass whose STATUS fails never
+      // holds them back (round 10 #1); only the records this rename wrote (one per new path, from its old path)
+      const now = renamed.length ? await ctx.loadCursor<Cursor>() : null;
+      const ours = now?.renamed ? renamed.filter((m) => Object.hasOwn(now.renamed!, m.to) && (now.renamed![m.to]!.key ?? now.renamed![m.to]!.from) === m.from) : [];
+      if (!ours.length) return;
+      for (const m of ours) now!.renamed![m.to] = { ...now!.renamed![m.to]!, answered: true };
+      await ctx.saveCursor(now!);
     },
 
     async deletionsFollowed(deleted) {

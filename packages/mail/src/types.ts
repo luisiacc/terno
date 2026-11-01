@@ -284,6 +284,12 @@ export interface MailProvider {
    * pass that shows them gone (Codex code review round 13 #1).
    */
   deletionsFollowed?(deleted: readonly string[]): Promise<void>;
+  /**
+   * Plan 107: the host has stored and announced these moves and followed them (favorites), so a pass never holds them
+   * back. Called only after that write: a change that failed before it (a LIST after the RENAME) leaves them for a
+   * pass to settle (Codex code review round 14 #1).
+   */
+  renamesFollowed?(renamed: readonly FolderMove[]): Promise<void>;
   /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */
   photos?(want: import("./google-photos").PhotoWant, signal?: AbortSignal): Promise<import("./google-photos").GooglePhotos>;
   close(): Promise<void>;

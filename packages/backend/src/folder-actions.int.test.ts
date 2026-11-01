@@ -696,6 +696,60 @@ it("a RENAME whose answer was lost waits for the old name's generation: a STATUS
   expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
 });
 
+it("a RENAME answered but whose LIST after it failed isn't acknowledged: a pass whose STATUS of a Work made again fails waits, and a later one announces it (Codex code review round 14 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  const renaming = ImapFlow.prototype.mailboxRename;
+  const list = ImapFlow.prototype.list;
+  let sent = false;
+  const answered = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof renaming>) {
+    const r = await renaming.apply(this, args);
+    sent = true;
+    return r;
+  });
+  // the RENAME is answered; the LIST after it fails, so the change never hands the backend the move
+  const failing = vi.spyOn(ImapFlow.prototype, "list").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof list>) {
+    if (sent) { sent = false; throw Object.assign(new Error("Connection closed"), { code: "NoConnection" }); }
+    return list.apply(this, args);
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    failing.mockRestore();
+    answered.mockRestore();
+  }
+  expect(t.mailboxes()).toEqual(["INBOX", "Job", "Sent", "Trash"]);
+  // another app makes Work again, and the pass's STATUS of it fails once
+  t.server.control.createMailbox("Work");
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  const status = ImapFlow.prototype.status;
+  let failed = false;
+  const flaky = vi.spyOn(ImapFlow.prototype, "status").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof status>) {
+    if (args[0] === "Work" && !failed) { failed = true; throw Object.assign(new Error("Server unavailable"), { responseStatus: "NO", responseText: "Try again" }); }
+    return status.apply(this, args);
+  });
+  try {
+    await t.backend.syncAccount(t.account.id);
+  } finally {
+    flaky.mockRestore();
+  }
+  expect(failed).toBe(true);
+  // nothing was decided: the favorite waits on Work
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Work", view: null }]);
+  t.events.length = 0;
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(t.events[0]).toBe("renamed Work>Job");
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  const fresh = await t.threadsIn("Work");
+  expect(fresh).toHaveLength(1);
+  expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
+});
+
 it("a folder made again under a renamed one's old name, then deleted, records its own generation: the renamed one keeps its mail (round 8 audit)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

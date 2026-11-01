@@ -117,6 +117,9 @@ async function change<R extends FolderChange>(
     // persisted: the provider may stop announcing these deletions (Codex code review round 13 #1: acknowledged before,
     // a LIST failing after the DELETE left the favorite for good)
     if (deleted.length) await provider.deletionsFollowed?.(deleted);
+    // and these moves (Codex code review round 14 #1: acknowledged before the LIST after the RENAME, a failing one
+    // left the move unannounced for good)
+    if (renamed.length) await provider.renamesFollowed?.(renamed);
     resync();
     if (result.partial) throw folderError(b, result.partial);
     return result;
