@@ -20,8 +20,8 @@ function folderError(b: Backend, error: unknown): unknown {
   return new RpcError("BAD_REQUEST", error.message, undefined, { i18n: error.i18n, cause: error });
 }
 
-/** threads carried a slice at a time (an IndexedDB write is ~20 µs a row: 500 stay well within a frame) */
-export const CARRY_SLICE = 500;
+/** threads carried a slice at a time (an IndexedDB write is ~20–30 µs a row with its aliases and clears: 300 stay within a frame on a busy machine) */
+export const CARRY_SLICE = 300;
 
 /** a count's rows looked at a slice, sized by time */
 const COUNT_SLICE = { ...BULK_SLICE, initial: 500, floor: 50, ceiling: 20_000 };

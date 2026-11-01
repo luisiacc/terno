@@ -757,27 +757,27 @@ it("plan 107: a renamed folder's threads carried to its new key a slice at a tim
   const slices: Sample[] = [];
   for (let after: number | null = 0; after !== null; ) {
     const from: number = after;
-    const s = await sampleAsync(() => store.folders.carry(account, "Label_carry", "Label_carried", from, 500));
+    const s = await sampleAsync(() => store.folders.carry(account, "Label_carry", "Label_carried", from, 300));
     slices.push(s);
     after = s.result.next;
   }
   const ms = settle(slices).ms;
   const total = ms.reduce((a, b) => a + b, 0);
   console.log(`carry of ${size} threads: ${slices.length} slices, ${total.toFixed(1)} ms in all, max ${Math.max(...ms).toFixed(2)} ms`);
-  expect(slices.length).toBe(Math.floor(size / 500) + 1);
+  expect(slices.length).toBe(Math.floor(size / 300) + 1);
   expect(Math.max(...ms), "one slice").toBeLessThanOrEqual(FRAME * MULT);
   // one pass over the folder in all, linear in its threads (a full scan and sort per slice grew with the folder)
   expect(total / size, "per thread").toBeLessThanOrEqual(0.03 * MULT);
   // what it left under the carried key cleared before another rename's carry, a slice at a time (Codex code review round 14 #2)
   const cleared: Sample[] = [];
   for (let more = true; more; ) {
-    const s = await sampleAsync(() => store.folders.clear(account, "Label_carried", 500));
+    const s = await sampleAsync(() => store.folders.clear(account, "Label_carried", 300));
     cleared.push(s);
     more = s.result.more;
   }
   const clearMs = settle(cleared).ms;
   console.log(`clear of ${size} rows: ${cleared.length} slices, max ${Math.max(...clearMs).toFixed(2)} ms`);
-  expect(cleared.length).toBe(Math.floor(size / 500) + 1);
+  expect(cleared.length).toBe(Math.floor(size / 300) + 1);
   expect(Math.max(...clearMs), "one clear slice").toBeLessThanOrEqual(FRAME * MULT);
 }, 900_000);
 
