@@ -172,6 +172,52 @@ export function defineFolderExportConformance(name: string, harness: StoreHarnes
       expect(cut.ids).toEqual(inbox.filter((id) => id !== gone));
     });
 
+    it("a thread merged into one the walk already passed is read again: none of its messages is left out (Codex code review round 17 #1)", async () => {
+      for (const target of ["inbox", "Label_w"] as const) {
+        const store = await fresh();
+        const [a] = await withAccounts(store, 1);
+        const labels = ["INBOX", "Label_w"];
+        await ingest(store, [
+          msg({ accountId: a!, providerMsgId: "a1", rfcMessageId: "a1@test", gmailLabels: labels }),
+          msg({ accountId: a!, providerMsgId: "b1", rfcMessageId: "b1@test", gmailLabels: labels }),
+          msg({ accountId: a!, providerMsgId: "b2", rfcMessageId: "b2@test", inReplyTo: "b1@test", references: ["b1@test"], gmailLabels: labels }),
+          msg({ accountId: a!, providerMsgId: "c1", rfcMessageId: "c1@test", gmailLabels: labels }),
+        ]);
+        const before = new Set((await store.debug.snapshot()).messages.map((m) => m.threadId));
+        expect(before.size).toBe(3);
+        const place: FolderExportTarget = target === "inbox" ? { accountId: a!, view: "inbox" } : { accountId: a!, folder: target };
+        const seen: number[] = [];
+        let rewound = false;
+        let stretches = 0;
+        for (let after: FolderExportCursor | null = null; ;) {
+          const r = await store.folderExport.ids(place, after, 1);
+          seen.push(...r.messages.map((m) => m.id));
+          if (r.rewound) rewound = true;
+          if (r.next === null) break;
+          after = r.next;
+          // past the first thread (a1's): a reply to a1 and b2 merges b's thread into a's, the lower id
+          if (++stretches === 1) {
+            expect(after.thread).toBeGreaterThan(0);
+            await ingest(store, [msg({ accountId: a!, providerMsgId: "bridge", rfcMessageId: "bridge@test", inReplyTo: "b2@test", references: ["a1@test", "b2@test"], gmailLabels: labels })]);
+            expect(new Set((await store.debug.snapshot()).messages.map((m) => m.threadId)).size).toBe(2);
+          }
+          expect(stretches).toBeLessThan(50);
+        }
+        const wanted = await idsOf(store, ["a1", "b1", "b2", "c1"]);
+        expect(wanted.filter((id) => !seen.includes(id))).toEqual([]);
+        expect(rewound).toBe(true);
+        // a walk with no merge during it never goes back
+        let again = false;
+        for (let after: FolderExportCursor | null = null; ;) {
+          const r = await store.folderExport.ids(place, after, 1);
+          if (r.rewound) again = true;
+          if (r.next === null) break;
+          after = r.next;
+        }
+        expect(again).toBe(false);
+      }
+    });
+
     it("reads a batch: stored headers, bodies, and which attachments' bytes are here", async () => {
       const store = await fresh();
       const [a] = await withAccounts(store, 1);

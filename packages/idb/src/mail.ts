@@ -1,6 +1,6 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
-import { requireGmailRefresh, copyOpAdmission, type OpAdmission } from "@terno/store";
+import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -711,10 +711,20 @@ export function adoptProviderThread(c: Ctx, threadId: number, accountId: number,
   return threadId;
 }
 
+const merges = new WeakMap<MemDb, ThreadMerges>();
+
+/** this store's thread merges, for an export's id walk (plan 107, Codex code review round 17 #1) */
+export function threadMerges(c: Ctx): ThreadMerges {
+  let m = merges.get(c.db);
+  if (!m) merges.set(c.db, (m = new ThreadMerges()));
+  return m;
+}
+
 /** Moves `from` into `into`: messages, categories (the newest explicit decision per category wins), decisions. */
 export function mergeThreads(c: Ctx, into: number, from: number, result: IngestResult): void {
   const messages = T(c, "messages");
   for (const m of messages.by("fk_thread_id", from)) messages.update(m, { thread_id: into });
+  threadMerges(c).record(from, into);
   const examples = T(c, "cls_examples");
   const both = [...examples.by("fk_thread_id", into), ...examples.by("fk_thread_id", from)];
   const winners = new Map<number, R>();

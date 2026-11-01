@@ -22,6 +22,8 @@ const IDS_SLICE = { ...BULK_SLICE, initial: 200, floor: 20, ceiling: 5000 };
 /** What one `next` writes, at most (a piece may take it a little past: pieces are ≤ MBOX_PIECE). */
 export const EXPORT_TEXT_MAX = 1024 * 1024;
 export const EXPORT_IDLE_MS = 60_000;
+/** ids added to the dedupe set between turns after a walk went back (Codex code review round 17 #1) */
+const SEEN_STEP = 65_536;
 /** request ids cancelled before their start arrived, kept at most */
 const CANCELLED_STARTS_MAX = 16;
 
@@ -185,11 +187,25 @@ export class FolderExports {
     const sizer = new SliceSizer(IDS_SLICE);
     const ids: number[] = [];
     const dates: number[] = [];
+    // kept once the walk went back for a thread merge: what it reads again comes once (Codex code review round 17 #1)
+    let seen: Set<number> | null = null;
     for (let after: FolderExportCursor | null = null; !superseded(); ) {
       const started = performance.now();
       const r = await this.b.store.folderExport.ids(target, after, sizer.size);
       sizer.record(sizer.size, performance.now() - started);
+      if (r.rewound && !seen) {
+        // what came so far, a stretch at a time with a turn between (a million ids are tens of ms)
+        seen = new Set();
+        for (let i = 0; i < ids.length; i += SEEN_STEP) {
+          for (let j = i; j < Math.min(ids.length, i + SEEN_STEP); j++) seen.add(ids[j]!);
+          await this.b.yieldTurn();
+        }
+      }
       for (const m of r.messages) {
+        if (seen) {
+          if (seen.has(m.id)) continue;
+          seen.add(m.id);
+        }
         ids.push(m.id);
         dates.push(m.date);
       }

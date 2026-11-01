@@ -1,5 +1,6 @@
 import { storedAddresses, type FolderView } from "@terno/core";
 import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
+import { threadMerges } from "./ingest";
 import type { Db } from "./sqlite";
 
 /**
@@ -28,7 +29,13 @@ const IN_FOLDER = `m.is_trash = 0 AND m.is_spam = 0 AND (
 /** before every message (dates are milliseconds) */
 const FIRST = { id: 0, date: Number.MIN_SAFE_INTEGER };
 
-export function exportIds(db: Db, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
+export function exportIds(db: Db, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null; rewound?: true } {
+  // a merge since the last stretch that moved a thread not read yet into one passed: read again from there (Codex
+  // code review round 17 #1: thread 2 merged into thread 1 after the walk passed 1 left thread 2's messages out)
+  const merges = threadMerges(db);
+  const back = after?.merges === undefined ? null : merges.rewind(after.merges, after.thread);
+  if (back !== null) after = { thread: back - 1 };
+  const answer = (messages: { id: number; date: number }[], next: FolderExportCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(back !== null && { rewound: true as const }) });
   // a thread's messages past a point, in the index's order, each with whether it's in the place: what's looked at is
   // bounded by the LIMIT, never by how many match (Codex code review round 2 #6: one 50,000-message conversation was
   // read whole in one call)
@@ -56,8 +63,8 @@ export function exportIds(db: Db, target: FolderExportTarget, after: FolderExpor
   };
   if (after?.message) {
     const cut = read(after.thread, after.message);
-    if (cut) return { messages: out, next: { thread: after.thread, message: cut } };
-    if (budget <= 0) return { messages: out, next: { thread: after.thread } };
+    if (cut) return answer(out, { thread: after.thread, message: cut });
+    if (budget <= 0) return answer(out, { thread: after.thread });
   }
   const from = after?.thread ?? 0;
   const asked = budget;
@@ -66,11 +73,11 @@ export function exportIds(db: Db, target: FolderExportTarget, after: FolderExpor
     : db.all<{ id: number }>("SELECT id FROM threads INDEXED BY threads_account_id WHERE account_id = ? AND id > ? ORDER BY id LIMIT ?", target.accountId, from, asked);
   for (const { id } of threads) {
     const cut = read(id, FIRST);
-    if (cut) return { messages: out, next: { thread: id, message: cut } };
-    if (budget <= 0) return { messages: out, next: { thread: id } };
+    if (cut) return answer(out, { thread: id, message: cut });
+    if (budget <= 0) return answer(out, { thread: id });
   }
   // each thread took at least one of the budget: a full stretch returned above, so this one was the last
-  return { messages: out, next: null };
+  return answer(out, null);
 }
 
 interface Row {

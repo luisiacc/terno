@@ -21,3 +21,4 @@ export * from "./recipient-receipts";
 
 export * from "./gmail-refresh";
 export * from "./capture-repair";
+export * from "./thread-merges";

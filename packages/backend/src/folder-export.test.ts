@@ -209,6 +209,32 @@ describe("folders.export (plan 107)", () => {
     expect((await client.call("folders.exportStart", { accountId: gmail, folder: null, view: "inbox", requestId: "r4" })).total).toBe(300);
   });
 
+  it("a thread merged behind the id walk is read again, and what comes twice is written once (Codex code review round 17 #1)", async () => {
+    const { client, backend, gmail } = await setup();
+    await backend.store.folders.replace(gmail, [{ key: "Label_w", path: ["Work"], selectable: true }]);
+    const day = Date.UTC(2026, 0, 2);
+    const labels = ["Label_w"];
+    await ingest(backend.store, [
+      msg({ accountId: gmail, providerMsgId: "a1", rfcMessageId: "a1@test", subject: "A1", date: day, gmailLabels: labels }),
+      msg({ accountId: gmail, providerMsgId: "b1", rfcMessageId: "b1@test", subject: "B1", date: day + 1000, gmailLabels: labels }),
+      msg({ accountId: gmail, providerMsgId: "b2", rfcMessageId: "b2@test", inReplyTo: "b1@test", references: ["b1@test"], subject: "B2", date: day + 2000, gmailLabels: labels }),
+      msg({ accountId: gmail, providerMsgId: "c1", rfcMessageId: "c1@test", subject: "C1", date: day + 3000, gmailLabels: labels }),
+    ]);
+    // a thread a stretch; after the first (a1's), a reply to a1 and b2 merges b's thread into a's
+    const ids = backend.store.folderExport.ids.bind(backend.store.folderExport);
+    let calls = 0;
+    vi.spyOn(backend.store.folderExport, "ids").mockImplementation(async (target, after) => {
+      const r = await ids(target, after, 1);
+      if (++calls === 1) await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "bridge", rfcMessageId: "bridge@test", inReplyTo: "b2@test", references: ["a1@test", "b2@test"], subject: "Bridge", date: day + 4000, gmailLabels: labels })]);
+      return r;
+    });
+    const start = await client.call("folders.exportStart", { accountId: gmail, folder: "Label_w", view: null });
+    const { text } = await drain(client, start.exportId);
+    // the bridge arrived after the start: read with a's thread again, or not
+    expect(subjects(text).filter((s) => s !== "Bridge")).toEqual(["A1", "B1", "B2", "C1"]);
+    expect(start.total).toBe(subjects(text).length);
+  });
+
   it("a session idle for a minute ends by itself", async () => {
     const { backend, gmail } = await setup();
     await ingest(backend.store, [msg({ accountId: gmail, providerMsgId: "one" })]);

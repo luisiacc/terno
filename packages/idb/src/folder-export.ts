@@ -1,6 +1,6 @@
 import { storedAddresses, type FolderView } from "@terno/core";
 import type { ExportMessage, FolderExportCursor, FolderExportTarget } from "@terno/store";
-import { seekAfter, T, type Ctx, type R } from "./mail";
+import { seekAfter, T, threadMerges, type Ctx, type R } from "./mail";
 import type { Key } from "./mem";
 
 /**
@@ -190,7 +190,17 @@ function threadOrdersOf(c: Ctx): Map<number, ThreadIds> {
   return kept;
 }
 
-export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null } {
+export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExportCursor | null, limit: number): { messages: { id: number; date: number }[]; next: FolderExportCursor | null; rewound?: true } {
+  // a merge since the last stretch that moved a thread not read yet into one passed: read again from there, its
+  // threads read afresh (the merge may have made one a member) (Codex code review round 17 #1: thread 2 merged into
+  // thread 1 after the walk passed 1 left thread 2's messages out)
+  const merges = threadMerges(c);
+  const back = after?.merges === undefined ? null : merges.rewind(after.merges, after.thread < 0 ? -after.thread - 1 : after.thread);
+  if (back !== null) {
+    memberRuns.get(c)?.delete(target.folder !== undefined ? `f\u0000${target.accountId}\u0000${target.folder}` : `v\u0000${target.accountId}`);
+    after = { thread: back - 1 };
+  }
+  const answer = (messages: { id: number; date: number }[], next: FolderExportCursor | null) => ({ messages, next: next && { ...next, merges: merges.current }, ...(back !== null && { rewound: true as const }) });
   const locations = T(c, "message_locations");
   const folder = target.folder;
   // a pending rename's old paths are the folder's too (Codex code review round 5 #2), each under the UIDVALIDITY it
@@ -214,23 +224,23 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
   };
   if (after?.message) {
     const cut = read(after.thread, after.message.id);
-    if (cut) return { messages: out, next: { thread: after.thread, message: cut } };
-    if (budget <= 0) return { messages: out, next: { thread: after.thread } };
+    if (cut) return answer(out, { thread: after.thread, message: cut });
+    if (budget <= 0) return answer(out, { thread: after.thread });
   }
   const asked = budget;
   const top = folder !== undefined ? stretch(c, { accountId: target.accountId, folder }, after?.thread ?? 0, asked) : viewStretch(c, target.accountId, after?.thread ?? 0, asked);
   // still reading a big folder's members or an account's threads: the next call goes on (Codex code review round 8 #5, round 13 #2)
-  if (top === null) return { messages: out, next: { thread: pendingAfter(after?.thread ?? 0) } };
+  if (top === null) return answer(out, { thread: pendingAfter(after?.thread ?? 0) });
   const { ids, through } = Array.isArray(top) ? { ids: top, through: null } : top;
   for (const id of ids) {
     const cut = read(id, null);
-    if (cut) return { messages: out, next: { thread: id, message: cut } };
-    if (budget <= 0) return { messages: out, next: { thread: id } };
+    if (cut) return answer(out, { thread: id, message: cut });
+    if (budget <= 0) return answer(out, { thread: id });
   }
   // stopped at its bound of gone threads: the next call goes on after the last it looked at (round 15 #3)
-  if (through !== null) return { messages: out, next: { thread: through } };
+  if (through !== null) return answer(out, { thread: through });
   // each thread took at least one of the budget: a full stretch returned above, so this one was the last
-  return { messages: out, next: null };
+  return answer(out, null);
 }
 
 /** these messages, their bodies read ahead by the caller (which parts there are) */

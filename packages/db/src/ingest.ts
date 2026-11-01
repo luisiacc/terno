@@ -1,7 +1,7 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
 import { addressKey, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
-import { requireGmailRefresh, acceptFlagObservation, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
+import { requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
 export type { IncomingAttachment, IncomingLocation, IncomingMessage } from "@terno/store";
@@ -143,6 +143,15 @@ export function adoptProviderThread(db: Db, threadId: number, accountId: number,
   return threadId;
 }
 
+const merges = new WeakMap<Db, ThreadMerges>();
+
+/** this database's thread merges, for an export's id walk (plan 107, Codex code review round 17 #1) */
+export function threadMerges(db: Db): ThreadMerges {
+  let m = merges.get(db);
+  if (!m) merges.set(db, (m = new ThreadMerges()));
+  return m;
+}
+
 /**
  * Moves every message and category of `from` into `into` and deletes `from`.
  * Per category the newest explicit decision (training example) of either
@@ -151,6 +160,7 @@ export function adoptProviderThread(db: Db, threadId: number, accountId: number,
  */
 export function mergeThreads(db: Db, into: number, from: number, result: IngestResult): void {
   db.run("UPDATE messages SET thread_id = ? WHERE thread_id = ?", into, from);
+  threadMerges(db).record(from, into);
   const examples = db.all<{ thread_id: number; category_id: number; label: number; weight: number; at: number; content: number; features: Uint8Array }>(
     "SELECT thread_id, category_id, label, weight, at, content, features FROM cls_examples WHERE thread_id IN (?, ?)",
     into,

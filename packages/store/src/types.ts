@@ -394,6 +394,11 @@ export type FolderPlace = string | { mailbox: string; except: readonly number[] 
 export interface FolderExportCursor {
   thread: number;
   message?: { id: number; date: number };
+  /**
+   * the store's thread merges the walk has seen (`ThreadMerges`): a merge since of a thread not read yet into one
+   * already passed sends the walk back to read it again (Codex code review round 17 #1)
+   */
+  merges?: number;
 }
 
 /**
