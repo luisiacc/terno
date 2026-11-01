@@ -39,7 +39,7 @@ async function accountFolders(b: Backend, accountId: number): Promise<Folder[]> 
  * shows it is stored: an old path listed again with the moved generation left out is derived again from its own
  * places (a rebuild that clears its rows), never before its rows were carried (Codex code review round 8 #1).
  */
-export async function carryRenamed(b: Backend, accountId: number, renamed: readonly FolderMove[], write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
+export async function carryRenamed(b: Backend, accountId: number, renamed: readonly FolderMove[], write: <W>(work: () => Promise<W>) => Promise<W>, announced: readonly FolderMove[] = renamed): Promise<void> {
   // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
   // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time; never another
   // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
@@ -55,7 +55,8 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
       await b.yieldTurn();
     }
   }
-  if (renamed.length) b.server.emit("foldersRenamed", renamed.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
+  // a pass's recovery announces every move it hands, carried or not (Codex code review round 15 #2)
+  if (announced.length) b.server.emit("foldersRenamed", announced.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
 }
 
 /**

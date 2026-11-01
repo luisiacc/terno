@@ -235,6 +235,37 @@ it("a RENAME whose answer was lost is announced by the next pass, before its lis
   expect(t.events.filter((e) => e.startsWith("renamed"))).toEqual([]);
 });
 
+it("a RENAME whose answer was lost into a name whose old folder is still listed here is announced by the next pass (Codex code review round 15 #2)", async () => {
+  const t = await setup(["Work", "Job"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Job", { raw: rawIdleMail("In the old job") });
+  // the old Job is another generation than Work (the fixture numbers both alike)
+  t.server.control.resetUidValidity("Job", { uidvalidity: 900 });
+  await t.backend.syncAccount(t.account.id);
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  // another app deletes Job; this one still lists it
+  t.server.control.deleteMailbox("Job");
+  const original = ImapFlow.prototype.mailboxRename;
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  expect(await t.ownFolders()).toEqual(expect.arrayContaining(["Work", "Job"]));
+  t.events.length = 0;
+  await t.backend.syncAccount(t.account.id);
+  expect(t.events[0]).toBe("renamed Work>Job");
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
+  // announced once
+  t.events.length = 0;
+  await t.backend.syncAccount(t.account.id);
+  expect(t.events.filter((e) => e.startsWith("renamed"))).toEqual([]);
+});
+
 it("a RENAME the server refuses leaves no record behind (Codex code review round 3 #1)", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);
@@ -561,6 +592,65 @@ it("a folder deleted here and made again before the cleanup pass: the deleted on
   expect((await t.messageOf(fresh[0]!)).id).toBe(mf.id);
 });
 
+it("a folder deleted, made again and deleted again before the cleanup pass: both deleted ones' mail goes (Codex code review round 15 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in old work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.backend.syncAccount(t.account.id);
+  // the first generation's record kept its own cleanup: nothing held as a vanished folder's
+  expect(await t.locations([ma.id])).toEqual([]);
+  expect(await t.held([ma.id])).toEqual([]);
+  expect((await t.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+});
+
+it("a second DELETE of a folder made again that the server refuses keeps the first one's cleanup (Codex code review round 15 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in old work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  const refused = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockRejectedValue(Object.assign(new Error("Command failed"), { responseStatus: "NO", responseText: "Not now" }));
+  try {
+    await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Work" })).rejects.toMatchObject({ i18n: { key: "errors.folder.refused" } });
+  } finally {
+    refused.mockRestore();
+  }
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.locations([ma.id])).toEqual([]);
+  expect(await t.held([ma.id])).toEqual([]);
+  const fresh = await t.threadsIn("Work");
+  expect(fresh).toHaveLength(1);
+  expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
+});
+
+it("a cursor written before keeps one deletion record a path: it's read, and its generation cleaned up (Codex code review round 15 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in old work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  const uidvalidity = (await t.backend.store.accounts.config<{ cursor: { mailboxes: Record<string, { uidvalidity: number }> } }>(t.account.id))!.config.cursor.mailboxes.Work!.uidvalidity;
+  // Work deleted elsewhere, the cursor holding the record as a bare UIDVALIDITY (the old shape)
+  t.server.control.deleteMailbox("Work");
+  const cursor = (await t.backend.store.accounts.config<{ cursor: Record<string, unknown> }>(t.account.id))!.config.cursor;
+  await t.backend.store.accounts.setCursor(t.account.id, { ...cursor, deleted: { Work: uidvalidity } });
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.locations([ma.id])).toEqual([]);
+  expect(await t.held([ma.id])).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+});
+
 it("a renamed folder's old name made again before the next pass shows none of the renamed one's mail, however its threads are refreshed (Codex code review round 8 #1)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
@@ -782,7 +872,11 @@ it("a folder made again under a renamed one's old name, then deleted, records it
   await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
   const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: Record<string, unknown>; renamed?: Record<string, { uidvalidity: number }> } }>(t.account.id);
   // the deletion is the new Work's generation, never the renamed one's
-  expect(config?.config.cursor?.deleted?.Work).not.toEqual(config?.config.cursor?.renamed?.Job?.uidvalidity);
+  const job = config?.config.cursor?.renamed?.Job?.uidvalidity;
+  expect(job).toBeTypeOf("number");
+  const work = config?.config.cursor?.deleted?.Work as { uidvalidity: number }[] | undefined;
+  expect(work).toEqual([expect.objectContaining({ uidvalidity: expect.any(Number) })]);
+  expect(work?.[0]?.uidvalidity).not.toBe(job);
   await t.backend.syncAccount(t.account.id);
   expect(await t.threadsIn("Job")).toEqual([a]);
   expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);

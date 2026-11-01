@@ -1631,15 +1631,20 @@ export class BackendCore {
         // plan 68: the account's own folders; an unchanged list writes and says nothing
         setFolders: async (folders, renamed = [], deleted = []) => {
           checkCurrent();
-          // plan 107: a rename this list shows done that the store hasn't followed (its answer was lost, Codex code
-          // review round 5 #1) is announced as a change's is, and favorites follow it
-          const shown = renamed.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
-          const moves = shown ? renamed.filter((m) => shown.has(m.from) && !shown.has(m.to)) : [];
-          // carried before the list is stored, as a change's are (Codex code review round 8 #1)
-          await carryRenamed(this, accountId, moves, (work) => this.accountWrite(life, work));
+          // plan 107: a rename this list shows done that the backend hasn't followed (its answer was lost, Codex code
+          // review round 5 #1) is announced as a change's is, and favorites follow it. The provider hands only those
+          // (its records' acknowledgement), never decided by what the store lists: a stale listing of the new path
+          // suppressed it (Codex code review round 15 #2)
+          const moves = renamed.filter((m) => m.from !== m.to);
+          // carried before the list is stored, as a change's are (Codex code review round 8 #1); only from a key the
+          // store still shows (one followed before a crash kept its acknowledgement from being written has none, and
+          // its new key's rows are the carry's already)
+          const shown = moves.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
+          const carried = shown ? moves.filter((m) => shown.has(m.from)) : [];
+          await carryRenamed(this, accountId, carried, (work) => this.accountWrite(life, work), moves);
           // the list and the favorites that follow it, never between a favorite's check and its write (round 10 #4)
           await this.withFolderList(accountId, async () => {
-            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, moves.map((m) => m.to)));
+            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, carried.map((m) => m.to)));
             if (r.changed || moves.length) {
               this.server.emit("folders", await this.store.folders.list());
               this.notifyChanged(r.touched);
