@@ -96,4 +96,25 @@ describe("mbox export in main (plan 107)", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(readdirSync(dir)).toEqual([]);
   });
+
+  it("a superseded export whose save panel answers late leaves its replacement be (Codex code review round 8 #4)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "terno-mbox-export-"));
+    dirs.push(dir);
+    const panels: ((r: { canceled: boolean; filePath?: string }) => void)[] = [];
+    electron.showSaveDialog = () => new Promise((resolve) => panels.push(resolve));
+    registerMboxExport({ trusted: () => true, testDir: null });
+    const sender = Object.assign(new EventEmitter(), { id: 10 });
+    const call = (channel: string, ...args: unknown[]) => electron.handlers.get(channel)!({ sender }, ...args);
+    const a = call("terno:export-begin", "A") as Promise<{ status: string }>;
+    const b = call("terno:export-begin", "B") as Promise<{ status: string; id: string }>;
+    panels[1]!({ canceled: false, filePath: join(dir, "B.mbox") });
+    const ready = await b;
+    expect(ready.status).toBe("ready");
+    // A's panel answers after B is ready: A begins nothing and aborts nothing
+    panels[0]!({ canceled: false, filePath: join(dir, "A.mbox") });
+    expect((await a).status).toBe("cancelled");
+    expect(await call("terno:export-write", ready.id, "From - b\n")).toBe(true);
+    expect(await call("terno:export-end", ready.id)).toEqual({ status: "saved", name: "B.mbox" });
+    expect(readdirSync(dir)).toEqual(["B.mbox"]);
+  });
 });

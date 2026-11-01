@@ -33,6 +33,8 @@ export function registerMboxExport(deps: MboxExportDeps): void {
     // review round 5 #5: cleanup ran before the export was registered, and the file was left open)
     watch(event.sender);
     const page = files.page(event.sender.id);
+    // a newer export asked for while this one's panel is open supersedes it (Codex code review round 8 #4)
+    const ask = files.ask(event.sender.id);
     let path = deps.testDir ? join(deps.testDir, file) : null;
     if (!path) {
       const parent = BrowserWindow.fromWebContents(event.sender);
@@ -40,12 +42,12 @@ export function registerMboxExport(deps: MboxExportDeps): void {
       const choice = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
       if (choice.canceled || !choice.filePath) return { status: "cancelled" };
       path = choice.filePath;
-      if (files.page(event.sender.id) !== page) return { status: "cancelled" };
+      if (files.page(event.sender.id) !== page || !files.current(event.sender.id, ask)) return { status: "cancelled" };
     }
     try {
-      return { status: "ready", id: await files.begin(event.sender.id, path, page) };
+      return { status: "ready", id: await files.begin(event.sender.id, path, page, ask) };
     } catch {
-      return { status: "failed" };
+      return { status: files.current(event.sender.id, ask) ? "failed" : "cancelled" };
     }
   });
   ipcMain.handle("terno:export-write", (event, id: unknown, chunk: unknown) => (deps.trusted(event) && typeof id === "string" && typeof chunk === "string" ? files.write(event.sender.id, id, chunk) : false));

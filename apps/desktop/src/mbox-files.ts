@@ -49,6 +49,8 @@ export class MboxFiles {
   private readonly pending = new Map<string, Pending>();
   /** each window's page generation: one more each time its page ends */
   private readonly pages = new Map<number, number>();
+  /** each window's newest export asked for: an older one whose panel answers late begins nothing (Codex code review round 8 #4) */
+  private readonly asks = new Map<number, number>();
 
   /** how many are open (tests) */
   get size(): number {
@@ -60,19 +62,37 @@ export class MboxFiles {
     return this.pages.get(owner) ?? 0;
   }
 
+  /** an export asked for (before its save panel): it supersedes any the window asked for before */
+  ask(owner: number): number {
+    const n = (this.asks.get(owner) ?? 0) + 1;
+    this.asks.set(owner, n);
+    return n;
+  }
+
+  /** whether `ask` is still the window's newest export */
+  current(owner: number, ask: number): boolean {
+    return this.asks.get(owner) === ask;
+  }
+
   /** the window's page went (a reload, a crash, the window gone): its exports end, and any still beginning */
   async endPage(owner: number): Promise<void> {
     this.pages.set(owner, this.page(owner) + 1);
     await this.abortAll(owner);
   }
 
-  /** `page`: the window's page when the export was asked for (before the save panel) */
-  async begin(owner: number, path: string, page = this.page(owner)): Promise<string> {
+  /**
+   * `page`: the window's page when the export was asked for (before the save panel); `ask`: its `ask()`. One a newer
+   * ask superseded aborts nothing and keeps nothing: a stale panel answering late never ends its replacement (Codex
+   * code review round 8 #4).
+   */
+  async begin(owner: number, path: string, page = this.page(owner), ask = this.ask(owner)): Promise<string> {
+    if (!this.current(owner, ask)) throw new Error("a newer export replaced this one");
     await this.abortAll(owner);
     const tmp = tempSibling(dirname(path), randomBytes(8).toString("hex"));
     const file = await open(tmp, "wx", 0o600);
-    // the page ended while this opened: its cleanup ran before the file was here (Codex code review round 5 #5)
-    if (this.page(owner) !== page) {
+    // the page ended while this opened: its cleanup ran before the file was here (Codex code review round 5 #5); or a
+    // newer export was asked for meanwhile
+    if (this.page(owner) !== page || !this.current(owner, ask)) {
       await file.close().catch(() => {});
       await rm(tmp, { force: true });
       throw new Error("the page that asked for this export is gone");

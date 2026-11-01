@@ -87,6 +87,22 @@ describe("mbox export file (plan 107)", () => {
     expect(files.size).toBe(0);
   });
 
+  it("a begin a newer ask superseded aborts nothing, before or after its file opens (Codex code review round 8 #4)", async () => {
+    const d = dir();
+    const files = new MboxFiles();
+    const a = files.ask(1);
+    const b = files.ask(1);
+    const id = await files.begin(1, join(d, "b.mbox"), files.page(1), b);
+    await expect(files.begin(1, join(d, "a.mbox"), files.page(1), a)).rejects.toThrow();
+    expect(await files.write(1, id, "x")).toBe(true);
+    // superseded while its file opens: its file goes
+    const c = files.ask(1);
+    const late = files.begin(1, join(d, "c.mbox"), files.page(1), c);
+    files.ask(1);
+    await expect(late).rejects.toThrow();
+    expect(readdirSync(d).filter((f) => f.startsWith(".terno-export-"))).toHaveLength(0);
+  });
+
   it("names the file from the folder, never a path", () => {
     expect(mboxFileName("Clients", "Mailbox")).toBe("Clients.mbox");
     expect(mboxFileName("../a/b:c", "Mailbox")).toBe("a b c.mbox");
