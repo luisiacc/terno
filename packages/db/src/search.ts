@@ -319,7 +319,7 @@ export function searchIsComplete(db: Db): boolean {
 function compileSegmentedSearch(resolved: ResolvedSearch): Compiled {
   const terms = resolved.query.terms.filter((term) => !(term.field === "from" && isFullEmail(term.value)));
   const c = compileSearch({ ...resolved, query: { ...resolved.query, terms: resolved.query.terms.filter((term) => term.field === "from" && isFullEmail(term.value)) } });
-  const positives = terms.filter((term) => !term.negate);
+  const positives = terms.filter((term) => !term.negate && ftsTerm(term) !== null);
   const sameMessage = positives.length > 0 || c.messageWhere.length > 0;
   const negatives: string[] = [], negativeParams: Param[] = [];
   for (const term of terms) {
