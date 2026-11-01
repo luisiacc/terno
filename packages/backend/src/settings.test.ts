@@ -29,10 +29,10 @@ const errorOf = (p: Promise<unknown>) => p.then(() => null, (e: RpcError) => e);
 const nord = { id: "mi-nord", name: "Mi Nord", mode: "dark" as const, extends: "nord" as const, tokens: { primary: "#88c0d0" } };
 
 describe("appearance settings", () => {
-  it("new installs get the defaults: Lumen in its own colors", async () => {
+  it("new installs get the defaults: Lumen in the GitHub palettes, following the system (plan 98)", async () => {
     const { client } = setup();
     const s = (await client.call("app.bootstrap", {})).settings;
-    expect(s).toMatchObject({ theme: "system", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, previousDarkTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
+    expect(s).toMatchObject({ theme: "system", design: "lumen", lightTheme: "github-light", darkTheme: "github-dark", previousLightTheme: null, previousDarkTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("a legacy blob keeps its mode and gets the new fields' defaults", async () => {
@@ -63,7 +63,7 @@ describe("appearance settings", () => {
     // a light-mode slot can't take a dark custom theme
     expect(await errorOf(client.call("settings.update", { customThemes: [nord], lightTheme: "custom:mi-nord" }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("settings.update", { customThemes: [{ ...nord, tokens: { primary: "red;}body{display:none" } }] }))).toMatchObject({ code: "BAD_REQUEST" });
-    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design", customThemes: [] });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "github-light", darkTheme: "github-dark", customThemes: [] });
   });
 
   it("deleting a custom theme in use falls back to Style colors", async () => {
@@ -147,8 +147,7 @@ describe("designs (plan 15)", () => {
     // an unrelated change persists the move: choosing a design later never brings the old palette back
     await client.call("settings.update", { motionMs: 50 });
     const stored = getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {});
-    expect(stored).toMatchObject({ appearanceVersion: 2, previousLightTheme: "github-light", motionMs: 50 });
-    expect(stored.lightTheme).toBeUndefined();
+    expect(stored).toMatchObject({ appearanceVersion: 3, previousLightTheme: "github-light", motionMs: 50, lightTheme: "design", darkTheme: "design" });
     expect(await client.call("settings.update", { design: "macos" })).toMatchObject({ design: "macos", lightTheme: "design", previousLightTheme: "github-light" });
   });
 
@@ -165,6 +164,26 @@ describe("designs (plan 15)", () => {
     expect(await errorOf(client.call("settings.update", { design: "brutalist" as never }))).toMatchObject({ code: "BAD_REQUEST" });
     setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, design: "brutalist" });
     expect((await client.call("app.bootstrap", {})).settings.design).toBe("lumen");
+  });
+
+  it("plan 98: a profile from before the GitHub defaults keeps what it shows; one that chose keeps its choice", async () => {
+    const { backend, client } = setup();
+    // v2, never chose a palette: it showed Lumen's own colors, and still does, also after an unrelated write
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, theme: "dark" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design" });
+    await client.call("settings.update", { motionMs: 50 });
+    expect(getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {})).toMatchObject({ appearanceVersion: 3, lightTheme: "design", darkTheme: "design" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design" });
+    // v2 with its own palettes: kept (and not remembered as "previous": that was v1's move)
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, lightTheme: "solarized-light", darkTheme: "nord" });
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "solarized-light", darkTheme: "nord", previousLightTheme: null });
+    // a fresh profile's first unrelated write keeps the new defaults
+    setSetting(sqlDb(backend.store), "app", {});
+    await client.call("settings.update", { motionMs: 50 });
+    expect(getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {})).toMatchObject({ appearanceVersion: 3 });
+    expect(getSetting<Record<string, unknown>>(sqlDb(backend.store), "app", {}).lightTheme).toBeUndefined();
+    expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "github-light", darkTheme: "github-dark" });
   });
 
   it("a remembered palette of the wrong mode is forgotten", async () => {

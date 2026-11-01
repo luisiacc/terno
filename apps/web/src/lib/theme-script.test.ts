@@ -48,11 +48,13 @@ describe("theme.js", () => {
     expect(run({ desktop: "linux" }).attrs.has("data-vibrancy")).toBe(false);
   });
 
-  it("defaults: system mode on a light OS, Lumen in its own colors, motion 75", () => {
+  it("defaults: system mode on a light OS, Lumen in the GitHub palettes (plan 98), motion 75", () => {
     const r = run();
     expect(r.classes.has("dark")).toBe(false);
     expect(r.attrs.get("data-design")).toBe("lumen");
-    expect(r.attrs.get("data-theme")).toBe("lumen-light");
+    expect(r.attrs.get("data-theme")).toBe("github-light");
+    expect(run({ dark: true }).attrs.get("data-theme")).toBe("github-dark");
+    expect(JSON.parse(r.store.get("terno:appearance")!)).toMatchObject({ design: "lumen", light: "github-light", dark: "github-dark" });
     expect(r.attrs.get("data-motion")).toBe("on");
     expect(r.style.colorScheme).toBe("light");
     expect(r.attrs.has("data-vibrancy")).toBe(false);

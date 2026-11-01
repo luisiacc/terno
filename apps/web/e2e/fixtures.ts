@@ -185,7 +185,8 @@ export const test = base.extend<Fixtures>({
   },
   app: async ({ page, server, fixedClock, backendOptions, design, layout }, use) => {
     if (fixedClock) await page.clock.setFixedTime(new Date(E2E_NOW));
-    if (design) await server.backend.server.invoke("settings.update", { design }, { clientId: "setup", origin: "dev" as const });
+    // a project's design in its own colors, as its baselines show it (plan 98's GitHub defaults are a new install's: `design: null`)
+    if (design) await server.backend.server.invoke("settings.update", { design, lightTheme: "design", darkTheme: "design" }, { clientId: "setup", origin: "dev" as const });
     if (layout) await server.backend.server.invoke("settings.update", { layout }, { clientId: "setup", origin: "dev" as const });
     await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
     await page.locator("[data-ready]").waitFor();

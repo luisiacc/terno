@@ -314,9 +314,9 @@ test.describe("Lumen: search behind a button", () => {
 
 test.describe("a new install", () => {
   test.use({ design: null });
-  test("opens in Lumen, in its own colors", async ({ app: page }) => {
+  test("opens in Lumen, in the GitHub palettes (plan 98)", async ({ app: page }) => {
     await expect(page.locator("html")).toHaveAttribute("data-design", "lumen");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "lumen-light");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "github-light");
     await expect(page.getByTestId("quick-filters")).toBeVisible();
   });
 });

@@ -39,14 +39,19 @@
     // plan 15: designs (@terno/core DESIGN_IDS) and the default's own palettes
     var DESIGNS = ["macos", "atelier", "lumen"];
     var LUMEN = { v: 2, design: "lumen", light: "lumen-light", dark: "lumen-dark", vibrancy: { light: false, dark: false } };
+    // plan 98: a new install's defaults (the backend's DEFAULT_SETTINGS); LUMEN above stays what older caches move to
+    var FRESH = { design: "lumen", light: "github-light", dark: "github-dark" };
     var a = null;
+    var cached = localStorage.getItem(KEY);
     try {
-      a = JSON.parse(localStorage.getItem(KEY) || "null");
+      a = JSON.parse(cached || "null");
     } catch {}
     if (!a || typeof a !== "object") {
       // v1 kept only the mode under unica:theme (terno:theme since the move above): convert it once
       var legacy = localStorage.getItem("terno:theme");
-      a = { v: 2, mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", design: LUMEN.design, light: LUMEN.light, dark: LUMEN.dark, motion: 75, vibrancy: LUMEN.vibrancy };
+      // nothing cached at all (not a broken cache) and no v1 key: a new install, in the new defaults
+      var base = cached === null && legacy === null ? FRESH : LUMEN;
+      a = { v: 2, mode: MODES.indexOf(legacy) >= 0 ? legacy : "system", design: base.design, light: base.light, dark: base.dark, motion: 75, vibrancy: LUMEN.vibrancy };
       localStorage.setItem(KEY, JSON.stringify(a));
       localStorage.removeItem("terno:theme");
     } else if (a.v !== 2) {

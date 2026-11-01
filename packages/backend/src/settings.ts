@@ -38,19 +38,28 @@ interface StoredSettings extends Partial<General> {
   errorReportsVersion?: number;
 }
 
-export const APPEARANCE_VERSION = 2;
+export const APPEARANCE_VERSION = 3;
 
 /**
- * Plan 15: everyone moves to the full Lumen look (Lumen and its own colors):
- * the user asked for it to be the default. A palette chosen before is
+ * Plan 15 (v2): everyone moves to the full Lumen look (Lumen and its own
+ * colors): the user asked for it to be the default. A palette chosen before is
  * remembered as "previous", one click away under Colors, but no longer
- * applied. Pure: reads apply it until the next write persists it.
+ * applied. Plan 98 (v3): new installs default to the GitHub palettes; a
+ * profile that already exists keeps what it shows ("design" where it never
+ * chose). `fresh` is read from the raw stored object, before any migration
+ * adds a field. Pure: reads apply it until the next write persists it.
  */
-export function migrateAppearance(s: StoredSettings): StoredSettings {
-  if ((s.appearanceVersion ?? 0) >= APPEARANCE_VERSION) return s;
-  const { lightTheme, darkTheme, design: _d, ...rest } = s;
-  const previous = (id: string | undefined) => (id && id !== DESIGN_PALETTE ? canonicalThemeId(id) : null);
-  return { ...rest, previousLightTheme: previous(lightTheme), previousDarkTheme: previous(darkTheme), appearanceVersion: APPEARANCE_VERSION };
+export function migrateAppearance(s: StoredSettings, fresh = Object.keys(s).length === 0): StoredSettings {
+  const version = s.appearanceVersion ?? 0;
+  if (version >= APPEARANCE_VERSION) return s;
+  let next = s;
+  if (version < 2) {
+    const { lightTheme, darkTheme, design: _d, ...rest } = next;
+    const previous = (id: string | undefined) => (id && id !== DESIGN_PALETTE ? canonicalThemeId(id) : null);
+    next = { ...rest, previousLightTheme: previous(lightTheme), previousDarkTheme: previous(darkTheme) };
+  }
+  if (!fresh) next = { ...next, lightTheme: next.lightTheme ?? DESIGN_PALETTE, darkTheme: next.darkTheme ?? DESIGN_PALETTE };
+  return { ...next, appearanceVersion: APPEARANCE_VERSION };
 }
 
 export const REMOTE_IMAGES_VERSION = 1;
@@ -89,10 +98,10 @@ export const DEFAULT_SETTINGS: General = {
   // new installs start local; migration v3 writes false for installs that predate it
   localMode: true,
   theme: "system",
-  // plan 15: Lumen, in its own colors
+  // plan 15: Lumen; plan 98: in the GitHub palettes (profiles from before keep Lumen's own, see migrateAppearance)
   design: DEFAULT_DESIGN,
-  lightTheme: DESIGN_PALETTE,
-  darkTheme: DESIGN_PALETTE,
+  lightTheme: "github-light",
+  darkTheme: "github-dark",
   previousLightTheme: null,
   previousDarkTheme: null,
   motionMs: 75,

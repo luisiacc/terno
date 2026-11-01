@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
+import { APPEARANCE_VERSION, Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
 import { WebSocketServer } from "ws";
@@ -71,7 +71,8 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     log: logBackend,
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
-    await backend.store.settings.set("app", { ai: { provider: "fake" } });
+    // a new install's settings (plan 98: its appearance is the new defaults, not an older profile's)
+    await backend.store.settings.set("app", { ai: { provider: "fake" }, appearanceVersion: APPEARANCE_VERSION });
     // warm model from the seeded categories (persisted on close, so E2E copies start ready)
     await backend.categorizer.rebuildNow();
   }
