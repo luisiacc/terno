@@ -86,12 +86,9 @@ export interface PageHistory {
 
 export function createPageHistory(deps: PageHistoryDeps): PageHistory {
   const { history, mailbox } = deps;
-  // plan 107: lists renamed while this document lives (a folder's new key), followed through a chain of renames
+  // plan 107: lists renamed while this document lives (a folder's new key): each old key to the list it is now
   const renamedLists = new Map<string, string>();
-  const listNow = (list: string) => {
-    for (let i = 0; i < 16 && renamedLists.has(list); i++) list = renamedLists.get(list)!;
-    return list;
-  };
+  const listNow = (list: string) => renamedLists.get(list) ?? list;
   let shown: Shown = { page: "list", id: null, list: "" };
   /** a back() on its way: the generation it belongs to, and its fallback */
   let traversal: { gen: number; timer: unknown } | null = null;
@@ -168,7 +165,13 @@ export function createPageHistory(deps: PageHistoryDeps): PageHistory {
     relist(from, to) {
       // entries other than this one (Forward's, Back's) can't be rewritten: their list is translated as they come
       // back (Codex code review round 16 #3)
-      if (from !== to) renamedLists.set(from, to);
+      if (from !== to) {
+        // every key maps straight to its list now: earlier names of `from` follow it, and `to` is a list again (a
+        // rename back), so no chain and no cycle (round 17 #4)
+        for (const [k, v] of renamedLists) if (v === from) renamedLists.set(k, to);
+        renamedLists.delete(to);
+        renamedLists.set(from, to);
+      }
       if (shown.list !== from) return;
       flushReplace(false);
       shown = { ...shown, list: to };

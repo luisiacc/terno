@@ -182,6 +182,21 @@ describe("page history (plan 24)", () => {
     expect(t.opened).toEqual([7, 7]);
   });
 
+  it("renamed back to an earlier name with a conversation in Forward: it reopens (Codex code review round 17 #4)", () => {
+    const t = harness();
+    t.h.relist("Work", "Job");
+    t.h.sync(thread(7, "Job"));
+    t.browser(-1, "Job");
+    t.h.relist("Job", "Work");
+    t.browser(1, "Work");
+    expect(t.opened).toEqual([7]);
+    // and an entry saved under the first name follows too
+    t.browser(-1, "Work");
+    t.h.relist("Work", "Third");
+    t.browser(1, "Third");
+    expect(t.opened).toEqual([7, 7]);
+  });
+
   it("j → Back → Forward within 300 ms: the replace still waiting is dropped (never written over the list), Forward reopens the entry as written", () => {
     const t = harness();
     t.h.sync(thread(1));
