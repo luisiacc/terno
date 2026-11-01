@@ -1,3 +1,4 @@
+import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
@@ -222,9 +223,11 @@ export class SqlMailStore implements MailStore {
   private bodyClosing = false;
   private readonly bodyCommands = new Set<Promise<unknown>>();
   private bodyGarbage: Promise<void> | undefined;
-  private queueBodyGarbage(): void {
-    if (this.bodyClosing || this.bodyGarbage) return;
-    const task = Promise.resolve().then(() => cleanupBodies(this.db, this.yieldTo)).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; });
+  private bodyGarbageAgain = false;
+  private queueBodyGarbage(retired = false): void {
+    if (this.bodyClosing) return;
+    if (this.bodyGarbage) { this.bodyGarbageAgain ||= retired; return; }
+    const task = Promise.resolve().then(() => cleanupBodies(this.db, this.yieldTo)).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
     this.bodyGarbage = task;
   }
 
@@ -249,7 +252,7 @@ export class SqlMailStore implements MailStore {
     this.yieldTo = () => platform.yield();
     this.bodyCleanup = cleanupBodies(db, this.yieldTo);
     this.log = options.log ?? (() => {});
-    observeBodyRetirement(db, () => this.queueBodyGarbage());
+    observeBodyRetirement(db, () => this.queueBodyGarbage(true));
     db.onCommit(() => { if (!this.bodyClosing && db.get("SELECT 1 FROM body_captures WHERE owned=0 AND ready=1 LIMIT 1")) this.queueBodyGarbage(); });
     this.checkpointer = options.checkpointWorker ? startCheckpointWorker(db) : null;
     if (options.instantSearch) {
@@ -307,18 +310,26 @@ export class SqlMailStore implements MailStore {
     head: async () => searchHead(this.db),
     changes: async (after, through, maxCommits) => {
       const batches: IndexBatch[] = [];
+      let pending: IndexChange[] = [];
+      try {
       for (const c of searchChangeIds(this.db, after, through, maxCommits)) {
         // a large commit (a 5,000-thread move) is read in slices: each doc is still the newest committed state
         // when read, never older than its batch, which is all replaying needs to converge
-        const changes = materializeChanges(this.db, c.messageIds.slice(0, MATERIALIZE_SLICE), c.threadIds.slice(0, MATERIALIZE_SLICE));
+        const changes = pending = materializeChanges(this.db, c.messageIds.slice(0, MATERIALIZE_SLICE), c.threadIds.slice(0, MATERIALIZE_SLICE));
         for (let m = MATERIALIZE_SLICE, t = MATERIALIZE_SLICE; m < c.messageIds.length || t < c.threadIds.length; m += MATERIALIZE_SLICE, t += MATERIALIZE_SLICE) {
           await this.yieldTo();
           if (!this.db.isOpen) throw new Error("the store closed");
           changes.push(...materializeChanges(this.db, c.messageIds.slice(m, m + MATERIALIZE_SLICE), c.threadIds.slice(t, t + MATERIALIZE_SLICE)));
         }
         batches.push({ from: c.from, to: c.to, changes });
+        pending = [];
       }
       return batches;
+      } catch (error) {
+        await releaseIndexBodies(batches, this.yieldTo);
+        await releaseBodyChanges(pending, this.yieldTo);
+        throw error;
+      }
     },
     beginBuild: async () => beginSearchBuild(this.db),
   };
@@ -1366,7 +1377,7 @@ export class SqlMailStore implements MailStore {
         if (!body) continue;
         message.bodyText = body.bodyText;
         const doc = snapshot.search.messages.find((doc) => doc.messageId === message.id);
-        if (doc) { doc.body = body.bodyText ?? ""; delete doc.bodyTokenParts; }
+        if (doc) { doc.body = body.bodyText ?? ""; doc.releaseBody?.(); delete doc.releaseBody; delete doc.bodyTokenParts; }
       }
       return snapshot;
     },

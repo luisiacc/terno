@@ -1,4 +1,4 @@
-import { RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild } from "@terno/store";
+import { messageBodiesReleased, releaseMessageBodies, RevisionError, type IndexBatch, type IndexChange, type Revision, type SearchBuild } from "@terno/store";
 import { messageDocs, messageDocsAfter, threadDocs, threadDocsAfter } from "./search-docs";
 import type { Db } from "./sqlite";
 
@@ -122,13 +122,15 @@ export function beginSearchBuild(db: Db, chunk = 500): SearchBuild {
     const from = searchHead(db);
     return { from, lease: db.run("INSERT INTO search_leases (from_seq, created_at) VALUES (?, ?)", from.seq, Date.now()).lastInsertRowid };
   });
+  const held = new Set<readonly import("@terno/store").SearchMessageDoc[]>();
   return {
     from,
     async *messages() {
       for (let after = 0; ; ) {
         const page = messageDocsAfter(db, after, chunk);
         if (page.length === 0) return;
-        yield page;
+        held.add(page);
+        try { yield page; } finally { if (messageBodiesReleased(page)) held.delete(page); }
         after = page[page.length - 1]!.messageId;
       }
     },
@@ -141,6 +143,8 @@ export function beginSearchBuild(db: Db, chunk = 500): SearchBuild {
       }
     },
     release: async () => {
+      for (const page of held) await releaseMessageBodies(page, () => new Promise<void>((r) => setTimeout(r, 0)));
+      held.clear();
       if (db.isOpen) db.run("DELETE FROM search_leases WHERE id = ?", lease);
     },
   };

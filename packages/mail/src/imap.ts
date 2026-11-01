@@ -1,3 +1,4 @@
+import { RpcError } from "@terno/core/rpc";
 import { sentCopyWarning, type SentCopyHooks } from "./sent-copy";
 import { FOLDERS_PER_ACCOUNT_MAX, MAX_INCOMING_MIME_BYTES } from "@terno/core";
 import { createHash } from "node:crypto";
@@ -716,6 +717,7 @@ class ImapIncomingResourceError extends ProviderError {
 
 export function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) return error;
+  if (error instanceof RpcError && error.code === "STALE" && error.details && typeof error.details === "object" && "reason" in error.details && error.details.reason === "revision") return new ImapIncomingResourceError("body-stale", L("errors.mail.processingBusy"));
   if (error instanceof IncomingProcessingError) {
     const key = error.code === "input-limit" || error.code === "result-limit" ? "errors.mail.processingLimit"
       : error.code === "worker-timeout" ? "errors.mail.processingTimedOut"

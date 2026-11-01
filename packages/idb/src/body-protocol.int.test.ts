@@ -92,3 +92,36 @@ for (const conflict of ["reset", "writer"] as const) it(`rejects ${conflict} at 
     expect(await store.attachments.read(accountId!, current.attachments[0]!.assetId!, 0)).toBe("AP+A");
   } finally { release(); await Promise.allSettled(pending ? [pending] : []); for (const spy of spies) spy.mockRestore(); await peer?.close(); await store.close(); indexedDB.deleteDatabase(`terno-${name}`); }
 });
+
+for (const terminal of ["consume", "abandon", "unstarted", "deferred"] as const) it(`keeps a selected search page exact through replacement and ${terminal}`, async () => {
+  const name = `page-${crypto.randomUUID()}`, store = await IdbMailStore.open({ name, factory: indexedDB, platform: nodePlatform, instantSearch: false });
+  let build: Awaited<ReturnType<typeof store.feed.beginBuild>> | undefined;
+  let pages: AsyncIterator<readonly import("@terno/store").SearchMessageDoc[]> | undefined;
+  let spy: { mockRestore(): void } | undefined, retired = false, retiredDone!: () => void;
+  const retirement = new Promise<void>((r) => { retiredDone = r; });
+  try {
+    const [accountId] = await withAccounts(store, 1);
+    const result = await store.sync.ingest([msg({ accountId: accountId!, bodyText: "old exact phrase ".repeat(5000), bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+    const message = (await store.threads.get(result.touched[0]!, { bodyFormat: "parts" }))!.messages[0]!;
+    build = await store.feed.beginBuild(); pages = build.messages()[Symbol.asyncIterator]();
+    const docs = (await pages.next()).value!;
+    const remove = IDBObjectStore.prototype.delete;
+    spy = vi.spyOn(IDBObjectStore.prototype, "delete").mockImplementation(function (this: IDBObjectStore, key) {
+      const request = remove.call(this, key);
+      if (this.name === "body_captures" && key === message.bodyReference!.version) this.transaction.addEventListener("complete", () => { retired = true; retiredDone(); }, { once: true });
+      return request;
+    });
+    if (terminal === "deferred") await pages.return?.();
+    await store.sync.setBody(message.id, "new complete phrase ".repeat(5000), null, { now: 2, classifier: null });
+    expect(retired, "selected page owns its old capture before the first token read").toBe(false);
+    if (terminal === "consume" || terminal === "deferred") {
+      let tokens = "";
+      for await (const part of docs[0]!.bodyTokenParts!()) tokens += part;
+      expect(tokens === `\0${"old\0exact\0phrase\0".repeat(5000)}`).toBe(true);
+    }
+    if (terminal === "unstarted") { const unread = docs[0]!.bodyTokenParts!()[Symbol.asyncIterator](); await unread.return?.(); }
+    await pages.return?.(); await build.release();
+    await retirement;
+    expect((await store.threads.get(result.touched[0]!))!.messages[0]!.bodyText === "new complete phrase ".repeat(5000)).toBe(true);
+  } finally { await pages?.return?.(); await build?.release(); spy?.mockRestore(); await store.close(); indexedDB.deleteDatabase(`terno-${name}`); }
+});

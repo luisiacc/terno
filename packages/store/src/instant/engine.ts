@@ -1,5 +1,7 @@
 import { isFullEmail, normalizeText, tokenize, type MessageTerm, type ResolvedSearch, type SearchView } from "@terno/core";
 import {
+  releaseMessageBodies,
+  releaseIndexBodies,
   RevisionError,
   sameRevision,
   StaleCursorError,
@@ -430,6 +432,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
       }
     } finally {
       this.busy = false;
+      await releaseMessageBodies(docs, this.o.yield);
     }
   }
 
@@ -823,6 +826,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
    * failure part-way discards the index.
    */
   async apply(batch: IndexBatch): Promise<void> {
+    try {
     const rev = this.rev;
     if (!this.indexed || !rev) throw new IndexNotCurrentError("instant search: apply before the build finished");
     if (batch.from.epoch !== rev.epoch || batch.to.epoch !== rev.epoch) throw new RevisionError("epoch", "the batch belongs to another database");
@@ -844,6 +848,7 @@ export class InstantSearchEngine implements CachedSearchEngine {
     } finally {
       this.busy = false;
     }
+    } finally { await releaseIndexBodies([batch], this.o.yield); }
   }
 
   private async applyChange(c: IndexChange, clock: SliceClock): Promise<void> {

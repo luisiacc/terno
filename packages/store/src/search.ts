@@ -60,6 +60,8 @@ export interface SearchMessageDoc {
   body: string | null;
   /** Exact prepared token parts; consumed lazily instead of normalizing a complete body. */
   bodyTokenParts?: () => AsyncIterable<string>;
+  /** Release selected source ownership on consumption, abandonment or failure; idempotent. */
+  releaseBody?: (() => void) & { isHeld?: () => boolean };
   hasAttachments: boolean;
   bodyState: "none" | "partial" | "full";
 }
@@ -176,3 +178,22 @@ export function sameRevision(a: Revision | null | undefined, b: Revision | null 
 
 /** Cursors minted before revisions existed (older renderers) carry this one. */
 export const UNVERSIONED: Revision = { epoch: "unversioned", seq: 0 };
+
+export async function releaseMessageBodies(docs: readonly SearchMessageDoc[], yieldTo?: () => Promise<void>): Promise<void> {
+  let n = 0;
+  for (const doc of docs) if (doc.releaseBody) { doc.releaseBody(); if (++n % 64 === 0) await yieldTo?.(); }
+}
+export async function releaseBodyChanges(changes: readonly IndexChange[], yieldTo?: () => Promise<void>): Promise<void> {
+  let n = 0;
+  for (const change of changes) if (change.kind === "upsertMessage" && change.doc.releaseBody) {
+    change.doc.releaseBody();
+    if (++n % 64 === 0) await yieldTo?.();
+  }
+}
+export async function releaseIndexBodies(batches: readonly IndexBatch[], yieldTo?: () => Promise<void>): Promise<void> {
+  for (const batch of batches) await releaseBodyChanges(batch.changes, yieldTo);
+}
+
+export function messageBodiesReleased(docs: readonly SearchMessageDoc[]): boolean {
+  return docs.every((doc) => !doc.releaseBody || doc.releaseBody.isHeld?.() === false);
+}

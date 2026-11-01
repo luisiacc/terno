@@ -19,7 +19,7 @@ export function sqlBodyProtocol(db: Db): BodyProtocol {
   return protocol;
 }
 export function observeBodyRetirement(db: Db, observer: () => void): void { retiredObservers.set(db, observer); }
-export function retainBody(db: Db, id: string): () => void { return sqlBodyProtocol(db).retain(id); }
+export function retainBody(db: Db, id: string): ReturnType<BodyProtocol["retain"]> { return sqlBodyProtocol(db).retain(id); }
 export function sqlBodyParts(db: Db, capture: string, field: number, yieldTo: () => Promise<void>): BodyPartSource {
   const row = db.get<{ text_parts: number | null; html_parts: number | null; token_parts: number; ready: number }>("SELECT text_parts,html_parts,token_parts,ready FROM body_captures WHERE id=?", capture);
   if (!row?.ready) throw new Error("Body source changed before it was read");

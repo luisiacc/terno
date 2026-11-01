@@ -1,9 +1,12 @@
+import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
+import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
+import { releaseMessageBodies } from "@terno/store";
 import { BodyProtocol, BodyEpochChanged, BODY_FACT_TABLES, publishBody, type BodyTicket } from "@terno/store";
 import { unsubscribeBodyParts } from "@terno/store";
 import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
-import { decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartText, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
+import { decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
 import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -237,14 +240,16 @@ export class IdbMailStore implements MailStore {
   private readonly bodyCommands = new Set<Promise<unknown>>();
   private readonly bodyStages = new Map<string, () => void>();
   private readonly bodyProtocol = new BodyProtocol(() => String(this.db.table("body_protocol").get(1)?.epoch ?? "0"), (id) => {
-    if (this.isOpen && bodyOwnership(this.db).isOrphan(id)) this.queueBodyGarbage();
+    if (this.isOpen && bodyOwnership(this.db).isOrphan(id)) this.queueBodyGarbage(true);
   });
   private readonly preparedTickets = new WeakMap<BodyTestResults, BodyTicket>();
   private bodyCleanup: Promise<void> = Promise.resolve();
   private bodyGarbage: Promise<void> | undefined;
-  private queueBodyGarbage(): void {
-    if (this.bodyClosing || this.bodyGarbage) return;
-    const task = Promise.resolve().then(() => this.cleanupBodies()).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; });
+  private bodyGarbageAgain = false;
+  private queueBodyGarbage(retired = false): void {
+    if (this.bodyClosing) return;
+    if (this.bodyGarbage) { this.bodyGarbageAgain ||= retired; return; }
+    const task = Promise.resolve().then(() => this.cleanupBodies()).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
     this.bodyGarbage = task;
   }
 
@@ -273,7 +278,7 @@ export class IdbMailStore implements MailStore {
     private readonly o: IdbMailStoreOptions,
   ) {
     this.log = o.log ?? (() => {});
-    bodyOwnership(db).onRetired = () => this.queueBodyGarbage();
+    bodyOwnership(db).onRetired = () => this.queueBodyGarbage(true);
     const order = new ThreadOrder(db);
     const filterOrders = Object.fromEntries(LIST_FILTERS.map((f) => [f, new ThreadOrder(db, FILTER_TEST[f])])) as Record<ListFilter, ThreadOrder>;
     const facts = new FactsQueue(db);
@@ -286,7 +291,7 @@ export class IdbMailStore implements MailStore {
       facts,
       scopes,
       uuid: () => o.platform.uuid(),
-      bodyTokenParts: (capture) => bodyPartText(this.bodyPartSource(capture, 2)),
+      bodyProjection: (capture) => projectBodyTokens(this.bodyProtocol.retain(capture), () => this.bodyPartSource(capture, 2)),
       body: (id) => {
         const r = bodies.get(id);
         if (r) return { body_text: r.body_text ?? null, body_html: r.body_html ?? null, body_preview: r.body_preview ?? null, capture_id: r.capture_id ?? null };
@@ -542,7 +547,7 @@ export class IdbMailStore implements MailStore {
 
   private searchMessageDoc(id: number): SearchMessageDoc {
     const body = this.c.body(id);
-    return messageDoc(T(this.c, "messages").get(id)!, body?.body_text ?? null, body?.capture_id ? () => bodyPartText(this.bodyPartSource(body.capture_id!, 2)) : undefined);
+    return { ...messageDoc(T(this.c, "messages").get(id)!, body?.body_text ?? null), ...(body?.capture_id ? this.c.bodyProjection!(body.capture_id) : {}) };
   }
 
   private bodyPartSource(capture: string, field: number): BodyPartSource {
@@ -815,8 +820,10 @@ export class IdbMailStore implements MailStore {
     changes: async (after, through, maxCommits) => {
       const ids = await this.read(() => searchChangeIds(this.c, after, through, maxCommits));
       const batches: IndexBatch[] = [];
+      let pending: IndexChange[] = [];
+      try {
       for (const b of ids) {
-        const changes = [];
+        const changes: IndexChange[] = pending = [];
         for (let m = 0, t = 0; m < Math.max(1, b.messageIds.length) || t < b.threadIds.length; m += SLICE, t += SLICE) {
           const mIds = b.messageIds.slice(m, m + SLICE);
           const tIds = b.threadIds.slice(t, t + SLICE);
@@ -830,8 +837,14 @@ export class IdbMailStore implements MailStore {
           );
         }
         batches.push({ from: b.from, to: b.to, changes });
+        pending = [];
       }
       return batches;
+      } catch (error) {
+        await releaseIndexBodies(batches, this.o.platform.yield);
+        await releaseBodyChanges(pending, this.o.platform.yield);
+        throw error;
+      }
     },
     beginBuild: async () => {
       const { from, lease, messageIds, threadIds } = await this.exclusive(async () => {
@@ -858,7 +871,10 @@ export class IdbMailStore implements MailStore {
       const messagesAt = (at: number) =>
         page<SearchMessageDoc>("messages", messageIds, at, (id) => this.searchMessageDoc(id), (slice) => this.readBodies(slice));
       const threadsAt = (at: number) => page<SearchThreadDoc>("threads", threadIds, at, (id) => threadDoc(this.c, this.db.table<R>("threads").get(id)!));
+      const held = new Set<readonly SearchMessageDoc[]>();
       const release = async () => {
+        for (const page of held) await releaseMessageBodies(page, this.o.platform.yield);
+        held.clear();
         if (!this.open) return;
         await this.exclusive(async () => {
           this.db.tx(() => this.db.table("search_leases").delete(lease));
@@ -872,7 +888,10 @@ export class IdbMailStore implements MailStore {
           for (let at = 0; at < messageIds.length; ) {
             const p = await messagesAt(at);
             at = p.next;
-            if (p.docs.length) yield p.docs;
+            if (p.docs.length) {
+              held.add(p.docs);
+              try { yield p.docs; } finally { if (messageBodiesReleased(p.docs)) held.delete(p.docs); }
+            }
           }
         },
         async *threads() {
@@ -2240,7 +2259,7 @@ export class IdbMailStore implements MailStore {
           if (!body?.capture_id) continue;
           const capture = T(this.c, "body_captures").get(body.capture_id)!;
           message.bodyText = capture.text_parts === null ? null : await assembleBody(this.bodyPartSource(body.capture_id, 0));
-          const doc = snap.search.messages.find((doc) => doc.messageId === message.id); if (doc) { doc.body = message.bodyText ?? ""; delete doc.bodyTokenParts; }
+          const doc = snap.search.messages.find((doc) => doc.messageId === message.id); if (doc) { doc.body = message.bodyText ?? ""; doc.releaseBody?.(); delete doc.releaseBody; delete doc.bodyTokenParts; }
         }
         this.evictBodies();
         return snap;

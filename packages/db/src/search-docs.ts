@@ -1,5 +1,5 @@
-import { bodyPartText } from "@terno/store";
-import { sqlBodyParts } from "./body-parts";
+import { projectBodyTokens } from "@terno/store";
+import { retainBody, sqlBodyParts } from "./body-parts";
 import type { SearchMessageDoc, SearchThreadDoc } from "@terno/store";
 import type { Db } from "./sqlite";
 
@@ -45,6 +45,7 @@ interface ThreadDocRow {
 }
 
 function toMessageDoc(db: Db, r: MessageDocRow): SearchMessageDoc {
+  const projection = r.capture_id ? projectBodyTokens(retainBody(db, r.capture_id), () => sqlBodyParts(db, r.capture_id!, 2, () => new Promise<void>((resolve) => setTimeout(resolve, 0)))) : undefined;
   return {
     messageId: r.id,
     threadId: r.thread_id,
@@ -55,7 +56,7 @@ function toMessageDoc(db: Db, r: MessageDocRow): SearchMessageDoc {
     fromEmail: r.from_email,
     recipients: r.recipients_text,
     body: r.capture_id ? null : r.body,
-    ...(r.capture_id ? { bodyTokenParts: () => bodyPartText(sqlBodyParts(db, r.capture_id!, 2, () => new Promise<void>((resolve) => setTimeout(resolve, 0)))) } : {}),
+    ...projection,
     hasAttachments: r.has_attachments === 1,
     bodyState: r.body_state,
   };

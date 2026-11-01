@@ -1,3 +1,5 @@
+import type { BodyPin } from "./body-protocol";
+import type { SearchMessageDoc } from "./search";
 import { UNSUBSCRIBE_SCAN_MAX, tokenize, type TextOp } from "@terno/core";
 
 /** A storage/transfer unit, never a limit on a message's complete content. */
@@ -24,7 +26,10 @@ export function decodeBodyPart(bytes: Uint8Array): string {
 }
 
 /** Caller controls physical reads/yields; no read collects the remaining parts. */
-export async function* bodyPartText(source: BodyPartSource): AsyncGenerator<string> {
+export function bodyPartText(source: BodyPartSource): AsyncGenerator<string> {
+  let closed = false;
+  const close = () => { if (!closed) { closed = true; source.close?.(); } };
+  const iterator = (async function* () {
   let ordinal = -1;
   try {
     for (;;) {
@@ -36,7 +41,12 @@ export async function* bodyPartText(source: BodyPartSource): AsyncGenerator<stri
       next = null;
       yield text;
     }
-  } finally { source.close?.(); }
+  } finally { close(); }
+  })();
+  const finish = iterator.return.bind(iterator), fail = iterator.throw.bind(iterator);
+  iterator.return = async (value) => { try { return await finish(value); } finally { close(); } };
+  iterator.throw = async (error) => { try { return await fail(error); } finally { close(); } };
+  return iterator;
 }
 
 /** Exact code-unit assembly for legacy string consumers; no whole-string join/normalization. */
@@ -57,9 +67,9 @@ export async function assembleBody(source: BodyPartSource): Promise<string> {
  * incremental even when a single token spans every part in the message.
  */
 export async function matchBodyParts(source: BodyPartSource, op: TextOp, value: string, prefix = false): Promise<boolean> {
-  if (op === "matches") return false;
+  if (op === "matches") { source.close?.(); return false; }
   const tokens = tokenize(value);
-  if (!tokens.length) return false;
+  if (!tokens.length) { source.close?.(); return false; }
   const pattern = `\0${tokens.join("\0")}${prefix ? "" : "\0"}`;
   const failure = new Uint32Array(pattern.length);
   for (let i = 1, j = 0; i < pattern.length; i++) {
@@ -192,4 +202,13 @@ export async function unsubscribeBodyParts(source: BodyPartSource, html: boolean
   }
   const end = tail.join("");
   return html && total > limit ? `${head.join("")}\n${end.slice(-limit * 3 / 4)}` : end;
+}
+
+/** Selection owns the projection; an actual reader also retains it until its terminal. */
+export function projectBodyTokens(releaseBody: BodyPin, open: () => BodyPartSource): Pick<SearchMessageDoc, "body" | "bodyTokenParts" | "releaseBody"> {
+  return { body: null, releaseBody, bodyTokenParts: () => {
+    let source: BodyPartSource;
+    try { source = open(); } catch (error) { releaseBody(); throw error; }
+    return bodyPartText({ read: (after) => source.read(after), close: () => { try { source.close?.(); } finally { releaseBody(); } } });
+  } };
 }

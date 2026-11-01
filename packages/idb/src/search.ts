@@ -78,7 +78,7 @@ export function materializeChanges(c: Ctx, messageIds: readonly number[], thread
   for (const id of messageIds) {
     const m = messages.get(id);
     const body = m ? c.body(id) : null;
-    changes.push(m ? { kind: "upsertMessage", doc: messageDoc(m, body?.body_text ?? null, body?.capture_id ? () => c.bodyTokenParts!(body.capture_id!) : undefined) } : { kind: "removeMessage", messageId: id });
+    changes.push(m ? { kind: "upsertMessage", doc: { ...messageDoc(m, body?.body_text ?? null), ...(body?.capture_id ? c.bodyProjection!(body.capture_id) : {}) } } : { kind: "removeMessage", messageId: id });
   }
   for (const id of threadIds) {
     const t = threads.get(id);

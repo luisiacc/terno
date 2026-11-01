@@ -1,5 +1,5 @@
 import type { Platform } from "../platform";
-import { RevisionError, sameRevision, type Revision, type SearchFeed } from "../search";
+import { releaseIndexBodies, RevisionError, sameRevision, type Revision, type SearchFeed } from "../search";
 import { IndexPreparationError, IndexMemoryError, InstantSearchEngine, type PhraseSource } from "./engine";
 
 const MiB = 1024 * 1024;
@@ -260,12 +260,14 @@ export class InstantSearch {
     this.update(this.engine === e ? "catching-up" : this.report.state);
     const batches = await this.o.feed.changes(at, head, 16);
     if (batches.length === 0 && head.epoch === at.epoch && head.seq > at.seq) throw new RevisionError("gap", "the feed served nothing");
+    try {
     for (const b of batches) {
       if (this.stopped) return true;
       await e.apply(b);
       if (b.changes.length && !this.unsaved) this.unsavedSince = this.now();
       this.unsaved += b.changes.length;
     }
+    } finally { await releaseIndexBodies(batches, this.o.platform.yield); }
     await this.o.platform.yield();
     return true;
   }

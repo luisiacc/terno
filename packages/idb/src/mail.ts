@@ -101,7 +101,7 @@ export interface Ctx {
   late?: { loaded: boolean };
   /** a message's stored body: written by this command, read ahead of it, or absent; throws if it wasn't read ahead */
   body(messageId: number): { body_text: string | null; body_html: string | null; body_preview?: string | null; capture_id?: string | null } | null;
-  bodyTokenParts?: (capture: string) => AsyncIterable<string>;
+  bodyProjection?: (capture: string) => Pick<SearchMessageDoc, "body" | "bodyTokenParts" | "releaseBody">;
   bodyTest?: (capture: string, op: import("@terno/core").TextOp, value: string, prefix?: boolean) => boolean;
 }
 

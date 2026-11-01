@@ -74,6 +74,7 @@ it("rechecks reader ownership inside deletion after a native orphan-key read", a
     build = await store.feed.beginBuild();
     const pages = build.messages()[Symbol.asyncIterator](), docs = (await pages.next()).value!;
     await pages.return?.();
+    await build.release();
     const message = (await store.threads.get(result.touched[0]!, { bodyFormat: "parts" }))!.messages[0]!;
     const keys = IDBObjectStore.prototype.getAllKeys;
     let selected = false;

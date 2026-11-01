@@ -4,6 +4,7 @@ import { L } from "@terno/i18n";
 /** Facts whose committed change invalidates prepared body publication. */
 export const BODY_FACT_TABLES = ["body_heads", "filters", "accounts", "secrets", "message_locations", "imap_identity_holds"] as const;
 export class BodyEpochChanged extends Error { constructor(readonly durable = false) { super("Body transaction authority changed"); } }
+export interface BodyPin { (): void; isHeld(): boolean }
 export interface BodyTicket { readonly epoch: string; check(): void }
 
 /** Stage and read pins share one lifetime; the adapter owns durable transaction admission. */
@@ -16,16 +17,17 @@ export class BodyProtocol {
     ticket.check();
     if (ticket.epoch !== this.epoch()) throw new BodyEpochChanged();
   }
-  retain(id: string): () => void {
+  retain(id: string): BodyPin {
     if (this.reclaiming.has(id)) throw new RpcError("STALE", L("errors.mail.processingBusy"), { reason: "revision" });
     this.pins.set(id, (this.pins.get(id) ?? 0) + 1);
     let held = true;
-    return () => {
+    const release = () => {
       if (!held) return;
       held = false;
       const n = this.pins.get(id)! - 1;
       if (n) this.pins.set(id, n); else { this.pins.delete(id); this.retired(id); }
     };
+    return Object.assign(release, { isHeld: () => held });
   }
   claimReclaim(id: string): () => void {
     if (this.held(id) || this.reclaiming.has(id)) throw new BodyEpochChanged();
