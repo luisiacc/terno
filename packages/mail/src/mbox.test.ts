@@ -1,6 +1,6 @@
 import { ATTACHMENT_CHUNK, bytesBase64 } from "@terno/core";
 import PostalMime from "postal-mime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { asctime, MBOX_PIECE, mboxMessage, qpLine, type MboxChunkReader, type MboxMessage } from "./mbox";
 
 const base: MboxMessage = {
@@ -96,6 +96,22 @@ describe("mbox (plan 107)", () => {
     expect(pieces.every((p) => p.endsWith("\n"))).toBe(true);
     const email = await PostalMime.parse(readMbox(text)[0]!);
     expect(email.text?.replace(/\r\n/g, "\n").replace(/\n$/, "")).toBe(body);
+  });
+
+  it("a 10 MB body of short lines is read as it goes, never split whole (Codex code review round 5 #3)", async () => {
+    const body = Array.from({ length: 10 * 1024 * 1024 / 16 }, (_, i) => `line ${String(i).padStart(9, "0")}`).join("\n");
+    // splitting it all before the first piece was ~169 ms in one next(): no string op may see more than a piece
+    const split = vi.spyOn(String.prototype, "split");
+    try {
+      const it = mboxMessage({ ...base, bodyText: body }, none);
+      const pieces: string[] = [];
+      for (let r = await it.next(); !r.done; r = await it.next()) pieces.push(r.value);
+      expect(Math.max(0, ...split.mock.contexts.map((s) => String(s).length))).toBeLessThanOrEqual(MBOX_PIECE);
+      const email = await PostalMime.parse(readMbox(pieces.join(""))[0]!);
+      expect(email.text?.replace(/\r\n/g, "\n").replace(/\n$/, "")).toBe(body);
+    } finally {
+      split.mockRestore();
+    }
   });
 
   it("several messages read back one by one", async () => {

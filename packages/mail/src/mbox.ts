@@ -229,8 +229,13 @@ function* put(out: Pieces, lines: string): Generator<string, void> {
 
 function* quotedPrintable(out: Pieces, text: string): Generator<string, void> {
   let batch = "";
-  // a line at a time, so a large body's encoding is never one string
-  for (const line of text.split(/\r\n|\r|\n/)) {
+  // a line at a time, so a large body's encoding is never one string; found as it goes, never split whole
+  // (Codex code review round 5 #3: splitting a 10 MB body took 169 ms before its first piece)
+  const eol = /\r\n|\r|\n/g;
+  for (let start = 0; start <= text.length; ) {
+    const m = eol.exec(text);
+    const line = text.slice(start, m ? m.index : text.length);
+    start = m ? eol.lastIndex : text.length + 1;
     for (const l of qpLines(line)) {
       batch += `${l}\n`;
       if (batch.length >= 16 * 1024) {
