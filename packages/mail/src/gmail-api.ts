@@ -673,7 +673,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
       let res: Response;
       let httpResponse: HttpResponseEvidence | undefined;
       let nativeStatus: number | undefined;
-      let settleForbidden: ((kind: "quota" | "policy" | "none") => Promise<void>) | undefined;
+      let settleForbidden: ((kind: "quota" | "policy" | "none", policyError?: ProviderError) => Promise<void>) | undefined;
       try {
         // plan 22: the People API and userinfo go through the same token and deadlines (absolute URLs)
         deadline.signal.throwIfAborted();
@@ -719,10 +719,10 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
         const quota = res.status === 403 && isRateLimit(text);
         const reason = res.status === 403 ? googleFailureReason(text) : undefined;
-        await settleForbidden?.(deadline.signal.aborted ? "none" : quota ? "quota" : reason ? "policy" : "none");
         const retryable = res.status === 429 || res.status >= 500 || quota;
         const failure = new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), reason, httpResponse);
         failure.googleReason = googleReasonOf(text);
+        await settleForbidden?.(deadline.signal.aborted ? "none" : quota ? "quota" : reason ? "policy" : "none", reason && !quota ? failure : undefined);
         throw failure;
       }
       if (responseMode === "void") {

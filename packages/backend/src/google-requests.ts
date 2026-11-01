@@ -1,4 +1,4 @@
-import { ProviderCooldownError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
+import { ProviderCooldownError, type ProviderError, type GoogleRequests, type HttpRequestContext, type MailAdmission, type ProviderRequests } from "@terno/mail/portable";
 import { mailboxDigest, type CooldownStamp, type ProviderCooldownStore } from "@terno/store";
 import type { ProviderCooldown } from "./provider-cooldown";
 import type { NetworkPolicy } from "./net-policy";
@@ -8,6 +8,7 @@ const mail = { endpoint: "gmail-api", purpose: "mail" } as const;
 export interface SavedGoogleRequests extends GoogleRequests {
   readonly paused: boolean;
   readonly policyPaused: boolean;
+  readonly policyError: ProviderError | undefined;
   recoverPolicy(): void;
   retryAt(): number | undefined;
   close(): void;
@@ -31,6 +32,7 @@ export async function savedGoogleRequests(input: {
   const policies = new Set([scope, installation]);
   let paused = false, closed = false;
   let policyEpoch: number | undefined;
+  let policyError: ProviderError | undefined;
   let recoveryRevision = 0;
   const policyPaused = () => policyEpoch !== undefined && policyEpoch === input.credentials();
   let proving: Promise<void> | undefined;
@@ -47,7 +49,8 @@ export async function savedGoogleRequests(input: {
     generation: input.credentials,
     get paused() { return paused || policyPaused(); },
     get policyPaused() { return policyPaused(); },
-    recoverPolicy() { recoveryRevision++; if (policyEpoch !== undefined) { policyEpoch = undefined; input.changed(); } },
+    get policyError() { return alive() && policyPaused() ? policyError : undefined; },
+    recoverPolicy() { recoveryRevision++; if (policyEpoch !== undefined) { policyEpoch = undefined; policyError = undefined; input.changed(); } },
     retryAt() {
       const states = [gate.state(owner ?? "installation", "gmail-api"), gate.state("installation", "gmail-api")];
       const dates = states.flatMap((state) => state.kind === "at" ? [state.atMs] : []);
@@ -71,9 +74,9 @@ export async function savedGoogleRequests(input: {
           return { ...ticket, headers429: (e) => active() ? ticket.headers429(e) : Promise.resolve("unconfirmed"), dispatch: (transport) => ticket.dispatch(() => { assert(); return transport(); }) };
         },
       };
-      return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind) => {
+      return net.fetchGoogle(policy, { ...descriptor, admission: descriptor.admission ?? "background", onForbidden: descriptor.onForbidden ? (settle) => descriptor.onForbidden!(async (kind, error) => {
         const current = active() && !init?.signal?.aborted;
-        if (current && revision === recoveryRevision && kind === "policy" && descriptor.request.endpoint === "gmail-api") { policyEpoch = epoch; input.changed(); }
+        if (current && revision === recoveryRevision && kind === "policy" && descriptor.request.endpoint === "gmail-api") { policyEpoch = epoch; policyError = error; input.changed(); }
         await settle(current ? kind : "none");
       }) : undefined })(resource, init);
     },

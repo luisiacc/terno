@@ -353,6 +353,73 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { release(); await syncing; }
   });
 
+  it.each(["SERVICE_DISABLED", "domainPolicy", "insufficientPermissions", "badRequest"])("projects a later %s after the first parallel raw download fails400", async (reason) => {
+    const h = await setup(false, kind);
+    const provider = (await h.backend.provider(h.account.id))!;
+    await provider.verify();
+    let retained: unknown;
+    const sync = provider.sync.bind(provider);
+    vi.spyOn(provider, "sync").mockImplementation(async (sink) => {
+      try { await sync(sink); } catch (error) { retained = error; throw error; }
+    });
+    const held = (status: number, body: unknown) => {
+      let controller!: ReadableStreamDefaultController<Uint8Array>, entered = false, released = false;
+      const response = new Response(new ReadableStream<Uint8Array>({
+        start(c) { controller = c; }, pull() { entered = true; },
+      }, { highWaterMark: 0 }), { status });
+      return { response, get entered() { return entered; }, release() {
+        if (released) return;
+        released = true;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(body))); controller.close();
+      } };
+    };
+    const first = held(400, { error: { message: privateMarker } });
+    const later = held(reason === "badRequest" ? 400 : 403, { error: { message: privateMarker, errors: [{ reason }] } });
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages") return Response.json({ messages: [{ id: "first", threadId: "first" }, { id: "later", threadId: "later" }] });
+      if (path === "/gmail/messages/first") return first.response;
+      if (path === "/gmail/messages/later") return later.response;
+      return healthySync(request);
+    });
+    const syncing = h.backend.syncAccount(h.account.id);
+    try {
+      await vi.waitFor(() => { expect(first.entered).toBe(true); expect(later.entered).toBe(true); });
+      first.release();
+      // Let the first download's rejection reach the preparation cancellation before the later body settles.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      later.release();
+      await syncing;
+      expect(retained).toMatchObject({ status: 400, i18n: { key: "errors.gmail.requestFailed", params: { status: 400 } } });
+      const key = reason === "SERVICE_DISABLED" ? "errors.gmail.serviceDisabled" : reason === "domainPolicy" ? "errors.gmail.adminPolicy" : reason === "insufficientPermissions" ? "errors.gmail.permissionRequired" : "errors.gmail.requestFailed";
+      const state = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+      expect(state).toMatchObject({ status: "error", connection: null, lastErrorI18n: { key, ...(reason === "badRequest" && { params: { status: 400 } }) } });
+      expect(state.authRequired).not.toBe(true);
+      expect(JSON.stringify(state)).not.toContain(privateMarker);
+      expect(h.paths().filter((path) => path.startsWith("/gmail/messages/"))).toEqual(["/gmail/messages/first", "/gmail/messages/later"]);
+      const sibling = await h.send();
+      const queued = await h.backend.store.ops.get(sibling.opId);
+      const calls = h.paths().slice();
+      const ledger = await h.backend.store.providerCooldown.read();
+      if (reason !== "badRequest") {
+        await h.backend.syncAccount(h.account.id);
+        await h.backend.retryNow(h.account.id, "focus");
+        expect(await h.backend.runWorker()).toBe(0);
+        expect(h.paths()).toEqual(calls);
+        expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+        expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+        expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toEqual(state);
+      }
+      h.answer(healthySync);
+      if (reason !== "badRequest") await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+      await h.backend.syncAccount(h.account.id);
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", lastError: null, lastErrorI18n: null });
+      expect(await h.backend.runWorker()).toBe(1);
+      expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
+      expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
+    } finally { first.release(); later.release(); await syncing; }
+  });
+
   it.each([["send", "policy first"], ["send", "auth first"], ["sync", "policy first"], ["sync", "auth first"]] as const)("surfaces invalid_grant despite concurrent policy refusal from %s: %s", async (policySource, order) => {
     const h = await setup(false, kind);
     const provider = (await h.backend.provider(h.account.id))!;

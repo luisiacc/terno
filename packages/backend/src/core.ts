@@ -1569,8 +1569,13 @@ export class BackendCore {
       await this.accountWrite(life, async () => {
         const policyFailure = gmailPolicyError(patch.lastErrorI18n?.key);
         if (policyFailure && this.connectivity.signInRequired(accountId)) return;
-        // A policy-only pause preserves its instruction, but cannot hide a genuine sign-in refusal.
-        if (this.google.get(accountId)?.policyPaused && patch.authRequired !== true && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !policyFailure) return;
+        // A parallel download may latch policy after the failure sync retained, before any instruction was published.
+        const google = this.google.get(accountId);
+        if (google?.policyPaused && patch.authRequired !== true && (patch.status !== undefined || patch.lastError !== undefined || patch.lastErrorI18n !== undefined) && !policyFailure) {
+          const policy = google.policyError;
+          if (!policy || this.connectivity.signInRequired(accountId)) return;
+          patch = { ...patch, status: "error", lastError: policy.message, lastErrorI18n: policy.i18n, connection: null };
+        }
         await this.store.accounts.setSyncState(accountId, patch);
         await this.emitAccounts();
       });
