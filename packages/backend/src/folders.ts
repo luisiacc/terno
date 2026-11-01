@@ -60,28 +60,22 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
 }
 
 /**
- * Where these folders' mail is still cached while an IMAP rename made here waits for a pass: the old paths (the IMAP
- * cursor's `renamed`, by new path). The rename carried their threads to the new keys, not their locations, so a count
- * or an export read under the new keys alone found nothing (Codex code review round 5 #2). Each by the UIDVALIDITY
- * the rename recorded: a path made again since is another folder, and these keys' own paths leave out the
- * generations that are another folder's (`except`; Codex code review round 6 #2: by path alone, Job counted nothing
- * and the new Work counted Job's mail): as the folder's listing has them, which the provider checked against the
- * server's STATUS, a rename's and a delete's alike (Codex code review round 8).
+ * Where these folders' mail is still cached while an IMAP rename made here waits for a pass: the old paths and the
+ * generation each rename moved (`Folder.aliases`). The rename carried their threads to the new keys, not their
+ * locations, so a count or an export read under the new keys alone found nothing (Codex code review round 5 #2). As
+ * the folder's listing has them, which the provider checked against the server's LIST and STATUS: never a recorded
+ * intent whose RENAME wasn't carried out (Codex code review round 17 #2: Job cached, deleted in another app, and an
+ * intent Work → Job saved before the connection dropped counted Work's mail in Job). These keys' own paths leave out
+ * the generations that are another folder's (`except`; Codex code review round 6 #2).
  */
 export async function renameAliases(b: Backend, accountId: number, keys: readonly string[]): Promise<{ aliases: FolderGeneration[]; except: Map<string, number[]> }> {
-  const renamed = (await b.store.accounts.config<{ cursor?: { renamed?: Record<string, { from?: unknown; uidvalidity?: unknown }> } }>(accountId))?.config.cursor?.renamed;
   const aliases: FolderGeneration[] = [];
   const except = new Map<string, number[]>();
-  const folders = await accountFolders(b, accountId);
   const asked = new Set(keys);
-  for (const f of folders) if (asked.has(f.key) && f.except?.length) except.set(f.key, [...f.except]);
-  if (!renamed) return { aliases, except };
-  const listed = new Set(folders.map((f) => f.key));
-  for (const [to, r] of Object.entries(renamed)) {
-    const { from, uidvalidity } = r ?? {};
-    // carried out: the new path is listed (one whose answer was lost and that never happened leaves the old one whole)
-    if (typeof from !== "string" || typeof uidvalidity !== "number" || from === to || !listed.has(to)) continue;
-    if (asked.has(to) && !aliases.some((a) => a.mailbox === from && a.uidvalidity === uidvalidity)) aliases.push({ mailbox: from, uidvalidity });
+  for (const f of await accountFolders(b, accountId)) {
+    if (!asked.has(f.key)) continue;
+    if (f.except?.length) except.set(f.key, [...f.except]);
+    for (const a of f.aliases ?? []) if (!aliases.some((x) => x.mailbox === a.mailbox && x.uidvalidity === a.uidvalidity)) aliases.push({ mailbox: a.mailbox, uidvalidity: a.uidvalidity });
   }
   return { aliases, except };
 }

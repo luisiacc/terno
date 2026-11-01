@@ -266,6 +266,34 @@ it("a RENAME whose answer was lost into a name whose old folder is still listed 
   expect(t.events.filter((e) => e.startsWith("renamed"))).toEqual([]);
 });
 
+it("a RENAME whose intent was saved but never sent adds nothing to the cached destination's count or export (Codex code review round 17 #2)", async () => {
+  const t = await setup(["Work", "Job"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("In work") });
+  t.server.control.addMessage("Job", { raw: rawIdleMail("In the old job") });
+  t.server.control.resetUidValidity("Job", { uidvalidity: 900 });
+  await t.backend.syncAccount(t.account.id);
+  // another app deletes Job; this one still lists it
+  t.server.control.deleteMailbox("Job");
+  // the intent is recorded, then the connection drops before the RENAME is sent
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async () => {
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash", "Work"]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { renamed?: Record<string, unknown> } }>(t.account.id);
+  expect(Object.keys(config?.config.cursor?.renamed ?? {})).toEqual(["Job"]);
+  // Job counts and exports only its own cached mail; Work keeps its own
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).toEqual({ messages: 1, folders: 1 });
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Work" })).toEqual({ messages: 1, folders: 1 });
+  const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder: "Job", view: null });
+  await t.client.call("folders.exportCancel", { exportId: started.exportId });
+  expect(started.total).toBe(1);
+});
+
 it("a RENAME the server refuses leaves no record behind (Codex code review round 3 #1)", async () => {
   const t = await setup(["Work"]);
   await t.backend.syncAccount(t.account.id);
