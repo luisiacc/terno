@@ -853,8 +853,6 @@ it("plan 107: a standard view's export for an account beside another's 1,000,000
     const { account: empty } = await own.accounts.create({ kind: "gmail", email: "empty@example.com", displayName: "Empty", color: "indigo", now: 0 });
     const N = 1_000_000;
     c.db.tx(() => { for (let i = 0; i < N; i++) c.db.table("threads").put({ id: 60_000_000 + i, account_id: account.id, last_date: 0, message_count: 0, unread_count: 0 }); });
-    // the store's ascending thread ids are kept for every list's "select all": built once, not this export's
-    c.scopes.threads(c);
     const samples: Sample[] = [];
     // an account with nothing here: none of the threads walked is its
     let after: FolderExportCursor | null = null;
@@ -869,9 +867,49 @@ it("plan 107: a standard view's export for an account beside another's 1,000,000
     }
     const ms = settle(samples).ms.sort((a, b) => a - b);
     console.log(`an empty account's Inbox export beside ${N} threads: ${calls} calls, max ${ms.at(-1)!.toFixed(2)} ms`);
-    // before: one call walked every thread (~57 ms)
-    expect(calls).toBeGreaterThan(1);
+    // before: one call walked every thread (~57 ms); now it reads only its own account's threads (round 13 #2)
+    expect(calls).toBe(1);
     expect(ms.at(-1)!).toBeLessThanOrEqual(FRAME * MULT);
+  } finally {
+    await own.close();
+  }
+}, 900_000);
+
+it("plan 107: a standard view's export of a 1,000,000-thread account reads its threads a bounded run a call, from a store just opened and after arrivals (Codex code review round 13 #2)", async () => {
+  // a store of its own: a million rows written and let go would leave the shared one's writes behind for the others
+  const own = await IdbMailStore.open({ name: `${name}-view-cold`, factory: indexedDB, platform, instantSearch: false });
+  try {
+    const c = (own as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { put(row: Record<string, unknown>): unknown } } } }).c;
+    const { account } = await own.accounts.create({ kind: "gmail", email: "many@example.com", displayName: "Many", color: "indigo", now: 0 });
+    const N = 1_000_000;
+    const ARRIVALS = 100;
+    // empty threads, written in reverse (the index holds them newest first): what's timed is the walk of the account's threads
+    const put = (from: number, n: number) => c.db.tx(() => { for (let i = n - 1; i >= 0; i--) c.db.table("threads").put({ id: from + i, account_id: account.id, last_date: 0, message_count: 0, unread_count: 0 }); });
+    put(90_000_000, N);
+    const limit = 2000;
+    const exportAll = (label: string, expected: number) => {
+      const samples: Sample[] = [];
+      let pending = 0;
+      for (let after: FolderExportCursor | null = null; ; ) {
+        let r!: ReturnType<typeof exportIds>;
+        const from = after;
+        samples.push(sampleSync(() => (r = exportIds(c, { accountId: account.id, view: "inbox" }, from, limit))));
+        if (!r.next) break;
+        if (r.next.thread < 0) pending++;
+        after = r.next;
+      }
+      const ms = settle(samples).ms.sort((a, b) => a - b);
+      console.log(`Inbox export of ${expected} threads, ${label}: ${samples.length} calls (${pending} reading), max ${ms.at(-1)!.toFixed(2)} ms`);
+      // every thread visited once, in stretches of `limit`
+      expect(samples.length - pending, `${label}: stretches`).toBe(Math.floor(expected / limit) + 1);
+      // before: the first call collected and sorted every thread of the store (~100 ms at a million)
+      expect(ms.at(-1)!, `${label}: one call`).toBeLessThanOrEqual(FRAME * MULT);
+    };
+    // nothing has read the store's threads since it opened
+    exportAll("cold", N);
+    // new mail: threads in, every kept order of the store's threads let go
+    put(90_000_000 + N, ARRIVALS);
+    exportAll("after arrivals", N + ARRIVALS);
   } finally {
     await own.close();
   }

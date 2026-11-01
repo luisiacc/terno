@@ -35,32 +35,53 @@ const hasLabel = (m: R, key: string): boolean => {
  * call walked and sorted every member, ~22 ms at 500,000). `after` below 0 is such a pending one's.
  */
 export function stretch(c: Ctx, target: { accountId: number; folder: string }, after: number, limit: number): number[] | null {
-  const from = after < 0 ? -after - 1 : after;
-  const at = `${target.accountId}\u0000${target.folder}`;
-  let runs = memberRuns.get(c);
-  if (!runs) memberRuns.set(c, (runs = new Map()));
   const ids = c.scopes.folder(c, target.accountId, target.folder);
+  const at = `f\u0000${target.accountId}\u0000${target.folder}`;
   if (ids) {
-    runs.delete(at);
-    const start = seekAfter(ids, from);
+    memberRuns.get(c)?.delete(at);
+    const start = seekAfter(ids, after < 0 ? -after - 1 : after);
     return ids.slice(start, start + limit);
   }
-  // its order still being built (in the background): the members read a run at a time, each run sorted, kept
-  // between calls; a walk starts again with each export (`after` 0), or when it was let go
+  // its order still being built (in the background): the members read a run at a time
+  const memberships = T(c, "thread_folders");
+  return runStretch(c, at, () => memberships.keysBy("folder", target.accountId, target.folder), (k) => memberships.rows.get(k)?.thread_id as number | undefined, after, limit);
+}
+
+/**
+ * A standard view's stretch: the account's smallest thread ids above `after`, from its own threads (the account
+ * index) read a run a call, sorted and kept between calls, as a folder's members are while their order builds. null:
+ * still being read; the caller asks again with `pendingAfter(after)`. Never the store's ascending ids: an empty
+ * account beside another's million threads walked them all (Codex code review round 9 #3), and when they weren't kept
+ * (after the store opened, or after an arrival) one call collected and sorted every thread (round 13 #2).
+ */
+export function viewStretch(c: Ctx, accountId: number, after: number, limit: number): number[] | null {
+  const threads = T(c, "threads");
+  // a thread gone since its run was read is skipped (it counts for no stretch)
+  return runStretch(c, `v\u0000${accountId}`, () => threads.keysBy("fk_account_id", accountId), (k) => k as number, after, limit, (id) => threads.has(id));
+}
+
+/**
+ * The smallest `limit` ids above `after` from a live walk read `MEMBER_RUN` keys a call, each run sorted, kept between
+ * calls (by `at`); a walk starts again with each export (`after` 0), or when it was let go. null until the walk is
+ * read to its end (Codex code review round 8 #5: one call walked and sorted every member, ~22 ms at 500,000).
+ */
+function runStretch(c: Ctx, at: string, walk: () => Iterator<Key>, id: (k: Key) => number | undefined, after: number, limit: number, live: (id: number) => boolean = () => true): number[] | null {
+  const from = after < 0 ? -after - 1 : after;
+  let runs = memberRuns.get(c);
+  if (!runs) memberRuns.set(c, (runs = new Map()));
   let read = after === 0 ? undefined : runs.get(at);
   if (!read) {
     runs.delete(at);
     if (runs.size >= 4) runs.delete(runs.keys().next().value!);
-    runs.set(at, (read = { walk: T(c, "thread_folders").keysBy("folder", target.accountId, target.folder), runs: [], done: false }));
+    runs.set(at, (read = { walk: walk(), runs: [], done: false }));
   }
   if (!read.done) {
-    const memberships = T(c, "thread_folders");
     const run: number[] = [];
     while (run.length < MEMBER_RUN) {
       const k = read.walk.next();
       if (k.done) { read.done = true; break; }
-      const r = memberships.rows.get(k.value);
-      if (r) run.push(r.thread_id as number);
+      const v = id(k.value);
+      if (v !== undefined) run.push(v);
     }
     if (run.length) read.runs.push(Float64Array.from(run).sort());
     if (!read.done) return null;
@@ -72,30 +93,13 @@ export function stretch(c: Ctx, target: { accountId: number; folder: string }, a
     let best = -1;
     for (let i = 0; i < heads.length; i++) if (heads[i]! < read.runs[i]!.length && (best < 0 || read.runs[i]![heads[i]!]! < read.runs[best]![heads[best]!]!)) best = i;
     if (best < 0) break;
-    const id = read.runs[best]![heads[best]!++]!;
-    // a thread read in two runs (let go and added again meanwhile, or its row updated: an update moves its key to the
+    const v = read.runs[best]![heads[best]!++]!;
+    // an id read in two runs (let go and added again meanwhile, or its row updated: an update moves its key to the
     // end of the live index) comes once
-    if (out.at(-1) !== id) out.push(id);
+    if (out.at(-1) !== v && live(v)) out.push(v);
   }
   return out;
 }
-
-/**
- * A standard view's stretch: the account's smallest thread ids above `after`, walked in the store's ascending ids at
- * most `VIEW_VISITS` a call (Codex code review round 9 #3: an empty account's export walked another's million threads
- * in one call, ~47 ms). `resume`: where the next call goes on when the walk stopped there, matched or not.
- */
-export function viewStretch(c: Ctx, accountId: number, after: number, limit: number): { ids: number[]; resume: number | null } {
-  const threads = T(c, "threads");
-  const all = c.scopes.threads(c);
-  const ids: number[] = [];
-  let i = seekAfter(all, after);
-  for (const end = Math.min(all.length, i + VIEW_VISITS); i < end && ids.length < limit; i++) if (threads.get(all[i]!)?.account_id === accountId) ids.push(all[i]!);
-  return { ids, resume: ids.length < limit && i < all.length ? all[i - 1]! : null };
-}
-
-/** thread ids a view's stretch looks at a call, whichever account they're in (a few milliseconds) */
-export const VIEW_VISITS = 16_384;
 
 /** the `after` to ask with again when `stretch` said its members are still being read */
 export const pendingAfter = (after: number): number => (after < 0 ? after : -after - 1);
@@ -198,19 +202,14 @@ export function exportIds(c: Ctx, target: FolderExportTarget, after: FolderExpor
     if (budget <= 0) return { messages: out, next: { thread: after.thread } };
   }
   const asked = budget;
-  let top: number[] | null;
-  let resume: number | null = null;
-  if (folder !== undefined) top = stretch(c, { accountId: target.accountId, folder }, after?.thread ?? 0, asked);
-  else ({ ids: top, resume } = viewStretch(c, target.accountId, after?.thread ?? 0, asked));
-  // still reading a big folder's members: the next call goes on (Codex code review round 8 #5)
+  const top = folder !== undefined ? stretch(c, { accountId: target.accountId, folder }, after?.thread ?? 0, asked) : viewStretch(c, target.accountId, after?.thread ?? 0, asked);
+  // still reading a big folder's members or an account's threads: the next call goes on (Codex code review round 8 #5, round 13 #2)
   if (top === null) return { messages: out, next: { thread: pendingAfter(after?.thread ?? 0) } };
   for (const id of top) {
     const cut = read(id, null);
     if (cut) return { messages: out, next: { thread: id, message: cut } };
     if (budget <= 0) return { messages: out, next: { thread: id } };
   }
-  // a view's walk stopped at its bound: the next call goes on from there (Codex code review round 9 #3)
-  if (resume !== null) return { messages: out, next: { thread: resume } };
   // each thread took at least one of the budget: a full stretch returned above, so this one was the last
   return { messages: out, next: null };
 }
