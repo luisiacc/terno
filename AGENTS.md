@@ -25,7 +25,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
 
 ## Non-negotiables
 
-- **Privacy.** Mail content, addresses, names, subjects, tokens and keys never leave the machine except to the user's own mail servers and the AI provider they chose. **Local mode** (the default, plan 97) means Terno keeps its copy of the mail on this machine and has no server of its own that stores it. It is not a network switch: everything else may use the internet, each by its own setting or explicit choice:
+- **Privacy.** Mail content, addresses, names, subjects, tokens and keys never leave the machine except to the user's own mail servers and the AI provider they chose. Terno keeps its copy of the mail on this machine and has no server of its own that stores it (plan 97). The old `localMode` setting decides nothing and is never shown: no switch, row or pill. Everything else may use the internet, each by its own setting or explicit choice:
   - updates (plan 11)
   - website icons (plan 22)
   - remote mail content, loaded per message or with the setting (plan 37)

@@ -138,7 +138,7 @@ test("what the browser can't do is said plainly: IMAP and agents locked, honest 
   const settings = page.getByTestId("settings-dialog");
   await expect(settings).toBeVisible();
   await expect(settings.getByTestId("mac-section")).toBeVisible();
-  await expect(settings.getByTestId("local-mode-row")).toContainText("Terno keeps its copy of your mail in this browser.");
+  await expect(settings.getByTestId("general-tab")).not.toContainText("Local mode");
   await settings.getByTestId("tab-agents").click();
   await expect(settings.getByTestId("desktop-only-agents")).toBeVisible();
   await expect(settings.getByTestId("mcp-claude")).toHaveCount(0);
@@ -157,7 +157,7 @@ test("plan 37: in local mode the browser loads a newsletter's images on “Load 
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await page.route((url) => url.protocol === "https:" && url.pathname.endsWith("/pixel.gif"), (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
   await boot(page);
-  await expect(page.getByTestId("local-pill")).toBeVisible();
+  await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
   await (await searchBox(page)).fill("Unsubscribe");
   await expect(rows(page).nth(1)).toBeVisible();
   await rows(page).first().dispatchEvent("mousedown");

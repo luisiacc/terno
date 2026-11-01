@@ -139,10 +139,10 @@ test.describe("light", () => {
     }
   });
 
-  test("settings: general with local mode first", async ({ app: page }) => {
+  test("settings: general", async ({ app: page }) => {
     await ready(page);
-    await page.getByTestId("local-pill").click();
-    await expect(page.getByTestId("local-mode-row")).toBeVisible();
+    await page.getByTestId("open-settings").click();
+    await expect(page.getByTestId("general-tab")).toBeVisible();
     await stabilize(page);
     await expect(page).toHaveScreenshot("settings-general.png");
   });

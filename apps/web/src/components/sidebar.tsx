@@ -18,7 +18,7 @@ import { createCategory as createNamedCategory } from "~/lib/tabs";
 import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, setOpenAccount, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
-import { LocalPill } from "./local-pill";
+import { CloudAiPill } from "./cloud-ai-pill";
 import { FirstSyncPill } from "./first-sync-pill";
 import { ConnectionPill } from "./connection-pill";
 import { SignInMarker, SignInNotice } from "./sign-in-notice";
@@ -977,7 +977,7 @@ export function Sidebar() {
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Sparkles className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>
-        <LocalPill />
+        <CloudAiPill />
         <Tooltip>
           <TooltipTrigger
             render={

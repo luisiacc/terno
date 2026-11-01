@@ -21,7 +21,7 @@ test.describe("local mode and AI providers", () => {
       // (Codex review R2): the pill names it and the footer no longer says nothing leaves
       await page.getByTestId("ai-endpoint").fill("http://192.168.1.20:11434/v1");
       await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
-      await expect(page.getByTestId("local-pill")).toHaveText("AI: Ollama (cloud)");
+      await expect(page.getByTestId("cloud-ai-pill")).toHaveText("AI: Ollama (cloud)");
       await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac.");
 
       await page.getByTestId("ai-endpoint").fill(`${ollama.url}/v1`);
@@ -51,16 +51,12 @@ test.describe("local mode and AI providers", () => {
     }
   });
 
-  test("Local pill opens General, where local mode is a fact; choosing a cloud AI shows it in the pill until another is chosen", async ({ app: page }) => {
-    const pill = page.getByTestId("local-pill");
-    await expect(pill).toHaveText("Local");
-    await pill.click();
-    const row = page.getByTestId("local-mode-row");
-    await expect(row).toBeVisible();
-    // it is the first row of General, and says what's true: Terno has no server that keeps mail
-    await expect(page.locator("[data-testid=settings-dialog] [role=tabpanel] section > div > :first-child").first()).toHaveAttribute("data-testid", "local-mode-row");
-    await expect(row).toContainText("Terno keeps its copy of your mail on this Mac. It has no server of its own that stores your mail.");
-    await expect(page.getByRole("switch", { name: "Local mode" })).toHaveCount(0);
+  test("no local-mode wording anywhere; a cloud AI shows in the sidebar while it's chosen, and its pill opens the AI tab", async ({ app: page }) => {
+    const pill = page.getByTestId("cloud-ai-pill");
+    await expect(pill).toHaveCount(0);
+    await page.getByTestId("open-settings").click();
+    await expect(page.getByTestId("settings-dialog")).not.toContainText("Local mode");
+    await expect(page.getByTestId("local-mode-row")).toHaveCount(0);
 
     await page.getByTestId("tab-ai").click();
     await page.getByTestId("ai-provider").click();
@@ -77,10 +73,14 @@ test.describe("local mode and AI providers", () => {
     await expect(page.getByTestId("ai-key-saved")).toHaveText(/Saved · …a1b2/);
     await expect(page.locator("body")).not.toContainText("sk-proj-e2e-secret");
 
-    // a model on this Mac again: the pill says Local
+    // its pill opens the AI tab
+    await page.keyboard.press("Escape");
+    await pill.click();
+    await expect(page.getByTestId("ai-tab")).toBeVisible();
+    // a model on this Mac again: nothing to say
     await page.getByTestId("ai-provider").click();
     await page.getByTestId("ai-choice-ollama").click();
-    await expect(pill).toHaveText("Local");
+    await expect(pill).toHaveCount(0);
   });
 
   test("a slow connection test that finishes after switching provider doesn't touch the new one", async ({ app: page, server }) => {
@@ -102,14 +102,14 @@ test.describe("local mode and AI providers", () => {
       await expect(page.getByTestId("ai-test-result")).toHaveCount(0);
       await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
       await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac");
-      await expect(page.getByTestId("local-pill")).toHaveText("AI: OpenAI (cloud)");
+      await expect(page.getByTestId("cloud-ai-pill")).toHaveText("AI: OpenAI (cloud)");
     } finally {
       await ollama.close();
     }
   });
 
   test("plan 37: in local mode “Load content” loads the message's remote images, for the session", async ({ app: page }) => {
-    await expect(page.getByTestId("local-pill")).toHaveText("Local");
+    await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
     const hits: string[] = [];
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
     await page.route(remote, (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
@@ -140,7 +140,6 @@ test.describe("local mode and AI providers", () => {
     await expect(always).toHaveAccessibleDescription(/Blocked by default to prevent tracking/);
     await always.click();
     await expect(always).toBeChecked();
-    await expect(page.getByTestId("local-mode-row")).toBeVisible();
     await page.keyboard.press("Escape");
     await openRow(page, 2);
     await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();

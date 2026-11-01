@@ -132,3 +132,15 @@ The review is in `/tmp/terno-p95/p97-code-review.txt`. Each fix has a regression
   - the renderer fence is strict for everyone
 - **e2e:** Settings shows the statement row in light and dark, which I looked at; every provider can be chosen; a remote Ollama shows in the pill; the visual baselines for the AI tab were updated.
 - **Packaged** (fresh build): the packaged, mailbox, update, print and diagnostics smokes.
+
+## Follow-up: no local-mode wording at all
+
+> "just remove the wording of local mode as a sidebar pill even, it means nothing"
+
+- **Removed:**
+  - the General row ("Local mode", with its statement)
+  - the sidebar's "Local" pill
+  - their strings, in en and es
+- **What remains** in the sidebar is `CloudAiPill`, shown only while the chosen AI runs off this machine (a cloud service, or a server elsewhere). It names that service and opens Settings → AI; that is the one thing about where mail text goes that a user needs to see.
+- **The stored setting:** `settings.localMode` stays stored and decides nothing.
+- **Tests:** the specs and smokes that looked for the pill or the row now assert that neither exists. The General baselines (en and es) were updated and looked at.

@@ -103,10 +103,9 @@ test.describe("reachable", () => {
 });
 
 test.describe("editable, persisted and in effect", () => {
-  test("General: local mode (a fact, not a switch: plan 97), remote images, density (row height), sync window (validated)", async ({ app: page }) => {
+  test("General: remote images, density (row height), sync window (validated); no local-mode row (plan 97)", async ({ app: page }) => {
     await openVia(page, "gear", "general");
-    await expect(page.getByTestId("local-mode-row")).toContainText("Terno keeps its copy of your mail on this Mac. It has no server of its own that stores your mail.");
-    await expect(page.getByRole("switch", { name: "Local mode" })).toHaveCount(0);
+    await expect(page.getByTestId("general-tab")).not.toContainText("Local mode");
     const images = page.getByRole("switch", { name: "Always load remote images" });
     await images.click();
     await expect(images).toBeChecked();

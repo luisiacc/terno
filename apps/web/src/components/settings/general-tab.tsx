@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Columns2, Keyboard, LaptopMinimalCheck, Rows3 } from "@terno/ui/icons";
+import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { updateAppearance } from "~/lib/appearance";
 import { Suspense, useEffect, useReducer, useRef, useState } from "react";
@@ -19,7 +19,6 @@ import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
 
-const WEB = import.meta.env.VITE_TARGET === "web";
 
 /**
  * A number of days, saved when it is valid (Enter or leaving the field);
@@ -223,12 +222,6 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
   return (
     <div data-testid="general-tab">
       <SettingsGroup>
-        {/* plan 97: a fact, not a switch: Terno has no server of its own that keeps mail; each outbound
-            feature (AI, icons, updates, reports, remote images) is its own setting */}
-        <SettingsRow testId="local-mode-row" label={t("settings.general.localMode")} hint={t(WEB ? "settings.general.localMode.hintWeb" : "settings.general.localMode.hint")}>
-          {() => <LaptopMinimalCheck className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-        </SettingsRow>
-        {/* plan 37: the same in both modes; local mode doesn't decide remote images */}
         <SettingsRow label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
           {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}
         </SettingsRow>
