@@ -10,8 +10,9 @@ import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { FAVORITES_MAX } from "@terno/core";
 import { createRegistry, type MailProvider } from "@terno/mail";
+import { ImapFlow } from "imapflow";
 import imapkit from "imapkit";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { bounded, deferred, rawIdleMail } from "./test/imap-idle-fixture";
 
@@ -187,6 +188,50 @@ it("a delete interrupted before its cleanup pass finishes it after a restart", a
   // nothing left to do: another pass changes nothing
   await reopened.backend.syncAccount(t.account.id);
   expect(t.mailboxes()).toEqual(["INBOX", "Sent", "Trash"]);
+});
+
+it("a DELETE the server carried out but whose answer was lost still takes the mail that was only there (Codex code review round 2 #2)", async () => {
+  const t = await setup(["Work", "Keep"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  t.server.control.addMessage("Keep", { raw: rawIdleMail("Only in keep") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const [k] = await t.threadsIn("Keep");
+  const original = ImapFlow.prototype.mailboxDelete;
+  // Work: deleted, then the connection drops before the answer; Keep: the connection drops before it's sent
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    if (args[0] === "Work") await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Work" })).rejects.toBeTruthy();
+    await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Keep" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  expect(t.mailboxes()).toEqual(["INBOX", "Keep", "Sent", "Trash"]);
+  const reopened = await t.reopen();
+  await reopened.backend.syncAccount(t.account.id);
+  expect((await reopened.client.call("threads.get", { threadId: a! }).catch(() => null))?.messages ?? []).toEqual([]);
+  // still on the server: its mail and its place stay
+  expect(await t.threadsIn("Keep")).toEqual([k]);
+});
+
+it("a DELETE the server refuses leaves no record behind, and its mail stays", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const refused = vi.spyOn(ImapFlow.prototype, "mailboxDelete").mockRejectedValue(Object.assign(new Error("Command failed"), { responseStatus: "NO", responseText: "Not now" }));
+  try {
+    await expect(t.client.call("folders.delete", { accountId: t.account.id, key: "Work" })).rejects.toMatchObject({ i18n: { key: "errors.folder.refused" } });
+  } finally {
+    refused.mockRestore();
+  }
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.deleted).toBeUndefined();
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.threadsIn("Work")).toEqual([a]);
 });
 
 it("a change waits for the running sync pass; a pass asked for during a change waits for it", async () => {

@@ -1527,9 +1527,12 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         await sink.setFolders?.(folders);
         // plan 107 (Codex R1): mailboxes deleted here: what was only there goes now, before anything reads the LIST's
         // changes as vanished folders (a restart in between finds them here again)
+        // A record is written before its DELETE is sent (Codex code review round 2 #2): one the LIST still has wasn't
+        // carried out (its answer was lost), so only the record goes
+        const stillListed = cursor.deleted ? new Set(list.filter((m) => !classifyMailbox(m).unusable).map((m) => m.path)) : null;
         for (const [path, uidvalidity] of Object.entries(cursor.deleted ?? {})) {
           check();
-          await forgetMailbox(cursor, path, cursor.mailboxes[path]?.uidvalidity ?? (uidvalidity || undefined), "remove", sink, c, check);
+          if (!stillListed!.has(path)) await forgetMailbox(cursor, path, cursor.mailboxes[path]?.uidvalidity ?? (uidvalidity || undefined), "remove", sink, c, check);
           delete cursor.deleted![path];
           if (!Object.keys(cursor.deleted!).length) delete cursor.deleted;
           await ctx.saveCursor(cursor);
@@ -1775,19 +1778,29 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
         const deleted: string[] = [];
         let partial: ProviderError | undefined;
         for (const path of paths) {
+          // written down before it's sent (Codex R1; Codex code review round 2 #2: after, a DELETE the server carried out
+          // but whose answer was lost, or a stop before the save, left the mail kept as a vanished folder's): the next
+          // pass forgets what was only there, even after a restart, and drops a record its LIST shows wasn't carried out
+          const cursor = await ctx.loadCursor<Cursor>();
+          if (cursor) await ctx.saveCursor({ ...cursor, deleted: Object.assign(Object.create(null) as Record<string, number>, cursor.deleted, { [path]: cursor.mailboxes[path]?.uidvalidity ?? 0 }) });
           try {
             await c.mailboxDelete(path);
           } catch (error) {
             const r = folderRefusal(error);
+            // refused: it's still there, so its record goes now (an answer lost keeps it for the next pass to settle)
+            if (r && cursor) {
+              const now = await ctx.loadCursor<Cursor>();
+              if (now?.deleted && Object.hasOwn(now.deleted, path)) {
+                delete now.deleted[path];
+                await ctx.saveCursor(Object.keys(now.deleted).length ? now : { ...now, deleted: undefined });
+              }
+            }
             // nothing deleted yet: the refusal is the answer; midway, what went stays gone and the rest is said
             if (!r || !deleted.length) throw r ? refusedBy(config.imap.host, r.reason) : error;
             partial = new ProviderError(L("errors.folder.partialDelete", { done: deleted.length, total: paths.length, name: leaf(before.list.find((m) => m.path === path) ?? { path }), reason: r.reason }), false);
             break;
           }
           deleted.push(path);
-          // written down at once (Codex R1): the next pass forgets what was only there, even after a restart
-          const cursor = await ctx.loadCursor<Cursor>();
-          if (cursor) await ctx.saveCursor({ ...cursor, deleted: Object.assign(Object.create(null) as Record<string, number>, cursor.deleted, { [path]: cursor.mailboxes[path]?.uidvalidity ?? 0 }) });
         }
         const after = await folderCatalog(c);
         return { folders: after.folders, deleted, ...(partial && { partial }) };
