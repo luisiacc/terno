@@ -170,7 +170,7 @@ export interface SyncSink {
    * plan 68: the account's own folders now (the store compares; an unchanged list writes nothing). The backend's sink
    * has it; a bare test sink may not. plan 107: `renamed`, renames made here that this list shows done
    */
-  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly { from: string; to: string }[]): Promise<void>;
+  setFolders?(folders: readonly ProviderFolder[], renamed?: readonly FolderMove[]): Promise<void>;
   signal: AbortSignal;
 }
 
@@ -222,6 +222,17 @@ export interface ProviderContext {
 }
 
 /** Plan 107: an account's own folders after a change, as its server lists them now. */
+/**
+ * Plan 107: a folder that moved (a rename). `stale`: the store's rows under `from` are another generation of that
+ * path than the one that moved (made again since, nothing of the moved one cached): announced, never carried (Codex
+ * code review round 8).
+ */
+export interface FolderMove {
+  from: string;
+  to: string;
+  stale?: true;
+}
+
 export interface FolderChange {
   folders: ProviderFolder[];
   /** part of it didn't happen (a refusal midway): what to tell; `folders` and the keys say what did */
@@ -263,7 +274,7 @@ export interface MailProvider {
    */
   createFolder?(input: { parent: string | null; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { key: string }>;
   /** Plan 107: its subfolders follow; `renamed`: where each went (Gmail: the same keys) */
-  renameFolder?(input: { key: string; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { renamed: { from: string; to: string }[] }>;
+  renameFolder?(input: { key: string; name: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { renamed: FolderMove[] }>;
   /** Plan 107: with its subfolders (IMAP: and their mail, which the next sync forgets here); `deleted`: the keys that went */
   deleteFolder?(input: { key: string; folders: readonly ProviderFolder[] }): Promise<FolderChange & { deleted: string[] }>;
   /** plan 22 (Gmail): the account's own picture and its contacts' photos, as far as the grant allows */

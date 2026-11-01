@@ -1,7 +1,7 @@
 import type { FavoriteFolder, Folder, FolderRename } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { ProviderError, type FolderChange, type MailProvider } from "@terno/mail/portable";
+import { ProviderError, type FolderChange, type FolderMove, type MailProvider } from "@terno/mail/portable";
 import type { FolderCountCursor, FolderGeneration, FolderPlace, ProviderFolder } from "@terno/store";
 import { BULK_SLICE, SliceSizer } from "./slicer";
 import type { BackendCore as Backend } from "./core";
@@ -35,13 +35,16 @@ async function accountFolders(b: Backend, accountId: number): Promise<Folder[]> 
 /**
  * A rename's new keys keep the folders' threads, then the move is announced: before the `folders` event that follows,
  * so the view, the back stack and favorites follow before the new list can send anyone to the Inbox (Codex R7). Also
- * a sync pass's, for a rename whose answer was lost (Codex code review round 5 #1).
+ * a sync pass's, for a rename whose answer was lost (Codex code review round 5 #1). Carried before the list that
+ * shows it is stored: an old path listed again with the moved generation left out is derived again from its own
+ * places (a rebuild that clears its rows), never before its rows were carried (Codex code review round 8 #1).
  */
-export async function carryRenamed(b: Backend, accountId: number, renamed: readonly { from: string; to: string }[], write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
+export async function carryRenamed(b: Backend, accountId: number, renamed: readonly FolderMove[], write: <W>(work: () => Promise<W>) => Promise<W>): Promise<void> {
   // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
-  // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time
+  // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time; never another
+  // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
   for (const m of renamed) {
-    if (m.from === m.to) continue;
+    if (m.from === m.to || m.stale) continue;
     for (let after: number | null = 0; after !== null; ) {
       const from: number = after;
       after = (await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
@@ -56,22 +59,24 @@ export async function carryRenamed(b: Backend, accountId: number, renamed: reado
  * cursor's `renamed`, by new path). The rename carried their threads to the new keys, not their locations, so a count
  * or an export read under the new keys alone found nothing (Codex code review round 5 #2). Each by the UIDVALIDITY
  * the rename recorded: a path made again since is another folder, and these keys' own paths leave out the
- * generations a carried-out rename took from them (`except`; Codex code review round 6 #2: by path alone, Job counted
- * nothing and the new Work counted Job's mail).
+ * generations that are another folder's (`except`; Codex code review round 6 #2: by path alone, Job counted nothing
+ * and the new Work counted Job's mail): as the folder's listing has them, which the provider checked against the
+ * server's STATUS, a rename's and a delete's alike (Codex code review round 8).
  */
 export async function renameAliases(b: Backend, accountId: number, keys: readonly string[]): Promise<{ aliases: FolderGeneration[]; except: Map<string, number[]> }> {
   const renamed = (await b.store.accounts.config<{ cursor?: { renamed?: Record<string, { from?: unknown; uidvalidity?: unknown }> } }>(accountId))?.config.cursor?.renamed;
   const aliases: FolderGeneration[] = [];
   const except = new Map<string, number[]>();
-  if (!renamed) return { aliases, except };
-  const listed = new Set((await accountFolders(b, accountId)).map((f) => f.key));
+  const folders = await accountFolders(b, accountId);
   const asked = new Set(keys);
+  for (const f of folders) if (asked.has(f.key) && f.except?.length) except.set(f.key, [...f.except]);
+  if (!renamed) return { aliases, except };
+  const listed = new Set(folders.map((f) => f.key));
   for (const [to, r] of Object.entries(renamed)) {
     const { from, uidvalidity } = r ?? {};
     // carried out: the new path is listed (one whose answer was lost and that never happened leaves the old one whole)
     if (typeof from !== "string" || typeof uidvalidity !== "number" || from === to || !listed.has(to)) continue;
     if (asked.has(to) && !aliases.some((a) => a.mailbox === from && a.uidvalidity === uidvalidity)) aliases.push({ mailbox: from, uidvalidity });
-    if (asked.has(from)) except.set(from, [...(except.get(from) ?? []), uidvalidity]);
   }
   return { aliases, except };
 }
@@ -80,7 +85,7 @@ async function change<R extends FolderChange>(
   b: Backend,
   accountId: number,
   run: (provider: MailProvider, folders: ProviderFolder[]) => Promise<R> | undefined,
-  follows: (r: R) => { renamed?: readonly { from: string; to: string }[]; deleted?: readonly string[] } = () => ({}),
+  follows: (r: R) => { renamed?: readonly FolderMove[]; deleted?: readonly string[] } = () => ({}),
 ): Promise<R> {
   if (!(await b.store.accounts.get(accountId))) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
   if (!b.connectivity.online) throw new RpcError("UNAVAILABLE", L("errors.folder.offline"));
@@ -99,9 +104,9 @@ async function change<R extends FolderChange>(
       throw folderError(b, error);
     }
     account.check();
-    const stored = await account.write(() => b.store.folders.replace(accountId, result.folders));
     const { renamed = [], deleted = [] } = follows(result);
     await carryRenamed(b, accountId, renamed, account.write);
+    const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to)));
     if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
     b.notifyChanged(stored.touched);
     void b.rebuildFolders();
@@ -115,7 +120,7 @@ async function change<R extends FolderChange>(
 export async function createFolder(b: Backend, accountId: number, parent: string | null, name: string): Promise<Folder> {
   const r = await change(b, accountId, (p, folders) => p.createFolder?.({ parent, name, folders }));
   const made = r.folders.find((f) => f.key === r.key);
-  return { accountId, ...(made ?? { key: r.key, path: [name], selectable: true }) };
+  return { accountId, key: r.key, path: made?.path ?? [name], selectable: made?.selectable ?? true };
 }
 
 export async function renameFolder(b: Backend, accountId: number, key: string, name: string): Promise<{ renamed: FolderRename[] }> {

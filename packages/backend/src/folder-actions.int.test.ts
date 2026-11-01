@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { FAVORITES_MAX } from "@terno/core";
+import { FAVORITES_MAX, folderRef } from "@terno/core";
 import { createRegistry, type MailProvider } from "@terno/mail";
 import { ImapFlow } from "imapflow";
 import imapkit from "imapkit";
@@ -486,6 +486,132 @@ it("a folder deleted here and made again before the cleanup pass: the deleted on
   await t.backend.syncAccount(t.account.id);
   expect(await t.threadsIn("Work")).toEqual(fresh);
   expect((await t.messageOf(fresh[0]!)).id).toBe(mf.id);
+});
+
+it("a renamed folder's old name made again before the next pass shows none of the renamed one's mail, however its threads are refreshed (Codex code review round 8 #1)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.backend.rebuildFolders();
+  const unread = async () => (await t.client.call("counts.get", {})).folderUnread ?? {};
+  expect(await t.threadsIn("Work")).toEqual([]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await unread())[folderRef(t.account.id, "Work")]).toBeUndefined();
+  expect((await unread())[folderRef(t.account.id, "Job")]).toBe(1);
+  // a refresh of the thread derives its folders from its places again: never the new Work's
+  await t.client.call("threads.act", { threadIds: [a!], action: "markRead" });
+  await t.client.call("threads.act", { threadIds: [a!], action: "markUnread" });
+  expect(await t.threadsIn("Work")).toEqual([]);
+  // the pass settles it: Job keeps the mail, Work is empty
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect(await t.threadsIn("Work")).toEqual([]);
+});
+
+it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Other" });
+  expect(t.mailboxes()).toEqual(["INBOX", "Job", "Other", "Sent", "Trash"]);
+  const total = async (folder: string) => {
+    const started = await t.client.call("folders.exportStart", { accountId: t.account.id, folder, view: null });
+    await t.client.call("folders.exportCancel", { exportId: started.exportId });
+    return started.total;
+  };
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Other" })).toEqual({ messages: 0, folders: 1 });
+  expect(await total("Other")).toBe(0);
+  expect(await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).toEqual({ messages: 1, folders: 1 });
+  expect(await total("Job")).toBe(1);
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect(await t.threadsIn("Other")).toEqual([]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+  expect(await t.held([ma.id])).toEqual([]);
+  const config = await t.backend.store.accounts.config<{ cursor?: { renamed?: unknown } }>(t.account.id);
+  expect(config?.config.cursor?.renamed).toBeUndefined();
+});
+
+it("a RENAME whose answer was lost is announced by the next pass even when another app made the old name again (Codex code review round 8 #3)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.favorite", { accountId: t.account.id, folder: "Work", view: null, on: true });
+  const original = ImapFlow.prototype.mailboxRename;
+  const lost = vi.spyOn(ImapFlow.prototype, "mailboxRename").mockImplementation(async function (this: InstanceType<typeof ImapFlow>, ...args: Parameters<typeof original>) {
+    await original.apply(this, args);
+    throw Object.assign(new Error("Connection closed"), { code: "NoConnection" });
+  });
+  try {
+    await expect(t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" })).rejects.toBeTruthy();
+  } finally {
+    lost.mockRestore();
+  }
+  // another app makes Work again, with mail of its own, before the pass
+  t.server.control.createMailbox("Work");
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Fresh in work") });
+  const reopened = await t.reopen();
+  t.events.length = 0;
+  await reopened.backend.syncAccount(t.account.id);
+  await reopened.backend.rebuildFolders();
+  expect(t.events[0]).toBe("renamed Work>Job");
+  expect((await t.client.call("app.bootstrap", {})).settings.favoriteFolders).toEqual([{ accountId: t.account.id, folder: "Job", view: null }]);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+  expect(await t.held([ma.id])).toEqual([]);
+  const fresh = await t.threadsIn("Work");
+  expect(fresh).toHaveLength(1);
+  expect((await t.messageOf(fresh[0]!)).subject).toBe("Fresh in work");
+});
+
+it("a folder made again under a renamed one's old name, then deleted, records its own generation: the renamed one keeps its mail (round 8 audit)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.client.call("folders.create", { accountId: t.account.id, parent: null, name: "Work" });
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  const config = await t.backend.store.accounts.config<{ cursor?: { deleted?: Record<string, unknown>; renamed?: Record<string, { uidvalidity: number }> } }>(t.account.id);
+  // the deletion is the new Work's generation, never the renamed one's
+  expect(config?.config.cursor?.deleted?.Work).not.toEqual(config?.config.cursor?.renamed?.Job?.uidvalidity);
+  await t.backend.syncAccount(t.account.id);
+  expect(await t.threadsIn("Job")).toEqual([a]);
+  expect((await t.locations([ma.id])).map((l) => l.mailbox)).toEqual(["Job"]);
+  expect(await t.held([ma.id])).toEqual([]);
+});
+
+it("a folder another app renamed and made again, renamed here before a pass, takes none of the first one's threads with it (round 8 audit)", async () => {
+  const t = await setup(["Work"]);
+  t.server.control.addMessage("Work", { raw: rawIdleMail("Moved by another app") });
+  await t.backend.syncAccount(t.account.id);
+  const [a] = await t.threadsIn("Work");
+  const ma = await t.messageOf(a!);
+  // another app: Work → Job, and Work made again (a new UIDVALIDITY), before a pass
+  t.server.control.renameMailbox("Work", "Job");
+  t.server.control.createMailbox("Work");
+  t.events.length = 0;
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Other" });
+  // announced (the view and favorites follow), but what the store showed under Work was the other generation's
+  expect(t.events[0]).toBe("renamed Work>Other");
+  expect(await t.threadsIn("Other")).toEqual([]);
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  expect(await t.threadsIn("Other")).toEqual([]);
+  // Job's mail is another app's rename's: kept as a vanished folder's is, never lost
+  expect((await t.messageOf(a!)).bodyText).toBe(ma.bodyText);
 });
 
 it("a change waits for the running sync pass; a pass asked for during a change waits for it", async () => {

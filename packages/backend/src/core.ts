@@ -1629,10 +1629,11 @@ export class BackendCore {
           // plan 107: a rename this list shows done that the store hasn't followed (its answer was lost, Codex code
           // review round 5 #1) is announced as a change's is, and favorites follow it
           const shown = renamed.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
-          const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders));
-          if (!r.changed) return;
           const moves = shown ? renamed.filter((m) => shown.has(m.from) && !shown.has(m.to)) : [];
+          // carried before the list is stored, as a change's are (Codex code review round 8 #1)
           await carryRenamed(this, accountId, moves, (work) => this.accountWrite(life, work));
+          const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, moves.map((m) => m.to)));
+          if (!r.changed && !moves.length) return;
           this.server.emit("folders", await this.store.folders.list());
           this.notifyChanged(r.touched);
           void this.rebuildFolders();
