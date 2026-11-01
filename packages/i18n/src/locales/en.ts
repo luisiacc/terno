@@ -386,8 +386,6 @@ const en = {
   "account.remove.descriptionOwner": "Its mail, drafts and pending actions are deleted from this computer. Nothing changes on the server: you can add it again. It stays your Terno account.",
   "account.remove.confirm": "Remove account",
   "account.removed": "Account removed",
-  "account.google.own": "Use your own Google client",
-  "account.google.builtIn": "Terno connects to Gmail with its own Google client. Add yours only if your organization requires it; new connections then use it.",
   "account.google.footer": "Create an OAuth client of type “Desktop app” in Google Cloud with the Gmail API enabled.",
   "account.google.footerWeb": "Create an OAuth client of type “Web application” in Google Cloud with the Gmail API enabled and {origin} as an authorized JavaScript origin.",
   "account.google.secret": "Client secret (optional)",

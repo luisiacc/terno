@@ -64,3 +64,7 @@ Where the values live: the repo's git-ignored `.env` (`TERNO_GOOGLE_DESKTOP_DEV_
 One finding: an account from before this plan whose Settings client was already cleared stays unbound, so a reconnect with the build's client and a Settings client added later would pair them wrongly. Now an existing account that remembers no client resolves to the build's client before Settings', and the legacy backfill runs once (a `googleClientBackfill` flag), so a later start never binds an account to a client it didn't sign in with. Regression: `google-client.test.ts` ("an account the backfill couldn't bind…").
 
 Verified: the desktop build bakes the clients into `backend.cjs` only; the preload carries just `googleBuiltIn`. Screenshots of the Settings group checked in light and dark.
+
+## Follow-up: no Google group at all
+
+The user asked to remove the box completely. A build with Terno's own client now shows no "Google (Gmail)" group in Settings → Accounts (no disclosure either); only a build without one (a fork, the e2e builds) keeps the fields, since it can't connect Gmail otherwise. A client already saved in Settings keeps working for the accounts bound to it. This also undoes a whitespace-only mis-indentation the first commit left in `accounts-tab.tsx`.
