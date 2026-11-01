@@ -63,7 +63,8 @@ function webMaps(outDir: string, buildId: string, release: string): Plugin {
   return {
     name: "terno:web-maps",
     apply: "build",
-    async closeBundle() {
+    // closeBundle also runs after a failed build, before there is output to archive.
+    async writeBundle() {
       const { archiveMaps, assertNoMaps, injectDebugIds, resetArchive } = await import(resolve(import.meta.dirname, "../../scripts/sourcemaps.mjs"));
       const out = resolve(import.meta.dirname, outDir);
       injectDebugIds(out);

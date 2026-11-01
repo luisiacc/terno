@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:build": "node --test scripts/web-maps.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test:e2e": "playwright test --project=e2e --project=e2e-lumen --project=e2e-atelier",
