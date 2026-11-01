@@ -135,6 +135,9 @@ test("a mailbox from a newer Terno: the gate says so, and the backend isn't rest
   const page = await launch(userData);
   await expect(gate(page)).toHaveAttribute("data-kind", "newer", { timeout: 30_000 });
   await expect(gate(page)).toContainText("This mailbox is from a newer version of Terno");
+  // its way forward is there on a cold start, though the mail engine never connected (Codex review R4)
+  await expect(page.getByTestId("update-now")).toBeVisible();
+  await expect(page.getByTestId("update-now")).toHaveText("Update Terno");
   await expect(page.getByTestId("engine-stopped")).toHaveCount(0);
   // the restart policy would have tried again within 0.5 + 1 + 2 + 4 s
   await page.waitForTimeout(9_000);

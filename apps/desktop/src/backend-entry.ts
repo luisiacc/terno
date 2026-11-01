@@ -6,13 +6,13 @@
 import { dirname, join } from "node:path";
 import { Backend, nodeStore, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
-import { classifyOpenError, diskFree, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
+import { classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, openDatabase, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
 import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
-import { clearRestoredMarker, readRestoredMarker } from "./mailbox/restore";
+import { settleRestored } from "./mailbox/restore";
 
 type PortMain = {
   on(event: "message", l: (e: { data: unknown }) => void): void;
@@ -234,15 +234,13 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
     const migrating = plan.from !== null && plan.from < plan.to;
     if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
     if (migrating) send({ type: "gate", gate: { kind: "upgrading", phase: "migrate", from: plan.from!, to: plan.to } });
-    const restored = readRestoredMarker(msg.dbPath);
     const db = openDatabase(msg.dbPath, { uuid: () => nodePlatform.uuid() });
     try {
-      if (restored) {
-        quarantineRestored(db);
-        clearRestoredMarker(msg.dbPath);
-        restoredFrom = restored.createdAt;
-      }
+      // a restored copy: quarantined and on disk before its marker goes (Codex review R3)
+      restoredFrom = settleRestored(db, msg.dbPath, () => quarantineRestored(db))?.createdAt ?? null;
       mailbox = nodeStore(db, { log: storeLog(msg.dev) });
+      // opened healthy at this schema: only now may a backup past its time go (Codex review R8)
+      expireBackups(backupsDir);
     } catch (error) {
       try { db.close(); } catch { /* the open's error explains it */ }
       throw error;

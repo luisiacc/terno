@@ -15,7 +15,7 @@
  * left behind: the copy in place with the old one aside means finished;
  * anything else is put back as it was.
  */
-import { closeSync, constants, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statfsSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { copyFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
@@ -47,9 +47,13 @@ export interface RestoreDeps {
   now?(): number;
   /** a seam for tests: fails the step named, as a crash or a disk error would */
   fault?(step: "copy" | "journal" | "aside-wal" | "aside" | "swap" | "marker"): void;
+  /** a seam for tests: what was made durable, in order (a file or a folder) */
+  synced?(path: string): void;
 }
 
 const exists = (p: string) => existsSync(p);
+
+let onSynced: ((path: string) => void) | undefined;
 
 function syncFile(path: string, fsync: (fd: number) => void): void {
   const fd = openSync(path, "r");
@@ -58,13 +62,16 @@ function syncFile(path: string, fsync: (fd: number) => void): void {
   } finally {
     closeSync(fd);
   }
+  onSynced?.(path);
 }
 
+/** Written through a temp file, then the rename itself made durable (the folder's fsync): a power cut keeps it or not. */
 function writeDurably(path: string, text: string, fsync: (fd: number) => void): void {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, text, { mode: 0o600 });
   syncFile(tmp, fsync);
   renameSync(tmp, path);
+  syncFile(dirname(path), fsync);
 }
 
 /** The marker the backend reads at start: quarantine this mailbox, then say it was restored from `createdAt`. */
@@ -77,12 +84,47 @@ export function readRestoredMarker(db: string): { createdAt: number } | null {
   }
 }
 
-export function clearRestoredMarker(db: string): void {
-  rmSync(restorePaths(db).marker, { force: true });
+/**
+ * The backend, before it starts on a restored mailbox: quarantine it, make
+ * that durable (commits are fsynced only at a checkpoint with
+ * synchronous=NORMAL), and only then drop the marker, durably. A power cut
+ * anywhere leaves the marker, so the next start quarantines again.
+ */
+export function settleRestored(
+  db: { get<T>(sql: string): T | undefined },
+  path: string,
+  quarantine: () => void,
+  fsync: (fd: number) => void = fsyncSync,
+): { createdAt: number } | null {
+  const marker = readRestoredMarker(path);
+  if (!marker) return null;
+  quarantine();
+  const r = db.get<{ busy: number; log: number; checkpointed: number }>("PRAGMA wal_checkpoint(FULL)");
+  if (!r || r.busy !== 0 || r.log !== r.checkpointed) throw new Error("the restored mailbox's quarantine isn't on disk yet");
+  rmSync(restorePaths(path).marker, { force: true });
+  syncFile(dirname(path), fsync);
+  return marker;
+}
+
+function stamp(path: string, at: number): void {
+  try {
+    utimesSync(path, at / 1000, at / 1000);
+  } catch {
+    /* gone: nothing to keep */
+  }
 }
 
 /** Restores `backup` over the mailbox at `db`. Throws RestoreError; on any failure the mailbox is as it was. */
 export async function restoreFromBackup(db: string, backup: BackupInfo, deps: RestoreDeps = {}): Promise<void> {
+  onSynced = deps.synced;
+  try {
+    await restore(db, backup, deps);
+  } finally {
+    onSynced = undefined;
+  }
+}
+
+async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promise<void> {
   const p = restorePaths(db);
   const fsync = deps.fsync ?? fsyncSync;
   const fault = deps.fault ?? (() => {});
@@ -109,12 +151,16 @@ export async function restoreFromBackup(db: string, backup: BackupInfo, deps: Re
   }
   try {
     fault("journal");
+    // durable (the folder too) before anything moves: a power cut that kept a move must keep the journal that undoes it
     writeDurably(p.journal, JSON.stringify({ createdAt: backup.createdAt, at: (deps.now ?? Date.now)() }), fsync);
     fault("aside-wal");
     if (exists(`${db}-wal`)) renameSync(`${db}-wal`, `${p.aside}-wal`);
     rmSync(`${db}-shm`, { force: true });
     fault("aside");
     if (exists(db)) renameSync(db, p.aside);
+    // the set-aside mailbox is kept 14 days from now, not from when it was last written (a rename keeps its mtime)
+    stamp(p.aside, (deps.now ?? Date.now)());
+    syncFile(dirname(db), fsync);
     fault("swap");
     renameSync(p.restoring, db);
     fault("marker");
@@ -155,6 +201,7 @@ export function reconcileRestore(db: string, deps: Pick<RestoreDeps, "fsync" | "
   if (exists(db) && exists(p.aside) && !exists(p.restoring)) {
     // the copy is in place and the old mailbox aside: finished but for the marker and the journal
     if (!exists(p.marker)) writeDurably(p.marker, JSON.stringify({ createdAt }), deps.fsync ?? fsyncSync);
+    stamp(p.aside, now);
     rmSync(p.journal, { force: true });
     return "completed";
   }

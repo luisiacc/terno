@@ -184,8 +184,12 @@ function startBackend() {
   if (backend || quitState !== "running") return;
   const userData = app.getPath("userData");
   mkdirSync(userData, { recursive: true });
-  // a restore a crash cut short is settled before anything opens the file
+  // a restore a crash cut short is settled before anything opens the file; one that can't be isn't opened at all
   const flags = mailbox.beforeStart();
+  if (!flags) {
+    mainDiag.setEngine("stopped");
+    return;
+  }
   const instance = ++backendInstance;
   const startedAt = Date.now();
   const child = utilityProcess.fork(join(__dirname, "backend.cjs"), [], { serviceName: "Terno Mail Engine", stdio: "inherit" });

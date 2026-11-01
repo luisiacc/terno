@@ -45,13 +45,20 @@ export class MailboxHost {
     this.deps.publish(gate);
   }
 
-  /** Before every backend start: a restore a crash cut short is settled first. Returns the init's one-shot flags. */
-  beforeStart(): { skipBackup?: true } {
+  /**
+   * Before every backend start: a restore a crash cut short is settled
+   * first. Returns the init's one-shot flags, or null: it couldn't be
+   * settled, and no backend may open a mailbox half restored (it could send
+   * what the copy had queued); the window says so, with Try Again.
+   */
+  beforeStart(): { skipBackup?: true } | null {
     try {
       const outcome = reconcileRestore(this.deps.dbPath(), this.deps.restore);
       if (outcome) this.deps.log("mailbox.restore_reconciled", { outcome });
     } catch (error) {
       this.deps.log("mailbox.restore_failed", { errorClass: error instanceof Error ? error.name : "Error", errno: (error as { code?: string }).code });
+      this.set({ kind: "failed", reason: "unwritable", step: null, backup: null, restoreFailed: "failed" });
+      return null;
     }
     const skip = this.skipNext;
     this.skipNext = false;
@@ -71,7 +78,12 @@ export class MailboxHost {
 
   /** A backend exited. True when it was one that explained itself: no restart, no crash report. */
   exited(instance: number): boolean {
-    if (instance !== this.failedInstance) return false;
+    if (instance !== this.failedInstance) {
+      // a crash mid-upgrade isn't still upgrading: the gate steps aside for the restart policy (and, if it gives up,
+      // the stopped-engine screen with its Try Again) (Codex review R6)
+      if (this.current.kind === "upgrading") this.set(GATE_OPEN);
+      return false;
+    }
     this.failedInstance = null;
     if (this.startOnExit) {
       this.startOnExit = false;

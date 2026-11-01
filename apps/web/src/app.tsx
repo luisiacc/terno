@@ -2,7 +2,7 @@ import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { lazy, Suspense, useEffect } from "react";
-import { useDraftRecovery } from "~/lib/draft-recovery-ui";
+import { reviewDrafts, useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { useAppearance } from "~/lib/appearance";
 import { usePage } from "~/lib/page";
 import { useSnack } from "~/lib/snack";
@@ -25,7 +25,9 @@ import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { ThreadList } from "./components/thread-list";
 import { EngineStopped } from "./components/diag/engine-stopped";
-import { startMailbox, useGateBlocks } from "./lib/mailbox";
+import { unsavedDraftWork } from "./lib/drafts";
+import { startMailbox, useGateBlocks, useMailbox } from "./lib/mailbox";
+import { startUpdates } from "./lib/updates";
 import { useRequiredCover } from "./lib/required-cover";
 import { PaneBoundary, RecoveryBoundary } from "./components/diag/error-boundary";
 import { ReportPreview } from "./components/diag/report-preview";
@@ -55,7 +57,17 @@ const MailboxCover = lazy(() => import("./components/mailbox-cover"));
 function Covers() {
   const blocks = useGateBlocks();
   const required = useRequiredCover();
-  useEffect(() => startMailbox(), []);
+  const gate = useMailbox((s) => s.gate.kind);
+  // the gate and the update state, before the mail engine connects: a mailbox that can't open never gets that far,
+  // and its Update Terno needs the updater's state (Codex review R4)
+  useEffect(() => {
+    startMailbox();
+    startUpdates();
+  }, []);
+  // a mailbox that can't be used never hides a draft that isn't saved: its review comes first (Codex review R7)
+  useEffect(() => {
+    if (blocks && gate !== "upgrading" && unsavedDraftWork()) reviewDrafts("error");
+  }, [blocks, gate]);
   if (!blocks && !required) return null;
   return (
     <Suspense>

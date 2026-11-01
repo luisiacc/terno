@@ -1036,6 +1036,11 @@ export async function draftsSaved(capMs = 5000): Promise<boolean> {
   return !draftWorkPending() && draftChangeVersion() === version && Object.values(useDrafts.getState().drafts).every((d) => !authored(d) || (!d.recovery && d.savedRev === d.localRev && d.status !== "error"));
 }
 
+/** Plan 95: a draft not saved as written (or in recovery), right now, without flushing: what a cover must never hide. */
+export function unsavedDraftWork(): boolean {
+  return draftWorkPending() || Object.values(useDrafts.getState().drafts).some((d) => authored(d) && (d.recovery || d.savedRev !== d.localRev || d.status === "error"));
+}
+
 /** Waits for the save in flight (if any) and stops further saves: the draft is about to be sent or discarded. */
 async function settle(key: string): Promise<LocalDraft | undefined> {
   const w = writers.get(key);

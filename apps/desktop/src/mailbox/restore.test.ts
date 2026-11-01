@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BackupInfo } from "@terno/db/backups";
-import { BEFORE_RESTORE_RETENTION_MS, readRestoredMarker, reconcileRestore, restoreFromBackup, RestoreError, restorePaths, type RestoreDeps } from "./restore";
+import { BEFORE_RESTORE_RETENTION_MS, readRestoredMarker, reconcileRestore, restoreFromBackup, RestoreError, restorePaths, settleRestored, type RestoreDeps } from "./restore";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -151,5 +151,50 @@ describe("restoring a backup (plan 95)", () => {
     expect(reconcileRestore(w.db)).toBeNull();
     expect(existsSync(p.aside)).toBe(false);
     expect(existsSync(`${p.aside}-wal`)).toBe(false);
+  });
+
+  it("the journal is durable, its folder entry too, before anything moves (Codex review R1)", async () => {
+    const w = world();
+    const events: string[] = [];
+    await restoreFromBackup(w.db, w.backup, { ...roomy, synced: (path) => events.push(`sync:${path === w.dir ? "dir" : path.split("/").pop()}`), fault: (s) => void events.push(`step:${s}`) });
+    w.live.close();
+    const journal = events.indexOf("sync:terno.db.restore.json.tmp");
+    expect(journal).toBeGreaterThan(-1);
+    expect(events[journal + 1]).toBe("sync:dir");
+    expect(events.indexOf("step:aside-wal")).toBeGreaterThan(journal + 1);
+    // and the moves are durable before the copy takes the mailbox's place
+    expect(events.lastIndexOf("sync:dir", events.indexOf("step:swap"))).toBeGreaterThan(events.indexOf("step:aside"));
+  });
+
+  it("the old mailbox is kept 14 days from the restore, not from when it was last written (Codex review R9)", async () => {
+    const w = world();
+    w.live.close();
+    const old = (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000;
+    utimesSync(w.db, old, old);
+    await restoreFromBackup(w.db, w.backup, roomy);
+    expect(reconcileRestore(w.db)).toBeNull();
+    expect(existsSync(restorePaths(w.db).aside)).toBe(true);
+  });
+
+  it("settleRestored: quarantined and checkpointed to the file before the marker goes; a checkpoint that can't finish keeps it (Codex review R3)", () => {
+    const w = world();
+    w.live.close();
+    writeFileSync(restorePaths(w.db).marker, JSON.stringify({ createdAt: 7 }));
+    const order: string[] = [];
+    const db = new DatabaseSync(w.db);
+    const facade = {
+      get: <T,>(sql: string) => {
+        order.push(`${sql}|marker:${existsSync(restorePaths(w.db).marker)}`);
+        return db.prepare(sql).get() as T;
+      },
+    };
+    expect(settleRestored(facade, w.db, () => order.push("quarantine"))).toEqual({ createdAt: 7 });
+    expect(order).toEqual(["quarantine", "PRAGMA wal_checkpoint(FULL)|marker:true"]);
+    expect(existsSync(restorePaths(w.db).marker)).toBe(false);
+    writeFileSync(restorePaths(w.db).marker, JSON.stringify({ createdAt: 7 }));
+    const busy = { get: <T,>() => ({ busy: 1, log: 3, checkpointed: 1 }) as T };
+    expect(() => settleRestored(busy, w.db, () => {})).toThrow();
+    expect(readRestoredMarker(w.db)).toEqual({ createdAt: 7 });
+    db.close();
   });
 });

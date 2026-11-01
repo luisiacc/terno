@@ -276,6 +276,8 @@ export class UpdateController {
       return this.state;
     }
     if (outcome === "forced") {
+      // a terminal failure: Update Terno's button comes back with the reason (Codex review R5)
+      this.dispatch({ type: "update-now", on: false });
       this.dispatch({ type: "install-failed", kind: "unknown" });
       this.deps.log("update.deferred", { reason: "other" });
       this.deps.recover();

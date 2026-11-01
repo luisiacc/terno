@@ -188,6 +188,27 @@ test.describe("mailbox gate (plan 95)", { tag: "@design" }, () => {
   });
 });
 
+test.describe("mailbox gate and unsaved drafts (plan 95, Codex review R7)", () => {
+  test("a mailbox that can't be used never hides a draft that isn't saved: its review comes first", async ({ app: page, server }) => {
+    await fakeMain(page);
+    await page.locator("[data-testid=thread-row]").first().dispatchEvent("mousedown");
+    await page.keyboard.press("r");
+    await page.getByTestId("compose-body").focus();
+    const drafts = server.backend.store.drafts as unknown as { save: (...a: unknown[]) => Promise<unknown> };
+    const save = drafts.save.bind(drafts);
+    drafts.save = () => new Promise(() => {});
+    try {
+      await page.keyboard.type("Not saved yet");
+      await gate(page, failed("corrupt"));
+      await expect(page.getByTestId("recovery-workspace")).toBeVisible();
+      await expect(cover(page)).toHaveCount(0);
+      await expect(page.getByTestId("recovery-workspace")).toContainText("Not saved yet");
+    } finally {
+      drafts.save = save;
+    }
+  });
+});
+
 test.describe("required update (plan 95)", { tag: "@design" }, () => {
   test("below the feed's minimum the window is covered, with one button that updates; it goes once met", async ({ app: page }) => {
     await fakeMain(page, { updates: { required: "0.2.0", status: "available", available: release } });

@@ -97,11 +97,9 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
   if (!existsSync(path)) return { from: null, to: SCHEMA_VERSION, backup: null, made: false };
   const from = readSchema(path);
   if (from > SCHEMA_VERSION) throw new SchemaNewerError(from, SCHEMA_VERSION);
-  if (from === SCHEMA_VERSION) {
-    // upgraded and opened before: a backup past its time goes (no timer: this start is the check)
-    for (const b of backups) if (now() - b.createdAt >= BACKUP_RETENTION_MS) remove(b.dir);
-    return { from, to: SCHEMA_VERSION, backup: backups.find((b) => b.toSchema === SCHEMA_VERSION && now() - b.createdAt < BACKUP_RETENTION_MS) ?? null, made: false };
-  }
+  // a current file's backup stays until the mailbox has opened (expireBackups): a header that reads may still sit on
+  // damaged tables, and that backup is then the way back (Codex review R8)
+  if (from === SCHEMA_VERSION) return { from, to: SCHEMA_VERSION, backup: backups.find((b) => b.toSchema === SCHEMA_VERSION) ?? null, made: false };
   // an earlier attempt at this upgrade already has the copy from before it started
   const kept = backups.find((b) => b.toSchema === SCHEMA_VERSION);
   if (kept) return { from, to: SCHEMA_VERSION, backup: kept, made: false };
@@ -159,4 +157,9 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
   // the new generation is in place: the older ones go
   for (const b of backups) remove(b.dir);
   return { from, to: SCHEMA_VERSION, backup: readManifest(o.backupsDir, id), made: true };
+}
+
+/** After the mailbox opened (healthy, at this schema): a backup past its 14 days goes. No timer: a start is the check. */
+export function expireBackups(backupsDir: string, now = Date.now()): void {
+  for (const b of listBackups(backupsDir)) if (b.toSchema <= SCHEMA_VERSION && now - b.createdAt >= BACKUP_RETENTION_MS) remove(b.dir);
 }

@@ -127,4 +127,27 @@ describe("main's mailbox gate (plan 95)", () => {
     t.host.beforeStart();
     expect(t.logs).toContain("mailbox.restore_reconciled:rolled-back");
   });
+
+  it("a restore that can't be settled keeps every backend off the mailbox, and says so with Try Again (Codex review R2)", () => {
+    const t = setup();
+    const p = restorePaths(t.db);
+    // a crash after the swap: the journal, the copy in place, the old one aside, and no marker yet
+    writeFileSync(p.journal, JSON.stringify({ createdAt: 1 }));
+    writeFileSync(p.aside, "old");
+    // the marker can't be written (its temp path is taken by a folder)
+    mkdirSync(`${p.marker}.tmp`);
+    expect(t.host.beforeStart()).toBeNull();
+    expect(t.published.at(-1)).toMatchObject({ kind: "failed", reason: "unwritable", restoreFailed: "failed" });
+    expect(t.host.retry()).toBe(true);
+    rmSync(`${p.marker}.tmp`, { recursive: true });
+    expect(t.host.beforeStart()).toEqual({});
+    expect(readRestoredMarker(t.db)).toEqual({ createdAt: 1 });
+  });
+
+  it("a crash mid-upgrade steps the gate aside, so the restart policy (and the stopped-engine screen) take over (Codex review R6)", () => {
+    const t = setup({ alive: true });
+    t.host.reported({ kind: "upgrading", phase: "migrate", from: 37, to: 38 });
+    expect(t.host.exited(9)).toBe(false);
+    expect(t.published.at(-1)).toEqual({ kind: "open", restoredFrom: null });
+  });
 });

@@ -630,4 +630,21 @@ describe("required updates and Update Terno (plan 95)", () => {
     h.ctl.mailboxFailed({ kind: "newer", schema: 40, supported: 38 });
     expect(h.captures).toEqual([]);
   });
+
+  it("a forced shutdown during Update Terno ends it: the button comes back with the reason (Codex review R5)", async () => {
+    const h = harness({ localMode: true, prefs: { requiredMinimum: "0.2.0" }, shutdown: ["forced", "closed"] });
+    h.engine.next = release("0.2.0");
+    h.engine.minimum = "0.2.0";
+    const done = h.ctl.updateNow();
+    await flush();
+    h.engine.dl!.resolve();
+    await done;
+    h.engine.handlers!.ready();
+    await flush();
+    expect(h.ctl.view).toMatchObject({ updatingNow: false, error: { stage: "install", kind: "unknown" } });
+    expect(h.engine.installs).toBe(0);
+    // Try Again installs what's ready
+    await h.ctl.updateNow();
+    expect(h.engine.installs).toBe(1);
+  });
 });

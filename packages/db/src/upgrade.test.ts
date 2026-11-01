@@ -8,7 +8,7 @@ import { nodeSqliteDriver } from "./node-driver";
 import { BackupError, classifyOpenError, NoRoomError, SchemaNewerError } from "./open-errors";
 import { openDatabaseWith } from "./portable";
 import { Db } from "./sqlite";
-import { BACKUP_RETENTION_MS, listBackups, prepareUpgrade, type UpgradeOptions } from "./upgrade";
+import { BACKUP_RETENTION_MS, expireBackups, listBackups, prepareUpgrade, type UpgradeOptions } from "./upgrade";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -230,13 +230,16 @@ describe("prepareUpgrade (plan 95)", () => {
     expect(readdirSync(w.backups)).toEqual([plan.backup!.id]);
   });
 
-  it("a backup goes 14 days after it was made, once the mailbox opened upgraded (checked at start, no timer)", async () => {
+  it("a backup goes 14 days after it was made, and only once the mailbox opened (checked at start, no timer)", async () => {
     const w = workdir();
     oldMailbox(w.db, PREV);
     const plan = await prepareUpgrade(w.db, opts(w, { now: () => 0 }));
     openDatabaseWith(nodeSqliteDriver, w.db).close();
-    expect(await prepareUpgrade(w.db, opts(w, { now: () => BACKUP_RETENTION_MS - 1 }))).toMatchObject({ backup: { id: plan.backup!.id } });
-    expect(await prepareUpgrade(w.db, opts(w, { now: () => BACKUP_RETENTION_MS }))).toMatchObject({ backup: null });
+    // past its time, but the mailbox hasn't opened yet this start: still offered (Codex review R8)
+    expect(await prepareUpgrade(w.db, opts(w, { now: () => BACKUP_RETENTION_MS * 2 }))).toMatchObject({ backup: { id: plan.backup!.id } });
+    expireBackups(w.backups, BACKUP_RETENTION_MS - 1);
+    expect(readdirSync(w.backups)).toEqual([plan.backup!.id]);
+    expireBackups(w.backups, BACKUP_RETENTION_MS);
     expect(readdirSync(w.backups)).toEqual([]);
   });
 
