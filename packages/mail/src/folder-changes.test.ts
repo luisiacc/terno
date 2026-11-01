@@ -76,6 +76,17 @@ describe("IMAP: a change checked on a fresh LIST", () => {
     expect(throwsKey(() => planImapDelete([...list, box("Work/Sent")], own, { ...roles, sent: "Work/Sent" }, "Work"))).toBe("errors.folder.standard");
     expect(throwsKey(() => planImapDelete(list, own, roles, "Gone"))).toBe("errors.folder.notFound");
   });
+
+  it("never takes a server special the sidebar doesn't show, nested under an own folder (Codex code review round 2 #1)", () => {
+    // what customFolders leaves out: \Important, \Flagged and the special-use roles
+    for (const flag of ["\\Important", "\\Flagged", "\\Junk"]) {
+      const nested = [...list, box("Work/Special", { flags: [flag] })];
+      expect(throwsKey(() => planImapDelete(nested, own, roles, "Work"))).toBe("errors.folder.standard");
+      expect(throwsKey(() => planImapRename(nested, own, roles, "Work", "Job", ""))).toBe("errors.folder.standard");
+    }
+    // an empty group under it holds no mail: it goes with it
+    expect(planImapDelete([...list, box("Work/Empty", { flags: ["\\Noselect"] })], own, roles, "Work")).toEqual(["Work/Clients/Acme", "Work/Clients", "Work/Empty", "Work"]);
+  });
 });
 
 describe("Gmail: a change checked on the raw label catalog", () => {

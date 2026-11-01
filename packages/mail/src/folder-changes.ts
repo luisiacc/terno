@@ -74,10 +74,16 @@ function subtree(list: readonly ListedPath[], target: ListedPath): ListedPath[] 
   return list.filter((m) => exists(m) && (m.path === target.path || (below !== null && m.path.startsWith(below))));
 }
 
-/** A change that would take a role mailbox or INBOX with it (one nested under an own folder) is refused whole. */
-function assertOwnSubtree(paths: readonly ListedPath[], roles: Readonly<Record<string, string | undefined>>): void {
+const selectable = (m: ListedPath) => ![...m.flags].some((f) => f.toLowerCase() === "\\noselect");
+
+/**
+ * A change that would take a role mailbox or INBOX with it (one nested under an own folder) is refused whole, and so
+ * is one taking a mailbox the sidebar doesn't show as the account's own (Codex code review round 2 #1: a child marked
+ * \Important, a server special, was deleted though neither listed nor counted in the confirmation).
+ */
+function assertOwnSubtree(paths: readonly ListedPath[], own: ReadonlySet<string>, roles: Readonly<Record<string, string | undefined>>): void {
   const rolePaths = new Set(Object.values(roles).filter((p): p is string => Boolean(p)));
-  if (paths.some((m) => rolePaths.has(m.path) || m.path.toUpperCase() === "INBOX")) throw standardFolder();
+  if (paths.some((m) => rolePaths.has(m.path) || m.path.toUpperCase() === "INBOX" || (selectable(m) && !own.has(m.path)))) throw standardFolder();
 }
 
 /** Plan 107: the path a new mailbox gets (under `parent`, or the top: the namespace's prefix), checked against a fresh LIST. */
@@ -107,7 +113,7 @@ export function planImapRename(list: readonly ListedPath[], own: ReadonlySet<str
   const parent = parentOf(key, target.delimiter);
   const path = parent ? parent + target.delimiter + name : namespaced(name, prefix);
   const moved = subtree(list, target);
-  assertOwnSubtree(moved, roles);
+  assertOwnSubtree(moved, own, roles);
   if (moved.some((m) => path.length + m.path.length - key.length > PATH_MAX)) throw fail(L("errors.folder.nameTooLong"));
   if (siblingTaken(list, path, target.delimiter, name, key)) throw nameTaken(name);
   return { path, moves: moved.map((m) => ({ from: m.path, to: path + m.path.slice(key.length) })) };
@@ -117,7 +123,7 @@ export function planImapRename(list: readonly ListedPath[], own: ReadonlySet<str
 export function planImapDelete(list: readonly ListedPath[], own: ReadonlySet<string>, roles: Readonly<Record<string, string | undefined>>, key: string): string[] {
   const target = ownTarget(list, own, key);
   const gone = subtree(list, target);
-  assertOwnSubtree(gone, roles);
+  assertOwnSubtree(gone, own, roles);
   return gone.map((m) => ({ path: m.path, depth: segments(m).length })).sort((a, b) => b.depth - a.depth).map((m) => m.path);
 }
 
