@@ -1963,3 +1963,14 @@ IDB diagnostic **fd527aee** is clean committed evidence only. The one selected o
 Root released localization to execute the en:any R1 negative fixture, fix the inferred-English-shape guard, check the original repository guard and run the final R2. Narrow reason-required annotations for the three committed non-product-copy findings are included in that review scope; no website copy WIP or generic bypass is permitted.
 
 Native SQL's next distinct queued group is sidebar/getCounts p95 27.05/5 ms. Source/plan preparation only is released while localization verifies; no new benchmark, schema/index/cache change or rerun of R37. Counts/scopes and existing tally/invalidation/rollback contracts must guide a discriminating query-work witness before a fix. R37 and optional W06 remain separate inconclusive COMMIT evidence, not a blanket SQL explanation. Other IDB performance groups remain queued. No full gate rerun.
+
+
+## Localization source contract landed — 2026-11-01
+
+Fast-forward landed **c8deb179**, reviewed final4c041b99 rebased over current main. The scanner recognizes only the pure-data initializer of the two exact typed site catalog declarations. It rejects executable values, wrong paths/exports/types/language markers and malformed lookalikes; file discovery is unchanged. Ordinary pre-implementation failures and the R1 en:any negative RED preceded the corresponding fixes. English inference is required so an explicit any cannot weaken the catalog type relationship. Site en/es parity typing itself is unchanged, not independently requalified by this scanner slice.
+
+The three existing non-product-copy findings use narrow reason-required annotations: aria-hidden honeypot Website, aria-hidden font specimen Aa, and controlled provider-fixture Synthetic refusal. No site copy/design/runtime behavior or user WIP was edited, and no directory blanket exemption was added. Reasonless ignore and actual production hard-coded-string controls remain.
+
+Child **52/52 tests**, full i18n types and exact lint PASS; one critique/two source reviews completed, R1 P2 regression-fixed, final R2 zero findings. Root inspected the complete delta, rebased and repeated **52/52**, including the genuine original repository guard, with the original 20-second timeout. Pure i18n selection omitted unused worker generation; no timing or broad gate rerun. Root evidence `/tmp/terno-root-scanner-reconcile`, child `/tmp/terno-scanner-430af319`; captured cache state restored and process joined naturally. Initial child dependency auto-install remains disclosed.
+
+SQL sidebar-count preparation has the next reserved measurement slot after its concrete plan/handoff, with no automatic unchanged benchmark or source/schema edit. Historical SQL/IDB failures and all final parked candidates remain unwaived. Final row totals are unchanged; release-green remains incomplete.
