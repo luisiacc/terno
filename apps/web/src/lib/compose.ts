@@ -16,6 +16,7 @@ import { sentRefs, withSentImages } from "./inline-images";
 import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./forward-files";
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, draftIndex, invalidateDraftPresentation, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, draftForSend, editDraft, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
+import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type EarlyComposeInput } from "./compose-focus-move";
 
 /**
@@ -215,6 +216,12 @@ export function focusDraft(key: string, target: "body" | "to", owner?: number) {
   }
 }
 
+/** Is the conversation's draft the pinned one (its placement may have expired since it was pinned)? */
+function pinnedFor(threadId: number, shown: ReturnType<typeof getApp>["draftShown"]): boolean {
+  const pinned = usePinned.getState();
+  return pinned.key !== null && (pinned.threadId === threadId || shownDraftKey(useDrafts.getState().drafts, threadId, shown) === pinned.key);
+}
+
 /** Does a draft carry anything the user wrote? */
 const written = (d: LocalDraft) => d.bodyText.trim() !== "" || d.subjectEdited || d.localRev > 0 || (d.attachments?.length ?? 0) > 0;
 
@@ -348,6 +355,7 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
 
 /** Open stored work under the same private intent and destination ownership as Reply/Forward. */
 export async function openStoredDraft(key: string): Promise<void> {
+  if (key === pinnedKey()) { focusPinned(); return; }
   if (getApp().compose?.key === key && useDrafts.getState().drafts[key]?.sending) return;
   const finish = beginDraftWork();
   if (!finish) return;
@@ -448,6 +456,8 @@ export async function openCompose(mode: DraftMode = "new", threadId: number | nu
   markSelectionIntent();
   const mine = ++intent;
   const state = getApp();
+  // plan 115: the conversation's draft is pinned: r / a / f go to its card (never a second editor, never a conversion)
+  if (mode !== "new" && threadId !== null && pinnedFor(threadId, state.draftShown)) { finish(); focusPinned(); return; }
   const wantsLease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2;
   const lease = wantsLease ? beginFocusLease(mine, threadId) : null;
   if (wantsLease && !lease) { finish(); return; }
@@ -533,6 +543,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   // its body as the editor has it now (what "written" and a conversion's undo look at)
   let existing = existingKey ? materialize(existingKey) : undefined;
   if (existing && !sameStoredDraft(existing)) return;
+  // plan 115: a pinned draft is answered in its card, never opened (or converted) a second time
+  if (existing && existing.key === pinnedKey()) { focusPinned(); return; }
   let proof: DraftAckRead | undefined, noWriter = false;
   const sameModeSource = Boolean(existing && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
   if (existing && (existing.mode !== mode || sameModeSource) && !existing.presentationExpired && lease) {
@@ -769,6 +781,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
 
 /** Shows a new-message draft in the reader pane again (from the drafts strip). */
 export function showNewDraft(key: string): void {
+  if (key === pinnedKey()) { focusPinned(); return; }
   markSelectionIntent();
   setApp({ compose: { key, seq: ++seq }, checked: new Set(), scope: null, readerOpen: false });
 }
@@ -782,7 +795,8 @@ export function leaveNewDraft(): void {
   if (!key) return;
   setApp({ compose: null });
   const d = useDrafts.getState().drafts[key];
-  if (d && !authored(d)) forgetDraft(key);
+  // plan 115: a pinned draft lives on in its card, untouched or not
+  if (d && !authored(d) && key !== pinnedKey()) forgetDraft(key);
   else void flushDraft(key);
 }
 

@@ -95,6 +95,9 @@ export const ICONS = {
   Paperclip: "Attachment01Icon",
   Pencil: "PencilIcon",
   PenLine: "PencilEdit01Icon",
+  // plan 115: pin a draft to the reading area's corner
+  Pin: "PinIcon",
+  PinOff: "PinOffIcon",
   Play: "PlayIcon",
   Plus: "Add01Icon",
   Printer: "PrinterIcon",

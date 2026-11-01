@@ -8,6 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import { openStoredDraft } from "~/lib/compose";
 import { draftPresentationThread, authored, shownDraftKey, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { useApp } from "~/state/app";
+import { usePinned } from "~/lib/pinned-draft-state";
 import { useList } from "~/state/list";
 import { reminderShort, reminderWhen } from "~/lib/when";
 import { useScheduled } from "~/lib/scheduled";
@@ -78,11 +79,14 @@ export function DraftsStrip() {
   const compose = useApp((s) => s.compose?.key ?? null);
   const shown = useApp((s) => s.draftShown);
   const index = useList((s) => s.index);
+  // plan 115: the pinned draft is on screen already
+  const pinned = usePinned((s) => s.key);
   const [expanded, setExpanded] = useState(false);
   const items = useDrafts(
     useShallow((s) => {
       const out: LocalDraft[] = [];
       for (const d of Object.values(s.drafts)) {
+        if (d.key === pinned) continue;
         const thread = draftPresentationThread(d);
         if (thread === null) {
           if (authored(d) || d.key === compose) out.push(d);

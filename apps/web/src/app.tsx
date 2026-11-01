@@ -16,6 +16,8 @@ import { showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
 import { NewMessage } from "./components/new-message";
+import { PinnedDraft } from "./components/pinned-draft";
+import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { installComposeFollowsSelection } from "~/lib/compose";
 import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
@@ -96,7 +98,10 @@ function Fatal({ message }: { message: string }) {
 function PageLayer({ page }: { page: "thread" | "compose" }) {
   const selectedId = useApp((s) => s.selectedId);
   // a new message keeps its foot (the format bar) clear of the dock
-  const inset = useSnack((s) => (page === "compose" ? s.inset : 0));
+  const snackInset = useSnack((s) => (page === "compose" ? s.inset : 0));
+  // plan 115: and of the pinned draft over it
+  const pinnedInset = usePinned((s) => (page === "compose" ? s.inset : 0));
+  const inset = bottomInset(snackInset, pinnedInset);
   return (
     <div data-testid="list-page" data-page={page} className="absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
       <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={page === "thread" ? selectedId : null}>
@@ -115,6 +120,9 @@ export function App() {
   const composing = useApp((s) => s.compose !== null);
   const selectedId = useApp((s) => s.selectedId);
   const list = useAppearance((s) => s.layout) === "list";
+  const pinned = usePinned((s) => s.key !== null);
+  // Split: a new message keeps its foot (the format bar) clear of the pinned draft
+  const composeInset = usePinned((s) => (!list && composing ? s.inset : 0));
   const page = usePage();
   const covered = page !== "list";
   useEffect(() => installKeyboard(), []);
@@ -169,17 +177,20 @@ export function App() {
             <ThreadList />
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
+          {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
+          {list && pinned && <PinnedDraft list />}
           <SnackDock />
           {/* plan 21: the panes' edges, over the hairlines; List has no list|reader edge (its width is Split's, kept for it) */}
           <PaneHandle pane="sidebar" />
           {!list && <PaneHandle pane="list" />}
         </section>
         {!list && (
-          <main className="relative min-h-0">
+          <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
             <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing ? selectedId : null}>
               {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
             </PaneBoundary>
+            {pinned && <PinnedDraft list={false} />}
           </main>
         )}
       </div>

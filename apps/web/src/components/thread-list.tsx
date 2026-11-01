@@ -27,6 +27,7 @@ import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
 import { client } from "~/rpc/connection";
 import { useSnack } from "~/lib/snack";
+import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu } from "./review-actions";
@@ -45,6 +46,9 @@ import { SelectionBar } from "./selection-bar";
 import { renderProbe } from "~/lib/render-probe";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
+/** What covers the list's last rows now: the snack dock, or List's pinned draft. */
+const listInset = (): number => bottomInset(useSnack.getState().inset, useAppearance.getState().layout === "list" ? usePinned.getState().inset : 0);
+
 const TOP_LABEL = 28;
 const TOP_GAP = 9;
 
@@ -679,8 +683,10 @@ export function ThreadList() {
   const headerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it
-  const dock = useSnack((s) => s.inset);
+  // the docked snackbar sits over the last rows: the list keeps room below them, and j/k stop above it;
+  // so does List's pinned draft (plan 115; Split's is over the reader, not the list)
+  const pinnedOver = useAppearance((s) => s.layout === "list");
+  const dock = bottomInset(useSnack((s) => s.inset), usePinned((s) => (pinnedOver ? s.inset : 0)));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
   // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
   const top = useMemo(() => {
@@ -738,9 +744,9 @@ export function ThreadList() {
           // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {
             const top = sel * h;
-            const bottom = el.scrollTop + el.clientHeight - useSnack.getState().inset;
+            const bottom = el.scrollTop + el.clientHeight - listInset();
             if (top + h <= el.scrollTop) el.scrollTop = top;
-            else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - useSnack.getState().inset);
+            else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - listInset());
           }
         };
     };

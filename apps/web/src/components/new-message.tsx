@@ -5,7 +5,7 @@ import { Button } from "@terno/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
-import { Trash2 } from "@terno/ui/icons";
+import { Pin, Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
 import { registerUndo, snack } from "~/lib/snack";
 import { composeFocusPending, finishComposeFocus, leaveNewDraft, leaveNewDraftWithFocus, sendDraft, showNewDraft } from "~/lib/compose";
@@ -16,6 +16,7 @@ import { popupOpen } from "./composer/controller";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { DraftCommandsHost } from "~/lib/draft-commands";
+import { pinDraft } from "~/lib/pinned-draft";
 
 /** Esc and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
 function leave(key: string) {
@@ -121,7 +122,18 @@ export function NewMessage() {
           <TooltipContent>{t("compose.discard")}</TooltipContent>
         </Tooltip>
         <span className="text-sm text-muted-foreground">{t("compose.newMessage")}</span>
-        <SendButton d={d} onSend={(at) => void send(at)} className="no-drag ml-auto" />
+        {/* plan 115: kept at the bottom right while conversations are read */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={t("compose.pin")} disabled={d.sending} onClick={() => pinDraft(key)} className="no-drag ml-auto text-muted-foreground hover:text-foreground" data-testid="compose-pin">
+                <Pin />
+              </Button>
+            }
+          />
+          <TooltipContent>{t("compose.pin")}</TooltipContent>
+        </Tooltip>
+        <SendButton d={d} onSend={(at) => void send(at)} className="no-drag" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-(--reader-max) flex-col px-(--reader-pad-x) pt-5 pb-10">

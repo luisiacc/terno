@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { ChevronDown, Forward, PenLine, ReplyAll, Trash2 } from "@terno/ui/icons";
+import { ChevronDown, Forward, PenLine, Pin, PinOff, ReplyAll, Trash2 } from "@terno/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { collapseInlineDraft, composeFocusPending, finishComposeFocus, openCompose, reopenInlineDraft, sendDraft } from "~/lib/compose";
 import { copyDraft, discardDraft, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
@@ -23,6 +23,8 @@ import { isSendLaterKey, openSendLater, SendButton } from "./send-button";
 import { controllerFor, popupOpen } from "./composer/controller";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { ComposerBody, ComposerFormatBar, FormatToggle, LinkButton, preloadComposer } from "./composer/lazy";
+import { focusPinned, usePinned } from "~/lib/pinned-draft-state";
+import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
 
 export { focusSoon } from "~/lib/compose-focus-move";
 import { focusSoon, focusMoveGeneration, type InlineFocusMove } from "~/lib/compose-focus-move";
@@ -296,9 +298,11 @@ function formLabel(forward: boolean, who: string): string {
  */
 /** `icons`: the account's own picture may be asked for (plan 22; never in spam) */
 export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, checkpoint, onCheckpointReopen }: { threadId: number; draftKey: string | null; replyTo: string; account: Account | undefined; icons?: boolean; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void }) {
-  const d = useDrafts((s) => (draftKey ? s.drafts[draftKey] : undefined));
+  // plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired)
+  const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
+  const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
-  const focus = useApp((s) => (draftKey && s.draftFocus?.key === draftKey ? s.draftFocus : null));
+  const focus = useApp((s) => (draftKey && !pinned && s.draftFocus?.key === draftKey ? s.draftFocus : null));
   const rootRef = useRef<HTMLDivElement>(null);
   const slotMove = useRef<InlineFocusMove | null>(null), slotGeneration = useRef(0);
   useEffect(() => {
@@ -308,7 +312,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
   const exitWatches = useRef(new Set<() => void>());
   useEffect(() => () => { for (const stop of exitWatches.current) stop(); }, []);
   const formatId = useId();
-  const state: "bar" | "open" | "collapsed" = !d ? "bar" : d.uiState;
+  const state: "bar" | "open" | "collapsed" | "pinned" = pinned ? "pinned" : !d ? "bar" : d.uiState;
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
   useEffect(preloadComposer, []);
@@ -409,6 +413,18 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
           </Button>
         </div>
       </Expand>
+      <Expand open={state === "pinned"}>
+        <div className="flex h-10 items-center gap-0.5 pr-1.5 pl-1" data-testid="draft-pinned">
+          <button type="button" onClick={focusPinned} data-testid="draft-pinned-go" className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pl-2 text-left text-sm">
+            <Pin className="size-4 shrink-0 text-primary" />
+            <span className="shrink-0 font-medium">{t("compose.pinned")}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{t("compose.pinnedHint")}</span>
+          </button>
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => unpinDraft()} data-testid="draft-pinned-unpin">
+            <PinOff /> {t("compose.unpin")}
+          </Button>
+        </div>
+      </Expand>
       <Expand open={state === "collapsed"}>
         {d && (
           <button type="button" onClick={reopen} data-testid="draft-collapsed" aria-expanded="false" className="flex h-10 w-full items-center gap-2 rounded-xl pr-3 pl-3 text-left text-sm">
@@ -466,6 +482,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, account, icons = true, 
                 <SaveState d={d} />
               </span>
               <span className="ml-auto flex gap-0.5">
+                <ToolIcon label={t("compose.pin")} onClick={() => pinDraft(d.key)} testId="compose-pin" disabled={d.sending}>
+                  <Pin />
+                </ToolIcon>
                 <ToolIcon label={t("compose.discard")} onClick={() => void discard()} testId="compose-discard" disabled={d.sending}>
                   <Trash2 />
                 </ToolIcon>

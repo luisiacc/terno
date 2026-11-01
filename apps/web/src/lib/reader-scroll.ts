@@ -28,6 +28,8 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;
   }
+  // what covers the scroller's foot (the snack dock, the pinned draft) is room the element must clear too
+  const covered = parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0;
   // the transition (slow ≤ 100 ms) plus two frames for layout to settle
   const until = performance.now() + Math.min(100, Math.round(motionMs * 1.33)) + 34;
   let frame = 0;
@@ -44,7 +46,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     // read
     const r = el.getBoundingClientRect();
     const s = scroller.getBoundingClientRect();
-    const overflow = r.bottom - (s.bottom - pad);
+    const overflow = r.bottom - (s.bottom - pad - covered);
     const room = r.top - (s.top + pad);
     // write
     if (overflow > 0 && room > 0) scroller.scrollTop += Math.min(overflow, room);

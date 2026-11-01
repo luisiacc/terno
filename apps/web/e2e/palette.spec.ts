@@ -208,7 +208,7 @@ test.describe("palette", () => {
     await expect(page.getByTestId("link-popover")).toHaveCount(0);
     await expect(input(page)).toBeFocused();
     const draft = group(page, "draft");
-    await expect(draft.getByRole("option")).toHaveText([/Send/, /Insert snippet/, /Attach files/, /Add Cc/, /Add Bcc/, /Insert link/, /Save as snippet/, /Discard draft/]);
+    await expect(draft.getByRole("option")).toHaveText([/Send/, /Insert snippet/, /Attach files/, /Add Cc/, /Add Bcc/, /Insert link/, /Save as snippet/, /Pin draft/, /Discard draft/]);
     await page.getByTestId("palette-draft-cc").click();
     await expect(page.getByTestId("compose-cc")).toBeFocused();
     // from Cc, ⌘K opens the palette directly; Cc is there now, so no "Add Cc"

@@ -16,6 +16,7 @@ import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scro
 import { takeSent } from "~/lib/sent-reveal";
 import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
+import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
@@ -499,7 +500,8 @@ export function Reader() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
   // List's page: the dock sits over the conversation's foot, so its end (the reply bar) scrolls clear of it
-  const dock = useSnack((s) => (page ? s.inset : 0));
+  // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
+  const dock = bottomInset(useSnack((s) => (page ? s.inset : 0)), usePinned((s) => s.inset));
   const sectionRef = useRef<HTMLElement>(null);
   const destination = useRef({});
   useLayoutEffect(() => selectedId === null ? undefined : registerReaderFocusDestination(selectedId, destination.current), [selectedId]);

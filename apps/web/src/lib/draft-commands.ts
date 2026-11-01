@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { controllerFor } from "~/components/composer/controller";
+import { pinDraft, unpinDraft } from "~/lib/pinned-draft";
+import { pinnedKey } from "~/lib/pinned-draft-state";
 
 /**
  * Plan 88: what the palette can do to a draft, through the composer's own
@@ -13,6 +15,9 @@ export interface DraftCommands {
   showCc(): void;
   showBcc(): void;
   link(): void;
+  /** plan 115: to the reading area's corner, or back */
+  pin(): void;
+  unpin(): void;
   /** what the palette offers now, read from the form's own controls (disabled while sending, recovering or uploading) */
   state(): DraftCommandState;
 }
@@ -25,6 +30,8 @@ export interface DraftCommandState {
   addCc: boolean;
   addBcc: boolean;
   link: boolean;
+  pin: boolean;
+  unpin: boolean;
 }
 
 const registry = new Map<string, DraftCommands>();
@@ -63,12 +70,14 @@ export function DraftCommandsHost({ draftKey: key, root, ...own }: { draftKey: s
       showCc: () => control("compose-show-cc")?.click(),
       showBcc: () => control("compose-show-bcc")?.click(),
       link: () => controllerFor(key)?.openLink(),
+      pin: () => pinDraft(key),
+      unpin: () => unpinDraft(key),
       state: () => {
         const enabled = (testId: string) => {
           const el = control(testId);
           return el !== null && !(el as HTMLButtonElement).disabled;
         };
-        return { send: enabled("compose-send"), discard: enabled("compose-discard"), attach: enabled("attachment-input"), addCc: enabled("compose-show-cc"), addBcc: enabled("compose-show-bcc"), link: !latest.current.sending };
+        return { send: enabled("compose-send"), discard: enabled("compose-discard"), attach: enabled("attachment-input"), addCc: enabled("compose-show-cc"), addBcc: enabled("compose-show-bcc"), link: !latest.current.sending, pin: !latest.current.sending && pinnedKey() !== key, unpin: pinnedKey() === key };
       },
     });
   }, [key, root]);
