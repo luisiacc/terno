@@ -98,6 +98,10 @@ export const useSnack = create<SnackState>(() => ({ current: null, last: null, c
 let seq = 0;
 let heard = 0;
 let ids = 0;
+let publication = 0;
+
+/** Ownership changes even when newer feedback waits in the queue. */
+export const snackPublication = (): number => publication;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let queue: (SnackInput & { render?: () => ReactNode })[] = [];
 /** loading snacks another one replaced: their results wait their turn instead of taking the dock back */
@@ -140,6 +144,7 @@ function holds(s: SnackState): boolean {
 }
 
 function show(input: SnackInput & { render?: () => ReactNode }): string {
+  publication++;
   const s = useSnack.getState();
   const tone = input.tone ?? "neutral";
   const { id: _, duration: __, background, ...rest } = input;
