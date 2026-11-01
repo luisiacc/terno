@@ -733,12 +733,8 @@ const AccountEntry = memo(function AccountEntry({
           controls={discloses ? `account-folders-${a.id}` : undefined}
           // one account: its own folders open and close, where you are stays (its Inbox is the top one)
           onClick={() => (many ? toggleAccount(a.id) : discloses ? setOpenAccount(open ? null : a.id) : navigate({ accountId: a.id, view: "inbox" }))}
-          icon={
-            <span className="relative">
-              <CategoryDot color={a.color as CategoryColor} />
-              {a.syncState.status === "syncing" && <span className="absolute -inset-0.5 animate-ping rounded-full bg-sidebar-primary/40" />}
-            </span>
-          }
+          // syncing stays quiet here: the first-sync and connection pills speak for it
+          icon={<CategoryDot color={a.color as CategoryColor} />}
           label={a.displayName}
           // open, the count is its Inbox's (with one account, the top Inbox's)
           count={open && many ? undefined : unread || undefined}
