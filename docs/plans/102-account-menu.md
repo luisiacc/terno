@@ -1,6 +1,6 @@
 # Plan 102: the account's right-click menu
 
-- **Status:** planned.
+- **Status:** done (see "Implementation notes" and "Codex code review").
 - **Builds on:** `9d988d3b` (main). Follows plan 83's category menu, plan 67's account rows, plan 25's sign-in marker.
 - **Request (verbatim):** "we need to improve the current multiple accounts abilities, we need a right click menu, for now i think we can have an edit button to edit the name, and it opens in-place something to edit the name of it, what do you think, would it be nice? are there other useful actions to have there?" Then, after the proposal (Rename in place plus seven actions): "yes lets do the 7 you suggested".
 
@@ -104,3 +104,28 @@ Codex (plan critique, 12 points) checked the plan against the code. Changes:
 10. **Sign In Again prepares like the marker.** The item runs the marker's preparation (`loadPanel()`, plus `prepareGoogle()` for Gmail on the web), then asks the marker to open. The popover focuses its first control once the panel has mounted (the panel's own initial focus), cold or warm.
 11. **No stale marker state.** The request is a one-shot `{ id, nonce }` in a tiny store that the marker consumes on mount or change: it sets its local `open` and clears the request. Nothing global survives an account that signs in or is removed.
 12. **Settings' focus goes through the dialog.** `settingsAccount` is read once by `AccountsTab` on mount (it expands that item) and handed to the dialog's initial focus (the same `switchFocus` path the dialog already uses), then cleared. A missing account falls back to the tab's default focus. Account events later never refocus.
+
+## Implementation notes
+
+- **Copy is sentence case** ("New message", "Mark all as read", "Remove account…"), not the Title Case in §2: the thread and category menus are sentence case, and this menu sits beside them. New message reuses `compose.newMessage`, Color reuses `settings.color`; Spanish follows Settings' "Quitar" for remove.
+- **Icons:** Rename is `PenLine` (`SquarePen` is New message's). The color dot sits in a `1.15em` box (`Swatch`), so its label starts on the other items' line (it started 10 px left in the first screenshot).
+- `COLOR_LABEL` moved to `lib/color-labels.ts` (Settings' `parts.tsx` re-exports it), so the sidebar doesn't pull Settings' parts into the entry chunk.
+- **Perf (sparse account, worst case: every other thread unread):** SQLite 29,500 threads / 20,046 unread elsewhere: whole walk p95 1.9 ms, count 2.0 ms (budget 16). IndexedDB 28,400 threads / 27,513 unread elsewhere: walk 0.7 ms, count 0.7 ms, ten unread 1.3 ms (one frame). No index was needed. The UI perf gates pass. One run of "sustained j (atelier, compact)" failed once; it then passed 5/5 here and 5/5 on the base commit (noise).
+- **The e2e spec is `@design`:** it runs in macOS, Lumen and Atelier (39 tests). The click-outside test targets the sidebar's Inbox, because Lumen's search is behind a button.
+- **Failures that are not this change:** they also fail on the base commit `9d988d3b`: `i18n/scan.test.ts` (the site's copy, `first-run.tsx`, a backend fixture), `draft-presentation-app-r1.test.tsx`, and 8 tests in `idb` (`cached-refresh`, `category-identities`, `idb.uncertain-upgrade`, `imap-identity`). `canonical-draft-r2` and `db/search.test.ts` failed only under the full parallel run, and pass alone on both.
+
+## Codex code review
+
+Seven rounds over `d4e36827..HEAD`; the seventh found nothing. Each fix has a test that fails without it (checked by running it against the pre-fix code), except where noted.
+
+1. **Round 1.** Two failed overlapping renames showed the first unsaved name. Another field's answer, carrying the stored name, took back a rename still on its way. Mark all as read dropped the checked rows under the Unread filter. A Gmail-tab promotion on top of the Inbox for its reminder was marked read on screen. Fix: `lib/accounts.ts` keeps the backend's account plus the edits on their way; `markAccountRead` keeps the open and checked rows and skips `inSeparateTab` rows. Tests: `accounts.test.ts`, `actions.test.ts`.
+2. **Round 2.**
+   - Settings' text fields lost the typed text when a save failed. They now save with `optimistic: false`: `CommitInput` keeps the text and shows the error.
+   - A newer accepted rename was hidden by an older one still pending. Each field now records its newest accepted edit.
+   - Rows from the previous view, still on screen while the Inbox loaded, were patched. The patch now requires `itemsKey === listKey()`.
+   - The remove dialog now has an explicit return target. This didn't reproduce: Base UI already returned focus to the row. It has an e2e test, but no failing test from before the fix.
+3. **Round 3.** A late answer to a save overwrote a newer `accounts` event (a broken sign-in). An answer now sets only the fields it saved. Sign in again could open over a field the user moved to while the panel loaded; it now opens only if focus didn't move (`sign-in-marker-open.test.tsx`).
+4. **Round 4.** With the panel already loaded, Sign in again checked focus while it was still in the closing menu, and did nothing. The menu it was asked from now counts as "not moved". The e2e's Sign in again step failed without this.
+5. **Round 5.** A slow panel would open over a *different* menu opened meanwhile; only the originating menu counts now. The other point (a click outside the menu steals focus back) didn't reproduce: the context menu is modal, so an outside click only closes it. The menu's `finalFocus` is now plain state, so Base UI's default applies unless an item moves focus itself. The e2e covers the click-outside case.
+6. **Round 6.** A right-click in the sign-in panel (portaled, but React events pass the row's menu trigger) opened the account menu. The panel now stops `contextmenu`.
+7. **Round 7.** No findings.

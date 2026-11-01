@@ -28,7 +28,7 @@ const inboxUnread = (db: ReturnType<typeof sqlDb>, account: number) =>
     account,
   )!.c;
 
-test.describe("the account menu", () => {
+test.describe("the account menu", { tag: "@design" }, () => {
   test("shows its actions; Sign in again… only for an account that needs it", async ({ app: page, server }) => {
     const [a, b] = await accountIds(page);
     await openMenu(page, a!);
@@ -133,14 +133,16 @@ test.describe("the account menu", () => {
   test("a click elsewhere closes the menu (it's modal); the next click's focus stays where it went", async ({ app: page }) => {
     const [a] = await accountIds(page);
     await openMenu(page, a!);
-    const box = (await page.getByTestId("search-input").boundingBox())!;
+    // the sidebar's Inbox: in every design (Lumen's search hides behind a button)
+    const target = page.getByTestId("nav-inbox");
+    const box = (await target.boundingBox())!;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(menu(page, a!)).toHaveCount(0);
-    await page.getByTestId("search-input").click();
-    await expect(page.getByTestId("search-input")).toBeFocused();
+    await target.click();
+    await expect(target).toBeFocused();
     // past the menu's close: nothing takes it back
     await page.waitForTimeout(300);
-    await expect(page.getByTestId("search-input")).toBeFocused();
+    await expect(target).toBeFocused();
   });
 
   test("Color: the dot and the account change", async ({ app: page, server }) => {
