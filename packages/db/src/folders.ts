@@ -300,7 +300,7 @@ export function listFolders(db: Db): Folder[] {
  * list). A newly listed IMAP folder gets a rebuild job instead of a rebuild here (Codex R5: one transaction over a
  * big folder held the backend): `rebuildFolders` runs it a slice at a time, resumable.
  */
-export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[], carried: readonly string[] = []): { changed: boolean; touched: number[] } {
+export function replaceFolders(db: Db, accountId: number, folders: readonly ProviderFolder[], carried: readonly string[] = [], rebuild: readonly string[] = []): { changed: boolean; touched: number[] } {
   return db.tx(() => {
     // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
     // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
@@ -340,12 +340,19 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
       db.run("DELETE FROM folders WHERE account_id = ? AND key = ?", accountId, key);
       changed = true;
     }
-    if (!changed) return { changed: false, touched: [] };
+    if (!changed && !rebuild.length) return { changed: false, touched: [] };
     // a job for a folder no longer listed has nothing to do
     db.run("DELETE FROM folder_rebuilds WHERE account_id = ? AND key NOT IN (SELECT key FROM folders WHERE account_id = ?)", accountId, accountId);
     if (db.get<{ kind: string }>("SELECT kind FROM accounts WHERE id = ?", accountId)?.kind === "imap") {
       for (const f of folders) {
-        // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1)
+        // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1), unless they were
+        // carried from a folder still being rebuilt (round 23 #1): then it's derived again from its places and aliases
+        if (rebuild.includes(f.key)) {
+          if (f.aliases?.length || db.get("SELECT 1 FROM message_locations INDEXED BY message_locations_uid WHERE account_id = ? AND mailbox = ? LIMIT 1", accountId, f.key)) {
+            db.run("INSERT OR REPLACE INTO folder_rebuilds (account_id, key, phase, after_uidvalidity, after_uid) VALUES (?, ?, 0, 0, 0)", accountId, f.key);
+          }
+          continue;
+        }
         if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
         // only where there's something to rebuild: its mailbox has locations, or rows a past listing left
         const any =
@@ -355,7 +362,7 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
         if (any) db.run("INSERT OR REPLACE INTO folder_rebuilds (account_id, key, phase, after_uidvalidity, after_uid) VALUES (?, ?, 0, 0, 0)", accountId, f.key);
       }
     }
-    return { changed: true, touched: [] };
+    return { changed, touched: [] };
   });
 }
 
@@ -507,6 +514,8 @@ export function carryFolder(db: Db, accountId: number, from: string, to: string,
       accountId, from, after, limit,
     );
     for (const r of rows) db.run("INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread) VALUES (?, ?, ?, ?, ?)", r.thread_id, accountId, to, r.last_date, r.unread);
-    return { next: rows.length < limit ? null : rows.at(-1)!.thread_id };
+    // its rows may be partial while its own rebuild runs (Codex code review round 23 #1)
+    const pending = db.get("SELECT 1 FROM folder_rebuilds WHERE account_id = ? AND key = ?", accountId, from) !== undefined;
+    return { next: rows.length < limit ? null : rows.at(-1)!.thread_id, ...(pending && { pending: true as const }) };
   });
 }

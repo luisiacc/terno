@@ -780,6 +780,28 @@ it("a thread marked read during a rename's carry stays in the renamed folder wit
   expect((await t.client.call("counts.get", {})).folderUnread?.[folderRef(t.account.id, "Job")]).toBe(1);
 });
 
+it("a folder renamed while its membership is being rebuilt keeps all its mail: the new key is rebuilt from its alias (Codex code review round 23 #1)", async () => {
+  const t = await setup(["Work"]);
+  for (const s of ["First", "Second", "Third"]) t.server.control.addMessage("Work", { raw: rawIdleMail(s) });
+  await t.backend.syncAccount(t.account.id);
+  await t.backend.rebuildFolders();
+  const before = await t.threadsIn("Work");
+  expect(before).toHaveLength(3);
+  // Work unlisted and listed again (another pass's view of it): a rebuild job, its old rows cleared, its places not
+  // walked yet when the rename comes
+  const store = t.backend.store;
+  const listed = (await store.folders.list()).filter((f) => f.accountId === t.account.id).map(({ accountId: _a, ...f }) => f);
+  await store.folders.replace(t.account.id, listed.filter((f) => f.key !== "Work"));
+  await store.folders.replace(t.account.id, listed);
+  await store.folders.rebuild(1000);
+  expect(await t.threadsIn("Work")).toEqual([]);
+  await t.client.call("folders.rename", { accountId: t.account.id, key: "Work", name: "Job" });
+  await t.backend.rebuildFolders();
+  expect(new Set(await t.threadsIn("Job"))).toEqual(new Set(before));
+  // and its count before any pass
+  expect((await t.client.call("folders.count", { accountId: t.account.id, key: "Job" })).messages).toBe(3);
+});
+
 it("a folder made again under a renamed one's old name and renamed itself before a pass claims none of the first one's mail (Codex code review round 8 #2)", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Moved with work") });

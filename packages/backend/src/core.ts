@@ -1642,11 +1642,11 @@ export class BackendCore {
           // its new key's rows are the carry's already)
           const shown = moves.length ? new Set((await this.accountRead(life, () => this.store.folders.list())).filter((f) => f.accountId === accountId).map((f) => f.key)) : null;
           const carried = shown ? moves.filter((m) => shown.has(m.from)) : [];
-          await carryRenamed(this, accountId, carried, folders, (work) => this.accountWrite(life, work), moves);
+          const partial = await carryRenamed(this, accountId, carried, folders, (work) => this.accountWrite(life, work), moves);
           // the list and the favorites that follow it, never between a favorite's check and its write (round 10 #4)
           await this.withFolderList(accountId, async () => {
-            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, carried.map((m) => m.to)));
-            if (r.changed || moves.length) {
+            const r = await this.accountWrite(life, () => this.store.folders.replace(accountId, folders, carried.map((m) => m.to), partial));
+            if (r.changed || moves.length || partial.length) {
               this.server.emit("folders", await this.store.folders.list());
               this.notifyChanged(r.touched);
               void this.rebuildFolders();

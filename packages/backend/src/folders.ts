@@ -46,7 +46,10 @@ export async function carryRenamed(
   listing: readonly ProviderFolder[],
   write: <W>(work: () => Promise<W>) => Promise<W>,
   announced: readonly FolderMove[] = renamed,
-): Promise<void> {
+): Promise<string[]> {
+  // new keys carried from a folder whose own rebuild was under way: the rows may be partial, so the listing's
+  // `replace` rebuilds them from their places and aliases (Codex code review round 23 #1: they were skipped as carried)
+  const partial: string[] = [];
   // an IMAP rename's new key keeps the folder's threads until the next pass proves where its mail went (Codex
   // code review round 2 #5: else the folder you're in shows empty meanwhile), a slice at a time; never another
   // generation's, shown under the path before it was made again (`stale`: Codex code review round 8)
@@ -59,12 +62,15 @@ export async function carryRenamed(
     await aliasAhead(b, accountId, listing.find((f) => f.key === m.to), write);
     for (let after: number | null = 0; after !== null; ) {
       const from: number = after;
-      after = (await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE))).next;
+      const r = await write(() => b.store.folders.carry(accountId, m.from, m.to, from, CARRY_SLICE));
+      if (r.pending && !partial.includes(m.to)) partial.push(m.to);
+      after = r.next;
       await b.yieldTurn();
     }
   }
   // a pass's recovery announces every move it hands, carried or not (Codex code review round 15 #2)
   if (announced.length) b.server.emit("foldersRenamed", announced.map((m): FolderRename => ({ accountId, from: m.from, to: m.to })));
+  return partial;
 }
 
 /**
@@ -128,10 +134,10 @@ async function change<R extends FolderChange>(
     }
     account.check();
     const { renamed = [], deleted = [] } = follows(result);
-    await carryRenamed(b, accountId, renamed, result.folders, account.write);
+    const partial = await carryRenamed(b, accountId, renamed, result.folders, account.write);
     // the list and the favorites that follow it, never between a favorite's check and its write (Codex code review round 10 #4)
     await b.withFolderList(accountId, async () => {
-      const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to)));
+      const stored = await account.write(() => b.store.folders.replace(accountId, result.folders, renamed.map((m) => m.to), partial));
       if (stored.changed || renamed.length) b.server.emit("folders", await b.store.folders.list());
       b.notifyChanged(stored.touched);
       void b.rebuildFolders();

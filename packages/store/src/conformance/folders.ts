@@ -713,6 +713,30 @@ export function defineFolderConformance(name: string, harness: StoreHarness): vo
       expect((await store.threads.counts(0)).folderUnread?.[`${m!}:New`]).toBe(5);
     });
 
+    it("plan 107: a carry from a folder still being rebuilt says so, and the listing rebuilds the new key from its alias (Codex code review round 23 #1)", async () => {
+      const store = await fresh();
+      const [, m] = await withAccounts(store);
+      const work = { key: "Work", path: ["Work"], selectable: true };
+      await ingest(store, [1, 2, 3].map((i) => msg({ accountId: m!, providerMsgId: `w${i}`, subject: `w${i}`, inInbox: false, locations: [loc("Work", i)] })));
+      const members = async (key: string) => (await store.threads.list({ view: "all", accountId: m!, folder: key, limit: 50 })).items.map((t) => t.id).sort((a, b) => a - b);
+      // Work listed after its mail came: a rebuild job, its old rows cleared and none of its places walked yet
+      await store.folders.replace(m!, [work]);
+      await store.folders.rebuild(100);
+      expect(await members("Work")).toEqual([]);
+      // Work → Job meanwhile: the carry finds nothing and says the source is pending
+      const job = { key: "Job", path: ["Job"], selectable: true, aliases: [{ mailbox: "Work", uidvalidity: 1 }] };
+      await store.folders.replace(m!, [work, job], ["Job"]);
+      const r = await store.folders.carry(m!, "Work", "Job", 0, 10);
+      expect(r).toEqual({ next: null, pending: true });
+      // the listing without Work cancels its job; Job gets one of its own, even though it's listed already
+      await store.folders.replace(m!, [job], ["Job"], ["Job"]);
+      await drain(store);
+      expect(await members("Job")).toHaveLength(3);
+      // a source with nothing pending carries as ever
+      await store.folders.clear(m!, "Next", 10);
+      expect(await store.folders.carry(m!, "Job", "Next", 0, 10)).toEqual({ next: null });
+    });
+
     it("plan 107: a rename into a key another rename just vacated clears what it left there first, in slices (Codex code review round 14 #2)", async () => {
       const store = await fresh();
       const [, m] = await withAccounts(store);

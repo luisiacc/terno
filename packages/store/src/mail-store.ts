@@ -524,8 +524,11 @@ export interface MailStore {
      * #1). `carried`: keys a rename's threads were just carried to (`carry`, before this): they keep those rows.
      * A folder's `aliases` (a pending rename's old path and generation) derive its membership too, in every derivation
      * and rebuild, until a listing without them (Codex code review round 16 #1); a change of them rebuilds nothing.
+     * `rebuild`: keys a rename carried from a folder whose own rebuild was pending (`carry`'s `pending`): what it
+     * carried may be partial, so each gets a rebuild job from its places and aliases, listed before or not (Codex
+     * code review round 23 #1); one with neither keeps what was carried.
      */
-    replace(accountId: number, folders: readonly ProviderFolder[], carried?: readonly string[]): Promise<{ changed: boolean; touched: number[] }>;
+    replace(accountId: number, folders: readonly ProviderFolder[], carried?: readonly string[], rebuild?: readonly string[]): Promise<{ changed: boolean; touched: number[] }>;
     /** one slice (up to `limit` rows) of a pending rebuild, durable and resumable (Codex R5); `more`: a job remains */
     rebuild(limit: number): Promise<{ more: boolean; touched: number[] }>;
     /**
@@ -541,9 +544,10 @@ export interface MailStore {
     /**
      * Plan 107: a renamed IMAP folder keeps its threads under its new key until the next pass proves where its mail
      * went (membership is derived: that pass, or any refresh of a thread, rewrites it from locations). Up to `limit`
-     * threads above `after`, by id; `next`: where the next slice starts, null when done.
+     * threads above `after`, by id; `next`: where the next slice starts, null when done. `pending`: `from` has a
+     * rebuild under way, so its rows may be partial (Codex code review round 23 #1: see `replace`'s `rebuild`).
      */
-    carry(accountId: number, from: string, to: string, after: number, limit: number): Promise<{ next: number | null }>;
+    carry(accountId: number, from: string, to: string, after: number, limit: number): Promise<{ next: number | null; pending?: true }>;
     /**
      * Plan 107: up to `limit` of the rows a folder no longer listed left under its key, gone, before a rename carries
      * another folder's threads there (Codex code review round 14 #2: Work → Job, then Other → Work before a pass,

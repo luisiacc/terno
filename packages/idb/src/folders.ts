@@ -271,7 +271,7 @@ export function listFolders(c: Ctx): Folder[] {
  * An account's list now; nothing written when it's the same (the SQL adapter's replaceFolders): memberships never
  * wait on the list; only a newly listed IMAP folder's located threads, and rows a past listing left, are rewritten.
  */
-export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[], carried: readonly string[] = []): { changed: boolean; touched: number[] } {
+export function replaceFolders(c: Ctx, accountId: number, next: readonly ProviderFolder[], carried: readonly string[] = [], rebuild: readonly string[] = []): { changed: boolean; touched: number[] } {
   const folders = T(c, "folders");
   // by key, the differences only (Codex R14: a rename in 10,000 folders rewrote them all): a new folder goes after
   // the others (the order is the sidebar's to draw, by path), a renamed one changes in place, a gone one goes
@@ -303,7 +303,7 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
     folders.deleteRow(r);
     changed = true;
   }
-  if (!changed) return { changed: false, touched: [] };
+  if (!changed && !rebuild.length) return { changed: false, touched: [] };
   // a job for a folder no longer listed has nothing to do; a newly listed IMAP folder with something to rebuild gets one (Codex R5)
   const jobs = T(c, "folder_rebuilds");
   const now = listed;
@@ -316,15 +316,17 @@ export function replaceFolders(c: Ctx, accountId: number, next: readonly Provide
   }
   if (T(c, "accounts").get(accountId)?.kind === "imap") {
     for (const f of next) {
-      // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1)
-      if ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key)) continue;
-      if (f.aliases?.length || T(c, "message_locations").count("mailbox", accountId, f.key) || T(c, "thread_folders").count("folder", accountId, f.key)) {
+      // (a rename's new key keeps the rows just carried to it: Codex code review round 8 #1), unless they were
+      // carried from a folder still being rebuilt (round 23 #1): then it's derived again from its places and aliases
+      const again = rebuild.includes(f.key);
+      if (!again && ((known.has(f.key) && !regenerated.has(f.key)) || carried.includes(f.key))) continue;
+      if (f.aliases?.length || T(c, "message_locations").count("mailbox", accountId, f.key) || (!again && T(c, "thread_folders").count("folder", accountId, f.key))) {
         jobs.put({ account_id: accountId, key: f.key, phase: 0, after_uidvalidity: 0, after_uid: 0 });
         forget(f.key);
       }
     }
   }
-  return { changed: true, touched: [] };
+  return { changed, touched: [] };
 }
 
 /** One slice of a pending rebuild (the SQL adapter's rebuildFolders): old rows first, then locations by UID. */
@@ -596,10 +598,12 @@ export function carryFolder(c: Ctx, accountId: number, from: string, to: string,
     last = r.thread_id as number;
     if (!memberships.has(r.thread_id, to)) memberships.insert({ thread_id: r.thread_id, account_id: accountId, folder: to, last_date: r.last_date, unread: r.unread });
   }
+  // its rows may be partial while its own rebuild runs (Codex code review round 23 #1)
+  const pending = T(c, "folder_rebuilds").has(accountId, from) ? { pending: true as const } : {};
   if (n < limit) {
     walks.delete(at);
-    return { next: null };
+    return { next: null, ...pending };
   }
-  return { next: last };
+  return { next: last, ...pending };
 }
 const carryWalks = new WeakMap<Ctx, Map<string, Iterator<Key>>>();
