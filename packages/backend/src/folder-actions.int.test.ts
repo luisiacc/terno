@@ -153,6 +153,24 @@ it("deletes a folder and its subfolder: what was only there goes with the next p
   expect((await t.messageOf(b!)).id).toBe(mb.id);
 });
 
+it("deleting a folder keeps a message under an identity hold, and its other places (the stores never delete a held message)", async () => {
+  const t = await setup(["Work"]);
+  const both = rawIdleMail("Held in both");
+  t.server.control.addMessage("INBOX", { raw: both });
+  await t.backend.syncAccount(t.account.id);
+  const [b] = (await t.client.call("threads.list", { view: "inbox", accountId: t.account.id })).items.map((x) => x.id);
+  const mb = await t.messageOf(b!);
+  const copy = t.server.control.addMessage("Work", { raw: both });
+  const store = t.backend.store.providerStore(t.account.id).locations;
+  await store.upsert(mb.id, "Work", copy.uidvalidity, copy.uid, []);
+  await store.fence([mb.id]);
+  expect(await t.held([mb.id])).toEqual([mb.id]);
+  await t.client.call("folders.delete", { accountId: t.account.id, key: "Work" });
+  await t.backend.syncAccount(t.account.id);
+  expect((await t.messageOf(b!)).id).toBe(mb.id);
+  expect((await t.locations([mb.id])).map((l) => l.mailbox)).toEqual(["INBOX"]);
+});
+
 it("a delete interrupted before its cleanup pass finishes it after a restart", async () => {
   const t = await setup(["Work"]);
   t.server.control.addMessage("Work", { raw: rawIdleMail("Only in work") });
