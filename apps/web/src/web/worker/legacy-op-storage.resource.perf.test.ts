@@ -8,12 +8,14 @@ import { expect, it } from "vitest";
 import { IdbMailStore } from "@terno/idb";
 import { UNCERTAINTY_KEY, UncertainWriteError } from "@terno/idb/uncertainty";
 import { ingest, msg } from "@terno/store/conformance";
+import { nodeBodyPreparationFactory } from "../../../../../packages/db/src/node-driver";
 import { MIGRATION_JOURNAL, migrateLegacyIdb } from "./legacy-storage";
 
 const N = 32, MiB = 1024 * 1024, ERROR = "e".repeat(16 * 1024);
 const PARTS = ["op_control", "op_target", "op_error"];
 const OPS = ["ops", ...PARTS];
-const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+// Node has no browser Worker: large bodies tokenize on the Node worker the web platform's stands in for (w11)
+const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)), bodyPreparation: nodeBodyPreparationFactory };
 type Op = NonNullable<Awaited<ReturnType<IdbMailStore["ops"]["get"]>>>;
 type Manifest = { version: number; stores: { name: string; keyPath: string | string[] | null; autoIncrement: boolean; indexes: { name: string; keyPath: string | string[]; unique: boolean; multiEntry: boolean }[] }[] };
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.addEventListener("success", () => resolve(r.result)); r.addEventListener("error", () => reject(r.error)); });

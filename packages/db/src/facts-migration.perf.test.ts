@@ -14,7 +14,7 @@ import { afterAll, expect, it } from "vitest";
 import { openDatabase } from "./index";
 import { seedDataset } from "./seed";
 import { SqlMailStore } from "./sql-store";
-import { writeLegacyCopy } from "./test/legacy";
+import { upgradedBodies, writeLegacyCopy } from "./test/legacy";
 import { BUDGET_MULTIPLIER as MULT, report, type Stat } from "./test/perf";
 
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -47,7 +47,8 @@ it(`migrates a v13 mailbox of 50,000 conversations in ≤ ${MIGRATION_MS} ms; th
     times.push(performance.now() - t);
     // the last copy stays open: its first backfill slices are timed next
     if (i < 2) db.close();
-    else store = new SqlMailStore(db, { checkpointWorker: true });
+    // as a host opens it: the legacy-body upgrade (w11) before any store, outside the timed migration
+    else store = new SqlMailStore(await upgradedBodies(db), { checkpointWorker: true });
   }
   const best = Math.min(...times);
   stats.push({ name: `open + migrate v13 → v14, ${threads} threads: ${times.map((x) => x.toFixed(0)).join("/")} ms`, budgetMs: MIGRATION_MS, p50: best, p95: best, max: Math.max(...times), iterations: times.length });

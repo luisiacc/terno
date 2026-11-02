@@ -112,7 +112,8 @@ it("a 50,000-thread category: counted in one indexed query, acted on with no sta
     const db = sqlDb(big.store);
     seedDataset(db, generateDataset({ threads: 50_000, accounts: 8, seed: 9, now: NOW, bodyScale: 0.2 }), { now: NOW });
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    db.run("INSERT INTO categories (name, color, position) VALUES ('Todo', 'rose', 99)");
+    // category ids are never reused (6543ec41): a new one takes the counter's next
+    db.run("INSERT INTO categories (id, name, color, position) VALUES ((SELECT last_id + 1 FROM category_counter WHERE id = 1), 'Todo', 'rose', 99)");
     const cat = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Todo'")!.id;
     db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT id, ?, 'user', 0 FROM threads WHERE in_trash = 0 AND in_spam = 0", cat);
     const inCat = db.get<{ c: number }>("SELECT count(*) AS c FROM thread_categories WHERE category_id = ?", cat)!.c;

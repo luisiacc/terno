@@ -114,6 +114,8 @@ export class GmailResponseFixture {
   syncSettled = false;
   providerCloseFulfilled = false;
   lastBodyText: string | null | undefined;
+  /** a body past one part arrives as exact parts (w11): their text, joined */
+  lastBodyParts: string | undefined;
   readonly provider: ReturnType<typeof createGmailApiProvider>;
   private readonly sink: SyncSink;
 
@@ -174,6 +176,7 @@ export class GmailResponseFixture {
         this.counts.effects++;
         this.counts.ingested += messages.length;
         this.lastBodyText = messages.at(-1)?.bodyText;
+        this.lastBodyParts = messages.at(-1)?.bodyParts?.text?.join("");
       },
       updateFlags: effect, removeMessages: effect, setBody: effect, setSyncState: effect,
       pendingMessageIds: async () => new Set(), windowStart: 0, signal: new AbortController().signal,

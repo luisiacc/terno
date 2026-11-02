@@ -84,7 +84,9 @@ it("admits a valid promoted Gmail body through the actual worker and sink", asyn
       { historyId: "10" },
     ]);
     expect(fixture.historyStarts).toEqual(["10"]);
-    expect(fixture.lastBodyText).toBe(`${text}\n`);
+    // a body past one part arrives as exact parts, not one string (w11 MIME byte retention)
+    expect(fixture.lastBodyText).toBeNull();
+    expect(fixture.lastBodyParts).toBe(`${text}\n`);
     expect(fixture.timingReport().stall).toBeLessThanOrEqual(15 * BUDGET_MULTIPLIER);
   } catch (error) { failure = { error }; }
   await fixture.finish(failure);
