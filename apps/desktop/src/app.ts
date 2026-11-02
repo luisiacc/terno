@@ -63,6 +63,14 @@ try {
 // main.ts named the app and set userData (profile.ts) before loading this
 const isDev = Boolean(process.env.TERNO_DEV_URL);
 const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
+/** Smoke runs open windows behind whatever the person at the machine is doing: never activated, never focused. */
+const background = process.env.TERNO_TEST_BACKGROUND === "1";
+/** Show a window and bring Terno forward, except in a background test run, where it only appears. */
+function present(win: BrowserWindow, focus = true): void {
+  if (background) return win.showInactive();
+  win.show();
+  if (focus) win.focus();
+}
 
 // Privileged scheme: standard + secure origin and, crucially, V8 code cache for renderer scripts (file:// has none).
 protocol.registerSchemesAsPrivileged([
@@ -513,8 +521,7 @@ const attention = new DesktopAttention({
     // quitting: no window comes back for it
     if (!win) return;
     if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    present(win);
     openRelay.want(win.id, threadId);
   },
   shown: (count) => diagLog.info("notify.shown", { count }),
@@ -665,7 +672,7 @@ function createWindow() {
   });
   win.on("closed", () => windows.delete(win));
   win.once("ready-to-show", () => {
-    win.show();
+    present(win, false);
     win.webContents.setBackgroundThrottling(true);
   });
 
@@ -769,7 +776,7 @@ if (!app.requestSingleInstanceLock()) {
     const w = [...windows][0];
     if (w) {
       if (w.isMinimized()) w.restore();
-      w.focus();
+      if (!background) w.focus();
     }
   });
   app.whenReady().then(async () => {
@@ -830,7 +837,7 @@ if (!app.requestSingleInstanceLock()) {
       if (backend) {
         quitState = "running";
         enableReload(true);
-        for (const w of windows) if (!w.isDestroyed()) w.show();
+        for (const w of windows) if (!w.isDestroyed()) present(w, false);
         return;
       }
       updates?.quitting();
