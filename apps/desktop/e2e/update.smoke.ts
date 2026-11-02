@@ -85,6 +85,9 @@ function buildTwo() {
 
 /** A fresh 0.1.0 in a temp "Applications", a fresh profile, and the 0.1.1 feed (its zip tampered with when asked). */
 function stage(o: { tamper: boolean; minimum?: string }) {
+  // first: the last test's quit may have handed a staged update to ShipIt, which swaps the bundle at this path once
+  // that app is gone; stopped after the copy below, it had already put 0.1.1 where the fresh 0.1.0 went
+  cleanSquirrel();
   rmSync(root(), { recursive: true, force: true });
   rmSync(join(work, "Applications"), { recursive: true, force: true });
   rmSync(join(work, "feed"), { recursive: true, force: true });
@@ -111,7 +114,7 @@ function stage(o: { tamper: boolean; minimum?: string }) {
     const yml = join(work, "feed", "latest-mac.yml");
     writeFileSync(yml, `${readFileSync(yml, "utf8").trimEnd()}\nminimumVersion: '${o.minimum}'\n`);
   }
-  cleanSquirrel();
+  if (bundleVersion() !== "0.1.0") throw new Error(`staged ${bundleVersion()}, not 0.1.0: a ShipIt replaced the bundle`);
   requests.length = 0;
 }
 
@@ -186,7 +189,8 @@ test.afterAll(async () => {
   }
   server?.close();
   if (identity) cleanSquirrel();
-  if (work && !process.env.TERNO_KEEP_UPDATE_E2E) rmSync(work, { recursive: true, force: true });
+  // the killed app may still be closing files in its profile here
+  if (work && !process.env.TERNO_KEEP_UPDATE_E2E) rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 test("a corrupted download is refused (sha512): an integrity error, and the app stays as it was", async () => {
