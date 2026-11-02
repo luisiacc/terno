@@ -573,7 +573,10 @@ describe("W06 A26/S14: cached flags beyond the download window", () => {
       await bounded(captured.promise, "swept FLAGS before reset");
       (await t.backend.provider(t.account.id))!.reset!();
       t.ctl.setFlags(t.path, [t.target.uid], [], "set");
-    } finally { release.resolve(); await bounded(running, "fresh generation retry"); }
+    } finally { release.resolve(); await bounded(running, "retired pass"); }
+    // the reset ends the pass: its connection is not retried under the fresh generation (dbbd4752)
+    expect(confirmed).toEqual([]);
+    await bounded(t.backend.syncAccount(t.account.id), "fresh generation");
     expect(confirmed).toEqual([false]);
     expect((await t.backend.store.providerStore(t.account.id).pendingFlagSnapshots({ limit: 50 })).items).toEqual([]);
     await witness(t, t, []);
