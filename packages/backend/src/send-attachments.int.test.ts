@@ -33,15 +33,16 @@ function open(dir: string) {
   return { backend, client, submitted, stop, sink: () => sink! };
 }
 
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-dispatch-assets-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const t = open(dir);
+  await t.backend.store.ready;
   const accountId = createAccount(sqlDb(t.backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
   return { ...t, dir, accountId };
 }
 
-async function queue(t: ReturnType<typeof setup>) {
+async function queue(t: Awaited<ReturnType<typeof setup>>) {
   const ref = await t.client.call("attachments.create", { accountId: t.accountId, filename: "exact.bin", mime: "application/octet-stream", size: 5 });
   await t.client.call("attachments.append", { accountId: t.accountId, assetId: ref.assetId, index: 0, dataBase64: "AP+ADQo=" });
   await t.client.call("attachments.seal", { accountId: t.accountId, assetId: ref.assetId });
@@ -51,7 +52,7 @@ async function queue(t: ReturnType<typeof setup>) {
 }
 
 it.each([false, true])("dispatch hydrates exact bytes while queued asset refs stay immutable (restart=%s)", async (restart) => {
-  const t = setup();
+  const t = await setup();
   const { ref, send } = await queue(t);
   const before = (await t.backend.store.ops.get(send.opId))!.payload_json;
   expect(JSON.parse(before).attachments).toEqual([ref]);
@@ -70,7 +71,7 @@ it.each([false, true])("dispatch hydrates exact bytes while queued asset refs st
 });
 
 it("lost local bytes after queueing fail before submission and preserve the captured refs", async () => {
-  const t = setup();
+  const t = await setup();
   const { ref, send } = await queue(t);
   const read = vi.spyOn(t.backend.store.attachments, "read").mockResolvedValueOnce(null);
   await t.backend.runWorker();
@@ -83,7 +84,7 @@ it("lost local bytes after queueing fail before submission and preserve the capt
 });
 
 it("quiesce owns an attachment send during local hydration and leaves it queued before submission", async () => {
-  const t = setup();
+  const t = await setup();
   const { send } = await queue(t);
   const before = (await t.backend.store.ops.get(send.opId))!.payload_json;
   let release!: () => void;
@@ -114,7 +115,7 @@ it("quiesce owns an attachment send during local hydration and leaves it queued 
 });
 
 it("removal while hydration is waiting cannot submit captured bytes through a stale provider", async () => {
-  const t = setup();
+  const t = await setup();
   await queue(t);
   let release!: () => void;
   let entered!: () => void;
@@ -139,7 +140,7 @@ it("removal while hydration is waiting cannot submit captured bytes through a st
 });
 
 it.each(["before commit", "after commit", "outcome recording"] as const)("accepted attachment bytes are submitted once when completion fails %s", async (failure) => {
-  const t = setup();
+  const t = await setup();
   const { ref, send } = await queue(t);
   const before = (await t.backend.store.ops.get(send.opId))!.payload_json;
   const complete = t.backend.store.ops.complete.bind(t.backend.store.ops);
@@ -161,7 +162,7 @@ it.each(["before commit", "after commit", "outcome recording"] as const)("accept
 });
 
 it("local staging failures expose fixed recovery copy without synthetic sensitive error details", async () => {
-  const t = setup();
+  const t = await setup();
   const { send } = await queue(t);
   const read = vi.spyOn(t.backend.store.attachments, "read").mockRejectedValueOnce(new Error("SYNTHETIC-SECRET recipient@example.com Private subject"));
   await t.backend.runWorker();
@@ -174,7 +175,7 @@ it("local staging failures expose fixed recovery copy without synthetic sensitiv
 });
 
 it.each([{ payload: null }, { payload: [] }, { payload: { subject: 4 } }])("malformed persisted preparation data %j fails definitively and remains readable in the outbox", async ({ payload }) => {
-  const t = setup();
+  const t = await setup();
   const { send } = await queue(t);
   // Simulate local snapshot corruption after a valid, attachment-pinned enqueue.
   sqlDb(t.backend.store).run("UPDATE ops SET payload_json = ? WHERE id = ?", JSON.stringify(payload), send.opId);
@@ -186,7 +187,7 @@ it.each([{ payload: null }, { payload: [] }, { payload: { subject: 4 } }])("malf
 });
 
 it("provider body hydration preserves attachment bytes through the public reader and chunk RPC", async () => {
-  const t = setup();
+  const t = await setup();
   await t.backend.ingestSliced([{
     accountId: t.accountId, providerMsgId: "partial", providerThreadId: "thread", rfcMessageId: "partial@example.com",
     inReplyTo: null, references: [], from: { name: "Sender", email: "sender@example.com" }, to: [], cc: [], bcc: [],

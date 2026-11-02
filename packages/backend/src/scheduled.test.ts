@@ -28,6 +28,7 @@ async function setup() {
   const clock = { now: NOW };
   const dir = mkdtempSync(join(tmpdir(), "terno-sched-"));
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => clock.now, autoSync: false });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);

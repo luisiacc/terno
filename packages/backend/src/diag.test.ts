@@ -25,7 +25,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup(syncError: () => Error | null) {
+async function setup(syncError: () => Error | null) {
   const dir = mkdtempSync(join(tmpdir(), "terno-diag-"));
   const registry: ProviderRegistry = {
     create: () =>
@@ -46,6 +46,7 @@ function setup(syncError: () => Error | null) {
     },
   } as unknown as ProviderRegistry;
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "t", cipher: plaintextCipher, providers: registry, autoSync: false });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   cleanups.push(async () => {
@@ -59,7 +60,7 @@ function setup(syncError: () => Error | null) {
 describe("backend diagnostics", () => {
   it("a sign-in to redo or being offline is a warning, never a record", async () => {
     let next: Error | null = new ProviderAuthError("Invalid credentials for luis@empresa.mx");
-    const { backend, accountId } = setup(() => next);
+    const { backend, accountId } = await setup(() => next);
     await backend.syncAccount(accountId);
     next = new ProviderError("ETIMEDOUT imap.empresa.mx", true);
     await backend.syncAccount(accountId);
@@ -88,7 +89,7 @@ describe("backend diagnostics", () => {
     }), { status: 429, cause: new Error(markers[5]) });
     expect(error.httpResponse!.retryAfter).toEqual({ kind: "value", value: markers[4] });
     expect(Object.keys(error)).not.toContain("httpResponse");
-    const { backend, accountId } = setup(() => error);
+    const { backend, accountId } = await setup(() => error);
     await backend.syncAccount(accountId);
     const failures = entries.filter((e) => e.code === "sync.failed");
     expect(failures).toHaveLength(1);
@@ -102,7 +103,7 @@ describe("backend diagnostics", () => {
 
   it("a bug in sync is one record with its code; the successful sync left a crumb", async () => {
     let next: Error | null = null;
-    const { backend, accountId } = setup(() => next);
+    const { backend, accountId } = await setup(() => next);
     await backend.syncAccount(accountId);
     next = new TypeError("undefined is not iterable");
     await backend.syncAccount(accountId);
@@ -112,7 +113,7 @@ describe("backend diagnostics", () => {
   });
 
   it("an RPC handler that throws is captured once, under its method; the renderer learns it was a bug", async () => {
-    const { backend, client } = setup(() => null);
+    const { backend, client } = await setup(() => null);
     (backend.store.threads as { get: unknown }).get = () => {
       throw new RangeError("boom");
     };

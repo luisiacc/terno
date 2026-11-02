@@ -76,7 +76,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; onPolicy?: (p: { localMode: boolean }) => void } = {}) {
+async function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; onPolicy?: (p: { localMode: boolean }) => void } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-ai-"));
   const lookup: LookupAll = async (host) => {
     const addrs = options.dns?.[host] ?? (host === "localhost" ? ["127.0.0.1"] : undefined);
@@ -84,6 +84,7 @@ function setup(options: { dns?: Record<string, string[]>; localMode?: boolean; o
     return addrs.map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
   };
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, lookup, demoAi: true, onPolicy: options.onPolicy });
+  await backend.store.ready;
   if (options.localMode === false) setSetting(sqlDb(backend.store), "app", { localMode: false });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
@@ -104,7 +105,7 @@ const errorOf = (p: Promise<unknown>) => p.then(() => null, (e: RpcError) => e);
 
 describe("settings: providers and profiles", () => {
   it("new installs start in local mode with AI off; switching providers keeps each profile", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     const boot = await client.call("app.bootstrap", {});
     expect(boot.settings.localMode).toBe(true);
     expect(boot.settings.ai).toMatchObject({ provider: "none", hasKey: false, local: true });
@@ -116,7 +117,7 @@ describe("settings: providers and profiles", () => {
   });
 
   it("plan 97: local mode doesn't stop choosing a cloud provider, or using it", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect((await client.call("app.bootstrap", {})).settings.localMode).toBe(true);
     await expect(client.call("settings.update", { ai: { provider: "openai", model: "gpt-x", baseURL: `${url()}/v1` } })).resolves.toMatchObject({ localMode: true, ai: { provider: "openai", local: false } });
     await client.call("ai.setKey", { provider: "openai", value: "sk-local-mode-0000-1111" });
@@ -125,7 +126,7 @@ describe("settings: providers and profiles", () => {
   });
 
   it("plan 97: a cloud choice local mode had paused doesn't resume on its own (profile and key stay); others are untouched", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     await backend.setSecret("ai:openai:apiKey", "sk-paused-0000-1111");
     setSetting(sqlDb(backend.store), "app", { localMode: true, aiCategorize: true, ai: { provider: "openai", profiles: { openai: { model: "gpt-x" } } } });
     const s = (await client.call("app.bootstrap", {})).settings;
@@ -142,7 +143,7 @@ describe("settings: providers and profiles", () => {
   });
 
   it("plan 97, Codex review R1: what local mode blocked is cleared whatever its kind (a remote Ollama, LM Studio or custom endpoint); loopback stays", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const blocked = [
       { provider: "ollama" as const, profiles: { ollama: { model: "m", baseURL: "http://192.168.1.20:11434/v1" } } },
       { provider: "lmstudio" as const, profiles: { lmstudio: { model: "m", baseURL: "http://gpu-box.lan:1234/v1" } } },
@@ -168,7 +169,7 @@ describe("settings: providers and profiles", () => {
   });
 
   it("plan 97, Codex review R2: a local kind pointed at another machine isn't 'local': what's disclosed follows where it goes", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect((await client.call("settings.update", { ai: { provider: "ollama", model: "m" } })).ai.local).toBe(true);
     expect((await client.call("settings.update", { ai: { provider: "ollama", baseURL: "http://192.168.1.20:11434/v1" } })).ai.local).toBe(false);
     expect((await client.call("settings.update", { ai: { provider: "lmstudio", model: "m", baseURL: "http://127.0.0.1:1234/v1" } })).ai.local).toBe(true);
@@ -176,7 +177,7 @@ describe("settings: providers and profiles", () => {
 
   it("tells the host (Electron main's renderer fence) when local mode changes, and only then", async () => {
     const seen: boolean[] = [];
-    const { backend, client } = setup({ onPolicy: (p) => seen.push(p.localMode) });
+    const { backend, client } = await setup({ onPolicy: (p) => seen.push(p.localMode) });
     await backend.publishPolicy();
     await client.call("settings.update", { theme: "dark" });
     await client.call("settings.update", { localMode: false });
@@ -186,7 +187,7 @@ describe("settings: providers and profiles", () => {
   });
 
   it("maps pre-v3 settings into the new shape", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     // what a pre-v3 install looks like (database migration v3 wrote localMode: false for them)
     setSetting(sqlDb(backend.store), "app", { aiProvider: "anthropic", aiModel: "claude-legacy", theme: "dark", localMode: false });
     const s = (await client.call("app.bootstrap", {})).settings;
@@ -202,7 +203,7 @@ describe("settings: providers and profiles", () => {
 
 describe("keys never leave the backend", () => {
   it("stores the key through the cipher and exposes only hasKey and its last 4 characters", async () => {
-    const { backend, client } = setup({ localMode: false });
+    const { backend, client } = await setup({ localMode: false });
     const KEY = "sk-proj-SECRET-abcdef-1234-zzzz-a1b2";
     // the key is saved for the endpoint in use (the stub), and only goes there
     await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x", baseURL: `${url()}/v1` } });
@@ -224,7 +225,7 @@ describe("keys never leave the backend", () => {
   });
 
   it("keeps one key per provider and preset; an empty value deletes it", async () => {
-    const { backend, client } = setup({ localMode: false });
+    const { backend, client } = await setup({ localMode: false });
     await client.call("ai.setKey", { provider: "compatible", preset: "groq", value: "gsk_groq_key_000000001" });
     await client.call("ai.setKey", { provider: "compatible", preset: "openrouter", value: "sk-or-key-00000000002" });
     const groq = await client.call("settings.update", { ai: { provider: "compatible", preset: "groq" } });
@@ -236,14 +237,14 @@ describe("keys never leave the backend", () => {
   });
 
   it("settings.setSecret no longer accepts AI keys", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect(await errorOf(client.call("settings.setSecret", { name: "anthropicApiKey" as never, value: "x" }))).toMatchObject({ code: "BAD_REQUEST" });
   });
 });
 
 describe("local AI", () => {
   it("an Ollama server on localhost works in local mode end to end (discovery, test, generate)", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await client.call("settings.update", { ai: { provider: "ollama", baseURL: `${url("localhost")}/v1`, model: "qwen3:8b" } });
     const { models } = await client.call("ai.listModels", { provider: "ollama", baseURL: `${url("localhost")}/v1` });
     expect(models).toEqual([{ id: "qwen3:8b", sizeBytes: 5e9, loaded: false, contextTokens: 40960 }]);
@@ -257,14 +258,14 @@ describe("local AI", () => {
 
 describe("ai RPCs", () => {
   it("explains what is missing instead of failing vaguely", async () => {
-    const { client } = setup({ localMode: false });
+    const { client } = await setup({ localMode: false });
     expect(await errorOf(generate(client))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "not_configured" } });
     await client.call("settings.update", { ai: { provider: "openai", model: "gpt-x" } });
     expect(await errorOf(generate(client))).toMatchObject({ details: { aiErrorKind: "not_configured" }, message: "Save your OpenAI API key in Settings → AI.", i18n: { key: "errors.ai.keyMissing", params: { provider: "OpenAI" } } });
   });
 
   it("a newer filters.generate from the same client aborts the previous one", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await client.call("settings.update", { ai: { provider: "ollama", baseURL: `${url()}/v1`, model: "qwen3:8b" } });
     hang = true;
     const first = errorOf(generate(client));
@@ -276,7 +277,7 @@ describe("ai RPCs", () => {
   });
 
   it("caches discovered models for a minute per endpoint", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await client.call("ai.listModels", { provider: "ollama", baseURL: `${url()}/v1` });
     const after = requests.length;
     const again = await client.call("ai.listModels", { provider: "ollama", baseURL: `${url()}/v1` });
@@ -286,12 +287,12 @@ describe("ai RPCs", () => {
   });
 
   it("only offers the demo model on hosts that allow it", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect((await client.call("ai.providers", {})).providers.map((p) => p.id)).toContain("fake");
   });
 
   it("agents (MCP) can't touch AI settings or keys", async () => {
-    const { mcp } = setup();
+    const { mcp } = await setup();
     for (const m of ["ai.providers", "ai.listModels", "ai.test", "ai.setKey", "settings.update"] as const) {
       expect(await errorOf(mcp.call(m, {} as never))).toMatchObject({ code: "FORBIDDEN" });
     }

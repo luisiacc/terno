@@ -23,6 +23,7 @@ let backend: Backend;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-importperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
+  await backend.store.ready;
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 2_000, accounts: 4, seed: 3, now: NOW, bodyScale: 0.3 }), { now: NOW });
 }, 300_000);
 

@@ -22,9 +22,10 @@ afterEach(async () => {
 
 const open = (dir: string) => new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false });
 
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-move-"));
   const backend = open(dir);
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   cleanups.push(async () => {
@@ -48,7 +49,7 @@ const example = (backend: Backend, t: number, cat: number) =>
 
 describe("moving threads between categories", () => {
   it("moves in one call and undoes in one call, restoring the source's provenance", async () => {
-    const { backend, client, a, b, threads } = setup();
+    const { backend, client, a, b, threads } = await setup();
     const [t1, t2] = threads as [number, number];
     // a bulk add to A (its own batch), then a move of t1 from A to B
     const bulk = await client.call("categories.addThreads", { categoryId: a, threadIds: [t1, t2], source: "snackbar" });
@@ -78,7 +79,7 @@ describe("moving threads between categories", () => {
   });
 
   it("leaves every other category, not only one: A+B dragged to C ends in C alone; undo puts it back in A and B", async () => {
-    const { backend, client, a, b, threads } = setup();
+    const { backend, client, a, b, threads } = await setup();
     const c = createCategory(sqlDb(backend.store), "Tercera", "lime").id;
     const [t1, t2] = threads as [number, number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1, t2], source: "snackbar" });
@@ -98,7 +99,7 @@ describe("moving threads between categories", () => {
   });
 
   it("an undo is idempotent and keeps what the destination had before", async () => {
-    const { backend, client, a, b, threads } = setup();
+    const { backend, client, a, b, threads } = await setup();
     const [t1, t2] = threads as [number, number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1, t2], source: "picker" });
     // t2 was already in B (from the picker): the move adds only t1 there, and the undo leaves t2 in B
@@ -115,7 +116,7 @@ describe("moving threads between categories", () => {
   });
 
   it("each slice is atomic: a failed one leaves its threads untouched, and the move and its undo resume exactly", async () => {
-    const { backend, client, a, b, threads } = setup();
+    const { backend, client, a, b, threads } = await setup();
     const [t1] = threads as [number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1], source: "picker" });
     // make the step that takes the thread out of `a` fail inside the slice's transaction
@@ -142,7 +143,7 @@ describe("moving threads between categories", () => {
   });
 
   it("an expired move's undo says so instead of reporting it done", async () => {
-    const { backend, client, a, b, threads } = setup();
+    const { backend, client, a, b, threads } = await setup();
     const [t1, t2] = threads as [number, number];
     await client.call("categories.addThreads", { categoryId: a, threadIds: [t1] });
     const move = await client.call("categories.moveThreads", { to: b, threadIds: [t1] });
@@ -154,7 +155,7 @@ describe("moving threads between categories", () => {
   });
 
   it("a move recorded before the app quit is applied and trained on the next start", async () => {
-    const { backend, a, b, threads, dir } = setup();
+    const { backend, a, b, threads, dir } = await setup();
     const [t1, t2] = threads as [number, number];
     sqlDb(backend.store).run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0), (?, ?, 'user', 0)", t1, a, t2, a);
     // recorded, nothing applied yet (the app quit)
@@ -179,7 +180,7 @@ describe("moving threads between categories", () => {
 
 describe("resuming a move at startup", () => {
   it("a resume that fails is logged and left for the next start, never an unhandled rejection", async () => {
-    const { backend, a, b, threads, dir } = setup();
+    const { backend, a, b, threads, dir } = await setup();
     const [t1] = threads as [number];
     const db = sqlDb(backend.store);
     db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) VALUES (?, ?, 'user', 0)", t1, a);
@@ -190,6 +191,7 @@ describe("resuming a move at startup", () => {
     process.on("unhandledRejection", onRejection);
     const logs: string[] = [];
     const again = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, log: (level, message) => logs.push(`${level} ${message}`) });
+    await again.store.ready;
     try {
       // the training can't write: the resume fails
       sqlDb(again.store).exec("CREATE TRIGGER fail_training BEFORE INSERT ON cls_examples BEGIN SELECT RAISE(ABORT, 'disco lleno'); END");

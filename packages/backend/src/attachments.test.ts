@@ -10,9 +10,10 @@ import { hydrateSendAttachments } from "./attachments";
 
 const close: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of close.splice(0)) await fn(); });
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-assets-"));
   const b = new Backend({ dbPath: join(dir, "mail.db"), cipher: plaintextCipher, version: "test", providers: demoRegistry, demoAi: true, autoSync: false });
+  await b.store.ready;
   const [c, s] = createMemoryTransportPair();
   b.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);
@@ -24,7 +25,7 @@ function setup() {
 const payload: SendPayload = { from: { name: "", email: "a@test.com" }, to: [{ name: "", email: "r@test.com" }], cc: [], bcc: [], text: "exact", subject: "files", messageId: "synthetic@test", inReplyTo: null, references: [], providerThreadId: null };
 
 it("RPC chunks are canonical, ordered, idempotent before seal and account bound after restart", async () => {
-  const { b, client, a, other } = setup();
+  const { b, client, a, other } = await setup();
   const ref = await client.call("attachments.create", { accountId: a, filename: "..\\..\\résumé.bin", mime: "application/octet-stream", size: 3 });
   const req = { accountId: a, assetId: ref.assetId, index: 0, dataBase64: "AP+A" };
   await expect(client.call("attachments.append", { ...req, index: 1 })).rejects.toThrow();
@@ -40,7 +41,7 @@ it("RPC chunks are canonical, ordered, idempotent before seal and account bound 
 });
 
 it("missing, incomplete, foreign and read-failed assets are definitive pre-submission errors", async () => {
-  const { b, client, a, other } = setup();
+  const { b, client, a, other } = await setup();
   const ref = await client.call("attachments.create", { accountId: a, filename: "empty", mime: "text/plain", size: 0 });
   for (const p of [{ account: a, ref }, { account: other, ref }, { account: a, ref: { ...ref, assetId: crypto.randomUUID() } }]) {
     await expect(hydrateSendAttachments(b.store, p.account, { ...payload, attachments: [p.ref] }, async () => {})).rejects.toMatchObject({ retryable: false, ambiguous: false });
@@ -53,7 +54,7 @@ it("missing, incomplete, foreign and read-failed assets are definitive pre-submi
 });
 
 it("queue RPC cannot silently omit an existing draft's attachments", async () => {
-  const { b, client, a } = setup();
+  const { b, client, a } = await setup();
   const ref = await b.store.attachments.create({ accountId: a, filename: "empty", mime: "text/plain", size: 0, now: 0 });
   await b.store.attachments.seal(a, ref.assetId);
   const d = (await client.call("drafts.save", { accountId: a, bodyText: "keep", attachments: [ref] }))!;

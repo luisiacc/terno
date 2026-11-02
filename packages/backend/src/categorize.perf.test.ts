@@ -39,9 +39,10 @@ function open(path: string, instantSearch = true) {
   return new Backend({ dbPath: path, version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch });
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-catperf-"));
   backend = open(join(dir, "base.db"));
+  await backend.store.ready;
   accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
   sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");

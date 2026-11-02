@@ -21,6 +21,7 @@ async function setup(processor: IncomingProcessor) {
   };
   const options = { dbPath: join(dir, "synthetic.db"), version: "test", cipher: plaintextCipher, providers, incomingProcessor: processor, autoSync: false, instantSearch: false, iconTransport: null };
   const backend = new Backend(options);
+  await backend.store.ready;
   const scopes = new Map<number, ProviderStore>();
   const scope = backend.store.providerStore.bind(backend.store);
   vi.spyOn(backend.store, "providerStore").mockImplementation((id) => {

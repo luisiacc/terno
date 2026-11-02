@@ -63,7 +63,7 @@ function scriptedRegistry() {
   return { registry, providers };
 }
 
-function setup(options: { dir?: string; now?: () => number } = {}) {
+async function setup(options: { dir?: string; now?: () => number } = {}) {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "terno-backend-"));
   const { registry, providers } = scriptedRegistry();
   const backend = new Backend({
@@ -75,6 +75,7 @@ function setup(options: { dir?: string; now?: () => number } = {}) {
     now: options.now ?? (() => NOW),
     autoSync: false,
   });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);
@@ -126,7 +127,7 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 describe("local-first actions", () => {
   it("archive updates the inbox immediately, queues one op, and the worker settles it", async () => {
-    const { backend, client, providers, accountId, events } = setup();
+    const { backend, client, providers, accountId, events } = await setup();
     await backend.ingestSliced([incoming(accountId), incoming(accountId)]);
     const inbox = await client.call("threads.list", { view: "inbox" });
     expect(inbox.items).toHaveLength(2);
@@ -145,7 +146,7 @@ describe("local-first actions", () => {
   });
 
   it("retryable provider failures back off; non-retryable ones fail", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await backend.provider(accountId);
@@ -160,7 +161,7 @@ describe("local-first actions", () => {
 describe("sending", () => {
   it.each(["before commit", "after commit"] as const)("an accepted send is never submitted again when completion fails %s", async (failure) => {
     let now = NOW;
-    const { backend, client, providers, accountId } = setup({ now: () => now });
+    const { backend, client, providers, accountId } = await setup({ now: () => now });
     await backend.provider(accountId);
     const complete = backend.store.ops.complete;
     vi.spyOn(backend.store.ops, "complete").mockImplementationOnce(async (...args) => {
@@ -178,7 +179,7 @@ describe("sending", () => {
 
   it("an accepted send stays unknown when recording its ambiguous outcome fails once", async () => {
     let now = NOW;
-    const { backend, client, providers, accountId, events } = setup({ now: () => now });
+    const { backend, client, providers, accountId, events } = await setup({ now: () => now });
     await backend.provider(accountId);
     const p = providers.get(accountId)!;
     p.execute = async (op) => {
@@ -197,7 +198,7 @@ describe("sending", () => {
   });
 
   it.each(["network", "authentication", "permanent"] as const)("a definitively unsubmitted send retains its %s outcome after a failed state write", async (failure) => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     providers.get(accountId)!.failNext = failure === "network" ? ProviderError.network("connection refused") : failure === "authentication" ? new ProviderAuthError("sign in") : new ProviderError("recipient refused", false);
     if (failure === "authentication") vi.spyOn(backend.store.ops, "awaitAuth").mockRejectedValueOnce(new Error("recording failed"));
@@ -212,7 +213,7 @@ describe("sending", () => {
 
   it("a transaction rollback after submission cannot send again, including after reopening storage", async () => {
     let now = NOW;
-    const first = setup({ now: () => now });
+    const first = await setup({ now: () => now });
     await first.backend.provider(first.accountId);
     const p = first.providers.get(first.accountId)!;
     let failCommit = false;
@@ -226,7 +227,7 @@ describe("sending", () => {
     await first.backend.runWorker();
     expect((await first.backend.store.ops.get(sent.opId))?.state).toBe("unknown");
     await first.backend.stop();
-    const second = setup({ dir: first.dir, now: () => now });
+    const second = await setup({ dir: first.dir, now: () => now });
     await second.backend.provider(first.accountId);
     second.providers.get(first.accountId)!.executed = p.executed;
     now += 3_600_000;
@@ -237,7 +238,7 @@ describe("sending", () => {
   });
 
   it("quiesce waits until fallback recovery records the uncertain send", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("acknowledgement lost", false, true);
     let entered!: () => void;
@@ -266,7 +267,7 @@ describe("sending", () => {
 
   it("repeated recovery write failures leave a send noneligible and the rest of its batch still runs", async () => {
     let now = NOW;
-    const { backend, client, providers, accountId } = setup({ now: () => now });
+    const { backend, client, providers, accountId } = await setup({ now: () => now });
     await backend.provider(accountId);
     vi.spyOn(backend.store.ops, "complete").mockRejectedValueOnce(new Error("completion failed"));
     vi.spyOn(backend.store.ops, "markUnknown").mockRejectedValueOnce(new Error("recording failed")).mockRejectedValueOnce(new Error("recovery failed"));
@@ -282,7 +283,7 @@ describe("sending", () => {
   });
 
   it("retains the synchronous acceptance latch when the provider throws before returning a result", async () => {
-    const { backend, client, providers, accountId } = setup(); await backend.provider(accountId);
+    const { backend, client, providers, accountId } = await setup(); await backend.provider(accountId);
     let acknowledgements = 0;
     providers.get(accountId)!.beforeExecute = (op) => { op.submissionAccepted?.(); acknowledgements++; throw new Error("Synthetic post-acceptance result failure"); };
     const { opId } = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "Accepted once", bodyText: "Synthetic" });
@@ -293,7 +294,7 @@ describe("sending", () => {
   });
 
   it.each(["retry", "markSent"] as const)("a proven accepted send permits markSent but refuses whole-send %s after local completion failed", async (resolution) => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     vi.spyOn(backend.store.ops, "complete").mockRejectedValueOnce(new Error("completion failed"));
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "receiver@example.com" }], subject: "once", bodyText: "hello" });
@@ -307,7 +308,7 @@ describe("sending", () => {
   });
 
   it("shows the reply in the thread instantly and adopts the provider id after sending", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
@@ -333,7 +334,7 @@ describe("sending", () => {
   });
 
   it("a reply whose send fails for good puts the conversation back among those waiting, and the lists and counts are told (plan 17, Codex review 1, #6)", async () => {
-    const { backend, client, providers, accountId, events } = setup();
+    const { backend, client, providers, accountId, events } = await setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
@@ -352,7 +353,7 @@ describe("sending", () => {
   });
 
   it("a send that runs out of attempts on network errors tells the lists and counts too (plan 17, Codex review 2, #6)", async () => {
-    const { backend, client, providers, accountId, events } = setup();
+    const { backend, client, providers, accountId, events } = await setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     const original = (await client.call("threads.get", { threadId: t!.id })).messages[0]!;
@@ -371,7 +372,7 @@ describe("sending", () => {
   });
 
   it("adding an account wakes its rescan: without any mail to sync, the waiting count is known again (plan 17, Codex review 1, #7)", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     await backend.facts.idle();
     expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
@@ -384,7 +385,7 @@ describe("sending", () => {
   });
 
   it("discarding an unknown send leaves no empty thread behind", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("connection closed after DATA", false, true);
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "Solo", bodyText: "." });
@@ -395,7 +396,7 @@ describe("sending", () => {
   });
 
   it("an ambiguous send failure becomes unknown; discarding removes the optimistic copy", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     providers.get(accountId)!.failNext = new ProviderError("connection closed after DATA", false, true);
     const sent = await client.call("compose.send", { accountId, to: [{ name: "", email: "x@y.com" }], subject: "Hi", bodyText: "." });
@@ -408,7 +409,7 @@ describe("sending", () => {
   });
 
   it("an op superseded while its batch runs is skipped and the rest of the batch still runs", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId, { listId: null, from: { name: "A", email: "a@x.io" } })]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await backend.provider(accountId);
@@ -428,13 +429,13 @@ describe("sending", () => {
   });
 
   it("a send interrupted by a crash is reported as unknown after restart, not resent", async () => {
-    const first = setup();
+    const first = await setup();
     sqlDb(first.backend.store).run("DELETE FROM accounts"); // keep this test's account list clean
     const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: "a@b.c", displayName: "A", color: "indigo" }).id;
     enqueueOp(sqlDb(first.backend.store), { accountId, kind: "send", target: {}, payload: { subject: "x" } });
     claimReadyOps(sqlDb(first.backend.store)); // running when the process dies
     await first.backend.stop();
-    const second = setup({ dir: first.dir });
+    const second = await setup({ dir: first.dir });
     const [op] = await second.client.call("ops.list", {});
     expect(op).toMatchObject({ kind: "send", state: "unknown" });
   });
@@ -442,7 +443,7 @@ describe("sending", () => {
 
 describe("quitting and updating (quiesce)", () => {
   it("with nothing sending it is idle at once, and an op claimed afterwards goes back untouched", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await backend.provider(accountId);
@@ -459,7 +460,7 @@ describe("quitting and updating (quiesce)", () => {
   });
 
   it("waits for a send in flight to be recorded, then reports idle", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     const p = providers.get(accountId)!;
     let answer!: () => void;
@@ -476,7 +477,7 @@ describe("quitting and updating (quiesce)", () => {
   });
 
   it("a send still in flight at the deadline is 'sending'; resume lets it finish and sendsIdle tells when", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.provider(accountId);
     const p = providers.get(accountId)!;
     let answer!: () => void;
@@ -494,7 +495,7 @@ describe("quitting and updating (quiesce)", () => {
   });
 
   it("a send claimed in the same batch but not started when quitting begins goes back to the queue, never 'unknown'", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await backend.provider(accountId);
@@ -515,7 +516,7 @@ describe("quitting and updating (quiesce)", () => {
   });
 
   it("a send waiting behind a slow op is back in the queue the moment quiesce answers, before that op ever finishes", async () => {
-    const { backend, client, providers, accountId } = setup();
+    const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await backend.provider(accountId);
@@ -538,7 +539,7 @@ describe("quitting and updating (quiesce)", () => {
 
 describe("categories.create", () => {
   it("keeps a new category's mail out of the Inbox unless asked; seeded ones are shown", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     expect((await backend.store.categories.list()).every((c) => c.showInInbox)).toBe(true);
     expect(await client.call("categories.create", { name: "Nueva", color: "violet" })).toMatchObject({ showInInbox: false });
     expect(await client.call("categories.create", { name: "Visible", color: "lime", showInInbox: true })).toMatchObject({ showInInbox: true });
@@ -548,7 +549,7 @@ describe("categories.create", () => {
 
 describe("filters on incoming mail", () => {
   it("applies enabled filters once, and they are not learning signals", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     const cat = await client.call("categories.create", { name: "Lecturas", color: "violet" });
     await client.call("filters.save", {
       name: "Brew",
@@ -566,7 +567,7 @@ describe("filters on incoming mail", () => {
   });
 
   it("re-evaluates body filters when a body arrives later", async () => {
-    const { backend, client, accountId, providers } = setup();
+    const { backend, client, accountId, providers } = await setup();
     await client.call("filters.save", {
       name: "Baja",
       enabled: true,
@@ -584,7 +585,7 @@ describe("filters on incoming mail", () => {
   });
 
   it("re-evaluates body filters when the body arrives through an upsert of the same message", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await client.call("filters.save", {
       name: "Baja",
       enabled: true,
@@ -598,7 +599,7 @@ describe("filters on incoming mail", () => {
   });
 
   it("a filter pointing at a deleted category doesn't block ingestion", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     const cat = await client.call("categories.create", { name: "Temp", color: "rose" });
     await client.call("filters.save", { name: "c", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "brief" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
     sqlDb(backend.store).run("PRAGMA foreign_keys = OFF");
@@ -610,7 +611,7 @@ describe("filters on incoming mail", () => {
   });
 
   it("editing a filter while it's being bulk-applied leaves no stale claims", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 1500 }, () => incoming(accountId)));
     const rule = { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "equals" as const, value: "morningbrew.com" }], actions: [{ type: "markRead" as const }] };
     const f = await client.call("filters.save", { name: "r", enabled: true, source: "manual", rule });
@@ -622,7 +623,7 @@ describe("filters on incoming mail", () => {
   });
 
   it("previews and bulk-applies a filter to existing mail", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 30 }, () => incoming(accountId)));
     const rule = { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "equals" as const, value: "morningbrew.com" }], actions: [{ type: "markRead" as const }] };
     const preview = await client.call("filters.preview", { rule, limit: 5 });
@@ -637,7 +638,7 @@ describe("filters on incoming mail", () => {
 
 describe("pattern and word filters (plan 89)", () => {
   it("applies in the background with progress, one apply per filter at a time", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 40 }, () => incoming(accountId)));
     const rule = { match: "all" as const, conditions: [{ field: "fromDomain" as const, op: "matches" as const, value: "^morning(brew)?\\.com$" }], actions: [{ type: "markRead" as const }] };
     const f = await client.call("filters.save", { name: "p", enabled: true, source: "manual", rule });
@@ -653,7 +654,7 @@ describe("pattern and word filters (plan 89)", () => {
   });
 
   it("a word filter fires at ingest on the subject, and its pattern can't stall the backend", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await client.call("filters.save", { name: "w", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "text", op: "contains", value: "brief" }], actions: [{ type: "star" }] } });
     await client.call("filters.save", { name: "slow", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "matches", value: "(a|aa)+$" }], actions: [{ type: "markRead" }] } });
     const start = performance.now();
@@ -665,7 +666,7 @@ describe("pattern and word filters (plan 89)", () => {
 
 describe("learned filters", () => {
   it("proposes a rule after repeated explicit archives and turns it into a filter", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
     const ids = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
     for (const id of ids.slice(0, 5)) await client.call("threads.act", { threadIds: [id], action: "archive" });
@@ -678,7 +679,7 @@ describe("learned filters", () => {
   });
 
   it("names the filter in the user's language when the renderer says how", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
     const ids = (await client.call("threads.list", { view: "inbox" })).items.map((t) => t.id);
     for (const id of ids.slice(0, 5)) await client.call("threads.act", { threadIds: [id], action: "archive" });
@@ -687,7 +688,7 @@ describe("learned filters", () => {
   });
 
   it("repeated or no-op actions don't manufacture support", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const [t] = (await client.call("threads.list", { view: "inbox" })).items;
     await client.call("threads.act", { threadIds: [t!.id, t!.id, t!.id, t!.id, t!.id], action: "archive" });
@@ -696,7 +697,7 @@ describe("learned filters", () => {
   });
 
   it("ignores actions taken by agents (MCP)", async () => {
-    const { backend, accountId } = setup();
+    const { backend, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "agent", origin: "mcp" });
@@ -710,7 +711,7 @@ describe("learned filters", () => {
 
 describe("agent permissions", () => {
   it("MCP clients cannot send unless the user allows it, nor touch settings", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "agent", origin: "mcp" });
     const agent = new RpcClient(c);
@@ -724,7 +725,7 @@ describe("agent permissions", () => {
 
 describe("search", () => {
   it("drops a superseded query from the same client (latest wins)", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);
     const first = client.call("threads.search", { query: "mark" });
     const second = client.call("threads.search", { query: "markets" });
@@ -733,7 +734,7 @@ describe("search", () => {
   });
 
   it("pages with the cursor it returns; a keyset-only cursor still pages; another query's or an outdated cursor is STALE", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 5 }, (_, i) => incoming(accountId, { subject: `Factura ${i}`, date: NOW - i * 1000 })));
     const first = await client.call("threads.search", { query: "factura", limit: 2 });
     expect(first.nextCursor).toMatchObject({ queryKey: expect.any(String), revision: { epoch: expect.any(String), seq: expect.any(Number) } });
@@ -748,7 +749,7 @@ describe("search", () => {
   });
 
   it("reports bodies still to download as an incomplete search", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId, { bodyState: "none", bodyText: null })]);
     expect(await client.call("threads.search", { query: "x" })).toMatchObject({ complete: false });
   });
@@ -756,7 +757,7 @@ describe("search", () => {
 
 describe("AI filters", () => {
   it("generates with the configured provider and explains when none is configured", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await expect(client.call("filters.generate", { prompt: "archiva lo de uber.com" })).rejects.toMatchObject({ code: "UNAVAILABLE" });
     await client.call("settings.update", { ai: { provider: "fake" } });
     const out = await client.call("filters.generate", { prompt: "archiva lo de uber.com" });
@@ -766,7 +767,7 @@ describe("AI filters", () => {
 
 describe("accounts", () => {
   it("rejects bad IMAP credentials and stores secrets encrypted-at-rest for good ones", async () => {
-    const { client, backend } = setup();
+    const { client, backend } = await setup();
     const base = {
       email: "hola@luiscordero.dev",
       displayName: "Freelance",
@@ -781,7 +782,7 @@ describe("accounts", () => {
   });
 
   it("two IMAP accounts given the same name show their full addresses", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     const add = (email: string, displayName: string) => client.call("accounts.addImap", {
       email, displayName, password: "correct",
       imap: { host: "imap.example.test", port: 993, secure: true, user: email },
@@ -796,7 +797,7 @@ describe("accounts", () => {
 
 describe("agent socket", () => {
   it("requires the token, then speaks the RPC envelope", async () => {
-    const { backend } = setup();
+    const { backend } = await setup();
     const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
     const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
     cleanups.push(async () => {
@@ -816,7 +817,7 @@ describe("agent socket", () => {
   });
 
   it("rotating the token cuts connected agents off, refuses the old token and accepts the new one; renderers only", async () => {
-    const { backend } = setup();
+    const { backend } = await setup();
     const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
     const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
     cleanups.push(async () => {

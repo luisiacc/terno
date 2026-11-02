@@ -31,7 +31,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] } = {}) {
+async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] } = {}) {
   const providers = new Map<number, Scripted>();
   /** what the next provider of an account starts with (a test sets it before a sign-in) */
   const script = new Map<number, Partial<Pick<Scripted, "refuseSync" | "refuseOps">>>();
@@ -84,6 +84,7 @@ function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] } = {}
     syncIntervalMs: o.syncIntervalMs ?? 3_600_000,
     connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: 60_000 },
   });
+  await backend.store.ready;
   const ids: number[] = [];
   for (const [i, kind] of (o.kinds ?? ["imap", "imap"]).entries()) {
     ids.push(createAccount(sqlDb(backend.store), { kind, email: `a${i}@example.com`, displayName: `A${i}`, color: "indigo", providerConfig: {} }).id);
@@ -109,7 +110,7 @@ const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("plan 25: an account that needs a sign-in", () => {
   it("the poll leaves it alone (no refused login every two minutes); a network change still tries it once", async () => {
-    const t = setup({ syncIntervalMs: 60 });
+    const t = await setup({ syncIntervalMs: 60 });
     const [refused, fine] = t.ids as [number, number];
     t.script.set(refused, { refuseSync: true });
     await t.backend.start();
@@ -127,7 +128,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("offline, a refused account gets no probe (Codex review #7), and Retry now (the network's) skips it", async () => {
-    const t = setup();
+    const t = await setup();
     const [refused, fine] = t.ids as [number, number];
     t.script.set(refused, { refuseSync: true });
     await t.backend.start();
@@ -144,7 +145,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("an action refused for its sign-in parks (attempt given back) and marks the account; later ones don't knock", async () => {
-    const t = setup({ kinds: ["gmail"] });
+    const t = await setup({ kinds: ["gmail"] });
     const [id] = t.ids as [number];
     await t.backend.start();
     await expect.poll(() => t.state(id).status).toBe("idle");
@@ -171,7 +172,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("signing in again clears it before the sync runs, releases what waited, and the account syncs", async () => {
-    const t = setup();
+    const t = await setup();
     const [id] = t.ids as [number];
     t.script.set(id, { refuseSync: true });
     await t.backend.start();
@@ -197,7 +198,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("Codex review #3: an action refused with the old credentials after the sign-in runs again on the new ones", async () => {
-    const t = setup();
+    const t = await setup();
     const [id] = t.ids as [number];
     await t.backend.start();
     await expect.poll(() => t.state(id).status).toBe("idle");
@@ -219,7 +220,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("Codex code review #1: a sign-in landing while an old refusal is being parked: the op still runs, the account stays signed in", async () => {
-    const t = setup();
+    const t = await setup();
     const [id] = t.ids as [number];
     t.script.set(id, { refuseOps: new Set(["send"]) });
     await t.backend.start();
@@ -243,7 +244,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("Codex review #2: IMAP works and SMTP refuses: only sends wait, a sync doesn't clear it, the poll keeps syncing", async () => {
-    const t = setup({ syncIntervalMs: 60 });
+    const t = await setup({ syncIntervalMs: 60 });
     const [id] = t.ids as [number];
     t.script.set(id, { refuseOps: new Set(["send"]) });
     await t.backend.start();
@@ -272,7 +273,7 @@ describe("plan 25: an account that needs a sign-in", () => {
   });
 
   it("a refused sync of the old credentials, landing after a renew, says nothing; the next pass decides", async () => {
-    const t = setup();
+    const t = await setup();
     const [id] = t.ids as [number];
     await t.backend.start();
     await expect.poll(() => t.state(id).status).toBe("idle");

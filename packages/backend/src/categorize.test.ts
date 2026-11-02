@@ -31,9 +31,10 @@ function open(dir: string, now: () => number = () => NOW, options: Pick<BackendO
   return { backend, client: new RpcClient(c) };
 }
 
-function setup(options: { seed?: boolean } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
+async function setup(options: { seed?: boolean } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-cat-"));
   const { backend, client } = open(dir, () => NOW, options);
+  await backend.store.ready;
   let stopped = false;
   cleanups.push(async () => {
     if (!stopped) await backend.stop().catch(() => {});
@@ -83,7 +84,7 @@ function incoming(accountId: number, over: Partial<IncomingMessage> = {}): Incom
 
 describe("categorizer: training hooks", () => {
   it("UI adds train the in-memory model only after their transaction commits", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const r = ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]);
@@ -109,7 +110,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("snackbar adds are bulk (half weight) and the whole batch undoes exactly", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]).touchedThreads];
@@ -128,7 +129,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("removing or undoing returns old uncategorized threads to the background", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 6 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
@@ -148,7 +149,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("plan 77: a leave's threads go back to the background when it is trained, so a move resumed after a crash still sends them", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 3 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
@@ -167,7 +168,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("an add that changes nothing returns no undo handle", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const [t] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
@@ -177,7 +178,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("plan 77: everything from a sender leaves a category (a user removal each); other senders and categories stay; undo is exact", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const other = createCategory(sqlDb(backend.store), "Viajes", "cyan").id;
@@ -215,7 +216,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("plan 77: a removal that fails partway still names its batch, and its undo takes back what was done", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const rappi = { name: "Rappi", email: "recibos@rappi.com" };
@@ -236,7 +237,7 @@ describe("categorizer: training hooks", () => {
 
   describe("plan 80: always add to a category", () => {
     async function world() {
-      const { backend, client } = setup();
+      const { backend, client } = await setup();
       const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
       const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
       const ingest = (over: Partial<IncomingMessage>[]) => [...ingestMessages(sqlDb(backend.store), over.map((o) => incoming(acct, o))).touchedThreads];
@@ -478,7 +479,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Clientes", "emerald").id;
     const a = incoming(acct, { rfcMessageId: "ra@x" });
@@ -497,7 +498,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("a seeded mailbox starts warm: the rebuild trains every user-filed thread", async () => {
-    const { backend } = setup({ seed: true });
+    const { backend } = await setup({ seed: true });
     expect(backend.categorizer.ready).toBe(false);
     await backend.start();
     await backend.categorizer.rebuild();
@@ -511,7 +512,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("persists a snapshot on stop and adopts it on the next start; a stale one is rebuilt", async () => {
-    const { backend, dir, stop } = setup({ seed: true });
+    const { backend, dir, stop } = await setup({ seed: true });
     await backend.categorizer.rebuildNow();
     const probe = sqlDb(backend.store).all<{ features: Uint8Array }>("SELECT features FROM cls_examples LIMIT 5");
     const { featuresFromBlob } = await import("@terno/core");
@@ -532,7 +533,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("a paged rebuild counts each write once, whether the scan had read that row or not", async () => {
-    const { backend, client } = setup({ seed: true });
+    const { backend, client } = await setup({ seed: true });
     const cat = (await client.call("categories.create", { name: "Muchos", color: "rose" })).id;
     const ids = sqlDb(backend.store).all<{ id: number }>("SELECT id FROM threads ORDER BY id").map((r) => r.id);
     addToCategory(sqlDb(backend.store), { categoryId: cat, threadIds: ids.slice(0, 500), addedBy: "user", now: NOW });
@@ -555,7 +556,7 @@ describe("categorizer: training hooks", () => {
   });
 
   it("writes committed during a sliced rebuild are replayed onto the new model", async () => {
-    const { backend, client } = setup({ seed: true });
+    const { backend, client } = await setup({ seed: true });
     const cat = sqlDb(backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
     await backend.categorizer.rebuildNow();
     const target = sqlDb(backend.store).get<{ id: number }>(
@@ -587,7 +588,7 @@ describe("categorizer: auto-apply at ingestion", () => {
 
   /** A mailbox where the user filed 6 receipt senders into Facturas (examples 120 days old) next to uncategorized personal mail and promotions. */
   async function trained(options: { examplesAt?: number } & Pick<BackendOptions, "aiFactory" | "log"> = {}) {
-    const { backend, client } = setup(options);
+    const { backend, client } = await setup(options);
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const old: IncomingMessage[] = [];
@@ -1569,7 +1570,7 @@ describe("categorizer: auto-apply at ingestion", () => {
 
 describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
   async function mailbox() {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
     const cat = createCategory(sqlDb(backend.store), "Lecturas", "violet").id;
     return { backend, client, acct, cat };

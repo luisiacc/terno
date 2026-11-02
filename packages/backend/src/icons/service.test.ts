@@ -47,6 +47,7 @@ async function setup(o: { transport?: IconTransport; seed?: boolean; online?: bo
   const dir = mkdtempSync(join(tmpdir(), "terno-icons-"));
   const transport = o.transport ?? stubTransport();
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, iconTransport: transport, online: o.online });
+  await backend.store.ready;
   if (o.seed !== false) await seedDemo(backend.store, { threads: 300, accounts: 4 });
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });

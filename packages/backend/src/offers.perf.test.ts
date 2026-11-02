@@ -41,6 +41,7 @@ let category: number;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-offersperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
+  await backend.store.ready;
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 86, now: NOW, bodyScale: 3 }), { now: NOW });
   const db = sqlDb(backend.store);
   // a third of all received mail: one shop, one numbered subject; another third: the same shop, other subjects

@@ -63,6 +63,7 @@ function recorder(answer: (url: URL) => Promise<{ status: number } | { opaque: t
 async function setup(o: { transport?: UnsubscribeTransport | null; localMode?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-unsub-"));
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, iconTransport: null, unsubscribeTransport: o.transport === undefined ? recorder().transport : o.transport });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);

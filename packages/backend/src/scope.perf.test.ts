@@ -23,6 +23,7 @@ let backend: Backend;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-scopeperf-"));
   backend = new Backend({ dbPath: join(dir, "perf.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
+  await backend.store.ready;
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW });
   // the seed leaves a WAL of hundreds of MB that a running app, checkpointing all along, never has
   sqlDb(backend.store).exec("PRAGMA wal_checkpoint(TRUNCATE)");
@@ -107,6 +108,7 @@ it("a 50,000-thread category: counted in one indexed query, acted on with no sta
   const dir50 = mkdtempSync(join(tmpdir(), "terno-scopeperf50-"));
   const big = new Backend({ dbPath: join(dir50, "big.db"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: false });
   try {
+    await big.store.ready;
     const db = sqlDb(big.store);
     seedDataset(db, generateDataset({ threads: 50_000, accounts: 8, seed: 9, now: NOW, bodyScale: 0.2 }), { now: NOW });
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");

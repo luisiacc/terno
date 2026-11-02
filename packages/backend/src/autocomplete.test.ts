@@ -23,9 +23,10 @@ const registry: ProviderRegistry = {
   },
 } as unknown as ProviderRegistry;
 
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-ac-backend-"));
   const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "test", cipher: plaintextCipher, providers: registry, now: () => NOW, autoSync: false });
+  await backend.store.ready;
   const connect = (origin: "renderer" | "mcp") => {
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: origin, origin });
@@ -44,7 +45,7 @@ const ana = { name: "Ana Martínez", email: "ana@acme.studio" };
 
 describe("autocomplete over RPC", () => {
   it("nothing is built until a composer warms it; then recipients and text answer from memory", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([
       msg({ accountId, from: { name: "Bob Stone", email: "bob@stone.io" }, to: [me] }),
       ...[1, 2, 3, 4].map(() => msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions." })),
@@ -68,7 +69,7 @@ describe("autocomplete over RPC", () => {
   });
 
   it("the setting turns body suggestions off (model and snapshot gone) and on again", async () => {
-    const { backend, client, accountId, dir } = setup();
+    const { backend, client, accountId, dir } = await setup();
     await backend.ingestSliced([1, 2, 3, 4].map(() => msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions." })));
     await client.call("compose.warm", {});
     await backend.autocomplete.idle();
@@ -82,7 +83,7 @@ describe("autocomplete over RPC", () => {
   });
 
   it("turning it off while warm drops the model; on again relearns it", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     await backend.ingestSliced([1, 2, 3, 4].map(() => msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, bodyText: "Let me know if you have any questions." })));
     await client.call("compose.warm", {});
     await backend.autocomplete.idle();
@@ -94,7 +95,7 @@ describe("autocomplete over RPC", () => {
   });
 
   it("removing an account resets the models: none of its people linger", async () => {
-    const { backend, client, accountId } = setup();
+    const { backend, client, accountId } = await setup();
     const other = createAccount(sqlDb(backend.store), { kind: "imap", email: "two@example.com", displayName: "Two", color: "indigo", providerConfig: {} }).id;
     await backend.ingestSliced([msg({ accountId: other, from: { name: "Zed Zero", email: "zed@zero.io" }, to: [{ name: "", email: "two@example.com" }] }), msg({ accountId, from: ana, to: [me] })]);
     await client.call("compose.warm", {});
@@ -106,14 +107,14 @@ describe("autocomplete over RPC", () => {
   });
 
   it("agents (MCP) can't read suggestions", async () => {
-    const { mcp } = setup();
+    const { mcp } = await setup();
     await expect(mcp.call("compose.suggestRecipients", { query: "a" })).rejects.toThrow();
     await expect(mcp.call("compose.suggestText", { before: "Hi" })).rejects.toThrow();
     await expect(mcp.call("compose.warm", {})).rejects.toThrow();
   });
 
   it("the request limits are enforced", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await expect(client.call("compose.suggestRecipients", { query: "a".repeat(321) })).rejects.toThrow();
     await expect(client.call("compose.suggestText", { before: "a".repeat(2001) })).rejects.toThrow();
     await expect(client.call("compose.suggestRecipients", { query: "a", limit: 11 })).rejects.toThrow();

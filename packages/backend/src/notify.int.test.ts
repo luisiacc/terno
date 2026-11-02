@@ -57,7 +57,7 @@ function mail(accountId: number, over: Partial<IncomingMessage> = {}): IncomingM
 /** you wrote to Carlos once: he is someone you have written to */
 const wroteToCarlos = (a: number) => [mail(a, { from: { name: "Me", email: ME }, to: [{ name: "Carlos", email: "carlos@acme.com" }], isSent: true, inInbox: false, isRead: true, date: Date.now() - 86_400_000 * 3 })];
 
-function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tmpdir(), "terno-notify-")), keep = false) {
+async function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tmpdir(), "terno-notify-")), keep = false) {
   const badges: number[] = [];
   const notices: MailNotice[] = [];
   const backend = new Backend({
@@ -68,6 +68,7 @@ function setup(passes: Parameters<typeof scripted>[0], dir = mkdtempSync(join(tm
     autoSync: false,
     attention: { badge: (c) => badges.push(c), notify: (x) => notices.push(x) },
   });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);
@@ -84,7 +85,7 @@ const settle = () => new Promise((r) => setTimeout(r, GATHER_MS + 300));
 
 describe("notifications through the backend (plan 41)", () => {
   it("the first pass notifies nothing (even live mail); the next pass's important mail notifies once; what isn't important or isn't news stays quiet", async () => {
-    const t = setup([
+    const t = await setup([
       { messages: (a) => [...wroteToCarlos(a), mail(a)], live: true },
       {
         live: true,
@@ -115,7 +116,7 @@ describe("notifications through the backend (plan 41)", () => {
   });
 
   it("mail a primed account inserts without the provider calling it live (a resync, a reset) notifies nothing", async () => {
-    const t = setup([
+    const t = await setup([
       { messages: (a) => wroteToCarlos(a), live: false },
       { messages: (a) => [mail(a)], live: false },
     ]);
@@ -130,14 +131,14 @@ describe("notifications through the backend (plan 41)", () => {
   it("a restarted backend's first pass is quiet (no catch-up at launch); its badge comes back at start", async () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-notify-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-    const first = setup([{ messages: (a) => [...wroteToCarlos(a), mail(a), mail(a)], live: false }], dir, true);
+    const first = await setup([{ messages: (a) => [...wroteToCarlos(a), mail(a), mail(a)], live: false }], dir, true);
     const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
     await first.backend.start();
     await first.backend.syncAccount(accountId);
     await expect.poll(() => first.badges.at(-1)).toBe(2);
     await first.backend.stop();
 
-    const second = setup([{ messages: (a) => [mail(a)], live: true }], dir, true);
+    const second = await setup([{ messages: (a) => [mail(a)], live: true }], dir, true);
     await second.backend.start();
     await expect.poll(() => second.badges[0]).toBe(2);
     await second.backend.syncAccount(accountId);
@@ -147,7 +148,7 @@ describe("notifications through the backend (plan 41)", () => {
   });
 
   it("the badge follows the Inbox's unread count: a read lowers it, turning it off clears it", async () => {
-    const t = setup([{ messages: (a) => [mail(a), mail(a)], live: false }]);
+    const t = await setup([{ messages: (a) => [mail(a), mail(a)], live: false }]);
     const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
     await t.backend.start();
     expect(t.badges).toEqual([0]);
@@ -178,6 +179,7 @@ describe("notifications through the backend (plan 41)", () => {
       await backend.stop().catch(() => {});
       rmSync(dir, { recursive: true, force: true });
     });
+    await backend.store.ready;
     const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
     await client.call("settings.update", { notificationPreview: false });
     await backend.start();
@@ -190,7 +192,7 @@ describe("notifications through the backend (plan 41)", () => {
   });
 
   it("notifications off: a live pass reads nothing", async () => {
-    const t = setup([
+    const t = await setup([
       { messages: (a) => wroteToCarlos(a), live: false },
       { messages: (a) => [mail(a)], live: true },
     ]);

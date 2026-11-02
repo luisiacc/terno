@@ -42,7 +42,7 @@ async function setup(folders: Record<string, object>, context = (ctx: ProviderCo
     imap: { host: "127.0.0.1", port, secure: false, user: "testuser" },
     smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" }, password: "testpass", verify: false,
   });
-  return { server, port, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); return open(); } };
+  return { server, port, commands, account, ...first, async reopen() { client.close(); await bounded(backend.stop(), "backend stop"); const next = open(); await next.backend.store.ready; return next; } };
 }
 
 function persistedTrash(backend: Backend, accountId: number) {

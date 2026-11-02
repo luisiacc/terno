@@ -38,6 +38,7 @@ function tempDir() {
 /** A mailbox whose facts are as right after the migration: a backfill to do. */
 async function pendingMailbox(dir: string) {
   const backend = backendAt(dir);
+  await backend.store.ready;
   seedDataset(sqlDb(backend.store), generateDataset({ threads: 400, accounts: 2, seed: 7, now: NOW }), { now: NOW });
   const expected = (await backend.store.debug.snapshot()).threads.map((t) => [t.id, t.person, t.waitingSince]);
   await backend.store.debug.resetFacts();

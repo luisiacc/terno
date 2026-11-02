@@ -174,6 +174,7 @@ describe("changing the owner", () => {
 
   it("refuses demo mailboxes", async () => {
     const { backend, client } = setup();
+    await backend.store.ready;
     const demo = createAccount(sqlDb(backend.store), { kind: "imap", email: "demo@demo.dev", displayName: "Demo", color: "indigo", providerConfig: { demo: true } });
     expect(await errorOf(client.call("identity.changeOwner", { accountId: demo.id, password: "x" }))).toMatchObject({ code: "BAD_REQUEST" });
   });

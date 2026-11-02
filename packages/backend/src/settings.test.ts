@@ -14,9 +14,10 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(tmpdir(), "terno-settings-"));
   const backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "renderer", origin: "renderer" });
   cleanups.push(async () => {
@@ -31,13 +32,13 @@ const nord = { id: "mi-nord", name: "Mi Nord", mode: "dark" as const, extends: "
 
 describe("appearance settings", () => {
   it("new installs get the defaults: Lumen in the GitHub palettes, following the system (plan 98)", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s).toMatchObject({ theme: "system", design: "lumen", lightTheme: "github-light", darkTheme: "github-dark", previousLightTheme: null, previousDarkTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
   });
 
   it("a legacy blob keeps its mode and gets the new fields' defaults", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { theme: "dark", density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
@@ -46,7 +47,7 @@ describe("appearance settings", () => {
   });
 
   it("every new field round-trips", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     const next = await client.call("settings.update", { lightTheme: "solarized-light", darkTheme: "custom:mi-nord", customThemes: [nord], motionMs: 0, htmlMailAppearance: "paper", theme: "light" });
     expect(next).toMatchObject({ lightTheme: "solarized-light", darkTheme: "custom:mi-nord", customThemes: [nord], motionMs: 0, htmlMailAppearance: "paper", theme: "light" });
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ darkTheme: "custom:mi-nord", motionMs: 0 });
@@ -56,7 +57,7 @@ describe("appearance settings", () => {
   });
 
   it("rejects motion off the scale, unknown themes and themes of the other mode", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect(await errorOf(client.call("settings.update", { motionMs: 60 as never }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("settings.update", { lightTheme: "no-such-theme" }))).toMatchObject({ code: "BAD_REQUEST" });
     expect(await errorOf(client.call("settings.update", { lightTheme: "dracula" }))).toMatchObject({ code: "BAD_REQUEST" });
@@ -68,7 +69,7 @@ describe("appearance settings", () => {
   });
 
   it("deleting a custom theme in use falls back to Style colors", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     await client.call("settings.update", { customThemes: [nord], darkTheme: "custom:mi-nord" });
     const after = await client.call("settings.update", { customThemes: [] });
     expect(after.darkTheme).toBe("design");
@@ -78,7 +79,7 @@ describe("appearance settings", () => {
   });
 
   it("reads themes saved under their Única ids as the Terno ones", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, lightTheme: "unica-light", darkTheme: "custom:mi-nord", customThemes: [{ ...nord, extends: "unica-dark" }] });
     const settings = (await client.call("app.bootstrap", {})).settings;
     expect(settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "custom:mi-nord" });
@@ -88,7 +89,7 @@ describe("appearance settings", () => {
 
 describe("remote images (plan 37)", () => {
   it("a profile in local mode that stored always reads as ask; the next write persists it, and a later always sticks", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { localMode: true, remoteImages: "always" });
     expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
     await client.call("settings.update", { motionMs: 50 });
@@ -99,20 +100,20 @@ describe("remote images (plan 37)", () => {
   });
 
   it("a profile without local mode stored keeps the default (on): always reads as ask", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { remoteImages: "always" });
     expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("ask");
   });
 
   it("a connected profile keeps always, also after turning local mode on", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { localMode: false, remoteImages: "always" });
     expect((await client.call("app.bootstrap", {})).settings.remoteImages).toBe("always");
     expect(await client.call("settings.update", { localMode: true })).toMatchObject({ localMode: true, remoteImages: "always" });
   });
 
   it("the marker never reaches the renderer", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     await client.call("settings.update", { motionMs: 50 });
     expect((await client.call("app.bootstrap", {})).settings).not.toHaveProperty("remoteImagesVersion");
   });
@@ -120,7 +121,7 @@ describe("remote images (plan 37)", () => {
 
 describe("error reports (plan 78)", () => {
   it("a profile in local mode that stored always reads as ask (it sent nothing before); a later always sticks", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { localMode: true, errorReports: "always" });
     expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("ask");
     await client.call("settings.update", { motionMs: 50 });
@@ -131,7 +132,7 @@ describe("error reports (plan 78)", () => {
   });
 
   it("a connected profile keeps always; never stays never", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { localMode: false, errorReports: "always" });
     expect((await client.call("app.bootstrap", {})).settings.errorReports).toBe("always");
     setSetting(sqlDb(backend.store), "app", { localMode: true, errorReports: "never" });
@@ -141,7 +142,7 @@ describe("error reports (plan 78)", () => {
 
 describe("designs (plan 15)", () => {
   it("an install from before designs moves to Lumen in its own colors; its palettes are remembered as previous, not applied", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { theme: "dark", lightTheme: "github-light", darkTheme: "custom:mi-nord", customThemes: [nord], density: "compact" });
     const s = (await client.call("app.bootstrap", {})).settings;
     expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: "github-light", previousDarkTheme: "custom:mi-nord" });
@@ -153,13 +154,13 @@ describe("designs (plan 15)", () => {
   });
 
   it("the old defaults and Única ids are remembered under their current names; one that no longer exists is forgotten", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     setSetting(sqlDb(backend.store), "app", { lightTheme: "unica-light", darkTheme: "retired-theme" });
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", previousLightTheme: "terno-light", previousDarkTheme: null });
   });
 
   it("a design and Style colors round-trip; an unknown design is refused, a stored one reads as Lumen", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     expect(await client.call("settings.update", { design: "atelier", lightTheme: "solarized-light" })).toMatchObject({ design: "atelier", lightTheme: "solarized-light" });
     expect(await client.call("settings.update", { lightTheme: "design", darkTheme: "design" })).toMatchObject({ lightTheme: "design", darkTheme: "design" });
     expect(await errorOf(client.call("settings.update", { design: "brutalist" as never }))).toMatchObject({ code: "BAD_REQUEST" });
@@ -168,7 +169,7 @@ describe("designs (plan 15)", () => {
   });
 
   it("plan 98: a profile from before the GitHub defaults keeps what it shows; one that chose keeps its choice", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     // v2, never chose a palette: it showed Lumen's own colors, and still does, also after an unrelated write
     setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, theme: "dark" });
     expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ lightTheme: "design", darkTheme: "design" });
@@ -188,14 +189,14 @@ describe("designs (plan 15)", () => {
   });
 
   it("a remembered palette of the wrong mode is forgotten", async () => {
-    const { client } = setup();
+    const { client } = await setup();
     expect(await client.call("settings.update", { previousLightTheme: "dracula", previousDarkTheme: "nord" })).toMatchObject({ previousLightTheme: null, previousDarkTheme: "nord" });
   });
 });
 
 describe("language", () => {
   it("new installs follow the system; a choice round-trips; anything else is refused or reads as system", async () => {
-    const { backend, client } = setup();
+    const { backend, client } = await setup();
     expect((await client.call("app.bootstrap", {})).settings.language).toBe("system");
     expect((await client.call("settings.update", { language: "es" })).language).toBe("es");
     expect((await client.call("app.bootstrap", {})).settings.language).toBe("es");
@@ -226,7 +227,7 @@ describe("language", () => {
 
 describe("favorite folders (plan 107)", () => {
   it("a rename onto a stale favorite keeps one: every resulting favorite once (Codex code review round 16 #2)", async () => {
-    const { backend } = setup();
+    const { backend } = await setup();
     // Work and Job favorited; Job deleted in another app before Terno read the list again; then Work → Job here
     setSetting(sqlDb(backend.store), "app", { favoriteFolders: [{ accountId: 7, folder: "Work", view: null }, { accountId: 7, folder: "Job", view: null }, { accountId: 8, folder: "Job", view: null }] });
     const next = await followFavoriteFolders(backend.store, 7, { renamed: [{ from: "Work", to: "Job" }] });

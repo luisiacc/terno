@@ -23,6 +23,7 @@ const stats: Stat[] = [];
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "terno-bperf-"));
   backend = new Backend({ dbPath: join(dir, "sqlDb(b.store)"), version: "perf", cipher: plaintextCipher, providers: demoRegistry, now: () => NOW, autoSync: false, instantSearch: true });
+  await backend.store.ready;
   accountIds = seedDataset(sqlDb(backend.store), generateDataset({ threads: 20_000, accounts: 8, seed: 5, now: NOW, bodyScale: 3 }), { now: NOW }).accountIds;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });

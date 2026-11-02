@@ -100,6 +100,7 @@ it("after an update that migrated, mail keeps syncing while the upgrade's backgr
   renameSync(join(dir, "old.db"), dbPath);
 
   const next = open(true);
+  await next.backend.store.ready;
   const db = sqlDb(next.backend.store);
   expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBeGreaterThan(BEFORE);
   expect(db.get("SELECT 1 FROM view_unread_backfill")).toBeDefined();

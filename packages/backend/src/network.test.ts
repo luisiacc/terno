@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
+async function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
   const providers = new Map<number, Scripted>();
   const registry: ProviderRegistry = {
     create(ctx) {
@@ -78,6 +78,7 @@ function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
     onNetworkReset: () => void resets++,
     connectivity: { delays: [150, 300, 600], settleMs: 30, offlineRetryMs: 60_000 },
   });
+  await backend.store.ready;
   const ids: number[] = [];
   for (let i = 0; i < (o.accounts ?? 2); i++) ids.push(createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "indigo", providerConfig: {} }).id);
   const [c, s] = createMemoryTransportPair();
@@ -95,7 +96,7 @@ const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("plan 20: the backend and the network", () => {
   it("a network change resets every provider and the host's HTTP pool once, and syncs every account", async () => {
-    const t = setup();
+    const t = await setup();
     await t.backend.start();
     await expect.poll(() => [...t.providers.values()].every((p) => p.syncs === 1)).toBe(true);
     t.backend.networkChanged(true, "network");
@@ -108,7 +109,7 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("offline stops push and marks accounts offline (not one in error); online brings push back and syncs", async () => {
-    const t = setup();
+    const t = await setup();
     await t.backend.start();
     await expect.poll(() => t.providers.size).toBe(2);
     await expect.poll(() => [...t.providers.values()].every((p) => p.syncs === 1)).toBe(true);
@@ -135,7 +136,7 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("the first failure is quiet; the second shows offline with its retry; a retry reads reconnecting, then a success clears it", async () => {
-    const t = setup({ accounts: 1 });
+    const t = await setup({ accounts: 1 });
     await t.backend.start();
     const [a] = t.ids as [number];
     await expect.poll(() => t.state(a).status).toBe("idle");
@@ -161,7 +162,7 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("the poll leaves accounts in backoff alone, asks push for a heartbeat, and does nothing offline", async () => {
-    const t = setup({ syncIntervalMs: 200, accounts: 2 });
+    const t = await setup({ syncIntervalMs: 200, accounts: 2 });
     await t.backend.start();
     await expect.poll(() => t.providers.size).toBe(2);
     const [a, b] = t.ids as [number, number];
@@ -184,7 +185,7 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("focus retries offline accounts at once (rate-limited); the user's retry starts the schedule over", async () => {
-    const t = setup({ accounts: 1 });
+    const t = await setup({ accounts: 1 });
     await t.backend.start();
     const [a] = t.ids as [number];
     await expect.poll(() => t.state(a).status).toBe("idle");
@@ -202,7 +203,7 @@ describe("plan 20: the backend and the network", () => {
   });
 
   it("an account removed during a network change gets nothing later (no sync, no reset after removal)", async () => {
-    const t = setup({ accounts: 2 });
+    const t = await setup({ accounts: 2 });
     await t.backend.start();
     await expect.poll(() => t.providers.size).toBe(2);
     const [a] = t.ids as [number];
@@ -215,7 +216,7 @@ describe("plan 20: the backend and the network", () => {
     expect(p.watching).toBe(0);
   });
   it("Codex review: a pass that works after the host went offline keeps the account's probe (it would never be tried again)", async () => {
-    const t = setup({ accounts: 1 });
+    const t = await setup({ accounts: 1 });
     await t.backend.start();
     const [a] = t.ids as [number];
     await expect.poll(() => t.state(a).status).toBe("idle");
@@ -233,7 +234,7 @@ describe("plan 20: the backend and the network", () => {
     expect(t.backend.connectivity.pending(a)).toBe(true);
   });
   it("Codex review (2): a refusal while the host says offline keeps the probe, so the account recovers once it passes", async () => {
-    const t = setup({ accounts: 1 });
+    const t = await setup({ accounts: 1 });
     await t.backend.start();
     const [a] = t.ids as [number];
     await expect.poll(() => t.state(a).status).toBe("idle");
@@ -250,7 +251,7 @@ describe("plan 20: the backend and the network", () => {
 
 describe("a connection back while the OS still says offline (2026-11)", () => {
   it("a network change probes at once; the server answering brings the account, push and the network back", async () => {
-    const t = setup({ accounts: 1 });
+    const t = await setup({ accounts: 1 });
     await t.backend.start();
     await expect.poll(() => t.providers.get(t.ids[0]!)?.syncs).toBe(1);
     const [a] = t.ids as [number];
