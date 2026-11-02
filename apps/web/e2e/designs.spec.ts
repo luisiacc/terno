@@ -246,7 +246,7 @@ test.describe("switching designs", () => {
         .filter((r): r is CSSFontFaceRule => r instanceof CSSFontFaceRule)
         .map((r) => ({ family: r.style.getPropertyValue("font-family"), src: r.style.getPropertyValue("src") })),
     );
-    for (const family of ["Figtree Variable", "Instrument Sans Variable", "Instrument Serif", "Geist Variable"]) expect(faces.some((f) => f.family.includes(family)), family).toBe(true);
+    for (const family of ["Figtree Variable", "Instrument Sans Variable", "Geist Variable"]) expect(faces.some((f) => f.family.includes(family)), family).toBe(true);
     const origin = new URL(page.url()).origin;
     for (const f of faces) {
       for (const [, url] of f.src.matchAll(/url\("?([^")]+)"?\)/g)) expect(new URL(url!, page.url()).origin, `${f.family}: ${url}`).toBe(origin);
@@ -260,8 +260,8 @@ test.describe("switching designs", () => {
     await page.locator("[data-ready]").waitFor();
     const loaded = (family: string) => page.evaluate((f) => [...document.fonts].filter((x) => x.family.replace(/"/g, "") === f).some((x) => x.status === "loaded"), family);
     expect(await loaded("Figtree Variable")).toBe(false);
-    expect(await loaded("Instrument Serif")).toBe(false);
-    await page.route(/instrument-(sans|serif).*\.woff2$/, async (route) => {
+    expect(await loaded("Instrument Sans Variable")).toBe(false);
+    await page.route(/instrument-sans.*\.woff2$/, async (route) => {
       await new Promise((r) => setTimeout(r, 1500));
       await route.continue();
     });
@@ -272,7 +272,8 @@ test.describe("switching designs", () => {
     expect(Date.now() - t0).toBeLessThan(1400);
     // text shows in a fallback meanwhile (swap), then the face arrives
     await expect(page.getByTestId("list-title")).toBeVisible();
-    await expect.poll(() => loaded("Instrument Serif"), { timeout: 8000 }).toBe(true);
+    // Atelier is Instrument Sans throughout (649d46cd)
+    await expect.poll(() => loaded("Instrument Sans Variable"), { timeout: 8000 }).toBe(true);
     expect(await loaded("Figtree Variable")).toBe(false);
   });
 });
