@@ -123,6 +123,13 @@ Six findings, all fixed, each with a test in `e2e/account-focus.spec.ts` that fa
 5. **"Search all accounts" dropped keyboard focus** (the button goes as it widens the search); focus goes to the search field.
 6. **Creating or renaming a folder while focused changed the normal sidebar's open account**; the open account is left alone when the edit is in the focused one.
 
+### Round 2
+
+Two findings, both fixed with a test that fails without the fix; the review stopped here (the bounded rounds).
+
+1. **Focusing from a search there kept the selection** (checked rows, the cursor) of threads from other accounts that the narrowed search no longer shows, so Archive or Delete could still act on them. Focusing that narrows a search starts the selection again (`account-focus.test.ts`).
+2. **The two sidebars share one scroll:** entering from a scrolled sidebar could hide the back row, and leaving could focus an account row out of view. Focused starts at its top; leaving puts back the normal sidebar's scroll, and the focus moves without `preventScroll`, so its row is in view (e2e at a 420 px window).
+
 ## Tests run
 
 - Unit: `lib/account-focus.test.ts` and the rest of `src/lib` and `src/state` (four failures, all unrelated: two fail the same way on main, two were timing under load and pass alone).

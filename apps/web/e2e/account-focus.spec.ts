@@ -208,6 +208,23 @@ test.describe("focus on one account", { tag: "@design" }, () => {
     await expect(page.getByTestId(`nav-account-${acme}`)).toHaveAttribute("aria-expanded", "false");
   });
 
+  test("Codex code review round 2 #2: a scrolled sidebar: focused starts at its top; back is where you'd scrolled, the account's row in view", async ({ app: page }) => {
+    await page.setViewportSize({ width: 1280, height: 420 });
+    const ids = await accountIds(page);
+    const last = ids.at(-1)!;
+    const nav = page.locator("#app-sidebar nav");
+    await nav.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const scrolled = await nav.evaluate((el) => el.scrollTop);
+    expect(scrolled).toBeGreaterThan(0);
+    await focusFromMenu(page, last);
+    await expect(page.getByTestId("solo-back")).toBeInViewport();
+    expect(await nav.evaluate((el) => el.scrollTop)).toBe(0);
+    await page.getByTestId("solo-back").click();
+    await expect(page.getByTestId(`nav-account-${last}`)).toBeFocused();
+    await expect(page.getByTestId(`nav-account-${last}`)).toBeInViewport();
+    expect(Math.abs((await nav.evaluate((el) => el.scrollTop)) - scrolled)).toBeLessThan(40);
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the focused sidebar is axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);

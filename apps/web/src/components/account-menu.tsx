@@ -147,13 +147,14 @@ export function AccountMenu({ account, unread, onRename, solo = false, children 
 /** plan 108: focused from the menu, the keyboard goes to the back row (the row it came from is gone) */
 function enterSolo(id: number): void {
   focusAccount(id);
-  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="solo-back"]')?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="solo-back"]')?.focus());
 }
 
 /** plan 108: back to all accounts from the header's menu; the keyboard goes to the account's row */
 export function leaveSoloKeepingFocus(id: number): void {
   leaveFocus();
-  requestAnimationFrame(() => (document.querySelector<HTMLElement>(`[data-testid="nav-account-${id}"]`) ?? document.querySelector<HTMLElement>('[data-testid="nav-inbox"]'))?.focus({ preventScroll: true }));
+  // scrolled into view if the sidebar's own scroll (restored) leaves it out (Codex code review round 2 #2)
+  requestAnimationFrame(() => (document.querySelector<HTMLElement>(`[data-testid="nav-account-${id}"]`) ?? document.querySelector<HTMLElement>('[data-testid="nav-inbox"]'))?.focus());
 }
 
 /** A color's dot in an icon's box, so its label starts on the other items' line */

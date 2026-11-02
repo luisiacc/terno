@@ -116,3 +116,15 @@ it("remembered however it ends, and restored only for an account still there amo
   expect(localStorage.getItem(KEY)).toBeNull();
   stopRemembering();
 });
+
+it("Codex code review round 2 #1: focusing narrows a search there, so what was checked or under the cursor goes", () => {
+  navigate({ accountId: 2, view: "inbox" });
+  setApp({ query: "factura", checked: new Set([5, 6]), selectedId: 5, anchorId: 5 });
+  focusAccount(2);
+  expect(getApp()).toMatchObject({ soloAccountId: 2, selectedId: null, anchorId: null, scope: null });
+  expect(getApp().checked.size).toBe(0);
+  // no search: the list is the same, and so is the selection
+  setApp({ soloAccountId: null, query: "", checked: new Set([7]), selectedId: 7 });
+  focusAccount(2);
+  expect(getApp()).toMatchObject({ soloAccountId: 2, selectedId: 7 });
+});

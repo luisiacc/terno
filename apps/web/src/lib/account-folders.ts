@@ -85,7 +85,11 @@ function remember(id: number | null): void {
 /** Focus on an account: its Inbox, unless you're already in one of its places (then you stay). */
 export function focusAccount(id: number): void {
   const s = getApp();
-  if (s.accountId === id && s.reviewCategoryId === null && !s.reminders) setApp({ soloAccountId: id });
+  if (s.accountId === id && s.reviewCategoryId === null && !s.reminders) {
+    // a search there narrows to the account: what was checked or under the cursor may be another's (Codex code
+    // review round 2 #1), so the selection starts again, as on any other list
+    setApp(s.query.trim() ? { soloAccountId: id, selectedId: null, checked: new Set(), anchorId: null, scope: null } : { soloAccountId: id });
+  }
   else {
     navigate({ accountId: id, view: "inbox" });
     setApp({ soloAccountId: id });
