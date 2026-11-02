@@ -49,3 +49,11 @@ export async function publishBody<V>(work: () => Promise<V>, check: () => void):
     }
   }
 }
+
+/** Preserve failures only after every owned shutdown phase has reached its terminal. */
+export async function finishBodyClose(phases: readonly (() => unknown | Promise<unknown>)[]): Promise<void> {
+  const errors = new Set<unknown>();
+  for (const phase of phases) { try { await phase(); } catch (error) { errors.add(error); } }
+  if (errors.size === 1) throw errors.values().next().value;
+  if (errors.size) throw new AggregateError([...errors], "Mailbox shutdown failed");
+}

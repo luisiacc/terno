@@ -1,3 +1,4 @@
+import { finishBodyClose } from "@terno/store";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { releaseMessageBodies } from "@terno/store";
@@ -237,6 +238,8 @@ export class IdbMailStore implements MailStore {
   private inflight: Promise<unknown> | null = null;
   private open = true;
   private bodyClosing = false;
+  private bodyClose: Promise<void> | undefined;
+  private bodyCleanupFailure: { error: unknown } | undefined;
   private readonly bodyCommands = new Set<Promise<unknown>>();
   private readonly bodyStages = new Map<string, () => void>();
   private readonly bodyProtocol = new BodyProtocol(() => String(this.db.table("body_protocol").get(1)?.epoch ?? "0"), (id) => {
@@ -249,7 +252,7 @@ export class IdbMailStore implements MailStore {
   private queueBodyGarbage(retired = false): void {
     if (this.bodyClosing) return;
     if (this.bodyGarbage) { this.bodyGarbageAgain ||= retired; return; }
-    const task = Promise.resolve().then(() => this.cleanupBodies()).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
+    const task = Promise.resolve().then(() => this.cleanupBodies()).catch((error: unknown) => { this.bodyCleanupFailure ??= { error }; this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
     this.bodyGarbage = task;
   }
 
@@ -394,22 +397,23 @@ export class IdbMailStore implements MailStore {
     await this.settled();
   }
 
-  async close(): Promise<void> {
-    if (!this.open) return;
+  close(): Promise<void> {
+    if (this.bodyClose) return this.bodyClose;
+    if (!this.open) return Promise.resolve();
     this.exportLeases.clear();
     this.bodyClosing = true;
-    await Promise.allSettled(this.bodyCommands);
-    await this.bodyCleanup;
-    await this.bodyGarbage;
-    try {
-      await this.instant?.close();
-      if (!this.unusable) await this.cleanupBodies();
-    } finally {
-      await this.loaded.catch(() => {});
-      await this.queue.catch(() => {});
-      this.open = false;
-      this.idb.close();
-    }
+    return this.bodyClose = finishBodyClose([
+      () => Promise.allSettled(this.bodyCommands),
+      () => this.instant?.close(),
+      () => this.bodyCleanup,
+      () => this.bodyGarbage,
+      () => this.loaded,
+      () => this.queue,
+      () => { if (!this.unusable) return this.cleanupBodies(); },
+      () => this.queue,
+      () => { if (this.bodyCleanupFailure) throw this.bodyCleanupFailure.error; },
+      () => { if (!this.unusable) this.idb.close(); this.open = false; },
+    ]);
   }
 
   // ───────────────────────────── units of work ─────────────────────────────
@@ -1022,7 +1026,7 @@ export class IdbMailStore implements MailStore {
     scopeIds: (p) => this.early(() => scopeThreadIds(this.c, p)),
     scopeCount: (p) => this.early(() => scopeThreadIds(this.c, p).length),
     summaries: (ids) => this.early(() => summariesInOrder(this.c, ids)),
-    get: async (id, options) => {
+    get: async (id, options) => this.bodyCommand(async () => {
       await this.settled();
       // exclusive: no command can add a message (or evict a body) between reading the bodies and the thread
       return this.exclusive(async () => {
@@ -1040,8 +1044,8 @@ export class IdbMailStore implements MailStore {
         }
         return { ...thread, categorization: { auto: autoReasons(this.c, id), suggestions: pendingSuggestions(this.c, { threadId: id, limit: 5 }) } };
       });
-    },
-    unsubscribeSource: async (id) => {
+    }),
+    unsubscribeSource: async (id) => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
         const pick = unsubscribeCandidate(this.c, id);
@@ -1059,7 +1063,7 @@ export class IdbMailStore implements MailStore {
           bodyText: body?.capture_id ? (T(this.c, "body_captures").get(body.capture_id)!.text_parts === null ? null : await unsubscribeBodyParts(this.bodyPartSource(String(body.capture_id), 0), false)) : (body?.body_text as string | null | undefined) ?? null,
         };
       });
-    },
+    }),
     bodyPart: async (input) => this.exclusive(async () => {
       const message = T(this.c, "messages").get(input.messageId);
       if (!message || message.account_id !== input.accountId) throw new RpcError("STALE", L("errors.originalGone"));

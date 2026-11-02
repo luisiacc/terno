@@ -1,3 +1,4 @@
+import { finishBodyClose } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
@@ -221,13 +222,15 @@ export class SqlMailStore implements MailStore {
   private readonly yieldTo: () => Promise<void>;
   private readonly bodyCleanup: Promise<void>;
   private bodyClosing = false;
+  private bodyClose: Promise<void> | undefined;
+  private bodyCleanupFailure: { error: unknown } | undefined;
   private readonly bodyCommands = new Set<Promise<unknown>>();
   private bodyGarbage: Promise<void> | undefined;
   private bodyGarbageAgain = false;
   private queueBodyGarbage(retired = false): void {
     if (this.bodyClosing) return;
     if (this.bodyGarbage) { this.bodyGarbageAgain ||= retired; return; }
-    const task = Promise.resolve().then(() => cleanupBodies(this.db, this.yieldTo)).catch(() => { this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
+    const task = Promise.resolve().then(() => cleanupBodies(this.db, this.yieldTo)).catch((error: unknown) => { this.bodyCleanupFailure ??= { error }; this.log("warn", "Body cleanup will resume after reopening the mailbox"); }).finally(() => { if (this.bodyGarbage === task) this.bodyGarbage = undefined; if (this.bodyGarbageAgain) { this.bodyGarbageAgain = false; this.queueBodyGarbage(); } });
     this.bodyGarbage = task;
   }
 
@@ -251,6 +254,7 @@ export class SqlMailStore implements MailStore {
     const platform = options.platform ?? { yield: () => new Promise<void>((r) => setTimeout(r, 0)) };
     this.yieldTo = () => platform.yield();
     this.bodyCleanup = cleanupBodies(db, this.yieldTo);
+    void this.bodyCleanup.catch(() => {});
     this.log = options.log ?? (() => {});
     observeBodyRetirement(db, () => this.queueBodyGarbage(true));
     db.onCommit(() => { if (!this.bodyClosing && db.get("SELECT 1 FROM body_captures WHERE owned=0 AND ready=1 LIMIT 1")) this.queueBodyGarbage(); });
@@ -269,7 +273,7 @@ export class SqlMailStore implements MailStore {
       db.onCommit(() => this.instant?.notify());
       this.instant.start();
     } else this.instant = null;
-    this.autocomplete = sqlAutocompleteSource(db, this.yieldTo, `sqlite-${SEARCH_SCHEMA_VERSION}`);
+    this.autocomplete = sqlAutocompleteSource(db, this.yieldTo, `sqlite-${SEARCH_SCHEMA_VERSION}`, (work) => this.bodyCommand(work));
     this.capabilities = {
       engine: `sqlite-${db.driver.id}`,
       search: this.instant ? `instant+${this.fts.id}` : this.fts.id,
@@ -289,16 +293,19 @@ export class SqlMailStore implements MailStore {
     await this.checkpointer?.settle();
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.bodyClose) return this.bodyClose;
     this.bodyClosing = true;
-    await Promise.allSettled(this.bodyCommands);
-    // writes the snapshot of what changed since the last one
-    await this.instant?.close();
-    await this.checkpointer?.stop();
-    await this.bodyCleanup;
-    await this.bodyGarbage;
-    await cleanupBodies(this.db, this.yieldTo);
-    this.db.close();
+    return this.bodyClose = finishBodyClose([
+      () => Promise.allSettled(this.bodyCommands),
+      () => this.instant?.close(),
+      () => this.checkpointer?.stop(),
+      () => this.bodyCleanup,
+      () => this.bodyGarbage,
+      () => cleanupBodies(this.db, this.yieldTo),
+      () => { if (this.bodyCleanupFailure) throw this.bodyCleanupFailure.error; },
+      () => { if (this.db.isOpen) this.db.close(); },
+    ]);
   }
 
   /** The revision searches answer at: the head of the search log, read in the same unit as the answer. */
@@ -370,7 +377,7 @@ export class SqlMailStore implements MailStore {
     summaries: async (ids) => getSummaries(this.db, ids),
     scopeIds: async (p) => scopeThreadIds(this.db, p),
     scopeCount: async (p) => countScopeThreads(this.db, p),
-    get: async (id, options) => {
+    get: async (id, options) => this.bodyCommand(async () => {
       const found = getThread(this.db, id);
       const thread = found ? { ...found, messages: found.messages.map((message) => ({ ...message })) } : null;
       if (!thread) return null;
@@ -383,8 +390,8 @@ export class SqlMailStore implements MailStore {
         if (body) Object.assign(message, body);
       }
       return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
-    },
-    unsubscribeSource: async (id) => {
+    }),
+    unsubscribeSource: async (id) => this.bodyCommand(async () => {
       const result = unsubscribeSource(this.db, id);
       if (!result || result.unsubscribe) return result;
       const reference = bodyReadReference(this.db, result.messageId);
@@ -397,8 +404,8 @@ export class SqlMailStore implements MailStore {
         } finally { release(); }
       }
       return result;
-    },
-    bodyPart: async (input) => {
+    }),
+    bodyPart: async (input) => this.bodyCommand(async () => {
       const current = () => !!this.db.get("SELECT 1 FROM messages m JOIN body_heads b ON b.message_id=m.id WHERE m.id=? AND m.account_id=? AND b.capture_id=?", input.messageId, input.accountId, input.version);
       if (!current()) throw new RpcError("STALE", L("errors.originalGone"));
       const source = sqlBodyParts(this.db, input.version, input.field === "text" ? 0 : 1, this.yieldTo);
@@ -407,7 +414,7 @@ export class SqlMailStore implements MailStore {
         if (!part || !current()) throw new RpcError("STALE", L("errors.originalGone"));
         return decodeBodyPart(part.value);
       } finally { source.close?.(); }
-    },
+    }),
     counts: async (now) => getCounts(this.db, now),
     search: async (req) => this.searchPage(req),
     searchText: async (p) => {

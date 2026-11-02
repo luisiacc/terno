@@ -99,7 +99,7 @@ export async function sentAfter(db: Db, afterId: number, limit: number, yieldTo 
 /** Ids per read when serving a large commit (500 headers read in ~1 ms). */
 const SLICE = 500;
 
-export function sqlAutocompleteSource(db: Db, yieldTo: () => Promise<void>, identity: string): AutocompleteSource {
+export function sqlAutocompleteSource(db: Db, yieldTo: () => Promise<void>, identity: string, own: <T>(work: () => Promise<T>) => Promise<T> = (work) => work()): AutocompleteSource {
   return {
     snapshotBase: db.path === ":memory:" ? null : db.path,
     identity,
@@ -147,7 +147,7 @@ export function sqlAutocompleteSource(db: Db, yieldTo: () => Promise<void>, iden
         },
       };
     },
-    sentAfter: async (afterId, limit) => sentAfter(db, afterId, limit, yieldTo),
-    sentTexts: async (ids) => sentTexts(db, ids, yieldTo),
+    sentAfter: async (afterId, limit) => own(() => sentAfter(db, afterId, limit, yieldTo)),
+    sentTexts: async (ids) => own(() => sentTexts(db, ids, yieldTo)),
   };
 }
