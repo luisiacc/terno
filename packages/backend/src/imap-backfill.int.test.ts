@@ -142,6 +142,6 @@ it("plan 103: an IMAP first read says how many folders it has read", async () =>
     vi.spyOn(server, "emit").mockImplementation((name, payload) => { if (name === "syncProgress" && (payload as { progress: unknown }).progress) writes.push((payload as { progress: unknown }).progress); emit(name, payload); });
   } });
   expect(writes[0]).toEqual({ done: 0, total: 2, unit: "folders" });
-  // done: nothing left to show
-  expect((await t.backend.store.accounts.get(t.account.id))?.syncState.progress).toBeNull();
+  // done: nothing left to show (absent or null: a state that never stored progress stays sparse, afd95dac)
+  expect((await t.backend.store.accounts.get(t.account.id))?.syncState.progress ?? null).toBeNull();
 });
