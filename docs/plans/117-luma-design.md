@@ -57,3 +57,5 @@ Already failing on the base commit and unrelated: `designs.spec` (macOS baseline
 ## The name
 
 **Luma** is Lumen + macOS, which it sits between: Lumen's avatars, pill compose and category pills; macOS's title, search field, filter menu, classic reader and reply icons; rows between the two.
+
+The design had a working id before it was released. The Codex review of the rename asked for a migration of saved designs and palettes under that id; none is needed, since no build carrying it ever shipped.
