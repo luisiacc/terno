@@ -2206,6 +2206,10 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "filters.categoryForward.to": "Para {to}",
   "filters.categoryForward.enable": "Reenviar el correo nuevo de {name}",
   "filters.categoryForward.edit": "Editar el reenvío de {name}",
+  "forward.line.partial": "Se reenvió solo a una parte de {to}: el resto no pudo recibirlo.",
+  "forward.failedNotice": "No se pudo reenviar un mensaje de {rule} a {to}",
+  "forward.viewFailed": "Ver el mensaje que no se reenvió",
+  "forward.retryName": "Reintentar el reenvío a {to}",
 } as const;
 
 export default es satisfies LocaleCheck<typeof es>;

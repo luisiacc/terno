@@ -162,7 +162,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
-import { approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
+import { forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
@@ -1453,6 +1453,8 @@ export class IdbMailStore implements MailStore {
         // plan 90: an automatic delete only takes what it made, unchanged (an edit meanwhile wins)
         if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
         T(this.c, "filters").delete(id);
+        // plan 116: its forwards never go
+        forwardRuleGone(this.c, { kind: "filter", id }, Date.now());
       }),
     preview: async (rule, now, limit) => {
       const matches = await this.matchAll(rule, now);
@@ -1596,7 +1598,9 @@ export class IdbMailStore implements MailStore {
     eligiblePage: (now, after, limit) => this.read(() => eligiblePage(this.c, now, after, limit)),
     list: (_now, limit) => this.early(() => listForwards(this.c, limit)),
     holds: (now) => this.early(() => forwardHolds(this.c, now)),
+    work: (now, limit) => this.read(() => forwardWork(this.c, now, limit)),
     nextDue: () => this.early(() => nextForwardDue(this.c)),
+    ruleGone: (rule, now) => this.command(() => forwardRuleGone(this.c, rule, now)),
     cancel: (ids, now) => this.command(() => cancelForwards(this.c, ids, now)),
     claim: (id, now, o) => this.command(() => claimForward(this.c, id, now, o)),
     waitForFiles: (id, until, now) => this.command(() => waitForFiles(this.c, id, until, now)),
@@ -1623,7 +1627,11 @@ export class IdbMailStore implements MailStore {
     create: (name, color, options) => this.command(() => createCategory(this.c, name, color, options)),
     update: (id, patch) => this.command(() => updateCategory(this.c, id, patch)),
     reorder: (ids) => this.command(() => reorderCategories(this.c, ids)),
-    delete: (id) => this.command(() => void T(this.c, "categories").delete(id)),
+    delete: (id) => this.command(() => {
+      T(this.c, "categories").delete(id);
+      // plan 116: what its trigger waited or held never goes
+      forwardRuleGone(this.c, { kind: "category", id }, Date.now());
+    }),
     createBatch: (categoryId, source, scope, now) => this.command(() => createBatch(this.c, categoryId, source, scope, now)),
     add: (a) =>
       this.command(

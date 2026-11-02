@@ -20,6 +20,9 @@ import { T, type Ctx, type R } from "./mail";
 
 /** Plan 116's forwards on IndexedDB, like SQL's (packages/db/src/forwards.ts). */
 
+/** a forward with its message's thread now (a merge moves the message; the row keeps the thread it was made in) */
+const rowOf = (c: Ctx, r: R): ForwardRow => ({ ...toRow(r), threadId: (T(c, "messages").get(r.message_id)?.thread_id as number | undefined) ?? r.thread_id });
+
 const toRow = (r: R): ForwardRow => ({
   id: r.id,
   messageId: r.message_id,
@@ -184,7 +187,7 @@ export function eligiblePage(c: Ctx, now: number, after: number, limit: number):
 
 export function getForward(c: Ctx, id: number): ForwardRow | null {
   const r = T(c, "forwards").get(id);
-  return r ? toRow(r) : null;
+  return r ? rowOf(c, r) : null;
 }
 
 const OPEN = new Set(["waiting", "held", "sending", "queued"]);
@@ -195,7 +198,7 @@ export function listForwards(c: Ctx, limit: number): ForwardRow[] {
   open.sort((a, b) => b.id - a.id);
   settled.sort((a, b) => b.at - a.at || b.id - a.id);
   const first = open.slice(0, limit);
-  return [...first, ...settled.slice(0, Math.max(0, limit - first.length))].map(toRow);
+  return [...first, ...settled.slice(0, Math.max(0, limit - first.length))].map((r) => rowOf(c, r));
 }
 
 function madeLately(c: Ctx, ref: ForwardRuleRef, now: number): number {
@@ -215,10 +218,21 @@ export function forwardHolds(c: Ctx, now: number): ForwardHold[] {
   return [...held.values()].map((h) => ({ ...h, count: madeLately(c, h.rule, now) }));
 }
 
+export function forwardWork(c: Ctx, now: number, limit: number): ForwardRow[] {
+  const forwards = T(c, "forwards");
+  const rows = [...forwards.by("state", "waiting").filter((r) => r.due_at <= now), ...forwards.by("state", "sending")];
+  return rows.sort((a, b) => a.due_at - b.due_at || a.id - b.id).slice(0, limit).map((r) => rowOf(c, r));
+}
+
 export function nextForwardDue(c: Ctx): number | null {
   let due: number | null = null;
   for (const r of T(c, "forwards").by("state", "waiting")) if (due === null || r.due_at < due) due = r.due_at;
+  for (const r of T(c, "forwards").by("state", "held")) if (due === null || r.at + FORWARD_HELD_MS < due) due = r.at + FORWARD_HELD_MS;
   return due;
+}
+
+export function forwardRuleGone(c: Ctx, ref: ForwardRuleRef, now: number): number {
+  return cancelRule(c, ref, "forward.reason.ruleChanged", now);
 }
 
 export function cancelForwards(c: Ctx, ids: readonly number[], now: number): ForwardRow[] {
@@ -247,6 +261,8 @@ export function claimForward(c: Ctx, id: number, now: number, o: { filesMissing:
   if (!m) return cancel("forward.reason.gone");
   if (m.is_trash || m.is_spam) return cancel("forward.reason.trash");
   if (ref.kind === "category" && !T(c, "thread_categories").has(m.thread_id, ref.id)) return cancel("forward.reason.left");
+  // a filter edited since: what it was applied to was forgotten (another definition, the same revision of addresses)
+  if (ref.kind === "filter" && !T(c, "filter_applications").has(ref.id, raw.message_id)) return cancel("forward.reason.ruleChanged");
   if (rule.state.approvedUntil < now && madeLately(c, ref, now) >= FORWARD_CAP) {
     forwards.update(raw, { state: "held", at: now });
     return { kind: "held", row: getForward(c, id)! };
@@ -293,8 +309,9 @@ export function failForward(c: Ctx, id: number, reason: string, now: number): vo
   const r = T(c, "forwards").get(id);
   if (r?.state !== "sending") return;
   const ops = JSON.parse(r.op_ids_json) as (string | null)[];
+  // a send already queued goes on (its op says how it went); the ones that can't go stay null: partly sent
   if (ops.some(Boolean)) {
-    T(c, "forwards").update(r, { state: "queued", op_ids_json: JSON.stringify(ops.filter(Boolean)), reason, at: now });
+    T(c, "forwards").update(r, { state: "queued", reason, at: now });
     return;
   }
   settle(c, r, "failed", reason, now);
@@ -305,7 +322,7 @@ export function retryForward(c: Ctx, id: number, now: number, failedOps: readonl
   if (!r) return null;
   const ops = JSON.parse(r.op_ids_json) as (string | null)[];
   const failed = new Set(failedOps);
-  const retryable = r.state === "failed" || (r.state === "queued" && ops.length > 0 && ops.every((op) => op !== null && failed.has(op)));
+  const retryable = r.state === "failed" || (r.state === "queued" && ops.length > 0 && ops.every((op) => op === null || failed.has(op)));
   if (!retryable) return null;
   T(c, "forwards").update(r, { state: "waiting", due_at: now, files_until: null, op_ids_json: "[]", reason: null, at: now });
   return getForward(c, id);
@@ -349,10 +366,10 @@ export function pruneForwards(c: Ctx, now: number): { cancelled: number } {
   for (const r of forwards.all()) {
     if ((r.state === "cancelled" || r.state === "failed" || r.state === "queued") && r.at < now - FORWARD_HISTORY_MS) forwards.deleteRow(r);
   }
+  // claims outlive their message's eligibility only while a forward of that message may still go
   const claims = T(c, "forward_recipients");
-  for (const r of claims.all()) {
-    const owner = forwards.get(r.forward_id);
-    if (!eligible.has(r.message_id) && owner && (owner.state === "queued" || owner.state === "cancelled" || owner.state === "failed")) claims.deleteRow(r);
-  }
+  const mayGo = new Set<number>();
+  for (const r of forwards.all()) if (r.state === "waiting" || r.state === "held" || r.state === "sending" || r.state === "failed") mayGo.add(r.message_id);
+  for (const r of claims.all()) if (!eligible.has(r.message_id) && !mayGo.has(r.message_id)) claims.deleteRow(r);
   return { cancelled };
 }

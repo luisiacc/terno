@@ -1,4 +1,4 @@
-import { FORWARD_CAP, FORWARD_DELAY_MS, FORWARD_ELIGIBLE_MS, FORWARD_FILTER_LAG_MS, FORWARD_MAX_AGE_MS, MAX_RECIPIENTS, type FilterRule } from "@terno/core";
+import { FORWARD_CAP, FORWARD_DELAY_MS, FORWARD_ELIGIBLE_MS, FORWARD_FILTER_LAG_MS, FORWARD_HELD_MS, FORWARD_MAX_AGE_MS, MAX_RECIPIENTS, type FilterRule } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import type { MailStore } from "../mail-store";
 import { msg, threadOf, withAccounts } from "./fixtures";
@@ -237,6 +237,97 @@ export function defineForwardsConformance(fresh: () => Promise<MailStore>, reope
       expect(await s.forwards.retry(row!.id, NOW + FORWARD_DELAY_MS + 2, [])).toMatchObject({ state: "waiting", dueAt: NOW + FORWARD_DELAY_MS + 2 });
       expect((await s.forwards.claim(row!.id, NOW + FORWARD_DELAY_MS + 2, { filesMissing: true, own: OWN })).kind).toBe("go");
       expect((await s.forwards.get(row!.id))?.filesMissing).toBe(true);
+    });
+
+    describe("after the Codex code review", () => {
+      it("#1: a deleted filter's forwards never go, whatever id a later filter gets", async () => {
+        const { store, arrive, plan, claim } = await setup({ trigger: false });
+        const rule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "contains", value: "x" }], actions: [{ type: "forward", to: [ANA] }] };
+        const f = await store.filters.save({ name: "x", enabled: true, source: "manual", rule }, NOW - 500);
+        const m = await arrive({ subject: "x" });
+        const [row] = await plan({ messageIds: [m.id] });
+        await store.filters.delete(f.id);
+        expect(await store.forwards.get(row!.id)).toMatchObject({ state: "cancelled", reason: "forward.reason.ruleChanged" });
+        await store.filters.save({ name: "y", enabled: true, source: "manual", rule: { ...rule, actions: [{ type: "forward", to: [LUIS] }] } }, NOW);
+        expect(await claim(row!.id)).toEqual({ kind: "none" });
+      });
+
+      it("#2: a filter applied to mail later (a bulk filing) never forwards it, at once or in the start's sweep", async () => {
+        const { store, cat, arrive, plan } = await setup();
+        const m = await arrive({ subject: "Factura vieja" });
+        const rule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "contains", value: "Factura" }], actions: [{ type: "addCategory", categoryId: cat.id }] };
+        const f = await store.filters.save({ name: "F", enabled: true, source: "manual", rule }, NOW + 1);
+        await store.filters.applyChunk(f.id, JSON.stringify(rule), [m.id], NOW + FORWARD_FILTER_LAG_MS + 1);
+        expect(await plan({ messageIds: await store.forwards.eligiblePage(NOW + FORWARD_FILTER_LAG_MS + 2, 0, 10) }, NOW + FORWARD_FILTER_LAG_MS + 2)).toEqual([]);
+      });
+
+      it("#4: an address's claim stays while another forward of that message may still go", async () => {
+        const { store, arrive, file, plan, claim } = await setup();
+        const rule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "contains", value: "factura" }], actions: [{ type: "forward", to: [ANA] }] };
+        await store.filters.save({ name: "F", enabled: true, source: "manual", rule }, NOW - 500);
+        const m = await arrive({ subject: "factura" });
+        await file(m.thread, "filter");
+        const rows = await plan({ messageIds: [m.id] });
+        const byCategory = rows.find((r) => r.ruleKind === "category")!, byFilter = rows.find((r) => r.ruleKind === "filter")!;
+        expect((await claim(byCategory.id)).kind).toBe("go");
+        // a day on: the message isn't eligible any more, the other forward still waits
+        const later = NOW + FORWARD_ELIGIBLE_MS + 1;
+        await store.forwards.prune(later);
+        expect(await claim(byFilter.id, later)).toMatchObject({ kind: "cancelled", row: { reason: "forward.reason.alreadySent" } });
+      });
+
+      it("#5: a filter edited so its match was forgotten: what it made waiting never goes", async () => {
+        const { store, cat, arrive, plan, claim } = await setup();
+        await store.forwards.setCategory(cat.id, null, NOW - 900);
+        const rule: FilterRule = { match: "all", conditions: [{ field: "subject", op: "contains", value: "recibo" }], actions: [{ type: "forward", to: [LUIS] }] };
+        const f = await store.filters.save({ name: "R", enabled: true, source: "manual", rule }, NOW - 800);
+        const m = await arrive({ subject: "recibo" });
+        const [row] = await plan({ messageIds: [m.id] });
+        await store.filters.save({ id: f.id, name: "R", enabled: true, source: "manual", rule: { ...rule, conditions: [{ field: "subject", op: "contains", value: "otra cosa" }] } }, NOW + 1);
+        expect(await claim(row!.id)).toMatchObject({ kind: "cancelled", row: { reason: "forward.reason.ruleChanged" } });
+      });
+
+      it("#6: the work is what's due or half sent, soonest first; the next moment counts a held one's expiry", async () => {
+        const { store, cat, arrive, file, plan, claim } = await setup();
+        const made: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const m = await arrive({}, NOW + i);
+          await file(m.thread, "filter", NOW + i);
+          made.push((await plan({ messageIds: [m.id] }, NOW + i))[0]!.id);
+        }
+        expect((await store.forwards.work(NOW + FORWARD_DELAY_MS, 10)).map((r) => r.id)).toEqual([made[0]]);
+        expect((await store.forwards.work(NOW + FORWARD_DELAY_MS + 2, 2)).map((r) => r.id)).toEqual(made.slice(0, 2));
+        expect((await claim(made[0]!)).kind).toBe("go");
+        expect((await store.forwards.work(NOW + FORWARD_DELAY_MS, 10)).map((r) => [r.id, r.state])).toEqual([[made[0], "sending"]]);
+        await store.forwards.cancel(made.slice(1), NOW);
+        // held: its expiry is the next moment
+        const held = await arrive({}, NOW + 5);
+        await file(held.thread, "filter", NOW + 5);
+        const [h] = await plan({ messageIds: [held.id] }, NOW + 5);
+        // the first one's claim counts: the cap's worth with these
+        for (let i = 0; i < FORWARD_CAP - 1; i++) {
+          const m = await arrive({}, NOW + 6);
+          await file(m.thread, "filter", NOW + 6);
+          const [r] = await plan({ messageIds: [m.id] }, NOW + 6);
+          await claim(r!.id, NOW + 6 + FORWARD_DELAY_MS);
+        }
+        expect((await claim(h!.id, NOW + 7 + FORWARD_DELAY_MS)).kind).toBe("held");
+        expect(await store.forwards.nextDue()).toBe(NOW + 7 + FORWARD_DELAY_MS + FORWARD_HELD_MS);
+        void cat;
+      });
+
+      it("#7: a send that can never go after another went: partly sent, its unsent part kept as unsent", async () => {
+        const { store, a, cat, arrive, file, plan, claim } = await setup();
+        await store.forwards.setCategory(cat.id, { addresses: Array.from({ length: MAX_RECIPIENTS + 1 }, (_, i) => ({ name: "", email: `p${i}@many.test` })), enabled: true }, NOW - 500);
+        const m = await arrive();
+        await file(m.thread, "filter");
+        const [row] = await plan({ messageIds: [m.id] });
+        const c = await claim(row!.id);
+        if (c.kind !== "go") throw new Error("not claimed");
+        const first = await store.compose.queueSend({ accountId: a, to: c.chunks[0]!, cc: [], bcc: [], subject: "x", bodyText: "x", recordReply: false, forward: { id: row!.id, chunk: 0 }, now: NOW });
+        await store.forwards.fail(row!.id, "forward.reason.failed", NOW + 1);
+        expect(await store.forwards.get(row!.id)).toMatchObject({ state: "queued", opIds: [first.opId, null], reason: "forward.reason.failed" });
+      });
     });
   });
 }

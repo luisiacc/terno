@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { FORWARD_CAP, FORWARD_DELAY_MS, type ForwardSnapshot } from "@terno/core";
+import { createMemoryTransportPair, RpcClient, RpcError } from "@terno/core/rpc";
+import { FORWARD_CAP, FORWARD_DELAY_MS, MAX_RECIPIENTS, type ForwardSnapshot } from "@terno/core";
+import { L, LOCALES } from "@terno/i18n";
 import { createAccount, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
@@ -23,7 +24,7 @@ async function settle() {
 }
 
 /** A backend on a clock the test moves, one account, a category that forwards to Ana, and a filter that files "factura" there. */
-async function setup(o: { trigger?: boolean } = {}) {
+async function setup(o: { trigger?: boolean; name?: string } = {}) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const clock = { now: NOW };
   const dir = mkdtempSync(join(tmpdir(), "terno-fwd-"));
@@ -39,7 +40,7 @@ async function setup(o: { trigger?: boolean } = {}) {
     rmSync(dir, { recursive: true, force: true });
   });
   const account = createAccount(sqlDb(backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
-  const cat = await client.call("categories.create", { name: "Facturas", color: "amber" });
+  const cat = await client.call("categories.create", { name: o.name ?? "Facturas", color: "amber" });
   await client.call("filters.save", { name: "Facturas", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "factura" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
   if (o.trigger !== false) await client.call("categories.setForward", { categoryId: cat.id, forward: { addresses: [ANA], enabled: true } });
   const events: ForwardSnapshot[] = [];
@@ -152,6 +153,8 @@ describe("forwarding (plan 116)", () => {
 
   it("writes the forward in the language set (Spanish)", async () => {
     const { client, arrive, advance, sends } = await setup();
+    // the catalog loads on first use (a dynamic import): loaded here, so the forward doesn't wait on the module graph
+    await LOCALES.es.load();
     await client.call("settings.update", { language: "es" });
     await arrive();
     await advance(FORWARD_DELAY_MS);
@@ -181,5 +184,79 @@ describe("forwarding (plan 116)", () => {
     backend.forwards.poke();
     await settle();
     expect(await sends()).toHaveLength(1);
+  });
+
+  describe("after the Codex code review", () => {
+    it("#7: a full Sent-copy queue waits and tries again; it never fails the forward", async () => {
+      const { backend, arrive, advance, sends, last } = await setup();
+      await arrive();
+      const queue = backend.store.compose.queueSend.bind(backend.store.compose);
+      let refused = 0;
+      const spy = vi.spyOn(backend.store.compose, "queueSend").mockImplementation(async (c) => {
+        if (refused++ === 0) throw new RpcError("BAD_REQUEST", L("errors.recipientReceipt.capacity"));
+        return queue(c);
+      });
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toEqual([]);
+      expect(last().items[0]).toMatchObject({ status: "sending" });
+      await advance(60_000);
+      expect(await sends()).toHaveLength(1);
+      spy.mockRestore();
+    });
+
+    it("#7/#10: a send that can never go after another went: partly sent, said so", async () => {
+      const { backend, client, cat, arrive, advance, sends, last } = await setup();
+      const many = Array.from({ length: MAX_RECIPIENTS + 1 }, (_, i) => ({ name: "", email: `p${i}@many.test` }));
+      await client.call("categories.setForward", { categoryId: cat.id, forward: { addresses: many, enabled: true } });
+      await arrive();
+      const queue = backend.store.compose.queueSend.bind(backend.store.compose);
+      const spy = vi.spyOn(backend.store.compose, "queueSend").mockImplementation(async (c) => {
+        if (c.forward?.chunk === 1) throw new RpcError("BAD_REQUEST", L("attachments.unavailable"));
+        return queue(c);
+      });
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toHaveLength(1);
+      expect(last().items[0]).toMatchObject({ status: "partial", reason: "forward.reason.failed" });
+      spy.mockRestore();
+    });
+
+    it("#8: a body that arrives later and makes its filter file it: forwarded", async () => {
+      const { backend, client, cat, account, advance, sends } = await setup();
+      await client.call("filters.save", { name: "Total", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "Total a pagar" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
+      const headers = msg({ accountId: account, providerMsgId: "late-body", subject: "Su estado de cuenta", date: NOW - 60_000, bodyText: null, bodyState: "none" });
+      await backend.ingestSliced([headers], true, undefined, undefined, undefined, undefined, undefined, true);
+      await settle();
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toEqual([]);
+      await backend.ingestSliced([{ ...headers, bodyText: "Total a pagar: 10", bodyState: "full" }], true, undefined, undefined, undefined, undefined, undefined, true);
+      await settle();
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toHaveLength(1);
+    });
+
+    it("#9: a message whose thread merged into another still goes", async () => {
+      const { backend, arrive, advance, sends } = await setup();
+      const elsewhere = await arrive({ subject: "Otra conversación" }, false);
+      const id = await arrive();
+      const db = sqlDb(backend.store);
+      const other = (await backend.store.debug.snapshot()).messages.find((m) => m.id === elsewhere)!.threadId;
+      // as a merge does: the message moves, and its conversation's categories with it
+      const from = (await backend.store.debug.snapshot()).messages.find((m) => m.id === id)!.threadId;
+      db.run("INSERT INTO thread_categories (thread_id, category_id, added_by, added_at) SELECT ?, category_id, added_by, added_at FROM thread_categories WHERE thread_id = ?", other, from);
+      db.run("UPDATE messages SET thread_id = ? WHERE id = ?", other, id);
+      expect((await backend.store.forwards.get((await backend.store.forwards.list(NOW, 10))[0]!.id))?.threadId).toBe(other);
+      await advance(FORWARD_DELAY_MS);
+      expect(await sends()).toHaveLength(1);
+    });
+
+    it("#13: an export's category forwarding comes back, turned off", async () => {
+      const { client, cat } = await setup();
+      const data = await client.call("app.export", {});
+      expect(data.categories.find((c) => c.id === cat.id)?.forward).toEqual({ addresses: [ANA], enabled: true });
+      const { client: fresh } = await setup({ trigger: false, name: "Otra" });
+      await fresh.call("app.import", { data: { ...data, categories: data.categories.map((c) => ({ ...c, name: c.id === cat.id ? "Facturas importadas" : c.name })) } });
+      const imported = (await fresh.call("app.bootstrap", {})).categories.find((c) => c.name === "Facturas importadas");
+      expect(imported?.forward).toEqual({ addresses: [ANA], enabled: false });
+    });
   });
 });

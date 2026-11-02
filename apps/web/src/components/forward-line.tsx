@@ -24,6 +24,8 @@ function sentence(f: ForwardInfo): string {
       return t("forward.line.sending", { to });
     case "sent":
       return t("forward.line.sent", { to });
+    case "partial":
+      return t("forward.line.partial", { to });
     case "failed":
       return f.reason ? translate({ key: f.reason }) : t("forward.line.failed", { to });
     case "unknown":
@@ -49,7 +51,7 @@ export function ForwardLine({ messageId }: { messageId: number }) {
               <span className="tabular">{listDate(f.at)}</span>
             </>
           )}
-          {f.filesMissing && (f.status === "sent" || f.status === "sending") && <span>{t("forward.line.filesMissing")}</span>}
+          {f.filesMissing && (f.status === "sent" || f.status === "sending" || f.status === "partial") && <span>{t("forward.line.filesMissing")}</span>}
           {f.status === "waiting" && (
             <Button size="xs" variant="ghost" data-testid="forward-line-cancel" onClick={() => void cancelForwards([f.id])}>
               {t("common.cancel")}

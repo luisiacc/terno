@@ -213,6 +213,7 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
   const accountId = useApp((s) => s.accounts[0]?.id ?? 0);
   const id = useId();
   const [value, setValue] = useState(() => formatAddressList(to));
+  const invalid = parseAddressList(value).find((a) => !isValidEmail(a.email));
   return (
     <div className="space-y-1.5" data-testid="filter-forward">
       <div className="flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring dark:bg-input/30">
@@ -225,13 +226,15 @@ function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange:
         value={value}
         onChange={(v) => {
           setValue(v);
-          onChange(parseAddressList(v).filter((a) => isValidEmail(a.email)));
+          // every address shown, a wrong one too: the rule's check refuses it, so Save never drops one quietly
+          onChange(parseAddressList(v));
         }}
         accountId={accountId}
         others={[]}
         className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
       />
       </div>
+      {invalid && <p role="alert" className="text-xs text-destructive-ink">{t("category.forward.invalid", { address: invalid.email })}</p>}
       <p className="text-xs text-muted-foreground">{t(paused ? "filters.forward.paused" : "filters.forward.note")}</p>
     </div>
   );

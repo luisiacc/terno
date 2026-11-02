@@ -359,6 +359,7 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
       // a category you already have keeps your settings; a new one comes with the file's (one from before plan 83 was shown)
       const made = await store.categories.create(c.name, c.color, { showInInbox: c.showInInbox !== false });
       if (c.autoApply === false) await store.categories.update(made.id, { autoApply: false });
+      if (c.forward) await store.forwards.setCategory(made.id, { addresses: c.forward.addresses, enabled: false }, b.now());
       byName.set(c.name.toLocaleLowerCase(), made.id);
       added++;
     }

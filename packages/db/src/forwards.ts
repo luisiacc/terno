@@ -63,6 +63,10 @@ const toRow = (r: Raw): ForwardRow => ({
 
 const ids = (list: readonly number[]) => JSON.stringify(list);
 
+/** a forward with its message's thread now (a merge moves the message; the row keeps the thread it was made in) */
+const ROW = `SELECT f.id, f.message_id, coalesce((SELECT m.thread_id FROM messages m WHERE m.id = f.message_id), f.thread_id) AS thread_id, f.account_id, f.rule_kind, f.rule_id,
+  f.rev, f.to_json, f.state, f.due_at, f.files_until, f.files_missing, f.op_ids_json, f.reason, f.created_at, f.claimed_at, f.at FROM forwards f`;
+
 interface Rule {
   ref: ForwardRuleRef;
   state: ForwardRuleState;
@@ -203,13 +207,13 @@ export function eligiblePage(db: Db, now: number, after: number, limit: number):
 }
 
 export function getForward(db: Db, id: number): ForwardRow | null {
-  const r = db.get<Raw>("SELECT * FROM forwards WHERE id = ?", id);
+  const r = db.get<Raw>(`${ROW} WHERE f.id = ?`, id);
   return r ? toRow(r) : null;
 }
 
 export function listForwards(db: Db, limit: number): ForwardRow[] {
-  const open = db.all<Raw>("SELECT * FROM forwards WHERE state IN ('waiting', 'held', 'sending', 'queued') ORDER BY id DESC LIMIT ?", limit);
-  const settled = db.all<Raw>("SELECT * FROM forwards WHERE state IN ('cancelled', 'failed') ORDER BY at DESC, id DESC LIMIT ?", Math.max(0, limit - open.length));
+  const open = db.all<Raw>(`${ROW} WHERE f.state IN ('waiting', 'held', 'sending', 'queued') ORDER BY f.id DESC LIMIT ?`, limit);
+  const settled = db.all<Raw>(`${ROW} WHERE f.state IN ('cancelled', 'failed') ORDER BY f.at DESC, f.id DESC LIMIT ?`, Math.max(0, limit - open.length));
   return [...open, ...settled].map(toRow);
 }
 
@@ -224,8 +228,19 @@ export function forwardHolds(db: Db, now: number): ForwardHold[] {
   });
 }
 
+export function forwardWork(db: Db, now: number, limit: number): ForwardRow[] {
+  return db.all<Raw>(`${ROW} WHERE (f.state = 'waiting' AND f.due_at <= ?) OR f.state = 'sending' ORDER BY f.due_at, f.id LIMIT ?`, now, limit).map(toRow);
+}
+
 export function nextForwardDue(db: Db): number | null {
-  return db.get<{ due: number | null }>("SELECT MIN(due_at) AS due FROM forwards WHERE state = 'waiting'")?.due ?? null;
+  const due = db.get<{ due: number | null }>("SELECT MIN(due_at) AS due FROM forwards WHERE state = 'waiting'")?.due ?? null;
+  const held = db.get<{ at: number | null }>("SELECT MIN(at) AS at FROM forwards WHERE state = 'held'")?.at ?? null;
+  const expiry = held === null ? null : held + FORWARD_HELD_MS;
+  return due === null ? expiry : expiry === null ? due : Math.min(due, expiry);
+}
+
+export function forwardRuleGone(db: Db, ref: ForwardRuleRef, now: number): number {
+  return db.tx(() => cancelRule(db, ref, "forward.reason.ruleChanged", now));
 }
 
 export function cancelForwards(db: Db, list: readonly number[], now: number): ForwardRow[] {
@@ -243,7 +258,7 @@ export function cancelForwards(db: Db, list: readonly number[], now: number): Fo
 
 export function claimForward(db: Db, id: number, now: number, o: { filesMissing: boolean; own: readonly string[] }): ForwardClaim {
   return db.tx((): ForwardClaim => {
-    const raw = db.get<Raw>("SELECT * FROM forwards WHERE id = ?", id);
+    const raw = db.get<Raw>(`${ROW} WHERE f.id = ?`, id);
     if (!raw || raw.state !== "waiting" || raw.due_at > now) return { kind: "none" };
     const cancel = (reason: string): ForwardClaim => {
       settle(db, id, "cancelled", reason, now);
@@ -256,6 +271,8 @@ export function claimForward(db: Db, id: number, now: number, o: { filesMissing:
     if (!m) return cancel("forward.reason.gone");
     if (m.is_trash || m.is_spam) return cancel("forward.reason.trash");
     if (ref.kind === "category" && !db.get("SELECT 1 FROM thread_categories WHERE thread_id = ? AND category_id = ?", m.thread_id, ref.id)) return cancel("forward.reason.left");
+    // a filter edited since: what it was applied to was forgotten (another definition, the same revision of addresses)
+    if (ref.kind === "filter" && !db.get("SELECT 1 FROM filter_applications WHERE filter_id = ? AND message_id = ?", ref.id, raw.message_id)) return cancel("forward.reason.ruleChanged");
     if (rule.state.approvedUntil < now && madeLately(db, ref, now) >= FORWARD_CAP) {
       db.run("UPDATE forwards SET state = 'held', at = ? WHERE id = ?", now, id);
       return { kind: "held", row: getForward(db, id)! };
@@ -306,9 +323,9 @@ export function failForward(db: Db, id: number, reason: string, now: number): vo
     const r = db.get<{ state: ForwardRowState; op_ids_json: string }>("SELECT state, op_ids_json FROM forwards WHERE id = ?", id);
     if (r?.state !== "sending") return;
     const ops = JSON.parse(r.op_ids_json) as (string | null)[];
-    // a send already queued goes on (its op says how it went); the forward is failed only when none was
+    // a send already queued goes on (its op says how it went); the ones that can't go stay null: partly sent
     if (ops.some(Boolean)) {
-      db.run("UPDATE forwards SET state = 'queued', op_ids_json = ?, reason = ?, at = ? WHERE id = ?", JSON.stringify(ops.filter(Boolean)), reason, now, id);
+      db.run("UPDATE forwards SET state = 'queued', reason = ?, at = ? WHERE id = ?", reason, now, id);
       return;
     }
     settle(db, id, "failed", reason, now);
@@ -317,12 +334,12 @@ export function failForward(db: Db, id: number, reason: string, now: number): vo
 
 export function retryForward(db: Db, id: number, now: number, failedOps: readonly string[]): ForwardRow | null {
   return db.tx(() => {
-    const r = db.get<Raw>("SELECT * FROM forwards WHERE id = ?", id);
+    const r = db.get<Raw>(`${ROW} WHERE f.id = ?`, id);
     if (!r) return null;
     const ops = JSON.parse(r.op_ids_json) as (string | null)[];
     const failed = new Set(failedOps);
     // only when nothing could have gone: never a send that was accepted or whose outcome is unknown
-    const retryable = r.state === "failed" || (r.state === "queued" && ops.length > 0 && ops.every((op) => op !== null && failed.has(op)));
+    const retryable = r.state === "failed" || (r.state === "queued" && ops.length > 0 && ops.every((op) => op === null || failed.has(op)));
     if (!retryable) return null;
     db.run("UPDATE forwards SET state = 'waiting', due_at = ?, files_until = NULL, op_ids_json = '[]', reason = NULL, at = ? WHERE id = ?", now, now, id);
     return getForward(db, id);
@@ -359,10 +376,11 @@ export function pruneForwards(db: Db, now: number): { cancelled: number } {
     for (const r of stale) settle(db, r.id, "cancelled", "forward.reason.unanswered", now);
     // settled history (a queued forward's ops say how it went, until the ops themselves are pruned)
     db.run("DELETE FROM forwards WHERE state IN ('cancelled', 'failed', 'queued') AND at < ?", now - FORWARD_HISTORY_MS);
-    // claims outlive their message's eligibility only while their forward is on its way
+    // claims outlive their message's eligibility only while a forward of that message may still go (waiting, held,
+    // on its way, or failed and retryable): a later one must never send it to an address again
     db.run(
       `DELETE FROM forward_recipients WHERE message_id NOT IN (SELECT message_id FROM forward_eligible)
-       AND forward_id IN (SELECT id FROM forwards WHERE state IN ('queued', 'cancelled', 'failed'))`,
+       AND message_id NOT IN (SELECT message_id FROM forwards WHERE state IN ('waiting', 'held', 'sending', 'failed'))`,
     );
     return { cancelled: stale.length };
   });

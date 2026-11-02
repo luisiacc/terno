@@ -4,6 +4,7 @@ import { LANGUAGE_SETTINGS, LOCALE_IDS, t, type LanguageSetting } from "@terno/i
 import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
 import { TABS } from "../tabs";
+import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import {
   AI_PROVIDER_IDS,
   COMPATIBLE_PRESETS,
@@ -438,7 +439,8 @@ export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
 
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
-export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional() });
+// plan 116: `forward` (its trigger) comes in turned off: an import never sends mail elsewhere until the user says so
+export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional(), forward: z.object({ addresses: z.array(address).min(1).refine((list) => JSON.stringify(list).length <= FORWARD_ADDRESSES_MAX_CHARS), enabled: z.boolean() }).optional() });
 // plan 90: `auto` absent (an older export) means the user's
 export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), auto: z.boolean().optional(), rule: filterRuleSchema });
 export const exportedAttachmentSchema = z.object({

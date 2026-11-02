@@ -2221,6 +2221,10 @@ It contains none of your mail, contacts, settings or keys.
   "filters.categoryForward.to": "To {to}",
   "filters.categoryForward.enable": "Forward new mail from {name}",
   "filters.categoryForward.edit": "Edit forwarding for {name}",
+  "forward.line.partial": "Forwarded to only some of {to}: the others couldn't get it.",
+  "forward.failedNotice": "Couldn't forward a message from {rule} to {to}",
+  "forward.viewFailed": "View the message that wasn't forwarded",
+  "forward.retryName": "Retry forwarding to {to}",
 } as const;
 
 export default en;

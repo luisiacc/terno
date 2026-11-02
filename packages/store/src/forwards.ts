@@ -1,4 +1,4 @@
-import { forwardAddresses, type Address, type CategoryForward, type ForwardRuleKind, type ForwardRuleRef, type FilterRule } from "@terno/core";
+import { FORWARD_FILTER_LAG_MS, forwardAddresses, type Address, type CategoryForward, type ForwardRuleKind, type ForwardRuleRef, type FilterRule } from "@terno/core";
 import type { AddedBy } from "./types";
 
 /**
@@ -84,13 +84,15 @@ export function ruleCurrent(state: ForwardRuleState | null, rev: number, filterE
 /**
  * Whether a thread's membership in a category makes a new message there go:
  * - the thread was there before the message arrived (a reply in a filed conversation)
- * - Terno filed it: a filter, the engine (auto), a suggestion the user accepted
+ * - Terno filed it as it arrived: a filter, the engine (auto); or a suggestion the user accepted
  * - an agent filed it, when agents may send
  * - the user filed this one conversation by hand (`filed`); a bulk filing or an undo never
  */
 export function membershipForwards(m: { addedBy: AddedBy; addedAt: number }, arrivedAt: number, o: { filed: boolean; agentFiles: boolean }): boolean {
   if (m.addedAt < arrivedAt) return true;
-  if (m.addedBy === "filter" || m.addedBy === "auto" || m.addedBy === "suggestion") return true;
+  // a filter's or the engine's filing as the mail (or its body) came in; applying a filter to it later is a bulk filing
+  if ((m.addedBy === "filter" || m.addedBy === "auto") && m.addedAt <= arrivedAt + FORWARD_FILTER_LAG_MS) return true;
+  if (m.addedBy === "suggestion") return true;
   if (m.addedBy === "agent") return o.agentFiles;
   return o.filed;
 }
@@ -153,8 +155,12 @@ export interface ForwardsStore {
   list(now: number, limit: number): Promise<ForwardRow[]>;
   /** rules holding forwards (the questions) */
   holds(now: number): Promise<ForwardHold[]>;
-  /** the soonest due waiting forward (null: none) */
+  /** what to work on now, soonest first: waiting ones that are due, and claimed ones not all queued yet */
+  work(now: number, limit: number): Promise<ForwardRow[]>;
+  /** when there is something to do next (null: nothing): the soonest due waiting forward, or a held one's expiry */
   nextDue(): Promise<number | null>;
+  /** a rule is gone (a filter or a category deleted): what it waits or holds is cancelled (an id may be used again) */
+  ruleGone(rule: ForwardRuleRef, now: number): Promise<number>;
   /** the user's Cancel: those still waiting or held */
   cancel(ids: readonly number[], now: number): Promise<ForwardRow[]>;
   /**
@@ -166,7 +172,7 @@ export interface ForwardsStore {
   claim(id: number, now: number, o: { filesMissing: boolean; own: readonly string[] }): Promise<ForwardClaim>;
   /** a waiting forward waits for its files until `until` */
   waitForFiles(id: number, until: number, now: number): Promise<boolean>;
-  /** a claimed forward that couldn't be queued: failed (its unqueued claims released) */
+  /** a claimed forward a send of which can't be queued, ever: failed (nothing queued) or partly sent (the rest stays unsent) */
   fail(id: number, reason: string, now: number): Promise<void>;
   /** the user's Retry of a failed forward whose sends all failed before anything went: it waits again */
   retry(id: number, now: number, failedOps: readonly string[]): Promise<ForwardRow | null>;

@@ -166,3 +166,22 @@ Forwards are ops in the existing queue (`ops`, `runWorker`), so they inherit its
   - **Stop**: the rule is turned off and the held ones are cancelled.
 - **Unanswered:** held forwards wait up to 3 days, then they are cancelled; the question goes with them. Nothing is sent without an answer.
 - **Tests:** the 101st is held, not sent; Keep forwarding sends the held ones and doesn't ask again that day; Stop cancels them and turns the rule off; a restart keeps the question; held rows expire.
+
+## Codex code review, round 1
+
+Thirteen findings. Twelve fixed, each with a regression test (store conformance `after the Codex code review`, `forwarding.test.ts`, `apps/web/src/lib/forwards.test.ts`, the builder's e2e):
+
+1. **A deleted filter's waiting forwards could go under a later filter that got its id.** Deleting a filter or a category cancels what its rule waited or held, in the delete's transaction (`forwards.ruleGone`).
+2. **Applying a filter to mail later (a bulk filing) made it forward at the next start's sweep.** A filter's or the engine's membership counts only when it came within `FORWARD_FILTER_LAG_MS` of the arrival.
+4. **A held forward could send an address a copy again once the other forward's claim was pruned.** Claims stay while any forward of that message may still go (waiting, held, sending, failed).
+5. **A filter edited so the message no longer matched still forwarded.** The claim requires the filter's application, which an edit of the rule forgets.
+6. **The work was read from the windows' list (200 rows): a bigger burst waited forever.** The queue reads its own work (`forwards.work`: due waiting ones and half-sent ones, in pages), and the next moment includes a held forward's expiry.
+7. **A full Sent-copy queue failed the forward; a part that couldn't go was dropped and the rest read as sent.** Capacity and other passing refusals leave it sending and try again a minute on; a part that never can stays unsent, and the forward reads as partly sent.
+8. **A body completed by an upsert, or loaded for the reader, never planned forwards.** Every body arrival plans (by the ingest's touched threads, and `bodyArrived` for both `setBody` paths).
+9. **A message whose thread merged into another couldn't be found.** Forwards are read with their message's thread now.
+10. **A server that took only some addresses read as sent.** A new status, `partial`, from the op's recipient evidence and from parts that never went.
+11. **A wrong address in the builder's Forward to was dropped quietly on Save.** Every address shown goes into the rule; a wrong one is named and Save waits.
+12. **A failed forward said nothing unless you opened its message.** A failure is said once, wherever you are: Retry when nothing went, View otherwise.
+13. **An import dropped category forwarding.** It comes back with its addresses, turned off.
+
+Not changed: **3. Spam or a category removal, then Undo, within the 10 s.** The forward goes by what the mail is when its time comes; an Undo puts the mail back as it was, and its forward with it. A removal that stays (or a Spam, a Trash that stays) still cancels it.

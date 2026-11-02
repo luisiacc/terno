@@ -49,9 +49,10 @@ export interface CategoryForward {
  * - held: past the rule's cap, waiting for the user's answer
  * - sending: queued or going out
  * - sent, failed (nothing went; Retry), unknown (may have gone; never retried by itself)
+ * - partial: it went to some of its addresses and not others
  * - cancelled: by the user, or because the mail left the category, went to Spam or Trash, or the rule changed
  */
-export type ForwardStatus = "waiting" | "held" | "sending" | "sent" | "failed" | "unknown" | "cancelled";
+export type ForwardStatus = "waiting" | "held" | "sending" | "sent" | "partial" | "failed" | "unknown" | "cancelled";
 
 export interface ForwardInfo {
   id: number;

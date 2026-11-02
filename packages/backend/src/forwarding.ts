@@ -2,7 +2,6 @@ import {
   attachmentMessageBudget,
   catalogWording,
   FORWARD_FILES_WAIT_MS,
-  FORWARD_HELD_MS,
   forwardBody,
   forwardChunks,
   forwardQuote,
@@ -37,6 +36,8 @@ const MAX_DELAY = 2 ** 31 - 1;
 const LOOK_RETRY_MS = 60_000;
 /** forwards the windows are told about */
 const LIST_LIMIT = 200;
+/** forwards worked per store read */
+const WORK_PAGE = 50;
 /** eligible messages per sweep page at start */
 const SWEEP_PAGE = 200;
 /** where the renderer's language is kept for a "system" setting (the backend can't see the system's) */
@@ -57,6 +58,8 @@ export interface ForwardingHost {
 }
 
 const isStale = (error: unknown) => error instanceof RpcError && error.code === "STALE";
+/** a send that may be queued later: the Sent-copy receipts are full (plan 65), or the store failed for its own reasons */
+const transient = (error: unknown) => !(error instanceof RpcError) || error.i18n?.key === "errors.recipientReceipt.capacity" || !["NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "STALE"].includes(error.code);
 const i18nKey = (error: unknown) => (error instanceof RpcError ? error.i18n?.key : undefined);
 
 export class Forwarding {
@@ -192,26 +195,37 @@ export class Forwarding {
   private async look(): Promise<ForwardSnapshot> {
     const store = this.host.store;
     const now = this.host.now();
-    let rows = await store.forwards.list(now, LIST_LIMIT);
-    // looks run one at a time: a forward still "sending" here is one a quit (or a crash) interrupted
-    const due = rows.filter((r) => (r.state === "waiting" && r.dueAt <= now) || r.state === "sending");
-    for (const row of due) {
-      if (this.stopped) break;
-      try {
-        if (row.state === "sending") await this.send(row, await this.message(row));
-        else await this.admit(row);
-      } catch (error) {
-        captureError(error, { code: "forward.send_failed", expected: error instanceof RpcError });
-        this.host.log("warn", "a forward couldn't be sent", error instanceof Error ? error.message : error);
-        await store.forwards.fail(row.id, "forward.reason.failed", this.host.now()).catch(() => {});
+    // what to do comes from its own query, never the windows' list (a burst bigger than it waits all the same)
+    let worked = 0;
+    let stuck = false;
+    const tried = new Set<number>();
+    while (!this.stopped) {
+      const work = (await store.forwards.work(now, WORK_PAGE)).filter((r) => !tried.has(r.id));
+      if (!work.length) break;
+      for (const row of work) {
+        if (this.stopped) break;
+        tried.add(row.id);
+        worked++;
+        try {
+          // looks run one at a time: a forward still "sending" here is one a quit, a crash or a full queue interrupted
+          if (row.state === "sending") await this.send(row, await this.message(row));
+          else await this.admit(row);
+        } catch (error) {
+          captureError(error, { code: "forward.send_failed", expected: error instanceof RpcError });
+          this.host.log("warn", "a forward couldn't be sent", error instanceof Error ? error.message : error);
+          // a send that can't be queued now (a full Sent-copy queue, a store hiccup) is tried again later; one that never can fails
+          if (transient(error)) stuck = true;
+          else await store.forwards.fail(row.id, "forward.reason.failed", this.host.now()).catch(() => {});
+        }
       }
+      await this.host.yieldTurn();
     }
     // held past their wait are cancelled; history past its time goes
-    const pruned = due.length || rows.some((r) => r.state === "held" && r.at < now - FORWARD_HELD_MS) ? await store.forwards.prune(this.host.now()) : null;
-    if (due.length || pruned?.cancelled) rows = await store.forwards.list(this.host.now(), LIST_LIMIT);
+    if (worked || ((await store.forwards.nextDue()) ?? Infinity) <= now) await store.forwards.prune(this.host.now());
+    const rows = await store.forwards.list(this.host.now(), LIST_LIMIT);
     const snapshot = await this.snapshot(rows);
     if (this.stopped) return snapshot;
-    await this.arm(rows);
+    await this.arm(stuck);
     const text = JSON.stringify(snapshot);
     if (text !== this.sent) {
       this.sent = text;
@@ -271,7 +285,8 @@ export class Forwarding {
         // files that can't go (too large, gone): it goes without them, as the composer's forward would (plan 60)
         if (files.refs.length && (key === "attachments.tooLarge" || key === "attachments.unavailable")) r = await queue([]);
         else {
-          await store.forwards.fail(row.id, error instanceof RpcError && error.code === "NOT_FOUND" ? "forward.reason.accountGone" : "forward.reason.failed", this.host.now());
+          // the rest waits for room (look() tries again); what can never go fails, its queued sends going on
+          if (!transient(error)) await store.forwards.fail(row.id, error instanceof RpcError && error.code === "NOT_FOUND" ? "forward.reason.accountGone" : "forward.reason.failed", this.host.now());
           throw error;
         }
       }
@@ -329,23 +344,28 @@ export class Forwarding {
   /** Where a forward is: its own state until its sends are queued, then theirs (never "failed" while one may have gone). */
   private async status(r: ForwardRow): Promise<ForwardStatus> {
     if (r.state !== "queued") return r.state === "sending" ? "sending" : r.state;
-    const states: (OpState | undefined)[] = [];
-    for (const op of r.opIds) if (op) states.push((await this.host.store.ops.get(op))?.state);
-    if (states.some((s) => s === "unknown")) return "unknown";
+    const ops = [];
+    for (const id of r.opIds) if (id) ops.push(await this.host.store.ops.get(id));
+    const states: (OpState | undefined)[] = ops.map((op) => op?.state);
+    if (states.some((s) => s === "unknown") || ops.some((op) => op?.send_recipient_unknown)) return "unknown";
+    // a part that can never go: whatever the rest does, it's partly sent
+    if (r.opIds.some((id) => id === null)) return "partial";
     if (states.some((s) => s === "queued" || s === "running")) return "sending";
-    if (states.some((s) => s === "failed")) return states.some((s) => s === "succeeded") ? "unknown" : "failed";
+    // some addresses got it and some didn't: a refused send, a server that took only some
+    if (ops.some((op) => op?.send_partial) || (states.some((s) => s === "failed") && states.some((s) => s === "succeeded"))) return "partial";
+    if (states.some((s) => s === "failed")) return "failed";
     // its ops pruned (old history) or all succeeded
     return "sent";
   }
 
-  /** One timer, for the soonest due forward or held one's expiry. */
-  private async arm(rows: readonly ForwardRow[]): Promise<void> {
+  /** One timer, for the soonest due forward or held one's expiry; a minute on while a send waits for room. */
+  private async arm(stuck: boolean): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
     const now = this.host.now();
     let next = (await this.host.store.forwards.nextDue()) ?? Infinity;
-    for (const r of rows) if (r.state === "held") next = Math.min(next, r.at + FORWARD_HELD_MS);
+    if (stuck) next = Math.min(next, now + LOOK_RETRY_MS);
     if (next === Infinity) return;
     // still due right after a look (a store that refused): a minute on, never a spin
     this.armIn(next <= now ? LOOK_RETRY_MS : next - now);

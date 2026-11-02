@@ -1,5 +1,5 @@
 import { FORWARD_DELAY_MS, type ForwardInfo, type ForwardQuestion, type ForwardRuleRef, type ForwardSnapshot } from "@terno/core";
-import { getLocale, onLocaleChange, t } from "@terno/i18n";
+import { getLocale, onLocaleChange, t, translate } from "@terno/i18n";
 import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { snack, withdrawSnack } from "~/lib/snack";
@@ -29,11 +29,36 @@ const who = (list: readonly { name: string; email: string }[]) => {
   return list.length > 1 ? t("forward.toMany", { name, count: list.length - 1 }) : name;
 };
 
+/** forwards whose failure this window has said (or found already failed when it opened) */
+const said = new Set<number>();
+let first = true;
+
 export function applyForwards(snapshot: ForwardSnapshot): void {
   const byMessage = new Map<number, ForwardInfo[]>();
   for (const f of snapshot.items) byMessage.set(f.messageId, [...(byMessage.get(f.messageId) ?? []), f]);
   useForwards.setState({ items: snapshot.items, questions: snapshot.questions, byMessage });
   notice(snapshot.items.filter((f) => f.status === "waiting"));
+  failures(snapshot.items.filter((f) => f.status === "failed" || f.status === "partial" || f.status === "unknown"));
+}
+
+/** A forward that failed while this window was open is said, wherever you are (Retry only when nothing could have gone). */
+function failures(failed: readonly ForwardInfo[]): void {
+  const fresh = failed.filter((f) => !said.has(f.id));
+  for (const f of fresh) said.add(f.id);
+  // what had failed before this window opened shows under its message, not as news
+  if (first) {
+    first = false;
+    return;
+  }
+  const f = fresh[fresh.length - 1];
+  if (!f) return;
+  const open = { label: t("common.view"), name: t("forward.viewFailed"), onClick: () => void import("~/lib/page").then((m) => m.openThread(f.threadId)) };
+  snack.error(t("forward.failedNotice", { rule: f.ruleName, to: who(f.to) }), {
+    id: `forward-failed-${f.id}`,
+    duration: 12_000,
+    ...(f.reason && { description: translate({ key: f.reason }) }),
+    ...(f.status === "failed" ? { action: { label: t("forward.retry"), name: t("forward.retryName", { to: who(f.to) }), onClick: () => void retryForward(f.id) }, secondary: open } : { action: open }),
+  });
 }
 
 /** One notice for what waits: "Forwarding 3 messages from Facturas to Ana · Cancel"; it goes when nothing waits. */

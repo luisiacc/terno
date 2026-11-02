@@ -1041,7 +1041,8 @@ export class BackendCore {
       this.opsQueued(r.opIds);
       this.reconcileFlags(r.flagReconcileAccounts);
       this.notifyChanged(r.touched);
-      if (forwardEligible) this.planForwards({ messageIds: r.inserted });
+      // plan 116: what it inserted, and the bodies it completed (their filters and category may make them go)
+      if (this.forwards.isActive) this.planForwards({ messageIds: forwardEligible ? r.inserted : [], threadIds: r.touched });
     });
     return { inserted };
   }
@@ -1540,6 +1541,7 @@ export class BackendCore {
       this.opsQueued(result.opIds);
       this.reconcileFlags(result.flagReconcileAccounts);
       this.notifyChanged(result.touched, false);
+      this.bodyArrived(messageId);
       return { changed: result.touched.length > 0 };
     } finally { body.release(); }
   }
@@ -1651,11 +1653,7 @@ export class BackendCore {
           this.opsQueued(r.opIds);
           this.reconcileFlags(r.flagReconcileAccounts);
           this.notifyChanged(r.touched, false);
-          // plan 116: its body's filters and category may make it go; a forward waiting for its files goes now
-          if (this.forwards.isActive) {
-            this.planForwards({ messageIds: [messageId] });
-            void this.forwards.filesArrived(messageId).catch(() => {});
-          }
+          this.bodyArrived(messageId);
         },
         removeMessages: async (ids) => {
           checkCurrent();
@@ -2366,6 +2364,13 @@ export class BackendCore {
     this.server.emit("op", this.opInfo(op));
     // plan 116: a forward's send settled
     if (op.kind === "send") this.forwards.opSettled(op.id);
+  }
+
+  /** Plan 116: a body arrived (a sync's, or one the reader asked for): its filters and category may make it go; a forward waiting for its files goes now. */
+  private bodyArrived(messageId: number): void {
+    if (!this.forwards.isActive) return;
+    this.planForwards({ messageIds: [messageId] });
+    void this.forwards.filesArrived(messageId).catch(() => {});
   }
 
   /** Plan 116: new mail or a filing may make forwards; a failure is logged (the start's sweep looks again). */

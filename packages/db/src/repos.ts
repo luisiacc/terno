@@ -1,5 +1,5 @@
 import { copyOpAdmission, nextFilterState, readRuleState, type OpAdmission } from "@terno/store";
-import { filterForwardChanged } from "./forwards";
+import { filterForwardChanged, forwardRuleGone } from "./forwards";
 import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
@@ -309,6 +309,8 @@ export function deleteFilter(db: Db, id: number, expect?: FilterState): void {
     const current = expect ? getFilter(db, id) : null;
     if (expect && current && !sameFilterState(filterState(current), expect)) throw new RpcError("CANCELLED", L("errors.filterChanged"));
     db.run("DELETE FROM filters WHERE id = ?", id);
+    // plan 116: its forwards never go (a filter made later may get this id again)
+    forwardRuleGone(db, { kind: "filter", id }, Date.now());
   });
 }
 
