@@ -4,9 +4,9 @@ import { expect, rows, test } from "./fixtures";
 import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 
 // the tip is seen already in every other spec (fixtures): here it's a first category
-test.use({ categoryTip: true });
+test.use({ tips: true });
 
-const tip = (page: Page) => page.getByTestId("category-inbox-tip");
+const tip = (page: Page) => page.getByTestId("tip-category-inbox");
 
 const categoryId = (server: DevServer, name: string): number => sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", name)!.id;
 
@@ -25,7 +25,7 @@ test.describe("the first new category's tip (plan 113)", { tag: "@design" }, () 
     await expect(tip(page)).toBeVisible();
     await expect(tip(page).getByRole("heading")).toHaveText("LinkedIn stays out of the Inbox");
     await expect(tip(page)).toContainText("right-click LinkedIn and choose Show in Inbox");
-    const picture = page.getByTestId("category-inbox-tip-picture");
+    const picture = page.getByTestId("tip-picture");
     await expect(picture).toContainText("Right-click");
     await expect(picture).toContainText("Show in Inbox");
     await expect(picture).toHaveAttribute("aria-hidden", "true");
@@ -39,7 +39,7 @@ test.describe("the first new category's tip (plan 113)", { tag: "@design" }, () 
     // it never takes focus
     expect(await tip(page).evaluate((el) => el.contains(document.activeElement))).toBe(false);
 
-    await page.getByTestId("category-inbox-tip-done").click();
+    await page.getByTestId("tip-done").click();
     await expect(tip(page)).toHaveCount(0);
 
     // the next category, and a reload: no tip
@@ -126,7 +126,7 @@ test.describe("the first new category's tip (plan 113)", { tag: "@design" }, () 
       // past its fade-in
       await page.waitForTimeout(300);
       if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/tip-${test.info().project.name}-${mode}.png` });
-      const r = await new AxeBuilder({ page }).include("[data-testid=category-inbox-tip]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      const r = await new AxeBuilder({ page }).include("[data-testid=tip-category-inbox]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
     });
   }

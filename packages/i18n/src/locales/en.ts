@@ -1148,11 +1148,12 @@ const en = {
   "category.inboxFailed": "Couldn’t change what the Inbox shows: {error}",
   "category.showInInbox": "Show in Inbox",
   "category.hiddenFromInboxBadge": "Hidden from the Inbox",
-  // plan 113: the one-time tip beside a new category
+  // plan 113: education tips (components/tip)
+  "tip.gotIt": "Got it",
+  "tip.rightClick": "Right-click",
+  // plan 113: the tip beside the first new category
   "category.tip.title": "{category} stays out of the Inbox",
   "category.tip.body": "Its mail won’t show in the Inbox or add to its unread count. To see it there too, right-click {category} and choose <b>Show in Inbox</b>.",
-  "category.tip.rightClick": "Right-click",
-  "category.tip.done": "Got it",
   "category.moveFailed": "Couldn’t move: {error}",
   "category.removeFailed": "Couldn’t remove: {error}",
   "category.saveFailed": "Couldn’t save: {error}",

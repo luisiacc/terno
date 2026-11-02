@@ -15,7 +15,7 @@ import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
-import { useCategoryTip } from "~/lib/category-tip";
+import { usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
@@ -63,9 +63,9 @@ function readMore(): boolean {
  */
 const CategoryInboxTip = lazy(() => import("./category-inbox-tip"));
 
-/** Plan 113: the first new category's tip, beside its row once the row is there; its code loads only then. */
+/** Plan 113: the first new category's tip (components/tip), beside its row once the row is there; its code loads only then. */
 function CategoryTip() {
-  const id = useCategoryTip((s) => s.id);
+  const id = usePendingTip("category-inbox");
   const category = useApp((s) => (id === null ? undefined : s.categories.find((c) => c.id === id)));
   if (!category) return null;
   return (

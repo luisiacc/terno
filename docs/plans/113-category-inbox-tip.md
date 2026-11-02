@@ -64,3 +64,13 @@ Nothing on a hot path: the sidebar subscribes to one number; the tip's code load
 ### Code review
 
 1. *Escape closed the tip and still reached the focused control:* typing a search, Escape closed the tip and also cleared the query and left the field. The tip's Escape now stops there too (e2e: the query and focus survive; fails without it). No other findings.
+
+## Addendum: a base for every education tip
+
+Request: "lets save this educational tooltip bases to be used later on other education tooltips". The tip's behavior and pieces are now shared:
+
+- `lib/tips.ts`: the registry (`TIPS`), `offerTip(id, target)`, `usePendingTip(id)`, `tipShown`, `markTipShown`, `dismissTip`. One tip waits at a time (the newest offer wins); each is remembered as `terno:<id>-tip` (the category tip's key is unchanged).
+- `components/tip.tsx`: `Tip` (anchor selector, `ended`, title, body, picture, side): every rule above (a clear stage, never focused, Escape its own, closes on a click away, a modal, its anchor leaving), Got it (`tip.gotIt`), and `strong` for the gesture's target in the body.
+- `components/tip-picture.tsx`: `TipPicture`, `TipRow`, `TipGesture` / `TipRightClick` (`tip.rightClick`), `TipMenu`, `TipMenuItem` (`pointer`).
+- e2e: every spec starts with all tips seen; a tip's own spec opts in with `test.use({ tips: true })`.
+- AGENTS.md says how to add one. The category tip is a consumer: its picture and words only.
