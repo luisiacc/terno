@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IdbMailStore } from "@terno/idb";
-import { SqlMailStore } from "@terno/db";
+import { sqlDb } from "@terno/db";
 import type { MemDb } from "../../idb/src/mem";
 import { IDBFactory } from "fake-indexeddb";
 import { ProviderAuthError, ProviderError, type ProviderContext, type ProviderRegistry } from "@terno/mail";
@@ -172,24 +172,26 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public provider secret replacem
     await t.backend.ready;
     const store = t.backend.store;
     const head = await store.feed.head();
-    if (store instanceof SqlMailStore) {
-      const trace = vi.spyOn(store.db, "prepare");
+    // the SQL backend's store is its opening facade (99c41201), so ask for the database rather than the class
+    if (kind === "SQL") {
+      const db = sqlDb(store);
+      const trace = vi.spyOn(db, "prepare");
       expect(await t.ctx.replaceSecret("password", "old", "next")).toBe(true);
       const small = trace.mock.calls.map(([sql]) => sql);
       trace.mockRestore();
-      store.db.tx(() => {
+      db.tx(() => {
         for (let id = 1; id <= 50000; id++) {
-          store.db.run("INSERT INTO threads(id, account_id) VALUES (?, ?)", id, t.account.id);
-          store.db.run("INSERT INTO messages(id, account_id, thread_id, date) VALUES (?, ?, ?, 0)", id, t.account.id, id);
+          db.run("INSERT INTO threads(id, account_id) VALUES (?, ?)", id, t.account.id);
+          db.run("INSERT INTO messages(id, account_id, thread_id, date) VALUES (?, ?, ?, 0)", id, t.account.id, id);
         }
       });
       const before = await store.feed.head();
-      const large = vi.spyOn(store.db, "prepare");
+      const large = vi.spyOn(db, "prepare");
       expect(await t.ctx.replaceSecret("password", "next", "old")).toBe(true);
       expect(large.mock.calls.map(([sql]) => sql)).toEqual(small);
       expect(small.some((sql) => /(?:FROM|JOIN) (?:messages|threads)\b/i.test(sql))).toBe(false);
       const cas = small.find((sql) => sql.startsWith("UPDATE secrets"))!;
-      const plan = store.db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${cas}`, Uint8Array.of(1), t.name, Uint8Array.of(2), t.account.id, t.account.email, 1);
+      const plan = db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${cas}`, Uint8Array.of(1), t.name, Uint8Array.of(2), t.account.id, t.account.email, 1);
       expect(plan.map((r) => r.detail).join(" ")).toMatch(/SEARCH secrets USING PRIMARY KEY/);
       expect(plan.map((r) => r.detail).join(" ")).toMatch(/SEARCH accounts USING INTEGER PRIMARY KEY/);
       large.mockRestore();
