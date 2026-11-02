@@ -242,7 +242,7 @@ export interface ImapLocationStore {
    * Plan 114: a message another mail app moved (or a mailbox reset renumbered) found at its new place. The held
    * message takes `place` and its hold goes only when that is provably the same mail and nothing of ours can be
    * misdirected: a hold left by a lost location (no owner: no command of ours in flight), no place left anywhere,
-   * the only message of the account with its Message-ID, the same size and date, and no action of ours queued,
+   * the only message of the account with its Message-ID, the same size and date (header), and no action of ours queued,
    * running or unknown for it. False, with nothing written, otherwise: it stays held.
    */
   adopt(messageId: number, place: { mailbox: string; uidvalidity: number; uid: number; flags: string[] }, expect: { rfcMessageId: string; size: number; date: number }): Promise<boolean>;

@@ -20,7 +20,7 @@
 1. **A hold of a lost place.** The owner is null, so no command of ours is in flight for it.
 2. **No place left anywhere.** A message still placed somewhere is never moved by inference.
 3. **The place is free.** No other message has that mailbox, UIDVALIDITY and UID.
-4. **The same mail.** The stored Message-ID, size and date equal the copy's. IMAP MOVE and COPY keep all three. Sender and subject are already equal (the provider id lookup checks them).
+4. **The same mail.** The stored Message-ID, size and date (the Date header, as stored for display) equal the copy's. IMAP MOVE and COPY keep all three. Sender and subject are already equal (the provider id lookup checks them).
 5. **The only message of the account with that Message-ID.** A duplicate, whether two copies or two different mails, stays held.
 6. **Nothing of ours pending for it.** No op targeting it is `queued`, `running` or `unknown`. A finished one doesn't block it.
 
@@ -50,3 +50,15 @@ The IMAP read (`syncMailbox`) asks only when the arrival has a Message-ID, its p
 - **ID-less mail stays held.** An envelope alone never proves identity.
 - **Two copies with one Message-ID stay held.** Telling them apart would need the bytes.
 - **An action of ours whose outcome is unknown keeps its message held.** It may have reached the server.
+
+## 5. What the Codex code review found (kept as limits)
+
+The review is in `/tmp/terno-p112/move-review.txt`. It found two issues, both rated P1, and both need the same contrived input: a different mail that copies the Message-ID, sender, subject and Date header, at exactly the same byte size. Under the user's rule for very rare findings, they are recorded here instead of fixed.
+
+1. **Adoption happens at the first matching arrival.** Suppose the moved copy and such an impostor both appear before Terno reads either. Whichever is read first takes the held message's identity, and the other is imported as a new message. A genuine duplicate, such as another app copying the mail to two folders, has identical bytes, so binding either copy is harmless.
+   - **Fix, if ever needed:** search every folder for the Message-ID before adopting, and refuse at more than one copy.
+2. **The date compared is the Date header, not IMAP's INTERNALDATE.** Terno doesn't store the arrival date.
+   - **Fix, if ever needed:** store INTERNALDATE in both stores (a migration) and compare it too.
+
+The section-1 wording that said "arrival date" was corrected in §2.
+
