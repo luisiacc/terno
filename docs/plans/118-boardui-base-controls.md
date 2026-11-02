@@ -37,3 +37,11 @@ Fewer CSS rules than plan 117 (no scoped variant). Menus lose their backdrop blu
 
 - BoardUI's control heights (36 px buttons, 42 px switches): every toolbar and settings row would move.
 - Application components (the sidebar, rows, the reader): they are Terno's, per design.
+
+## Revisions after the Codex review
+
+Three findings, all fixed, each with a regression test that fails without its fix:
+
+1. Send's split button: its halves pass `bg-transparent`, but `bg-linear-to-b` survived the merge, and its opaque gradient hid the open half's `aria-expanded` fill once the pointer left. The halves now drop the gradient (`bg-none`), and the group, which owns the fill, is lit like a primary (`controls.spec`: the open half shows `primary-hover` and no image).
+2. Text on the filled field was not in the contrast suite. Eight pairs now cover a field's text and placeholder on its 5% wash (`FIELD_WASH`, which a test keeps equal to `--color-field`), over the background, cards, menus and Settings' tint groups. Every built-in palette passes, and custom themes get them as warnings.
+3. The draft's From selector passes `dark:bg-transparent`, which beat the base `hover:bg-muted` in dark mode. It now has `dark:hover:bg-muted` (`controls.spec`, dark).

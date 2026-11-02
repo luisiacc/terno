@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { DESIGN_IDS } from "@terno/core";
-import { expect, test } from "./fixtures";
+import { expect, focusList, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
@@ -56,6 +56,35 @@ for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) 
       // hovered: no gradient, the plain hover fill
       await page.getByTestId("primary").hover();
       expect(await css(page, "primary", "background-image")).toBe("none");
+    });
+  });
+}
+
+// plan 118 review: call sites that restyle a control keep their states over its new base
+for (const mode of ["light", "dark"] as const) {
+  test.describe(`controls restyled in place keep their states, ${mode} (plan 118)`, () => {
+    test.beforeEach(async ({ app: page, server }) => {
+      await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), markup);
+    });
+
+    test("Send's schedule half, open, keeps its hover fill when the pointer leaves (no gradient over it)", async ({ app: page }) => {
+      await focusList(page);
+      await page.keyboard.press("c");
+      await page.getByTestId("compose-send-later").click();
+      await page.mouse.move(1, 1);
+      await expect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
+      expect(await css(page, "compose-send-later", "background-image")).toBe("none");
+      expect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
+    });
+
+    test("the draft's From selector fills on hover", async ({ app: page }) => {
+      await focusList(page);
+      await page.keyboard.press("c");
+      await page.getByTestId("compose-from").hover();
+      expect(await css(page, "compose-from", "background-color")).toBe(await css(page, "probe-muted", "background-color"));
     });
   });
 }

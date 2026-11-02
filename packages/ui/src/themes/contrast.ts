@@ -7,12 +7,17 @@ export interface ContrastPair {
   bg: ThemeToken;
   /** the background is this token at 15% (soft badges) */
   tint?: boolean;
+  /** the background is this token at this alpha (plan 118: a field's ink wash) */
+  alpha?: number;
   min: 4.5 | 3;
   /** what the (translucent) background sits on, instead of the theme background: e.g. a menu over a white HTML mail */
   over?: string;
   /** the same, as a token: a badge's tint over a selected row (itself over the theme background when translucent) */
   overToken?: ThemeToken;
 }
+
+/** the filled field's wash of ink (plan 118): globals.css --color-field mixes this much foreground in; a test keeps them equal */
+export const FIELD_WASH = 0.05;
 
 const text = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 4.5 }));
 const ui = (fg: ThemeToken, bgs: ThemeToken[]): ContrastPair[] => bgs.map((bg) => ({ fg, bg, min: 3 }));
@@ -64,6 +69,11 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...ui("destructive", ["muted"]),
   // a chosen outline toggle (settings): its text on the accent's 15% wash, over the tint group it sits on
   { fg: "foreground", bg: "primary", tint: true, min: 4.5, overToken: "tint" },
+  // plan 118: a field's text and placeholder on its wash of ink (globals.css --color-field, 5%), on the surfaces fields sit on
+  // (panes, cards, menus and dialogs, Settings' tint groups)
+  ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
+    (["background", "card", "popover", "tint"] as const).map((over): ContrastPair => ({ fg, bg: "foreground", alpha: FIELD_WASH, min: 4.5, overToken: over })),
+  ),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];
@@ -87,12 +97,13 @@ export function contrastFailures(theme: Pick<Theme, "tokens">, pairs: readonly C
   const t = theme.tokens;
   const out: ContrastFailure[] = [];
   for (const p of pairs) {
-    const bg = p.tint ? withAlpha(parseColor(t[p.bg]), 0.15) : parseColor(t[p.bg]);
+    const alpha = p.tint ? 0.15 : p.alpha;
+    const bg = alpha !== undefined ? withAlpha(parseColor(t[p.bg]), alpha) : parseColor(t[p.bg]);
     // a token backdrop that is itself translucent is painted over the theme background
     const under = p.overToken ? composite(oklchToRgb(parseColor(t[p.overToken])), { ...oklchToRgb(parseColor(t.background)), alpha: 1 }) : (p.over ?? t.background);
     const ratio = contrast(parseColor(t[p.fg]), bg, under);
     const over = p.over ?? p.overToken;
-    if (ratio < p.min) out.push({ pair: `${p.fg} / ${p.bg}${p.tint ? " 15%" : ""}${over ? ` over ${over}` : ""}`, ratio: Math.round(ratio * 100) / 100, min: p.min });
+    if (ratio < p.min) out.push({ pair: `${p.fg} / ${p.bg}${alpha !== undefined ? ` ${Math.round(alpha * 100)}%` : ""}${over ? ` over ${over}` : ""}`, ratio: Math.round(ratio * 100) / 100, min: p.min });
   }
   return out;
 }
