@@ -166,3 +166,16 @@ it("returns every message above the cache count bound without retaining it", () 
   expect(getThread(db, id)).toEqual(first);
   expect(reads()).toBe(2);
 });
+
+it("serves the committed image inside a transaction until that transaction writes", () => {
+  const { db, id } = fixture();
+  const original = getThread(db, id);
+  const reads = materializations(db);
+  db.tx(() => {
+    expect(getThread(db, id)).toEqual(original);
+    expect(reads()).toBe(0);
+    db.run("UPDATE message_bodies SET body_text='written'");
+    expect(getThread(db, id)!.messages[0]!.bodyText).toBe("written");
+    expect(reads()).toBe(1);
+  });
+});

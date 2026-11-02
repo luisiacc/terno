@@ -15,7 +15,7 @@ import { factsReady } from "./facts";
 import { hidingSql, inboxHiding, NO_HIDING, type InboxHiding } from "./inbox-hiding";
 
 export { hiddenCategories, hidingSql, inboxHiding, NO_HIDING, shownInInbox, type InboxHiding } from "./inbox-hiding";
-import { readThread } from "./thread-read-cache";
+import { readThread, warmThread } from "./thread-read-cache";
 
 export type { Cursor, ListParams, Page } from "@terno/store";
 
@@ -324,6 +324,11 @@ interface MessageRow {
 
 export function getThread(db: Db, threadId: number): ThreadDetail | null {
   return readThread(db, threadId, () => loadThread(db, threadId));
+}
+
+/** Before a selection transaction: a repeated open then copies the committed image instead of materializing it again. */
+export function warmThreadRead(db: Db, threadId: number): void {
+  warmThread(db, threadId, () => loadThread(db, threadId));
 }
 
 function loadThread(db: Db, threadId: number): ThreadDetail | null {

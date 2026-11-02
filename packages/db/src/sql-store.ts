@@ -95,7 +95,7 @@ import { adoptProviderThread, deleteMessages, findIngestMessage, ingestMessages,
 import { tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, factsIdle, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { changeOwner, claimOwner, getOwner } from "./owner";
-import { countScopeThreads, getCounts, getSummaries, getThread, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
+import { countScopeThreads, getCounts, getSummaries, getThread, warmThreadRead, listThreads, scopeThreadIds, SUMMARY_COLUMNS, toSummary, type SummaryRow } from "./queries";
 import {
   accountStamp,
   addThreadsToCategory,
@@ -419,7 +419,7 @@ export class SqlMailStore implements MailStore {
     summaries: async (ids) => getSummaries(this.db, ids),
     scopeIds: async (p) => scopeThreadIds(this.db, p),
     scopeCount: async (p) => countScopeThreads(this.db, p),
-    get: async (id, options) => this.bodyCommand(() => withBodySelection(this.db, () => {
+    get: async (id, options) => this.bodyCommand(() => (warmThreadRead(this.db, id), withBodySelection(this.db, () => {
       const found = getThread(this.db, id);
       const value = found ? { ...found, messages: found.messages.map((message) => ({ ...message })), categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } } : null;
       return { value, ids: value?.messages.map((message) => message.id) ?? [] };
@@ -432,7 +432,7 @@ export class SqlMailStore implements MailStore {
         else Object.assign(message, await hydrateBodyReference(this.db, reference, this.yieldTo));
       }
       return thread;
-    })),
+    }))),
     unsubscribeSource: async (id) => this.bodyCommand(async () => {
       const result = unsubscribeSource(this.db, id);
       if (!result || result.unsubscribe) return result;

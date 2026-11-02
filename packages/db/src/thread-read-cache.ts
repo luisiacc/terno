@@ -49,16 +49,29 @@ function copy(detail: ThreadDetail): ThreadDetail {
 /** One private decoded conversation per connection; every caller owns its returned containers. */
 export function readThread(db: Db, id: number, load: () => ThreadDetail | null): ThreadDetail | null {
   if (!db.autocommit) {
+    // a committed image nothing has changed since serves a transaction too (its own writes move the stamp);
+    // a transaction's image is never kept: it may still roll back
+    const hit = entries.get(db);
+    if (hit?.detail.thread.id === id && same(hit.stamp, stamp(db))) return copy(hit.detail);
     entries.delete(db);
     return load();
   }
+  return cached(db, id, load, true);
+}
+
+/** Readers that select inside their own transaction (w11 body selection) keep the committed image ready first. */
+export function warmThread(db: Db, id: number, load: () => ThreadDetail | null): void {
+  if (db.autocommit) cached(db, id, load, false);
+}
+
+function cached(db: Db, id: number, load: () => ThreadDetail | null, owned: boolean): ThreadDetail | null {
   if (!registered.has(db)) {
     registered.add(db);
     db.onClose(() => entries.delete(db));
   }
   const before = stamp(db);
   const hit = entries.get(db);
-  if (hit?.detail.thread.id === id && same(hit.stamp, before)) return copy(hit.detail);
+  if (hit?.detail.thread.id === id && same(hit.stamp, before)) return owned ? copy(hit.detail) : null;
   entries.delete(db);
   const detail = load();
   if (detail && fits(detail) && same(before, stamp(db))) {
