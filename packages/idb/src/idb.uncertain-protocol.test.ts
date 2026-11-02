@@ -254,8 +254,9 @@ it("delete-only public writes clear after their request, and an absent delete su
     await store.secrets.put("qualification-only", new Uint8Array([1, 2, 3])); await store.whenLoaded();
     let observation = observeWrites();
     await store.secrets.delete("qualification-only");
-    expect(observation.counts).toEqual({ guard: 1, marker: 1, body: 1, clear: 1, faults: 0, abortRefusals: 0 });
-    expect(observation.successes).toEqual(["guard", "marker", "body", "clear"]); expect(observation.terminals).toEqual(["complete"]);
+    // the delete and the body epoch a credential change moves (w11 S48), in the same transaction
+    expect(observation.counts).toEqual({ guard: 1, marker: 1, body: 2, clear: 1, faults: 0, abortRefusals: 0 });
+    expect(observation.successes).toEqual(["guard", "marker", "body", "body", "clear"]); expect(observation.terminals).toEqual(["complete"]);
     vi.restoreAllMocks();
     observation = observeWrites();
     await store.secrets.delete("qualification-only");
