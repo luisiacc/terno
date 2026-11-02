@@ -1,11 +1,13 @@
 import "fake-indexeddb/auto";
+import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import { generateDataset } from "@terno/mock-data";
 import type { MailStore, Platform } from "@terno/store";
 import { defineSearchConformance, defineStoreConformance, seedThroughCommands } from "@terno/store/conformance";
 import { afterAll, expect } from "vitest";
 import { IdbMailStore } from "./store";
 
-const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
+// Node has no browser Worker: large bodies tokenize on the Node worker the web platform's stands in for (w11)
+const platform: Pick<Platform, "uuid" | "yield" | "bodyPreparation"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)), bodyPreparation: nodeBodyPreparationFactory };
 let n = 0;
 const open = (name: string, instantSearch: boolean) => IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch });
 const reopen = async (store: MailStore, instantSearch: boolean) => {

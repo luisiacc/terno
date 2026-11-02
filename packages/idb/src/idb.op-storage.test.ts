@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { nodeBodyPreparationFactory } from "../../db/src/node-driver";
 import { Buffer } from "node:buffer";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it, vi } from "vitest";
@@ -7,7 +8,8 @@ import { ingest, msg, threadOf } from "@terno/store/conformance";
 
 const NOW = Date.UTC(2026, 9, 27, 12);
 const LARGE_BYTES = 1024 * 1024;
-const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
+// Node has no browser Worker: large bodies tokenize on the Node worker the web platform's stands in for (w11)
+const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)), bodyPreparation: nodeBodyPreparationFactory };
 
 type Phase = ReturnType<typeof phase>;
 function phase() {
