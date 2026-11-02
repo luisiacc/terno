@@ -1,10 +1,10 @@
-import { finishBodyClose } from "@terno/store";
-import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
+import { bodyPartRange, finishBodyClose } from "@terno/store";
+import { releaseMessageBodies, releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
 import { publishBody } from "@terno/store";
 import { resolvable, parseSearch } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
-import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, hydrateBody, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
+import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
 import { unsubscribeSource } from "./unsubscribe";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -377,20 +377,20 @@ export class SqlMailStore implements MailStore {
     summaries: async (ids) => getSummaries(this.db, ids),
     scopeIds: async (p) => scopeThreadIds(this.db, p),
     scopeCount: async (p) => countScopeThreads(this.db, p),
-    get: async (id, options) => this.bodyCommand(async () => {
+    get: async (id, options) => this.bodyCommand(() => withBodySelection(this.db, () => {
       const found = getThread(this.db, id);
-      const thread = found ? { ...found, messages: found.messages.map((message) => ({ ...message })) } : null;
+      const value = found ? { ...found, messages: found.messages.map((message) => ({ ...message })), categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } } : null;
+      return { value, ids: value?.messages.map((message) => message.id) ?? [] };
+    }, async (thread, references) => {
       if (!thread) return null;
       for (const message of thread.messages) {
-        if (options?.bodyFormat === "parts") {
-          const reference = bodyReadReference(this.db, message.id);
-          if (reference) { message.bodyText = null; message.bodyHtml = null; message.bodyReference = reference; continue; }
-        }
-        const body = await hydrateBody(this.db, message.id, this.yieldTo);
-        if (body) Object.assign(message, body);
+        const reference = references.get(message.id);
+        if (!reference) continue;
+        if (options?.bodyFormat === "parts") { message.bodyText = null; message.bodyHtml = null; message.bodyReference = reference; }
+        else Object.assign(message, await hydrateBodyReference(this.db, reference, this.yieldTo));
       }
-      return { ...thread, categorization: { auto: autoReasons(this.db, id), suggestions: pendingSuggestions(this.db, { threadId: id, limit: 5 }) } };
-    }),
+      return thread;
+    })),
     unsubscribeSource: async (id) => this.bodyCommand(async () => {
       const result = unsubscribeSource(this.db, id);
       if (!result || result.unsubscribe) return result;
@@ -1064,7 +1064,12 @@ export class SqlMailStore implements MailStore {
   readonly folderExport: MailStore["folderExport"] = {
     ids: async (target, after, limit) => exportIds(this.db, target, after, limit),
     messages: async (ids) => exportMessages(this.db, ids),
-    body: async (id, part, at, size) => exportBody(this.db, id, part, at, size),
+    body: async (id, part, at, size) => this.bodyCommand(() => withBodySelection(this.db, () => ({ value: exportBody(this.db, id, part, at, size), ids: [id] }), async (inline, references) => {
+      const reference = references.get(id);
+      if (!reference) return inline;
+      const count = part === "text" ? reference.textParts : reference.htmlParts;
+      return count === null ? null : bodyPartRange(sqlBodyParts(this.db, reference.version, part === "text" ? 0 : 1, this.yieldTo), count, at, size);
+    })),
     // a byte range a call: nothing held
     release: () => {},
   };
@@ -1379,17 +1384,20 @@ export class SqlMailStore implements MailStore {
   };
 
   readonly debug: MailStore["debug"] = {
-    snapshot: async () => {
-      const snapshot = storeSnapshot(this.db);
-      for (const message of snapshot.messages) {
-        const body = await hydrateBody(this.db, message.id, this.yieldTo);
-        if (!body) continue;
-        message.bodyText = body.bodyText;
-        const doc = snapshot.search.messages.find((doc) => doc.messageId === message.id);
-        if (doc) { doc.body = body.bodyText ?? ""; doc.releaseBody?.(); delete doc.releaseBody; delete doc.bodyTokenParts; }
-      }
-      return snapshot;
-    },
+    snapshot: async () => this.bodyCommand(() => withBodySelection(this.db, () => {
+      const value = storeSnapshot(this.db);
+      return { value, ids: value.messages.map((message) => message.id), release: () => releaseMessageBodies(value.search.messages, this.yieldTo) };
+    }, async (snapshot, references) => {
+        for (const message of snapshot.messages) {
+          const reference = references.get(message.id);
+          if (!reference) continue;
+          const body = await hydrateBodyReference(this.db, reference, this.yieldTo);
+          message.bodyText = body.bodyText;
+          const doc = snapshot.search.messages.find((doc) => doc.messageId === message.id);
+          if (doc) { doc.body = body.bodyText ?? ""; delete doc.bodyTokenParts; }
+        }
+        return snapshot;
+    })),
     verify: async () => {
       // rank=1 compares the index against the external content, not only its own structure
       this.db.exec("INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)");

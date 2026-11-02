@@ -25,6 +25,26 @@ export function decodeBodyPart(bytes: Uint8Array): string {
   return String.fromCharCode(...units);
 }
 
+/** Opaque UTF-16 cursor into fixed-size persisted parts; at most two bounded reads per stretch. */
+export async function bodyPartRange(source: BodyPartSource, count: number, at: number, size: number): Promise<{ text: string; next: number | null }> {
+  try {
+    let ordinal = Math.floor(at / BODY_PART_UNITS), offset = at % BODY_PART_UNITS;
+    let text = "", more = false;
+    const limit = Math.min(BODY_PART_UNITS, Math.max(2, Math.floor(size)));
+    while (ordinal < count && text.length < limit) {
+      const part = await source.read(ordinal - 1);
+      if (!part || part.ordinal !== ordinal) throw new Error("Incomplete body parts");
+      const value = decodeBodyPart(part.value), take = Math.min(value.length - offset, limit - text.length);
+      text += value.slice(offset, offset + take);
+      more = offset + take < value.length || ordinal + 1 < count;
+      if (offset + take < value.length) break;
+      ordinal++; offset = 0;
+    }
+    if (more && text.length > 1 && (text.charCodeAt(text.length - 1) & 0xfc00) === 0xd800) text = text.slice(0, -1);
+    return { text, next: more ? at + text.length : null };
+  } finally { source.close?.(); }
+}
+
 /** Caller controls physical reads/yields; no read collects the remaining parts. */
 export function bodyPartText(source: BodyPartSource): AsyncGenerator<string> {
   let closed = false;

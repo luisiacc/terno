@@ -295,6 +295,7 @@ export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] 
     const m = messages.get(id);
     if (!m) continue;
     const body = c.body(id);
+    const capture = body?.capture_id ? T(c, "body_captures").get(body.capture_id) : undefined;
     out.push({
       id,
       accountId: m.account_id,
@@ -305,8 +306,8 @@ export function exportMessages(c: Ctx, ids: readonly number[]): ExportMessage[] 
       date: m.date,
       subject: m.subject,
       listId: m.list_id ?? null,
-      hasText: typeof body?.body_text === "string",
-      hasHtml: typeof body?.body_html === "string",
+      hasText: typeof body?.body_text === "string" || capture?.text_parts != null,
+      hasHtml: typeof body?.body_html === "string" || capture?.html_parts != null,
       bodyState: m.body_state,
       attachments: attachments
         .by("fk_message_id", id)

@@ -78,11 +78,39 @@ export async function discardBody(db: Db, id: string, yieldTo: () => Promise<voi
   }
 }
 
+/** Snapshot every representation and acquire its ownership before any selected reader can yield. */
+export async function withBodySelection<T, R>(db: Db, select: () => { value: T; ids: readonly number[]; release?: () => void | Promise<void> }, read: (value: T, references: ReadonlyMap<number, import("@terno/core").BodyReadReference>) => Promise<R>): Promise<R> {
+  const releases: (() => void | Promise<void>)[] = [], references = new Map<number, import("@terno/core").BodyReadReference>();
+  const errors: unknown[] = [];
+  let result!: R;
+  try {
+    const value = db.tx(() => {
+      const selected = select();
+      if (selected.release) releases.push(selected.release);
+      for (const id of selected.ids) {
+        if (references.has(id)) continue;
+        const reference = bodyReadReference(db, id);
+        if (reference) { releases.push(retainBody(db, reference.version)); references.set(id, reference); }
+      }
+      return selected.value;
+    });
+    result = await read(value, references);
+  } catch (error) { errors.push(error); }
+  finally { for (const release of releases) { try { await release(); } catch (error) { errors.push(error); } } }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, "Body selection failed");
+  return result;
+}
+
+export async function hydrateBodyReference(db: Db, reference: import("@terno/core").BodyReadReference, yieldTo: () => Promise<void>): Promise<{ bodyText: string | null; bodyHtml: string | null }> {
+  return { bodyText: reference.textParts === null ? null : await assembleBody(sqlBodyParts(db, reference.version, 0, yieldTo)), bodyHtml: reference.htmlParts === null ? null : await assembleBody(sqlBodyParts(db, reference.version, 1, yieldTo)) };
+}
+
 export async function hydrateBody(db: Db, messageId: number, yieldTo: () => Promise<void>): Promise<{ bodyText: string | null; bodyHtml: string | null } | null> {
-  const row = db.get<{ capture_id: string; text_parts: number | null; html_parts: number | null }>("SELECT b.capture_id,c.text_parts,c.html_parts FROM body_heads b JOIN body_captures c ON c.id=b.capture_id WHERE b.message_id=? AND c.ready=1", messageId);
-  if (!row) return null;
-  const release = retainBody(db, row.capture_id);
-  try { return { bodyText: row.text_parts === null ? null : await assembleBody(sqlBodyParts(db, row.capture_id, 0, yieldTo)), bodyHtml: row.html_parts === null ? null : await assembleBody(sqlBodyParts(db, row.capture_id, 1, yieldTo)) }; } finally { release(); }
+  return withBodySelection(db, () => ({ value: null, ids: [messageId] }), async (_, references) => {
+    const reference = references.get(messageId);
+    return reference ? hydrateBodyReference(db, reference, yieldTo) : null;
+  });
 }
 
 export type PreparedBodyMatches = Map<string, Map<string, boolean>>;

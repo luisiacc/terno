@@ -1,6 +1,6 @@
 import { bodyPrefix, addressesOf, RevisionError, SENT_SIZE_MAX, SENT_TEXT_MAX, type AutocompleteSource, type ContactBatch, type ContactBuild, type ContactMessage, type SentText } from "@terno/store";
 import { searchChangeIds, searchHead } from "./outbox";
-import { sqlBodyParts } from "./body-parts";
+import { sqlBodyParts, withBodySelection } from "./body-parts";
 import type { Db } from "./sqlite";
 
 /**
@@ -76,23 +76,26 @@ export function spamSenders(db: Db, threadIds: readonly number[]): string[] {
     .map((r) => r.e);
 }
 
-async function projectSent(db: Db, rows: SentRow[], yieldTo: () => Promise<void>): Promise<SentText[]> {
+async function projectSent(db: Db, select: () => SentRow[], yieldTo: () => Promise<void>): Promise<SentText[]> {
+  return withBodySelection(db, () => { const value = select(); return { value, ids: value.map((row) => row.id) }; }, async (rows, references) => {
   const out: SentText[] = [];
   for (const row of rows) {
-    if (row.capture_id) row.text = await bodyPrefix(sqlBodyParts(db, row.capture_id, 0, yieldTo), SENT_TEXT_MAX, true);
+    const reference = references.get(row.id);
+    if (reference) row.text = await bodyPrefix(sqlBodyParts(db, reference.version, 0, yieldTo), SENT_TEXT_MAX, true);
     out.push(toSent(row));
   }
   return out;
+  });
 }
 
 const bodyYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 export async function sentTexts(db: Db, ids: readonly number[], yieldTo = bodyYield): Promise<SentText[]> {
   if (!ids.length) return [];
-  return projectSent(db, db.all<SentRow>(`${SENT} AND m.id IN (SELECT value FROM json_each(?)) ORDER BY m.id`, JSON.stringify(ids)), yieldTo);
+  return projectSent(db, () => db.all<SentRow>(`${SENT} AND m.id IN (SELECT value FROM json_each(?)) ORDER BY m.id`, JSON.stringify(ids)), yieldTo);
 }
 
 export async function sentAfter(db: Db, afterId: number, limit: number, yieldTo = bodyYield): Promise<{ texts: SentText[]; next: number | null }> {
-  const texts = await projectSent(db, db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit), yieldTo);
+  const texts = await projectSent(db, () => db.all<SentRow>(`${SENT} AND m.id > ? ORDER BY m.id LIMIT ?`, afterId, limit), yieldTo);
   return { texts, next: texts.length ? texts[texts.length - 1]!.id : null };
 }
 

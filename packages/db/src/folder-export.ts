@@ -104,8 +104,8 @@ export function exportMessages(db: Db, ids: readonly number[]): ExportMessage[] 
   const json = JSON.stringify(ids);
   const rows = new Map(db.all<Row>(
     `SELECT m.id, m.account_id, m.rfc_message_id, m.in_reply_to, m.references_json, m.from_name, m.from_email, m.to_json, m.cc_json, m.reply_to_json,
-            m.subject, m.date, m.list_id, m.body_state, typeof(b.body_text) != 'null' AS has_text, typeof(b.body_html) != 'null' AS has_html
-     FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.id IN (SELECT value FROM json_each(?))`,
+            m.subject, m.date, m.list_id, m.body_state, (typeof(b.body_text) != 'null' OR c.text_parts IS NOT NULL) AS has_text, (typeof(b.body_html) != 'null' OR c.html_parts IS NOT NULL) AS has_html
+     FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id LEFT JOIN body_heads h ON h.message_id=m.id LEFT JOIN body_captures c ON c.id=h.capture_id WHERE m.id IN (SELECT value FROM json_each(?))`,
     json,
   ).map((r) => [r.id, r]));
   const attachments = new Map<number, ExportMessage["attachments"]>();

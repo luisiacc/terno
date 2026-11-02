@@ -7,7 +7,7 @@ import { unsubscribeBodyParts } from "@terno/store";
 import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
 import { iterateBodyTokens, type TextOp } from "@terno/core";
-import { decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
+import { bodyPartRange, decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
 import { exportBody, exportIds, exportMessages, sliceBody } from "./folder-export";
 import { completeCapture, retryCapture } from "@terno/store";
@@ -1803,9 +1803,16 @@ export class IdbMailStore implements MailStore {
         return exportMessages(this.c, ids);
       });
     },
-    body: async (id, part, at, size, lease) => {
+    body: async (id, part, at, size, lease) => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
+        await this.readBodies([id]);
+        const current = this.c.body(id);
+        if (current?.capture_id) {
+          const capture = T(this.c, "body_captures").get(current.capture_id)!;
+          const count = part === "text" ? capture.text_parts : capture.html_parts;
+          return count == null ? null : bodyPartRange(this.bodyPartSource(current.capture_id, part === "text" ? 0 : 1), count, at, size);
+        }
         if (lease === undefined) {
           await this.readBodies([id]);
           return exportBody(this.c, id, part, at, size);
@@ -1825,7 +1832,7 @@ export class IdbMailStore implements MailStore {
         }
         return sliceBody(body ?? null, part, at, size);
       });
-    },
+    }),
     release: (lease) => void this.exportLeases.delete(lease),
   };
 
