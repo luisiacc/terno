@@ -37,6 +37,7 @@ export async function copyMailTree(source: Node, target: Node, signal: AbortSign
           const key = String(graphics.size);
           const original = current as SVGSVGElement;
           const shell = copied as SVGSVGElement;
+          if (!original.hasAttribute("viewBox") && original.clientWidth > 0 && original.clientHeight > 0) shell.setAttribute("viewBox", `0 0 ${original.clientWidth} ${original.clientHeight}`);
           const inherited = new Set<string>();
           for (let context: Element | null = original; context && context !== source; context = context.parentElement) {
             const style = (context as HTMLElement | SVGElement).style;
@@ -101,7 +102,7 @@ export async function prepareMailDisplay(source: { root: HTMLElement; tabs: Weak
       const initial = new Set(owners);
       for (const owner of owners) await visitGraphic(owner.source, cancellation, (element) => {
         for (const { name, value } of element === owner.source ? [...element.attributes, ...owner.shell.attributes] : element.attributes) {
-          const references = [...value.matchAll(/url\(\s*["']?#([^\s"'()]+)["']?\s*\)/g)].map((match) => match[1]!);
+          const references = [...value.matchAll(/url\(\s*["']?#([^\s"'()]+)["']?\s*\)/gi)].map((match) => match[1]!);
           if ((name === "href" || name === "xlink:href") && value.startsWith("#")) references.push(value.slice(1));
           for (let id of references) {
             try { id = decodeURIComponent(id); } catch { /* Keep literal non-encoded IDs. */ }

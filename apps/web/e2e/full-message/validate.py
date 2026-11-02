@@ -30,14 +30,14 @@ def run(command, name, deadline=60):
     if child.returncode:
         raise SystemExit(child.returncode)
 
-pnpm = ['pnpm', '--config.verify-deps-before-run=false', 'exec']
+cli = root/'node_modules/.bin'
 for suffix, config in [('main', 'apps/web/tsconfig.json'), ('worker', 'apps/web/tsconfig.worker.json'), ('fixture', 'apps/web/e2e/full-message/tsconfig.json')]:
-    run(pnpm + ['tsc', '-p', config], 'types-' + suffix)
-run(pnpm + ['vitest', 'run', '--config', 'apps/web/e2e/full-message/vitest.config.ts'], 'unit-final')
+    run([str(cli/'tsc'), '-p', config], 'types-' + suffix)
+run([str(cli/'vitest'), 'run', '--config', 'apps/web/e2e/full-message/vitest.config.ts'], 'unit-final')
 files = [
     'apps/web/src/components/' + name for name in ['mail-body.tsx', 'mail-reader-view.tsx', 'mail-reader-back.ts', 'full-message.tsx', 'mail-sections.ts', 'mail-graphic.ts', 'reader.tsx']
 ] + ['apps/web/src/lib/page.ts', 'apps/web/e2e/mail-repaint.spec.ts'] + [
     'apps/web/e2e/full-message/' + name for name in ['fixture.tsx', 'reader-fixture.tsx', 'transport.ts', 'full-message.probe.ts', 'lazy.unit.ts', 'back.unit.ts', 'sections.unit.ts', 'frame-load.unit.ts', 'graphic.unit.ts', 'vite.config.ts', 'playwright.config.ts', 'vitest.config.ts', 'perf.config.ts', 'perf-setup.ts']
 ] + ['packages/i18n/src/locales/en.ts', 'packages/i18n/src/locales/es.ts']
-run(pnpm + ['oxlint', '--deny-warnings'] + files, 'lint')
+run([str(cli/'oxlint'), '--deny-warnings'] + files, 'lint')
 run([sys.executable, 'apps/web/e2e/full-message/run.py'], 'browser-coherent-r1', 200)

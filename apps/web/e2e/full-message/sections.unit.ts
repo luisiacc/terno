@@ -145,3 +145,10 @@ it("indexes source tables once while rendering consecutive sections", () => {
     expect(lookups).toBe(1);
   } finally { DocumentFragment.prototype.querySelectorAll = original; }
 });
+it("round-trips void background media across section boundaries without losing payload order", () => {
+  const source = 'Before' + 'x'.repeat(4096) + '<hr style="height:30000px;background-image:url(data:image/png;base64,AAAA),url(data:image/png;base64,BBBB)">After';
+  const sections = mailSections(source);
+  const bodies = Array.from({ length: sections.count }, (_, i) => parsed(sections.html(i)));
+  expect(bodies.map((body) => body.textContent).join('')).toBe('Before' + 'x'.repeat(4096) + 'After');
+  expect(bodies.flatMap((body) => [...body.querySelectorAll('img')].map((image) => image.getAttribute('src')))).toEqual(['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB']);
+});

@@ -6,7 +6,7 @@ import { cancelReaderScroll } from "~/lib/reader-scroll";
 import { forwardPrintKey } from "~/lib/print-open";
 
 interface Opening { lease: object; owner: unknown; focusRequest: number | null; trigger: HTMLElement; fallback: HTMLElement | null; scroller: HTMLElement | null; top: number; y: number }
-interface ReaderView { threadId: number | null; active: object | null; target: HTMLDivElement | null; open(lease: object, trigger: HTMLElement): void; close(lease: object, restore?: boolean): void }
+interface ReaderView { threadId: number | null; active: object | null; target: HTMLDivElement | null; focus(element: HTMLElement | null): void; open(lease: object, trigger: HTMLElement): void; close(lease: object, restore?: boolean): void }
 const Context = createContext<ReaderView | null>(null);
 export const useMailReaderView = () => useContext(Context);
 
@@ -21,10 +21,10 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
   const close = useCallback((lease: object, restore = true) => {
     setOpening((current) => {
       if (current?.lease !== lease) return current;
-      if (restore) returning.current = current;
+      if (restore && (document.activeElement === document.body || target?.contains(document.activeElement))) returning.current = current;
       return null;
     });
-  }, []);
+  }, [target]);
   const open = (lease: object, trigger: HTMLElement) => {
     cancelReaderScroll();
     const scroller = trigger.closest<HTMLElement>("[data-reader-scroller]");
@@ -76,7 +76,7 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
     return () => { unregisterBack(); window.removeEventListener("keydown", capture, true); if (escape.current === keys) escape.current = null; observer.disconnect(); };
   }, [active, close, target]);
   return (
-    <Context.Provider value={{ threadId: typeof identity === "number" ? identity : null, active: active?.lease ?? null, target, open, close }}>
+    <Context.Provider value={{ threadId: typeof identity === "number" ? identity : null, active: active?.lease ?? null, target, open, close, focus: (element) => { if (active && (document.activeElement === document.body || document.activeElement === active.trigger || target?.contains(document.activeElement))) element?.focus({ preventScroll: true }); } }}>
       <div className="relative h-full min-h-0" onKeyDown={(event) => escape.current?.(event.nativeEvent)}>
         <div ref={source} inert={Boolean(active)} aria-hidden={active ? true : undefined} className="h-full min-h-0" style={{ visibility: active ? "hidden" : undefined }}>{children}</div>
         <div ref={setTarget} className={active ? "absolute inset-0 flex min-h-0 flex-col bg-background" : "hidden"} data-full-message-host />
@@ -87,7 +87,8 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
 
 export function MailReaderStatus({ onClose, failed = false }: { onClose(): void; failed?: boolean }) {
   const back = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => { back.current?.focus({ preventScroll: true }); }, []);
+  const view = useMailReaderView();
+  useLayoutEffect(() => { view?.focus(back.current); }, []);
   return <section className="flex h-full flex-col p-3.5"><button ref={back} type="button" className="self-start rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={onClose}>{t("reader.full.back")}</button><p role={failed ? "alert" : "status"}>{t(failed ? "reader.full.error" : "reader.full.loading")}</p></section>;
 }
 

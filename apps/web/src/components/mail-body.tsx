@@ -147,10 +147,6 @@ export function HtmlBody({ html, messageId, remoteImages, appearance, attachment
       const finish = () => {
         if (!active || frame.contentDocument !== d || !flow.isConnected) return;
         paint(d.documentElement, lookRef.current);
-        if (section) for (const svg of d.querySelectorAll<SVGSVGElement>("svg:not(svg *)")) {
-          const bounds = svg.getBBox();
-          if (bounds.width > 0 && bounds.height > 0 && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
-        }
         const tabStops = section ? [] : [...d.querySelectorAll<HTMLElement>("a[href], area[href], button, input, select, textarea, [tabindex]")].map((element) => ({ element, tab: element.getAttribute("tabindex") }));
         loaded.current = { markup: flow.dataset.ternoDocument!, doc: d, tabs: new WeakMap(tabStops.map(({ element, tab }) => [element, tab])) };
         const styled = [...d.body.querySelectorAll<HTMLElement>(section ? "[style]:not(svg *)" : "[style]")];

@@ -31,7 +31,7 @@ export default function FullMessage({ html, source, onClose, controls, copyText,
   const scroller = useRef<HTMLDivElement>(null);
   const back = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
-  useLayoutEffect(() => { back.current?.focus({ preventScroll: true }); }, []);
+  useLayoutEffect(() => { view?.focus(back.current); }, []);
   const move = (next: number) => {
     setReady(false); setAnchor(sections!.offset(next)); setCopied(false);
     if (scroller.current) scroller.current.scrollTop = 0;

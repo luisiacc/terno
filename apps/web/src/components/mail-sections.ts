@@ -23,10 +23,14 @@ export function mailSections(clean: string | DocumentFragment, nodeBudget = NODE
     const backgrounds = [...style.backgroundImage.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/g)].map((match) => match[1] ?? match[2] ?? match[3]!);
     const background = element.getAttribute("background");
     if (background) backgrounds.push(background);
+    const sibling = element.namespaceURI !== "http://www.w3.org/1999/xhtml" || /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(element.localName);
+    let anchor: Element = element;
+    if (sibling) while (anchor.parentElement && (anchor.parentElement.namespaceURI !== "http://www.w3.org/1999/xhtml" || /^(picture|audio|video|object|table|thead|tbody|tfoot|tr|colgroup|select|optgroup|datalist)$/.test(anchor.parentElement.localName))) anchor = anchor.parentElement;
     for (const src of backgrounds) {
       const image = root.ownerDocument.createElement("img");
       image.setAttribute("src", src); image.setAttribute("alt", "");
-      element.appendChild(image);
+      if (sibling) { anchor.after(image); anchor = image; }
+      else element.appendChild(image);
     }
   }
   const sections: Section[] = [];

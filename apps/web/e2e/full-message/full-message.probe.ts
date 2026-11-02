@@ -3,6 +3,16 @@ import { existsSync, renameSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+  const color = (png: Buffer) => {
+    const chunks: Buffer[] = [];
+    for (let offset = 8; offset < png.length;) {
+      const length = png.readUInt32BE(offset);
+      if (png.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    // A 1×1 first-row PNG has zero predictors under every PNG filter.
+    return [...inflateSync(Buffer.concat(chunks)).subarray(1, 4)];
+  };
 type Fixture = { fullFixture: { calls: string[]; original: string; cursor(): { selectedId: number | null; anchorId: number | null; readerOpen: boolean; checked: number[] }; replace(): void; navigate(): void; collapse(): void } };
 const show = (page: Page, es = false) => page.getByRole("button", { name: es ? "Mostrar mensaje completo" : "Show full message", exact: true });
 const full = (page: Page) => page.getByTestId("full-message");
@@ -391,25 +401,17 @@ test("a 100000-node SVG never takes an atomic deep-clone expansion on opening", 
   await expect(full(page)).toHaveAttribute("aria-busy", "false");
   expect(await page.evaluate(() => (window as unknown as { largestGraphicClone: number }).largestGraphicClone)).toBeLessThanOrEqual(64);
   await expect(mail(page).locator("svg path")).toHaveCount(100000);
+  const graphic = (await mail(page).locator("svg").first().boundingBox())!;
+  expect(color(await page.screenshot({ clip: { x: graphic.x + graphic.width / 2, y: graphic.y + graphic.height / 2, width: 1, height: 1 } }))).toEqual([0,128,0]);
   await expect(mail(page).locator("svg text")).toHaveText("Complete graphic label");
 });
 
-for (const query of ["svg-reference", "svg-inherited"]) test(`a later SVG renders its earlier pattern dependency (${query})`, async ({ page }) => {
+for (const query of ["svg-reference", "svg-inherited", "svg-case-upper", "svg-case-inherited"]) test(`a later SVG renders its earlier pattern dependency (${query})`, async ({ page }) => {
   await page.goto(`/e2e/full-message/index.html?${query}`);
   await expect(show(page)).toBeVisible();
   const control = await page.locator("iframe").contentFrame().locator("#control-pixel").boundingBox();
   const prefix = `/tmp/terno-w11-r1-fixes-61640/cross-reference-${query}`;
   for (const kind of ["control", "result"]) { const path = `${prefix}-${kind}.png`; if (existsSync(path)) renameSync(path, `${path}.${Date.now()}.archive`); }
-  const color = (png: Buffer) => {
-    const chunks: Buffer[] = [];
-    for (let offset = 8; offset < png.length;) {
-      const length = png.readUInt32BE(offset);
-      if (png.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
-      offset += length + 12;
-    }
-    // A 1×1 first-row PNG has zero predictors under every PNG filter.
-    return [...inflateSync(Buffer.concat(chunks)).subarray(1, 4)];
-  };
   const expected = await page.screenshot({ path: `${prefix}-control.png`, clip: { x: control!.x + control!.width / 2, y: control!.y + control!.height / 2, width: 1, height: 1 } });
   expect(color(expected)).toEqual([0, 255, 0]);
   await show(page).click();
@@ -507,4 +509,55 @@ for (const query of ["svg-theme", "svg-theme-link"]) test(`staged SVG paint foll
   });
   expect(state.color).toBe(state.inherited);
   expect(state.same).toBe(true);
+});
+
+for (const failure of [false, true]) test(`delayed reader completion and Back yield to newer external focus (${failure ? "failure" : "success"})`, async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/src/components/full-message.tsx*", async (route) => { await held; if (failure) await route.abort(); else await route.continue(); });
+  await page.goto("/e2e/full-message/index.html?reader");
+  await show(page).click();
+  await expect(page.getByText("Loading full message…", { exact: true })).toBeVisible();
+  await page.evaluate(() => { const control = document.createElement("button"); control.id = "new-owner"; control.textContent = "Synthetic sidebar"; document.body.append(control); control.focus(); });
+  release();
+  if (failure) await expect(page.getByRole("alert")).toBeVisible(); else await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("#new-owner")).toBeFocused();
+  const top = await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop);
+  await page.evaluate(async () => { const path = "/src/lib/page.ts"; (await import(path)).goBack(); });
+  await expect(full(page)).toHaveCount(0);
+  await expect(show(page)).toBeVisible();
+  await expect(page.locator("#new-owner")).toBeFocused();
+  expect(await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop)).toBe(top);
+});
+
+for (const query of ["filter-explicit", "filter-implicit"]) test(`SVG filter paint preserves the original viewport (${query})`, async ({ page }) => {
+  await page.goto(`/e2e/full-message/index.html?${query}`);
+  await expect(show(page)).toBeVisible();
+  const pixel = async (frame: ReturnType<Page["locator"]>) => {
+    const svg = (await frame.contentFrame().locator("svg").first().boundingBox())!;
+    const scale = Math.min(svg.width / 100, svg.height / 100);
+    return color(await page.screenshot({ clip: { x: svg.x + (svg.width - 100 * scale) / 2 + 15 * scale, y: svg.y + (svg.height - 100 * scale) / 2 + 45 * scale, width: 1, height: 1 } }));
+  };
+  expect(await pixel(page.locator("iframe"))).toEqual([0,255,0]);
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  expect(await pixel(full(page).locator("iframe"))).toEqual([0,255,0]);
+});
+
+test("void backgrounds remain loaded and visibly painted in the complete reader", async ({ page }) => {
+  await page.goto("/e2e/full-message/index.html?void-background");
+  await expect(show(page)).toBeVisible();
+  const rule = (await page.locator("iframe").contentFrame().locator("hr").boundingBox())!;
+  expect(color(await page.screenshot({ clip: { x: rule.x + 5, y: rule.y + 5, width: 1, height: 1 } }))).toEqual([255,0,0]);
+  await show(page).click();
+  await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await expect(mail(page).locator("img")).toHaveCount(2);
+  for (const image of await mail(page).locator("img").all()) {
+    await expect(image).toHaveJSProperty("naturalWidth", 1);
+    await image.scrollIntoViewIfNeeded();
+    const box = (await image.boundingBox())!;
+    const outer = (await full(page).locator("[data-full-message-scroller]").boundingBox())!;
+    expect(color(await page.screenshot({ clip: { x: box.x, y: Math.max(box.y + 1, outer.y + 4), width: 1, height: 1 } }))).toEqual([255,0,0]);
+  }
+  expect(await mail(page).locator("body").textContent()).toBe("BeforeAfter");
 });
