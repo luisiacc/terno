@@ -18,6 +18,7 @@ Terno is a minimalist, fast email client: Electron (macOS first) plus a web buil
    - Lists are virtualized, and render counts are asserted.
    - Nothing blocks the backend event loop beyond the slicer's budget. Queries must hold at 50k+ threads in both stores: SQLite in `packages/db`, IndexedDB in `packages/idb`.
    - New heavy UI is lazy-loaded and kept out of the entry chunk.
+   - An update never makes the user wait: a SQLite migration changes shape only (≤ 1 s at 50k threads, `migrations.perf.test.ts`), and any data work goes to the backend's background slices (plan 112).
 4. **Low resource usage.**
    - No polling where an event exists, and no work until a feature is opened.
    - Memory, disk and log files are bounded.
