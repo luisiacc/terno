@@ -24,7 +24,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex size-full flex-col overflow-hidden rounded-2xl! bg-popover p-1 text-popover-foreground [--accent:var(--muted)] [--accent-foreground:var(--foreground)]",
+        "flex size-full flex-col overflow-hidden rounded-palette! bg-popover p-1 text-popover-foreground [--accent:var(--muted)] [--accent-foreground:var(--foreground)]",
         className
       )}
       {...props}
@@ -50,8 +50,7 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          // concentric with its rows (rounded-lg, 2 in from the edge: the list's and the group's p-1), plan 119
-          "top-[18%] translate-y-0 overflow-hidden rounded-[calc(var(--radius-lg)+var(--spacing)*2)]! p-0 sm:max-w-[640px]",
+          "top-[18%] translate-y-0 overflow-hidden rounded-palette! p-0 sm:max-w-[640px]",
           className
         )}
         showCloseButton={showCloseButton}
@@ -161,7 +160,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 h-9 rounded-sm px-2 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "group/command-item relative flex cursor-default items-center gap-2 h-9 rounded-lg px-2 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-accent data-selected:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}

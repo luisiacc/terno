@@ -72,7 +72,7 @@ export function WhenFields({ when, testPrefix, describedBy }: { when: ReturnType
           <Clock className="size-[1.15em]" aria-hidden />
           <SelectValue className="tabular-nums" />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30 p-1" data-testid={`${testPrefix}-times`}>
+        <SelectContent alignItemWithTrigger={false} side="bottom" align="end" sideOffset={6} className="max-h-60 min-w-30" data-testid={`${testPrefix}-times`}>
           {TIMES.map((m) => (
             <SelectItem key={m} value={m} data-gone={gone(m) || undefined} className="tabular-nums data-gone:text-muted-foreground">
               {timeText(m)}

@@ -453,6 +453,10 @@
 @utility rounded-menu {
   border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
 }
+/* the same for a command list (the palette, the category picker): lg rows, 2 in (the list's and the group's p-1) */
+@utility rounded-palette {
+  border-radius: calc(var(--radius-lg) + var(--spacing) * 2);
+}
 /*
  * Translucent menus (DropdownMenu, ContextMenu, Select popups only: modal, so
  * nothing scrolls behind them). --popover-glass is as translucent as the

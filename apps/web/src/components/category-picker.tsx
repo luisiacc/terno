@@ -64,7 +64,7 @@ export function CategoryPicker() {
   const exact = categories.some((c) => normalizeText(c.name) === normalizeText(search.trim()));
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="top-[20%] translate-y-0 overflow-hidden p-0 sm:max-w-sm" showCloseButton={false} data-testid="category-picker" data-mode={mode}>
+      <DialogContent className="top-[20%] translate-y-0 overflow-hidden rounded-palette p-0 sm:max-w-sm" showCloseButton={false} data-testid="category-picker" data-mode={mode}>
         <DialogTitle className="sr-only">{mode === "move" ? t("category.picker.moveTitle") : t("category.picker.title")}</DialogTitle>
         <Command>
           <CommandInput placeholder={mode === "move" ? t("actions.moveTo") : t("category.picker.placeholder")} value={search} onValueChange={setSearch} />
