@@ -2,7 +2,8 @@
  * Plan 95 on the PACKAGED app, with throwaway profiles (TERNO_USER_DATA):
  * the real backend, real migrations and a real disk.
  *
- * - an older mailbox is backed up, then migrated; the window opens as usual
+ * - an older mailbox is backed up (a clone, plan 112), then migrated; the
+ *   window opens as usual, never covered
  * - a mailbox from a newer Terno: the gate says so, and nothing restarts the
  *   backend on a timer (one backend.started in the log)
  * - a step that fails (a table the migration creates is already there): the
@@ -107,12 +108,20 @@ const logged = (userData: string, code: string) => {
 
 const gate = (page: Page) => page.getByTestId("mailbox-gate");
 
-test("an older mailbox: backed up, migrated, and the window opens as usual", async () => {
+test("an older mailbox: backed up, migrated, and the window opens as usual, never covered (plan 112)", async () => {
   const userData = profile("older");
   const db = join(userData, "terno.db");
-  oldMailbox(db, { drafts: 5 });
+  // ~200 MB: a full copy takes seconds, past the cover's 400 ms; a clone doesn't
+  oldMailbox(db, { drafts: 5, bodyKb: 40_000 });
   const page = await launch(userData);
-  await page.locator("[data-ready]").waitFor({ timeout: 60_000 });
+  // watched from the window's first moment until the mailbox is ready: the cover never appeared
+  let covered = false;
+  for (const until = Date.now() + 60_000; !(await page.locator("[data-ready]").count()); ) {
+    if (await gate(page).count()) covered = true;
+    if (Date.now() > until) throw new Error("the mailbox never opened");
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  expect(covered).toBe(false);
   await expect(gate(page)).toHaveCount(0);
   await closePackaged(app);
   app = undefined;
@@ -120,7 +129,7 @@ test("an older mailbox: backed up, migrated, and the window opens as usual", asy
   const generations = readdirSync(join(userData, "backups"));
   expect(generations).toHaveLength(1);
   const manifest = JSON.parse(readFileSync(join(userData, "backups", generations[0]!, "manifest.json"), "utf8")) as { fromSchema: number; toSchema: number };
-  expect(manifest).toMatchObject({ fromSchema: PREV, toSchema: SCHEMA_VERSION });
+  expect(manifest).toMatchObject({ fromSchema: PREV, toSchema: SCHEMA_VERSION, method: "clone" });
   expect(facts(join(userData, "backups", generations[0]!, "terno.db"))).toEqual({ version: PREV, drafts: 5 });
   expect(logged(userData, "mailbox.backup_made")).toBe(1);
 });
