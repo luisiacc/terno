@@ -98,4 +98,4 @@ Three findings, all fixed with a regression test that fails without the fix:
 
 - `pinned-draft.spec.ts` (10 flows, the `@design` ones in all three designs), `pinned-draft.test.ts` (8), the palette spec (its draft group lists Pin draft now).
 - Screenshots in light and dark, Split and List, looked at.
-- Pre-existing failures on `main`, unchanged by this plan: `draft-presentation-app-r1` and `forward-source-continuity` (unit), three `designs.spec` tests (Settings → Appearance baseline, font faces), the perf gate's "toggling More" (category seeding error). `main` also needs `packages/backend/src/account-label.ts`, imported by plan 101 but never committed.
+- Rebased onto `main` and renumbered from 103 (taken by the sync progress card) to 115: typecheck, lint, the unit file and the pinned-draft, palette and compose specs in all three designs (105) pass.
