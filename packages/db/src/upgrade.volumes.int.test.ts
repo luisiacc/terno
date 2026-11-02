@@ -101,7 +101,8 @@ const probe = process.platform === "darwin" ? volume("probe", "HFS+", 8) : null;
 if (probe) detach(probe);
 const skip = !probe;
 
-describe.skipIf(skip)("plan 95 on real volumes", () => {
+// hdiutil takes seconds per image on a busy machine
+describe.skipIf(skip)("plan 95 on real volumes", { timeout: 180_000 }, () => {
   it("HFS+ (no clones): the room check refuses a backup that doesn't fit, and says whether the migration alone would", async () => {
     const v = volume("tight", "HFS+", 120)!;
     const db = join(v, "terno.db");
@@ -179,11 +180,50 @@ describe.skipIf(skip)("plan 95 on real volumes", () => {
     const db = join(v, "terno.db");
     oldMailbox(db, 4);
     const plan = await prepareUpgrade(db, { backupsDir: join(v, "backups"), appVersion: "0.2.0" });
+    expect(plan.method).toBe("clone");
     openDatabaseWith(nodeSqliteDriver, db).close();
     const copy = join(work, "copy.db");
     copyFileSync(plan.backup!.file, copy);
     expect(drafts(copy)).toEqual({ version: PREV, n: 16 });
     expect(drafts(db)).toEqual({ version: SCHEMA_VERSION, n: 16 });
+    detach(v);
+  });
+
+  it("plan 112, APFS: a 200 MB mailbox's backup is a clone, made in under a second with free space barely moved", async () => {
+    const v = volume("clone", "APFS", 600)!;
+    const db = join(v, "terno.db");
+    oldMailbox(db, 200);
+    const before = free(v);
+    const t = performance.now();
+    const plan = await prepareUpgrade(db, { backupsDir: join(v, "backups"), appVersion: "0.3.0" });
+    const ms = performance.now() - t;
+    expect(plan.method).toBe("clone");
+    expect(ms).toBeLessThan(1000);
+    expect(before - free(v)).toBeLessThan(16 * 2 ** 20);
+    expect(drafts(plan.backup!.file)).toEqual({ version: PREV, n: 800 });
+    detach(v);
+  });
+
+  it("plan 112, HFS+: no clones there, so the backup API copies (the full room asked first)", async () => {
+    const v = volume("hfs-copy", "HFS+", 80)!;
+    const db = join(v, "terno.db");
+    oldMailbox(db, 4);
+    const plan = await prepareUpgrade(db, { backupsDir: join(v, "backups"), appVersion: "0.3.0" });
+    expect(plan.method).toBe("copy");
+    expect(drafts(plan.backup!.file)).toEqual({ version: PREV, n: 16 });
+    detach(v);
+  });
+
+  it("plan 112: the real cp filling a disk (where it can only copy) is said as no room, with nothing kept and the mailbox unlocked", async () => {
+    const v = volume("cp-full", "HFS+", 80)!;
+    const db = join(v, "terno.db");
+    oldMailbox(db, 30);
+    const before = drafts(db);
+    fill(v, 10 * 2 ** 20);
+    const error = await prepareUpgrade(db, { backupsDir: join(v, "backups"), appVersion: "0.3.0", freeBytes: () => 2 ** 40, volume: () => true }).catch((e: unknown) => e);
+    expect(classifyOpenError(error)).toMatchObject({ kind: "no-room", stage: "backup" });
+    expect(readdirSync(join(v, "backups"))).toEqual([]);
+    expect(drafts(db)).toEqual(before);
     detach(v);
   });
 });

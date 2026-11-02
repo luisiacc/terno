@@ -1,9 +1,12 @@
 /**
  * Plan 95: before a migration, a backup of the mailbox as it was.
  *
- * - SQLite's backup API copies a consistent snapshot (the WAL's commits
- *   included) whatever other connections do, a few hundred pages at a time
- *   so the backend's event loop keeps answering.
+ * - On one APFS volume the backup is a clone made under the mailbox's
+ *   exclusive lock (plan 112, `clone.ts`): milliseconds whatever its size.
+ * - Elsewhere, or while another connection has the file, SQLite's backup API
+ *   copies a consistent snapshot (the WAL's commits included) whatever other
+ *   connections do, a few hundred pages at a time so the backend's event
+ *   loop keeps answering.
  * - Each backup is an immutable generation, `backups/<createdAt>-v<from>-v<to>/`
  *   with `terno.db` and `manifest.json`: built in a `.partial-` folder,
  *   fsynced, renamed into place; only then does the previous one go. A folder
@@ -20,6 +23,7 @@ import { backup as sqliteBackup, DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./migrations";
 import { BACKUP_RETENTION_MS, fileSize, listBackups, readManifest, remove, type BackupInfo } from "./backups";
+import { cloneFile, lockMailbox, sameApfsVolume } from "./clone";
 import { BackupError, NoRoomError, SchemaNewerError } from "./open-errors";
 
 export { BACKUP_RETENTION_MS, listBackups, type BackupInfo } from "./backups";
@@ -37,8 +41,11 @@ export interface UpgradeOptions {
   onBackup?(): void;
   now?(): number;
   freeBytes?(dir: string): number;
-  /** seams for tests: the backup API and fsync */
+  /** seams for tests: the backup API, fsync, the volume check, the lock and the clone */
   backup?: typeof sqliteBackup;
+  volume?(file: string, dir: string): boolean;
+  lock?: typeof lockMailbox;
+  clone?: typeof cloneFile;
   fsync?(fd: number): void;
 }
 
@@ -50,6 +57,8 @@ export interface UpgradePlan {
   backup: BackupInfo | null;
   /** a backup was made by this call */
   made: boolean;
+  /** how it was made: a clone (plan 112) or a full copy */
+  method?: "clone" | "copy";
 }
 
 export function diskFree(dir: string): number {
@@ -74,6 +83,13 @@ function fsyncPath(path: string, fsync: (fd: number) => void): void {
   } finally {
     closeSync(fd);
   }
+}
+
+/** `backups/` exists, and a new one is durable in its parent before anything is published into it */
+function ensureBackupsDir(dir: string, fsync: (fd: number) => void): void {
+  if (existsSync(dir)) return;
+  mkdirSync(dir, { recursive: true });
+  fsyncPath(dirname(dir), fsync);
 }
 
 function readSchema(path: string): number {
@@ -108,33 +124,64 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
   const size = mailboxBytes(path);
   const freeBytes = o.freeBytes ?? diskFree;
   const headroom = migrateHeadroom(size);
-  const free = freeBytes(dirname(path));
-  if (free < size + headroom) throw new NoRoomError("backup", size + headroom, free, free >= headroom);
+  const fsync = o.fsync ?? fsyncSync;
+  // plan 112: on one APFS volume the backup is a clone, free when made; elsewhere a full copy
+  let clone = (o.volume ?? sameApfsVolume)(path, o.backupsDir);
+  const need = () => (clone ? headroom : size + headroom);
+  const before = freeBytes(dirname(path));
+  if (before < need()) throw new NoRoomError("backup", need(), before, before >= headroom);
 
   o.onBackup?.();
   const createdAt = now();
   const id = `${createdAt}-v${from}-v${SCHEMA_VERSION}`;
   const partial = join(o.backupsDir, `.partial-${id}`);
-  const fsync = o.fsync ?? fsyncSync;
-  const source = new DatabaseSync(path, { readOnly: true });
+  const file = join(partial, "terno.db");
+  let method: "clone" | "copy" = "copy";
   try {
+    ensureBackupsDir(o.backupsDir, fsync);
     mkdirSync(partial, { recursive: true });
-    const file = join(partial, "terno.db");
-    const pages = Number((source.prepare("PRAGMA page_count").get() as { page_count: number }).page_count);
-    await (o.backup ?? sqliteBackup)(source, file, { rate: PAGES_PER_STEP });
-    // the copy opens, at the version it was taken from, with every page; it leaves WAL mode (the backup API keeps
-    // the source's), so it is one self-contained file that reading never adds a -wal or -shm next to
+    let expected: { version: number; pages: number } | null = null;
+    if (clone) {
+      const lock = await (o.lock ?? lockMailbox)(path);
+      if (lock) {
+        try {
+          expected = { version: lock.version, pages: lock.pages };
+          await (o.clone ?? cloneFile)(path, file);
+        } finally {
+          await lock.release();
+        }
+        // cp -c copies in full where it can't clone: then the copy's room is what's left to judge by
+        const after = freeBytes(dirname(path));
+        method = before - after > size / 2 ? "copy" : "clone";
+        if (after < headroom) throw new NoRoomError("backup", size + headroom, after, false);
+      } else {
+        // another connection has the file: the backup API's snapshot is consistent whatever it does
+        clone = false;
+        if (before < need()) throw new NoRoomError("backup", need(), before, before >= headroom);
+      }
+    }
+    if (!expected) {
+      const source = new DatabaseSync(path, { readOnly: true });
+      try {
+        expected = { version: from, pages: Number((source.prepare("PRAGMA page_count").get() as { page_count: number }).page_count) };
+        await (o.backup ?? sqliteBackup)(source, file, { rate: PAGES_PER_STEP });
+      } finally {
+        source.close();
+      }
+    }
+    // the copy opens, at the version it was taken from, with every page; it leaves WAL mode (both ways keep the
+    // source's), so it is one self-contained file that reading never adds a -wal or -shm next to
     const copy = new DatabaseSync(file);
     try {
       copy.exec("PRAGMA journal_mode = DELETE");
       const v = Number((copy.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
       const n = Number((copy.prepare("PRAGMA page_count").get() as { page_count: number }).page_count);
-      if (v !== from || n !== pages) throw new Error(`backup verification failed (v${v}/${from}, ${n}/${pages} pages)`);
+      if (v !== from || v !== expected.version || n !== expected.pages) throw new Error(`backup verification failed (v${v}/${from}, ${n}/${expected.pages} pages)`);
     } finally {
       copy.close();
     }
     fsyncPath(file, fsync);
-    const manifest = { file: "terno.db", fromSchema: from, toSchema: SCHEMA_VERSION, appVersion: o.appVersion, size: fileSize(file), createdAt };
+    const manifest = { file: "terno.db", fromSchema: from, toSchema: SCHEMA_VERSION, appVersion: o.appVersion, size: fileSize(file), createdAt, method };
     const manifestFile = join(partial, "manifest.json");
     writeFileSync(manifestFile, JSON.stringify(manifest), { mode: 0o600 });
     fsyncPath(manifestFile, fsync);
@@ -143,6 +190,7 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
     fsyncPath(o.backupsDir, fsync);
   } catch (error) {
     remove(partial);
+    if (error instanceof NoRoomError) throw error;
     const code = (error as { code?: unknown }).code;
     const rc = (error as { errcode?: unknown }).errcode;
     if (code === "ENOSPC" || code === "EDQUOT" || (typeof rc === "number" && (rc & 0xff) === 13)) {
@@ -151,12 +199,10 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
     }
     const unwritable = code === "EACCES" || code === "EPERM" || code === "EROFS" || (typeof rc === "number" && [3, 8, 14].includes(rc & 0xff));
     throw new BackupError(unwritable ? "unwritable" : "failed", error);
-  } finally {
-    source.close();
   }
   // the new generation is in place: the older ones go
   for (const b of backups) remove(b.dir);
-  return { from, to: SCHEMA_VERSION, backup: readManifest(o.backupsDir, id), made: true };
+  return { from, to: SCHEMA_VERSION, backup: readManifest(o.backupsDir, id), made: true, method };
 }
 
 /** After the mailbox opened (healthy, at this schema): a backup past its 14 days goes. No timer: a start is the check. */

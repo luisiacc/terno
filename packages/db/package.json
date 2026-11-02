@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./portable": "./src/portable.ts",
     "./wasm": "./src/wasm.ts",
-    "./backups": "./src/backups.ts"
+    "./backups": "./src/backups.ts",
+    "./clone": "./src/clone.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

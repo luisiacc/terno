@@ -8,6 +8,7 @@ import { nodeSqliteDriver } from "./node-driver";
 import { BackupError, classifyOpenError, NoRoomError, SchemaNewerError } from "./open-errors";
 import { openDatabaseWith } from "./portable";
 import { Db } from "./sqlite";
+import { oldMailbox } from "./test/old-mailbox";
 import { BACKUP_RETENTION_MS, expireBackups, listBackups, prepareUpgrade, type UpgradeOptions } from "./upgrade";
 
 const dirs: string[] = [];
@@ -31,18 +32,6 @@ function workdir() {
   return { dir, db: join(dir, "terno.db"), backups: join(dir, "backups") };
 }
 
-/** A mailbox exactly as an older Terno left it (schema `version`), with an account and a draft. */
-export function oldMailbox(path: string, version = PREV, drafts = 1): void {
-  const db = new Db(nodeSqliteDriver, path);
-  for (const m of MIGRATIONS.filter((m) => m.version <= version)) db.exec(m.sql);
-  db.exec(`PRAGMA user_version = ${version}`);
-  db.run("INSERT INTO accounts (id, kind, email, display_name, provider_config, created_at) VALUES (1, 'imap', 'synthetic@example.test', '', '{}', 0)");
-  for (let i = 1; i <= drafts; i++) {
-    db.run("INSERT INTO drafts (id, generation, account_id, format, mode, to_json, cc_json, subject, body_text, body_html, updated_at) VALUES (?, 'g', 1, 2, 'new', '[]', '[]', ?, 'body', '', 5)", i, `draft ${i}`);
-  }
-  db.close();
-}
-
 const contents = (path: string) => {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -55,7 +44,8 @@ const contents = (path: string) => {
   }
 };
 
-const opts = (w: { backups: string }, o: Partial<UpgradeOptions> = {}): UpgradeOptions => ({ backupsDir: w.backups, appVersion: "0.2.0", freeBytes: () => 100 * GiB, ...o });
+/** plan 95's tests take the full-copy path (the backup API); plan 112's clone path has its own below */
+const opts = (w: { backups: string }, o: Partial<UpgradeOptions> = {}): UpgradeOptions => ({ backupsDir: w.backups, appVersion: "0.2.0", freeBytes: () => 100 * GiB, volume: () => false, ...o });
 
 describe("prepareUpgrade (plan 95)", () => {
   it("a fresh install and a current mailbox have nothing to back up (and a current start makes no backups folder)", async () => {

@@ -28,3 +28,4 @@ export function openDatabase(path: string, options: OpenOptions = {}): Db {
 }
 export { compactOnOpen, type CompactOutcome } from "./compact";
 export * from "./upgrade";
+export { cancelClones } from "./clone";
