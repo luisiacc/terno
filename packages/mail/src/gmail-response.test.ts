@@ -269,7 +269,9 @@ describe("Gmail successful response validation", () => {
     const source = toBase64url(new TextEncoder().encode(`Subject: Large\r\n\r\n${body}`));
     const box = mailbox({ respond: (url) => url.searchParams.get("format") === "raw" ? { ...message, raw: source } : undefined });
     await box.sync();
-    expect(box.ingested[0]?.bodyText?.trimEnd() === body).toBe(true);
+    // a body past one part arrives as exact parts, not one string (w11 MIME byte retention)
+    expect(box.ingested[0]?.bodyText).toBeNull();
+    expect(box.ingested[0]?.bodyParts?.text?.join("").trimEnd() === body).toBe(true);
     expect(box.requests.filter((u) => u.searchParams.get("format") === "raw")).toHaveLength(1);
   });
 
