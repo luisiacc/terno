@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
-import { createGmailProvider, ProviderAuthError, ProviderError, type ProviderContext, type ProviderRegistry } from "@terno/mail";
+import { createGmailProvider, inspectGmailToken, ProviderAuthError, ProviderError, type ProviderContext, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 
@@ -27,7 +27,7 @@ function healthySync(r: Request): Response | undefined {
 function heldJson(status: number, value: unknown) {
   let controller!: ReadableStreamDefaultController<Uint8Array>, entered = false, released = false;
   const response = new Response(new ReadableStream<Uint8Array>({
-    start(c) { controller = c; }, pull() { entered = true; },
+    start(c) { controller = c; }, pull() { entered = true; }, cancel() { released = true; },
   }, { highWaterMark: 0 }), { status, headers: { "content-type": "application/json" } });
   return { response, get entered() { return entered; }, release() {
     if (released) return;
@@ -75,6 +75,27 @@ async function setup(autoSync = false, kind: "SQL" | "IDB" = "SQL") {
   let rpc = connect(); cleanups.push(async () => rpc.close());
   const send = () => rpc.call("compose.send", { accountId: account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Exact subject", bodyText: "Exact body" });
   return { get backend() { return backend; }, account, get rpc() { return rpc; }, send, requests, async reopen() { rpc.close(); await backend.stop(); backend = await open(); await backend.ready; rpc = connect(); }, get context() { return context; }, answer(fn: typeof answer) { answer = fn; }, paths: () => requests.map((r) => new URL(r.url).pathname) };
+}
+
+function followupHealthy(request: Request): Response | undefined {
+  if (new URL(request.url).pathname === "/gmail/messages/sent") return Response.json({ id: "sent", threadId: "sent-thread", labelIds: ["SENT"] });
+  if (new URL(request.url).pathname === "/userinfo") return Response.json({ sub: "synthetic-sub", email: "synthetic@example.test", email_verified: true, name: "Synthetic" });
+  return healthySync(request);
+}
+
+function followupReconnect(h: Awaited<ReturnType<typeof setup>>, proof?: () => void) {
+  h.backend.options.openExternal = async () => {};
+  return vi.spyOn(h.backend.options.providers, "connectGmail").mockImplementation(async (options) => {
+    const google = await h.backend.initialGoogleRequests(false, h.account.id);
+    try {
+      const who = await inspectGmailToken("synthetic-proof-access", options.fetch, {
+        signal: options.signal, google,
+        endpoints: { api: "https://synthetic.invalid/gmail", userinfo: "https://synthetic.invalid/userinfo" },
+      });
+      proof?.();
+      return { ...who, refreshToken: "synthetic-reconnected", grantedScopes: ["https://www.googleapis.com/auth/gmail.modify"] };
+    } finally { google.close(); }
+  });
 }
 
 for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account reason-aware recovery boundaries`, () => {
@@ -430,6 +451,233 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
       expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
     } finally { first.release(); later.release(); await syncing; }
+  });
+
+  it("follow-up reopen cannot retain syncing without a live run or clear durable auth", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "held@example.test", displayName: "Held", color: "indigo", providerConfig: {}, now: 2 });
+    await h.backend.store.accounts.setSyncState(other.account.id, { status: "error", connection: null, authRequired: true, authScope: null, lastError: "Sign in again", lastErrorI18n: { key: "errors.gmail.revoked" } });
+    const durableAuth = (await h.backend.store.accounts.get(other.account.id))!.syncState;
+    const history = heldJson(200, { historyId: "10" });
+    h.answer((request) => new URL(request.url).pathname === "/gmail/history" ? history.response : followupHealthy(request));
+    const syncing = h.backend.syncAccount(h.account.id);
+    try {
+      await vi.waitFor(() => expect(history.entered).toBe(true));
+      expect((await h.backend.store.accounts.get(h.account.id))!.syncState.status).toBe("syncing");
+      const retiring = h.backend.dropAccount(h.account.id);
+      history.release(); await Promise.all([retiring, syncing]);
+      const calls = h.paths().slice(), create = vi.spyOn(h.backend.options.providers, "create");
+      await h.reopen();
+      const accounts = (await h.rpc.call("app.bootstrap", {})).accounts;
+      expect(accounts.find((account) => account.id === other.account.id)!.syncState).toEqual(durableAuth);
+      expect(create).not.toHaveBeenCalled();
+      expect(h.paths()).toEqual(calls);
+      expect(accounts.find((account) => account.id === h.account.id)!.syncState).toMatchObject({ status: "idle", lastSyncAt: null });
+    } finally { history.release(); await Promise.allSettled([syncing]); }
+  });
+
+  it("follow-up confirmed credential generation cannot retire policy after failed recovery", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(403, "SERVICE_DISABLED") : followupHealthy(request));
+    const original = await h.send(); await h.backend.runWorker();
+    expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "failed", attempts: 1 });
+    const sibling = await h.send(), queued = await h.backend.store.ops.get(sibling.opId);
+    const generation = h.backend.credentialsOf(h.account.id);
+    let proofCalls: string[] | undefined;
+    h.answer(followupHealthy);
+    followupReconnect(h, () => { proofCalls = h.paths().slice(); });
+    const commit = h.backend.store.secrets.commit.bind(h.backend.store.secrets);
+    vi.spyOn(h.backend.store.secrets, "commit").mockImplementationOnce(async (...args) => {
+      await commit(...args); throw new Error("Synthetic committed credential acknowledgement lost");
+    });
+    await expect(h.rpc.call("accounts.reconnect", { id: h.account.id })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(proofCalls?.slice(-2)).toEqual(["/gmail/profile", "/userinfo"]);
+    expect(h.backend.credentialsOf(h.account.id)).toBeGreaterThan(generation);
+    expect(await h.backend.getSecret(`account:${h.account.id}:refreshToken`)).toBe("synthetic-reconnected");
+    await h.backend.syncAccount(h.account.id);
+    await h.backend.retryNow(h.account.id, "focus");
+    await h.backend.syncAccount(h.account.id);
+    expect.soft(await h.backend.runWorker()).toBe(0);
+    expect.soft(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+    expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "failed", attempts: 1 });
+    expect.soft(h.paths()).toEqual(proofCalls);
+    expect.soft((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.serviceDisabled" } });
+    await h.rpc.call("accounts.reconnect", { id: h.account.id });
+    await h.backend.syncAccount(h.account.id);
+    expect(await h.backend.runWorker()).toBe(1);
+    expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: queued!.payload_json });
+    expect(await h.backend.store.ops.get(original.opId)).toMatchObject({ state: "failed", attempts: 1 });
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", authRequired: false, lastError: null });
+  });
+
+  it.each(["reconnect", "remove"] as const)("follow-up one failed auth persistence write permits later %s", async (action) => {
+    const h = await setup(false, kind);
+    const provider = (await h.backend.provider(h.account.id))!;
+    await provider.verify();
+    const queued = await h.send(), intent = await h.backend.store.ops.get(queued.opId);
+    const auth = new ProviderAuthError("Synthetic refused credential");
+    const sync = vi.spyOn(provider, "sync").mockRejectedValueOnce(auth);
+    const storageFailure = new Error("Synthetic one-shot status write failure");
+    let failed = false;
+    const write = h.backend.store.accounts.setSyncState.bind(h.backend.store.accounts);
+    const persistence = vi.spyOn(h.backend.store.accounts, "setSyncState").mockImplementation(async (id, patch) => {
+      if (!failed && patch.authRequired) { failed = true; throw storageFailure; }
+      return write(id, patch);
+    });
+    try {
+      await expect(h.backend.syncAccount(h.account.id)).rejects.toBe(storageFailure);
+      expect(failed).toBe(true);
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: true, lastError: auth.message });
+      h.answer(followupHealthy);
+      if (action === "reconnect") {
+        const proof = followupReconnect(h);
+        const result = await h.rpc.call("accounts.reconnect", { id: h.account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
+        expect(proof).toHaveBeenCalledOnce();
+        expect(h.paths().slice(-2)).toEqual(["/gmail/profile", "/userinfo"]);
+        expect(await h.backend.store.ops.get(queued.opId)).toEqual(intent);
+        expect(result).toHaveProperty("value.id", h.account.id);
+        await h.backend.syncAccount(h.account.id);
+        expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState.authRequired).toBe(false);
+        expect(await h.backend.runWorker()).toBe(1);
+        expect(await h.backend.store.ops.get(queued.opId)).toMatchObject({ state: "succeeded", attempts: 1, payload_json: intent!.payload_json });
+      } else {
+        await expect(h.rpc.call("accounts.remove", { id: h.account.id })).resolves.toBeDefined();
+        expect((await h.rpc.call("app.bootstrap", {})).accounts).toEqual([]);
+        expect(await h.backend.store.accounts.get(h.account.id)).toBeNull();
+      }
+    } finally { persistence.mockRestore(); sync.mockRestore(); }
+  });
+
+  it("follow-up notification completion must deliver a later classified native auth fact", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const policy = heldJson(403, { error: { errors: [{ reason: "SERVICE_DISABLED" }] } });
+    let deliver!: () => void, delivered!: () => void, finishAuth!: () => void, classified = false, published = false;
+    const authDone = new Promise<void>((resolve) => { delivered = resolve; });
+    const tokenResult = h.context.tokenResult!;
+    h.context.tokenResult = (generation, error) => {
+      if (!error) return tokenResult(generation);
+      classified = true;
+      return new Promise<void>((resolve, reject) => {
+        finishAuth = resolve;
+        deliver = () => {
+          if (published) return;
+          published = true;
+          Promise.resolve(tokenResult(generation, error)).then(delivered, reject);
+        };
+      });
+    };
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages/send") return policy.response;
+      if (path === "/gmail/history") return Response.json({ error: { code: 401 } }, { status: 401 });
+      if (path === "/token") return Response.json({ error: "invalid_grant" }, { status: 400 });
+      return followupHealthy(request);
+    });
+    const notifications: import("@terno/core").Account[][] = [];
+    h.rpc.on("accounts", (accounts) => notifications.push(accounts));
+    const sent = await h.send(), sending = h.backend.runWorker();
+    let syncing: Promise<void> | undefined, finishEmission!: () => void, emissionEntered = false;
+    const emission = new Promise<void>((resolve) => { finishEmission = resolve; });
+    try {
+      await vi.waitFor(() => expect(policy.entered).toBe(true));
+      syncing = h.backend.syncAccount(h.account.id);
+      await vi.waitFor(() => expect(classified).toBe(true));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const emit = h.backend.emitAccounts.bind(h.backend);
+      vi.spyOn(h.backend, "emitAccounts").mockImplementationOnce(async () => {
+        await emit(); emissionEntered = true;
+        await emission;
+        // Let the drain observe no dirty fact before the classified refusal reaches its finalizer.
+        queueMicrotask(() => queueMicrotask(deliver));
+      });
+      policy.release(); await sending;
+      expect(emissionEntered).toBe(true);
+      expect(notifications.at(-1)![0]!.syncState.lastErrorI18n).toEqual({ key: "errors.gmail.serviceDisabled" });
+      finishEmission(); await authDone;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(await h.backend.store.ops.get(sent.opId)).toMatchObject({ state: "failed", attempts: 1 });
+      const current = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+      expect(current).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.gmail.revoked" } });
+      expect((await h.backend.store.accounts.get(h.account.id))!.syncState).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.gmail.revoked" } });
+      expect(notifications.at(-1)![0]!.syncState).toEqual(current);
+    } finally {
+      policy.release(); finishEmission(); deliver?.(); finishAuth?.();
+      await Promise.allSettled([sending, ...(syncing ? [syncing] : [])]);
+    }
+  });
+
+  it("follow-up Send-first token429 projects its durable dependency hold without sync", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/gmail/messages/send") return Response.json({ error: { code: 401 } }, { status: 401 });
+      if (path === "/token") return failure(429, "rateLimitExceeded");
+      return followupHealthy(request);
+    });
+    const sent = await h.send();
+    await h.backend.runWorker();
+    const original = await h.backend.store.ops.get(sent.opId);
+    expect(original).toMatchObject({ state: "queued", attempts: 1 });
+    expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ service: "oauth-token" })]));
+    const sibling = await h.send(), queued = await h.backend.store.ops.get(sibling.opId);
+    const calls = h.paths().slice(), ledger = await h.backend.store.providerCooldown.read();
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(h.paths()).toEqual(calls);
+    expect(await h.backend.store.ops.get(sent.opId)).toEqual(original);
+    expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: queued!.payload_json, target_json: queued!.target_json });
+    expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "error", lastErrorI18n: { key: "errors.gmail.paused" }, connection: null });
+  });
+
+  it("follow-up cached-token control remains usable during a real token endpoint hold", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => new URL(request.url).pathname === "/token" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
+    const response = await h.context.google!.request({ request: { endpoint: "oauth-token", purpose: "refresh" } }, "https://synthetic.invalid/token", { method: "POST" });
+    expect(response.status).toBe(429);
+    await response.text();
+    expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ service: "oauth-token" })]));
+    const sent = await h.send();
+    expect(await h.backend.runWorker()).toBe(1);
+    expect(await h.backend.store.ops.get(sent.opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+    expect(h.paths().filter((path) => path === "/token")).toHaveLength(2);
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState.status).not.toBe("error");
+  });
+
+  it("follow-up retired quota handles cannot outlive actual expiry and verified reconnect", async () => {
+    let wall = Date.now(), elapsed = performance.now();
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(429, "userRateLimitExceeded") : followupHealthy(request));
+    const sent = await h.send();
+    await h.backend.runWorker();
+    const queued = await h.backend.store.ops.get(sent.opId);
+    expect(queued).toMatchObject({ state: "queued", attempts: 1 });
+    const row = JSON.parse((await h.backend.store.providerCooldown.read())!).rows.find((r: { service: string }) => r.service === "gmail-api");
+    const calls = h.paths().slice();
+    wall += 120_001;
+    expect(await h.backend.runWorker()).toBe(0);
+    expect(h.paths()).toEqual(calls);
+    expect(await h.backend.store.ops.get(sent.opId)).toEqual(queued);
+    expect(JSON.parse((await h.backend.store.providerCooldown.read())!).rows).toEqual(expect.arrayContaining([expect.objectContaining({ service: "gmail-api", minimum: row.minimum })]));
+    elapsed += 120_001;
+    h.answer(followupHealthy);
+    const reconnect = followupReconnect(h);
+    await h.rpc.call("accounts.reconnect", { id: h.account.id });
+    expect(reconnect).toHaveBeenCalledOnce();
+    await h.backend.syncAccount(h.account.id);
+    expect(await h.backend.runWorker()).toBe(1);
+    expect(await h.backend.store.ops.get(sent.opId)).toMatchObject({ state: "succeeded", attempts: 2, payload_json: queued!.payload_json });
+    expect(h.paths().filter((path) => path === "/gmail/profile").length).toBeGreaterThanOrEqual(3);
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", lastError: null, lastErrorI18n: null, lastSyncAt: wall });
   });
 
   it.each([429, 403])("R1 Send-first quota%i projects the existing admission hold without a sync", async (status) => {
