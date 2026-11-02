@@ -50,7 +50,7 @@ function ContextMenuContent({
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
           // The menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
-          className={cn("z-50 max-h-(--available-height) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast outline-none ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
+          className={cn("z-50 max-h-(--available-height) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast outline-none ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>

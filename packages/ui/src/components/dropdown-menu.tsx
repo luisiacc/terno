@@ -43,7 +43,7 @@ function DropdownMenuContent({
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           // The menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
-          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95", className )}
           {...props}
         />
       </MenuPrimitive.Positioner>
@@ -137,7 +137,7 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuContent
       data-slot="dropdown-menu-sub-content"
-      className={cn("w-auto min-w-[96px] rounded-xl bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
+      className={cn("w-auto min-w-[96px] rounded-menu bg-popover p-1.5 shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] text-popover-foreground duration-base data-closed:duration-fast ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
       align={align}
       alignOffset={alignOffset}
       side={side}

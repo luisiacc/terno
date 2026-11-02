@@ -1066,7 +1066,7 @@ export function FormatBar({ draftKey, className }: { draftKey: string; className
                 <Ellipsis />
               </ToolbarButton>
             </Tip>
-            <PopoverContent align="end" className="w-auto p-1" finalFocus={{ current: c.dom }} data-testid="format-more-popover">
+            <PopoverContent align="end" className="w-auto rounded-menu p-1.5" finalFocus={{ current: c.dom }} data-testid="format-more-popover">
               <Toolbar aria-label={t("compose.format.more")} disabled={!s.editable} className="gap-px">
                 {folded.map((g, i) => (
                   <FormatGroup key={g.id} group={g} c={c} s={s} last={i === folded.length - 1} />

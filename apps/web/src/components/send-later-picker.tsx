@@ -46,7 +46,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
   return (
     <div className="flex flex-col gap-2" data-testid="send-later-picker" onKeyDown={onKeyDown}>
       {current && (
-        <div className="flex flex-col gap-0.5 px-1">
+        <div className="flex flex-col gap-0.5 px-2 pt-1">
           <p className="text-xs text-muted-foreground" data-testid="send-later-current">
             {t("sendLater.current", { when: reminderWhen(current.sendAt) })}
           </p>
@@ -57,7 +57,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
           )}
         </div>
       )}
-      <div ref={listRef} className="-mx-1 flex flex-col gap-px" role="group" aria-label={t("sendLater.title")}>
+      <div ref={listRef} className="flex flex-col gap-px" role="group" aria-label={t("sendLater.title")}>
         <button type="button" data-send-later-choice data-testid="send-later-now" className={choice} onClick={() => pick("now")}>
           <Send aria-hidden />
           <span className="min-w-0 flex-1 truncate">{t("sendLater.now")}</span>
@@ -73,7 +73,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
           <span className="min-w-0 flex-1 truncate">{t("sendLater.custom")}</span>
         </button>
         {picking && (
-          <div className="flex flex-col gap-2 px-1 pt-1 pb-1" data-testid="send-later-fields">
+          <div className="flex flex-col gap-2 px-2 pt-1 pb-1" data-testid="send-later-fields">
             <WhenFields when={when} testPrefix="send-later" describedBy={pastId} />
             {when.past && (
               <p id={pastId} className="px-1 text-xs text-destructive-ink" data-testid="send-later-past">
@@ -104,7 +104,7 @@ export function SendLaterPicker({ current, onPick, onEdit, sendKeys, done }: { c
           </>
         )}
       </div>
-      <p className="hairline-t px-1 pt-2 text-xs text-muted-foreground" data-testid="send-later-local">
+      <p className="hairline-t px-2 pt-2 pb-1.5 text-xs text-muted-foreground" data-testid="send-later-local">
         {t("sendLater.local")}
       </p>
     </div>

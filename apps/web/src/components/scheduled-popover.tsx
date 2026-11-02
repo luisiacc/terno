@@ -14,7 +14,7 @@ export function ScheduledPopover({ s, align, children }: { s: ScheduledInfo; ali
   return (
     <Popover open={open} onOpenChange={setOpen}>
       {children(open)}
-      <PopoverContent side="bottom" align={align} sideOffset={4} className="w-72 gap-2 p-2" data-testid="scheduled-popover" aria-label={t("sendLater.title")}>
+      <PopoverContent side="bottom" align={align} sideOffset={4} className="w-72 gap-2 rounded-menu p-1.5" data-testid="scheduled-popover" aria-label={t("sendLater.title")}>
         <Suspense fallback={<div className="h-32" />}>
           <SendLaterPicker
             current={s}

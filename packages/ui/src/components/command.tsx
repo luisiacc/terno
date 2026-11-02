@@ -50,7 +50,8 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className={cn(
-          "top-[18%] translate-y-0 overflow-hidden rounded-2xl! p-0 sm:max-w-[640px]",
+          // concentric with its rows (rounded-lg, 2 in from the edge: the list's and the group's p-1), plan 119
+          "top-[18%] translate-y-0 overflow-hidden rounded-[calc(var(--radius-lg)+var(--spacing)*2)]! p-0 sm:max-w-[640px]",
           className
         )}
         showCloseButton={showCloseButton}

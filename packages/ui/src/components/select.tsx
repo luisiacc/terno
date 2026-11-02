@@ -11,7 +11,7 @@ function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
-      className={cn("scroll-my-1 p-1", className)}
+      className={cn("scroll-my-1.5", className)}
       {...props}
     />
   )
@@ -84,7 +84,7 @@ function SelectContent({
           data-slot="select-content"
           // The menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
           data-align-trigger={alignItemWithTrigger}
-          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover text-popover-foreground shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] duration-base data-closed:duration-fast data-[align-trigger=true]:animate-none ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
+          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu bg-popover p-1.5 text-popover-foreground shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] duration-base data-closed:duration-fast data-[align-trigger=true]:animate-none ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
           {...props}
         >
           <SelectScrollUpButton />

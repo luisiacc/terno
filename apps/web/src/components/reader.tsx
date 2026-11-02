@@ -78,7 +78,7 @@ function RemindButton({ threadId }: { threadId: number }) {
           <Shortcut keys="h" />
         </TooltipContent>
       </Tooltip>
-      <PopoverContent side="bottom" align="start" sideOffset={6} className="w-72 gap-2 p-2" data-testid="remind-popover" aria-label={t("remind.title")}>
+      <PopoverContent side="bottom" align="start" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="remind-popover" aria-label={t("remind.title")}>
         <Suspense fallback={<div className="h-48" />}>
           <RemindPicker threadIds={[threadId]} done={close} />
         </Suspense>

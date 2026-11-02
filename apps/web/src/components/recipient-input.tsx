@@ -620,7 +620,7 @@ export function RecipientInput({
             // focus stays in the field: a click must not blur it
             onMouseDown={(e) => e.preventDefault()}
             style={{ top: rect.top, left: rect.left, width: rect.width }}
-            className="fixed z-50 flex flex-col rounded-xl bg-popover p-1 text-sm text-popover-foreground shadow-popover outline-hidden animate-in fade-in-0 duration-base"
+            className="fixed z-50 flex flex-col rounded-menu bg-popover p-1.5 text-sm text-popover-foreground shadow-popover outline-hidden animate-in fade-in-0 duration-base"
           >
             {items.map((a, i) => (
               <div

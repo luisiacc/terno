@@ -45,7 +45,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
   return (
     <div className="flex flex-col gap-2" data-testid="remind-picker" onKeyDown={onKeyDown}>
       {current && (
-        <p className="px-1 text-xs text-muted-foreground" data-testid="remind-current">
+        <p className="px-2 pt-1 text-xs text-muted-foreground" data-testid="remind-current">
           {t(current.kind === "noReply" ? "remind.currentNoReply" : "remind.current", { when: reminderWhen(current.dueAt) })}
         </p>
       )}
@@ -68,7 +68,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <div ref={listRef} className="-mx-1 flex flex-col" role="group" aria-label={t("remind.title")}>
+      <div ref={listRef} className="flex flex-col" role="group" aria-label={t("remind.title")}>
         {presets.map((p) => (
           <button key={p.id} type="button" data-remind-choice data-testid={`remind-preset-${p.id}`} className={choice} onClick={() => set(p.at)}>
             <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
@@ -81,7 +81,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
         </button>
         {picking && (
           <form
-            className="flex flex-col gap-2 px-1 pt-1 pb-1"
+            className="flex flex-col gap-2 px-2 pt-1 pb-1"
             data-testid="remind-custom"
             onSubmit={(e) => {
               e.preventDefault();

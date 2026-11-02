@@ -61,7 +61,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
             <Shortcut keys="mod+shift+enter" />
           </TooltipContent>
         </Tooltip>
-        <PopoverContent side="top" align="end" sideOffset={6} className="w-72 gap-2 p-2" data-testid="send-later-popover" aria-label={t("sendLater.title")}>
+        <PopoverContent side="top" align="end" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="send-later-popover" aria-label={t("sendLater.title")}>
           <Suspense fallback={<div className="h-32" />}>
             <SendLaterPicker sendKeys="mod+enter" done={() => setOpen(false)} onPick={(at) => onSend(at === "now" ? undefined : at)} />
           </Suspense>

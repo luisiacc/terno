@@ -447,6 +447,13 @@
   --hairline-color: var(--border);
 }
 /*
+ * A panel of rows (menus, the send-later and remind pickers): corners concentric with its rows', the rows' md radius
+ * plus the 1.5 inset (p-1.5) between them, so the two curves run parallel in every design (plan 119).
+ */
+@utility rounded-menu {
+  border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
+}
+/*
  * Translucent menus (DropdownMenu, ContextMenu, Select popups only: modal, so
  * nothing scrolls behind them). --popover-glass is as translucent as the
  * theme's menu text allows (often solid). Solid without support and when the
