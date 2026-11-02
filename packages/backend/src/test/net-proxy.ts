@@ -26,7 +26,11 @@ interface Pair {
 
 export interface NetProxy {
   port: number;
-  /** connections accepted so far (a refused one isn't) */
+  /**
+   * connections accepted so far (a refused one isn't). IMAP and SMTP servers speak first, so a connection
+   * that writes before the server's greeting is a stranger's knock on the port (another app on this machine
+   * probing new ports with an HTTP GET or a TLS hello): it is closed and not counted.
+   */
   readonly accepted: number;
   /** connections currently open */
   readonly open: number;
@@ -40,7 +44,7 @@ export interface NetProxy {
 
 export async function startNetProxy(upstreamPort: number, host = "127.0.0.1"): Promise<NetProxy> {
   let mode: Mode = "pass";
-  let accepted = 0;
+  let accepted = 0, strangers = 0;
   const pairs = new Set<Pair>();
   let server: Server | null = null;
   let port = 0;
@@ -53,11 +57,21 @@ export async function startNetProxy(upstreamPort: number, host = "127.0.0.1"): P
     upstream.on("error", () => client.destroy());
     const pair: Pair = { client, upstream, dead: blackholed };
     pairs.add(pair);
+    let greeted = false;
     client.on("data", (d) => {
+      if (!greeted) {
+        strangers++;
+        pairs.delete(pair);
+        client.destroy();
+        upstream.destroy();
+        return;
+      }
       if (!pair.dead) upstream.write(d);
     });
     upstream.on("data", (d) => {
-      if (!pair.dead) client.write(d);
+      if (pair.dead) return;
+      greeted = true;
+      client.write(d);
     });
     const end = () => {
       pairs.delete(pair);
@@ -90,7 +104,7 @@ export async function startNetProxy(upstreamPort: number, host = "127.0.0.1"): P
       return port;
     },
     get accepted() {
-      return accepted;
+      return accepted - strangers;
     },
     get open() {
       return pairs.size;

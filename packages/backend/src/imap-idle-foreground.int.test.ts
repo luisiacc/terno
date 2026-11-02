@@ -91,7 +91,7 @@ async function act(t: Awaited<ReturnType<typeof account>>, threadId: number, act
 
 function budget(w: Wire, start: number, sessions = 2) {
   expect(w.overflow).toBe(false);
-  expect(w.server.sessionCounter).toBeLessThanOrEqual(5);
+  expect(w.sessions).toBeLessThanOrEqual(5);
   expect(w.commands.length - start).toBeLessThan(120);
   expect(new Set(w.commands.slice(start).map((cmd) => cmd.session)).size).toBeLessThanOrEqual(sessions);
 }

@@ -121,7 +121,18 @@ async function wire(raw: Buffer, bytes: Buffer[], messageId: string) { wireConte
 async function smtpServer(owned = cleanup) {
   const transcript: string[] = [], received: Buffer[] = [], envelopes: string[][] = [];
   let refused = 0;
-  const log = (...args: unknown[]) => { transcript.push(format(...args)); };
+  // a session joins the transcript once it speaks SMTP: a stranger's knock on the port (another app on this machine
+  // probing new ports with an HTTP GET) is no connection Terno made
+  const held = new Map<string, string[]>(), spoke = new Set<string>();
+  const log = (...args: unknown[]) => {
+    const meta = args[0] as { cid?: string; tnx?: string; command?: string } | undefined, line = format(...args);
+    // a socket error names its session in the message ("%s %s %s", id, address, error)
+    const cid = meta?.cid ?? (meta?.tnx === "error" ? String(args[2]) : undefined);
+    if (!cid || spoke.has(cid)) { transcript.push(line); return; }
+    const lines = [...(held.get(cid) ?? []), line];
+    if (meta?.command === "EHLO" || meta?.command === "HELO") { spoke.add(cid); held.delete(cid); transcript.push(...lines); }
+    else held.set(cid, lines);
+  };
   const server = new SMTPServer({ size: 1, hidePIPELINING: true, disabledCommands: ["STARTTLS", "PIPELINING"], logger: { debug: log, info() {}, error: log, warn: log },
     onAuth(_auth, _session, cb) { cb(null, { user: "synthetic" }); },
     onMailFrom(_address, _session, cb) {

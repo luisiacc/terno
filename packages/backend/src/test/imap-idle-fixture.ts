@@ -22,6 +22,8 @@ export function rawIdleMail(subject: string, body = "Exact foreground body") {
     "Content-Type: text/plain; charset=utf-8", "", body, ""].join("\r\n");
 }
 
+const OPENERS = new Set(["CAPABILITY", "ID", "LOGIN", "AUTHENTICATE", "STARTTLS", "NOOP", "LOGOUT", "ENABLE"]);
+
 export async function idleFixture(idle = true, script: ScriptRule[] = []) {
   const server = imapkit({
     plugins: [...(idle ? ["IDLE"] : []), "MOVE", "UIDPLUS", "SPECIAL-USE", "ENABLE", "CONDSTORE"],
@@ -39,9 +41,17 @@ export async function idleFixture(idle = true, script: ScriptRule[] = []) {
   const active = new Set<number>();
   const closed = new Set<number>();
   let overflow = false;
+  // a session is a mail client's once its first command opens IMAP; a stranger's knock on the port (an HTTP GET,
+  // a TLS hello: another app on this machine probing new ports) is neither recorded nor counted
+  const clients = new Set<number>(), strangers = new Set<number>();
+  const client = (session: number, command: string) => {
+    if (!clients.has(session) && !strangers.has(session)) (OPENERS.has(command.toUpperCase()) ? clients : strangers).add(session);
+    return clients.has(session);
+  };
   const notify = () => changes.emit("change");
   server.script.add([
     { on: "command", run: true, when(ctx) {
+      if (!client(ctx.session, ctx.command ?? "")) return false;
       if (commands.length < 2000) commands.push({ session: ctx.session, command: ctx.command!, data: ctx.data, mailbox: ctx.mailbox });
       else overflow = true;
       notify();
@@ -106,6 +116,8 @@ export async function idleFixture(idle = true, script: ScriptRule[] = []) {
 
   return { server, port, commands, completions, idles, byes, arrivals, active, closed, wait,
     get overflow() { return overflow; },
+    /** sessions mail clients opened (not strangers probing the port) */
+    get sessions() { return clients.size; },
     async stop() {
       try { await bounded(server.stop(), "fixture stop"); }
       finally { server.off("session", sessionEvent); server.off("command", commandEvent); changes.removeAllListeners(); }
