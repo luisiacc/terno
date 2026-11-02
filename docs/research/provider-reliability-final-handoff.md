@@ -1,6 +1,6 @@
 # Provider reliability handoff
 
-The release is **not green**. Every report row has a recorded disposition; two remain needs-work with committed, unlanded candidates parked under the user's final review stop rule. The latest focused verification passed the complete original SQL performance file on supported Node 24.3.0. It does not supersede the failed full release run or the separate cached-migration correctness failure.
+The release is **not green**. Every report row has a recorded disposition. The authorized S48, T09 and B35/S23 follow-ups are now landed, leaving zero needs-work report rows; broader release failures and separate optional candidates remain open. The latest focused verification passed the complete original SQL performance file on supported Node 24.3.0. It does not supersede the failed full release run or the separate cached-migration correctness failure.
 
 ## Row dispositions
 
@@ -8,22 +8,22 @@ The [canonical worklist](provider-reliability-worklist.md) contains the individu
 
 | Disposition | Rows |
 |---|---:|
-| Covered by an existing reviewed change | 83 |
+| Covered by an existing reviewed change | 85 |
 | Already protected in Terno | 33 |
 | Doesn't apply to Terno | 14 |
 | Outlook-deferred | 21 |
-| Needs work, candidate follow-up active | 2 |
+| Needs work | 0 |
 | Total | 153 |
 
-W01, W02, W03, W04, W06, W08, W09, W10 and W12 have no needs-work report rows. W07 remains Outlook-deferred. W05 retains B35/S23; W11 has no remaining needs-work rows: S48 landed at `bbcfaf8f` and T09 at `62532cde` after authorized follow-ups and focused integration. These are finite supported-contract dispositions, not universal provider, crash, hardware-sleep or live-service guarantees. S52's native SQLite/Gmail 50k resource contract is already protected; its ordered phases retain the original identities, assertions and per-case timeouts.
+W01, W02, W03, W04, W06, W08, W09, W10 and W12 have no needs-work report rows. W07 remains Outlook-deferred. W05 has no remaining needs-work rows after B35/S23 landed `0478fadd`; W11 has no remaining needs-work rows: S48 landed at `bbcfaf8f` and T09 at `62532cde` after authorized follow-ups and focused integration. These are finite supported-contract dispositions, not universal provider, crash, hardware-sleep or live-service guarantees. S52's native SQLite/Gmail 50k resource contract is already protected; its ordered phases retain the original identities, assertions and per-case timeouts.
 
 ## Parked implementations
 
-All candidates below remain unlanded. Passing controls do not waive their outstanding findings or timing gates.
+The first three rows record completed follow-up landings; the remaining optional candidates are still unlanded. Passing focused controls do not waive unrelated release failures.
 
 | Candidate / preserved head | Reason |
 |---|---|
-| B35/S23 account-status owner, `t3/policy-status-projection`, `cbe1d7cc` | Final redesign R2: five P2s involving retired-handle cooldown, Send-first 429 projection, notification completion, remembered write failure, and premature policy retirement on credential generation. Also one P3 for persisted syncing without a live run. |
+| B35/S23 account-status owner — LANDED `0478fadd` | Five P2s, stale-syncing P3 and two follow-up review findings fixed with SQL/IDB RED→GREEN. Root integration378status/direct+6Send+1network PASS. Actual review requested changes; both post-review fixes were tested and inspected, without a second clean verdict. |
 | S48 complete-body publication — LANDED `bbcfaf8f` | The three redesign findings and both follow-up review findings received RED→GREEN fixes. Root integration passed 54 native/38 WASM; original incoming 15 ms gate passed. Full bodies preserved, no cutoff. No second clean review verdict or general release clearance claimed. |
 | T09 full-message reader — LANDED `62532cde` | Four original findings and two follow-up P2s fixed with RED→GREEN regressions. Root integration:62 unit/direct,42 browser,types/lint/axe PASS. Original two perf cases passed unchanged20ms limits; all7 rebased patches unchanged. No second clean review verdict claimed. |
 | Optional W06 survivor recovery, `3c9a6fa3` | Clean source R3, but unchanged 16 ms performance gate failed. One focused profile found the dominant native COMMIT cost in inherited transaction/driver code; no candidate-local fix was justified. A28/S11 qualification on landed main remains separate. |
@@ -82,6 +82,10 @@ Selected passing diagnostics for other IDB, search, instant-index, history, pars
 
 User WIP was left untouched. Candidate branches and evidence remain preserved; no pushes were made. Latest SQL verification restored its source/dependency/output paths and joined all captured processes naturally without signals. Process audits are sampled rather than exhaustive; earlier install/cache and observation limitations remain disclosed in each report. No new full milestone or additional parked-item review is implied by this handoff.
 
-Current continuation: S48 landed on 2026-11-02. B35/S23 and T09 are active fix-and-land follow-ups under the latest user authorization; their earlier park entries describe historical review findings. The separate migration/reconcile/editor parks remain unchanged.
 
-T09 continuation landed62532cde on2026-11-02; onlyB35/S23 remain active. Earlier park descriptions and failed full-release results remain historical evidence.
+
+## Authorized follow-up completion — 2026-11-02
+
+All four requested rows landed serially by fast-forward: S48 `bbcfaf8f`, T09 `62532cde`, B35/S23 `0478fadd`. Current tally85covered/0needs-work/33protected/14N-A/21deferred=153. No body cutoff or performance-budget change. All three follow-up reviews produced findings that received executed failing regressions and fixes; no independent clean rereview was performed or claimed. Root inspected corrections and isolated integration checks passed.
+
+B35/S23 integration385 newly passing bodies at exact0478fadd, while four broader failures were reproduced on pristine committed main with matching candidate signatures. These known issues are two IDB explicit-renewal authority/removal failures and two reader-reconnect payload/detail-state failures; later assertions remain unqualified. See [integration report](/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-b35-verification-ar9jycah/report.md). The foreground backfill pacing fixture and prior native migration-cache/lifecycle performance holds remain recorded separately. No full release gates were repeated; the release is still not green. User WIP and unrelated parked branches were preserved; no push.
