@@ -530,7 +530,7 @@ for (const failure of [false, true]) test(`delayed reader completion and Back yi
   expect(await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop)).toBe(top);
 });
 
-for (const query of ["filter-explicit", "filter-implicit"]) test(`SVG filter paint preserves the original viewport (${query})`, async ({ page }) => {
+for (const query of ["filter-explicit", "filter-implicit", "filter-slice"]) test(`SVG filter paint preserves the original viewport (${query})`, async ({ page }) => {
   await page.goto(`/e2e/full-message/index.html?${query}`);
   await expect(show(page)).toBeVisible();
   const pixel = async (frame: ReturnType<Page["locator"]>) => {
@@ -544,14 +544,14 @@ for (const query of ["filter-explicit", "filter-implicit"]) test(`SVG filter pai
   expect(await pixel(full(page).locator("iframe"))).toEqual([0,255,0]);
 });
 
-test("void backgrounds remain loaded and visibly painted in the complete reader", async ({ page }) => {
-  await page.goto("/e2e/full-message/index.html?void-background");
+for (const query of ["void-background", "variable-background"]) test(`backgrounds remain loaded and visibly painted in the complete reader (${query})`, async ({ page }) => {
+  await page.goto(`/e2e/full-message/index.html?${query}`);
   await expect(show(page)).toBeVisible();
-  const rule = (await page.locator("iframe").contentFrame().locator("hr").boundingBox())!;
+  const rule = (await page.locator("iframe").contentFrame().locator(query === "void-background" ? "hr" : 'div[style*="height:30000px"]').boundingBox())!;
   expect(color(await page.screenshot({ clip: { x: rule.x + 5, y: rule.y + 5, width: 1, height: 1 } }))).toEqual([255,0,0]);
   await show(page).click();
   await expect(full(page)).toHaveAttribute("aria-busy", "false");
-  await expect(mail(page).locator("img")).toHaveCount(2);
+  await expect(mail(page).locator("img")).toHaveCount(query === "void-background" ? 2 : 1);
   for (const image of await mail(page).locator("img").all()) {
     await expect(image).toHaveJSProperty("naturalWidth", 1);
     await image.scrollIntoViewIfNeeded();
@@ -560,4 +560,25 @@ test("void backgrounds remain loaded and visibly painted in the complete reader"
     expect(color(await page.screenshot({ clip: { x: box.x, y: Math.max(box.y + 1, outer.y + 4), width: 1, height: 1 } }))).toEqual([255,0,0]);
   }
   expect(await mail(page).locator("body").textContent()).toBe("BeforeAfter");
+});
+
+for (const failure of [false, true]) test(`external focus persistently revokes loading and return ownership (${failure})`, async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/src/components/full-message.tsx*", async (route) => { await held; if (failure) await route.abort(); else await route.continue(); });
+  await page.goto("/e2e/full-message/index.html?reader");
+  await show(page).click();
+  await expect(page.getByText("Loading full message…", { exact: true })).toBeVisible();
+  await page.evaluate(() => { const button = document.createElement("button"); button.id = "outside-owner"; button.textContent = "Sidebar"; const blank = document.createElement("div"); blank.id = "sidebar-blank"; blank.style.cssText = "position:fixed;right:0;top:0;width:30px;height:30px"; document.body.append(button, blank); });
+  await page.locator("#outside-owner").click();
+  await page.locator("#sidebar-blank").click();
+  await expect(page.locator("body")).toBeFocused();
+  release();
+  if (failure) await expect(page.getByRole("alert")).toBeVisible(); else await expect(full(page)).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("body")).toBeFocused();
+  const top = await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop);
+  await page.evaluate(async () => { const path = "/src/lib/page.ts"; (await import(path)).goBack(); });
+  await expect(show(page)).toBeVisible();
+  await expect(page.locator("body")).toBeFocused();
+  expect(await page.locator("[data-reader-scroller]").evaluate((element) => element.scrollTop)).toBe(top);
 });

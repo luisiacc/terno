@@ -5,7 +5,7 @@ import { getApp } from "~/state/app";
 import { cancelReaderScroll } from "~/lib/reader-scroll";
 import { forwardPrintKey } from "~/lib/print-open";
 
-interface Opening { lease: object; owner: unknown; focusRequest: number | null; trigger: HTMLElement; fallback: HTMLElement | null; scroller: HTMLElement | null; top: number; y: number }
+interface Opening { ticket: { valid: boolean }; lease: object; owner: unknown; focusRequest: number | null; trigger: HTMLElement; fallback: HTMLElement | null; scroller: HTMLElement | null; top: number; y: number }
 interface ReaderView { threadId: number | null; active: object | null; target: HTMLDivElement | null; focus(element: HTMLElement | null): void; open(lease: object, trigger: HTMLElement): void; close(lease: object, restore?: boolean): void }
 const Context = createContext<ReaderView | null>(null);
 export const useMailReaderView = () => useContext(Context);
@@ -21,14 +21,14 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
   const close = useCallback((lease: object, restore = true) => {
     setOpening((current) => {
       if (current?.lease !== lease) return current;
-      if (restore && (document.activeElement === document.body || target?.contains(document.activeElement))) returning.current = current;
+      if (restore && current.ticket.valid && (document.activeElement === document.body || target?.contains(document.activeElement))) returning.current = current;
       return null;
     });
   }, [target]);
   const open = (lease: object, trigger: HTMLElement) => {
     cancelReaderScroll();
     const scroller = trigger.closest<HTMLElement>("[data-reader-scroller]");
-    setOpening({ lease, owner: identity, focusRequest, trigger, fallback: trigger.parentElement?.querySelector("iframe") ?? null, scroller, top: scroller?.scrollTop ?? 0, y: trigger.getBoundingClientRect().top });
+    setOpening({ ticket: { valid: true }, lease, owner: identity, focusRequest, trigger, fallback: trigger.parentElement?.querySelector("iframe") ?? null, scroller, top: scroller?.scrollTop ?? 0, y: trigger.getBoundingClientRect().top });
   };
   useLayoutEffect(() => {
     if (superseded) { returning.current = null; setOpening(null); }
@@ -37,7 +37,7 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
     if (active || !returning.current) return;
     const previous = returning.current;
     returning.current = null;
-    if (previous.owner !== identity) return;
+    if (previous.owner !== identity || !previous.ticket.valid || (document.activeElement !== document.body && !target?.contains(document.activeElement))) return;
     const owned = (element: HTMLElement | null): element is HTMLElement => Boolean(element?.isConnected && source.current?.contains(element) && !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }));
     if (owned(previous.trigger)) {
       if (previous.scroller) {
@@ -49,10 +49,19 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
       previous.fallback.scrollIntoView({ block: "nearest" });
       previous.fallback.focus({ preventScroll: true });
     }
-  }, [active, identity]);
+  }, [active, identity, target]);
   useLayoutEffect(() => {
     if (!active) return;
     const retained = new WeakSet<KeyboardEvent>();
+    const intent = (event: Event) => {
+      const element = event.target as Element | null;
+      const state = getApp();
+      if (state.menuOpen || state.dialog !== null || element?.closest?.('[role="menu"], [role="dialog"], [role="alertdialog"]')) return;
+      if (element !== active.trigger && element !== document.body && element !== document.documentElement && !target?.contains(element)) active.ticket.valid = false;
+      if (event.type === "pointerdown" && !target?.contains(element)) active.ticket.valid = false;
+    };
+    window.addEventListener("focusin", intent, true);
+    window.addEventListener("pointerdown", intent, true);
     const capture = (event: KeyboardEvent) => {
       const state = getApp();
       if (state.menuOpen || state.dialog !== null || (event.target as Element | null)?.closest?.('[role="menu"], [role="dialog"], [role="alertdialog"]')) retained.add(event);
@@ -73,10 +82,10 @@ export function MailReaderView({ identity, focusRequest = null, children }: { id
       if (!active.trigger.isConnected || active.trigger.closest('[data-state="closed"]')) close(active.lease, false);
     });
     if (source.current) observer.observe(source.current, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-state"] });
-    return () => { unregisterBack(); window.removeEventListener("keydown", capture, true); if (escape.current === keys) escape.current = null; observer.disconnect(); };
+    return () => { window.removeEventListener("focusin", intent, true); window.removeEventListener("pointerdown", intent, true); unregisterBack(); window.removeEventListener("keydown", capture, true); if (escape.current === keys) escape.current = null; observer.disconnect(); };
   }, [active, close, target]);
   return (
-    <Context.Provider value={{ threadId: typeof identity === "number" ? identity : null, active: active?.lease ?? null, target, open, close, focus: (element) => { if (active && (document.activeElement === document.body || document.activeElement === active.trigger || target?.contains(document.activeElement))) element?.focus({ preventScroll: true }); } }}>
+    <Context.Provider value={{ threadId: typeof identity === "number" ? identity : null, active: active?.lease ?? null, target, open, close, focus: (element) => { if (active?.ticket.valid && (document.activeElement === document.body || document.activeElement === active.trigger || target?.contains(document.activeElement))) element?.focus({ preventScroll: true }); } }}>
       <div className="relative h-full min-h-0" onKeyDown={(event) => escape.current?.(event.nativeEvent)}>
         <div ref={source} inert={Boolean(active)} aria-hidden={active ? true : undefined} className="h-full min-h-0" style={{ visibility: active ? "hidden" : undefined }}>{children}</div>
         <div ref={setTarget} className={active ? "absolute inset-0 flex min-h-0 flex-col bg-background" : "hidden"} data-full-message-host />

@@ -28,6 +28,13 @@ export async function copyMailTree(source: Node, target: Node, signal: AbortSign
         copied = parent;
       } else {
         copied = target.ownerDocument!.importNode(current, false);
+        if (current.nodeType === Node.ELEMENT_NODE) {
+          const element = current as HTMLElement | SVGElement;
+          if (/var\(|^inherit$/i.test(element.style?.backgroundImage ?? "")) {
+            const background = element.ownerDocument.defaultView?.getComputedStyle(element).backgroundImage;
+            if (background) (copied as HTMLElement | SVGElement).style.backgroundImage = background;
+          }
+        }
         if (tabs.has(current)) {
           const tab = tabs.get(current);
           if (tab === null) (copied as Element).removeAttribute("tabindex");
