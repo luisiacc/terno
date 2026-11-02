@@ -115,6 +115,11 @@ async function paired(page: Page, rounds: number) {
     const round: Record<string, number> = {};
     for (const enabled of r % 2 ? [false, true] : [true, false]) {
       await setSuggestions(page, enabled);
+      // the last burst's edits saved first (past the 800 ms debounce): a huge draft's save holds the page ~300 ms and
+      // the in-process backend that types these keys ~200 ms, so keys then arrive a second apart and a save follows
+      // each. Which burst met it decided the ratio, not suggestions; a save's own cost is perf.spec's gate.
+      await page.waitForTimeout(900);
+      await expect(page.getByTestId("draft-status")).toHaveText(/saved/i, { timeout: 60_000 });
       await resetProbe(page);
       await page.keyboard.type(HABIT, { delay: 90 });
       // a huge draft takes tens of ms a key: the suggestion is asked 60 ms after the last one is handled
