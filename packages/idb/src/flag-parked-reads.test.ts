@@ -1,4 +1,4 @@
-import { legacyImage } from "./test/legacy-stores";
+import { legacyImage, legacyBodyUpgrade } from "./test/legacy-stores";
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
@@ -7,7 +7,7 @@ import { IdbMailStore } from "./store";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 for (const instantSearch of [false, true]) it(`reaffirmation avoids loading parked history (instantSearch=${instantSearch})`, async () => {
-  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch, platform });
+  const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: crypto.randomUUID(), factory: indexedDB, instantSearch, platform });
   try {
     const [account] = await withAccounts(store, 1);
     await ingest(store, [msg({ accountId: account!, providerMsgId: "parked" })]);
@@ -47,7 +47,7 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
   const { databaseName, IDB_VERSION } = await import("./schema");
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-  let store = await IdbMailStore.open({ name, factory, instantSearch: false, platform });
+  let store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), name, factory, instantSearch: false, platform });
   let raw: IDBDatabase | undefined;
   try {
     const [account] = await withAccounts(store, 1);
@@ -85,7 +85,7 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
     expect(raw.version).toBe(8);
     expect(await request(raw.transaction("meta").objectStore("meta").get("logicalSchema"))).toBe(21);
     raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ name: legacyName, factory, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), name: legacyName, factory, instantSearch: false, platform });
     raw = await request(factory.open(databaseName(legacyName)));
     expect(raw.version).toBe(IDB_VERSION);
     raw.close(); raw = undefined;
@@ -97,7 +97,7 @@ it("rebuilds the memory index when opening physical 8 logical 21 metadata", asyn
 });
 
 it("restores the parked lookup after a real IndexedDB transaction abort", async () => {
-  const store = await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform });
+  const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: crypto.randomUUID(), factory: indexedDB, instantSearch: false, platform });
   try {
     const [account] = await withAccounts(store, 1);
     await ingest(store, [msg({ accountId: account!, providerMsgId: "abort" })]);

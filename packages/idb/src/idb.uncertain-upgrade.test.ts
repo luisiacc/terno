@@ -4,7 +4,7 @@ import { ingest, memoryFiles, msg, withAccounts } from "@terno/store/conformance
 import { expect, it, vi } from "vitest";
 import { databaseName, IDB_VERSION, LOGICAL_SCHEMA } from "./schema";
 import { IdbMailStore } from "./store";
-import { legacyImage } from "./test/legacy-stores";
+import { legacyImage, legacyBodyUpgrade } from "./test/legacy-stores";
 import { UNCERTAINTY_KEY, UncertainWriteError } from "./uncertainty";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
@@ -33,7 +33,10 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
 
 /** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery, physical24's forwards (plan 116) */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source.map((store) => store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends", "forward_eligible", "forwards", "forward_recipients"].map((name) => ({
+  // the legacy-body upgrade (w11) records the last body it scanned
+  const bodies = source.find((store) => store.name === "message_bodies")?.keys ?? [];
+  const scanned = (store: StoreImage): StoreImage => ({ ...store, values: store.values.map((value, i) => store.keys[i] === "bodyPartsUpgrade" ? { ...(value as object), after: bodies.at(-1) ?? 0 } : value) });
+  return [...source.map((store) => store.name === "meta" ? scanned(store) : store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends", "forward_eligible", "forwards", "forward_recipients"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   })),
   { name: "category_counter", keyPath: null, autoIncrement: false, indexes: [], keys: [1], values: [{ id: 1, last_id: 0 }] },
@@ -41,6 +44,10 @@ function withEmptyParts(source: StoreImage[]): StoreImage[] {
     { name: "discovery", keyPath: ["account_id", "key"], unique: false, multiEntry: false },
     { name: "state", keyPath: ["account_id", "state", "key"], unique: false, multiEntry: false },
   ], keys: [], values: [] },
+  // physical23–26's exact body parts (w11): empty for a mailbox whose bodies all fit inline
+  ...["body_captures", "body_parts"].map((name) => ({ name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [] })),
+  { name: "body_heads", keyPath: null, autoIncrement: false, indexes: [{ name: "capture", keyPath: "capture_id", unique: true, multiEntry: false }], keys: [], values: [] },
+  { name: "body_protocol", keyPath: null, autoIncrement: false, indexes: [], keys: [1], values: [{ id: 1, epoch: "0" }] },
   ].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }
 
@@ -61,7 +68,7 @@ async function copyAsV9(factory: IDBFactory, name: string, source: StoreImage[])
 
 it("preserves a complete reconstructed physical9 compatibility image through the current downgrade barrier", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
     const [account] = await withAccounts(seed, 1);
@@ -87,7 +94,7 @@ it("preserves a complete reconstructed physical9 compatibility image through the
     expect(raw.version).toBe(9);
     expect(await image(raw)).toEqual(original);
     raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect({ snapshot: await store.debug.snapshot(), drafts: await store.drafts.list(), head: await store.feed.head() }).toEqual(publicBefore);
     await store.debug.verify(); await store.close();
     raw = await request(factory.open(databaseName(name)));
@@ -101,7 +108,7 @@ it("preserves a complete reconstructed physical9 compatibility image through the
 it("preserves a complete reconstructed physical10 compatibility image through the current downgrade barrier", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
   const seedName = `${name}-v10-source`;
-  const seed = await IdbMailStore.open({ factory, name: seedName, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: seedName, instantSearch: false, platform });
   const opened: IdbMailStore[] = [seed];
   let raw: IDBDatabase | undefined;
   let cleanupFailure: PromiseRejectedResult | undefined;
@@ -135,20 +142,20 @@ it("preserves a complete reconstructed physical10 compatibility image through th
     raw = await request(old);
     expect(raw.version).toBe(10); expect(await image(raw)).toEqual(original);
     raw.close(); raw = undefined;
-    let store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    let store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform }); opened.push(store);
     expect({ snapshot: await store.debug.snapshot(), drafts: await store.drafts.list(), head: await store.feed.head(), ops: await store.ops.recent(100) }).toEqual(publicBefore);
     await store.debug.verify(); await store.close();
     raw = await request(factory.open(databaseName(name)));
     expect(raw.version).toBe(IDB_VERSION); expect(await image(raw)).toEqual(withEmptyParts(original));
     raw.close(); raw = undefined;
     // The barrier must protect a now-stale wide BASE after a real public control transition.
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform }); opened.push(store);
     expect(await store.ops.resumeAuth(account!, 23)).toEqual([queued.opId]);
     expect((await store.ops.claimReady(24, 1)).map((op) => op.id)).toEqual([queued.opId]);
     const latest = (await store.ops.get(queued.opId))!;
     expect(latest.state).toBe("running"); expect(legacyOp.state).not.toBe(latest.state);
     await store.close();
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); opened.push(store);
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform }); opened.push(store);
     expect(await store.ops.get(queued.opId)).toEqual(latest);
     await store.debug.verify(); await store.close();
     raw = await request(factory.open(databaseName(name)));
@@ -169,7 +176,7 @@ it("preserves a complete reconstructed physical10 compatibility image through th
 
 it("refuses a completed upgrade whose inspection success was hidden", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: `${name}-source`, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined, acquired: IDBDatabase | undefined;
   try {
     await seed.settings.set("retained", "exact");
@@ -193,7 +200,7 @@ it("refuses a completed upgrade whose inspection success was hidden", async () =
       r.addEventListener("success", () => { acquired = r.result; });
       return r;
     });
-    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((value) => { store = value; return null; }, (failure: unknown) => failure);
+    const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform }).then((value) => { store = value; return null; }, (failure: unknown) => failure);
     expect({ hits, terminal, exposed: store !== undefined }).toEqual({ hits: 1, terminal: "complete", exposed: false });
     expect(error).toMatchObject({ name: "UncertainWriteError", reason: "unreadable" });
     expect(() => acquired!.transaction("meta")).toThrow(expect.objectContaining({ name: "InvalidStateError" }));
@@ -206,7 +213,7 @@ it("refuses a completed upgrade whose inspection success was hidden", async () =
 
 it("classifies an aborted upgrade whose inspection error was hidden as unreadable", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: `${name}-source`, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: `${name}-source`, instantSearch: false, platform });
   let raw: IDBDatabase | undefined, exposed: IdbMailStore | undefined;
   try {
     await seed.settings.set("retained", "exact aborted upgrade control"); await seed.close();
@@ -227,7 +234,7 @@ it("classifies an aborted upgrade whose inspection error was hidden as unreadabl
       r.addEventListener("error", (event) => { errors++; event.stopImmediatePropagation(); });
       return r;
     });
-    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+    const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
     expect({ hits, errors, rowReads, terminal, exposed: exposed !== undefined }).toEqual({ hits: 1, errors: 1, rowReads: 0, terminal: "abort", exposed: false });
     expect.soft(error).toMatchObject({ name: "UncertainWriteError", reason: "unreadable" });
     vi.restoreAllMocks();
@@ -286,7 +293,7 @@ for (const version of [1, 2, 4, 6, 8, 9, 10]) {
     try {
       const before = await image(raw); raw.close(); raw = undefined;
       const observation = observeAdmission();
-      const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+      const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
       expect(observation.counts).toEqual({ guards: 1, rowReads: 0, rowWrites: 0, schemaWrites: 0 });
       expect(observation.terminals).toEqual(["abort"]);
       expect(exposed !== undefined).toBe(false);
@@ -317,7 +324,7 @@ it("latches dirty upgrade refusal even when abort is refused and the open actual
     });
     vi.spyOn(IDBDatabase.prototype, "close").mockImplementation(function (this: IDBDatabase) { if (this === acquired) closes++; return close.call(this); });
     const observation = observeAdmission();
-    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+    const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
     expect({ successes, refused, closes, ...observation.counts }).toEqual({ successes: 1, refused: 1, closes: 1, guards: 1, rowReads: 0, rowWrites: 0, schemaWrites: 0 });
     expect(observation.terminals).toEqual(["complete"]);
     expect(exposed !== undefined).toBe(false);
@@ -352,7 +359,7 @@ it.each([false, true])("retains an unreadable upgrade cause across abort refusal
     if (refuseAbort) vi.spyOn(IDBTransaction.prototype, "abort").mockImplementation(function (this: IDBTransaction) {
       if (this.mode === "versionchange") { refused++; throw new Error("injected abort refusal"); } return abort.call(this);
     });
-    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+    const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
     expect({ hits, refused, terminal, ...observation.counts }).toEqual({ hits: 1, refused: refuseAbort ? 1 : 0, terminal: refuseAbort ? "complete" : "abort", guards: 0, rowReads: 0, rowWrites: 0, schemaWrites: 0 });
     expect(exposed !== undefined).toBe(false); expect(error).toBeInstanceOf(UncertainWriteError);
     expect(error).toMatchObject({ reason: "unreadable", cause: injected }); expect((error as Error).cause).toBe(injected);
@@ -363,7 +370,7 @@ it.each([false, true])("retains an unreadable upgrade cause across abort refusal
 
 it.each(["transaction", "enqueue", "request"] as const)("closes the acquired handle before exposing memory/search when startup marker %s fails", async (boundary) => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
   let exposed: IdbMailStore | undefined, acquired: IDBDatabase | undefined;
   try {
     await seed.settings.set("retained", "exact startup control"); await seed.close();
@@ -397,7 +404,7 @@ it.each(["transaction", "enqueue", "request"] as const)("closes the acquired han
       return result;
     });
     vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (this: IDBObjectStore, ...args) { earlyReads++; return getAll.call(this, ...args); });
-    const error = await IdbMailStore.open({ factory, name, instantSearch: true, platform: { ...platform, files } }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
+    const error = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: true, platform: { ...platform, files } }).then((store) => { exposed = store; return null; }, (failure: unknown) => failure);
     expect({ hits, closes, earlyReads, requestErrors, terminal }).toEqual({ hits: 1, closes: 1, earlyReads: 0, requestErrors: boundary === "request" ? 1 : 0, terminal: boundary === "transaction" ? undefined : "abort" });
     expect(readFile).not.toHaveBeenCalled(); expect(exposed !== undefined).toBe(false);
     expect(error).toBeInstanceOf(UncertainWriteError); expect(error).toMatchObject({ reason: "unreadable" });
@@ -405,14 +412,14 @@ it.each(["transaction", "enqueue", "request"] as const)("closes the acquired han
     if (boundary === "request") expect(original).toMatchObject({ name: "AbortError" });
     expect(() => acquired!.transaction("settings")).toThrow(expect.objectContaining({ name: "InvalidStateError" }));
     vi.restoreAllMocks();
-    exposed = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    exposed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect(await exposed.settings.get("retained", null)).toBe("exact startup control");
   } finally { vi.restoreAllMocks(); await exposed?.close(); acquired?.close(); await seed.close(); }
 });
 
 it("closes its admitted connection on versionchange so a subsequent version is not blocked", async () => {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+  const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
   let newer: IDBDatabase | undefined;
   try {
     await store.whenLoaded();
@@ -429,7 +436,7 @@ it("closes its admitted connection on versionchange so a subsequent version is n
 
 it("adds empty Sent recovery stores to physical12 while preserving Plan68 folder membership and counts", async () => {
   const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: sourceName, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
     const [account] = await withAccounts(seed, 1);
@@ -448,7 +455,7 @@ it("adds empty Sent recovery stores to physical12 while preserving Plan68 folder
       }
     };
     raw = await request(legacy); raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect(await shape(store)).toEqual(before);
     expect(await store.sendCopies.list(account!)).toEqual([]);
     await store.close(); raw = await request(factory.open(databaseName(name)));
@@ -461,7 +468,7 @@ it("adds empty Sent recovery stores to physical12 while preserving Plan68 folder
 
 it("upgrades populated physical14 reply context and folders without inventing recipient receipts", async () => {
   const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: sourceName, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
     const [account] = await withAccounts(seed, 1);
@@ -474,7 +481,7 @@ it("upgrades populated physical14 reply context and folders without inventing re
     const legacy = factory.open(databaseName(name), 14);
     legacy.onupgradeneeded = () => { for (const saved of source) { const target = legacy.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement }); for (const index of saved.indexes) target.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry }); saved.values.forEach((value, i) => target.put(saved.name === "meta" && saved.keys[i] === "logicalSchema" ? 26 : value, saved.keys[i]!)); } };
     raw = await request(legacy); raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect(await store.folders.list()).toEqual(before.folders);
     expect((await store.drafts.list()).find((row) => row.id === draft.id)).toEqual(before.draft);
     expect(await store.recipientReceipts.list(account!)).toEqual([]);
@@ -483,7 +490,7 @@ it("upgrades populated physical14 reply context and folders without inventing re
 
 it("upgrades physical15 recipient evidence and copy ownership without losing its parts", async () => {
   const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: sourceName, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
     const { account } = await seed.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: true }, now: 1 });
@@ -494,7 +501,7 @@ it("upgrades physical15 recipient evidence and copy ownership without losing its
     const legacy = factory.open(databaseName(name), 15);
     legacy.onupgradeneeded = () => { for (const saved of source) { const target = legacy.result.createObjectStore(saved.name, { keyPath: saved.keyPath, autoIncrement: saved.autoIncrement }); for (const index of saved.indexes) target.createIndex(index.name, index.keyPath, { unique: index.unique, multiEntry: index.multiEntry }); saved.values.forEach((value, i) => { let row = value; if (saved.name === "meta" && saved.keys[i] === "logicalSchema") row = 27; if (saved.name === "recipient_receipts") { const { hasRejected: _r, wireOwnerId: _w, ...prior } = value as Record<string, unknown>; row = prior; } if (saved.name === "send_copies") { const { copyRequested: _c, ...prior } = value as Record<string, unknown>; row = prior; } target.put(row, saved.keys[i]!); }); } };
     raw = await request(legacy); raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect(await store.recipientReceipts.get(queued.opId)).toMatchObject({ state: "accepted", hasRejected: true, wireOwnerId: null });
     expect(await store.sendCopies.get(queued.opId)).toMatchObject({ ready: true, copyRequested: true });
     expect(await store.recipientReceipts.readPart(queued.opId, "outcomes", 0)).toBe('["accepted","rejected"]');
@@ -503,7 +510,7 @@ it("upgrades physical15 recipient evidence and copy ownership without losing its
 
 it("backfills only remote IMAP identity holds from a populated physical14 image", async () => {
   const factory = new IDBFactory(), sourceName = crypto.randomUUID(), name = crypto.randomUUID();
-  const seed = await IdbMailStore.open({ factory, name: sourceName, instantSearch: false, platform });
+  const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: sourceName, instantSearch: false, platform });
   let raw: IDBDatabase | undefined, store: IdbMailStore | undefined;
   try {
     const [gmail, imap] = await withAccounts(seed, 2);
@@ -521,7 +528,7 @@ it("backfills only remote IMAP identity holds from a populated physical14 image"
       }
     };
     raw = await request(old); raw.close(); raw = undefined;
-    store = await IdbMailStore.open({ factory, name, instantSearch: false, platform });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform });
     expect(await store.debug.snapshot()).toEqual(before);
     await store.close(); raw = await request(factory.open(databaseName(name)));
     const holds = (await image(raw)).find((row) => row.name === "imap_identity_holds")!;

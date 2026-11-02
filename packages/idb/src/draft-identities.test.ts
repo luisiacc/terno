@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { withAccounts } from "@terno/store/conformance";
 import { databaseName } from "./schema";
 import { IdbMailStore } from "./store";
-import { legacyStores } from "./test/legacy-stores";
+import { legacyStores, legacyBodyUpgrade } from "./test/legacy-stores";
 
 const raw: IDBDatabase[] = [];
 afterEach(() => { for (const db of raw.splice(0)) db.close(); });
@@ -11,7 +11,7 @@ afterEach(() => { for (const db of raw.splice(0)) db.close(); });
 it("upgrades v6 legacy drafts, accepts their old identity, and fences erased legacy IDs from fresh generations", async () => {
   const name = `draft-upgrade-${crypto.randomUUID()}`;
   const platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
-  const source = await IdbMailStore.open({ name: `${name}-source`, factory: indexedDB, platform, instantSearch: false });
+  const source = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: `${name}-source`, factory: indexedDB, platform, instantSearch: false });
   const [accountId] = await withAccounts(source);
 
   const input = { accountId: accountId!, to: [], cc: [], subject: "exact", bodyText: "keep" };
@@ -37,14 +37,14 @@ it("upgrades v6 legacy drafts, accepts their old identity, and fences erased leg
     r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
   });
   old.close();
-  let store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
+  let store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch: false });
   try {
     expect(await store.drafts.save({ ...input, id: d.id, baseRevision: 1 }, 1)).toMatchObject({ id: d.id, generation: "", revision: 2 });
     const fresh = (await store.drafts.save(input, 2))!;
     expect(await store.drafts.save({ ...input, id: fresh.id, baseRevision: 1, bodyText: "delayed legacy" }, 3)).toBeNull();
     expect((await store.drafts.list()).find((draft) => draft.id === fresh.id)?.body_text).toBe("keep");
     await store.drafts.delete(fresh.id); await store.close();
-    store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
+    store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch: false });
     await expect(store.drafts.save({ ...input, id: fresh.id, baseRevision: 1, bodyText: "late after erase" }, 4)).resolves.toBeNull();
     expect((await store.drafts.list()).some((draft) => draft.id === fresh.id)).toBe(false);
     expect((await store.drafts.save(input, 5))!.id).toBeGreaterThan(fresh.id);

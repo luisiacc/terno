@@ -1,4 +1,4 @@
-import { legacyImage } from "./test/legacy-stores";
+import { legacyImage, legacyBodyUpgrade } from "./test/legacy-stores";
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, expect, it, vi } from "vitest";
@@ -10,7 +10,7 @@ const stores: IdbMailStore[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const store of stores.splice(0)) if (store.isOpen) await store.close(); });
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 async function open(factory = new IDBFactory(), name: string = crypto.randomUUID(), yieldTo = platform.yield) {
-  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform: { ...platform, yield: yieldTo } });
+  const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform: { ...platform, yield: yieldTo } });
   stores.push(store); return store;
 }
 const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

@@ -3,7 +3,7 @@ import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { generateDataset } from "@terno/mock-data";
 import { IdbMailStore } from "./store";
 import { Table } from "./mem";
-import { identityImage, physicalImage } from "./test/legacy-stores";
+import { identityImage, physicalImage, legacyBodyUpgrade } from "./test/legacy-stores";
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0)) await close(); });
 it.each(["SQL", "IDB"])("%s seeks 50k cached keys without an account materialization", async (kind) => {
   const dir = mkdtempSync(join(tmpdir(), "terno-cached-page-"));
-  const store = kind === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} }, instantSearch: false });
+  const store = kind === "SQL" ? new SqlMailStore(openDatabase(join(dir, "mail.db"))) : await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: crypto.randomUUID(), factory: indexedDB, platform: { uuid: () => crypto.randomUUID(), yield: async () => {} }, instantSearch: false });
   cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
   const now = Date.UTC(2026, 9, 22);
   await store.dev.seed(generateDataset({ threads: 50_000, accounts: 1, seed: 4, now }), { now });
@@ -65,7 +65,7 @@ it.each(["SQL", "IDB"])("%s seeks 50k cached keys without an account materializa
 
 it("IDB advances local-only pages and survives deletion, insertion and reopen", async () => {
   const name = crypto.randomUUID(), platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
-  let store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
+  let store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch: false });
   cleanup.push(async () => { await store.close(); });
   const [account] = await withAccounts(store, 1);
   await ingest(store, Array.from({ length: 50 }, (_, i) => msg({ accountId: account!, providerMsgId: `local:${String(i).padStart(3, "0")}` })));
@@ -76,7 +76,7 @@ it("IDB advances local-only pages and survives deletion, insertion and reopen", 
   expect(second.items.map((r) => r.providerMsgId)).toEqual(["z-first"]);
   await store.sync.remove(second.items.map((r) => r.id));
   await ingest(store, [msg({ accountId: account!, providerMsgId: "z-last" })]);
-  await store.close(); store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
+  await store.close(); store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch: false });
   expect((await store.providerStore(account!).syncedMessagePage(second.next)).items.map((r) => r.providerMsgId)).toEqual(["z-last"]);
   expect(await store.providerStore(account!).syncedMessagePage("z-last")).toEqual({ items: [], next: undefined });
 });
@@ -86,7 +86,7 @@ it("upgrades a populated v18 image atomically and reopens the new indexed reader
   const name = crypto.randomUUID(), legacyName = crypto.randomUUID();
   const platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
   const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-  const source = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
+  const source = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch: false });
   const [account] = await withAccounts(source, 1);
   await ingest(source, [msg({ accountId: account!, providerMsgId: "local:draft" }), msg({ accountId: account!, providerMsgId: "remote" })]);
   await source.close();
@@ -110,11 +110,11 @@ it("upgrades a populated v18 image atomically and reopens the new indexed reader
     if (args[0] === "cached_provider") { hits++; this.transaction.addEventListener("abort", () => { aborted = true; }); throw new Error("upgrade refused"); }
     return create.call(this, ...args);
   });
-  await expect(IdbMailStore.open({ name: legacyName, factory: indexedDB, platform, instantSearch: false })).rejects.toThrow();
+  await expect(IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: legacyName, factory: indexedDB, platform, instantSearch: false })).rejects.toThrow();
   expect(hits).toBe(1); expect(aborted).toBe(true); failure.mockRestore();
   const unchanged = await request(indexedDB.open(databaseName(legacyName)));
   expect(unchanged.version).toBe(18); expect(await physicalImage(unchanged)).toEqual(original); unchanged.close();
-  const upgraded = await IdbMailStore.open({ name: legacyName, factory: indexedDB, platform, instantSearch: false });
+  const upgraded = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name: legacyName, factory: indexedDB, platform, instantSearch: false });
   expect((await upgraded.providerStore(account!).syncedMessagePage()).items.map((r) => r.providerMsgId)).toEqual(["remote"]);
   await upgraded.close();
 });

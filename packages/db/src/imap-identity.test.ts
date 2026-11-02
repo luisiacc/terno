@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { openDatabase } from "./index";
 import { SqlMailStore } from "./sql-store";
-import { writeLegacyCopy } from "./test/legacy";
+import { openUpgraded, writeLegacyCopy } from "./test/legacy";
 
 const stores: SqlMailStore[] = [], dirs: string[] = [];
 afterEach(async () => {
@@ -40,7 +40,8 @@ it("identity: schema29 guessed or absent locators cannot authorize dispatch afte
   const dir = mkdtempSync(join(tmpdir(), "terno-identity-upgrade-")); dirs.push(dir);
   const file = join(dir, "legacy.db");
   writeLegacyCopy(source.db, file, 29);
-  const upgraded = open(file), locations = upgraded.providerStore(account!).locations;
+  const upgraded = new SqlMailStore(await openUpgraded(file)); stores.push(upgraded);
+  const locations = upgraded.providerStore(account!).locations;
   expect(await locations.unresolved(ids)).toEqual(ids);
   let issued = false;
   await expect(locations.dispatch([ids[0]!], await locations.of([ids[0]!]), async () => { issued = true; })).rejects.toThrow("IMAP identity unavailable");

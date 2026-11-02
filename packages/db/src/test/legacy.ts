@@ -1,6 +1,18 @@
+import { upgradeLegacyBodies } from "../body-upgrade";
+import { openDatabase } from "../index";
 import { MIGRATIONS } from "../migrations";
 import { nodeSqliteDriver } from "../node-driver";
 import { Db } from "../sqlite";
+
+/**
+ * Opens a legacy copy as a host does: migrations, then the dedicated legacy-body
+ * upgrade before any store is admitted (w11: "Use the off-thread legacy upgrade").
+ */
+export async function openUpgraded(path: string): Promise<Db> {
+  const db = openDatabase(path);
+  await upgradeLegacyBodies(db, () => new Promise<void>((resolve) => setImmediate(resolve)), async () => {}, () => {});
+  return db;
+}
 
 /**
  * How today's tables read back in an older schema's shape, for tables whose

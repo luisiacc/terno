@@ -4,14 +4,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createMemDb, databaseName } from "./schema";
 import { createCategory } from "./mail";
 import { IdbMailStore } from "./store";
-import { identityImage, physicalImage } from "./test/legacy-stores";
+import { identityImage, physicalImage, legacyBodyUpgrade } from "./test/legacy-stores";
 
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 const stores = new Set<IdbMailStore>();
 afterEach(async () => { vi.restoreAllMocks(); for (const s of stores) await s.close(); stores.clear(); });
 async function setup() {
   const factory = new IDBFactory(), name = crypto.randomUUID();
-  const open = async () => { const store = await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.add(store); return store; };
+  const open = async () => { const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), name, factory, platform, instantSearch: false }); stores.add(store); return store; };
   return { factory, name, open, close: async (store: IdbMailStore) => { await store.close(); stores.delete(store); } };
 }
 const rule = (categoryId: number) => ({ match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "Synthetic" }], actions: [{ type: "addCategory" as const, categoryId }] });
@@ -122,12 +122,12 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("upgrades a v19
     if (this.name === "category_counter") { hits++; this.transaction.addEventListener("abort", () => { aborted = true; }); throw new Error("interrupted upgrade"); }
     return put.call(this, ...args);
   });
-  const failed = await IdbMailStore.open({ name: legacyName, factory: t.factory, platform, instantSearch: false }).then((opened) => { stores.add(opened); return null; }, (error: unknown) => error);
+  const failed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(t.factory), name: legacyName, factory: t.factory, platform, instantSearch: false }).then((opened) => { stores.add(opened); return null; }, (error: unknown) => error);
   expect(failed).not.toBeNull(); expect(hits).toBe(1); expect(aborted).toBe(true); spy.mockRestore();
   const unchanged = await request(t.factory.open(databaseName(legacyName), 19));
   expect(unchanged.objectStoreNames.contains("category_counter")).toBe(false);
   expect(await physicalImage(unchanged)).toEqual(original); unchanged.close();
-  s = await IdbMailStore.open({ name: legacyName, factory: t.factory, platform, instantSearch: false }); stores.add(s);
+  s = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(t.factory), name: legacyName, factory: t.factory, platform, instantSearch: false }); stores.add(s);
   expect(await s.categories.list()).toEqual([survivor]); expect(await s.filters.list()).toEqual([f]);
   expect((await s.categories.create("After upgrade", "amber")).id).toBe(201);
 });

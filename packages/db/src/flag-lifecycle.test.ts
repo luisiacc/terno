@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 import { ingest, msg, threadOf, withAccounts } from "@terno/store/conformance";
 import { openDatabase } from "./index";
 import { SqlMailStore } from "./sql-store";
-import { writeLegacyCopy } from "./test/legacy";
+import { openUpgraded, writeLegacyCopy } from "./test/legacy";
 
 const stores: SqlMailStore[] = [], dirs: string[] = [];
 afterEach(async () => { for (const store of stores.splice(0)) if (store.isOpen) await store.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -64,7 +64,7 @@ it("upgrades genuine logical20 queue data without activating it, then synthesize
   const action = await source.threads.act({ threadIds: [await threadOf(source, "legacy20")], action: "archive", signal: null, now: 1 });
   const file = path();
   writeLegacyCopy(source.db, file, 20);
-  const upgraded = open(file);
+  const upgraded = new SqlMailStore(await openUpgraded(file)); stores.push(upgraded);
   expect(await upgraded.sync.beginObservation(a!, { authoritativeFlags: false })).toBeNull();
   await upgraded.sync.beginObservation(a!, { authoritativeFlags: true });
   expect((await upgraded.ops.claimReady(2, 20)).map((op) => op.id)).toEqual(action.opIds);

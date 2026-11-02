@@ -41,7 +41,7 @@ it("upgrades a real schema 21 mailbox with parked effects", async () => {
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { writeLegacyCopy } = await import("./test/legacy");
+  const { openUpgraded, writeLegacyCopy } = await import("./test/legacy");
   const dir = mkdtempSync(join(tmpdir(), "terno-parked-upgrade-"));
   let source = new SqlMailStore(openDatabase(join(dir, "source.db")));
   try {
@@ -55,7 +55,7 @@ it("upgrades a real schema 21 mailbox with parked effects", async () => {
     const path = join(dir, "legacy.db");
     writeLegacyCopy(source.db, path, 21);
     await source.close();
-    const db = openDatabase(path); source = new SqlMailStore(db);
+    const db = await openUpgraded(path); source = new SqlMailStore(db);
     expect(db.get<{ user_version: number }>("PRAGMA user_version")!.user_version).toBe(SCHEMA_VERSION);
     expect(db.get<{ count: number }>("SELECT count(*) AS count FROM flag_op_effects")!.count).toBe(1);
     const fresh = await source.sync.beginObservation(account!, { authoritativeFlags: true });

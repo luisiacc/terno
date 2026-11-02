@@ -4,13 +4,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { databaseName } from "./schema";
 import { IdbMailStore } from "./store";
-import { identityImage, physicalImage } from "./test/legacy-stores";
+import { identityImage, physicalImage, legacyBodyUpgrade } from "./test/legacy-stores";
 
 const stores: IdbMailStore[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const store of stores.splice(0)) if (store.isOpen) await store.close(); });
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 async function open(factory = new IDBFactory(), name: string = crypto.randomUUID()) {
-  const store = await IdbMailStore.open({ factory, name, instantSearch: false, platform }); stores.push(store); return store;
+  const store = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name, instantSearch: false, platform }); stores.push(store); return store;
 }
 const location = { mailbox: "INBOX", uidvalidity: 7, uid: 1, flags: [] };
 const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

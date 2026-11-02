@@ -1,3 +1,4 @@
+import { upgradeLegacyIdbBodies } from "../body-upgrade";
 // Historical object-store names stay fixed when today's schema gains a table.
 const version1 = [
   "accounts",
@@ -101,4 +102,12 @@ export function identityImage(source: Awaited<ReturnType<typeof physicalImage>>,
     if (store.name === "messages") { delete row.category; delete row.unsubscribe; }
     return row;
   }) }));
+}
+
+/**
+ * The open option a host passes (w11: "Use the off-thread legacy upgrade"): legacy
+ * bodies are converted by their dedicated owner before the store is admitted.
+ */
+export function legacyBodyUpgrade(factory: IDBFactory, yieldTo: () => Promise<void> = async () => {}) {
+  return (name: string) => upgradeLegacyIdbBodies(factory, name, yieldTo, async () => {}, () => {}).then(() => {});
 }

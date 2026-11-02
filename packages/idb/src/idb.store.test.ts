@@ -6,7 +6,7 @@ import { ingest, msg, withAccounts } from "@terno/store/conformance";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemDb, databaseName, IDB_VERSION, openIdb } from "./schema";
 import { IdbMailStore } from "./store";
-import { legacyImage, legacyStores } from "./test/legacy-stores";
+import { legacyImage, legacyStores, legacyBodyUpgrade } from "./test/legacy-stores";
 
 const platform: Pick<Platform, "uuid" | "yield"> = { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setTimeout(r, 0)) };
 const NOW = Date.UTC(2026, 9, 22, 15, 30);
@@ -14,7 +14,7 @@ const opened: IdbMailStore[] = [];
 const raw: IDBDatabase[] = [];
 let n = 0;
 const open = async (name = `store-${Date.now()}-${++n}`, instantSearch = false) => {
-  const s = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch });
+  const s = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(indexedDB), name, factory: indexedDB, platform, instantSearch });
   opened.push(s);
   return s;
 };
