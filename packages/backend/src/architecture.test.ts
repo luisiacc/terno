@@ -48,6 +48,9 @@ const ALLOWED: Record<string, { patterns: string[]; why: string }> = {
   "packages/mcp/src/connection.ts": { patterns: ["raw sockets"], why: "unix socket to the local backend" },
   "apps/desktop/src/diag/reporter.ts": { patterns: ["Electron session fetch"], why: "plan 78: error reports from main, in a session fenced to the DSN's envelope URL, each asked of the consent boundary (the setting, the user's approval, the DSN)" },
   "apps/web/src/lib/diag-report.ts": { patterns: ["global fetch"], why: "plan 78: error reports from the web page to the DSN's envelope URL only (no redirects, no credentials), each asked of the consent boundary" },
+  "apps/site/src/client.ts": { patterns: ["global fetch"], why: "plan 97: terno.app's waitlist form posts to its own Worker; the marketing site, not the mail client" },
+  "apps/site/src/worker/index.ts": { patterns: ["global fetch"], why: "plan 97: the site Worker's own fetch handler (a method, not a request)" },
+  "apps/desktop/src/mailbox/opening.fixture.ts": { patterns: ["globalThis.fetch"], why: "test fixture: replaces fetch with a guard that fails any network route" },
 };
 
 function sources(dir: string): string[] {
