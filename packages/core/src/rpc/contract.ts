@@ -1,6 +1,6 @@
 import type { AttachmentRef } from "../attachments";
 import type { MailNotice } from "../attention";
-import { LANGUAGE_SETTINGS, t, type LanguageSetting } from "@terno/i18n";
+import { LANGUAGE_SETTINGS, LOCALE_IDS, t, type LanguageSetting } from "@terno/i18n";
 import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
 import { TABS } from "../tabs";
@@ -610,6 +610,8 @@ const composeSend = z.object({
 
 export const contract = {
   "app.bootstrap": m<Bootstrap>()(empty),
+  /** plan 116: the windows' language (what a forward is written in while the setting follows the system) */
+  "app.locale": m<{ ok: true }>()(z.object({ locale: z.enum(LOCALE_IDS) }).strict()),
   "app.export": m<MailboxExport>()(empty),
   /**
    * Brings an export back: categories merged by name, filters (categories and
@@ -854,6 +856,16 @@ export const contract = {
   "compose.send": m<{ opId: string; threadId: number; messageId: number }>()(composeSend),
   /** plan 94: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
   "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
+  /** plan 116: what is waiting to be forwarded, held, going, and what settled lately; the questions past the cap */
+  "forwards.list": m<import("../forwarding").ForwardSnapshot>()(empty),
+  /** the user's Cancel (those still waiting or held) */
+  "forwards.cancel": m<{ cancelled: number }>()(z.object({ ids: z.array(id).min(1).max(1000) }).strict()),
+  /** a failed forward (nothing went) waits again */
+  "forwards.retry": m<{ ok: true }>()(z.object({ id }).strict()),
+  /** past the cap: Keep forwarding (true) or Stop (false) */
+  "forwards.answer": m<{ ok: true }>()(z.object({ rule: z.object({ kind: z.enum(["category", "filter"]), id }).strict(), keep: z.boolean() }).strict()),
+  /** a category's trigger: where its new mail is forwarded (null: nowhere) */
+  "categories.setForward": m<Category>()(z.object({ categoryId: id, forward: z.object({ addresses: z.array(address).min(1), enabled: z.boolean() }).strict().nullable() }).strict()),
   "scheduled.list": m<ScheduledSnapshot>()(empty),
   "scheduled.reschedule": m<{ ok: true }>()(z.object({ draftId: id, sendAt: z.number().int().nonnegative() }).strict()),
   /** the draft is an ordinary draft again */
@@ -1097,6 +1109,8 @@ export interface Events {
   reminders: RemindersSnapshot;
   /** plan 94: the scheduled sends changed (scheduled, sent, failed) */
   scheduled: ScheduledSnapshot;
+  /** plan 116: the forwards changed (made, cancelled, held, sent, failed) */
+  forwards: import("../forwarding").ForwardSnapshot;
   /**
    * plan 103: a long sync's progress, at most every 2 s an account; null: it's over. Its own event (only the sync
    * card listens): the accounts event would re-render everything that reads accounts (the reader, the composer).

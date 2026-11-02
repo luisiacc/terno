@@ -652,6 +652,7 @@ const en = {
   "filters.invalid.duplicate": "A filter can’t have the same action twice.",
   "filters.invalid.text": "“Subject or body” can only check that it mentions a word or phrase.",
   "filters.invalid.patternField": "Patterns work on the sender, domain, recipients, subject or list, not the body.",
+  "filters.invalid.forwardTooMany": "That's too many addresses for one filter. Split them across two filters.",
   "filters.invalid.pattern.syntax": "This pattern isn’t a valid regular expression.",
   "filters.invalid.pattern.length": "A pattern needs 1 to 500 characters.",
   "filters.invalid.pattern.unsupported": "Patterns can’t look around (?=, ?!) or refer back to a group (\\1).",
@@ -2163,6 +2164,19 @@ It contains none of your mail, contacts, settings or keys.
   "ui.command.title": "Command palette",
   "ui.command.description": "Search for a command to run…",
   "ui.shortcut.then": "then",
+  "errors.forwardGone": "This forward was cancelled or already sent.",
+  "forward.reason.ruleChanged": "Not forwarded: the forwarding rule changed or was turned off.",
+  "forward.reason.gone": "Not forwarded: the message is no longer here.",
+  "forward.reason.trash": "Not forwarded: the message went to Spam or Trash.",
+  "forward.reason.left": "Not forwarded: the conversation left the category.",
+  "forward.reason.alreadySent": "Not forwarded: it had already gone to every address.",
+  "forward.reason.stopped": "Not forwarded: you stopped this forwarding.",
+  "forward.reason.unanswered": "Not forwarded: it waited 3 days for your answer.",
+  "forward.reason.restored": "Not forwarded: Terno was restored from a backup.",
+  "forward.reason.failed": "Not forwarded: it couldn't be sent. Choose Retry to try again.",
+  "forward.reason.accountGone": "Not forwarded: the account that received it was removed.",
+  "errors.forwardAgent": "Agents can't set up or change forwarding. Do it in Terno.",
+  "errors.forwardNotRetryable": "This forward can't be tried again: it may already have been sent. Check Sent first.",
 } as const;
 
 export default en;

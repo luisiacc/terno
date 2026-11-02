@@ -162,6 +162,7 @@ import type { Key, MemDb } from "./mem";
 import { idbCachedPage, IdbProviderStore } from "./provider-store";
 import { createMemDb, EARLY_TABLES, idbExists, LATE_TABLES, LOGICAL_SCHEMA, loadAll, PartialCommit, SEARCH_SCHEMA, openIdb, persist, readAll, readLazy, writeMeta } from "./schema";
 import { UncertainWriteError } from "./uncertainty";
+import { approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
@@ -923,6 +924,8 @@ export class IdbMailStore implements MailStore {
     if (messageIds.length === 0) return touched;
     const messages = T(this.c, "messages");
     for (const action of actions) {
+      // plan 116: a forward is decided after the commit, from what the mail is then (forwards.plan)
+      if (action.type === "forward") continue;
       if (action.type === "addCategory") {
         if (!T(this.c, "categories").has(action.categoryId)) throw new Error(`category ${action.categoryId} doesn't exist`);
         const threads = [...new Set(messageIds.map((id) => messages.get(id)?.thread_id as number).filter((t) => t !== undefined))];
@@ -971,7 +974,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? await this.read(() => findIngestMessage(this.c, m)) : undefined;
@@ -983,6 +986,8 @@ export class IdbMailStore implements MailStore {
           const flagBefore = flagEpochs(idbFlags(this.c));
           for (const m of staged) completeCapture(idbCaptureStorage(this.c), m.accountId, m.repair);
           const result = ingestMessages(this.c, staged as IncomingMessage[], now, observation);
+          // plan 116: live mail that may be forwarded, marked with its insertion (never later, by an upsert)
+          if (forwardEligible) markEligible(this.c, result.inserted, now);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           if (applyFilters) {
@@ -1323,6 +1328,7 @@ export class IdbMailStore implements MailStore {
         const draft = p.draftId === undefined ? undefined : T(this.c, "drafts").get(p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (p.scheduledAt !== undefined && !stillScheduled(this.c, p.draftId, p.scheduledAt)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "unscheduled" });
+        if (p.forward && !forwardSendOpen(this.c, p.forward)) throw new RpcError("STALE", L("errors.forwardGone"), { reason: "forwardGone" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         const account = getAccount(this.c, p.accountId);
         if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
@@ -1392,6 +1398,7 @@ export class IdbMailStore implements MailStore {
         if (account.kind === "imap") reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
         if (p.draftId) T(this.c, "drafts").delete(p.draftId);
+        if (p.forward) linkForwardSend(this.c, p.forward, opId, p.now);
         if (replyThreadId && p.recordReply) recordUserActions(this.c, [replyThreadId], "reply", p.now);
         return { opId, threadId: T(this.c, "messages").get(localId)!.thread_id as number, messageId: localId, deltas: ingest.deltas };
       });
@@ -1579,6 +1586,26 @@ export class IdbMailStore implements MailStore {
     deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
     // reads messages: waits for them
     answered: (rows) => this.read(() => answeredReminders(this.c, rows)),
+  };
+
+  // plan 116: messages are read by most of these, so they wait for them (the list and the next due don't)
+  readonly forwards: MailStore["forwards"] = {
+    active: () => this.early(() => forwardsActive(this.c)),
+    setCategory: (categoryId, forward, now) => this.command(() => setCategoryForward(this.c, categoryId, forward, now)),
+    plan: (p) => this.command(() => planForwards(this.c, p)),
+    eligiblePage: (now, after, limit) => this.read(() => eligiblePage(this.c, now, after, limit)),
+    list: (_now, limit) => this.early(() => listForwards(this.c, limit)),
+    holds: (now) => this.early(() => forwardHolds(this.c, now)),
+    nextDue: () => this.early(() => nextForwardDue(this.c)),
+    cancel: (ids, now) => this.command(() => cancelForwards(this.c, ids, now)),
+    claim: (id, now, o) => this.command(() => claimForward(this.c, id, now, o)),
+    waitForFiles: (id, until, now) => this.command(() => waitForFiles(this.c, id, until, now)),
+    fail: (id, reason, now) => this.command(() => failForward(this.c, id, reason, now)),
+    retry: (id, now, failedOps) => this.command(() => retryForward(this.c, id, now, failedOps)),
+    approve: (rule, now) => this.command(() => approveRule(this.c, rule, now)),
+    stop: (rule, now) => this.command(() => stopRule(this.c, rule, now)),
+    prune: (now) => this.command(() => pruneForwards(this.c, now)),
+    get: (id) => this.early(() => getForward(this.c, id)),
   };
 
   readonly scheduled: MailStore["scheduled"] = {

@@ -193,6 +193,8 @@ export interface SendCommand {
   recordReply: boolean;
   /** plan 94: a scheduled send: only while the draft is still scheduled for exactly this moment (STALE "unscheduled" otherwise) */
   scheduledAt?: number;
+  /** plan 116: one send of a claimed forward: only while that send isn't queued yet (STALE "forwardGone" otherwise) */
+  forward?: { id: number; chunk: number };
   now: number;
 }
 
@@ -385,7 +387,8 @@ export interface MailStore {
   sync: {
     beginObservation(accountId: number, options: FlagObservationOptions): Promise<FlagObservation | null>;
     /** threading, aggregates, filters (claims, actions, ops) and classification of one slice */
-    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void }): Promise<IngestOutcome>;
+    /** `forwardEligible` (plan 116): live mail it inserts may be forwarded (forward_eligible), in the same commit */
+    ingest(batch: readonly IncomingMessage[], o: { applyFilters: boolean; now: number; classifier: ClassifierInput | null; observation?: FlagObservation; check?: () => void; forwardEligible?: boolean }): Promise<IngestOutcome>;
     setBody(messageId: number, text: string | null, html: string | null, o: { now: number; classifier: ClassifierInput | null; attachments?: import("./types").IncomingAttachment[]; captureUnavailable?: "size"; repair?: import("@terno/core").CaptureTicket; check?: () => void; expected?: { accountId: number; threadId: number; providerMsgId: string } }): Promise<{ touched: number[]; deltas: ModelDelta[]; auto: ClassifyResult["auto"]; opIds: string[] } & FlagReconciliation>;
     /** provider state for existing messages; preserves fields affected by queued/running ops inside the same unit */
     updateFlags(accountId: number, updates: readonly FlagUpdate[], observation?: FlagObservation, check?: () => void): Promise<{ touched: number[] } & FlagReconciliation>;
@@ -462,6 +465,8 @@ export interface MailStore {
     queueSend(c: SendCommand): Promise<{ opId: string; threadId: number; messageId: number; deltas: ModelDelta[] }>;
   };
 
+  /** plan 116 */
+  forwards: import("./forwards").ForwardsStore;
   filters: {
     list(): Promise<Filter[]>;
     get(id: number): Promise<Filter | null>;

@@ -31,9 +31,9 @@ async function image(db: IDBDatabase): Promise<StoreImage[]> {
   await finished; return values;
 }
 
-/** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery */
+/** what an upgrade adds empty: physical11's operation parts, physical12's folders (plan 68), physical13's Sent recovery, physical24's forwards (plan 116) */
 function withEmptyParts(source: StoreImage[]): StoreImage[] {
-  return [...source.map((store) => store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends"].map((name) => ({
+  return [...source.map((store) => store.name !== "messages" ? store : ({ ...store, indexes: [...store.indexes, { name: "cached_provider", keyPath: ["account_id", "provider_msg_id"], unique: false, multiEntry: false }] })), ...["imap_identity_holds", "op_control", "op_target", "op_error", "folders", "thread_folders", "folder_rebuilds", "send_copies", "send_copy_bytes", "recipient_receipts", "recipient_receipt_parts", "reminders", "scheduled_sends", "forward_eligible", "forwards", "forward_recipients"].map((name) => ({
     name, keyPath: null, autoIncrement: false, indexes: [], keys: [], values: [],
   })),
   { name: "category_counter", keyPath: null, autoIncrement: false, indexes: [], keys: [1], values: [{ id: 1, last_id: 0 }] },

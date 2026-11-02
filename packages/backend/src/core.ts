@@ -22,6 +22,7 @@ import { FactsBackfill } from "./facts";
 import { Reminders } from "./reminders";
 import { TabsBackfill } from "./tabs";
 import { ScheduledSends, type ComposeSendParams } from "./scheduled";
+import { Forwarding } from "./forwarding";
 import { createHandlers } from "./handlers";
 import { googleClientFor, rememberedGoogleClient, rememberLegacyGoogleClients, type GoogleClients } from "./google-client";
 import { restorePending } from "./import";
@@ -261,6 +262,8 @@ export class BackendCore {
   readonly reminders: Reminders;
   /** plan 94: scheduled sends: one timer for the next one, sent through compose.send's own path */
   readonly scheduled: ScheduledSends;
+  /** plan 116: forwards of new mail: one timer for the next one, sent through compose's own durable path */
+  readonly forwards: Forwarding;
   /** plan 96 */
   readonly unsubscribeTransport: UnsubscribeTransport | null;
   private warming: Promise<void> | null = null;
@@ -297,6 +300,20 @@ export class BackendCore {
       emit: (snapshot) => this.server.emit("scheduled", snapshot),
       send: async (p) => void (await this.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt })),
       draftsBack: () => this.server.emit("drafts", { reason: "scheduled" }),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
+    this.forwards = new Forwarding({
+      store: this.store,
+      now: () => this.now(),
+      emit: (snapshot) => this.server.emit("forwards", snapshot),
+      queued: ({ threadId, deltas }) => {
+        this.categorizer.apply(deltas);
+        this.notifyChanged([threadId]);
+        this.kickWorker();
+      },
+      agentsMaySend: async () => (await readSettings(this.store)).allowAgentSend,
+      language: async () => (await readPolicy(this.store)).language,
+      yieldTurn: () => this.yieldTurn(),
       log: (level, message, extra) => this.log(level, message, extra),
     });
     const web = options.host?.kind === "web";
@@ -515,6 +532,11 @@ export class BackendCore {
     this.tabs.start();
     // plan 94: what came due while Terno was closed goes now
     this.scheduled.poke();
+    // plan 116: forwards a quit left waiting (or half sent), and new mail a crash left unlooked-at
+    void this.forwards.start().catch((error: unknown) => {
+      captureError(error, { code: "forward.failed" });
+      this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
+    });
     // plan 68: a folder rebuild a quit interrupted goes on where it was
     void this.rebuildFolders();
     // a resume that fails waits for the next start (its journal is intact); it must never crash the backend
@@ -559,6 +581,7 @@ export class BackendCore {
     if (reason === "wake") {
       this.refreshReminders();
       this.scheduled.poke();
+      this.forwards.poke();
     }
     if (this.options.autoSync === false) return;
     breadcrumb("sync", "net.changed", { netReason: reason, online });
@@ -692,6 +715,7 @@ export class BackendCore {
     this.reminders.stop();
     // plan 94: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
     const scheduledStopped = this.scheduled.stop();
+    const forwardsStopped = this.forwards.stop();
     for (const n of this.autoNotices.values()) if (n.timer) clearTimeout(n.timer);
     this.categorizer.stop();
     // the slice in flight finishes; the next start resumes where the store's progress says
@@ -702,6 +726,7 @@ export class BackendCore {
     for (const off of this.unwatch.values()) off();
     await accountsClosed;
     await scheduledStopped;
+    await forwardsStopped;
     await Promise.allSettled([...this.bodyJobs.values()].map((job) => job.promise));
     // let an in-flight ops batch finish writing before the database closes
     for (let i = 0; this.workerRunning && i < 200; i++) await new Promise((r) => setTimeout(r, 10));
@@ -989,7 +1014,7 @@ export class BackendCore {
    * Ingests in slices sized to ~sliceBudgetMs and yields between slices so
    * interactive RPCs (list, search, open) interleave with big imports.
    */
-  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation, checkCurrent?: () => void, pass?: { accountId: number; pass: number }): Promise<{ inserted: number[] }> {
+  async ingestSliced(messages: IncomingMessage[], applyFilters = true, life?: AccountLifetime, onInserted?: (ids: number[]) => void, observation?: FlagObservation, checkCurrent?: () => void, pass?: { accountId: number; pass: number }, live = false): Promise<{ inserted: number[] }> {
     const inserted: number[] = [];
     await this.runSliced(messages, 50, async (chunk) => {
       // one store command per slice: messages, filter claims and actions with their ops, and
@@ -997,7 +1022,9 @@ export class BackendCore {
       if (life) this.assertCurrent(life);
       const classifier = await this.classifier();
       checkCurrent?.();
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent }) : null);
+      // plan 116: live mail may be forwarded (marked with its insertion), only while a rule forwards
+      const forwardEligible = live && this.forwards.isActive;
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
@@ -1014,6 +1041,7 @@ export class BackendCore {
       this.opsQueued(r.opIds);
       this.reconcileFlags(r.flagReconcileAccounts);
       this.notifyChanged(r.touched);
+      if (forwardEligible) this.planForwards({ messageIds: r.inserted });
     });
     return { inserted };
   }
@@ -1575,7 +1603,7 @@ export class BackendCore {
           await this.accountWrite(life, () => this.store.captureRepairs.retire(accountId, locator, checkCurrent));
         },
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass });
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass }, o?.live === true);
         },
         // the account's own window, else the general one
         windowDays,
@@ -1623,6 +1651,11 @@ export class BackendCore {
           this.opsQueued(r.opIds);
           this.reconcileFlags(r.flagReconcileAccounts);
           this.notifyChanged(r.touched, false);
+          // plan 116: its body's filters and category may make it go; a forward waiting for its files goes now
+          if (this.forwards.isActive) {
+            this.planForwards({ messageIds: [messageId] });
+            void this.forwards.filesArrived(messageId).catch(() => {});
+          }
         },
         removeMessages: async (ids) => {
           checkCurrent();
@@ -2331,6 +2364,16 @@ export class BackendCore {
   private announceOp(op: OpRow, reconciliations: Set<number>): void {
     if (operationFlagFields(op.kind).length && ["succeeded", "failed", "unknown"].includes(op.state)) reconciliations.add(op.account_id);
     this.server.emit("op", this.opInfo(op));
+    // plan 116: a forward's send settled
+    if (op.kind === "send") this.forwards.opSettled(op.id);
+  }
+
+  /** Plan 116: new mail or a filing may make forwards; a failure is logged (the start's sweep looks again). */
+  planForwards(p: { messageIds?: readonly number[]; threadIds?: readonly number[]; filed?: readonly number[] }): void {
+    void this.forwards.plan(p).catch((error: unknown) => {
+      captureError(error, { code: "forward.failed" });
+      this.log("warn", "forwards couldn't be planned", error instanceof Error ? error.message : error);
+    });
   }
 
   private readonly copyActions = new Set<string>();

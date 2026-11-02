@@ -198,7 +198,9 @@ async function restoreInto(b: Backend, items: Pending, options: { final: boolean
         continue;
       }
       same.add(key);
-      await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, auto: f.auto ?? false, rule }, now);
+      const saved = await store.filters.save({ name: f.name, enabled: f.enabled, source: f.source, auto: f.auto ?? false, rule }, now);
+      // plan 116: forwarding comes in turned off (the user turns it on where it is): an import never sends mail elsewhere
+      if (rule.actions.some((a) => a.type === "forward")) await store.forwards.stop({ kind: "filter", id: saved.id }, now);
       filters++;
     }
   });

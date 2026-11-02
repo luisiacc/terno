@@ -129,6 +129,22 @@ export function t<K extends TextKey>(key: K, ...args: ParamsArg<K>): string {
 }
 
 /**
+ * A message in a given locale's catalog, whatever the active one is: text the
+ * backend writes into mail itself (plan 116's forwards), in the language the
+ * user had when they asked for it. English fills what the catalog lacks.
+ */
+export function tIn<K extends TextKey>(id: LocaleId, catalog: Messages, key: K, ...args: ParamsArg<K>): string {
+  const values = args[0] as Readonly<Record<string, unknown>> | undefined;
+  const tag = localeTag(id);
+  const m: Message = catalog[key] ?? english[key] ?? key;
+  const plural = typeof m === "object";
+  const text = plural ? pluralText(m, values?.count, () => new Intl.PluralRules(tag)) : m;
+  if (!plural && !/[{<]/.test(text)) return text;
+  const numberFormat = new Intl.NumberFormat(tag);
+  return renderText(compile(text, plural), refs(values, catalog), (n) => numberFormat.format(n));
+}
+
+/**
  * A message to be shown by another realm (the backend's errors and reasons
  * are rendered by the renderer, in its locale). `message` is the English
  * text, for logs, agents and tests.

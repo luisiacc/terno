@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX } from "@terno/core";
+import { capFilterName, categoryRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -10,6 +10,7 @@ import { accountLabel } from "./account-label";
 import { exportMailbox, importMailbox, restorePending } from "./import";
 import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, UndoJournal } from "./scope";
 import { SimilarFilters } from "./similar";
+import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { StorageMaintenance } from "./storage";
 import { FolderExports } from "./folder-export";
@@ -114,6 +115,8 @@ export function createHandlers(b: Backend): Handlers {
       progress?.((done += chunk.length));
     });
     await endDueIfHidden(categoryId, added, added.length ? batchId : null);
+    // plan 116: new mail filed here may go (one conversation by hand, a suggestion, an agent; never a bulk filing)
+    if (added.length && addedBy !== "bulk" && !(addedBy === "user" && threadIds.length > 1)) b.planForwards({ threadIds: added, filed: addedBy === "user" ? added : [] });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
   };
   /**
@@ -414,6 +417,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categories.delete": async ({ id }) => {
       await store.categories.delete(id);
+      await b.forwards.rules();
       b.categorizer.dropCategory(id);
       b.server.emit("categories", await store.categories.list());
       b.notifyChanged([]);
@@ -429,6 +433,8 @@ export function createHandlers(b: Backend): Handlers {
       await b.finishMove(batchId);
       const r = await store.categories.moveOutcome(batchId);
       await endDueIfHidden(to, threadIds, batchId);
+      // plan 116: one conversation dragged here by hand may go (a drag of several never)
+      if (r.added.length && threadIds.length === 1) b.planForwards({ threadIds: r.added, filed: ctx.origin === "mcp" ? [] : r.added });
       return { added: r.added.length, addedIds: r.added, batchId, moved: r.moved };
     },
     "categories.addScope": async ({ categoryId, scope, jobId }) => {
@@ -633,8 +639,21 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "filters.list": () => store.filters.list(),
-    "filters.save": (p) => store.filters.save(p, b.now()),
-    "filters.setEnabled": ({ ids, enabled }) => similarFilters.setEnabled(ids, enabled),
+    "filters.save": async (p, ctx) => {
+      // plan 116: an agent never sets up forwarding (a way to send mail elsewhere), nor changes a filter that forwards
+      if (ctx.origin === "mcp") {
+        const previous = p.id === undefined ? null : await store.filters.get(p.id);
+        if (p.rule.actions.some((a) => a.type === "forward") || previous?.rule.actions.some((a) => a.type === "forward")) throw new RpcError("FORBIDDEN", L("errors.forwardAgent"));
+      }
+      const f = await store.filters.save(p, b.now());
+      await b.forwards.rules();
+      return f;
+    },
+    "filters.setEnabled": async ({ ids, enabled }) => {
+      const r = await similarFilters.setEnabled(ids, enabled);
+      await b.forwards.rules();
+      return r;
+    },
     "filters.autoFor": async ({ categoryId, threadIds }) => {
       const mine = (await store.filters.list()).filter((f) => f.auto && f.enabled && f.rule.actions.some((a) => a.type === "addCategory" && a.categoryId === categoryId));
       if (mine.length === 0) return { filters: [] };
@@ -649,6 +668,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     "filters.delete": async ({ id }) => {
       await store.filters.delete(id);
+      await b.forwards.rules();
       return { ok: true as const };
     },
     "filters.preview": ({ rule, limit }) => store.filters.preview(rule, b.now(), limit),
@@ -726,6 +746,33 @@ export function createHandlers(b: Backend): Handlers {
       const r = await b.scheduled.schedule(params, sendAt);
       if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
       if (r === "full") throw new RpcError("BAD_REQUEST", L("errors.scheduledFull", { max: SCHEDULED_MAX }));
+      return { ok: true as const };
+    },
+    // plan 116
+    "forwards.list": () => b.forwards.refresh(),
+    "forwards.cancel": async ({ ids }) => ({ cancelled: await b.forwards.cancel(ids) }),
+    "forwards.retry": async ({ id }) => {
+      if (!(await b.forwards.retry(id))) throw new RpcError("BAD_REQUEST", L("errors.forwardNotRetryable"));
+      return { ok: true as const };
+    },
+    "forwards.answer": async ({ rule, keep }) => {
+      await b.forwards.answer(rule, keep);
+      // a category's trigger shows as off in the sidebar (Settings → Filters reads its list when it opens)
+      if (!keep && rule.kind === "category") b.server.emit("categories", await store.categories.list());
+      return { ok: true as const };
+    },
+    "categories.setForward": async ({ categoryId, forward }) => {
+      if (forward && JSON.stringify(forward.addresses).length > FORWARD_ADDRESSES_MAX_CHARS) throw new RpcError("BAD_REQUEST", L("filters.invalid.forwardTooMany"));
+      if (!(await store.forwards.setCategory(categoryId, forward, b.now()))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
+      await b.forwards.rules();
+      b.forwards.poke();
+      const list = await store.categories.list();
+      b.server.emit("categories", list);
+      return list.find((c) => c.id === categoryId)!;
+    },
+    "app.locale": async ({ locale }) => {
+      // the language a forward is written in when the setting follows the system (the backend can't see the system's)
+      if ((await store.settings.get<string | null>(UI_LOCALE_KEY, null)) !== locale) await store.settings.set(UI_LOCALE_KEY, locale);
       return { ok: true as const };
     },
     "scheduled.list": () => b.scheduled.refresh(),

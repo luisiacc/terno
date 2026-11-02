@@ -1,4 +1,4 @@
-import { formatAddressList, isValidEmail, parseAddressList, type Address } from "@terno/core";
+import { formatAddressList, isValidEmail, parseAddressList, signatureBlock, type Address } from "@terno/core";
 import { t } from "@terno/i18n";
 import type { Draft, DraftAddress, DraftMode, ReplyContext } from "@terno/core/rpc";
 import { create } from "zustand";
@@ -214,11 +214,8 @@ export function validRecipients(text: string): Address[] {
   return parseAddressList(text).filter((a) => isValidEmail(a.email));
 }
 
-/** The signature block appended below what is written (the "-- " line marks it, so clients can fold it). */
-export function signatureBlock(signature: string): string {
-  const sig = signature.replace(/\s+$/, "");
-  return sig ? `-- \n${sig}` : "";
-}
+/** The signature block appended below what is written (core's, shared with plan 116's forwards). */
+export { signatureBlock };
 
 /** What is sent: what the user wrote, the From account's signature, then the quoted original when it is kept. */
 export function sendBody(d: Pick<LocalDraft, "bodyText" | "quotedText" | "includeQuote">, signature = ""): string {

@@ -116,6 +116,9 @@ export const CODES = {
   // scheduled sends (plan 94): a failed read, a send that will be tried again or given back; never a subject or an address
   "scheduled.failed": c("errorClass"),
   "scheduled.send_failed": c("errorClass"),
+  // plan 116: forwards (reading them, sending one); only the error's class, never an address or a subject
+  "forward.failed": c("errorClass"),
+  "forward.send_failed": c("errorClass"),
   "scheduled.given_back": c("errorClass"),
   // sender icons (plan 22): counts, sizes and durations only, never a domain, an address or a URL
   "icons.batch": c("count", "durationMs"),

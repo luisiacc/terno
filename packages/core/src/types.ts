@@ -234,6 +234,8 @@ export interface Category {
   autoApply: boolean;
   /** plan 83: its mail shows in the Inbox (off: the Inbox, its counts and notifications leave it out) */
   showInInbox: boolean;
+  /** plan 116: where its new mail is forwarded (absent: nowhere) */
+  forward?: import("./forwarding").CategoryForward;
 }
 
 /**

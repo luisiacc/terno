@@ -1,4 +1,5 @@
-import { copyOpAdmission, type OpAdmission } from "@terno/store";
+import { copyOpAdmission, nextFilterState, readRuleState, type OpAdmission } from "@terno/store";
+import { filterForwardChanged } from "./forwards";
 import { assetError, bindFlagTarget, linkAssets, localFlagIntent, operationFlagFields, settleFlagEffects, validateAssets, type LocalFlagField } from "@terno/store";
 import { sqlFlags } from "./flag-intents";
 import { RpcError } from "@terno/core/rpc";
@@ -156,8 +157,11 @@ export function removeAccount(db: Db, id: number): void {
 
 export function listCategories(db: Db): Category[] {
   return db
-    .all<Category & { auto_apply: number; show_in_inbox: number }>("SELECT id, name, color, position, auto_apply, show_in_inbox FROM categories ORDER BY position, id")
-    .map(({ auto_apply, show_in_inbox, ...c }) => ({ ...c, autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1 }));
+    .all<Category & { auto_apply: number; show_in_inbox: number; forward_json: string | null }>("SELECT id, name, color, position, auto_apply, show_in_inbox, forward_json FROM categories ORDER BY position, id")
+    .map(({ auto_apply, show_in_inbox, forward_json, ...c }) => {
+      const forward = readRuleState(forward_json);
+      return { ...c, autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
+    });
 }
 
 export function createCategory(db: Db, name: string, color: CategoryColor, { showInInbox = true }: { showInInbox?: boolean } = {}): Category {
@@ -227,6 +231,7 @@ interface FilterRow {
   created_at: number;
   learned_key: string | null;
   auto: number;
+  forward_json: string | null;
 }
 
 function toFilter(r: FilterRow): Filter {
@@ -239,6 +244,7 @@ function toFilter(r: FilterRow): Filter {
     rule: JSON.parse(r.rule_json) as FilterRule,
     hits: r.hits,
     createdAt: r.created_at,
+    ...(readRuleState(r.forward_json)?.enabled === false && { forwardPaused: true }),
   };
 }
 
@@ -268,6 +274,7 @@ export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
         f.auto === undefined ? null : f.auto ? 1 : 0,
         f.id,
       );
+      saveFilterForward(db, f.id, previous?.enabled ?? false, now);
       return getFilter(db, f.id)!;
     }
     const position = db.get<{ p: number }>("SELECT coalesce(max(position), -1) + 1 AS p FROM filters")!.p;
@@ -282,8 +289,18 @@ export function saveFilter(db: Db, f: FilterSave, now = Date.now()): Filter {
       position,
       now,
     ).lastInsertRowid;
+    saveFilterForward(db, Number(id), false, now);
     return getFilter(db, id)!;
   });
+}
+
+/** Plan 116: a saved filter's forward state (a new revision when its addresses changed or it was turned on). */
+function saveFilterForward(db: Db, id: number, wasEnabled: boolean, now: number): void {
+  const row = db.get<{ forward_json: string | null; rule_json: string; enabled: number }>("SELECT forward_json, rule_json, enabled FROM filters WHERE id = ?", id);
+  if (!row) return;
+  const next = nextFilterState(readRuleState(row.forward_json), JSON.parse(row.rule_json) as FilterRule, row.enabled === 1, wasEnabled, now);
+  db.run("UPDATE filters SET forward_json = ? WHERE id = ?", next ? JSON.stringify(next) : null, id);
+  filterForwardChanged(db, id, now);
 }
 
 export function deleteFilter(db: Db, id: number, expect?: FilterState): void {

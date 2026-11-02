@@ -1149,6 +1149,48 @@ CREATE TABLE folder_aliases (
 ) WITHOUT ROWID;
 CREATE INDEX folder_aliases_key ON folder_aliases(account_id, key);
 ` },
+  // plan 116: forwarding what lands in a category or matches a filter. A rule's state rides on its row (JSON: addresses,
+  // revision, since, approval); new mail that may go is marked by the ingest that inserted it; each (message, rule) is
+  // one forward, and each (message, address) one claim, so no address gets a message twice
+  { version: 44, name: "forwards (plan 116)", sql: `
+ALTER TABLE categories ADD COLUMN forward_json TEXT;
+ALTER TABLE filters ADD COLUMN forward_json TEXT;
+CREATE TABLE forward_eligible (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  arrived_at INTEGER NOT NULL
+);
+CREATE INDEX forward_eligible_at ON forward_eligible(arrived_at);
+CREATE TABLE forwards (
+  id INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  rule_kind TEXT NOT NULL CHECK (rule_kind IN ('category', 'filter')),
+  rule_id INTEGER NOT NULL,
+  rev INTEGER NOT NULL,
+  to_json TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('waiting', 'held', 'sending', 'queued', 'cancelled', 'failed')),
+  due_at INTEGER NOT NULL,
+  files_until INTEGER,
+  files_missing INTEGER NOT NULL DEFAULT 0,
+  op_ids_json TEXT NOT NULL DEFAULT '[]',
+  reason TEXT,
+  created_at INTEGER NOT NULL,
+  claimed_at INTEGER,
+  at INTEGER NOT NULL,
+  UNIQUE (message_id, rule_kind, rule_id)
+);
+CREATE INDEX forwards_due ON forwards(state, due_at);
+CREATE INDEX forwards_rule ON forwards(rule_kind, rule_id, claimed_at);
+CREATE INDEX forwards_at ON forwards(state, at);
+CREATE TABLE forward_recipients (
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  address TEXT NOT NULL,
+  forward_id INTEGER NOT NULL REFERENCES forwards(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, address)
+) WITHOUT ROWID;
+CREATE INDEX forward_recipients_forward ON forward_recipients(forward_id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

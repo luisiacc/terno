@@ -78,6 +78,7 @@ import {
   type ClassifyResult,
 } from "./categorize";
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
+import { approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
@@ -394,6 +395,8 @@ export class SqlMailStore implements MailStore {
     const touched = new Set<number>();
     if (messageIds.length === 0) return touched;
     for (const action of actions) {
+      // plan 116: a forward is decided after the commit, from what the mail is then (forwards.plan)
+      if (action.type === "forward") continue;
       if (action.type === "addCategory") {
         const threads = this.db
           .all<{ thread_id: number }>("SELECT DISTINCT thread_id FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(messageIds))
@@ -437,7 +440,7 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check }) => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible }) => {
       const staged: IncomingMessage[] = [];
       for (const m of batch) {
         const existing = !m.captureUnavailable && m.attachments?.length ? findIngestMessage(this.db, m) : undefined;
@@ -448,6 +451,8 @@ export class SqlMailStore implements MailStore {
         const flagBefore = flagEpochs(sqlFlags(this.db));
         for (const m of staged) completeCapture(sqlCaptureStorage(this.db), m.accountId, m.repair);
           const result = ingestMessages(this.db, staged as IncomingMessage[], now, observation);
+        // plan 116: live mail that may be forwarded, marked with its insertion (never later, by an upsert)
+        if (forwardEligible) markEligible(this.db, result.inserted, now);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         if (applyFilters) {
@@ -769,6 +774,7 @@ export class SqlMailStore implements MailStore {
         const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (p.scheduledAt !== undefined && !stillScheduled(this.db, p.draftId, p.scheduledAt)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "unscheduled" });
+        if (p.forward && !forwardSendOpen(this.db, p.forward)) throw new RpcError("STALE", L("errors.forwardGone"), { reason: "forwardGone" });
         if (draft && (draft.account_id !== p.accountId || (p.draftRevision !== undefined && p.draftRevision !== draft.revision))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
         const account = getAccount(this.db, p.accountId);
         if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
@@ -846,11 +852,33 @@ export class SqlMailStore implements MailStore {
         if (account.kind === "imap") reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);
         if (p.draftId) deleteDraft(this.db, p.draftId);
+        if (p.forward) linkForwardSend(this.db, p.forward, opId, p.now);
         if (replyThreadId && p.recordReply) recordUserActions(this.db, [replyThreadId], "reply", p.now);
         const threadId = this.db.get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE id = ?", localId)!.thread_id;
         return { opId, threadId, messageId: localId, deltas: ingest.deltas };
       });
     },
+  };
+
+  // ───────────────────────────── forwards (plan 116) ─────────────────────────────
+
+  readonly forwards: MailStore["forwards"] = {
+    active: async () => forwardsActive(this.db),
+    setCategory: async (categoryId, forward, now) => setCategoryForward(this.db, categoryId, forward, now),
+    plan: async (p) => planForwards(this.db, p),
+    eligiblePage: async (now, after, limit) => eligiblePage(this.db, now, after, limit),
+    list: async (_now, limit) => listForwards(this.db, limit),
+    holds: async (now) => forwardHolds(this.db, now),
+    nextDue: async () => nextForwardDue(this.db),
+    cancel: async (ids, now) => cancelForwards(this.db, ids, now),
+    claim: async (id, now, o) => claimForward(this.db, id, now, o),
+    waitForFiles: async (id, until, now) => waitForFiles(this.db, id, until, now),
+    fail: async (id, reason, now) => failForward(this.db, id, reason, now),
+    retry: async (id, now, failedOps) => retryForward(this.db, id, now, failedOps),
+    approve: async (rule, now) => approveRule(this.db, rule, now),
+    stop: async (rule, now) => stopRule(this.db, rule, now),
+    prune: async (now) => pruneForwards(this.db, now),
+    get: async (id) => getForward(this.db, id),
   };
 
   // ───────────────────────────── filters ─────────────────────────────

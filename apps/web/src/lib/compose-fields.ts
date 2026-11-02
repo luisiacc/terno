@@ -1,4 +1,4 @@
-import { attachmentMessageBudget, type AttachmentRef, formatAddressList, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
+import { attachmentMessageBudget, type AttachmentRef, formatAddressList, forwardQuote, forwardSubject, type ForwardWording, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
@@ -59,9 +59,7 @@ export function quoteFor(mode: Exclude<DraftMode, "new">, detail: ThreadDetail, 
   const last = answered(detail, mine);
   const text = last.bodyText ?? last.snippet;
   const date = fullDate(last.date);
-  if (mode === "forward") {
-    return `${t("compose.quote.forwarded", { from: formatAddressList([last.from]), date, subject: last.subject, to: formatAddressList(last.to) })}\n\n${text}`;
-  }
+  if (mode === "forward") return forwardQuote({ from: last.from, to: last.to, subject: last.subject, date: last.date, text }, WORDING);
   return `${t("compose.quote.attribution", { date, name: last.from.name || last.from.email })}\n${text.split("\n").map((l) => `> ${l}`).join("\n")}`;
 }
 
@@ -94,13 +92,15 @@ export function replyName(detail: ThreadDetail, mine: Mine | string | readonly s
   return to ? (to.name || to.email).split(/\s+/)[0]! : "";
 }
 
-/** A prefix already on the subject, from any language ("RE:", "Fw:", Outlook's Spanish "RV:"): kept, never doubled. */
-const FORWARDED = /^(fwd?|rv|reenv):/i;
+/** The composer's words for a forward (plan 116: the backend's forwards write the same, in a given locale). */
+const WORDING: ForwardWording = { message: (key: "compose.quote.forwarded" | "compose.prefix.forward", params: Record<string, string>) => t(key, params as never), date: fullDate } as ForwardWording;
+
+/** A prefix already on the subject ("RE:"): kept, never doubled (a forward's: core's forwardSubject). */
 const REPLIED = /^re:/i;
 
 /** A reply's or a forward's subject; the prefix Terno adds follows the language ("Re:", "Fwd:"). */
 export function subjectFor(mode: DraftMode, subject: string): string {
-  if (mode === "forward") return FORWARDED.test(subject) ? subject : t("compose.prefix.forward", { subject });
+  if (mode === "forward") return forwardSubject(subject, WORDING);
   if (mode === "new") return "";
   return REPLIED.test(subject) ? subject : t("compose.prefix.reply", { subject });
 }

@@ -1,6 +1,8 @@
 import { L, type TextKey } from "@terno/i18n";
 import { z } from "zod";
 
+import { isValidEmail } from "../address";
+import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import { checkPattern, type PatternIssue } from "./pattern";
 
 /** plan 89: `text` is the subject or the body, by words (it only "mentions") */
@@ -51,9 +53,14 @@ export const conditionSchema = z.union([
   ageConditionSchema,
 ]);
 
+/** plan 116: a forward's address (the composer's recipient shape) */
+const forwardAddress = z.object({ name: z.string().max(300), email: z.string().trim().max(320).refine(isValidEmail, "Invalid email address") });
+
 export const actionSchema = z.union([
   z.object({ type: z.enum(["archive", "trash", "spam", "markRead", "star"]) }),
   z.object({ type: z.literal("addCategory"), categoryId: z.number().int().positive() }),
+  // plan 116: new mail it matches is forwarded there (never mail it is applied to later, nor old mail)
+  z.object({ type: z.literal("forward"), to: z.array(forwardAddress).min(1) }),
 ]);
 
 export const filterRuleSchema = z
@@ -79,6 +86,7 @@ export const filterRuleSchema = z
     const seen = new Set<string>();
     rule.actions.forEach((action, i) => {
       const key = action.type === "addCategory" ? `cat:${action.categoryId}` : action.type;
+      if (action.type === "forward" && JSON.stringify(action.to).length > FORWARD_ADDRESSES_MAX_CHARS) ctx.addIssue(ruleIssue("filters.invalid.forwardTooMany", ["actions", i]));
       if (seen.has(key)) ctx.addIssue(ruleIssue("filters.invalid.duplicate", ["actions", i]));
       seen.add(key);
     });
@@ -96,6 +104,7 @@ const RULE_ISSUES = [
   "filters.invalid.duplicate",
   "filters.invalid.text",
   "filters.invalid.patternField",
+  "filters.invalid.forwardTooMany",
   ...Object.values(PATTERN_ISSUE),
 ] as const satisfies readonly TextKey[];
 type RuleIssueKey = (typeof RULE_ISSUES)[number];
@@ -127,6 +136,8 @@ export interface Filter {
   rule: FilterRule;
   hits: number;
   createdAt: number;
+  /** plan 116: its forward action is paused ("Stop" at the cap); saving it from the builder turns it on again */
+  forwardPaused?: boolean;
 }
 
 /** What a filter's owner can change: an automatic write compares it before it writes (plan 90). */

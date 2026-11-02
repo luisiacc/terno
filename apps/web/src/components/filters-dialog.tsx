@@ -54,7 +54,7 @@ const PATTERN_ISSUES = {
   complex: "filters.invalid.pattern.complex",
 } as const satisfies Record<NonNullable<ReturnType<typeof checkPattern>>, TextKey>;
 
-const ACTIONS: { type: Exclude<FilterAction["type"], "addCategory">; label: `filters.action.${string}` & TextKey; icon: typeof Archive }[] = [
+const ACTIONS: { type: Exclude<FilterAction["type"], "addCategory" | "forward">; label: `filters.action.${string}` & TextKey; icon: typeof Archive }[] = [
   { type: "archive", label: "filters.action.archive", icon: Archive },
   { type: "trash", label: "filters.action.trash", icon: Trash2 },
   { type: "spam", label: "filters.action.spam", icon: OctagonAlert },
@@ -289,7 +289,7 @@ export function FiltersDialog() {
   const rule = draft.rule;
   const setRule = (r: FilterRule) => setDraft((d) => ({ ...d, rule: r }));
   const hasAction = (type: string) => rule.actions.some((a) => a.type === type);
-  const toggleAction = (type: Exclude<FilterAction["type"], "addCategory">) => {
+  const toggleAction = (type: Exclude<FilterAction["type"], "addCategory" | "forward">) => {
     if (hasAction(type)) setRule({ ...rule, actions: rule.actions.filter((a) => a.type !== type) });
     else setRule({ ...rule, actions: [...rule.actions.filter((a) => !(EXCLUSIVE.has(type) && EXCLUSIVE.has(a.type))), { type }] });
   };

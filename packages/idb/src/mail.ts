@@ -1,4 +1,6 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
+import { readRuleState } from "@terno/store";
+import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
 import { requireGmailRefresh, copyOpAdmission, ThreadMerges, type OpAdmission } from "@terno/store";
 import { assetError, linkAssets, reaffirmFlagIntent, restoreLocationOps, sameLocation, validateAssets } from "@terno/store";
@@ -1528,7 +1530,10 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
 }
 
 export function listCategories(c: Ctx): Category[] {
-  return [...T(c, "categories").all()].sort(byPosition).map((r) => ({ id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0 }));
+  return [...T(c, "categories").all()].sort(byPosition).map((r) => {
+    const forward = readRuleState(r.forward_json);
+    return { id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
+  });
 }
 
 export function createCategory(c: Ctx, name: string, color: CategoryColor, { showInInbox = true }: { showInInbox?: boolean } = {}): Category {
@@ -1566,7 +1571,7 @@ export function reorderCategories(c: Ctx, ids: readonly number[]): Category[] {
 
 // plan 90: a record written before `auto` existed is automatic when SimilarFilters made it (manual with a learned key), as SQL's v35 backfill says
 const autoOf = (r: R): boolean => (r.auto === undefined ? r.source === "manual" && r.learned_key != null : r.auto === 1);
-const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, auto: autoOf(r), rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at });
+const toFilter = (r: R): Filter => ({ id: r.id, name: r.name, enabled: r.enabled === 1, source: r.source, auto: autoOf(r), rule: JSON.parse(r.rule_json) as FilterRule, hits: r.hits, createdAt: r.created_at, ...(readRuleState(r.forward_json)?.enabled === false && { forwardPaused: true }) });
 
 export function listFilters(c: Ctx): Filter[] {
   return [...T(c, "filters").all()].sort(byPosition).map(toFilter);
@@ -1587,8 +1592,10 @@ export function saveFilter(c: Ctx, f: FilterSave, now: number): Filter {
       if (f.expect && (!previous || !sameFilterState(filterState(toFilter(previous)), f.expect))) throw new RpcError("CANCELLED", L("errors.filterChanged"));
       if (!previous) return getFilter(c, f.id)!;
       if (previous.rule_json !== ruleJson && !f.keepApplications) for (const a of T(c, "filter_applications").by("fk_filter_id", f.id)) T(c, "filter_applications").deleteRow(a);
+      const wasEnabled = previous.enabled === 1;
       filters.update(previous, { name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, rule_json: ruleJson, auto: (f.auto ?? autoOf(previous)) ? 1 : 0 });
       reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
+      saveFilterForward(c, f.id, wasEnabled, now);
       return getFilter(c, f.id)!;
     }
     let position = -1;
@@ -1596,6 +1603,7 @@ export function saveFilter(c: Ctx, f: FilterSave, now: number): Filter {
     const row: R = { id: undefined, name: f.name, enabled: f.enabled ? 1 : 0, source: f.source, auto: f.auto ? 1 : 0, rule_json: ruleJson, learned_key: f.learnedKey ?? null, hits: 0, position: position + 1, created_at: now, last_applied_at: null };
     filters.insert(row);
     reserveCategoryIds(c.db, categoryReferenceCeiling(ruleJson));
+    saveFilterForward(c, row.id, false, now);
     return getFilter(c, row.id)!;
   });
 }

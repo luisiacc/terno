@@ -645,6 +645,7 @@ const es = {
   "filters.invalid.duplicate": "Un filtro no puede tener la misma acción dos veces.",
   "filters.invalid.text": "“Asunto o cuerpo” solo puede comprobar que mencione una palabra o frase.",
   "filters.invalid.patternField": "Los patrones funcionan con el remitente, el dominio, los destinatarios, el asunto o la lista, no con el cuerpo.",
+  "filters.invalid.forwardTooMany": "Son demasiadas direcciones para un filtro. Repártelas en dos filtros.",
   "filters.invalid.pattern.syntax": "Este patrón no es una expresión regular válida.",
   "filters.invalid.pattern.length": "Un patrón necesita de 1 a 500 caracteres.",
   "filters.invalid.pattern.unsupported": "Los patrones no pueden mirar alrededor (?=, ?!) ni hacer referencia a un grupo (\\1).",
@@ -2148,6 +2149,19 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ui.command.title": "Paleta de comandos",
   "ui.command.description": "Busca un comando para ejecutar…",
   "ui.shortcut.then": "luego",
+  "errors.forwardGone": "Este reenvío se canceló o ya se envió.",
+  "forward.reason.ruleChanged": "No se reenvió: la regla de reenvío cambió o se desactivó.",
+  "forward.reason.gone": "No se reenvió: el mensaje ya no está.",
+  "forward.reason.trash": "No se reenvió: el mensaje pasó a Spam o a la Papelera.",
+  "forward.reason.left": "No se reenvió: la conversación salió de la categoría.",
+  "forward.reason.alreadySent": "No se reenvió: ya se había enviado a todas las direcciones.",
+  "forward.reason.stopped": "No se reenvió: detuviste este reenvío.",
+  "forward.reason.unanswered": "No se reenvió: esperó tu respuesta 3 días.",
+  "forward.reason.restored": "No se reenvió: Terno se restauró desde una copia de seguridad.",
+  "forward.reason.failed": "No se reenvió: no se pudo enviar. Elige Reintentar para intentarlo de nuevo.",
+  "forward.reason.accountGone": "No se reenvió: se quitó la cuenta que lo recibió.",
+  "errors.forwardAgent": "Los agentes no pueden configurar ni cambiar reenvíos. Hazlo en Terno.",
+  "errors.forwardNotRetryable": "Este reenvío no se puede reintentar: quizá ya se envió. Revisa Enviados primero.",
 } as const;
 
 export default es satisfies LocaleCheck<typeof es>;

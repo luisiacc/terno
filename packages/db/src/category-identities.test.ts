@@ -96,10 +96,12 @@ it.each(["filter", "pending", "moveSource", "moveRow"] as const)("migrates retai
   expect(db.get("SELECT name FROM sqlite_master WHERE name='category_counter'")).toBeUndefined();
   expect(db.all("SELECT * FROM filters")).toEqual(filters);
   migrate(db);
-  // unchanged but for v35's auto column (plan 90): a manual filter without a learned key is the user's
-  expect(db.all("SELECT * FROM filters")).toEqual(filters.map((x) => ({ ...(x as object), auto: 0 })));
+  // unchanged but for v35's auto column (plan 90: a manual filter without a learned key is the user's) and v44's forward state (plan 116: none)
+  expect(db.all("SELECT * FROM filters")).toEqual(filters.map((x) => ({ ...(x as object), auto: 0, forward_json: null })));
   expect(db.get("SELECT rule_json FROM filters WHERE id=?", f.id)).toEqual({ rule_json: JSON.stringify(rule(ids.filter)) });
-  for (const row of schema) expect(db.all("SELECT type,name,sql FROM sqlite_master WHERE name=?", row.name as string)).toContainEqual(row);
+  // v44 adds the categories' forward state (plan 116); nothing else about them changes
+  const later = (row: Record<string, unknown>) => (row.type === "table" && row.name === "categories" ? { ...row, sql: String(row.sql).replace(/\)$/, ", forward_json TEXT)") } : row);
+  for (const row of schema) expect(db.all("SELECT type,name,sql FROM sqlite_master WHERE name=?", row.name as string)).toContainEqual(later(row as Record<string, unknown>));
   expect(db.all("PRAGMA foreign_key_check")).toEqual([]);
   expect(createCategory(db, "After upgrade", "amber").id).toBeGreaterThan(200);
   close(db); const reopened = open(file); reopened.run("DELETE FROM categories");
@@ -134,7 +136,8 @@ it("upgrades the installed alias guard atomically without changing categories or
   for (const migration of MIGRATIONS.filter((m) => m.version <= 39)) db.exec(migration.sql);
   db.exec("PRAGMA user_version = 39");
   const old = createCategory(db, "Original lifetime", "amber");
-  const filter = saveFilter(db, { name: "Preserved rule", enabled: true, source: "manual", rule: rule(old.id) });
+  // written as the v39 app did (today's saveFilter knows v44's forward state)
+  const filter = { id: Number(db.run("INSERT INTO filters(name,enabled,source,rule_json,position,created_at) VALUES('Preserved rule',1,'manual',?,0,0)", JSON.stringify(rule(old.id))).lastInsertRowid) };
   deleteCategory(db, old.id);
   const replacement = createCategory(db, "Replacement lifetime", "amber");
   expect(old.id).toBe(1); expect(replacement.id).toBe(2);
@@ -154,8 +157,9 @@ it("upgrades the installed alias guard atomically without changing categories or
   expect(db.all("SELECT * FROM filters")).toEqual(filters);
   migrate(db);
   expect(() => db.run("UPDATE categories SET rowid=1 WHERE id=2")).toThrow("Category identity cannot change");
-  expect(db.all("SELECT * FROM categories")).toEqual(categories);
-  expect(db.all("SELECT * FROM filters")).toEqual(filters);
+  // unchanged but for v44's forward state (plan 116: none)
+  expect(db.all("SELECT * FROM categories")).toEqual(categories.map((x) => ({ ...(x as object), forward_json: null })));
+  expect(db.all("SELECT * FROM filters")).toEqual(filters.map((x) => ({ ...(x as object), forward_json: null })));
   expect(db.get("SELECT rule_json FROM filters WHERE id=?", filter.id)).toEqual({ rule_json: JSON.stringify(rule(1)) });
   close(db); const reopened = open(file);
   expect(() => reopened.run("UPDATE categories SET oid=1 WHERE id=2")).toThrow("Category identity cannot change");

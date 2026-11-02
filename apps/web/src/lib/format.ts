@@ -1,22 +1,5 @@
+import { dateStyle, fullDateFormat, type DateStyle } from "@terno/core";
 import { formatNumber, getLocale, t, type LocaleId } from "@terno/i18n";
-
-/**
- * Each language's date formats, like Mail: English "9:34 AM", "Yesterday",
- * "Oct 22", "Oct 22, 2024"; Spanish as Terno always wrote it ("09:34",
- * "22 oct", "22 oct 2024", no "Ayer"). A language without an entry gets
- * its locale's defaults.
- */
-interface DateStyle {
-  tag: string;
-  time: Intl.DateTimeFormatOptions;
-  yesterday: boolean;
-  /** Spanish's short months carry a period ("oct.") that the list never showed */
-  stripPeriod: boolean;
-}
-const STYLES: Partial<Record<LocaleId, DateStyle>> = {
-  en: { tag: "en-US", time: { hour: "numeric", minute: "2-digit" }, yesterday: true, stripPeriod: false },
-  es: { tag: "es", time: { hour: "2-digit", minute: "2-digit" }, yesterday: false, stripPeriod: true },
-};
 
 interface Formats {
   style: DateStyle;
@@ -31,13 +14,13 @@ function formats(): Formats {
   const id = getLocale();
   let f = cache.get(id);
   if (!f) {
-    const style = STYLES[id] ?? { tag: id, time: { hour: "2-digit", minute: "2-digit" }, yesterday: false, stripPeriod: false };
+    const style = dateStyle(id);
     f = {
       style,
       time: new Intl.DateTimeFormat(style.tag, style.time),
       day: new Intl.DateTimeFormat(style.tag, { day: "numeric", month: "short" }),
       year: new Intl.DateTimeFormat(style.tag, { day: "numeric", month: "short", year: "numeric" }),
-      full: new Intl.DateTimeFormat(style.tag, { weekday: "short", day: "numeric", month: "short", year: "numeric", ...style.time }),
+      full: fullDateFormat(id),
     };
     cache.set(id, f);
   }
