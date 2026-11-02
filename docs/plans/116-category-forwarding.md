@@ -1,5 +1,17 @@
 # 116: Forward what lands in a category
 
+## Status
+
+- Built and committed: storage (SQL v44, IDB 24), the backend queue (`packages/backend/src/forwarding.ts`), RPCs, conformance (`packages/store/src/conformance/forwards.ts`) and backend tests (`forwarding.test.ts`).
+- Next: the UI (category menu panel, sidebar icon, notice with Cancel, reader line, the cap's question, the builder's "Forward to", Settings → Filters group), e2e, then the Codex code review.
+- Deviations from the design, decided while building:
+  - A forward is decided after each commit from persisted state (`forwards.plan`, called by ingest, a body's arrival, a single filing, and a sweep at start), not inside every store transaction: the claim at 10 s re-checks everything in one transaction, so a crash between can only miss a forward, never send a wrong one, and the start's sweep finds what a crash missed.
+  - "Bulk vs single" is the caller's: the handlers plan only a single hand filing (`filed`), a suggestion, an agent's (when agents may send); memberships made after the mail arrived by `user` or `bulk` count only through `filed`.
+  - A filter's match counts when it came within 10 minutes of the mail's arrival (`FORWARD_FILTER_LAG_MS`): applying a filter later never forwards.
+  - Loops: no `X-Terno-Forward` header. Mail from any of the user's addresses never becomes eligible, a forward never goes to its own sender or to the user, each (message, address) goes once, and the daily cap stops anything that still runs away.
+  - Forwards are text, like the composer's Forward (whose HTML is that text's rendering); the original's HTML isn't forwarded.
+  - A restart sends what was due at once (no fresh 10 s); a half-sent forward finishes, each send fenced.
+
 ## Request (verbatim)
 
 > have triggers on categories to forward to a certain email when it lands on a category
