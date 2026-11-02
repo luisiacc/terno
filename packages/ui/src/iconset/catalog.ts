@@ -9,6 +9,8 @@ export const ICONS = {
   Apple: "AppleIcon",
   Archive: "ArchiveIcon",
   ArrowDown: "ArrowDown02Icon",
+  // plan 108: the focused sidebar's way back to all accounts
+  ArrowLeft: "ArrowLeft02Icon",
   AtSign: "AtIcon",
   BadgeCheck: "CheckmarkBadge01Icon",
   Baseline: "TextColorIcon",
@@ -42,6 +44,8 @@ export const ICONS = {
   EyeOff: "ViewOffSlashIcon",
   FileDown: "FileDownloadIcon",
   Filter: "FilterIcon",
+  // plan 108: "Focus on this account"
+  Focus: "CenterFocusIcon",
   Folder: "Folder01Icon",
   FolderInput: "FolderInputIcon",
   // plan 107: New folder… / New subfolder…
