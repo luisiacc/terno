@@ -27,6 +27,7 @@ import { installNativeReload } from "~/lib/native-reload";
 import { openFromNotice, startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
 import { snippetsSaved } from "~/lib/snippets";
+import { applyForwards, loadForwards, shareLocale } from "~/lib/forwards";
 import { applyScheduled, loadScheduled } from "~/lib/scheduled";
 
 export async function boot(): Promise<void> {
@@ -115,6 +116,10 @@ export async function boot(): Promise<void> {
     // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
     client.on("scheduled", applyScheduled);
     void loadScheduled().catch((error) => console.warn("[scheduled] could not load", error));
+    // plan 116: forwards (the notice with Cancel, the reader's line, the cap's question)
+    client.on("forwards", applyForwards);
+    void loadForwards().catch((error) => console.warn("[forwards] could not load", error));
+    shareLocale();
     client.on("owner", (owner) => setApp({ owner }));
     // drafts added elsewhere (an import, in this window or another): merged in as they are
     client.on("drafts", () => void loadDrafts());

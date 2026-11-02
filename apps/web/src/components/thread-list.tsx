@@ -34,6 +34,7 @@ import { ReviewAlwaysMenu } from "./review-actions";
 import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner } from "./learned-banner";
+import { ForwardQuestion } from "./forward-question";
 import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
 import { preloadComposer } from "./composer/lazy";
@@ -839,6 +840,7 @@ export function ThreadList() {
     <section className="flex h-full min-h-0 flex-col bg-pane" data-testid="thread-list" data-results-for={itemsKey} data-composing={composing || undefined}>
       <Header hairlineRef={headerRef} />
       <ReportRow />
+      <ForwardQuestion />
       <LearnedBanner />
       {DesktopBanner && (
         <Suspense>

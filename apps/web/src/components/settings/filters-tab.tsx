@@ -1,13 +1,15 @@
-import { patternTemplate, type Condition, type Filter } from "@terno/core";
+import { patternTemplate, type Category, type Condition, type Filter } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { t, type TextKey } from "@terno/i18n";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { ConfirmDialog, SettingsGroup } from "./parts";
+
+const CategoryForwardDialog = lazy(() => import("../category-forward-dialog").then((m) => ({ default: m.CategoryForwardDialog })));
 
 // keys, read at render (in the current language)
 const SOURCE = { manual: "filters.source.manual", ai: "filters.source.ai", learned: "filters.source.learned" } as const;
@@ -116,6 +118,41 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
   );
 }
 
+/** Plan 116: a category that forwards its new mail: on or off here, its addresses edited in its dialog. */
+function CategoryForwardItem({ category }: { category: Category }) {
+  const forward = category.forward!;
+  const [editing, setEditing] = useState<number | null>(null);
+  const to = forward.addresses.map((a) => a.name || a.email).join(", ");
+  return (
+    <div className="flex min-h-11 items-center gap-3 py-2" data-testid="settings-category-forward" data-category-id={category.id}>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{category.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{t("filters.categoryForward.to", { to })}</p>
+      </div>
+      <Switch
+        aria-label={t("filters.categoryForward.enable", { name: category.name })}
+        data-testid="settings-category-forward-enabled"
+        checked={forward.enabled}
+        onCheckedChange={async (enabled) => {
+          try {
+            await client.call("categories.setForward", { categoryId: category.id, forward: { addresses: forward.addresses, enabled } });
+          } catch (e) {
+            snack.error(errorText(e));
+          }
+        }}
+      />
+      <Button variant="ghost" size="icon-sm" aria-label={t("filters.categoryForward.edit", { name: category.name })} data-testid="settings-category-forward-edit" onClick={() => setEditing((n) => (n ?? 0) + 1)}>
+        <Pencil />
+      </Button>
+      {editing !== null && (
+        <Suspense fallback={null}>
+          <CategoryForwardDialog key={editing} category={category} open onOpenChange={(open) => !open && setEditing(null)} />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
 /** Plan 90: Terno's filters off at once; the undo token that turns back on exactly those (an edit meanwhile wins). */
 async function turnAllOff(filters: Filter[]): Promise<number | null> {
   try {
@@ -138,6 +175,8 @@ export function FiltersTab() {
   const [filters, setFilters] = useState<Filter[] | null>(null);
   const refresh = () => void client.call("filters.list", {}).then(setFilters, (e: unknown) => snack.error(errorText(e)));
   useEffect(refresh, []);
+  // plan 116: categories that forward (the category list follows their changes)
+  const forwarding = useApp((s) => s.categories).filter((c) => c.forward);
   const yours = filters?.filter((f) => !f.auto);
   const auto = filters?.filter((f) => f.auto) ?? [];
   const on = auto.filter((f) => f.enabled).length;
@@ -154,6 +193,11 @@ export function FiltersTab() {
           </Button>
         </div>
       </SettingsGroup>
+      {forwarding.length > 0 && (
+        <SettingsGroup title={t("filters.group.categoryForwards")} footer={t("filters.group.categoryForwardsFooter")} testId="settings-filters-category-forwards">
+          {forwarding.map((c) => <CategoryForwardItem key={c.id} category={c} />)}
+        </SettingsGroup>
+      )}
       {auto.length > 0 && (
         <SettingsGroup
           testId="settings-filters-auto"

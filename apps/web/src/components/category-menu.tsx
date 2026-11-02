@@ -1,17 +1,21 @@
 import type { Category } from "@terno/core";
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { Inbox, Trash2 } from "@terno/ui/icons";
+import { Forward, Inbox, Trash2 } from "@terno/ui/icons";
 import { lazy, Suspense, useState, type ReactElement } from "react";
 import { setShowInInbox } from "~/lib/categorize";
 import { setApp } from "~/state/app";
 
 const CategoryDeleteDialog = lazy(() => import("./category-delete-dialog").then((m) => ({ default: m.CategoryDeleteDialog })));
+const CategoryForwardDialog = lazy(() => import("./category-forward-dialog").then((m) => ({ default: m.CategoryForwardDialog })));
 
-/** A category's right-click menu (plan 83): whether its mail shows in the Inbox, and Delete…. Settings → Categories has both too. */
+/** A category's right-click menu (plan 83): whether its mail shows in the Inbox, where its new mail is forwarded (plan 116), and Delete…. */
 export function CategoryMenu({ category, children }: { category: Category; children: ReactElement }) {
   // mounted from the first Delete… on, so the dialog can animate out after
   const [deleting, setDeleting] = useState<boolean | null>(null);
+  const [forwarding, setForwarding] = useState<boolean | null>(null);
+  // each opening starts from the saved addresses (a key per opening, so closing still animates)
+  const [opened, setOpened] = useState(0);
   return (
     <>
       <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
@@ -21,6 +25,16 @@ export function CategoryMenu({ category, children }: { category: Category; child
             <Inbox />
             <span className="flex-1">{t("category.showInInbox")}</span>
           </ContextMenuCheckboxItem>
+          <ContextMenuItem
+            data-testid="category-menu-forward"
+            onClick={() => {
+              setOpened((n) => n + 1);
+              setForwarding(true);
+            }}
+          >
+            <Forward />
+            <span className="flex-1">{t("category.forward.menu")}</span>
+          </ContextMenuItem>
           <ContextMenuSeparator />
           {/* a plain item, as in macOS menus: the confirmation is where it reads as destructive */}
           <ContextMenuItem data-testid="category-menu-delete" onClick={() => setDeleting(true)}>
@@ -32,6 +46,11 @@ export function CategoryMenu({ category, children }: { category: Category; child
       {deleting !== null && (
         <Suspense fallback={null}>
           <CategoryDeleteDialog category={category} open={deleting} onOpenChange={setDeleting} />
+        </Suspense>
+      )}
+      {forwarding !== null && (
+        <Suspense fallback={null}>
+          <CategoryForwardDialog key={opened} category={category} open={forwarding} onOpenChange={setForwarding} />
         </Suspense>
       )}
     </>

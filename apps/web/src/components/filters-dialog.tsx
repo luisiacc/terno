@@ -1,4 +1,4 @@
-import { checkPattern, sameRule, filterIssueKey, filterRuleSchema, describeCondition, patternTemplate, PATTERN_FIELDS, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
+import { formatAddressList, isValidEmail, parseAddressList, type Address, checkPattern, sameRule, filterIssueKey, filterRuleSchema, describeCondition, patternTemplate, PATTERN_FIELDS, capFilterName, LEARNED_FILTER_NAME, type CategoryColor, type Condition, type Filter, type FilterAction, type FilterRule, type LearnedProposal, type ThreadSummary } from "@terno/core";
 import { Badge } from "@terno/ui/components/badge";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "@terno/ui/icons";
+import { Archive, Forward, Loader2, MailCheck, OctagonAlert, Plus, Sparkles, Star, Tag, Trash2, Wand2, X } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -19,6 +19,7 @@ import { listDate } from "~/lib/format";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
+import { RecipientInput } from "./recipient-input";
 
 type Field = Condition["field"];
 
@@ -207,6 +208,35 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
   );
 }
 
+/** Plan 116: the addresses a filter forwards new mail to (its "Forward to" action). */
+function ForwardTo({ to, onChange, paused }: { to: readonly Address[]; onChange: (to: Address[]) => void; paused: boolean }) {
+  const accountId = useApp((s) => s.accounts[0]?.id ?? 0);
+  const id = useId();
+  const [value, setValue] = useState(() => formatAddressList(to));
+  return (
+    <div className="space-y-1.5" data-testid="filter-forward">
+      <div className="flex min-w-0 items-start gap-2 rounded-lg border border-input px-2.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring dark:bg-input/30">
+      <label htmlFor={id} className="sr-only">{t("filters.action.forward")}</label>
+      <RecipientInput
+        id={id}
+        testId="filter-forward-to"
+        label={t("filters.action.forward")}
+        placeholder={t("filters.forward.placeholder")}
+        value={value}
+        onChange={(v) => {
+          setValue(v);
+          onChange(parseAddressList(v).filter((a) => isValidEmail(a.email)));
+        }}
+        accountId={accountId}
+        others={[]}
+        className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+      />
+      </div>
+      <p className="text-xs text-muted-foreground">{t(paused ? "filters.forward.paused" : "filters.forward.note")}</p>
+    </div>
+  );
+}
+
 function Preview({ rule }: { rule: FilterRule }) {
   const parsed = useMemo(() => filterRuleSchema.safeParse(rule), [rule]);
   const [state, setState] = useState<{ count: number; sample: ThreadSummary[]; ms: number } | null>(null);
@@ -294,6 +324,8 @@ export function FiltersDialog() {
     else setRule({ ...rule, actions: [...rule.actions.filter((a) => !(EXCLUSIVE.has(type) && EXCLUSIVE.has(a.type))), { type }] });
   };
   const categoryAction = rule.actions.find((a) => a.type === "addCategory") as { type: "addCategory"; categoryId: number } | undefined;
+  const forwardAction = rule.actions.find((a) => a.type === "forward") as { type: "forward"; to: Address[] } | undefined;
+  const setForward = (to: Address[] | null) => setRule({ ...rule, actions: [...rule.actions.filter((a) => a.type !== "forward"), ...(to ? [{ type: "forward" as const, to }] : [])] });
 
   const generate = async () => {
     if (prompt.trim().length < 3) return;
@@ -502,6 +534,18 @@ export function FiltersDialog() {
                     <Icon className="size-3.5" /> {t(label)}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  data-testid="action-toggle-forward"
+                  aria-pressed={Boolean(forwardAction)}
+                  onClick={() => setForward(forwardAction ? null : [])}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
+                    forwardAction ? "border-primary/40 bg-primary/10 text-accent-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  <Forward className="size-3.5" /> {t("filters.action.forward")}
+                </button>
                 <Select
                   value={categoryAction ? String(categoryAction.categoryId) : "none"}
                   onValueChange={(v) =>
@@ -523,6 +567,7 @@ export function FiltersDialog() {
                   </SelectContent>
                 </Select>
               </div>
+              {forwardAction && <ForwardTo key={draft.id ?? "new"} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
               {!valid.success && <p className="text-xs text-destructive" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
             </div>
 

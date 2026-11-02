@@ -6,7 +6,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users } from "@terno/ui/icons";
+import { Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Send, Settings2, Sparkles, SquarePen, Star, Tag, Trash2, Users } from "@terno/ui/icons";
 import { Kbd } from "@terno/ui/components/kbd";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
@@ -1304,13 +1304,26 @@ export function Sidebar() {
                 countHelp={help ? { id: `sidebar-count-category-${c.id}`, text: help } : undefined}
                 reserveEnd={inlineReview && (counts.categorySuggestions[c.id] ?? 0) > 0}
                 note={
-                  !c.showInInbox && (
-                    <EyeOff
-                      role="img"
-                      aria-label={t("category.hiddenFromInboxBadge")}
-                      data-testid={`nav-category-hidden-${c.id}`}
-                      className="size-3 shrink-0 text-muted-foreground animate-in fade-in zoom-in-75"
-                    />
+                  (!c.showInInbox || c.forward?.enabled) && (
+                    <>
+                      {!c.showInInbox && (
+                        <EyeOff
+                          role="img"
+                          aria-label={t("category.hiddenFromInboxBadge")}
+                          data-testid={`nav-category-hidden-${c.id}`}
+                          className="size-3 shrink-0 text-muted-foreground animate-in fade-in zoom-in-75"
+                        />
+                      )}
+                      {/* plan 116: its new mail is forwarded */}
+                      {c.forward?.enabled && (
+                        <Forward
+                          role="img"
+                          aria-label={t("category.forward.on", { to: c.forward.addresses.map((a) => a.name || a.email).join(", ") })}
+                          data-testid={`nav-category-forward-${c.id}`}
+                          className="size-3 shrink-0 text-muted-foreground animate-in fade-in zoom-in-75"
+                        />
+                      )}
+                    </>
                   )
                 }
               />

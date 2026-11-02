@@ -18,6 +18,7 @@ import { Expand } from "./expand";
 import { DraftSlot } from "./inline-draft";
 import { bottomInset, usePinned } from "~/lib/pinned-draft-state";
 import { ScheduledReplyLine } from "./scheduled-popover";
+import { ForwardLine } from "./forward-line";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { replyName } from "~/lib/compose-fields";
 import { composeFocusPending, registerReaderFocusDestination, subscribeComposeFocus } from "~/lib/compose";
@@ -195,6 +196,7 @@ function Message({ m, expanded, onToggle, icons, headless, knownEmail }: { m: Me
               <p className="text-sm text-muted-foreground italic">{m.bodyUnavailable ? t("attachments.bodyUnavailable") : m.bodyState === "full" ? t("attachments.noBody") : t("reader.downloading")}</p>
             )}
             {m.attachments.length > 0 && <ReaderAttachments messageId={m.id} accountId={m.accountId} attachments={m.attachments} />}
+            <ForwardLine messageId={m.id} />
           </div>
         </Expand>
       </div>
