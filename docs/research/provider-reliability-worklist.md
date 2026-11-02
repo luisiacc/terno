@@ -13,6 +13,8 @@ Updated 2026-10-29 after the isolated-worktree workflow correction. Triage base:
 
 The **12 workgroups are the units of work**. The 153 T/A/B/S rows below are scenarios or evidence, not 153 implementation tasks. Every row has exactly one disposition and one primary workgroup. A needs-work row can contain reviewed prerequisites: finish only its stated remainder. Absence of a hosted architecture is a reason not to build one; an external historical fix is not proof of a current Terno bug.
 
+> **Latest user authorization (2026-11-02):** “do that round of fixes for each, then land them on main.” Resume the four remaining rows as three candidate follow-ups: S48 first, then B35/S23 in the serial hot-source slot; T09 may proceed in disjoint UI sections. Execute ordinary failing regressions for every final finding, preserve all earlier acceptance cases and budgets, run targeted checks and native Codex review of each full rebased candidate, then Root serially retests/rebases/fast-forward lands and updates each row. Previous final park dispositions remain historical until each candidate qualifies; this authorization resumes these candidates only, not optional W06/reconcile/migration/editor/list parks. No full milestone, cutoff or user-WIP edits.
+
 ## Triage totals and order
 
 **81 covered by an existing reviewed change** | **4 needs work** | **33 already protected in Terno** | **14 doesn't apply to Terno** | **21 Outlook-deferred**. Total: **153 rows**.
