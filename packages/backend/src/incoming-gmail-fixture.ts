@@ -30,7 +30,10 @@ export function incomingGmailFixture(options: {
     const format = url.searchParams.get("format");
     const simple = ["/profile", "/labels"].includes(path) && keys === "";
     const list = path === "/messages" && url.searchParams.size === 3 && keys === "includeSpamTrash,maxResults,q" && url.searchParams.get("includeSpamTrash") === "true" && url.searchParams.get("maxResults") === "500" && /^after:\d+$/.test(url.searchParams.get("q") ?? "");
-    const history = path === "/history" && url.searchParams.size === 6 && keys === "historyTypes,maxResults,startHistoryId" && url.searchParams.get("maxResults") === "500" && url.searchParams.getAll("historyTypes").sort().join(",") === "labelAdded,labelRemoved,messageAdded,messageDeleted" && ["10", "11"].includes(url.searchParams.get("startHistoryId") ?? "");
+    // the catch-up reads labels too; plan 102's peek for arrivals during a long first sync reads only adds and deletes
+    const types = url.searchParams.getAll("historyTypes").sort().join(",");
+    const history = path === "/history" && keys === "historyTypes,maxResults,startHistoryId" && url.searchParams.get("maxResults") === "500" && ["10", "11"].includes(url.searchParams.get("startHistoryId") ?? "")
+      && ((url.searchParams.size === 6 && types === "labelAdded,labelRemoved,messageAdded,messageDeleted") || (url.searchParams.size === 4 && types === "messageAdded,messageDeleted"));
     const message = path.startsWith("/messages/") && options.ids.includes(id) && url.searchParams.size === 1 && keys === "format" && (format === "raw" || format === "minimal");
     if (!simple && !list && !history && !message) return refuse();
     requests.push({ url, token });
