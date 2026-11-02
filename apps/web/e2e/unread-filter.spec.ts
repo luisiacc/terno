@@ -215,11 +215,14 @@ test.describe("acting on a filtered mailbox", () => {
     // enough unread for more than one page
     const read = readInbox(server).slice(0, 150);
     await server.backend.server.invoke("threads.act", { threadIds: read, action: "markUnread" }, ctx);
+    await filterOn(page);
+    // past the 450 ms dwell the open thread is read (⌘A inside it would leave it unread): count once it is, not racing it
+    const open = Number(await selectedRow(page).getAttribute("data-thread-id"));
+    await expect.poll(() => db(server).get<{ u: number }>("SELECT unread_count AS u FROM threads WHERE id = ?", open)!.u).toBe(0);
     const unread = unreadInbox(server);
     expect(unread.length).toBeGreaterThan(100);
     const stillRead = readInbox(server);
     expect(stillRead.length).toBeGreaterThan(0);
-    await filterOn(page);
     await page.keyboard.press("ControlOrMeta+a");
     const banner = page.getByTestId("select-all-scope-button");
     await expect(banner).toHaveText(`Select all ${unread.length.toLocaleString("en-US")} conversations in “Inbox · Unread”`);
@@ -228,7 +231,9 @@ test.describe("acting on a filtered mailbox", () => {
     await page.keyboard.press("e");
     await expect.poll(() => unreadInbox(server).length).toBe(0);
     expect(readInbox(server)).toEqual(stillRead);
-    await expect(page.getByTestId("unread-empty")).toBeVisible();
+    // read, it was outside the scope; it stays while it is open (the empty state has its own test below)
+    await expect(page.getByTestId("thread-row")).toHaveCount(1);
+    await expect(row(page, open)).toBeVisible();
   });
 });
 
