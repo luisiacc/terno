@@ -89,9 +89,9 @@ export function rootRefs(db: Db, threadIds: Iterable<number>, own: OwnAddresses 
   return db
     .all<{ thread_id: number; id: number; date: number; in_inbox: number; is_spam: number; is_trash: number; is_draft: number }>(
       `SELECT m.thread_id, m.id, m.date, m.in_inbox, m.is_spam, m.is_trash, m.is_draft
-       FROM json_each(?1) t JOIN messages m ON m.id = (
+       FROM json_each(?) t JOIN messages m ON m.id = (
          SELECT r.id FROM messages r INDEXED BY messages_thread
-         WHERE r.thread_id = t.value AND r.is_sent = 0 AND r.from_email NOT IN (SELECT value FROM json_each(?2))
+         WHERE r.thread_id = t.value AND r.is_sent = 0 AND r.from_email NOT IN (SELECT value FROM json_each(?))
          ORDER BY r.date, r.id LIMIT 1)`,
       JSON.stringify(ids),
       JSON.stringify([...own.emails]),

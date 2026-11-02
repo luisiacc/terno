@@ -1073,9 +1073,9 @@ export class SqlMailStore implements MailStore {
     const root = rootRefs(this.db, [threadId])[0];
     if (!root || !root.inInbox || root.spam || root.trash || root.draft) return false;
     return !this.db.get(
-      `SELECT 1 FROM thread_categories WHERE thread_id = ?1 UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ?1
-       UNION ALL SELECT 1 FROM cls_examples WHERE thread_id = ?1 LIMIT 1`,
-      threadId,
+      `SELECT 1 FROM thread_categories WHERE thread_id = ? UNION ALL SELECT 1 FROM cls_decisions WHERE thread_id = ?
+       UNION ALL SELECT 1 FROM cls_examples WHERE thread_id = ? LIMIT 1`,
+      threadId, threadId, threadId,
     );
   }
 

@@ -35,13 +35,13 @@ const MEMBERSHIP = /* sql */ `
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
 SELECT t.id, t.account_id, k.folder, t.last_date, t.unread_count > 0 FROM (
   SELECT m.thread_id AS tid, j.value AS folder FROM messages m, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
-   WHERE m.thread_id IN (SELECT value FROM json_each(?1)) AND m.is_trash = 0 AND m.is_spam = 0
+   WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0
      AND instr(m.gmail_labels, 'Label_') > 0 AND j.value LIKE 'Label\\_%' ESCAPE '\\'
   UNION
   SELECT m.thread_id, l.mailbox FROM messages m JOIN message_locations l ON l.message_id = m.id JOIN folders f ON f.account_id = l.account_id AND f.key = l.mailbox
-   WHERE m.thread_id IN (SELECT value FROM json_each(?1)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
+   WHERE m.thread_id IN (SELECT value FROM json_each(?)) AND m.is_trash = 0 AND m.is_spam = 0 AND ${OWN("l", "f")}
   UNION
-  ${ALIASED("?1")}
+  ${ALIASED("?")}
 ) k JOIN threads t ON t.id = k.tid`;
 
 /**
@@ -53,7 +53,7 @@ export function refreshFolders(db: Db, threadIds: Iterable<number>): void {
   if (!ids.length) return;
   const json = JSON.stringify(ids);
   db.run("DELETE FROM thread_folders WHERE thread_id IN (SELECT value FROM json_each(?))", json);
-  db.run(MEMBERSHIP, json);
+  db.run(MEMBERSHIP, json, json, json);
 }
 
 /** A message's user labels (Gmail `Label_*`) from its raw labels; anything malformed has none. */
@@ -128,10 +128,10 @@ export function threadsOfMessages(db: Db, messageIds: readonly number[]): number
 const placed = (id: string, places: string) => `EXISTS (SELECT 1 FROM message_locations e WHERE e.message_id = ${id} AND EXISTS (SELECT 1 FROM json_each(${places}) p
   WHERE json_extract(p.value, '$.m') = e.mailbox AND coalesce(json_extract(p.value, '$.v'), e.uidvalidity) = e.uidvalidity AND e.uidvalidity NOT IN (SELECT value FROM json_each(p.value, '$.x'))))`;
 
-/** a message counted in its thread: one of these labels (?5, outside trash and spam), and no place in these folders (?2, counted by it) */
+/** a message counted in its thread: one of these labels (outside trash and spam), and no place in these folders (counted by it) */
 const LABELLED = `m.is_trash = 0 AND m.is_spam = 0 AND instr(m.gmail_labels, 'Label_') > 0
-  AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?5)))
-  AND NOT ${placed("m.id", "?2")}`;
+  AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j WHERE j.value IN (SELECT value FROM json_each(?)))
+  AND NOT ${placed("m.id", "?")}`;
 
 type Place = { mailbox: string; uidvalidity?: number; except?: readonly number[] };
 export const toPlace = (k: FolderPlace): Place => (typeof k === "string" ? { mailbox: k } : k);
@@ -174,14 +174,14 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly Fo
           above = next;
         }
       };
-      const select = `SELECT l.uid AS u, NOT ${placed("l.message_id", "?3")} AS ok
-        FROM message_locations l INDEXED BY message_locations_uid WHERE l.account_id = ?1 AND l.mailbox = ?2 AND l.uidvalidity = ?4 AND l.uid > ?5 ORDER BY l.uid LIMIT ?6`;
+      const select = `SELECT l.uid AS u, NOT ${placed("l.message_id", "?")} AS ok
+        FROM message_locations l INDEXED BY message_locations_uid WHERE l.account_id = ? AND l.mailbox = ? AND l.uidvalidity = ? AND l.uid > ? ORDER BY l.uid LIMIT ?`;
       let v = at.after.length ? at.after[0] : generation(-1);
       let u = at.after[1] ?? -1;
       for (;;) {
         if (v === undefined) { at = { key: at.key, places: false, after: [] }; break; }
         const asked = budget;
-        const rows = db.all<{ u: number; ok: number }>(select, accountId, key, earlier, v, u, asked);
+        const rows = db.all<{ u: number; ok: number }>(select, earlier, accountId, key, v, u, asked);
         for (const r of rows) messages += r.ok ? 1 : 0;
         budget -= Math.max(1, rows.length);
         if (rows.length >= asked) { at = { key: at.key, places: true, after: [v, rows.at(-1)!.u] }; break; }
@@ -204,9 +204,9 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly Fo
     }
     const asked = budget;
     const threads = db.all<{ id: number; dup: number }>(
-      `SELECT f.thread_id AS id, EXISTS (SELECT 1 FROM thread_folders e WHERE e.thread_id = f.thread_id AND e.folder IN (SELECT value FROM json_each(?4))) AS dup
-       FROM thread_folders f INDEXED BY thread_folders_id WHERE f.account_id = ?1 AND f.folder = ?2 AND f.thread_id > ?3 ORDER BY f.thread_id LIMIT ?5`,
-      accountId, key, thread, earlier, asked,
+      `SELECT f.thread_id AS id, EXISTS (SELECT 1 FROM thread_folders e WHERE e.thread_id = f.thread_id AND e.folder IN (SELECT value FROM json_each(?))) AS dup
+       FROM thread_folders f INDEXED BY thread_folders_id WHERE f.account_id = ? AND f.folder = ? AND f.thread_id > ? ORDER BY f.thread_id LIMIT ?`,
+      earlier, accountId, key, thread, asked,
     );
     let stopped: FolderCountCursor | null = null;
     for (const t of threads) {
@@ -222,11 +222,11 @@ export function countFolderMessages(db: Db, accountId: number, keys: readonly Fo
 
   /** a thread's messages from `from` (null: its start), up to the budget: where it stopped, or null when read to its end */
   function countThread(thread: number, from: { date: number; id: number } | null): { date: number; id: number } | null {
-    const select = `SELECT m.id, m.date, (${LABELLED}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?1`;
+    const select = `SELECT m.id, m.date, (${LABELLED}) AS ok FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ?`;
     // one more than the budget: whether the thread goes on past it
     const n = Math.max(1, budget) + 1;
-    const same = from ? db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ?3 AND m.id > ?4 ORDER BY m.id LIMIT ?6`, thread, all, from.date, from.id, labels, n) : [];
-    const rows = same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date ${from ? ">" : ">="} ?3 ORDER BY m.date, m.id LIMIT ?4`, thread, all, from?.date ?? Number.MIN_SAFE_INTEGER, n - same.length, labels)];
+    const same = from ? db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date = ? AND m.id > ? ORDER BY m.id LIMIT ?`, labels, all, thread, from.date, from.id, n) : [];
+    const rows = same.length >= n ? same : [...same, ...db.all<{ id: number; date: number; ok: number }>(`${select} AND m.date ${from ? ">" : ">="} ? ORDER BY m.date, m.id LIMIT ?`, labels, all, thread, from?.date ?? Number.MIN_SAFE_INTEGER, n - same.length)];
     const taken = rows.length > n - 1 ? rows.slice(0, n - 1) : rows;
     for (const r of taken) messages += r.ok ? 1 : 0;
     budget -= taken.length;
@@ -375,7 +375,7 @@ export function replaceFolders(db: Db, accountId: number, folders: readonly Prov
 const MESSAGE_LABELS = /* sql */ `
 INSERT OR IGNORE INTO thread_folders (thread_id, account_id, folder, last_date, unread)
 SELECT DISTINCT t.id, t.account_id, j.value, t.last_date, t.unread_count > 0
-FROM (SELECT thread_id, gmail_labels FROM messages WHERE id > ?1 AND id <= ?2 AND gmail_labels IS NOT NULL AND is_trash = 0 AND is_spam = 0 AND instr(gmail_labels, 'Label_') > 0) m
+FROM (SELECT thread_id, gmail_labels FROM messages WHERE id > ? AND id <= ? AND gmail_labels IS NOT NULL AND is_trash = 0 AND is_spam = 0 AND instr(gmail_labels, 'Label_') > 0) m
 JOIN threads t ON t.id = m.thread_id, json_each(CASE WHEN json_valid(m.gmail_labels) THEN m.gmail_labels ELSE '[]' END) j
 WHERE j.value LIKE 'Label\\_%' ESCAPE '\\'
 RETURNING thread_id`;
