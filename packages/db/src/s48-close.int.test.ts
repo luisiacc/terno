@@ -62,3 +62,32 @@ it("reports background reclaim failure after native SQL closure even if final cl
     expect(db.isOpen).toBe(false);
   } finally { armed = false; spy.mockRestore(); await build?.release(); await store.close().catch(() => {}); if (db.isOpen) db.close(); }
 });
+
+for (const operation of ["search", "preview", "matchWindow", "matchMessages", "countScope", "resolveScope"] as const) it(`joins an admitted ${operation} token reader before native close`, async () => {
+  const db = openDatabase(":memory:");
+  let armed = false, hold = false, entered!: () => void, release!: () => void;
+  const held = new Promise<void>((r) => { entered = r; }), resume = new Promise<void>((r) => { release = r; });
+  const platform = { ...nodePlatform, async yield() { await nodePlatform.yield(); if (hold) { hold = false; entered(); await resume; } } };
+  const store = new SqlMailStore(db, { platform, instantSearch: false });
+  let reading: Promise<unknown> | undefined, closing: Promise<void> | undefined;
+  const get = db.get.bind(db), spy = vi.spyOn(db, "get").mockImplementation((sql, ...args) => { if (armed && sql === "SELECT text_parts,html_parts,token_parts,ready FROM body_captures WHERE id=?") { armed = false; hold = true; } return get(sql, ...args); });
+  try {
+    const [accountId] = await withAccounts(store, 1);
+    const seeded = await store.sync.ingest([msg({ accountId: accountId!, bodyText: "exact lifecycle phrase ".repeat(3000) })], { now: 1, classifier: null, applyFilters: false });
+    const messageId = (await store.threads.get(seeded.touched[0]!))!.messages[0]!.id, category = await store.categories.create("Synthetic", "indigo");
+    const rule = { match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value: "exact lifecycle phrase" }], actions: [{ type: "star" as const }] };
+    const read = () => operation === "search" ? store.threads.searchText({ query: '"exact lifecycle phrase"', now: 1, limit: 10 }) : operation === "preview" ? store.filters.preview(rule, 1, 10) : operation === "matchWindow" ? store.filters.matchWindow(rule, 1, { from: messageId, to: messageId }) : operation === "matchMessages" ? store.filters.matchMessages(rule, 1, [messageId]) : operation === "countScope" ? store.categorize.countScope(category.id, { kind: "query", query: '"exact lifecycle phrase"' }, 1) : store.categorize.resolveScope(category.id, { kind: "query", query: '"exact lifecycle phrase"' }, 1, 10);
+    armed = true; reading = read(); void reading.catch(() => {}); await held;
+    let closed = false; closing = store.close().finally(() => { closed = true; });
+    await nodePlatform.yield(); await nodePlatform.yield();
+    expect(closed, "physical close must wait for the admitted paused token source").toBe(false);
+    expect(db.isOpen).toBe(true);
+    release(); const result = await reading;
+    if (operation === "search") expect((result as { items: { id: number }[] }).items.map((m) => m.id)).toEqual(seeded.touched);
+    else if (operation === "preview") expect((result as { count: number }).count).toBe(1);
+    else if (operation === "countScope") expect(result).toEqual({ count: 1, capped: false });
+    else expect(result).toEqual(operation === "resolveScope" ? seeded.touched : [messageId]);
+    await closing; expect(db.isOpen).toBe(false);
+    await expect(read()).rejects.toThrow("closing");
+  } finally { release(); await Promise.allSettled([reading, closing].filter((p) => p !== undefined)); spy.mockRestore(); await store.close(); }
+});

@@ -416,11 +416,11 @@ export class SqlMailStore implements MailStore {
       } finally { source.close?.(); }
     }),
     counts: async (now) => getCounts(this.db, now),
-    search: async (req) => this.searchPage(req),
-    searchText: async (p) => {
+    search: async (req) => this.bodyCommand(() => this.searchPage(req)),
+    searchText: async (p) => this.bodyCommand(async () => {
       const search = resolveQuery(this.db, p);
       return this.searchPage({ search, cursor: p.cursor ? withKey(p.cursor, search.key, this.revision()) : undefined, limit: p.limit });
-    },
+    }),
     act: async ({ threadIds, action, signal, now }) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -1009,7 +1009,7 @@ export class SqlMailStore implements MailStore {
     get: async (id) => getFilter(this.db, id),
     save: async (f, now) => saveFilter(this.db, f, now),
     delete: async (id, expect) => deleteFilter(this.db, id, expect),
-    preview: async (rule, now, limit) => {
+    preview: async (rule, now, limit) => this.bodyCommand(async () => {
       const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
       const matches = withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now));
       const top = this.db
@@ -1020,19 +1020,19 @@ export class SqlMailStore implements MailStore {
         )
         .map((r) => r.id);
       return { count: matches.threadIds.length, sample: getSummaries(this.db, top) };
-    },
+    }),
     messageIdRange: async () => {
       const r = this.db.get<{ lo: number | null; hi: number | null }>("SELECT min(id) AS lo, max(id) AS hi FROM messages")!;
       return r.lo === null || r.hi === null ? null : { lo: r.lo, hi: r.hi };
     },
-    matchWindow: async (rule, now, window) => {
+    matchWindow: async (rule, now, window) => this.bodyCommand(async () => {
       const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
       return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, undefined, window).messageIds);
-    },
-    matchMessages: async (rule, now, messageIds) => {
+    }),
+    matchMessages: async (rule, now, messageIds) => this.bodyCommand(async () => {
       const prepared = await prepareBodyMatches(this.db, rule.conditions.flatMap((c) => c.field === "body" ? [{ op: c.op, value: c.value }] : c.field === "text" ? [{ op: "contains" as const, value: c.value }] : []), this.yieldTo);
       return withBodyMatches(this.db, prepared, () => findRuleMatches(this.db, rule, now, messageIds).messageIds);
-    },
+    }),
     applyChunk: async (id, ruleJson, messageIds, now) =>
       this.db.tx(() => {
         const flagBefore = flagEpochs(sqlFlags(this.db));
@@ -1159,10 +1159,12 @@ export class SqlMailStore implements MailStore {
   };
 
   private async preparedScope<V>(scope: import("@terno/core").CategorizeScope, work: () => V): Promise<V> {
+    return this.bodyCommand(async () => {
     const resolved = resolvable(scope);
     const tests = resolved.kind === "query" ? parseSearch(resolved.query).terms.filter((t) => t.field === "text").map((t) => ({ op: "contains" as const, value: t.value, prefix: t.prefix })) : [];
     const matches = await prepareBodyMatches(this.db, tests, this.yieldTo);
     return withBodyMatches(this.db, matches, work);
+    });
   }
 
   readonly categorize: MailStore["categorize"] = {

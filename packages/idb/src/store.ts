@@ -682,7 +682,7 @@ export class IdbMailStore implements MailStore {
 
   private autocompleteSource(): AutocompleteSource {
     let sentIds: Int32Array | null = null;
-    return {
+    const source: AutocompleteSource = {
       snapshotBase: this.o.platform.files ? `/${this.o.name}.idb` : null,
       identity: `idb-${SEARCH_SCHEMA}`,
       head: async () => this.early(() => this.revision()),
@@ -786,7 +786,7 @@ export class IdbMailStore implements MailStore {
         }
         const ids = Array.from(all.subarray(lo, lo + limit));
         // the cursor is the last id looked at: a page whose bodies are all empty isn't the end
-        return { texts: await this.autocomplete.sentTexts(ids), next: ids.length ? ids[ids.length - 1]! : null };
+        return { texts: await source.sentTexts(ids), next: ids.length ? ids[ids.length - 1]! : null };
       },
       sentTexts: async (ids) => {
         const out: SentText[] = [];
@@ -814,6 +814,7 @@ export class IdbMailStore implements MailStore {
         return out;
       },
     };
+    return { ...source, sentAfter: (...args) => this.bodyCommand(() => source.sentAfter(...args)), sentTexts: (...args) => this.bodyCommand(() => source.sentTexts(...args)) };
   }
 
   // ───────────────────────────── search ─────────────────────────────
@@ -1067,7 +1068,7 @@ export class IdbMailStore implements MailStore {
         };
       });
     }),
-    bodyPart: async (input) => this.exclusive(async () => {
+    bodyPart: async (input) => this.bodyCommand(() => this.exclusive(async () => {
       const message = T(this.c, "messages").get(input.messageId);
       if (!message || message.account_id !== input.accountId) throw new RpcError("STALE", L("errors.originalGone"));
       await this.readBodies([input.messageId]);
@@ -1078,10 +1079,10 @@ export class IdbMailStore implements MailStore {
         if (!part) throw new RpcError("STALE", L("errors.originalGone"));
         return decodeBodyPart(part.value);
       } finally { source.close?.(); }
-    }),
+    })),
     counts: (now) => this.early(() => getCounts(this.c, now)),
-    search: (req) => this.searchPage(req),
-    searchText: async (p) => {
+    search: (req) => this.bodyCommand(() => this.searchPage(req)),
+    searchText: async (p) => this.bodyCommand(async () => {
       // resolving account:/category: reads early tables only
       const { search, cursor } = await this.early(() => {
         const search = this.resolve(p);
@@ -1089,7 +1090,7 @@ export class IdbMailStore implements MailStore {
         return { search, cursor };
       });
       return this.searchPage({ search, cursor, limit: p.limit }, p.signal);
-    },
+    }),
     act: ({ threadIds, action, signal, now }) =>
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
@@ -1705,7 +1706,7 @@ export class IdbMailStore implements MailStore {
         // plan 116: its forwards never go
         forwardRuleGone(this.c, { kind: "filter", id }, Date.now());
       }),
-    preview: async (rule, now, limit) => {
+    preview: async (rule, now, limit) => this.bodyCommand(async () => {
       const matches = await this.matchAll(rule, now);
       return this.read(() => {
         const threads = T(this.c, "threads");
@@ -1715,7 +1716,7 @@ export class IdbMailStore implements MailStore {
           .slice(0, limit);
         return { count: matches.threadIds.size, sample: summariesInOrder(this.c, top) };
       });
-    },
+    }),
     messageIdRange: () =>
       this.read(() => {
         let lo: number | null = null;
@@ -1727,8 +1728,8 @@ export class IdbMailStore implements MailStore {
         }
         return lo === null || hi === null ? null : { lo, hi };
       }),
-    matchWindow: async (rule, now, window) => (await this.matchAll(rule, now, window)).messageIds,
-    matchMessages: async (rule, now, messageIds) => {
+    matchWindow: async (rule, now, window) => this.bodyCommand(async () => (await this.matchAll(rule, now, window)).messageIds),
+    matchMessages: async (rule, now, messageIds) => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
         const full = ruleReadsBody(rule) ? messageIds.filter((id) => T(this.c, "messages").get(id)?.body_state === "full") : [];
@@ -1736,7 +1737,7 @@ export class IdbMailStore implements MailStore {
         const prepared = await this.prepareBodyTests(this.ruleTests([rule]), full);
         return this.withBodyTests(prepared, () => findRuleMatches(this.c, rule, now, messageIds).messageIds);
       });
-    },
+    }),
     applyChunk: (id, ruleJson, messageIds, now) =>
       this.command(() => {
         const flagBefore = flagEpochs(idbFlags(this.c));
@@ -1798,14 +1799,14 @@ export class IdbMailStore implements MailStore {
 
   readonly folderExport: MailStore["folderExport"] = {
     ids: (target, after, limit) => this.read(() => exportIds(this.c, target, after, limit)),
-    messages: async (ids) => {
+    messages: async (ids) => this.bodyCommand(async () => {
       await this.settled();
       // exclusive: no command can evict a body between reading it and the message
       return this.exclusive(async () => {
         await this.readBodies(ids);
         return exportMessages(this.c, ids);
       });
-    },
+    }),
     body: async (id, part, at, size, lease) => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
@@ -1964,12 +1965,12 @@ export class IdbMailStore implements MailStore {
         return quickActions(this.c, categoryId, threadIds, model);
       });
     },
-    countScope: async (categoryId, given, now) => {
+    countScope: async (categoryId, given, now) => this.bodyCommand(async () => {
       const scope = resolvable(given);
       if (scope.kind === "query") return countOf((await this.categorize.resolveScope(categoryId, scope, now, COUNT_CAP + 1)).length);
       return countOf((await this.read(() => scopeThreads(this.c, categoryId, scope, COUNT_CAP + 1)))!.length);
-    },
-    resolveScope: async (categoryId, given, now, limit = -1) => {
+    }),
+    resolveScope: async (categoryId, given, now, limit = -1) => this.bodyCommand(async () => {
       const scope = resolvable(given);
       // sender/domain/list scopes read the message indexes: the late tables must be in
       const prepared = await this.read(() => {
@@ -1981,7 +1982,7 @@ export class IdbMailStore implements MailStore {
       });
       const ids = prepared.ids ?? await this.scan({ search: prepared.search!, limit: limit < 0 ? Number.MAX_SAFE_INTEGER : limit }, (found) => found, (t) => scopeOpen(this.c, categoryId, t), limit);
       return limit < 0 ? ids : ids.slice(0, limit);
-    },
+    }),
     predict: async (threadId, model, mode, now) => {
       await this.settled();
       return this.exclusive(async () => {
@@ -2263,7 +2264,7 @@ export class IdbMailStore implements MailStore {
   // ───────────────────────────── debug, dev ─────────────────────────────
 
   readonly debug: MailStore["debug"] = {
-    snapshot: async () => {
+    snapshot: async () => this.bodyCommand(async () => {
       await this.settled();
       return this.exclusive(async () => {
         await this.readBodies([...T(this.c, "messages").rows.keys()].map(Number));
@@ -2278,7 +2279,7 @@ export class IdbMailStore implements MailStore {
         this.evictBodies();
         return snap;
       });
-    },
+    }),
     verify: async () => {
       await this.settled();
       // memory and IndexedDB hold the same rows, and every index agrees with its table
