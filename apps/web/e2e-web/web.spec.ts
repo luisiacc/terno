@@ -619,6 +619,9 @@ test("a key is never carried through a redirect: Azure's endpoint answering 307 
   const cors = (req: IncomingMessage) => ({ "access-control-allow-origin": req.headers.origin ?? "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET, POST, OPTIONS" });
   const target: { method: string; keys: string[] }[] = [];
   const thief = createServer((req, res) => {
+    // a page's cross-origin request always says its Origin ("null" after a redirect); a bare GET without one is
+    // another app on this machine probing the new port, not this page
+    if (req.headers.origin === undefined) return void res.writeHead(404).end();
     target.push({ method: req.method!, keys: ["authorization", "api-key", "x-api-key"].filter((h) => req.headers[h] !== undefined) });
     res.writeHead(200, { ...cors(req), "content-type": "application/json" }).end("{}");
   });
