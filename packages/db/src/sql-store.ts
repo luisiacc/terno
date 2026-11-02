@@ -273,7 +273,7 @@ export class SqlMailStore implements MailStore {
         identity: `sqlite-schema-${SEARCH_SCHEMA_VERSION}`,
         // inside the store's unit of work, like the engine's own answer
         phrases: (term, candidates) => {
-          if (term.field === "text" && db.get("SELECT 1 FROM body_heads LIMIT 1")) {
+          if (term.field === "text" && this.readyPhrases && db.get("SELECT 1 FROM body_heads LIMIT 1")) {
             const ids = this.readyPhrases?.get(bodyTestKey("contains", term.value, term.prefix));
             if (!ids) throw new ReadyPhraseRequired(term, candidates);
             return ids;

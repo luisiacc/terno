@@ -65,3 +65,28 @@ it("keeps common positive and negative RAM phrases exact with captured candidate
     } finally { spy.mockRestore(); }
   } finally { release(); await searching?.catch(() => {}); await store.close(); }
 });
+
+it("finishes a prepared fallback when the actual RAM build becomes ready during its yielded read", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs"), { tmpdir } = await import("node:os"), { join } = await import("node:path");
+  const directory = mkdtempSync(join(tmpdir(), "terno-ready-transition-")), path = join(directory, "mail.db");
+  let hold = false, armed = false, readEntered!: () => void, resumeRead!: () => void, buildEntered!: () => void, resumeBuild!: () => void;
+  const reading = new Promise<void>((r) => { readEntered = r; }), readResume = new Promise<void>((r) => { resumeRead = r; }), building = new Promise<void>((r) => { buildEntered = r; }), buildResume = new Promise<void>((r) => { resumeBuild = r; });
+  const platform = { ...nodePlatform, async yield() { await nodePlatform.yield(); if (hold) { hold = false; readEntered(); await readResume; } } };
+  let store = new SqlMailStore(openDatabase(path), { platform, instantSearch: false });
+  let searching: ReturnType<typeof store.threads.searchText> | undefined;
+  const spies: { mockRestore(): void }[] = [];
+  try {
+    const [accountId] = await withAccounts(store, 1);
+    await store.sync.ingest(Array.from({ length: 513 }, (_, i) => msg({ accountId: accountId!, providerThreadId: `transition-${i}`, date: 1, subject: "Synthetic", bodyText: i ? "alpha gap beta" : "alpha gap beta ".repeat(3000) })), { now: 1, classifier: null, applyFilters: false });
+    await store.close();
+    store = new SqlMailStore(openDatabase(path), { platform, instantSearch: true });
+    const begin = store.feed.beginBuild.bind(store.feed);
+    spies.push(vi.spyOn(store.feed, "beginBuild").mockImplementation(async () => { const actual = await begin(); return { ...actual, async *messages() { for await (const page of actual.messages()) { buildEntered(); await buildResume; yield page; } } }; }));
+    await building;
+    const db = store.db, get = db.get.bind(db);
+    spies.push(vi.spyOn(db, "get").mockImplementation((sql, ...args) => { if (armed && sql === "SELECT text_parts,html_parts,token_parts,ready FROM body_captures WHERE id=?") { armed = false; hold = true; } return get(sql, ...args); }));
+    armed = true; searching = store.threads.searchText({ query: '-"alpha beta"', accountId: accountId!, now: 1, limit: 10 }); void searching.catch(() => {});
+    await reading; resumeBuild(); expect(await store.instant!.settled()).toBe(true); resumeRead();
+    expect((await searching).items.map((row) => row.id)).toEqual([513,512,511,510,509,508,507,506,505,504]);
+  } finally { resumeRead(); resumeBuild(); await searching?.catch(() => {}); for (const spy of spies) spy.mockRestore(); await store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
