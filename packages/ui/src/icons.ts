@@ -71,6 +71,8 @@ export { Maximize } from "./iconset/generated/Maximize";
 export { MessageSquareReply } from "./iconset/generated/MessageSquareReply";
 export { MessageSquareText } from "./iconset/generated/MessageSquareText";
 export { Moon } from "./iconset/generated/Moon";
+export { MousePointer } from "./iconset/generated/MousePointer";
+export { MouseRightClick } from "./iconset/generated/MouseRightClick";
 export { NotepadText } from "./iconset/generated/NotepadText";
 export { OctagonAlert } from "./iconset/generated/OctagonAlert";
 export { OctagonX } from "./iconset/generated/OctagonX";

@@ -48,6 +48,24 @@ function PopoverContent({
   )
 }
 
+/** Points at the anchor: a square turned 45°, half under the popup's edge, its two outer sides drawn as the popup's hairline. */
+function PopoverArrow({ className, ...props }: PopoverPrimitive.Arrow.Props) {
+  return (
+    <PopoverPrimitive.Arrow
+      data-slot="popover-arrow"
+      className={cn(
+        "size-2.5 rotate-45 bg-popover hairline-strong",
+        "data-[side=right]:-left-[5px] data-[side=right]:hairline-l data-[side=right]:hairline-b",
+        "data-[side=left]:-right-[5px] data-[side=left]:hairline-t data-[side=left]:hairline-r",
+        "data-[side=bottom]:-top-[5px] data-[side=bottom]:hairline-t data-[side=bottom]:hairline-l",
+        "data-[side=top]:-bottom-[5px] data-[side=top]:hairline-b data-[side=top]:hairline-r",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
 function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -83,6 +101,7 @@ function PopoverDescription({
 
 export {
   Popover,
+  PopoverArrow,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,
