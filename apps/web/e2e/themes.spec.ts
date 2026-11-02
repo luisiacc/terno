@@ -38,21 +38,28 @@ test.describe("reduced transparency", () => {
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   });
 
-  test("menus are glass (blurred) normally and solid when the OS asks for reduced transparency", async ({ app: page }) => {
+  // plan 118: BoardUI's menus are solid (they were glass until then), whatever the OS asks for
+  test("menus are solid, with or without reduced transparency", async ({ app: page }) => {
     const cdp = await page.context().newCDPSession(page);
-    const menuFilter = async () => {
+    const menuLook = async () => {
       await page.getByTestId("thread-row").first().click({ button: "right" });
       const popup = page.locator("[data-slot=context-menu-content]");
       await expect(popup).toBeVisible();
-      const f = await popup.evaluate((el) => getComputedStyle(el).backdropFilter);
+      const look = await popup.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { filter: s.backdropFilter, background: s.backgroundColor };
+      });
       await page.keyboard.press("Escape");
       await expect(popup).toHaveCount(0);
-      return f;
+      return look;
     };
-    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "no-preference" }] });
-    expect(await menuFilter()).toContain("blur");
-    await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
-    expect(await menuFilter()).toBe("none");
+    for (const value of ["no-preference", "reduce"]) {
+      await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value }] });
+      const look = await menuLook();
+      expect(look.filter, value).toBe("none");
+      // opaque: no alpha below 1 in the painted color
+      expect(look.background, value).not.toMatch(/\/\s*0?\.\d|rgba\(.*,\s*0?\.\d+\)/);
+    }
   });
 });
 

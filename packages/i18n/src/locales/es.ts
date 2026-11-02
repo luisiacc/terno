@@ -812,7 +812,7 @@ const es = {
   "design.macos.description": "Como Mail de Apple: compacto, con la fuente del sistema.",
   "design.atelier.description": "Editorial: tinta y papel, letra recta y sencilla.",
   "design.lumen.description": "Cálido y centrado en las personas: avatares grandes, filtros a la mano.",
-  "design.board.description": "Nítido y familiar: Inter, controles con borde, un acento azul.",
+  "design.board.description": "BoardUI de principio a fin: Inter, sus formas, un acento azul.",
   "sidebar.alreadyHere": "Ya está aquí",
   "sidebar.accounts": "Cuentas",
   "sidebar.allAccounts": "Todas las cuentas",

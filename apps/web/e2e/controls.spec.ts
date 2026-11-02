@@ -1,44 +1,33 @@
 /**
- * Plan 117: Board's controls (the board: variant) keep the states the shared ones draw: an error border, focus
- * under hover, a disabled fill, and a primary whose text is on fills the contrast suite checks. The real components,
- * rendered to markup here, drawn by the app's own stylesheet in Board, against probes of the token they should show.
+ * Plans 117 and 118: BoardUI's controls, the base of every design, keep their states: an error border, focus under
+ * hover, a disabled fill, and a primary whose text is on fills the contrast suite checks. The real components,
+ * rendered to markup here, drawn by the app's own stylesheet in each design, against probes of the token they should show.
  */
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
-import { Button } from "@terno/ui/components/button";
-import { Input } from "@terno/ui/components/input";
-import { InputGroup, InputGroupInput } from "@terno/ui/components/input-group";
-import { createElement as h } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { DESIGN_IDS } from "@terno/core";
 import { expect, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
 
-const markup = renderToStaticMarkup(
-  h(
-    "div",
-    { id: "board-probe", style: { position: "fixed", inset: "40px auto auto 40px", zIndex: 9999, display: "grid", gap: 8, width: 240, padding: 8 }, className: "bg-background" },
-    h(Button, { variant: "outline", "aria-invalid": true, "data-testid": "invalid-outline" }, "Invalid"),
-    h(Button, { "data-testid": "primary" }, "Send"),
-    h(Input, { disabled: true, "data-testid": "disabled-input", defaultValue: "180" }),
-    h(InputGroup, { "data-testid": "group" }, h(InputGroupInput, { "data-testid": "group-input", placeholder: "Search" })),
-    h("i", { "data-testid": "probe-destructive", className: "border border-destructive" }),
-    h("i", { "data-testid": "probe-ring", className: "border border-ring" }),
-    h("i", { "data-testid": "probe-disabled", className: "bg-input/50" }),
-    h("i", { "data-testid": "probe-primary-hover", className: "bg-primary-hover" }),
-    h("i", { "data-testid": "probe-primary", className: "bg-primary" }),
-  ),
-);
+// the real components, rendered to markup in a process of their own (helpers/controls-markup.ts says why)
+// (run from packages/ui, whose tsconfig compiles the components' JSX)
+const ui = new URL("../../../packages/ui/", import.meta.url);
+const tsx = createRequire(new URL("package.json", ui)).resolve("tsx/cli");
+const markup = execFileSync(process.execPath, [tsx, fileURLToPath(new URL("./helpers/controls-markup.ts", import.meta.url))], { cwd: fileURLToPath(ui), encoding: "utf8" });
 
 const css = (page: Page, id: string, prop: string) => page.getByTestId(id).evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
 
-for (const mode of ["light", "dark"] as const) {
-  test.describe(`Board's controls keep their states, ${mode} (plan 117)`, () => {
-    test.use({ design: "board" });
+for (const design of DESIGN_IDS) for (const mode of ["light", "dark"] as const) {
+  test.describe(`the controls keep their states, ${design} ${mode} (plan 118)`, () => {
+    test.use({ design });
     test.beforeEach(async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
-      await expect(page.locator("html")).toHaveAttribute("data-design", "board");
+      await expect(page.locator("html")).toHaveAttribute("data-design", design);
       await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", html), markup);
     });
 
