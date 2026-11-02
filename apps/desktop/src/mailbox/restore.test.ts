@@ -62,6 +62,27 @@ describe("restoring a backup (plan 95)", () => {
     expect(value(w.db)).toBe("live");
   });
 
+  it("plan 112: on the backup's own APFS volume the copy is a clone, which needs only the margin; elsewhere the backup's size too", async () => {
+    const w = world();
+    const room = { freeBytes: () => 64 * 2 ** 20 + 1024 };
+    await expect(restoreFromBackup(w.db, w.backup, { ...room, volume: () => false })).rejects.toMatchObject({ kind: "no-room" });
+    let cloned = 0;
+    await restoreFromBackup(w.db, w.backup, { ...room, volume: () => true, clone: async (src, dst) => { cloned++; copyFileSync(src, dst); } });
+    w.live.close();
+    expect(cloned).toBe(1);
+    expect(value(w.db)).toBe("backup");
+  });
+
+  it("plan 112: a clone that fails is said as no-room or failed, with nothing moved", async () => {
+    const w = world();
+    const fail = (code: string) => restoreFromBackup(w.db, w.backup, { ...roomy, volume: () => true, clone: () => Promise.reject(Object.assign(new Error(code), { code })) });
+    await expect(fail("ENOSPC")).rejects.toMatchObject({ kind: "no-room" });
+    await expect(fail("EIO")).rejects.toMatchObject({ kind: "failed" });
+    w.live.close();
+    expect(value(w.db)).toBe("live");
+    expect(existsSync(restorePaths(w.db).restoring)).toBe(false);
+  });
+
   it("a backup that isn't what its manifest says is refused before anything moves", async () => {
     const w = world();
     await expect(restoreFromBackup(w.db, { ...w.backup, fromSchema: 12 }, roomy)).rejects.toThrow(RestoreError);

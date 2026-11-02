@@ -15,11 +15,12 @@
  * left behind: the copy in place with the old one aside means finished;
  * anything else is put back as it was.
  */
-import { closeSync, constants, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statfsSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { copyFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
 import type { BackupInfo } from "@terno/db/backups";
+import { cloneFile, sameApfsVolume } from "@terno/db/clone";
 
 const MiB = 2 ** 20;
 export const BEFORE_RESTORE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -49,6 +50,9 @@ export interface RestoreDeps {
   fault?(step: "copy" | "journal" | "aside-wal" | "aside" | "swap" | "marker"): void;
   /** a seam for tests: what was made durable, in order (a file or a folder) */
   synced?(path: string): void;
+  /** seams for tests: whether the backup can be cloned beside the mailbox, and the clone */
+  volume?(file: string, dir: string): boolean;
+  clone?(src: string, dst: string): Promise<void>;
 }
 
 const exists = (p: string) => existsSync(p);
@@ -129,13 +133,16 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
   const fsync = deps.fsync ?? fsyncSync;
   const fault = deps.fault ?? (() => {});
   const free = (deps.freeBytes ?? ((dir) => { const s = statfsSync(dir); return Number(s.bavail) * Number(s.bsize); }))(dirname(db));
-  if (free < backup.size + 64 * MiB) throw new RestoreError("no-room");
+  // plan 112: a clone on the backup's own APFS volume takes no room when made (Node's COPYFILE_FICLONE copies in full)
+  const clone = (deps.volume ?? sameApfsVolume)(backup.file, dirname(db));
+  if (free < (clone ? 0 : backup.size) + 64 * MiB) throw new RestoreError("no-room");
   // what an earlier restore set aside goes now: the journal's states are only unambiguous without it
   for (const f of [p.aside, `${p.aside}-wal`, p.restoring]) rmSync(f, { force: true });
   try {
     fault("copy");
     // off main's thread (a large mailbox takes a while); a clone where the volume can (the backup never changes)
-    await copyFile(backup.file, p.restoring, constants.COPYFILE_FICLONE);
+    if (clone) await (deps.clone ?? cloneFile)(backup.file, p.restoring);
+    else await copyFile(backup.file, p.restoring);
     syncFile(p.restoring, fsync);
     const check = new DatabaseSync(p.restoring, { readOnly: true });
     try {
