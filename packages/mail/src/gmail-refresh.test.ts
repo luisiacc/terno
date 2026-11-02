@@ -23,6 +23,8 @@ function harness(response: () => Response | Promise<Response> = () => json(valid
   });
   const ctx = {
     account: { id: 1, email: "synthetic@example.test" }, config: {},
+    // the backend's cooperative turn (core.ts), not a timer: fake clocks here count only the network's
+    yield: async () => {},
     store: { setting: async () => ({ gmailClientId: "client" }) },
     getSecret: vi.fn(async () => durable), getAppSecret: async () => null,
     replaceSecret: replace,

@@ -14,6 +14,8 @@ function setup(rawResponse: () => Promise<Response>, process: (signal: AbortSign
   const pipeline = new IncomingPipeline(), abort = new AbortController();
   const writes: unknown[] = [], checkpoints: unknown[] = [], removed: unknown[] = [];
   const ctx = {
+    // the backend's cooperative turn (core.ts), not a timer: fake clocks here count only the network's
+    yield: async () => {},
     account: { id: 1 }, config: {}, incoming: { acquire: pipeline.acquire.bind(pipeline), promote: promote ? (_id: number, signal: AbortSignal) => promote(signal) : pipeline.promote.bind(pipeline) },
     incomingProcessor: { run: (_input: unknown, signal: AbortSignal) => process(signal) },
     store: { repairs: capture.revision === undefined ? undefined : { get: async () => ({ state: "pending", revision: capture.revision }), list: async () => ({ items: [] }) }, messageByProviderId: async () => null, syncedMessages: async () => [], syncedMessagePage: async () => ({ items: [] }), pendingAttachmentBodies: async () => [] },
