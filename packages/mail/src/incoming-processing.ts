@@ -321,6 +321,17 @@ export function createIncomingProcessor(factory: IncomingWorkerFactory, options:
 }
 
 
+
+/**
+ * Exact UTF-16 units as a string (a lone surrogate kept, where TextDecoder would replace it), a few thousand units a
+ * call: spreading a whole part's 32,768 as arguments cost ten times as much and held the loop past a frame
+ */
+function unitsText(units: Uint16Array): string {
+  let text = "";
+  for (let at = 0; at < units.length; at += 8192) text += String.fromCharCode.apply(null, units.subarray(at, at + 8192) as unknown as number[]);
+  return text;
+}
+
 async function restoreIncomingText(result: IncomingWireResult, check: () => void, preserveParts = false): Promise<IncomingProcessingResult> {
   const fields = result.textParts!;
   if (!record(fields) || Object.keys(fields).some((key) => key !== "text" && key !== "html")) throw new IncomingProcessingError("worker-fault");
@@ -337,7 +348,7 @@ async function restoreIncomingText(result: IncomingWireResult, check: () => void
         check();
         const part = parts[index]!;
         if (!(part instanceof Uint16Array) || !(part.buffer instanceof ArrayBuffer) || !part.length || part.length > INCOMING_TEXT_UNITS || part.byteOffset !== 0 || part.byteLength !== part.buffer.byteLength) throw new IncomingProcessingError("worker-fault");
-        let text = String.fromCharCode(...part), level = 0;
+        let text = unitsText(part), level = 0;
         if (preserveParts) decoded.push(text);
         else {
           while (levels[level] !== undefined) { text = levels[level]! + text; levels[level] = undefined; level++; }

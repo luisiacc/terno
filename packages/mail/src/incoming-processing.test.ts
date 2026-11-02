@@ -271,6 +271,22 @@ it("reconstructs exact transferred UTF16 text, including a surrogate pair crossi
   } finally { await h.processor.close(); }
 });
 
+it("restores a part exactly across its internal decoding chunks: a pair split at 8,192 units, lone surrogates kept", async () => {
+  const h = harness();
+  try {
+    const pending = h.processor.run(input(), new AbortController().signal);
+    const part = new Uint16Array(32768).fill(66);
+    part[8191] = 0xd83d; part[8192] = 0xde00; // one pair across the seam
+    part[16384] = 0xdc00; part[32767] = 0xd800; // lone halves (a TextDecoder would make them U+FFFD)
+    const expected = String.fromCharCode.apply(null, Array.from(part));
+    const packed = { kind: "mime" as const, message: { ...result.message, text: null, html: null }, textParts: { text: [part] } };
+    h.answer(h.hosts[0]!, packed);
+    const parsed = await pending;
+    expect(parsed.message.text === expected).toBe(true);
+    await h.processor.whenIdle();
+  } finally { await h.processor.close(); }
+});
+
 it("rejects a small text view retaining a larger backing buffer and retires that host", async () => {
   const h = harness();
   try {
