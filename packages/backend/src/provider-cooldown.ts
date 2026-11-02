@@ -140,8 +140,8 @@ export class ProviderCooldown {
   mailConstrained(owner: string, stamp: CooldownStamp): boolean {
     const scopes = new Set([owner, "installation"]);
     if ([...scopes].some((scope) => this.state(scope, "gmail-api").kind !== "ready")) return true;
-    const dependent = [...this.dependencies.values()].some((dependency) => scopes.has(dependency.owner) &&
-      (dependency.id === null || (dependency.id === stamp.id && dependency.createdAt === stamp.createdAt)));
+    const dependent = [...this.dependencies.values()].some((dependency) => dependency.owner === owner &&
+      (owner === "installation" ? dependency.id === null : dependency.id === stamp.id && dependency.createdAt === stamp.createdAt));
     return dependent && [...scopes].some((scope) => this.state(scope, "oauth-token").kind !== "ready");
   }
 

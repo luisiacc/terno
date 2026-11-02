@@ -975,7 +975,8 @@ export class BackendCore {
       const life = this.lifetime(accountId);
       loading = (async () => {
         const account = await this.store.accounts.get(accountId);
-        if (!account || life.removing || this.lifetimes.get(accountId) !== life) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+        // Provider replacement retains this account owner; removal keeps its original fence.
+        if (!account || life.removing || this.lifetimes.get(accountId)?.removing || this.stopped) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
         const status = new AccountStatus({
           initial: account.syncState,
           generation: () => this.credentialsOf(accountId),

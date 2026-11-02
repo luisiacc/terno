@@ -453,6 +453,72 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     } finally { first.release(); later.release(); await syncing; }
   });
 
+  it("review follow-up keeps another unbound refresh dependency out of cached-token status", async () => {
+    let wall = Date.now(), elapsed = performance.now();
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
+    await h.send(); await h.backend.runWorker();
+    wall += 120_001; elapsed += 120_001;
+    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "unbound@example.test", displayName: "Unbound", color: "indigo", providerConfig: {}, now: 2 });
+    await h.backend.setSecret(`account:${other.account.id}:refreshToken`, "synthetic-unbound");
+    h.answer((request) => new URL(request.url).pathname === "/token" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
+    await h.backend.syncAccount(other.account.id);
+    const tokens = h.paths().filter((path) => path === "/token").length;
+    await h.backend.syncAccount(h.account.id);
+    expect(h.paths().filter((path) => path === "/token")).toHaveLength(tokens);
+    const accounts = (await h.rpc.call("app.bootstrap", {})).accounts;
+    expect(accounts.find((account) => account.id === other.account.id)!.syncState.status).toBe("error");
+    expect(accounts.find((account) => account.id === h.account.id)!.syncState).toMatchObject({ status: "idle", lastError: null, lastSyncAt: wall });
+  });
+
+  it("review follow-up deletion fences a pending status initialization", async () => {
+    const h = await setup(false, kind);
+    let release!: () => void, entered = false;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const get = h.backend.store.accounts.get.bind(h.backend.store.accounts);
+    vi.spyOn(h.backend.store.accounts, "get").mockImplementationOnce(async (id) => {
+      const account = await get(id); entered = true; await held; return account;
+    });
+    const bootstrap = h.rpc.call("app.bootstrap", {}).then((value) => ({ value }), (error: unknown) => ({ error }));
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      await h.rpc.call("accounts.remove", { id: h.account.id });
+      expect(await h.backend.store.accounts.get(h.account.id)).toBeNull();
+      release();
+      expect(await bootstrap).toHaveProperty("error");
+      expect((await h.rpc.call("app.bootstrap", {})).accounts).toEqual([]);
+    } finally { release(); await bootstrap; }
+  });
+
+  it("review follow-up verified reconnect survives a shared pending status initialization", async () => {
+    const h = await setup(false, kind);
+    h.answer(followupHealthy); followupReconnect(h);
+    let release!: () => void, entered = false, signing = false;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const get = h.backend.store.accounts.get.bind(h.backend.store.accounts);
+    vi.spyOn(h.backend.store.accounts, "get").mockImplementationOnce(async (id) => {
+      const account = await get(id); entered = true; await held; return account;
+    });
+    const bootstrap = h.rpc.call("app.bootstrap", {}).then((value) => ({ value }), (error: unknown) => ({ error }));
+    let reconnect: Promise<unknown> | undefined;
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      const signedIn = h.backend.signedIn.bind(h.backend);
+      vi.spyOn(h.backend, "signedIn").mockImplementation(async (...args) => { const work = signedIn(...args); signing = true; return work; });
+      reconnect = h.rpc.call("accounts.reconnect", { id: h.account.id }).then((value) => ({ value }), (error: unknown) => ({ error }));
+      await vi.waitFor(() => expect(signing).toBe(true));
+      expect(await h.backend.getSecret(`account:${h.account.id}:refreshToken`)).toBe("synthetic-reconnected");
+      release();
+      expect(await reconnect).toHaveProperty("value.id", h.account.id);
+      expect(await bootstrap).toHaveProperty("value.accounts");
+      await h.backend.syncAccount(h.account.id);
+      expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", authRequired: false, lastError: null });
+    } finally { release(); await Promise.allSettled([bootstrap, ...(reconnect ? [reconnect] : [])]); }
+  });
+
   it("follow-up reopen cannot retain syncing without a live run or clear durable auth", async () => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
