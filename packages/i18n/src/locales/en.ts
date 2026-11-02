@@ -1441,6 +1441,7 @@ const en = {
   "palette.layout.split": "Use Split layout",
   "palette.addTo": "Add to “{name}”",
   "palette.searchAll": "Search for “{query}” in all accounts",
+  "palette.searchIn": "Search for “{query}” in {account}",
   "palette.search.category": "category",
   "palette.search.account": "account",
   "palette.search.addTo": "add to",

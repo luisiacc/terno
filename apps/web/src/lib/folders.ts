@@ -27,14 +27,18 @@ export function setFieldDraft(id: number, patch: Partial<FieldDraft>): void {
 }
 
 const edits = { n: 0 };
+/** plan 108 (Codex code review #6): the normal sidebar's open account is left as it was while focused on this one */
+function openFor(accountId: number): void {
+  if (getApp().soloAccountId !== accountId) setOpenAccount(accountId);
+}
 export function startCreate(accountId: number, parent: string | null): void {
-  // the account opens to show where it goes (its children always show)
-  setOpenAccount(accountId);
+  // the account opens to show where it goes (its children always show); focused on it, they show already
+  openFor(accountId);
   useFolderEdit.setState({ editing: { kind: "create", accountId, parent, id: ++edits.n }, done: null });
 }
 export function startRename(accountId: number, key: string): void {
   // from a favorite, its account may be closed: it opens so the field is there (Codex code review #4)
-  setOpenAccount(accountId);
+  openFor(accountId);
   useFolderEdit.setState({ editing: { kind: "rename", accountId, key, id: ++edits.n }, done: null });
 }
 /**

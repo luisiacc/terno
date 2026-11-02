@@ -69,7 +69,7 @@ export function listKey(): string {
 }
 
 /** plan 108: a search while focused on an account: only that account's mail */
-function soloSearch(s: { soloAccountId: number | null; query: string }): boolean {
+export function soloSearch(s: { soloAccountId: number | null; query: string }): boolean {
   return s.soloAccountId !== null && s.query.trim() !== "";
 }
 

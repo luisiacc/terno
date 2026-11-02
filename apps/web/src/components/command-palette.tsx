@@ -86,6 +86,7 @@ export function CommandPalette() {
   // closed means idle: no re-render for category or account changes
   const categories = useApp((s) => (open ? s.categories : NONE));
   const accounts = useApp((s) => (open ? s.accounts : NONE));
+  const soloName = useApp((s) => (open && s.soloAccountId !== null ? (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null) : null));
   // what the actions and "Add to" apply to: all N of a view, the checked threads, else the selected one
   const targets = useApp((s) => (open ? (s.scope ? s.scope.count : s.checked.size ? s.checked.size : s.selectedId !== null ? 1 : 0) : 0));
   // printing takes the conversation the reader shows (one, with no new message in the pane)
@@ -437,7 +438,8 @@ export function CommandPalette() {
           {page === "root" && query && (
             <CommandGroup value="search" heading={t("common.search")} forceMount>
               <CommandItem forceMount value={`search\u0000${value}`} onSelect={() => { close(); setApp({ query: value }); }}>
-                <Search /> {t("palette.searchAll", { query: value })}
+                {/* plan 108: focused, a search looks only in that account (Codex code review #4) */}
+                <Search /> {soloName === null ? t("palette.searchAll", { query: value }) : t("palette.searchIn", { query: value, account: soloName })}
               </CommandItem>
             </CommandGroup>
           )}

@@ -194,6 +194,12 @@ export function FolderMenu({ target, name, account, favoriteRow, children }: { t
   const [deleting, setDeleting] = useState<boolean | null>(null);
   // an item that moves the focus itself (a name field, a dialog) keeps the closing menu from handing it back (plan 106)
   const [handOff, setHandOff] = useState(false);
+  // plan 108 (Codex code review #2): leaving a focused account (a notification) takes this row away while its menu
+  // is open: shortcuts never stay blocked behind a menu that's gone
+  const open = useRef(false);
+  useEffect(() => () => {
+    if (open.current) setApp({ menuOpen: false });
+  }, []);
   const away = (run: () => void) => () => {
     setHandOff(true);
     run();
@@ -203,9 +209,10 @@ export function FolderMenu({ target, name, account, favoriteRow, children }: { t
   return (
     <>
       <ContextMenu
-        onOpenChange={(open) => {
-          if (open) setHandOff(false);
-          setApp({ menuOpen: open });
+        onOpenChange={(next) => {
+          if (next) setHandOff(false);
+          open.current = next;
+          setApp({ menuOpen: next });
         }}
       >
         <ContextMenuTrigger data-context-menu render={children} />

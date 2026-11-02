@@ -453,7 +453,11 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
   // plan 108: focused on an account, a search looks only in it: it says whose, and offers every account
   const soloSearch = useApp((s) => s.soloAccountId !== null) && searching;
   const searchAll = soloSearch && (
-    <button type="button" data-testid="solo-search-all" onClick={() => setApp({ soloAccountId: null })} className="no-drag shrink-0 rounded-sm text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+    <button type="button" data-testid="solo-search-all" onClick={() => {
+        setApp({ soloAccountId: null });
+        // the button goes with the narrowed search: the keyboard stays in the search (Codex code review #5)
+        searchInputRef.current?.focus();
+      }} className="no-drag shrink-0 rounded-sm text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
       {t("list.search.allAccounts")}
     </button>
   );

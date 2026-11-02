@@ -9,7 +9,7 @@ import { useAppearance } from "~/lib/appearance";
 import { leaveNewDraft, supersedeCompose } from "~/lib/compose";
 import { createPageHistory, type Page, type PageHistory } from "~/lib/page-history";
 import { getApp, markSelectionIntent, setApp, useApp, type AppState } from "~/state/app";
-import { flushDeferredRefresh, followedRename, listKey, refreshPolicy } from "~/state/list";
+import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearch } from "~/state/list";
 import { noteOpen } from "~/lib/reminders";
 
 export type { Page };
@@ -87,7 +87,7 @@ useApp.subscribe((s, p) => {
   // plan 107 (Codex code review round 2 #4): the folder you're in renamed is the same list: the page stays
   const renamed = s.folder !== p.folder && followedRename.from === p.folder && followedRename.to === s.folder;
   // a folder of the same account is another list too (plan 68, Codex R5)
-  const otherList = !renamed && (s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.gmailTab !== p.gmailTab || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders);
+  const otherList = !renamed && (s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.gmailTab !== p.gmailTab || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders || soloSearch(s) !== soloSearch(p));
   if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
 });
 // Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.

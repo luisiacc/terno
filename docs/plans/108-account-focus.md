@@ -1,6 +1,6 @@
 # Plan 108: focus on one account
 
-- **Status:** planned.
+- **Status:** done (see "Codex code review").
 - **Builds on:** plans 67/68 (an account's folders under its row), 105 (folder counts), 106 (the account menu), 107 (folder actions, favorites), 64 (search everywhere).
 - **Request (verbatim):** "focus mode for an inbox, in the right click menu, have ‘focus this inbox’ which puts the email of the inbox at the top, with a backarrow to go back to the unified inbox view, in this focus view all folders and subfolders of that inbox show, like ‘inbox, sent, archive, etc… plus any custom folders"
 - **Decisions (2026-11-01), after the grooming proposal:**
@@ -109,3 +109,23 @@ Eleven points; what each changed:
 9. **Remembering:** written by a subscription to `soloAccountId`, so every way out (the back arrow, a notification, a category, Reminders, the account removed) clears it. Restored in the boot's ready write, before history (`bootPage`) and the first list load.
 10. **`account:` inside a focused search** intersects with the account, so `account:other` finds nothing; "Search all accounts" is the way out. Both stores already cover a search with `accountId` (`store/conformance/search.ts`, including an `account:` operator), and "select all N" uses the same scope (`backend/src/scope.ts` passes `accountId`).
 11. **"Search all accounts"** is `no-drag` (the list header is a window drag region), a real button with its name, and shown whenever a focused search is on screen (not only once stats arrive).
+
+## Codex code review
+
+### Round 1
+
+Six findings, all fixed, each with a test in `e2e/account-focus.spec.ts` that fails without its fix:
+
+1. **(P1) Focusing another account kept the last one's folder rows** (`useFolderRows` cached by the folder list alone): its folder names under the new account's title, and a click or rename aimed at the new account with the old one's keys. The focused sidebar is keyed by its account, and the hook never returns rows built for another account.
+2. **A folder's menu open when a notification left focus** unmounted with `menuOpen` still true, so shortcuts stayed blocked. `FolderMenu` clears it on unmount, as `AccountMenu` does. (A test hook, `openFromNotice`, makes the notification's click from the page.)
+3. **List layout: focusing while a search's conversation was open** narrowed the list under it and replaced the conversation on screen. The page subscription treats a change of a focused search's scope as another list, so the conversation closes back to the list.
+4. **The palette's search said "in all accounts"** while focused; it now says "Search for “…” in {account}" (`palette.searchIn`, en and es).
+5. **"Search all accounts" dropped keyboard focus** (the button goes as it widens the search); focus goes to the search field.
+6. **Creating or renaming a folder while focused changed the normal sidebar's open account**; the open account is left alone when the edit is in the focused one.
+
+## Tests run
+
+- Unit: `lib/account-focus.test.ts` and the rest of `src/lib` and `src/state` (four failures, all unrelated: two fail the same way on main, two were timing under load and pass alone).
+- e2e, every design: account-focus, account-folders, account-own-folders, account-menu, folder-actions, palette, search-everywhere, list-layout, notifications, i18n (332 passed). `designs.spec.ts` has 6 failures that fail the same way on main.
+- UI perf: the account toggle, folder counts, sidebar drag and search typing gates pass. Wrapping the normal sidebar in a conditional made the React Compiler memoize it as one block (6 category/account rows rendered per account toggle against a budget of 2); the normal body is built unconditionally, as before.
+- `no-hardcoded.test.ts` in `@terno/ui` fails on main as well (`folder-rows.tsx:151`, not touched here).

@@ -24,7 +24,7 @@ import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { withPendingEdits } from "~/lib/accounts";
 import { acceptNextFavorites, applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
-import { startAttention } from "~/lib/notify";
+import { openFromNotice, startAttention } from "~/lib/notify";
 import { applyReminders, loadReminders } from "~/lib/reminders";
 import { snippetsSaved } from "~/lib/snippets";
 import { applyScheduled, loadScheduled } from "~/lib/scheduled";
@@ -61,6 +61,8 @@ export async function boot(): Promise<void> {
       acquireDraftHold,
       updateAppearance,
       getApp,
+      // plan 108: a notification's click, as main or the page would make it
+      openFromNotice,
       loadedIds: () => useList.getState().items.map((t) => t.id),
       // the reader specs wait on what the cache holds (a refetch that changes nothing on screen)
       threadDetail: (id: number) => useThreads.getState().details.get(id),

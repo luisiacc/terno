@@ -151,6 +151,63 @@ test.describe("focus on one account", { tag: "@design" }, () => {
     await expect.poll(() => listFor(page)).toEqual(["sent", null, null, null, null, ""]);
   });
 
+  test("Codex code review #1: focusing another account shows its own folders, never the last one's", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const other = (await accountIds(page)).find((id) => id !== acme)!;
+    await focusFromMenu(page, acme);
+    await expect(page.getByTestId(`nav-own-${acme}-Label_21`)).toBeVisible();
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId(`palette-focus-${other}`).click();
+    await expect(page.getByTestId(`nav-folder-${other}-inbox`)).toBeVisible();
+    const keys = new Set(sqlDb(server.backend.store).all<{ key: string }>("SELECT key FROM folders WHERE account_id = ?", other).map((f) => f.key));
+    const prefix = `nav-own-${other}-`;
+    const shown = await page.locator(`[data-testid^="${prefix}"]`).evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!));
+    // only its own (the last account's Proyectos under this title would be a click on the wrong folder)
+    expect(shown.filter((id) => !id.startsWith(`nav-own-more-`)).every((id) => keys.has(id.slice(prefix.length)))).toBe(true);
+    if (!keys.has("Label_21")) await expect(page.getByTestId(`${prefix}Label_21`)).toHaveCount(0);
+  });
+
+  test("Codex code review #2: a notification while a folder's menu is open leaves focus, and shortcuts work after", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    await focusFromMenu(page, acme);
+    await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });
+    await expect(page.locator(`[data-testid="folder-menu-${acme}-Label_21"]`)).toBeVisible();
+    await page.evaluate(() => (window as unknown as { __terno: { openFromNotice(id: number | null): void } }).__terno.openFromNotice(null));
+    await expect(page.getByTestId("solo-back")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __terno: { getApp(): { menuOpen: boolean } } }).__terno.getApp().menuOpen)).toBe(false);
+  });
+
+  test("Codex code review #4, #5: focused, the palette's search says whose mail; Search all accounts keeps the keyboard in the search", async ({ app: page, server }) => {
+    const [a] = await accountIds(page);
+    const name = (await server.backend.store.accounts.get(a!))!.displayName;
+    await focusFromMenu(page, a!);
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("zzqx");
+    await expect(page.getByRole("dialog")).toContainText(`Search for “zzqx” in ${name}`);
+    await page.keyboard.press("Escape");
+    await search(page, "design");
+    await page.getByTestId("solo-search-all").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("solo-search-all")).toHaveCount(0);
+    await expect(page.getByTestId("search-input")).toBeFocused();
+  });
+
+  test("Codex code review #6: a folder field while focused leaves the normal sidebar's open account as it was", async ({ app: page, server }) => {
+    const acme = accountOf(server, "Acme Studio");
+    const other = (await accountIds(page)).find((id) => id !== acme)!;
+    await page.getByTestId(`nav-account-${other}`).click();
+    await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
+    await focusFromMenu(page, acme);
+    await page.getByTestId("solo-folders").hover();
+    await page.getByTestId("solo-add-folder").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("solo-back").click();
+    await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByTestId(`nav-account-${acme}`)).toHaveAttribute("aria-expanded", "false");
+  });
+
   for (const mode of ["light", "dark"] as const) {
     test(`the focused sidebar is axe-clean, ${mode}`, async ({ app: page, server }) => {
       await server.backend.server.invoke("settings.update", { theme: mode }, ctx);
@@ -163,4 +220,21 @@ test.describe("focus on one account", { tag: "@design" }, () => {
       expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 120)).join(", ")}`)).toEqual([]);
     });
   }
+});
+
+test.describe("focus on one account, List layout", () => {
+  test.use({ layout: "list" });
+
+  test("Codex code review #3: focusing narrows an open search, so the conversation on screen goes back to the list", async ({ app: page }) => {
+    const [a] = await accountIds(page);
+    await page.getByTestId(`nav-account-${a}`).click();
+    await search(page, "design");
+    await page.getByTestId("thread-row").nth(1).click();
+    const app = () => page.evaluate(() => (window as unknown as { __terno: { getApp(): { readerOpen: boolean; soloAccountId: number | null } } }).__terno.getApp());
+    await expect.poll(async () => (await app()).readerOpen).toBe(true);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId(`palette-focus-${a}`).click();
+    await expect.poll(async () => (await app()).soloAccountId).toBe(a);
+    await expect.poll(async () => (await app()).readerOpen).toBe(false);
+  });
 });

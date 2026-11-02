@@ -1427,6 +1427,7 @@ const es = {
   "palette.layout.split": "Usar la disposición dividida",
   "palette.addTo": "Añadir a «{name}»",
   "palette.searchAll": "Buscar «{query}» en todas las cuentas",
+  "palette.searchIn": "Buscar «{query}» en {account}",
   "palette.search.category": "categoria",
   "palette.search.account": "cuenta",
   "palette.search.addTo": "añadir a",

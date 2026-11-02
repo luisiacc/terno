@@ -1375,7 +1375,8 @@ export function Sidebar() {
       <div className="drag-region h-[52px] shrink-0" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill /> })}
       <nav data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {soloAccount ? <SoloSidebar account={soloAccount} countTone={design.surfaces.inboxCount} /> : all}
+        {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}
+        {soloAccount ? <SoloSidebar key={soloAccount.id} account={soloAccount} countTone={design.surfaces.inboxCount} /> : all}
       </nav>
       {/* The last pill stands clear of the footer's hairline; empty, the stack takes no room. */}
       <div className="flex shrink-0 flex-col pb-2 empty:hidden">

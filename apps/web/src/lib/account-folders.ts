@@ -253,15 +253,15 @@ const ROWS_STEP_MS = 4;
  * size is there at once; a huge one goes on a few milliseconds a task, the rows it had shown until then.
  */
 export function useFolderRows(folders: readonly Folder[], accountId: number, open: boolean): readonly FolderRow[] {
-  const [built, setBuilt] = useState<{ folders: readonly Folder[]; rows: readonly FolderRow[] } | null>(null);
+  const [built, setBuilt] = useState<{ folders: readonly Folder[]; accountId: number; rows: readonly FolderRow[] } | null>(null);
   useLayoutEffect(() => {
-    if (!open || built?.folders === folders) return;
+    if (!open || (built?.folders === folders && built.accountId === accountId)) return;
     const steps = folderRowSteps(folders, accountId);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const step = () => {
       const until = performance.now() + ROWS_STEP_MS;
       for (let r = steps.next(); ; r = steps.next()) {
-        if (r.done) return setBuilt({ folders, rows: r.value });
+        if (r.done) return setBuilt({ folders, accountId, rows: r.value });
         if (performance.now() >= until) {
           timer = setTimeout(step, 0);
           return;
@@ -271,5 +271,6 @@ export function useFolderRows(folders: readonly Folder[], accountId: number, ope
     step();
     return () => clearTimeout(timer);
   }, [open, folders, accountId, built]);
-  return built?.rows ?? NO_ROWS;
+  // plan 108 (Codex code review #1): never another account's rows, even for the frame before its own are built
+  return built?.accountId === accountId ? built.rows : NO_ROWS;
 }
