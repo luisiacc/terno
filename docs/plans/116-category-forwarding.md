@@ -2,8 +2,9 @@
 
 ## Status
 
-- Built and committed: storage (SQL v44, IDB 24), the backend queue (`packages/backend/src/forwarding.ts`), RPCs, conformance (`packages/store/src/conformance/forwards.ts`) and backend tests (`forwarding.test.ts`).
-- Next: the UI (category menu panel, sidebar icon, notice with Cancel, reader line, the cap's question, the builder's "Forward to", Settings → Filters group), e2e, then the Codex code review.
+- Built, reviewed (two Codex code review rounds, every finding but one fixed; see below) and committed.
+- Perf: `forwards.perf.test.ts` (SQLite and IndexedDB, the workload in `conformance/forwards-perf.ts`): at 50k threads a 200-message live slice plans in 6.8 ms (SQL) / 2.9 ms (IDB) p95, the queue's reads 1.9 / 0.3 ms.
+- Not run: `pnpm dist:mac` and the packaged smoke (no desktop-only code changed; the SQL migration is covered by the db suites).
 - Deviations from the design, decided while building:
   - A forward is decided after each commit from persisted state (`forwards.plan`, called by ingest, a body's arrival, a single filing, and a sweep at start), not inside every store transaction: the claim at 10 s re-checks everything in one transaction, so a crash between can only miss a forward, never send a wrong one, and the start's sweep finds what a crash missed.
   - "Bulk vs single" is the caller's: the handlers plan only a single hand filing (`filed`), a suggestion, an agent's (when agents may send); memberships made after the mail arrived by `user` or `bulk` count only through `filed`.
