@@ -1,9 +1,9 @@
-import { goToAccount, goToFolder } from "~/lib/account-folders";
+import { focusAccount, goToAccount, goToFolder } from "~/lib/account-folders";
 import { normalizeText, remindPresets, separatesTabs, snippetPreview, TABS, type CategoryColor, type ReminderKind, type Snippet } from "@terno/core";
 import { t, type TextKey } from "@terno/i18n";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users, X } from "@terno/ui/icons";
+import { Archive, AtSign, Bell, BellOff, BookmarkPlus, CalendarClock, CheckCheck, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users, X } from "@terno/ui/icons";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { act, openCompose, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
@@ -210,6 +210,12 @@ export function CommandPalette() {
     }
     for (const a of accounts) {
       add({ id: `account:${a.id}`, group: "goTo", label: a.displayName, hint: a.email, search: `${t("palette.search.account")} ${a.displayName} ${a.email}`, icon: <Layers />, keywords: english("palette.search.account"), run: () => goToAccount(a.id) });
+    }
+    // plan 108: the sidebar shows only that account, and search looks only in it ("All accounts" leaves)
+    if (accounts.length > 1) {
+      for (const a of accounts) {
+        add({ id: `focus:${a.id}`, group: "goTo", label: t("palette.focusAccount", { account: a.displayName }), hint: a.email, search: `${t("palette.focusAccount", { account: a.displayName })} ${a.email}`, icon: <Focus />, testId: `palette-focus-${a.id}`, keywords: english("account.menu.focus"), run: () => focusAccount(a.id) });
+      }
     }
     // plan 86: a Gmail account's Promotions and Social
     for (const a of accounts.filter(separatesTabs)) {

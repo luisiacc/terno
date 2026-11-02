@@ -217,6 +217,9 @@ function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
   const query = useApp((s) => s.query);
   const review = useApp((s) => s.reviewCategoryId !== null);
   const [focused, setFocused] = useState(false);
+  // plan 108: focused on an account, the field says whose mail it looks in
+  const soloName = useApp((s) => (s.soloAccountId === null ? null : (s.accounts.find((a) => a.id === s.soloAccountId)?.displayName ?? null)));
+  const placeholder = soloName === null ? t("list.search.placeholder") : t("list.search.placeholderIn", { account: soloName });
   const showCoverage = !review && (focused || query.trim() !== "");
   return (
     <>
@@ -228,8 +231,8 @@ function SearchField({ autoCollapse }: { autoCollapse: boolean }) {
           }}
           data-testid="search-input"
           value={query}
-          placeholder={t("list.search.placeholder")}
-          aria-label={t("list.search.placeholder")}
+          placeholder={placeholder}
+          aria-label={placeholder}
           aria-describedby={showCoverage ? "search-coverage" : undefined}
           className="h-[30px] rounded-lg border-0 bg-tint pr-14 pl-8 text-sm shadow-none dark:bg-tint"
           onFocus={() => setFocused(true)}
@@ -447,7 +450,15 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
       )}
     </>
   );
-  const accountSuffix = account && !searching && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
+  // plan 108: focused on an account, a search looks only in it: it says whose, and offers every account
+  const soloSearch = useApp((s) => s.soloAccountId !== null) && searching;
+  const searchAll = soloSearch && (
+    <button type="button" data-testid="solo-search-all" onClick={() => setApp({ soloAccountId: null })} className="no-drag shrink-0 rounded-sm text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+      {t("list.search.allAccounts")}
+    </button>
+  );
+  // (the compact title row leaves it to "Search all accounts": beside the stats it would only truncate)
+  const accountSuffix = account && (!searching || (soloSearch && kind !== "title")) && <span className="ml-1.5 text-sm font-normal tracking-normal text-muted-foreground not-italic">· {account.displayName}</span>;
 
   return (
     <div ref={hairlineRef} data-testid="list-header" data-kind={kind} className="drag-region scroll-hairline shrink-0 px-3 pb-2">
@@ -461,6 +472,7 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
             {filter && <FilterStatus search={query.trim() !== ""} filter={filter} />}
           </div>
           {stats}
+          {searchAll}
           {actions}
         </div>
       ) : (
@@ -470,7 +482,14 @@ function Header({ hairlineRef }: { hairlineRef: React.Ref<HTMLDivElement> }) {
               {kind === "greeting" ? <Greeting /> : title}
               {kind !== "greeting" && accountSuffix}
             </h1>
-            {query && searchMs !== null ? <p className="mt-1">{stats}</p> : <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />}
+            {query && (searchMs !== null || searchAll) ? (
+              <p className="mt-1 flex items-center gap-2">
+                {stats}
+                {searchAll}
+              </p>
+            ) : (
+              <Subtitle filter={filter} search={query.trim() !== ""} greeting={kind === "greeting"} />
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{actions}</div>
         </div>

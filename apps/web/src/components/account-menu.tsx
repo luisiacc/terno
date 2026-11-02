@@ -13,8 +13,9 @@ import {
   ContextMenuTrigger,
 } from "@terno/ui/components/context-menu";
 import { t } from "@terno/i18n";
-import { FolderPlus, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
-import { lazy, Suspense, useState, type ReactElement } from "react";
+import { ArrowLeft, Focus, FolderPlus, KeyRound, MailOpen, PenLine, RefreshCw, Settings2, SquarePen, Trash2 } from "@terno/ui/icons";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactElement } from "react";
+import { focusAccount, leaveFocus } from "~/lib/account-folders";
 import { patchAccount } from "~/lib/accounts";
 import { startCreate } from "~/lib/folders";
 import { markAccountRead, openCompose } from "~/lib/actions";
@@ -22,7 +23,7 @@ import { COLOR_LABEL } from "~/lib/color-labels";
 import { needsSignIn } from "~/lib/sign-in";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { setApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
 import { openSignInMarker } from "./sign-in-notice";
 
 const AccountRemoveDialog = lazy(() => import("./account-remove-dialog").then((m) => ({ default: m.AccountRemoveDialog })));
@@ -33,7 +34,9 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * An account's right-click menu in the sidebar (plan 106): what you do to one mailbox without opening Settings.
  * Its trigger is marked `data-context-menu`, so ⇧F10 and the menu key on the focused row open it too.
  */
-export function AccountMenu({ account, unread, onRename, children }: { account: Account; unread: number; onRename: () => void; children: ReactElement }) {
+export function AccountMenu({ account, unread, onRename, solo = false, children }: { account: Account; unread: number; onRename: () => void; /** plan 108: the focused sidebar's header */ solo?: boolean; children: ReactElement }) {
+  // plan 108: focus is offered with more than one account (with one, the sidebar already shows only it)
+  const several = useApp((s) => s.accounts.length > 1);
   // mounted from the first Remove… on, so the dialog can animate out after
   const [removing, setRemoving] = useState<boolean | null>(null);
   // an item that moves focus itself (the rename field, the composer, a dialog, the sign-in panel) keeps the
@@ -41,6 +44,12 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
   // state, not a function: a function would override Base UI's own check that the user hasn't clicked elsewhere
   // (Codex code review round 5 #1); set in the same click that closes, so the close reads it
   const [handOff, setHandOff] = useState(false);
+  // plan 108 (Codex R7): focusing or leaving swaps the sidebar, so this menu may go while open: shortcuts never stay
+  // blocked behind it
+  const open = useRef(false);
+  useEffect(() => () => {
+    if (open.current) setApp({ menuOpen: false });
+  }, []);
   const away = (run: () => void) => () => {
     setHandOff(true);
     run();
@@ -48,9 +57,10 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
   return (
     <>
       <ContextMenu
-        onOpenChange={(open) => {
-          if (open) setHandOff(false);
-          setApp({ menuOpen: open });
+        onOpenChange={(next) => {
+          if (next) setHandOff(false);
+          open.current = next;
+          setApp({ menuOpen: next });
         }}
       >
         <ContextMenuTrigger data-context-menu render={children} />
@@ -74,6 +84,20 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
             </ContextMenuItem>
           )}
           <ContextMenuSeparator />
+          {/* plan 108: the sidebar shows only this account, or all of them again */}
+          {solo ? (
+            <ContextMenuItem data-testid="account-menu-unfocus" onClick={away(() => leaveSoloKeepingFocus(account.id))}>
+              <ArrowLeft />
+              <span className="flex-1">{t("account.menu.unfocus")}</span>
+            </ContextMenuItem>
+          ) : (
+            several && (
+              <ContextMenuItem data-testid="account-menu-focus" onClick={away(() => enterSolo(account.id))}>
+                <Focus />
+                <span className="flex-1">{t("account.menu.focus")}</span>
+              </ContextMenuItem>
+            )
+          )}
           <ContextMenuItem data-testid="account-menu-rename" onClick={away(onRename)}>
             <PenLine />
             <span className="flex-1">{t("account.menu.rename")}</span>
@@ -118,6 +142,18 @@ export function AccountMenu({ account, unread, onRename, children }: { account: 
       )}
     </>
   );
+}
+
+/** plan 108: focused from the menu, the keyboard goes to the back row (the row it came from is gone) */
+function enterSolo(id: number): void {
+  focusAccount(id);
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="solo-back"]')?.focus({ preventScroll: true }));
+}
+
+/** plan 108: back to all accounts from the header's menu; the keyboard goes to the account's row */
+export function leaveSoloKeepingFocus(id: number): void {
+  leaveFocus();
+  requestAnimationFrame(() => (document.querySelector<HTMLElement>(`[data-testid="nav-account-${id}"]`) ?? document.querySelector<HTMLElement>('[data-testid="nav-inbox"]'))?.focus({ preventScroll: true }));
 }
 
 /** A color's dot in an icon's box, so its label starts on the other items' line */
