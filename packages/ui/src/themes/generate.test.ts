@@ -17,11 +17,12 @@ describe("generated theme CSS", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
     expect(css).toMatch(/^:root,\n\[data-theme="lumen-light"\] \{/m);
-    expect(css.match(/color-scheme: dark;/g)).toHaveLength(10);
+    expect(css.match(/color-scheme: dark;/g)).toHaveLength(11);
   });
 
-  it("stays small: ≤ 8 KB gzip", () => {
-    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(8 * 1024);
+  // plan 117: 9 KB with Board's pair (about 400 bytes a pair)
+  it("stays small: ≤ 9 KB gzip", () => {
+    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(9 * 1024);
   });
 
   it("is imported by globals.css, which no longer hard-codes theme values", () => {

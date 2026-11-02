@@ -13,12 +13,13 @@ const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"),
 const imports = [...globals.matchAll(/@import "(@fontsource[^"]+)";/g)].map((m) => m[1]!);
 
 describe("bundled fonts", () => {
-  it("imports Geist, Figtree and Instrument Sans", () => {
+  it("imports Geist, Figtree, Instrument Sans and Inter", () => {
     expect(imports).toEqual([
       "@fontsource-variable/geist",
       "@fontsource-variable/geist-mono",
       "@fontsource-variable/figtree",
       "@fontsource-variable/instrument-sans",
+      "@fontsource-variable/inter",
     ]);
   });
 
