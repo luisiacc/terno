@@ -1,5 +1,8 @@
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { contrastFailures, CONTRAST_PAIRS, STAR_ON_ROWS } from "./contrast";
+import { contrastFailures, CONTRAST_PAIRS, FIELD_WASH, STAR_ON_ROWS } from "./contrast";
 import { THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
@@ -21,7 +24,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 66: a hovered sidebar row's four inks and its glyph
     // a chosen outline toggle's text on the accent's wash over a tint group
     // plan 94: a filled button's text on its hover fill
-    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1);
+    // plan 118: a field's text and placeholder on its wash over 4 surfaces
+    expect(CONTRAST_PAIRS).toHaveLength(49 + 2 + 4 + 2 + 6 + 5 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8);
   });
 
   it("reports a failing pair with its ratio", () => {
@@ -30,5 +34,12 @@ describe("WCAG AA in every built-in theme", () => {
     expect(f.length).toBeGreaterThan(0);
     expect(f[0]).toMatchObject({ pair: "muted-foreground / background", min: 4.5 });
     expect(f[0]!.ratio).toBeLessThan(2);
+  });
+});
+
+describe("the field's wash (plan 118)", () => {
+  it("is the amount globals.css mixes in", () => {
+    const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
+    expect(globals).toContain(`--color-field: color-mix(in oklab, var(--foreground) ${FIELD_WASH * 100}%, transparent);`);
   });
 });

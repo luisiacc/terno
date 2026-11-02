@@ -20,6 +20,7 @@ process.stdout.write(
       h("i", { "data-testid": "probe-disabled", className: "bg-input/50" }),
       h("i", { "data-testid": "probe-primary-hover", className: "bg-primary-hover" }),
       h("i", { "data-testid": "probe-primary", className: "bg-primary" }),
+      h("i", { "data-testid": "probe-muted", className: "bg-muted" }),
     ),
   ),
 );
