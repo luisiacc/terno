@@ -1,6 +1,6 @@
 # Provider reliability handoff
 
-The release is **not green**. Every report row has a recorded disposition; four remain needs-work with committed, unlanded candidates parked under the user's final review stop rule. The latest focused verification passed the complete original SQL performance file on supported Node 24.3.0. It does not supersede the failed full release run or the separate cached-migration correctness failure.
+The release is **not green**. Every report row has a recorded disposition; three remain needs-work with committed, unlanded candidates parked under the user's final review stop rule. The latest focused verification passed the complete original SQL performance file on supported Node 24.3.0. It does not supersede the failed full release run or the separate cached-migration correctness failure.
 
 ## Row dispositions
 
@@ -8,14 +8,14 @@ The [canonical worklist](provider-reliability-worklist.md) contains the individu
 
 | Disposition | Rows |
 |---|---:|
-| Covered by an existing reviewed change | 81 |
+| Covered by an existing reviewed change | 82 |
 | Already protected in Terno | 33 |
 | Doesn't apply to Terno | 14 |
 | Outlook-deferred | 21 |
-| Needs work, candidate parked | 4 |
+| Needs work, candidate follow-up active | 3 |
 | Total | 153 |
 
-W01, W02, W03, W04, W06, W08, W09, W10 and W12 have no needs-work report rows. W07 remains Outlook-deferred. W05 retains B35/S23; W11 retains S48/T09. These are finite supported-contract dispositions, not universal provider, crash, hardware-sleep or live-service guarantees. S52's native SQLite/Gmail 50k resource contract is already protected; its ordered phases retain the original identities, assertions and per-case timeouts.
+W01, W02, W03, W04, W06, W08, W09, W10 and W12 have no needs-work report rows. W07 remains Outlook-deferred. W05 retains B35/S23; W11 retains T09; S48 landed at `bbcfaf8f` after the authorized follow-up and exact-head integration. These are finite supported-contract dispositions, not universal provider, crash, hardware-sleep or live-service guarantees. S52's native SQLite/Gmail 50k resource contract is already protected; its ordered phases retain the original identities, assertions and per-case timeouts.
 
 ## Parked implementations
 
@@ -24,7 +24,7 @@ All candidates below remain unlanded. Passing controls do not waive their outsta
 | Candidate / preserved head | Reason |
 |---|---|
 | B35/S23 account-status owner, `t3/policy-status-projection`, `cbe1d7cc` | Final redesign R2: five P2s involving retired-handle cooldown, Send-first 429 projection, notification completion, remembered write failure, and premature policy retirement on credential generation. Also one P3 for persisted syncing without a live run. |
-| S48 complete-body publication, `t3/mime-retention-bounds`, `f155dab7` | Final redesign R2: unnecessary token scans for ready instant search, cleanup failure preventing close, and batch readers not owning every selected capture before yielding. Complete bodies remain required; no cutoff was activated. |
+| S48 complete-body publication — LANDED `bbcfaf8f` | The three redesign findings and both follow-up review findings received RED→GREEN fixes. Root integration passed 54 native/38 WASM; original incoming 15 ms gate passed. Full bodies preserved, no cutoff. No second clean review verdict or general release clearance claimed. |
 | T09 full-message reader, `t3/fix-mail-frame-scroll`, `f7b84790` | Final R2: delayed mount steals newer focus, void-element backgrounds disappear, SVG viewport rewriting crops filter output, and case-sensitive URL dependency handling. Approved reader design remains unfinished. |
 | Optional W06 survivor recovery, `3c9a6fa3` | Clean source R3, but unchanged 16 ms performance gate failed. One focused profile found the dominant native COMMIT cost in inherited transaction/driver code; no candidate-local fix was justified. A28/S11 qualification on landed main remains separate. |
 | Empty-thread deletion optimization, `t3/backend-perf-release-diagnosis`, `80bdfcea` | Work regression and 861 affected checks pass; R1 clean. Original complete reconcile file still fails orphan stall at 83.221/32 ms. Do not land the optimization on this evidence. |
@@ -81,3 +81,5 @@ Selected passing diagnostics for other IDB, search, instant-index, history, pars
 ## Preservation
 
 User WIP was left untouched. Candidate branches and evidence remain preserved; no pushes were made. Latest SQL verification restored its source/dependency/output paths and joined all captured processes naturally without signals. Process audits are sampled rather than exhaustive; earlier install/cache and observation limitations remain disclosed in each report. No new full milestone or additional parked-item review is implied by this handoff.
+
+Current continuation: S48 landed on 2026-11-02. B35/S23 and T09 are active fix-and-land follow-ups under the latest user authorization; their earlier park entries describe historical review findings. The separate migration/reconcile/editor parks remain unchanged.
