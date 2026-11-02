@@ -63,10 +63,10 @@ describe("custom theme schema", () => {
     expect(customThemesSchema.safeParse(big).success).toBe(false);
   });
 
-  it("knows 8 light and 10 dark built-ins with unique ids", () => {
-    expect(BUILTIN_THEMES.filter((t) => t.mode === "light")).toHaveLength(8);
-    expect(BUILTIN_THEMES.filter((t) => t.mode === "dark")).toHaveLength(10);
-    expect(new Set(BUILTIN_THEMES.map((t) => t.id)).size).toBe(18);
+  it("knows 9 light and 11 dark built-ins with unique ids", () => {
+    expect(BUILTIN_THEMES.filter((t) => t.mode === "light")).toHaveLength(9);
+    expect(BUILTIN_THEMES.filter((t) => t.mode === "dark")).toHaveLength(11);
+    expect(new Set(BUILTIN_THEMES.map((t) => t.id)).size).toBe(20);
     expect(new Set(THEME_TOKENS).size).toBe(THEME_TOKENS.length);
   });
 });
