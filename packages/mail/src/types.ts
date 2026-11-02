@@ -257,7 +257,14 @@ export interface MailProvider {
    * mail (Gmail's /labels: read when unknown, stale or met in the pass; otherwise nothing). IMAP lists them in sync.
    */
   folders?(sink: SyncSink): Promise<void>;
-  /** Executes a queued op. For `send`, returns the provider's id of the sent message when known. */
+  /**
+   * Executes a queued op. For `send`, returns the provider's id of the sent message when known.
+   *
+   * `send` is every message Terno sends: the composer's, a scheduled one (plan 94) and an automatic forward
+   * (plan 116) all arrive here as the same SendPayload, files included, and nothing else is asked of a provider
+   * for them. A new provider (Outlook) proves it in packages/backend/src/forwarding-delivery.int.test.ts:
+   * add a harness for its server to DELIVERIES.
+   */
   execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
   /** Deliberate copy-only recovery. Never submits a message to SMTP. */
   repairSentCopy?(input: { raw: Uint8Array; messageId: string; mailbox: string | null }, hooks: import("./sent-copy").SentCopyHooks): Promise<void>;

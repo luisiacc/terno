@@ -198,3 +198,9 @@ Seven findings, all fixed with a regression test:
 5. **Reselecting a filter in the builder kept the addresses typed meanwhile.** The field starts again whenever a filter is loaded.
 6. **A forward waiting for its files was looked for in the windows' list.** Files arriving wake it by its message, in the store (`forwards.filesReady`).
 7. **Files completed by an ingest's upsert didn't wake it.** They do, by the threads the ingest touched.
+
+## Delivery, provider by provider
+
+`packages/backend/src/forwarding-delivery.int.test.ts` runs the same forwards through each real provider against a local stand-in for its server: IMAP + SMTP (imapkit and smtp-server) and Gmail (its HTTP API: token, profile, messages/send). New mail filed into a forwarding category is delivered after its 10 s to the rule's addresses only, as a forward (subject, quoted header, body, the original's file byte for byte), once; a cancelled one never reaches the server. A mutation check (forwards without their files) fails it on both.
+
+**Adding a provider (Outlook):** forwarding has no provider code. A forward is an ordinary `send` op, so the provider forwards as soon as its `execute` sends a `SendPayload`, files included (`packages/mail/src/types.ts`). Add its harness to `DELIVERIES` in that test to prove it.

@@ -28,6 +28,13 @@ import type { ForwardRow, MailStore, ModelDelta, SendCommand } from "@terno/stor
  * (a forward is claimed once, each of its sends queued once). A rule past
  * its cap holds what comes next until the user answers. The windows get a
  * snapshot whenever what they show changed.
+ *
+ * No provider code here, on purpose: a forward is queued as an ordinary
+ * `send` op (store.compose.queueSend), and the ops worker delivers it
+ * through the account's provider like any message (Provider.execute). A new
+ * provider forwards once its `execute` sends; forwarding-delivery.int.test.ts
+ * runs the same forwards through each provider's server (add the new one's
+ * harness there).
  */
 
 /** setTimeout's longest delay; a later one re-arms when it runs out */
