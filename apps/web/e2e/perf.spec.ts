@@ -635,7 +635,8 @@ test("resizing panes (plan 21): dragging either edge keeps frames smooth with fi
 
 test("toggling More (plan 40) with 80 more categories: what's below slides within the cap with smooth frames, no long frame, and only the six rows behind More render", async ({ app: page, server }) => {
   const db = sqlDb(server.backend.store);
-  for (let i = 0; i < 80; i++) db.run("INSERT INTO categories (name, color, position) VALUES (?, 'cyan', ?)", `Long ${String(i).padStart(2, "0")}`, 100 + i);
+  // a fresh id above the category counter: deleted ones stay retired (w02 stable action targets)
+  for (let i = 0; i < 80; i++) db.run("INSERT INTO categories (id, name, color, position) VALUES ((SELECT last_id + 1 FROM category_counter WHERE id = 1), ?, 'cyan', ?)", `Long ${String(i).padStart(2, "0")}`, 100 + i);
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await page.getByText("Long 79").waitFor({ state: "attached" });
