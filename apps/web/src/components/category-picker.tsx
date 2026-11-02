@@ -6,6 +6,7 @@ import { t } from "@terno/i18n";
 import { Check, Plus } from "@terno/ui/icons";
 import { useState } from "react";
 import { snack } from "~/lib/snack";
+import { offerCategoryTip } from "~/lib/category-tip";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
 import { currentTargets } from "~/lib/select";
 import { client } from "~/rpc/connection";
@@ -17,6 +18,7 @@ export async function createCategory(name: string): Promise<number> {
   const categories = getApp().categories;
   const c = await client.call("categories.create", { name, color: CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length]! });
   setApp({ categories: [...getApp().categories.filter((x) => x.id !== c.id), c] });
+  offerCategoryTip(c);
   return c.id;
 }
 

@@ -6,6 +6,7 @@
  */
 import { CATEGORY_COLORS } from "@terno/core";
 import { client } from "~/rpc/connection";
+import { offerCategoryTip } from "~/lib/category-tip";
 import { snack } from "~/lib/snack";
 import { activeFilter, mailboxKey, saveListFilters, withFilter } from "~/lib/unread-filter";
 import { getApp, navigate, setApp, type AppState } from "~/state/app";
@@ -68,6 +69,7 @@ export async function createCategory(name: string, o: { allAccounts?: boolean } 
   try {
     const color = CATEGORY_COLORS[getApp().categories.length % CATEGORY_COLORS.length]!;
     const c = await client.call("categories.create", { name: trimmed, color });
+    offerCategoryTip(c);
     navigate(o.allAccounts ? { categoryId: c.id, accountId: null } : { categoryId: c.id });
     return true;
   } catch (e) {

@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type CategoryColor, type CountedView, type Folder, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -15,6 +15,7 @@ import { viewLabel } from "~/lib/format";
 import { getApp, navigate, setApp, useApp, type AppState } from "~/state/app";
 import { useReminders } from "~/lib/reminders";
 import { createCategory as createNamedCategory } from "~/lib/tabs";
+import { useCategoryTip } from "~/lib/category-tip";
 import { ACCOUNT_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { useDropState } from "~/state/drag";
@@ -60,6 +61,20 @@ function readMore(): boolean {
  * stops half a pixel short at the top and bottom (a transparent border it isn't painted under),
  * leaving a hairline between neighbors while the rows keep their height and pitch.
  */
+const CategoryInboxTip = lazy(() => import("./category-inbox-tip"));
+
+/** Plan 113: the first new category's tip, beside its row once the row is there; its code loads only then. */
+function CategoryTip() {
+  const id = useCategoryTip((s) => s.id);
+  const category = useApp((s) => (id === null ? undefined : s.categories.find((c) => c.id === id)));
+  if (!category) return null;
+  return (
+    <Suspense fallback={null}>
+      <CategoryInboxTip key={category.id} category={category} />
+    </Suspense>
+  );
+}
+
 const ROW_SEAM = "border-y-[0.5px] border-transparent bg-clip-padding";
 /** An account's folders: one step in under it, one more per level of its own folders (plan 68), up to four */
 const INSET = ["pl-7", "pl-10", "pl-13", "pl-16"];
@@ -1199,6 +1214,7 @@ export function Sidebar() {
             />
           )}
           {categories.length === 0 && !creating && <p className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.categoriesEmpty")}</p>}
+          <CategoryTip />
 
           <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
           <div ref={accountsRef} onFocus={rememberFocus} onBlur={forgetFocus}>

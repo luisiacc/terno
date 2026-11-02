@@ -11,6 +11,7 @@ import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { deleteCategory, setShowInInbox } from "~/lib/categorize";
+import { offerCategoryTip } from "~/lib/category-tip";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
@@ -172,6 +173,7 @@ function NewCategory() {
       setApp((s) => ({ categories: s.categories.some((x) => x.id === c.id) ? s.categories : [...s.categories, c] }));
       setName("");
       snack.success(t("settings.categories.created", { name: c.name }));
+      offerCategoryTip(c);
     } catch (e) {
       snack.error(errorText(e));
     }
