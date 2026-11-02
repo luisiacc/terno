@@ -29,29 +29,34 @@ const inboxUnread = (db: ReturnType<typeof sqlDb>, account: number) =>
   )!.c;
 
 test.describe("the account menu", { tag: "@design" }, () => {
-  test("shows its actions; Sign in again… only for an account that needs it", async ({ app: page, server }) => {
-    const [a, b] = await accountIds(page);
-    await openMenu(page, a!);
-    for (const id of ["compose", "sync", "read-all", "rename", "color", "settings", "remove"]) await expect(page.getByTestId(`account-menu-${id}`)).toBeVisible();
-    await expect(page.getByTestId("account-menu-sign-in")).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(menu(page, a!)).toHaveCount(0);
+  test.describe("an account that needs a sign-in", () => {
+    test.use({ backendOptions: { network: true } });
+    test("shows its actions; Sign in again… only for an account that needs it", async ({ app: page, server }) => {
+      const [a, b] = await accountIds(page);
+      await openMenu(page, a!);
+      for (const id of ["compose", "sync", "read-all", "rename", "color", "settings", "remove"]) await expect(page.getByTestId(`account-menu-${id}`)).toBeVisible();
+      await expect(page.getByTestId("account-menu-sign-in")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(menu(page, a!)).toHaveCount(0);
 
-    await server.backend.store.accounts.setSyncState(b!, { status: "error", authRequired: true });
-    await page.reload();
-    await page.locator("[data-ready]").waitFor();
-    // the row has its key; the menu opens the same panel beside it
-    await expect(page.getByTestId(`sign-in-marker-${b}`)).toBeVisible();
-    await openMenu(page, b!);
-    await page.getByTestId("account-menu-sign-in").click();
-    const popover = page.getByTestId("sign-in-popover");
-    await expect(popover).toBeVisible();
-    await expect.poll(() => popover.evaluate((el) => el.contains(document.activeElement))).toBe(true);
-    // a right-click in the panel is its own (paste into the password), never the account menu (Codex code review round 6)
-    await popover.click({ button: "right" });
-    await page.waitForTimeout(200);
-    await expect(menu(page, b!)).toHaveCount(0);
-    await expect(popover).toBeVisible();
+      // the account's server refuses its saved sign-in and a sync finds out: the status owner, not a stored state,
+      // says it needs a sign-in (w05 account-status owner, 80d812de)
+      const email = (await server.backend.store.accounts.get(b!))!.email;
+      server.net.refused.add(email);
+      await server.backend.syncAccount(b!);
+      // the row has its key; the menu opens the same panel beside it
+      await expect(page.getByTestId(`sign-in-marker-${b}`)).toBeVisible();
+      await openMenu(page, b!);
+      await page.getByTestId("account-menu-sign-in").click();
+      const popover = page.getByTestId("sign-in-popover");
+      await expect(popover).toBeVisible();
+      await expect.poll(() => popover.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+      // a right-click in the panel is its own (paste into the password), never the account menu (Codex code review round 6)
+      await popover.click({ button: "right" });
+      await page.waitForTimeout(200);
+      await expect(menu(page, b!)).toHaveCount(0);
+      await expect(popover).toBeVisible();
+    });
   });
 
   test("Rename: the field sits where the name was; Enter saves, Esc cancels, leaving saves, empty keeps the name", async ({ app: page, server }) => {

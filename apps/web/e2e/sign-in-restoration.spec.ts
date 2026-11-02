@@ -19,8 +19,9 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByTestId("sign-in-open").click();
     const popup = page.getByTestId("sign-in-popover");
     await expect(popup.getByTestId("sign-in-section")).toHaveCount(2);
+    // signed in again elsewhere: only a verified sign-in clears a refusal (w05 account-status owner, 80d812de)
     server.net.refused.delete(google.email);
-    await server.backend.syncAccount(google.id);
+    await server.backend.signedIn(google.id);
     const field = popup.getByLabel(`Password for ${imap.email}`);
     await expect(field).toBeVisible();
     await field.fill("synthetic-partial");

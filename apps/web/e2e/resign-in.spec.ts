@@ -28,6 +28,15 @@ async function refuse(server: DevServerFixture, ...list: Account[]): Promise<voi
   }
 }
 
+/**
+ * the account is signed in again elsewhere (Settings, another window): only a verified sign-in clears a refusal,
+ * never a sync that happens to work (w05 account-status owner, 80d812de)
+ */
+async function signedInElsewhere(server: DevServerFixture, a: Account): Promise<void> {
+  server.net.refused.delete(a.email);
+  await server.backend.signedIn(a.id);
+}
+
 const notice = (page: Page) => page.getByTestId("sign-in-notice");
 const marker = (page: Page, a: Account) => page.getByTestId(`sign-in-marker-${a.id}`);
 const popover = (page: Page) => page.getByTestId("sign-in-popover");
@@ -116,8 +125,7 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await expect(field).toHaveValue("half-typ");
     await expect(field).toBeFocused();
     // and back to one
-    server.net.refused.delete(personal.email);
-    await server.backend.syncAccount(personal.id);
+    await signedInElsewhere(server, personal);
     await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(1);
     await expect(field).toHaveValue("half-typ");
     await expect(field).toBeFocused();
@@ -128,8 +136,7 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await refuse(server, personal, freelance);
     await page.getByTestId("sign-in-open").click();
     await expect(popover(page).getByTestId("sign-in-section")).toHaveCount(2);
-    server.net.refused.delete(personal.email);
-    await server.backend.syncAccount(personal.id);
+    await signedInElsewhere(server, personal);
     const field = popover(page).getByLabel(`Password for ${freelance.email}`);
     await expect(field).toBeVisible();
     await field.fill("half-typ");
@@ -139,15 +146,14 @@ test.describe("signing in again", { tag: "@design" }, () => {
     await expect(field).toBeFocused();
   });
 
-  test("Later puts the line off, never the row's key; the account working and failing again brings it back", async ({ app: page, server }) => {
+  test("Later puts the line off, never the row's key; signing in and failing again brings it back", async ({ app: page, server }) => {
     const { freelance } = await accounts(server);
     await refuse(server, freelance);
     await page.getByTestId("sign-in-dismiss").click();
     await expect(notice(page)).toHaveCount(0);
     await expect(marker(page, freelance)).toBeVisible();
-    // its server takes the saved password again (it was a glitch): nothing to say any more
-    server.net.refused.delete(freelance.email);
-    await server.backend.syncAccount(freelance.id);
+    // signed in again from elsewhere: nothing to say any more
+    await signedInElsewhere(server, freelance);
     await expect(marker(page, freelance)).toHaveCount(0);
     // a new refusal is news again
     await refuse(server, freelance);

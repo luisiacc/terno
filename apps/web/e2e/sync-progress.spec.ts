@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import type { Account } from "@terno/core";
 import { expect, test } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -15,11 +16,16 @@ for (const theme of ["light", "dark"] as const) {
     const personal = byName("Personal"), acme = byName("Acme Studio"), freelance = byName("Freelance");
     const now = Date.now();
     // Gmail's estimate; IMAP's folders; a backfill that can only say how far back it is
-    await server.backend.store.accounts.setSyncState(personal.id, { status: "syncing", lastSyncAt: null, progress: { done: 1200, total: 5521, unit: "messages", reachedAt: now - 40 * DAY } });
-    await server.backend.store.accounts.setSyncState(acme.id, { status: "syncing", lastSyncAt: null, progress: { done: 4, total: 7, unit: "folders" } });
     await server.backend.store.accounts.update(freelance.id, { syncWindowDays: 365, backfill: { merge: { since: now - 365 * DAY, until: now - 180 * DAY } } });
-    await server.backend.store.accounts.setSyncState(freelance.id, { progress: { reachedAt: now - 300 * DAY } });
-    await server.backend.emitAccounts();
+    const progress: Record<number, Partial<Account["syncState"]>> = {
+      [personal.id]: { status: "syncing", lastSyncAt: null, progress: { done: 1200, total: 5521, unit: "messages", reachedAt: now - 40 * DAY } },
+      [acme.id]: { status: "syncing", lastSyncAt: null, progress: { done: 4, total: 7, unit: "folders" } },
+      [freelance.id]: { progress: { reachedAt: now - 300 * DAY } },
+    };
+    // runs in progress are the status owner's (w05, 80d812de), not a stored state: the card is fed the accounts event
+    // a backend mid-sync would send
+    const views = await server.backend.accountViews(await server.backend.store.accounts.list());
+    server.backend.server.emit("accounts", views.map((a) => ({ ...a, syncState: { ...a.syncState, ...progress[a.id] } })));
 
     const card = page.getByTestId("first-sync-pill");
     const toggle = page.getByTestId("first-sync-toggle");
