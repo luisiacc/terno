@@ -421,7 +421,7 @@
   --draft-shadow: 0 0 transparent;
 }
 
-[data-design="board"] {
+[data-design="luma"] {
   --ds-font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --ds-font-display: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --ds-font-features: "kern";

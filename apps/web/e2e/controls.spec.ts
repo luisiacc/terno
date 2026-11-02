@@ -1,5 +1,5 @@
 /**
- * Plans 117 and 118: BoardUI's controls, the base of every design, keep their states: an error border, focus under
+ * Plans 117 and 118: the base controls of every design keep their states: an error border, focus under
  * hover, a disabled fill, and a primary whose text is on fills the contrast suite checks. The real components,
  * rendered to markup here, drawn by the app's own stylesheet in each design, against probes of the token they should show.
  */

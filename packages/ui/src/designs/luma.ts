@@ -3,15 +3,15 @@ import type { DesignDefinition } from "./types";
 const INTER = '"Inter Variable", ui-sans-serif, system-ui, sans-serif';
 
 /**
- * Board (plan 117): BoardUI's base components (boardui.com, MIT) as a design. Inter at BoardUI's ramp
- * (body 14/20, body 2 13/18, caption 12/16), its 10 px controls and 16 px menus, medium weights, small avatars.
- * Its controls are every design's since plan 118; Board is them in BoardUI's own type, shapes and colors.
+ * Luma (plan 117): between Lumen and macOS. Lumen's avatars, pill compose and category pills; macOS's title, search
+ * field, filter menu, classic reader and reply icons; rows between the two. In Inter (body 14/20, body 2 13/18,
+ * caption 12/16), 10 px controls and 16 px menus, medium weights, in its own neutrals and blue.
  */
-export const board: DesignDefinition = {
-  id: "board",
-  palette: { light: "board-light", dark: "board-dark" },
+export const luma: DesignDefinition = {
+  id: "luma",
+  palette: { light: "luma-light", dark: "luma-dark" },
   vibrancy: false,
-  // Inter as BoardUI sets it: no stylistic sets (the others' cv11 would give Inter a single-storey a)
+  // Inter as designed: no stylistic sets (the others' cv11 would give Inter a single-storey a)
   fonts: { sans: INTER, display: INTER, features: '"kern"', faces: ['400 1em "Inter Variable"', '500 1em "Inter Variable"', '600 1em "Inter Variable"'] },
   // 11 · 12 · 13 · 14 · 16 · 18 · 24 (caption 2, caption 1, body 2, body, headline, title 3, title 1)
   text: {

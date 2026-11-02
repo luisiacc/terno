@@ -39,7 +39,7 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
-      // BoardUI's select (plan 118): drawn as its secondary button
+      // The select (plan 118): drawn as the secondary button
       className={cn(
         "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-border bg-card py-2 pr-2 pl-2.5 text-sm whitespace-nowrap shadow-xs transition-colors hover:border-input hover:bg-muted outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
@@ -82,7 +82,7 @@ function SelectContent({
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
-          // BoardUI's menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
+          // The menu (plan 118): solid, a 1 px edge, rows highlighted in the neutral muted, not the accent
           data-align-trigger={alignItemWithTrigger}
           className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover text-popover-foreground shadow-menu [--accent:var(--muted)] [--accent-foreground:var(--foreground)] duration-base data-closed:duration-fast data-[align-trigger=true]:animate-none ease-spring data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.97] data-closed:animate-out data-closed:fade-out-0 data-closed:ease-exit", className )}
           {...props}

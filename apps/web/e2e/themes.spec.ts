@@ -38,7 +38,7 @@ test.describe("reduced transparency", () => {
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   });
 
-  // plan 118: BoardUI's menus are solid (they were glass until then), whatever the OS asks for
+  // plan 118: menus are solid (they were glass until then), whatever the OS asks for
   test("menus are solid, with or without reduced transparency", async ({ app: page }) => {
     const cdp = await page.context().newCDPSession(page);
     const menuLook = async () => {

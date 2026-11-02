@@ -131,7 +131,7 @@
   --color-sidebar-glyph: var(--sidebar-glyph);
   --color-popover-glass: var(--popover-glass);
   --color-drop-target: color-mix(in oklch, var(--primary) 16%, transparent);
-  /* plan 118: BoardUI's filled field, a wash of ink so it reads on white and on grey groups alike */
+  /* plan 118: the filled field, a wash of ink so it reads on white and on grey groups alike */
   --color-field: color-mix(in oklab, var(--foreground) 5%, transparent);
 
   /* shadows take the theme's shadow color (deeper in dark themes) */
@@ -147,7 +147,7 @@
   --shadow-raised: 0 0 0 var(--hairline-w) var(--border), 0 1px 1px color-mix(in oklab, var(--shadow-color) 60%, transparent), inset 0 1px var(--highlight);
   --shadow-popover: 0 0 0 var(--hairline-w) var(--border), 0 4px 12px -2px var(--shadow-color), 0 12px 32px -12px var(--shadow-color);
   --shadow-modal: 0 0 0 var(--hairline-w) var(--border), 0 24px 64px -24px var(--shadow-color);
-  /* plan 118: menus, popovers and tooltips, BoardUI's dropdown: a 1 px edge over a soft, short shadow */
+  /* plan 118: menus, popovers and tooltips: a 1 px edge over a soft, short shadow */
   --shadow-menu: 0 0 0 1px var(--border), 0 1px 1px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 6px 16px -4px color-mix(in oklab, var(--shadow-color) 70%, transparent);
 
   /* motion: one setting (--motion, 0/50/75/100 ms) behind every duration */

@@ -20,7 +20,7 @@ describe("generated theme CSS", () => {
     expect(css.match(/color-scheme: dark;/g)).toHaveLength(11);
   });
 
-  // plan 117: 9 KB with Board's pair (about 400 bytes a pair)
+  // plan 117: 9 KB with Luma's pair (about 400 bytes a pair)
   it("stays small: ≤ 9 KB gzip", () => {
     expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(9 * 1024);
   });

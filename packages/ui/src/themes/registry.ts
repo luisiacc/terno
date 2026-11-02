@@ -460,11 +460,11 @@ export const THEMES: readonly Theme[] = [
     cats: cats(".57 .12 15 | .6 .11 65 | .58 .08 125 | .559 .069 144 | .554 .055 209 | .496 .079 258 | .557 .065 306 | .56 .012 90"),
   }),
   defineTheme({
-    id: "board-light",
-    name: "Board",
+    id: "luma-light",
+    name: "Luma",
     mode: "light",
     vibrancy: false,
-    // BoardUI's tokens (MIT, boardui.com): Tailwind's neutrals on white, its blue as the accent
+    // Luma: Tailwind's neutrals on white, a blue as the accent
     tokens: {
       background: "1 0 0",
       foreground: "0.145 0 0",
@@ -805,11 +805,11 @@ export const THEMES: readonly Theme[] = [
     cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .72 .08 258 | .74 .07 306 | .7 .012 90"),
   }),
   defineTheme({
-    id: "board-dark",
-    name: "Board",
+    id: "luma-dark",
+    name: "Luma",
     mode: "dark",
     vibrancy: false,
-    // BoardUI's dark tokens: #121212 ground, neutral-900 panels, a lighter blue so text on the ground still reads
+    // Luma dark: #121212 ground, neutral-900 panels, a lighter blue so text on the ground still reads
     tokens: {
       background: "0.18 0 0",
       foreground: "0.985 0 0",

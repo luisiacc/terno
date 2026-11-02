@@ -107,7 +107,7 @@ export const BUILTIN_THEMES = [
   { id: "catppuccin-latte", mode: "light" },
   { id: "lumen-light", mode: "light" },
   { id: "atelier-light", mode: "light" },
-  { id: "board-light", mode: "light" },
+  { id: "luma-light", mode: "light" },
   { id: "terno-dark", mode: "dark" },
   { id: "dracula", mode: "dark" },
   { id: "monokai", mode: "dark" },
@@ -118,7 +118,7 @@ export const BUILTIN_THEMES = [
   { id: "catppuccin-mocha", mode: "dark" },
   { id: "lumen-dark", mode: "dark" },
   { id: "atelier-dark", mode: "dark" },
-  { id: "board-dark", mode: "dark" },
+  { id: "luma-dark", mode: "dark" },
 ] as const satisfies readonly { id: string; mode: ThemeMode }[];
 export type BuiltinThemeId = (typeof BUILTIN_THEMES)[number]["id"];
 export const BUILTIN_THEME_IDS = BUILTIN_THEMES.map((t) => t.id) as BuiltinThemeId[];
@@ -183,7 +183,7 @@ export const customThemesSchema = z
  * Designs (plan 15): typography, shape, density and component variants; the
  * values live in @terno/ui/designs (a test keeps both lists in sync).
  */
-export const DESIGN_IDS = ["macos", "atelier", "lumen", "board"] as const;
+export const DESIGN_IDS = ["macos", "atelier", "lumen", "luma"] as const;
 export type DesignId = (typeof DESIGN_IDS)[number];
 export const DEFAULT_DESIGN: DesignId = "lumen";
 /** lightTheme/darkTheme: "the design's own palette" ("Style colors"), the default */

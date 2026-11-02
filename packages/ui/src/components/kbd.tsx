@@ -4,7 +4,7 @@ function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (
     <kbd
       data-slot="kbd"
-      // BoardUI's key (plan 118): a flat pill
+      // The key (plan 118): a flat pill
       className={cn(
         "pointer-events-none inline-flex h-4.5 w-fit min-w-4.5 items-center justify-center gap-1 rounded-full bg-muted px-1.5 font-sans text-2xs font-semibold text-muted-foreground tabular select-none [&_svg:not([class*='size-'])]:size-3",
         className

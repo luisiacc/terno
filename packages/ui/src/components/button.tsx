@@ -7,10 +7,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // BoardUI's primary (plan 118): lit from the top between two fills its text is checked on (primary-hover is the
+        // The primary (plan 118): lit from the top between two fills its text is checked on (primary-hover is the
         // lighter of the two in light palettes, the darker in dark ones); hover drops the gradient for the darker hover fill
         default: "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] hover:bg-[color-mix(in_oklab,var(--primary)_90%,var(--foreground))] hover:bg-none dark:from-primary dark:to-primary-hover",
-        // BoardUI's secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow
+        // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow
         outline:
           "border-border bg-card shadow-xs hover:border-input hover:bg-muted hover:text-foreground aria-expanded:border-input aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground",
         secondary:
