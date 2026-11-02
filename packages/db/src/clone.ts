@@ -29,14 +29,29 @@ export function sameApfsVolume(file: string, dir: string): boolean {
 }
 
 const children = new Set<ChildProcess>();
-// a quit mid-clone: the copy is a partial folder the next start removes, never a process left writing it
-process.once("exit", () => {
+const killAll = () => {
   for (const c of children) c.kill();
-});
+};
+// a quit mid-clone: the copy is a partial folder the next start removes, never a process left writing it. Main
+// retires the backend with SIGTERM, which ends it without "exit": while a cp runs, that signal kills it first and
+// then ends the process as it would have (Codex code review #2)
+process.once("exit", killAll);
+const onTerm = () => {
+  killAll();
+  process.kill(process.pid, "SIGTERM");
+};
+const track = (child: ChildProcess) => {
+  if (children.size === 0) process.once("SIGTERM", onTerm);
+  children.add(child);
+};
+const untrack = (child: ChildProcess) => {
+  children.delete(child);
+  if (children.size === 0) process.removeListener("SIGTERM", onTerm);
+};
 
 /** Ends a clone in flight (the backend's shutdown): its promise rejects, its partial folder goes. */
 export function cancelClones(): void {
-  for (const c of children) c.kill();
+  killAll();
 }
 
 /** cp says why in words; the classifier reads errno codes */
@@ -49,11 +64,11 @@ export function cpError(stderr: string, fallback: unknown): Error {
 export function cloneFile(src: string, dst: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = execFile("/bin/cp", ["-c", src, dst], (error, _stdout, stderr) => {
-      children.delete(child);
+      untrack(child);
       if (error) reject(cpError(String(stderr ?? ""), error));
       else resolve();
     });
-    children.add(child);
+    track(child);
   });
 }
 

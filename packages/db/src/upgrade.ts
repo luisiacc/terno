@@ -153,7 +153,12 @@ export async function prepareUpgrade(path: string, o: UpgradeOptions): Promise<U
         // cp -c copies in full where it can't clone: then the copy's room is what's left to judge by
         const after = freeBytes(dirname(path));
         method = before - after > size / 2 ? "copy" : "clone";
-        if (after < headroom) throw new NoRoomError("backup", size + headroom, after, false);
+        if (after < headroom) {
+          // what's free once the copy is gone says whether the migration alone fits (Codex code review #4)
+          remove(partial);
+          const freeNow = freeBytes(dirname(path));
+          throw new NoRoomError("backup", size + headroom, freeNow, freeNow >= headroom);
+        }
       } else {
         // another connection has the file: the backup API's snapshot is consistent whatever it does
         clone = false;

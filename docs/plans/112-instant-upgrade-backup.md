@@ -1,6 +1,6 @@
 # Plan 112: an update never makes you wait for the mailbox backup
 
-- **Status:** planned.
+- **Status:** shipped (see §7).
 - **Builds on:** plan 95 (safe upgrades: the backup before a migration, the mailbox gate), plan 68 (migrations that leave heavy work to background slices).
 - **Request (verbatim):** "while updateing a build,spacially for hte final user who is using this, while updating sometimes, for example when doing the backup, we are preventing the user from using the app, i think this is terrible, we must found a way of doing the backup in the background while the user is able to use their email and then the app should just update gracefully, never blocking the user from using the app"
 
@@ -33,7 +33,7 @@ The app can't run on an old schema, so the time between start and a usable windo
    - No other connection (reader, writer, checkpoint worker or external tool) can then read or write. One that was already open makes the lock fail with SQLITE_BUSY, and the path falls back to the backup API, whose snapshot stays consistent whatever others do.
    - Measured: an open idle connection and an open reader both block the lock; with the lock held, another connection's read gets "database is locked".
 3. **One self-contained file.** `PRAGMA wal_checkpoint(TRUNCATE)` must return `busy = 0`, and the `-wal` file must then be 0 bytes (or absent). Otherwise fall back. The main file now holds every commit, and nobody can add one.
-4. **Clone.** `execFile("/bin/cp", ["-c", "-X", mailbox, partial/terno.db])`. It runs asynchronously, so the event loop keeps answering (a quit stays possible). `-X` drops extended attributes, so the copy carries no quarantine or Spotlight data.
+4. **Clone.** `execFile("/bin/cp", ["-c", mailbox, partial/terno.db])`. It runs asynchronously, so the event loop keeps answering (a quit stays possible).
    - `cp -c` falls back to a plain copy where a clone is impossible. The same-APFS-volume check makes that unlikely; the duration is logged (`mailbox.backup_made { method: "clone", durationMs }`), so a regression shows up.
 5. **Verify and publish, as today.** Open the copy, set `journal_mode = DELETE` (so it is one file with no `-wal`), and check that `user_version` and `page_count` equal what was read under the lock. Then fsync the file and the manifest, rename the generation into place, fsync `backups/`, and remove older generations.
    - The manifest gains `method: "clone" | "copy"` for diagnostics. Readers ignore unknown keys, so older and newer builds read each other's manifests.
@@ -108,3 +108,48 @@ These override §§2–5 where they conflict. The full critique is in `/tmp/tern
 8. **The backup screen is still reported** (point 11).
    - `onBackup` fires on both paths, so a slow checkpoint or clone shows the cover after the usual 400 ms; a fast one never does.
    - The smoke installs a `MutationObserver` before the window loads and asserts that `mailbox-gate` never attached.
+
+## 7. As shipped
+
+- **The clone** (`packages/db/src/clone.ts`):
+  - A worker thread takes the exclusive lock (locking mode set before the first access, `checkpoint_fullfsync` on) and runs the TRUNCATE checkpoint. It answers `{ version, pages }`, or `null` when another connection has the file, and holds the lock until released.
+  - `/bin/cp -c` makes the clone. `cp` refuses `-c` together with `-X`, so the copy keeps the mailbox's (empty) extended attributes.
+  - cp's stderr is mapped to `ENOSPC`, `EACCES` or `EROFS`. A `cp` in flight is killed by `cancelClones()` (the backend's shutdown), at process exit, and on SIGTERM (main's retirement), after which SIGTERM ends the process as before.
+- **`prepareUpgrade`:**
+  - It tries the clone on one APFS volume. The free space read before and after the clone tells a clone from a full copy.
+  - Another connection, another volume or a full copy that leaves less than the migration's room fall back to plan 95's path, or say no-room with the space measured once the copy is gone.
+  - The manifest records `method`, and `backups/` is fsynced with its parent when it is new.
+- **Restore** clones on the backup's own APFS volume, asks only for the 64 MiB margin there, and checks the margin again after the copy.
+- **The backend** logs `mailbox.backup_made { method, durationMs }`. A shutdown during the backup ends it, waits, and keeps the mailbox from opening after (`mailbox/preparing.ts`).
+- **The rule** is in AGENTS.md: a migration changes shape only, ≤ 1 s at 50k threads.
+
+### Measured
+
+- **Before:** the dev profile `/tmp/terno-1` logged `mailbox.backup_made` at 19.2 s and 13.2 s on its last two updates. The window was covered for that long.
+- **Now:**
+  - A 200 MB mailbox on a real APFS image is cloned in under 1 s, with free space moving by less than 16 MB.
+  - The packaged app upgrades a ~200 MB mailbox in under 400 ms of backup, and the cover never shows.
+- **Migrations at 50,000 threads, each on its own:** v25–v43 take 0–44 ms (v30 is the largest), and the whole way from v24 through `openDatabase` takes 100 ms.
+
+### Verification
+
+- **Unit:**
+  - `upgrade-clone.test.ts` (21): a WAL left by a process that died, other processes holding the file in every state, room on both paths, a full copy detected, failures by errno, the real `cp` into a folder it can't write, verification, cp's words, and SIGTERM taking `cp` with it.
+  - `upgrade.test.ts` (16) on the copy path.
+  - `restore.test.ts` (+3).
+  - `preparing.test.ts` (3).
+- **Real volumes** (`upgrade.volumes.int.test.ts`, 8): the clone on APFS, the copy on HFS+, and the real `cp` filling an HFS+ disk. The suite now has a 180 s timeout: hdiutil took more than 5 s per image on a busy machine, which made the plan-95 cases time out before this change too.
+- **Perf:** `migrations.perf.test.ts`.
+- **Packaged:**
+  - `mailbox.smoke.ts`: 5 of 5.
+  - The full desktop smoke: 71 of 72. `update.smoke.ts`' "saved renderer ACK … active-send drain" failed once and passed on its own, the same flake as plan 107's run.
+
+## 8. What the Codex code review changed
+
+The review is in `/tmp/terno-p112/code-review.txt`. Each fix has a regression test that fails without it.
+
+1. A shutdown during the backup no longer answers "closed" while the open goes on: it waits for the backup, and the mailbox isn't opened after (`Preparation`).
+2. Main's SIGTERM retirement no longer leaves `cp` running: a SIGTERM handler, present only while a `cp` runs, kills it first.
+3. Restore checks its margin again after a `cp` that copied in full, before anything moves.
+4. A full copy that left too little room reports the space free once the copy is gone, so Update Without a Backup is offered when the migration alone fits.
+5. The smoke asserts the logged backup time is under the cover's 400 ms, besides watching for the cover.

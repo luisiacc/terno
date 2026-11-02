@@ -132,7 +132,8 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
   const p = restorePaths(db);
   const fsync = deps.fsync ?? fsyncSync;
   const fault = deps.fault ?? (() => {});
-  const free = (deps.freeBytes ?? ((dir) => { const s = statfsSync(dir); return Number(s.bavail) * Number(s.bsize); }))(dirname(db));
+  const freeBytes = deps.freeBytes ?? ((dir: string) => { const s = statfsSync(dir); return Number(s.bavail) * Number(s.bsize); });
+  const free = freeBytes(dirname(db));
   // plan 112: a clone on the backup's own APFS volume takes no room when made (Node's COPYFILE_FICLONE copies in full)
   const clone = (deps.volume ?? sameApfsVolume)(backup.file, dirname(db));
   if (free < (clone ? 0 : backup.size) + 64 * MiB) throw new RestoreError("no-room");
@@ -141,8 +142,11 @@ async function restore(db: string, backup: BackupInfo, deps: RestoreDeps): Promi
   try {
     fault("copy");
     // off main's thread (a large mailbox takes a while); a clone where the volume can (the backup never changes)
-    if (clone) await (deps.clone ?? cloneFile)(backup.file, p.restoring);
-    else await copyFile(backup.file, p.restoring);
+    if (clone) {
+      await (deps.clone ?? cloneFile)(backup.file, p.restoring);
+      // cp copies in full where it can't clone: the margin is checked again before anything moves (Codex code review #3)
+      if (freeBytes(dirname(db)) < 64 * MiB) throw Object.assign(new Error("no room left after the copy"), { code: "ENOSPC" });
+    } else await copyFile(backup.file, p.restoring);
     syncFile(p.restoring, fsync);
     const check = new DatabaseSync(p.restoring, { readOnly: true });
     try {

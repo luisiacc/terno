@@ -106,6 +106,15 @@ const logged = (userData: string, code: string) => {
     .reduce((a, b) => a + b, 0);
 };
 
+/** the fields of the backend's "mailbox.backup_made" line (plan 112: how it was made, and how long it took) */
+const backupMade = (userData: string): { method?: string; durationMs: number } | null => {
+  const dir = join(userData, "logs");
+  for (const f of existsSync(dir) ? readdirSync(dir).filter((x) => x.endsWith(".jsonl")) : [])
+    for (const line of readFileSync(join(dir, f), "utf8").split("\n"))
+      if (line.includes('"mailbox.backup_made"')) return (JSON.parse(line) as { fields: { method?: string; durationMs: number } }).fields;
+  return null;
+};
+
 const gate = (page: Page) => page.getByTestId("mailbox-gate");
 
 test("an older mailbox: backed up, migrated, and the window opens as usual, never covered (plan 112)", async () => {
@@ -114,10 +123,11 @@ test("an older mailbox: backed up, migrated, and the window opens as usual, neve
   // ~200 MB: a full copy takes seconds, past the cover's 400 ms; a clone doesn't
   oldMailbox(db, { drafts: 5, bodyKb: 40_000 });
   const page = await launch(userData);
-  // watched from the window's first moment until the mailbox is ready: the cover never appeared
+  // watched until the mailbox is ready: the cover never appeared (a sample; the log below is the proof)
   let covered = false;
-  for (const until = Date.now() + 60_000; !(await page.locator("[data-ready]").count()); ) {
+  for (const until = Date.now() + 60_000; ; ) {
     if (await gate(page).count()) covered = true;
+    if (await page.locator("[data-ready]").count()) break;
     if (Date.now() > until) throw new Error("the mailbox never opened");
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -132,6 +142,10 @@ test("an older mailbox: backed up, migrated, and the window opens as usual, neve
   expect(manifest).toMatchObject({ fromSchema: PREV, toSchema: SCHEMA_VERSION, method: "clone" });
   expect(facts(join(userData, "backups", generations[0]!, "terno.db"))).toEqual({ version: PREV, drafts: 5 });
   expect(logged(userData, "mailbox.backup_made")).toBe(1);
+  // the cover waits 400 ms before it shows: a backup (and its lock) done well inside that never shows it (Codex code review #5)
+  const made = backupMade(userData);
+  expect(made).toMatchObject({ method: "clone" });
+  expect(made!.durationMs).toBeLessThan(400);
 });
 
 test("a mailbox from a newer Terno: the gate says so, and the backend isn't restarted on a timer", async () => {

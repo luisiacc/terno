@@ -155,11 +155,41 @@ describe.skipIf(!apfs)("prepareUpgrade's clone (plan 112)", () => {
     expect(await prepareUpgrade(w.db, opts(w, { freeBytes: () => free, clone: copied }))).toMatchObject({ method: "copy" });
     const v = workdir();
     oldMailbox(v.db, PREV, 1);
-    free = migrateHeadroom(size) + size - 1;
-    const error = await prepareUpgrade(v.db, opts(v, { freeBytes: () => free, clone: copied })).catch((e: unknown) => e);
-    expect(classifyOpenError(error)).toMatchObject({ kind: "no-room", stage: "backup" });
+    // the copy's bytes count only while it is there: once it goes, the migration alone fits (Codex code review #4)
+    const base = migrateHeadroom(size) + size - 1;
+    let copy = "";
+    const tracked = (src: string, dst: string) => cloneFile(src, (copy = dst));
+    const error = await prepareUpgrade(v.db, opts(v, { freeBytes: () => base - (copy && existsSync(copy) ? size : 0), clone: tracked })).catch((e: unknown) => e);
+    expect(classifyOpenError(error)).toMatchObject({ kind: "no-room", stage: "backup", canSkipBackup: true, freeBytes: base });
     expect(readdirSync(v.backups)).toEqual([]);
     expect(writable(v.db)).toBe(true);
+  });
+
+  it("a backend ended with SIGTERM mid-copy takes its cp with it (Codex code review #2)", async () => {
+    const w = workdir();
+    // a FIFO nobody writes: cp blocks reading it, as a long copy would
+    const fifo = join(w.dir, "slow");
+    expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+    const clone = join(__dirname, "clone.ts");
+    const child = spawn(process.execPath, ["-e", `import(${JSON.stringify(clone)}).then((m) => { m.cloneFile(${JSON.stringify(fifo)}, ${JSON.stringify(join(w.dir, "out"))}).catch(() => {}); setTimeout(() => process.stdout.write("ready\\n"), 200); setInterval(() => {}, 1000); });`], { stdio: ["ignore", "pipe", "inherit"] });
+    procs.push(child);
+    await new Promise<void>((resolve) => child.stdout!.on("data", (b: Buffer) => b.toString().includes("ready") && resolve()));
+    const cp = Number(spawnSync("pgrep", ["-P", String(child.pid)], { encoding: "utf8" }).stdout.trim());
+    expect(cp).toBeGreaterThan(0);
+    const exited = new Promise<NodeJS.Signals | null>((resolve) => child.once("exit", (_code, signal) => resolve(signal)));
+    child.kill("SIGTERM");
+    // the process still ends as SIGTERM ends it
+    expect(await exited).toBe("SIGTERM");
+    const alive = () => {
+      try {
+        process.kill(cp, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(alive()).toBe(false);
   });
 
   it.each([

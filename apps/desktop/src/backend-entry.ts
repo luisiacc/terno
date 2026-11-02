@@ -12,6 +12,7 @@ import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
+import { Preparation } from "./mailbox/preparing";
 import { settleRestored } from "./mailbox/restore";
 
 type PortMain = {
@@ -214,7 +215,7 @@ const storeLog =
   };
 let restoredFrom: number | null = null;
 /** the backup before a migration, while it runs: a shutdown ends a clone in flight and waits for it (plan 112) */
-let preparing: Promise<UpgradePlan> | null = null;
+const preparation = new Preparation();
 
 const summary = (b: BackupInfo | null | undefined): BackupSummary | null => (b ? { createdAt: b.createdAt, appVersion: b.appVersion, fromSchema: b.fromSchema } : null);
 
@@ -228,17 +229,14 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
   let plan: UpgradePlan | null = null;
   const startedAt = Date.now();
   try {
-    preparing = prepareUpgrade(msg.dbPath, {
+    plan = await preparation.run(prepareUpgrade(msg.dbPath, {
       backupsDir,
       appVersion: msg.version,
       skipBackup: msg.skipBackup,
       onBackup: () => send({ type: "gate", gate: { kind: "upgrading", phase: "backup", from: plan?.from ?? 0, to: SCHEMA_VERSION } }),
-    });
-    try {
-      plan = await preparing;
-    } finally {
-      preparing = null;
-    }
+    }));
+    // a shutdown came while the backup ran: the mailbox isn't opened
+    if (preparation.stopped) return false;
     if (plan.made) log.info("mailbox.backup_made", { schema: plan.from ?? 0, method: plan.method ?? "copy", durationMs: Date.now() - startedAt });
     const migrating = plan.from !== null && plan.from < plan.to;
     if (migrating && !plan.backup) log.info("mailbox.backup_skipped", { schema: plan.from ?? 0 });
@@ -256,6 +254,8 @@ async function openMailbox(msg: Extract<MainToBackend, { type: "init" }>): Promi
     }
     return true;
   } catch (error) {
+    // a backup ended by a shutdown isn't a failure to show
+    if (preparation.stopped) return false;
     const failure = classifyOpenError(error, () => {
       const size = mailboxBytes(msg.dbPath);
       let free = 0;
@@ -287,10 +287,7 @@ let closing: Promise<void> | null = null;
 /** See MainToBackend "shutdown": a send in flight is never cut short unless main says so. */
 async function shutdown(msg: Extract<MainToBackend, { type: "shutdown" }>): Promise<void> {
   const b = backend;
-  if (!b && preparing) {
-    cancelClones();
-    await preparing.catch(() => {});
-  }
+  if (!b) await preparation.stop(cancelClones);
   if (!b || closing) {
     await closing;
     return send({ type: "shutdown-result", id: msg.id, outcome: "closed" });

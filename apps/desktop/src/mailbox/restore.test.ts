@@ -73,6 +73,16 @@ describe("restoring a backup (plan 95)", () => {
     expect(value(w.db)).toBe("backup");
   });
 
+  it("plan 112: a cp that copied in full and left less than the margin is no-room, with nothing moved (Codex code review #3)", async () => {
+    const w = world();
+    let free = 64 * 2 ** 20 + 4096;
+    await expect(restoreFromBackup(w.db, w.backup, { freeBytes: () => free, volume: () => true, clone: async (src, dst) => { copyFileSync(src, dst); free -= 8192; } })).rejects.toMatchObject({ kind: "no-room" });
+    w.live.close();
+    expect(value(w.db)).toBe("live");
+    expect(existsSync(restorePaths(w.db).restoring)).toBe(false);
+    expect(existsSync(restorePaths(w.db).journal)).toBe(false);
+  });
+
   it("plan 112: a clone that fails is said as no-room or failed, with nothing moved", async () => {
     const w = world();
     const fail = (code: string) => restoreFromBackup(w.db, w.backup, { ...roomy, volume: () => true, clone: () => Promise.reject(Object.assign(new Error(code), { code })) });
