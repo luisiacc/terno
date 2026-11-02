@@ -196,7 +196,7 @@ describe("app.import", () => {
     await to.client.call("categories.create", { name: "facturas", color: "rose" });
     const result = await to.client.call("app.import", { data: dump });
     // the filter on a mailbox that isn't connected here waits for it
-    expect(result).toEqual({ categories: { added: 1, merged: 1 }, filters: { added: 2, existing: 0, skipped: [] }, drafts: 1, pending: { drafts: 0, filters: 1 }, settings: true });
+    expect(result).toEqual({ categories: { added: 1, merged: 1 }, filters: { added: 2, existing: 0, skipped: [] }, drafts: 1, pending: { drafts: 0, filters: 1 }, settings: true, snippets: 0 });
 
     const boot = await to.client.call("app.bootstrap", {});
     expect(boot.categories.map((c) => [c.name, c.color, c.autoApply])).toEqual([["facturas", "rose", true], ["Viajes", "cyan", false]]);
@@ -269,9 +269,11 @@ describe("app.import: designs (plan 15)", () => {
     expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({ design: "atelier", lightTheme: "github-light", darkTheme: "design" });
 
     const fresh = setup();
+    // the palettes this install shows stay (plan 98: a new install's are GitHub's)
+    const { lightTheme, darkTheme } = (await fresh.client.call("app.bootstrap", {})).settings;
     const { design: _d, previousLightTheme: _pl, previousDarkTheme: _pd, ...legacy } = dump.settings;
     await fresh.client.call("app.import", { data: { ...dump, settings: { ...legacy, lightTheme: "solarized-light", darkTheme: "nord" } as never } });
-    expect((await fresh.client.call("app.bootstrap", {})).settings).toMatchObject({ design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: "solarized-light", previousDarkTheme: "nord" });
+    expect((await fresh.client.call("app.bootstrap", {})).settings).toMatchObject({ design: "lumen", lightTheme, darkTheme, previousLightTheme: "solarized-light", previousDarkTheme: "nord" });
   });
 });
 
