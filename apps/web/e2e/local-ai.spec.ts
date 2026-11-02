@@ -154,7 +154,8 @@ test.describe("local mode and AI providers", () => {
     const fits = () =>
       frame.evaluate((f: HTMLIFrameElement) => {
         const root = f.contentDocument!.documentElement;
-        return { overflow: root.scrollHeight - root.clientHeight, gap: f.clientHeight - Math.ceil(root.getBoundingClientRect().height), scrolls: getComputedStyle(root).overflowY !== "hidden" };
+        // clip (b1c85b77, outer-only preview scroll) is stricter than hidden: not even a script scrolls it
+        return { overflow: root.scrollHeight - root.clientHeight, gap: f.clientHeight - Math.ceil(root.getBoundingClientRect().height), scrolls: !["hidden", "clip"].includes(getComputedStyle(root).overflowY) };
       });
     await expect.poll(fits).toEqual({ overflow: 0, gap: 0, scrolls: false });
     const wide = await frame.evaluate((f) => f.clientHeight);
