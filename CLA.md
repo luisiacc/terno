@@ -1,9 +1,9 @@
 # Terno Contributor License Agreement
 
 Thank you for contributing to Terno. This agreement keeps the project's
-licensing clear: you keep the copyright in your work, and Luis Cordero (the
-"Maintainer") gets the rights needed to ship it under Terno's license and to
-offer commercial licenses.
+licensing clear: you keep the copyright in your work, and Luisiacc LLC,
+together with its successors and assigns (the "Maintainer"), gets the rights
+needed to ship it under Terno's license and to offer commercial licenses.
 
 By signing, you ("You") agree to the following for every Contribution You
 submit to the Terno project, now or in the future.

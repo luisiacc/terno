@@ -94,7 +94,7 @@ up or adding evidence. Feel free to update it and ask again, or open a smaller p
 
 Terno is source-available under the Business Source License 1.1 (see
 [LICENSE](LICENSE)), each version becomes AGPL-3.0 three years after its
-release, and the author can grant other licenses (for example, permission
+release, and Luisiacc LLC can grant other licenses (for example, permission
 to sell). So that contributed code can ship under all of them, every contributor signs the
 [Contributor License Agreement](CLA.md) once. You keep the copyright in your
 work.

@@ -38,6 +38,8 @@ const stage = process.env.TERNO_PACKAGE_OUT ? `${release}.stage` : join(root, ".
 // One ASCII name everywhere: bundle, CFBundleName (Electron derives the
 // "<name> Helper.app" file names from it), the executable and the DMG volume.
 const productName = "Terno";
+// the legal entity behind Terno: the LICENSE's Licensor and the Developer ID team
+const publisher = "Luisiacc LLC";
 /** what update tests are built as: never dev.terno.mail, so a real Terno's Squirrel state and caches stay untouched */
 const TEST_APP_ID = "dev.terno.updatetest";
 const appId = testBuild ? TEST_APP_ID : "dev.terno.mail";
@@ -107,7 +109,7 @@ mkdirSync(stage, { recursive: true });
 cpSync(dist, join(stage, "dist"), { recursive: true });
 writeFileSync(
   join(stage, "package.json"),
-  JSON.stringify({ name: packageName, productName, version, description: pkg.description, main: "dist/main.cjs", author: productName, license: "SEE LICENSE IN LICENSE" }, null, 2),
+  JSON.stringify({ name: packageName, productName, version, description: pkg.description, main: "dist/main.cjs", author: publisher, license: "SEE LICENSE IN LICENSE" }, null, 2),
 );
 
 await build({
@@ -119,7 +121,7 @@ await build({
   config: {
     appId,
     productName,
-    copyright: `© 2026 ${productName}`,
+    copyright: `© 2026 ${publisher}`,
     electronVersion: electronPkg.version,
     electronDist,
     directories: { output: release, buildResources: join(root, "resources") },
