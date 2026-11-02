@@ -36,12 +36,13 @@ export default function CategoryInboxTip({ category }: { category: Category }) {
     setRow(el);
   }, [row, busy, category.showInInbox, category.id]);
 
-  // Escape is the tip's while it's up: before the app's own keys (which would also clear a selection or close the reader)
+  // Escape is the tip's alone while it's up: before the app's keys and the focused control's own (a search would clear)
   useEffect(() => {
     if (!row) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       e.preventDefault();
+      e.stopPropagation();
       dismissCategoryTip();
     };
     window.addEventListener("keydown", onKey, true);

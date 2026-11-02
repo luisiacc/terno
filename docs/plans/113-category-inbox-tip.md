@@ -60,3 +60,7 @@ Nothing on a hot path: the sidebar subscribes to one number; the tip's code load
 9. *Right-click must still open the menu.* The popover's outside press closes it without stopping the event (e2e: the menu opens on the same click).
 11. *Two windows.* It rechecks storage just before showing; two windows racing in the same instant is out of scope.
 12. *Arrow and scrolling.* A `PopoverArrow` part (hairline on its two outer sides); hidden while its row is scrolled away; screenshots in all three designs, light and dark.
+
+### Code review
+
+1. *Escape closed the tip and still reached the focused control:* typing a search, Escape closed the tip and also cleared the query and left the field. The tip's Escape now stops there too (e2e: the query and focus survive; fails without it). No other findings.

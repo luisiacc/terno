@@ -73,6 +73,19 @@ test.describe("the first new category's tip (plan 113)", { tag: "@design" }, () 
     expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { categoryId: number | null } } }).__terno.getApp().categoryId)).toBe(id);
   });
 
+  test("Escape while typing a search closes the tip and leaves the search as it was (Codex review)", async ({ app: page, server }) => {
+    await create(page, server, "LinkedIn");
+    await expect(tip(page)).toBeVisible();
+    await page.keyboard.press("/");
+    const search = page.getByTestId("search-input");
+    await expect(search).toBeFocused();
+    await page.keyboard.type("factura");
+    await page.keyboard.press("Escape");
+    await expect(tip(page)).toHaveCount(0);
+    await expect(search).toHaveValue("factura");
+    await expect(search).toBeFocused();
+  });
+
   test("from the picker, it waits for the picker to close, then points at the row", async ({ app: page, server }) => {
     await rows(page).first().dispatchEvent("mousedown");
     await page.keyboard.press("l");
