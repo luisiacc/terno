@@ -20,7 +20,7 @@ import { findRuleMatches } from "./rules";
 import { searchThreads } from "./search";
 import { listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { SqlProviderStore } from "./sql-provider-store";
-import { startCheckpointWorker } from "./checkpoint";
+import { checkpointFixture } from "./test/checkpoint-fixture";
 import { seedDataset } from "./seed";
 import type { Db } from "./sqlite";
 import { BUDGET_MULTIPLIER, measure, report, type Stat } from "./test/perf";
@@ -88,7 +88,7 @@ describe("navigation", () => {
 
   it("lists an account's own folders (plan 68): big, sparse, deep, filtered, scopes", async () => {
     // checkpoints off the thread, as on desktop: in-thread ones every thousand pages would be the stalls measured
-    const checkpoints = startCheckpointWorker(db)!;
+    checkpointFixture(db);
     // the biggest account's every thread in one folder, beside the dataset's own folders
     const big = db.get<{ account_id: number; c: number }>("SELECT account_id, count(*) c FROM threads WHERE in_trash = 0 AND in_spam = 0 GROUP BY 1 ORDER BY 2 DESC LIMIT 1")!;
     db.run("INSERT INTO folders (account_id, key, path_json, selectable, position) VALUES (?, 'Label_everything', '[\"Everything\"]', 1, 99)", big.account_id);
@@ -244,7 +244,6 @@ describe("navigation", () => {
     stats.push({ name: "rename one folder of 10,000 (20 levels deep)", budgetMs: 32, p50: renames[2]!, p95: renames[4]!, max: renames[4]!, n: 5 } as never);
     expect(renames[2]!, "rename one folder of 10,000").toBeLessThanOrEqual(32 * BUDGET_MULTIPLIER);
     replaceFolders(db, big.account_id, withConvo);
-    await checkpoints.stop();
   });
 
   it("computes sidebar counts", () => {

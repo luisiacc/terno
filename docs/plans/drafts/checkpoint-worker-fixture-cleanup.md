@@ -1,6 +1,6 @@
-# Checkpoint worker fixture cleanup — preparation only
+# Checkpoint worker fixture cleanup
 
-Base `d6dadc6581a1d88e728698e2c816697cd17cc407`, initially clean branch `t3/checkpoint-worker-cleanup-plan`. IDB R48 owns measurement. **No implementation or test release; source reviews0/2.**
+Base `d6dadc6581a1d88e728698e2c816697cd17cc407`, initially clean branch `t3/checkpoint-worker-cleanup-plan`. IDB R48 owns measurement. **Initial preparation state; implementation release and results below.**
 
 ## Request and source evidence
 
@@ -39,3 +39,31 @@ After Root’s serial release only: ordinary RED, targeted tests/types/exact lin
 ## Revisions after the Codex review
 
 One actual native `gpt-6.1-sol`/high read-only critique completed exit0 with five points, all accepted: child-owned safety cleanup; explicit real stop/join witness; restoration ordering; honest helper-versus-perf coverage; isolated parent entry/deadlines. Verbatim findings/process receipt in `checkpoint-worker-fixture-cleanup.critique.md`. No second critique, tests/profiles/benchmarks/installs/generators/production edits or source reviews. Runner cleanup-error semantics remain an execution acceptance criterion, not verified fact. **Source reviews0/2.**
+
+
+## Root release and implementation receipt
+
+Root released test-first implementation after SQL common-word diagnostic/process join and byte-exact source restoration. Clean prep555f55ba was rebased without conflicts onto **committed main87d728568efa976cba8e99f8bccfc4e7d703cb3c**, producing prep02a1af85306cee0126255449c3fa97c157caba67. No peer WIP existed. Shared perf source hash matched the preparation receipt before edits; no main/worklist/parked/protected/user source changed.
+
+Implemented only the named import/acquisition/success-stop boundary, the ten-line test-only helper, and dedicated ordinary parent/child fixtures. A byte-equivalence receipt proves the entire remaining perf file unchanged: original SHA2567a963909f876f4ba6f92fe1a5b832a70eac5dda671bd18d617da0f33097bf6ef; after boundary edits3a2443a011aa70d13620cea464acaa7d86447a787be6686c091f419359d32a05. No perf execution. Hook registration is synchronous at acquisition; stop/join and writer-default1000 restoration finish before normal global DB close. Primary errors are not caught by the helper; restoration failures propagate as separate Vitest teardown errors.
+
+**Executed ordinary RED before fix:** helper initially registered success-only stop without restoration. Parent failed; child had8 failed/2 passed tests. Pre-safety operation/assertion witnesses captured the same live Worker objects (threadIds2/3) and pragma0, with no stop/exit events; success captured threadId-1/stop-joined but pragma0. Child safety finalizer joined its exact raw handles after all witnesses, then closed DBs. Raw initial RED retained. Added pre-safety snapshots and strengthened operation failure to a real native missing-table SQL error, reproducing RED (`red-native-operation`) before restoring the fix. These are ordinary regression refinements, not timing retries.
+
+**Executed GREEN:** identical final native-error fixture under unconditional hook stop/restore passed the parent test (`green-native-operation`). Child10 tests:4 expected body failures,6 passed; all5 following witnesses passed stop-called → same-object exit → stop-resolved → restoration, final threadId-1 and pragma1000. Operation failure is actual native SQL error; assertion failure is real Vitest assertion. Body+cleanup report retains native SQL error AND restoration sentinel; cleanup-only report retains its teardown error. Expected failing child cases are assertions inside a passing regression, not forced gate success. Earlier green and safety-harness-refinement runs retained too. Helper lifecycle is executed; perf call-site/body equivalence is source-checked, not executed integration coverage.
+
+Full `tsc -p packages/db/tsconfig.json` initially failed for absent local parser links; after adding owned links to existing postal-mime/parse5/css-tree/types, it passed. Dedicated explicit3-file type configuration passed; exact4-file `oxlint --deny-warnings` passed. No installs, generators, backend setup, benchmark/profile, full perf or other gate runs. Commands/logs/identities in the evidence directory below. All test/check commands preserved NODE_OPTIONS and appended the network guard; ELECTRON_RUN_AS_NODE unset.
+
+Process/artifacts: parent/child use Node threads pools, not fork pools. Python supervisor captures CLI PID/birth/argv and finite90-second test/120-second check joins; test captures nested CLI PID/birth/argv and finite45/48-second SIGTERM/SIGKILL guards, signals only via its owned unreaped ChildProcess. Native Worker identity/exit captured in child; safety cleanup occurs after witnesses. All actual commands exited/joined naturally without signals. Child synthetic DB/config/cache/report directories removed after join. Top-level temporary evidence/config/cache retained outside Git. Initial node_modules absent; only owned links to existing local packages created, to be restored absent after review. No existing perf report or old evidence deleted; perf report path never written.
+
+**Limits:** only ordinary completed-operation/assertion failure, success and restoration-error semantics qualified. Stop rejection is propagated and default restoration is not attempted until join succeeds; no synthetic stop-rejection coverage. Startup failure before a handle exists is outside scope. Hard process death, blocked event loop and in-flight timed-out async operations are not qualified: Vitest can finish a timed-out test while its promise continues, and this hook does not cancel it. No cancellation/GC/cadence/WAL/durability changes or historical-cause claim. Root owns restore/cold-folder serial retests and ff-only landing; no release-green claim.
+
+Raw bounded evidence: `/var/folders/_h/cy6nv52s2lj7n18v_mlcb3y40000gn/T/terno-checkpoint-impl-whib151_` (RED/GREEN helper snapshots, JSON reports/pre-safety lifecycle/process receipts, exact source copy/hash, check configs/logs). Combined nativeSol/high R1 pending after coherent checks; max2 source reviews, R2P1/P2 park-only.
+
+
+### Combined source review R1 and fail-first repairs
+
+One native `gpt-6.1-sol`/high read-only R1 completed exit0 (raw `R1.txt`, `R1.process.json`). Two P2 findings: remove hardcoded session `/tmp` preload from the committed test; reject child suite-level safety-finalizer errors that leave expected test outcomes/exit1 unchanged. Helper order/error semantics and exact three perf edits were accepted.
+
+Both repaired with ordinary RED before fix (`R1-repair-red-oracle`): (1) child NODE_OPTIONS hash differs because old code appends an extra preload; (2) child real Db.onClose callback throws during finalizer while all expected body/witness outcomes remain, yet old parent oracle accepts it. Both parent tests failed for their intended reason. No environment dump: only a NODE_OPTIONS digest is retained. Final code inherits NODE_OPTIONS exactly, and external execution harness still appends the required network guard for every command. Parent now rejects nonempty suite-level messages and requires explicit successful finalizer completion; child always persists completion=false on safety failure and retries the remaining open DB close after the one-shot failing onClose callback, preserving the original suite error. This safety retry is synthetic-test resource cleanup, not a performance rerun or production behavior.
+
+`R1-repair-green`: both parent tests passed; full DB type config, dedicated3-file types and exact4-file lint passed again. Raw first repair-RED (with abbreviated suite-message precondition corrected) retained too. No production/perf-body changes during repairs. R2 is the only remaining review slot; P1/P2 there parks only this item without another implementation/review loop.
